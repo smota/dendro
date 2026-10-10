@@ -59,6 +59,15 @@ fn ingest_openrig(store: &AnalyticsStore, sqlite_path: &Path, frozen: bool) -> R
         uri,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI,
     )?;
+    let mut rig_names = std::collections::HashMap::<String, String>::new();
+    if let Ok(mut rigs) = conn.prepare("SELECT id, name FROM rigs") {
+        let rows = rigs.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        for row in rows.flatten() {
+            rig_names.insert(row.0, row.1);
+        }
+    }
     let mut count = 0i64;
     let mut stmt = conn.prepare("SELECT seq, type, payload, created_at FROM events")?;
     let rows = stmt.query_map([], |row| {
@@ -88,10 +97,11 @@ fn ingest_openrig(store: &AnalyticsStore, sqlite_path: &Path, frozen: bool) -> R
             let Some(seat) = parsed.get("sessionName").and_then(|v| v.as_str()) else {
                 continue;
             };
-            let rig = parsed.get("rigId").and_then(|v| v.as_str()).unwrap_or("");
+            let rig_id = parsed.get("rigId").and_then(|v| v.as_str()).unwrap_or("");
+            let rig = rig_names.get(rig_id).map(String::as_str).unwrap_or(rig_id);
             store.insert_identity(&IdentityFact {
                 source_key: format!("events:{seq}"),
-                harness: runtime.to_string(),
+                harness: normalize_harness(runtime),
                 native_session: session_id.to_string(),
                 rig: rig.to_string(),
                 seat: seat.to_string(),
@@ -164,6 +174,15 @@ fn ingest_openrig(store: &AnalyticsStore, sqlite_path: &Path, frozen: bool) -> R
         let _ = std::fs::remove_dir_all(&snap_dir);
     }
     Ok(count)
+}
+
+fn normalize_harness(runtime: &str) -> String {
+    match runtime {
+        "claude-code" | "claude" => "claude".to_string(),
+        "codex" => "codex".to_string(),
+        "pi" => "pi".to_string(),
+        other => other.to_string(),
+    }
 }
 
 fn uuid_suffix() -> String {

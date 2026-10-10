@@ -153,6 +153,13 @@ pub fn report_json(
             .map(|fact| (fact.harness.clone(), fact.native_session.clone()))
             .collect()
     });
+    let rig_seats: Option<std::collections::HashSet<String>> = rig.map(|name| {
+        identities
+            .iter()
+            .filter(|fact| fact.rig == name)
+            .map(|fact| fact.seat.clone())
+            .collect()
+    });
     let usage: Vec<_> = store
         .load_usage()?
         .into_iter()
@@ -169,6 +176,10 @@ pub fn report_json(
         .load_queue()?
         .into_iter()
         .filter(|row| row.ts >= window.from && row.ts < window.to)
+        .filter(|row| match &rig_seats {
+            Some(seats) => seats.contains(&row.source_seat) || seats.contains(&row.dest_seat),
+            None => true,
+        })
         .collect();
     let edges = metrics::handoff_edges(&queue);
     let (rework, chains, paths) = metrics::m3_rework(&edges);
