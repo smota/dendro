@@ -753,6 +753,68 @@ mod tests {
     }
 
     #[test]
+    fn source_hash_counter_snapshot_and_warning_reason_are_not_raw_secrets() {
+        let dir = std::env::temp_dir().join(format!("dendro-source-rest-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let codex = dir.join("codex");
+        fs::create_dir_all(&codex).unwrap();
+        write(
+            &codex.join("rollout.jsonl"),
+            "not-json sk-ant-ZZZLINE\n{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":10,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":0,\"reasoning_output_tokens\":0,\"total_tokens\":10}}}}\n",
+        );
+        let sqlite_path = dir.join("openrig.sqlite");
+        let conn = rusqlite::Connection::open(&sqlite_path).unwrap();
+        conn.execute(
+            "CREATE TABLE events (seq INTEGER, type TEXT, payload TEXT, created_at TEXT)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "CREATE TABLE queue_items (qitem_id TEXT, destination_session TEXT, ts_updated TEXT)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO queue_items VALUES ('plain-item','sk-ant-ZZZDEST','2026-10-09T00:00:00Z')",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+        let db_path = dir.join("analytics.duckdb");
+        drop(AnalyticsStore::open_path(&db_path, "key").unwrap());
+        let roots = [
+            crate::SourceRoot {
+                name: "codex".into(),
+                path: codex,
+            },
+            crate::SourceRoot {
+                name: "openrig".into(),
+                path: sqlite_path,
+            },
+        ];
+        crate::ingest_staged(&db_path, &roots, false, b"source-column-test-key").unwrap();
+        let db = AnalyticsStore::open_path(&db_path, "key").unwrap();
+        let state = db.source_state("codex:0").unwrap().unwrap();
+        assert_eq!(state.2.len(), 64);
+        assert!(state.2.chars().all(|ch| ch.is_ascii_hexdigit()));
+        assert!(!state.2.contains("ZZZ"));
+        let snapshots = db.load_destination_snapshots().unwrap();
+        assert!(snapshots.iter().all(|row| !row.1.contains("ZZZDEST")));
+        assert!(!snapshots.is_empty());
+        let reasons = db.warning_reasons().unwrap();
+        assert!(reasons.iter().any(|reason| reason == "malformed-json"));
+        assert!(reasons.iter().all(|reason| !reason.contains("ZZZLINE")));
+        drop(db);
+        let bytes = fs::read(&db_path).unwrap();
+        let blob = String::from_utf8_lossy(&bytes);
+        for token in ["ZZZLINE", "ZZZDEST"] {
+            assert!(!blob.contains(token), "{token}");
+        }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn codex_uses_only_cumulative_token_count_and_reset() {
         let dir = std::env::temp_dir().join(format!("dendro-codex-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);

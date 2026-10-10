@@ -721,6 +721,12 @@ impl AnalyticsStore {
             .map_err(Into::into)
     }
 
+    pub fn warning_reasons(&self) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare("SELECT reason FROM warnings")?;
+        let rows = stmt.query_map([], |row| row.get(0))?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
     pub fn warning_count(&self) -> Result<i64> {
         self.conn
             .query_row("SELECT COUNT(*) FROM warnings", [], |row| row.get(0))
