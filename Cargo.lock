@@ -554,9 +554,11 @@ dependencies = [
  "async-trait",
  "chrono",
  "dendro-core",
+ "hex",
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2",
  "tracing",
 ]
 

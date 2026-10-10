@@ -389,7 +389,9 @@ impl AnalyticsStore {
                 fact.closure_reason.as_deref().map(redact),
                 fact.closure_target.as_deref().map(redact),
                 fact.chain_id.as_deref(),
-                serde_json::to_string(&fact.missions.iter().map(|m| redact(m)).collect::<Vec<_>>())?
+                serde_json::to_string(
+                    &fact.missions.iter().map(|m| redact(m)).collect::<Vec<_>>()
+                )?
             ],
         )?;
         Ok(())
@@ -399,7 +401,12 @@ impl AnalyticsStore {
         self.conn.execute(
             r#"INSERT INTO skill_facts (source_key, seat, skill, invoked) VALUES (?, ?, ?, ?)
                ON CONFLICT (source_key) DO NOTHING"#,
-            params![fact.source_key, redact(&fact.seat), redact(&fact.skill), fact.invoked],
+            params![
+                fact.source_key,
+                redact(&fact.seat),
+                redact(&fact.skill),
+                fact.invoked
+            ],
         )?;
         Ok(())
     }
@@ -418,7 +425,11 @@ impl AnalyticsStore {
                 harness: row.get(1)?,
                 native_session: row.get(2)?,
                 message_id: row.get(3)?,
-                ts: ts.and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok().map(|d| d.with_timezone(&chrono::Utc))),
+                ts: ts.and_then(|s| {
+                    chrono::DateTime::parse_from_rfc3339(&s)
+                        .ok()
+                        .map(|d| d.with_timezone(&chrono::Utc))
+                }),
                 seq: row.get(5)?,
                 input_uncached: row.get(6)?,
                 output: row.get(7)?,
@@ -444,7 +455,11 @@ impl AnalyticsStore {
                 native_session: row.get(2)?,
                 rig: row.get(3)?,
                 seat: row.get(4)?,
-                ts: ts.and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok().map(|d| d.with_timezone(&chrono::Utc))),
+                ts: ts.and_then(|s| {
+                    chrono::DateTime::parse_from_rfc3339(&s)
+                        .ok()
+                        .map(|d| d.with_timezone(&chrono::Utc))
+                }),
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
@@ -509,7 +524,11 @@ impl AnalyticsStore {
                 source_key: row.get(0)?,
                 harness: row.get(1)?,
                 native_session: row.get(2)?,
-                ts: ts.and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok().map(|d| d.with_timezone(&chrono::Utc))),
+                ts: ts.and_then(|s| {
+                    chrono::DateTime::parse_from_rfc3339(&s)
+                        .ok()
+                        .map(|d| d.with_timezone(&chrono::Utc))
+                }),
                 seq: row.get(4)?,
                 name: row.get(5)?,
                 fingerprint: row.get(6)?,
@@ -534,6 +553,35 @@ impl AnalyticsStore {
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    pub fn message_seen(
+        &self,
+        harness: &str,
+        native_session: &str,
+        message_id: &str,
+        generation: i64,
+    ) -> Result<bool> {
+        let n: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM usage_facts WHERE harness = ? AND native_session = ? AND message_id = ? AND generation = ?",
+            params![harness, native_session, message_id, generation],
+            |row| row.get(0),
+        )?;
+        Ok(n > 0)
+    }
+
+    pub fn latest_usage_totals(&self, source_id: &str) -> Result<(i64, i64, i64, i64)> {
+        self.conn
+            .query_row(
+                r#"SELECT COALESCE(SUM(input_uncached), 0), COALESCE(SUM(output_tokens), 0),
+                      COALESCE(SUM(cache_read), 0), COALESCE(SUM(cache_write), 0)
+               FROM usage_facts
+               WHERE source_id = ?
+                 AND generation = (SELECT MAX(generation) FROM source_files WHERE source_id = ?)"#,
+                params![source_id, source_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .map_err(Into::into)
     }
 
     pub fn warning_count(&self) -> Result<i64> {
@@ -651,8 +699,11 @@ mod tests {
         );
         assert!(err.is_ok());
         let tx = store.conn.unchecked_transaction().unwrap();
-        tx.execute("INSERT INTO warnings (path, line_no, reason) VALUES ('x', 1, 'bad')", [])
-            .unwrap();
+        tx.execute(
+            "INSERT INTO warnings (path, line_no, reason) VALUES ('x', 1, 'bad')",
+            [],
+        )
+        .unwrap();
         drop(tx);
         assert_eq!(store.warning_count().unwrap(), 0);
         assert!(store.source_state("src").unwrap().is_some());
