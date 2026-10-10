@@ -1,27 +1,27 @@
 <div align="center">
   <h1>🌲 Dendro</h1>
-  <p><strong>Reading the rings of your AI agents.</strong></p>
+  <p><strong>Deep telemetry, observability, and analytics for autonomous AI agent fleets.</strong></p>
   <p>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
     <img src="https://img.shields.io/badge/rust-2021-orange.svg" alt="Rust 2021" />
     <img src="https://img.shields.io/badge/storage-DuckDB-yellow.svg" alt="DuckDB" />
-    <img src="https://img.shields.io/badge/runtime-OpenRig-purple.svg" alt="OpenRig" />
+    <img src="https://img.shields.io/badge/engine-local--first-emerald.svg" alt="Local-First" />
   </p>
 </div>
 
-> *"Just as dendrochronology reveals climate history through tree rings, Dendro reads the session rings of your AI agents to uncover team topology, costs, and handovers."*
+> *"Just as dendrochronology deciphers historical climate patterns through the concentric growth layers of ancient trees, Dendro analyzes the cumulative execution layers of autonomous AI squads to reveal team dynamics, hidden friction, and true operational costs."*
 
-**Dendro** is a high-performance, local-first telemetry and analytics engine written in Rust. It unifies execution traces from coding agents (Claude Code, Codex, AGY, Grok, Pi) with runtime orchestrators (like [OpenRig](https://openrig.dev)), normalizes them into [DuckDB](https://duckdb.org), and models semantic layers for natural language exploration with [Nao](https://github.com/getnao/nao).
+**Dendro** is a high-performance, local-first telemetry and analytics engine written in Rust. It unifies execution traces from coding agents (Claude Code, Codex, AGY, Grok, Pi) and orchestrators (such as [OpenRig](https://openrig.dev)), normalizes them into [DuckDB](https://duckdb.org), and provides a semantic foundation for natural language exploration with [Nao](https://github.com/getnao/nao).
 
 ---
 
-## The Three Core Pillars
+## The Three Core Observability Layers
 
-Dendro solves the three fundamental observability questions for multi-agent squads:
+Dendro solves the fundamental operational blind spots for multi-agent squads:
 
-1. **Seat Optimization:** Are you over-engineering agent seats? Identify idle times, task overlap, and seat convergence speed.
-2. **Handover Efficiency:** Is context lost or bloated during handoffs? Track queue transitions, prompt token overhead, and rework rates.
-3. **Resource & Cost Mastery:** Where is compute burning vs idling? Monitor token burn by mission, detect bash command retry loops, and surface watchdog alerts.
+1. **Seat Dynamics & Yield:** Identify real idle times, queue contention, task overlap, and seat convergence velocity without over-engineering squad topology.
+2. **Handover Flow & Friction:** Track context transfer overhead across seat transitions, measure rework loops (QA/Review $\to$ Dev), and eliminate context bloat.
+3. **Resource & Cost Mastery:** Accurately account for input, output, and cache tokens by mission and seat, detect command retry loops early, and surface anomalies before budget exhaustion.
 
 ---
 
