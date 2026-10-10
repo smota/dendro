@@ -1115,4 +1115,45 @@ mod tests {
         assert_eq!(closed, vec!["t1".to_string()]);
         assert!(K2_CLOSED_ITEM.contains("zero closed items = no data"));
     }
+
+    fn q(key: &str, id: i64, item: &str, at: i64, state: &str, source: &str, dest: &str, reason: Option<&str>) -> QueueFact {
+        QueueFact {
+            source_key: key.into(),
+            transition_id: id,
+            qitem_id: item.into(),
+            ts: ts(at),
+            state: state.into(),
+            source_seat: source.into(),
+            dest_seat: dest.into(),
+            closure_reason: reason.map(str::to_string),
+            closure_target: None,
+            chain_id: None,
+            missions: vec![],
+        }
+    }
+
+    #[test]
+    fn closed_items_follow_k2_destination_and_window() {
+        let window = Window { from: ts(0), to: ts(60) };
+        let queue = vec![
+            q("ok-none", 1, "a", 10, "done", "actor", "seat", None),
+            q("ok-follow", 2, "b", 10, "done", "actor", "seat", Some("no-follow-on")),
+            q("ok-hand", 3, "c", 10, "done", "actor", "seat", Some("handed_off_to")),
+            q("ok-esc", 4, "d", 10, "done", "actor", "seat", Some("escalation")),
+            q("ok-state", 5, "e", 10, "handed-off", "actor", "seat", None),
+            q("bad-cancel", 6, "f", 10, "canceled", "actor", "seat", Some("superseded")),
+            q("bad-denied", 7, "g", 10, "done", "actor", "seat", Some("denied")),
+            q("bad-canceled-reason", 8, "h", 10, "done", "actor", "seat", Some("canceled")),
+            q("bad-failed", 9, "i", 10, "failed", "actor", "seat", None),
+            q("bad-blocked", 10, "j", 10, "blocked", "actor", "seat", None),
+            q("bad-unknown", 11, "k", 10, "unknown", "actor", "seat", None),
+            q("actor-not-dest", 12, "l", 10, "done", "seat", "other", None),
+            q("too-early", 13, "m", -1, "done", "actor", "seat", None),
+            q("at-end", 14, "n", 60, "done", "actor", "seat", None),
+            q("mirror", 15, "a", 20, "handed-off", "actor", "seat", None),
+        ];
+        let keys = closed_item_keys("seat", &queue, window);
+        assert_eq!(keys, vec!["ok-none", "ok-follow", "ok-hand", "ok-esc", "ok-state"]);
+        assert!(closed_item_keys("nobody", &queue, window).is_empty());
+    }
 }
