@@ -314,8 +314,8 @@ impl AnalyticsStore {
                 params![
                     u.source_key,
                     u.harness,
-                    u.native_session,
-                    u.message_id,
+                    redact(&u.native_session),
+                    u.message_id.as_deref().map(redact),
                     u.ts.map(|t| t.to_rfc3339()),
                     u.seq,
                     u.input_uncached,
@@ -339,7 +339,7 @@ impl AnalyticsStore {
                 params![
                     t.source_key,
                     t.harness,
-                    t.native_session,
+                    redact(&t.native_session),
                     t.ts.map(|v| v.to_rfc3339()),
                     t.seq,
                     redact(&t.name),
@@ -363,7 +363,7 @@ impl AnalyticsStore {
             params![
                 fact.source_key,
                 fact.harness,
-                fact.native_session,
+                redact(&fact.native_session),
                 redact(&fact.rig),
                 redact(&fact.seat),
                 fact.ts.map(|t| t.to_rfc3339())

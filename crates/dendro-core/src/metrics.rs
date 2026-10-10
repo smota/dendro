@@ -319,7 +319,8 @@ pub fn tool_loops(tools: &[ToolFact], failures: usize, window_secs: i64) -> Vec<
         };
         for event in events {
             let continues = event.failed == Some(true)
-                && run.last().is_none_or(|prev| {
+                && event.fingerprint.is_some()
+                && run.last().is_some_and(|prev| {
                     prev.name == event.name && prev.fingerprint == event.fingerprint
                 });
             if continues {

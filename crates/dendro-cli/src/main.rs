@@ -78,8 +78,8 @@ async fn main() -> Result<()> {
             };
             let paths: Vec<PathBuf> = roots.iter().map(|root| root.path.clone()).collect();
             let summary = tokio::task::spawn_blocking(move || {
-                dendro_core::run_locked(&db, &paths, |staged| {
-                    dendro_connectors::ingest_staged(staged, &roots, frozen)
+                dendro_core::run_locked(&db, &paths, |staged, key| {
+                    dendro_connectors::ingest_staged(staged, &roots, frozen, key)
                 })
             })
             .await??;

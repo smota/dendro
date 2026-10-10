@@ -4,7 +4,9 @@ use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Result};
-use dendro_core::{AnalyticsStore, CodexCounters, UsageFact, WarningNote};
+use dendro_core::{
+    redact, tool_fingerprint, AnalyticsStore, CodexCounters, ToolFact, UsageFact, WarningNote,
+};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
@@ -26,6 +28,16 @@ pub fn ingest_jsonl(
     source_id: &str,
     harness: &str,
     path: &Path,
+) -> Result<()> {
+    ingest_jsonl_with_key(store, source_id, harness, path, None)
+}
+
+pub fn ingest_jsonl_with_key(
+    store: &AnalyticsStore,
+    source_id: &str,
+    harness: &str,
+    path: &Path,
+    tool_key: Option<&[u8]>,
 ) -> Result<()> {
     let mut file = File::open(path)?;
     let file_len = file.metadata()?.len() as i64;
@@ -74,6 +86,7 @@ pub fn ingest_jsonl(
         store.codex_counters(source_id, generation)?
     };
     let mut usages = Vec::new();
+    let mut tools = Vec::new();
     let mut warnings = Vec::new();
     let mut seen_messages = HashSet::new();
     for (line_no, bytes) in pending {
@@ -95,9 +108,16 @@ pub fn ingest_jsonl(
             Ok(None) => {}
             Ok(Some(bucket)) => {
                 if let Some(id) = &bucket.message_id {
-                    let key = format!("{}\n{}\n{id}", harness, bucket.native_session);
+                    let redacted_id = redact(id);
+                    let redacted_session = redact(&bucket.native_session);
+                    let key = format!("{harness}\n{redacted_session}\n{redacted_id}");
                     if !seen_messages.insert(key)
-                        || store.message_seen(harness, &bucket.native_session, id, generation)?
+                        || store.message_seen(
+                            harness,
+                            &redacted_session,
+                            &redacted_id,
+                            generation,
+                        )?
                     {
                         continue;
                     }
@@ -105,8 +125,8 @@ pub fn ingest_jsonl(
                 usages.push(UsageFact {
                     source_key: format!("{source_id}:{generation}:{line_no}"),
                     harness: harness.to_string(),
-                    native_session: bucket.native_session,
-                    message_id: bucket.message_id,
+                    native_session: redact(&bucket.native_session),
+                    message_id: bucket.message_id.as_deref().map(redact),
                     ts: bucket.ts,
                     seq: line_no,
                     input_uncached: bucket.input_uncached,
@@ -124,6 +144,11 @@ pub fn ingest_jsonl(
                 reason,
             }),
         }
+        if harness == "claude" {
+            tools.extend(claude_tools(
+                &text, tool_key, source_id, generation, line_no,
+            ));
+        }
     }
     store.commit_file_batch(
         source_id,
@@ -138,7 +163,7 @@ pub fn ingest_jsonl(
             None
         },
         &usages,
-        &[],
+        &tools,
     )?;
     for note in &warnings {
         store.record_warning(note)?;
@@ -299,6 +324,54 @@ fn parse_pi(value: &Value) -> Result<Option<Buckets>, String> {
         native_session: "pi-session".into(),
         ts: timestamp_of(value),
     }))
+}
+
+fn claude_tools(
+    text: &str,
+    key: Option<&[u8]>,
+    source_id: &str,
+    generation: i64,
+    line_no: i64,
+) -> Vec<ToolFact> {
+    let Ok(value) = serde_json::from_str::<Value>(text) else {
+        return Vec::new();
+    };
+    let Some(content) = value
+        .pointer("/message/content")
+        .and_then(|item| item.as_array())
+    else {
+        return Vec::new();
+    };
+    let session = value
+        .get("sessionId")
+        .and_then(|item| item.as_str())
+        .unwrap_or("claude-session");
+    let ts = timestamp_of(&value);
+    let mut tools = Vec::new();
+    for (index, block) in content.iter().enumerate() {
+        if block.get("type").and_then(|item| item.as_str()) != Some("tool_use") {
+            continue;
+        }
+        let Some(name) = block.get("name").and_then(|item| item.as_str()) else {
+            continue;
+        };
+        let lexical = block.get("input").and_then(|item| item.as_str());
+        let fingerprint = key.and_then(|key| tool_fingerprint(key, name, lexical));
+        let failed = block.get("is_error").and_then(|item| item.as_bool());
+        tools.push(ToolFact {
+            source_key: format!("{source_id}:{generation}:{line_no}:{index}"),
+            harness: "claude".into(),
+            native_session: redact(session),
+            ts,
+            seq: line_no * 100 + index as i64,
+            name: name.to_string(),
+            fingerprint,
+            failed,
+            structured_write: matches!(name, "Write" | "Edit" | "MultiEdit" | "NotebookEdit"),
+            generation,
+        });
+    }
+    tools
 }
 
 fn timestamp_of(value: &Value) -> Option<chrono::DateTime<chrono::Utc>> {

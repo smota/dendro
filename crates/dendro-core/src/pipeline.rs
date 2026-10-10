@@ -16,7 +16,7 @@ pub struct RunRequest<'a> {
 
 pub fn run_locked<F>(db: &Path, source_roots: &[PathBuf], ingest: F) -> Result<Value>
 where
-    F: FnOnce(&Path) -> Result<Vec<String>>,
+    F: FnOnce(&Path, &[u8]) -> Result<Vec<String>>,
 {
     if source_roots.is_empty() {
         return Err(anyhow!("at least one source root is required"));
@@ -29,7 +29,7 @@ where
 
 fn run_inner<F>(db: &Path, source_roots: &[PathBuf], ingest: F) -> Result<Value>
 where
-    F: FnOnce(&Path) -> Result<Vec<String>>,
+    F: FnOnce(&Path, &[u8]) -> Result<Vec<String>>,
 {
     refuse_aliased_output(db, source_roots)?;
     let before = fs::symlink_metadata(db).ok();
@@ -59,7 +59,7 @@ where
             let created = AnalyticsStore::open_path(&staged, &key.id)?;
             created.checkpoint()?;
         }
-        let notes = ingest(&staged)?;
+        let notes = ingest(&staged, &key.bytes)?;
         let staged_store = AnalyticsStore::open_staged(&staged)?;
         staged_store.checkpoint()?;
         drop(staged_store);
@@ -188,6 +188,70 @@ pub fn report_json(
     let (input, output, cache_read, cache_write) = metrics::token_totals(&usage);
     let tokens = input + output + cache_read + cache_write;
     let nonreturn = handoffs - returns;
+    let activity = store.load_activity()?;
+    let mut seats: Vec<String> = activity.iter().map(|row| row.seat.clone()).collect();
+    seats.sort();
+    seats.dedup();
+    let activity_rows: Vec<_> = seats
+        .iter()
+        .map(|seat| {
+            let bands = metrics::activity_bands(seat, &activity, &queue, window, None, None);
+            json!({
+                "seat": seat,
+                "active_secs": bands.active_secs,
+                "idle_with_work_secs": bands.idle_with_work_secs,
+                "idle_without_work_secs": bands.idle_without_work_secs,
+                "waiting_human_secs": bands.waiting_human_secs,
+                "unknown_secs": bands.unknown_secs,
+                "sum": bands.sum(),
+            })
+        })
+        .collect();
+    let tools = store.load_tools()?;
+    let loops = metrics::tool_loops(&tools, 3, 600);
+    let mut mission_tokens = std::collections::BTreeMap::<String, i64>::new();
+    for row in &usage {
+        let seat = identities
+            .iter()
+            .find(|fact| fact.harness == row.harness && fact.native_session == row.native_session)
+            .map(|fact| fact.seat.clone());
+        let label = match (seat, row.ts) {
+            (Some(seat), Some(ts)) => match metrics::mission_at(&seat, &queue, ts) {
+                metrics::MissionBucket::Mission(name) => name,
+                metrics::MissionBucket::None => "no_mission".into(),
+                metrics::MissionBucket::Ambiguous => "ambiguous".into(),
+            },
+            _ => "no_mission".into(),
+        };
+        *mission_tokens.entry(label).or_insert(0) +=
+            row.input_uncached + row.output + row.cache_read + row.cache_write;
+    }
+    let mut discovered = std::collections::BTreeSet::<(String, String)>::new();
+    for row in &usage {
+        discovered.insert((row.harness.clone(), row.native_session.clone()));
+    }
+    let links: Vec<_> = discovered
+        .into_iter()
+        .map(|(harness, native)| {
+            let matches: Vec<_> = identities
+                .iter()
+                .filter(|fact| fact.harness == harness && fact.native_session == native)
+                .collect();
+            let status = if matches.is_empty() {
+                "unlinked"
+            } else {
+                "linked"
+            };
+            json!({
+                "harness": harness,
+                "native_session": native,
+                "status": status,
+                "rig": matches.first().map(|fact| fact.rig.clone()),
+                "seat": matches.first().map(|fact| fact.seat.clone()),
+                "evidence": matches.iter().map(|fact| fact.source_key.clone()).collect::<Vec<_>>(),
+            })
+        })
+        .collect::<Vec<_>>();
     Ok(metrics::report_value(
         kind,
         json!({
@@ -204,6 +268,16 @@ pub fn report_json(
             "m3_paths": paths,
             "m4_impact": metrics::m4_impact(),
             "kind": kind,
+            "activity": activity_rows,
+            "links": links,
+            "handoff_edges": edges.iter().map(|edge| json!({
+                "from": edge.from_seat,
+                "to": edge.to_seat,
+                "return": edge.is_return,
+                "source_key": edge.source_key,
+            })).collect::<Vec<_>>(),
+            "mission_tokens": mission_tokens,
+            "tool_loops": loops.iter().map(|item| json!({"session": item.session, "tool": item.tool, "count": item.count})).collect::<Vec<_>>(),
             "trace_inputs": usage.iter().map(|row| json!({
                 "source_key": row.source_key,
                 "input_uncached": row.input_uncached,
@@ -318,7 +392,7 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let db = dir.join("analytics.duckdb");
-        let err = run_locked(&db, &[], |_| Ok(vec![])).unwrap_err();
+        let err = run_locked(&db, &[], |_, _| Ok(vec![])).unwrap_err();
         assert!(err.to_string().contains("source root"));
         assert!(!db.exists());
         let _ = fs::remove_dir_all(&dir);

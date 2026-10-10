@@ -14,7 +14,12 @@ pub struct SourceRoot {
     pub path: PathBuf,
 }
 
-pub fn ingest_staged(staged_db: &Path, roots: &[SourceRoot], frozen: bool) -> Result<Vec<String>> {
+pub fn ingest_staged(
+    staged_db: &Path,
+    roots: &[SourceRoot],
+    frozen: bool,
+    key: &[u8],
+) -> Result<Vec<String>> {
     let store = AnalyticsStore::open_staged(staged_db)?;
     let mut notes = Vec::new();
     for root in roots {
@@ -26,11 +31,12 @@ pub fn ingest_staged(staged_db: &Path, roots: &[SourceRoot], frozen: bool) -> Re
             "claude" | "codex" | "pi" => {
                 let files = walk_jsonl(&root.path);
                 for (index, file) in files.iter().enumerate() {
-                    stream::ingest_jsonl(
+                    stream::ingest_jsonl_with_key(
                         &store,
                         &format!("{}:{}", root.name, index),
                         &root.name,
                         file,
+                        Some(key),
                     )?;
                 }
                 notes.push(format!("{} files={}", root.name, files.len()));
@@ -102,7 +108,7 @@ fn ingest_openrig(store: &AnalyticsStore, sqlite_path: &Path, frozen: bool) -> R
             store.insert_identity(&IdentityFact {
                 source_key: format!("events:{seq}"),
                 harness: normalize_harness(runtime),
-                native_session: session_id.to_string(),
+                native_session: dendro_core::redact(session_id),
                 rig: rig.to_string(),
                 seat: seat.to_string(),
                 ts,
@@ -134,7 +140,7 @@ fn ingest_openrig(store: &AnalyticsStore, sqlite_path: &Path, frozen: bool) -> R
         }
     }
     let mut transitions = conn.prepare(
-        "SELECT transition_id, qitem_id, ts, state, actor_session, closure_reason, closure_target FROM queue_transitions",
+        "SELECT transition_id, qitem_id, ts, state, actor_session, closure_reason, closure_target, transition_note FROM queue_transitions",
     );
     if let Ok(ref mut stmt) = transitions {
         let rows = stmt.query_map([], |row| {
@@ -146,6 +152,7 @@ fn ingest_openrig(store: &AnalyticsStore, sqlite_path: &Path, frozen: bool) -> R
                 row.get::<_, Option<String>>(4)?,
                 row.get::<_, Option<String>>(5)?,
                 row.get::<_, Option<String>>(6)?,
+                row.get::<_, Option<String>>(7)?,
             ))
         })?;
         for row in rows.flatten() {
@@ -166,7 +173,7 @@ fn ingest_openrig(store: &AnalyticsStore, sqlite_path: &Path, frozen: bool) -> R
                 closure_reason: row.5,
                 closure_target: row.6,
                 chain_id: None,
-                missions: Vec::new(),
+                missions: parse_missions(row.7.as_deref()),
             })?;
         }
     }
@@ -174,6 +181,13 @@ fn ingest_openrig(store: &AnalyticsStore, sqlite_path: &Path, frozen: bool) -> R
         let _ = std::fs::remove_dir_all(&snap_dir);
     }
     Ok(count)
+}
+
+fn parse_missions(note: Option<&str>) -> Vec<String> {
+    let Some(note) = note else {
+        return Vec::new();
+    };
+    serde_json::from_str::<Vec<String>>(note).unwrap_or_default()
 }
 
 fn normalize_harness(runtime: &str) -> String {
