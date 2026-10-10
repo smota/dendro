@@ -1,0 +1,82 @@
+[
+  {
+    "name": "epic",
+    "color": "3E4B9E",
+    "description": "Parent tracking issue orchestrating child features"
+  },
+  {
+    "name": "feature",
+    "color": "1D76DB",
+    "description": "User-facing product capability"
+  },
+  {
+    "name": "bug",
+    "color": "D93F0B",
+    "description": "Defect, regression, or security bug"
+  },
+  {
+    "name": "dx",
+    "color": "0E8A16",
+    "description": "Developer experience or workflow maintenance"
+  },
+  {
+    "name": "tooling",
+    "color": "5319E7",
+    "description": "CLI tooling, automation, and CI scripts"
+  },
+  {
+    "name": "documentation",
+    "color": "0075CA",
+    "description": "Documentation-first deliverables"
+  },
+  {
+    "name": "qa",
+    "color": "FBCA04",
+    "description": "Exploratory QA sessions or evidence work"
+  },
+  {
+    "name": "needs-test",
+    "color": "B60205",
+    "description": "Regression test needed before fix merges"
+  },
+  {
+    "name": "role:product-manager",
+    "color": "C5DEF5",
+    "description": "Phase 0 Product Manager handoff"
+  },
+  {
+    "name": "role:analyst",
+    "color": "BFD4F2",
+    "description": "Phase 1 Analyst acceptance criteria"
+  },
+  {
+    "name": "role:architect",
+    "color": "D4C5F9",
+    "description": "Phase 2 Architecture design & ADRs"
+  },
+  {
+    "name": "role:planner",
+    "color": "F9D0C4",
+    "description": "Phase 3 Implementation plan"
+  },
+  {
+    "name": "role:developer",
+    "color": "C2E0C6",
+    "description": "Phase 4 Code implementation"
+  },
+  {
+    "name": "role:tester",
+    "color": "FEF2C0",
+    "description": "Phase 5 Verification & test evidence"
+  },
+  {
+    "name": "role:reviewer",
+    "color": "BFDADC",
+    "description": "Phase 6 Independent review"
+  },
+  {
+    "name": "role:writer",
+    "color": "E99695",
+    "description": "Phase 7 Technical documentation"
+  }
+]
