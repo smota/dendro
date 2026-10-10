@@ -299,7 +299,7 @@ pub fn tool_loops(tools: &[ToolFact], failures: usize, window_secs: i64) -> Vec<
     }
     let mut loops = Vec::new();
     for (session, mut events) in by_session {
-        events.sort_by(|a, b| a.seq.cmp(&b.seq));
+        events.sort_by_key(|event| event.seq);
         let mut run: Vec<&ToolFact> = Vec::new();
         let flush = |run: &mut Vec<&ToolFact>, loops: &mut Vec<ToolLoop>, session: &str| {
             if run.len() >= failures {
@@ -350,7 +350,7 @@ pub fn even_median(mut values: Vec<f64>) -> Option<f64> {
     }
     values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let mid = values.len() / 2;
-    if values.len() % 2 == 0 {
+    if values.len().is_multiple_of(2) {
         Some((values[mid - 1] + values[mid]) / 2.0)
     } else {
         Some(values[mid])
