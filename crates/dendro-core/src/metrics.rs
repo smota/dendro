@@ -336,6 +336,71 @@ pub fn tool_loops(tools: &[ToolFact], failures: usize, window_secs: i64) -> Vec<
     loops
 }
 
+pub fn m1_yield(tokens: i64, nonreturn_handoffs: i64) -> Option<f64> {
+    if nonreturn_handoffs == 0 {
+        None
+    } else {
+        Some(tokens as f64 / nonreturn_handoffs as f64)
+    }
+}
+
+pub fn even_median(mut values: Vec<f64>) -> Option<f64> {
+    if values.is_empty() {
+        return None;
+    }
+    values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let mid = values.len() / 2;
+    if values.len() % 2 == 0 {
+        Some((values[mid - 1] + values[mid]) / 2.0)
+    } else {
+        Some(values[mid])
+    }
+}
+
+pub fn m2_return_rate(returns: i64, handoffs: i64) -> Option<f64> {
+    if handoffs == 0 {
+        None
+    } else {
+        Some(returns as f64 / handoffs as f64)
+    }
+}
+
+pub fn m3_rework(edges: &[HandoffEdge]) -> (i64, i64, Vec<String>) {
+    let mut chains: BTreeMap<String, Vec<&HandoffEdge>> = BTreeMap::new();
+    for edge in edges {
+        let key = edge
+            .chain_id
+            .clone()
+            .unwrap_or_else(|| edge.qitem_id.clone());
+        chains.entry(key).or_default().push(edge);
+    }
+    let mut rework = 0;
+    let mut paths = Vec::new();
+    for group in chains.values() {
+        let mut saw_gate = false;
+        let mut path = Vec::new();
+        for edge in group {
+            path.push(edge.from_seat.clone());
+            path.push(edge.to_seat.clone());
+            if edge.from_seat.contains("dev.qa") || edge.from_seat.contains("rev") {
+                saw_gate = true;
+            }
+            if saw_gate
+                && (edge.to_seat.starts_with("dev-build") || edge.to_seat.starts_with("dev.build"))
+            {
+                rework += 1;
+                paths.push(path.join(" -> "));
+                break;
+            }
+        }
+    }
+    (rework, chains.len() as i64, paths)
+}
+
+pub fn m4_impact() -> &'static str {
+    "insufficient data: a valid skill comparison needs the same role with and without the skill and at least five closed items on each side"
+}
+
 pub fn report_value(kind: &str, payload: Value) -> Value {
     json!({
         "metric": kind,
@@ -635,5 +700,52 @@ mod tests {
             tool(3, Some(true), "Read"),
         ];
         assert!(tool_loops(&broken, 3, 600).is_empty());
+    }
+
+    #[test]
+    fn decision_metrics_keep_zero_denominator_and_even_median() {
+        assert_eq!(m1_yield(100, 0), None);
+        assert_eq!(m1_yield(100, 4), Some(25.0));
+        assert_eq!(even_median(vec![1.0, 3.0, 5.0, 7.0]), Some(4.0));
+        assert_eq!(m2_return_rate(0, 0), None);
+        assert_eq!(m2_return_rate(1, 4), Some(0.25));
+        assert_eq!(
+            m4_impact(),
+            "insufficient data: a valid skill comparison needs the same role with and without the skill and at least five closed items on each side"
+        );
+    }
+
+    #[test]
+    fn m3_counts_a_return_to_build_after_qa() {
+        let edges = vec![
+            HandoffEdge {
+                from_seat: "dev-build".into(),
+                to_seat: "dev.qa".into(),
+                qitem_id: "i".into(),
+                chain_id: Some("c".into()),
+                is_return: false,
+                source_key: "a".into(),
+            },
+            HandoffEdge {
+                from_seat: "dev.qa".into(),
+                to_seat: "rev-review".into(),
+                qitem_id: "i".into(),
+                chain_id: Some("c".into()),
+                is_return: false,
+                source_key: "b".into(),
+            },
+            HandoffEdge {
+                from_seat: "rev-review".into(),
+                to_seat: "dev-build".into(),
+                qitem_id: "i".into(),
+                chain_id: Some("c".into()),
+                is_return: true,
+                source_key: "c".into(),
+            },
+        ];
+        let (count, chains, paths) = m3_rework(&edges);
+        assert_eq!(count, 1);
+        assert_eq!(chains, 1);
+        assert_eq!(paths.len(), 1);
     }
 }
