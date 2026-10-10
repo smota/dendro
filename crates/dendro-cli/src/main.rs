@@ -14,10 +14,29 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Run one-shot batch extraction and sync to DuckDB
+    /// Run one-shot ingest into a local analytics database.
     Run {
         #[arg(short, long, default_value = "dendro.duckdb")]
         db: PathBuf,
+    },
+    /// Print an Operational Intelligence report as JSON.
+    Report {
+        kind: String,
+        #[arg(long, default_value = "dendro.duckdb")]
+        db: PathBuf,
+        #[arg(long)]
+        rig: Option<String>,
+        #[arg(long, default_value = "2026-10-08T00:00:00Z")]
+        from: String,
+        #[arg(long, default_value = "2026-10-11T00:00:00Z")]
+        to: String,
+    },
+    /// Print the trace inputs for one metric id.
+    Trace {
+        #[arg(long, default_value = "dendro.duckdb")]
+        db: PathBuf,
+        #[arg(long)]
+        metric_id: String,
     },
     /// Run daemon in continuous file watching mode
     Watch {
@@ -43,15 +62,29 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::Run { db } => {
             info!("Starting Dendro batch extraction against {:?}", db);
-            let _storage = dendro_core::DuckDbStorage::open(&db)?;
-            info!("Dendro batch sync completed successfully.");
+            let summary = dendro_core::run_locked(&db, &[])?;
+            println!("{summary}");
+        }
+        Commands::Report {
+            kind,
+            db,
+            rig,
+            from,
+            to,
+        } => {
+            let report = dendro_core::report_json(&db, &kind, rig.as_deref(), &from, &to)?;
+            println!("{report}");
+        }
+        Commands::Trace { db, metric_id } => {
+            let report = dendro_core::report_json(&db, &metric_id, None, "", "")?;
+            println!("{report}");
         }
         Commands::Watch { db, debounce_secs } => {
             info!(
                 "Starting Dendro watcher against {:?} (debounce: {}s)",
                 db, debounce_secs
             );
-            info!("Dendro is actively reading agent session rings. Press Ctrl+C to stop.");
+            info!("Dendro watch is outside this R1 proof. Press Ctrl+C to stop.");
         }
         Commands::InitNao { target, db } => {
             info!(
