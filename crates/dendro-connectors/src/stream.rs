@@ -544,6 +544,47 @@ mod tests {
     }
 
     #[test]
+    fn source_tool_names_do_not_keep_credential_families() {
+        let families = [
+            "sk-ZZZ1",
+            "sk-ant-ZZZ2",
+            "ghp_ZZZ3",
+            "gho_ZZZ4",
+            "github_pat_ZZZ5",
+            "xai-ZZZ6",
+            "AKIAZZZ7",
+            "xoxb-ZZZ8",
+            "xoxp-ZZZ9",
+            "Bearer ZZZ0",
+        ];
+        let dir = std::env::temp_dir().join(format!("dendro-tool-secret-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("claude.jsonl");
+        let mut body = String::new();
+        for (index, token) in families.iter().enumerate() {
+            body.push_str(&format!(
+                "{{\"type\":\"assistant\",\"sessionId\":\"s{index}\",\"message\":{{\"id\":\"m{index}\",\"content\":[{{\"type\":\"tool_use\",\"name\":\"{token}\",\"input\":\"x\",\"is_error\":false}}]}}}}\n"
+            ));
+        }
+        body.push_str("{\"type\":\"assistant\",\"sessionId\":\"plain\",\"message\":{\"id\":\"plain\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Read\",\"input\":\"x\",\"is_error\":false}]}}\n");
+        write(&path, &body);
+        let db_path = dir.join("analytics.duckdb");
+        let db = AnalyticsStore::open_path(&db_path, "key").unwrap();
+        ingest_jsonl(&db, "c1", "claude", &path).unwrap();
+        let tools = db.load_tools().unwrap();
+        assert!(tools.iter().any(|tool| tool.name == "Read"));
+        assert!(tools.iter().all(|tool| !tool.name.contains("ZZZ")));
+        drop(db);
+        let bytes = fs::read(&db_path).unwrap();
+        let blob = String::from_utf8_lossy(&bytes);
+        for token in families {
+            assert!(!blob.contains(token), "{token}");
+        }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn codex_uses_only_cumulative_token_count_and_reset() {
         let dir = std::env::temp_dir().join(format!("dendro-codex-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
