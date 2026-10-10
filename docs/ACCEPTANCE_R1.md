@@ -7,6 +7,7 @@
 | Data | 2026-10-10 |
 | Estado | **Congelado** em 2026-10-10. Sponsor aprovou às 17:01Z. Decisão PM: prosseguir (`docs/PRODUCT_SPECIFICATION.md` §12). A1, A2, A5, M1 e M4 aceitos. |
 | Emenda 1 | 2026-10-10. Retorno do `orch.arch` (`transitions/0003.json`), ciclo 1 de 2. Atribuição de missão com sobreposição (§4, AC6). Somente leitura em fontes vivas (AC8, AC10, AC11, AC12). Aprovada pelo `pm.manager` às 17:04Z. Inclui as lacunas semânticas do conselho (QA `qitem-20261010170440-5d776632`, revisão `qitem-20261010170435-20c8a356`): §4, §4.1, AC1, AC4–AC7, AC10, AC11. O job não muda. Ver §9. |
+| Emenda 2 | 2026-10-10. Decisão do sponsor às 19:44Z (escalação `qitem-20261010193835-90317af8`). Registro portador: `.agent-runs/follow-ups/r1-amendment2` (orçamento novo de 2 retornos). C1–C4 e AC10 absorvido. O resto da Emenda 1 (`046c1722`) continua em vigor. O job não muda. Ver §10. |
 | Próximo dono | `orch-arch@dendro-dev` (Fase 2) |
 
 Este documento define o que o G1 precisa provar. Ele não escolhe arquivos, crates, schemas nem consultas. Isso é do `orch.arch`.
@@ -114,7 +115,7 @@ Regras de intervalo:
 | Missão | Valor da tag `mission:<id>` do item de fila. |
 | Atribuição de missão | Cada registro de uso recebe a missão do item que o assento tem `in-progress` no instante do registro. Sem item `in-progress`, ou item sem tag: "sem missão". Dois ou mais itens `in-progress` com missões diferentes, ou um item com duas tags `mission:` diferentes: "ambígua". Vários itens da mesma missão: essa missão. O Dendro nunca divide nem estima um registro ambíguo. Cada registro conta em exatamente uma faixa. |
 | Loop de ferramenta | O mesmo assento executa a mesma ferramenta com a mesma entrada normalizada, com falha, 3 ou mais vezes seguidas, em até 10 minutos. |
-| Loop de handoff | O mesmo item ou cadeia passa entre o mesmo par de assentos mais de 2 vezes. |
+| Loop de handoff | O mesmo item ou cadeia passa entre o mesmo par de assentos mais de 2 vezes. **Fora da R1 (Emenda 2, C4):** a definição continua válida, mas o detector é pré-requisito do #12 na v0.2. A R1 não mostra um campo de loop de handoff. |
 | Custo em moeda | Exibido só quando a fonte registra o custo (Pi) ou quando o operador fornece uma tabela de preços. O Dendro nunca inventa um preço. |
 
 Regras de loop de ferramenta:
@@ -125,7 +126,7 @@ Regras de loop de ferramenta:
 4. Qualquer outra chamada de ferramenta na mesma sessão quebra a sequência.
 5. Janela: da 1ª à 3ª falha em até 10 minutos, inclusivo (exatamente 10:00 conta).
 6. 4 ou mais falhas seguidas formam **um** episódio, com a contagem total. Não formam vários loops sobrepostos.
-7. Os limiares (3 falhas, 10 minutos, mais de 2 voltas) são configuráveis pelo operador.
+7. Na R1 os limiares são fixos: 3 falhas, 10 minutos, mais de 2 voltas. A configuração pelo operador vai para a v0.2 (Emenda 2, C1).
 
 ### 4.1 Semântica comum
 
@@ -147,7 +148,7 @@ Regras de loop de ferramenta:
 | M1 | Rendimento do assento (substitui "ROI do assento") | Tokens do assento divididos pelo número de handoffs que ele entregou e que não voltaram para ele. Mostra também tokens por item fechado. | Sim |
 | M2 | Eficiência de handoff | Retornos ÷ handoffs, tempo de espera mediano e custo de entrada mediano, por par de assentos. | Sim |
 | M3 | Retrabalho de build | Número e proporção de cadeias em que o trabalho volta a um assento `dev-build*` depois de passar por `dev-qa` ou por um assento de revisão. Mostra o caminho real (ex.: `dev-qa → rev-review → dev-build`). | Sim |
-| M4 | Exposição a skills | Quais skills cada assento tinha carregadas e quais invocou, quando a fonte registra. O impacto (com vs. sem) mostra "dados insuficientes" até existir uma comparação válida (ver A7). | Só exposição |
+| M4 | Exposição a skills | Quais skills cada assento tinha carregadas e quais invocou, quando a fonte registra. O impacto (com vs. sem) mostra "dados insuficientes" até existir uma comparação válida (ver A7). | Não na R1. A R1 mostra só "dados insuficientes" e o motivo. A exposição por assento vai para a v0.2 (Emenda 2, C2). |
 
 M1 não mede a qualidade do código. Ele mede o que o assento consumiu e o que passou adiante sem voltar. O nome "ROI" promete valor, e o Dendro não mede valor. Por isso o nome é "rendimento".
 
@@ -210,7 +211,7 @@ Todos rodam nesta máquina, com dados reais, sobre `agentflow-dev` de 2026-10-08
 - **e** um caso de teste com dois itens `in-progress` de missões diferentes no mesmo instante conta o uso desse instante como "ambígua", e não em nenhuma das duas missões,
 - **e** uma sequência de teste com 3 falhas iguais seguidas em 10 minutos aparece como um loop,
 - **e** uma sequência com 2 falhas iguais não aparece como loop,
-- **e** casos de teste cobrem: exatamente 10 minutos, sucesso no meio, ferramenta ou entrada diferente no meio, mesma entrada em outra sessão do mesmo assento, 4 falhas (um episódio), e limiar alterado pelo operador.
+- **e** casos de teste cobrem: exatamente 10 minutos, sucesso no meio, ferramenta ou entrada diferente no meio, mesma entrada em outra sessão do mesmo assento e 4 falhas (um episódio).
 
 ### AC7 — Rastreabilidade (O5, G1.7)
 
@@ -235,8 +236,7 @@ Todos rodam nesta máquina, com dados reais, sobre `agentflow-dev` de 2026-10-08
 - **Dado** `agentflow-dev` e o período,
 - **quando** o operador pede as métricas de decisão,
 - **então** M1, M2 e M3 aparecem com valores e origem, segundo as definições da §4,
-- **e** M4 mostra a exposição a skills por assento,
-- **e** o impacto de skills mostra "dados insuficientes" e o motivo.
+- **e** M4 mostra "dados insuficientes" e o motivo (Emenda 2, C2).
 
 ### AC10 — Privacidade (O7)
 
@@ -254,6 +254,13 @@ Forma de segredo = um valor que segue um padrão conhecido de credencial (ex.: c
 - **e** o marcador comum de um identificador pode aparecer, porque é um identificador que o operador precisa ver,
 - **e** a impressão usada para comparar entradas de ferramenta (loops) não permite recuperar a entrada: calcular a impressão de uma entrada conhecida, sem a chave local da máquina, não reproduz o valor armazenado,
 - **e** o arquivo de teste fica inalterado (mesmo hash antes e depois).
+
+Absorvido da continuação AC10 (Emenda 2):
+
+- **Campos de conjunto fechado.** O estado de atividade aceita só `running`, `idle` e `needs_input`. Qualquer outro valor (incluindo vazio, ausente ou texto arbitrário) é guardado e mostrado como "desconhecido" e conta na faixa "desconhecido" da AC4. Cada outro campo de conjunto fechado segue a mesma regra. O valor bruto inesperado nunca é guardado nem emitido.
+- **Texto de origem.** Campos de texto vindos da fonte (proveniência, evidência, motivo, evento bruto, nome de harness, motivo de fechamento, id de cadeia) ou ficam fora do armazenamento e das saídas, ou são tratados como identificador (comum visível, forma de segredo redigida).
+- **Todas as superfícies.** O teste cobre cada coluna de texto do banco analítico e os bytes do banco, WAL e área temporária, e cada saída: relatórios, rastreio, exportações, stdout, stderr, logs e mensagens de erro. Isso inclui o eco de argumentos da linha de comando (ex.: nome do rig, id de métrica, tipo de relatório, caminho recusado).
+- **Distinção segura.** Identificadores comuns continuam visíveis e distintos. A correção não apaga identificadores seguros.
 
 ### AC11 — Somente leitura: cópia congelada (determinismo)
 
@@ -292,7 +299,7 @@ O sponsor revisa M1–M4 de `agentflow-dev` e registra uma decisão real de topo
 | A5 | O "retrabalho QA→Build" do sponsor significa "trabalho que volta ao build depois de QA ou revisão" (F3). | Se o sponsor quiser só a aresta direta, M3 mostra 0. |
 | A6 | O custo em moeda aparece só onde a fonte registra ou o operador fornece preços. | Totais em moeda ficam incompletos para Claude Code e Codex. Tokens ficam completos. |
 | A7 | Uma comparação válida de impacto de skill exige o mesmo papel, com e sem a skill, com pelo menos 5 itens fechados de cada lado. Os dados atuais não têm isso. | Se o sponsor aceitar uma comparação mais fraca, o resultado vira opinião com número. |
-| A8 | Os limiares de loop (3 falhas iguais em 10 minutos; mais de 2 voltas no mesmo par) são o padrão. São configuráveis. | Falsos alarmes ou loops perdidos. |
+| A8 | Os limiares de loop (3 falhas iguais em 10 minutos; mais de 2 voltas no mesmo par) são o padrão. Na R1 são fixos; configuráveis na v0.2 (Emenda 2, C1). | Falsos alarmes ou loops perdidos. |
 
 ---
 
@@ -315,6 +322,7 @@ O sponsor revisa M1–M4 de `agentflow-dev` e registra uma decisão real de topo
 - Site, marca, domínio e as três documentações (Antigravity).
 - AGY e Grok como bloqueadores. Eles entram na mesma release depois dos obrigatórios. Hoje nenhum nó OpenRig usa esses harnesses, então eles não alteram o O8.
 - Sessões fora de rigs OpenRig. Elas aparecem nos totais de fonte como "sem vínculo".
+- Emenda 2: limiares de loop configuráveis (C1), exposição a skills por assento (C2), comandos `watch` e `init-nao` (C3), detector de loop de handoff (C4). Todos vão para a v0.2.
 
 ---
 
@@ -353,4 +361,20 @@ O analista decide o que a métrica significa e o que o teste observa. O `orch.ar
 | Bancos antigos com `command_preview` ou `error_message` | `orch.arch` | Não há instalação anterior da R1. Não há migração. O caminho de persistência sai. |
 | Substituições no scaffold (custo não nulo, resolver por substring, `OPENRIG_HOME`, SQLite gravável) | `orch.arch` | Obrigação de arquitetura, não muda o escopo. |
 | Matriz de oráculos AC1–AC12 e base do candidato | `orch.arch` + `dev.qa` | Plano da Fase 3. |
+
+---
+
+## 10. Emenda 2 — decisão do sponsor (2026-10-10 19:44Z)
+
+| # | Mudança | Onde |
+| --- | --- | --- |
+| C1 | Limiares de loop fixos na R1 (3 falhas, 10 minutos, mais de 2 voltas). Configuração na v0.2. Todos os casos de borda da AC6 continuam. | §4 regra 7, AC6, A8 |
+| C2 | M4 na R1 = "dados insuficientes" e o motivo. Exposição a skills por assento na v0.2. | §4 M4, AC9 |
+| C3 | A linha de comando da R1 expõe só ingestão, relatório e rastreio. `watch` e `init-nao` saem ou ficam ocultos na v0.1.0. | §7 |
+| C4 | Detector de loop de handoff fora da R1. É pré-requisito do #12 na v0.2 (`docs/ACCEPTANCE_G2_STAGED.md`). O O4 da R1 é atendido pelos loops de ferramenta e pelas cadeias de retrabalho M3. | §4, §7 |
+| AC10 | A continuação AC10 (`.agent-runs/follow-ups/ac10-legacy-spec`) é absorvida. As quatro regras ficam na AC10. | AC10 |
+
+Continua obrigatório na v0.1.0, sem mudança: AC1–AC5, AC6 (faixas de missão por assento com conservação, registros sem marca de tempo fora das janelas e contados à parte, tokens sem vínculo separados de "sem missão", totais por categoria e por sessão), AC7, AC8, AC9 (M1 por assento e tokens por item fechado, M2 por par, M3), AC10, AC11 e AC12.
+
+Registro: `.agent-runs/follow-ups/r1-amendment2`. O histórico da R1 (`transitions/0014.json`) e a continuação AC10 (`0011`) ficam preservados. As aprovações anteriores (`cdbb68a40b99`, `799dd427c955`) são só histórico e não aprovam esta emenda. A aprovação desta emenda é a decisão do sponsor às 19:44Z.
 

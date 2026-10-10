@@ -1,0 +1,16 @@
+# R1 Acceptance — Clarifications Register
+
+| Field | Value |
+| --- | --- |
+| Owner | `pm.analyst` |
+| Contract | `docs/ACCEPTANCE_R1.md`, Emenda 2, sha256 `cc365c88…`. This register does not change it. |
+| Rule | A clarification defines a term or case the contract leaves undefined. It changes no formula, adds no criterion and removes none. Anything that does must go through an amendment. |
+| Users | `orch.arch` (records each one in the Phase 2 body of `.agent-runs/follow-ups/r1-amendment2`), `dev.qa`, `rev.review`, the operator. |
+
+| # | Date (UTC) | Term or case | Clarification | Contract anchor | Accepted by |
+| --- | --- | --- | --- | --- | --- |
+| K1 | 2026-10-10 19:21 | Known-set fields (AC10) | Truly closed sets (activity state; queue state from the installed OpenRig API) are allowlisted; any other value becomes "unknown", never raw. Open-text fields (harness or runtime names, closure reasons other than the exact `handed_off_to` sentinel, chain ids) are identifiers: ordinary values stay visible, secret-shaped values are redacted. Source-origin strings (identity `provenance`, activity `evidenceSource`, `reason`, `rawEvent`, `rawSubtype`) are excluded from storage and output, or classified and canary-tested. An unlisted queue state is never read as valid demand or a successful closure. | AC10 (Emenda 2 absorbed text), AC4, §4 | `orch.arch` (AC10 follow-up phase 2), `pm.manager` |
+| K2 | 2026-10-10 19:47 | "Closed item" in M1 "tokens per closed item" | Closed item: a queue item whose destination is this seat, counted once, with at least one successful terminal transition inside the half-open window [from, to): state done (closure reason no-follow-on, handed_off_to, escalation, or none) or state handed-off. Excluded: canceled, denied, failed, blocked, unknown or unlisted states, and done with closure reason denied or canceled. Tokens per closed item = seat tokens in the window / closed items; zero closed items = no data. **The M1 report and trace print this text verbatim (AC7).** | §4 M1, AC9, AC7 | `pm.manager` 19:48Z |
+| K3 | 2026-10-10 19:49 | Mission attribution when an item's historical destination or tag cannot be proven | The usage goes into the existing "ambiguous" bucket with the visible reason "insufficient history", distinct from "conflicting missions". It never goes into "no mission". The three-bucket sum is unchanged. The current destination is never applied to the past, and the actor is never taken as the destination. Historical destination evidence comes from `queue.claimed` and `queue.created` events when present. Mission tags are taken as set at creation; a detectable tag change makes the usage ambiguous. QA reports the ambiguous share by reason. | §4 mission attribution, AC6 | `pm.manager` 19:49Z |
+
+If this register grows past about five entries, `pm.manager` publishes it as a clarifications note next to the contract.
