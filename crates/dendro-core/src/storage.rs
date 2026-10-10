@@ -1016,6 +1016,17 @@ mod tests {
             name.push(".wal");
             path.with_file_name(name)
         };
+        let key_id: String = store
+            .conn
+            .query_row("SELECT key_id FROM dendro_meta", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(key_id, "key");
+        assert!(!key_id.contains("ZZZ"));
+        let bounds: i64 = store
+            .conn
+            .query_row("SELECT COUNT(*) FROM seat_bounds", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(bounds, 0);
         assert!(wal.exists(), "expected a DuckDB wal before checkpoint");
         let wal_bytes = std::fs::read(&wal).unwrap();
         let wal_blob = String::from_utf8_lossy(&wal_bytes);
