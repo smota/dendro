@@ -159,7 +159,7 @@ def main():
     replay = sum(r["input_uncached"] + r["output"] + r["cache_read"] + r["cache_write"] for r in traced.get("inputs", {}).get("rows", []))
     check("ac7_trace_replay", replay == traced.get("value"), traced.get("value"), replay)
     rows_in = traced.get("inputs", {}).get("rows", [])
-    check("qa_trace_provenance", rows_in and all("generation" in row and "line" in row and "path" in row for row in rows_in), True, bool(rows_in))
+    check("qa_trace_provenance", rows_in and all("generation" in row and "line" in row and "path" in row and "predecessor" in row for row in rows_in), True, bool(rows_in))
     demand = traced.get("inputs", {}).get("demand_events", [])
     actor_only = [row for row in demand if row.get("qitem_id") == "actor-only"]
     check("qa_actor_is_not_destination", actor_only and all(row.get("dest") == "unknown" for row in actor_only), "unknown", actor_only[0].get("dest") if actor_only else None)
@@ -247,6 +247,13 @@ def main():
     code, links_all, _ = report(analytics, "links")
     collide = next((row for row in json.loads(links_all)["payload"]["links"] if row.get("native_session") == "s-collide"), {}) if code == 0 else {}
     check("qa_identity_collision", collide.get("status") == "collision" and collide.get("seat") is None, "collision", collide.get("status"))
+    key_path = Path(str(analytics) + ".key")
+    original_key = key_path.read_bytes()
+    flipped = original_key[:-1] + bytes([original_key[-1] ^ 1])
+    key_path.write_bytes(flipped)
+    code, text, err = run(["run", "--db", str(analytics), "--root", f"claude={src/'claude'}", "--root", f"codex={src/'codex'}", "--root", f"pi={src/'pi'}", "--root", f"openrig={db}", "--frozen"])
+    key_path.write_bytes(original_key)
+    check("qa_wrong_key", code != 0 and secret_a not in text + err, 1, code)
     failed = [row for row in rows if not row["ok"]]
     Path("/tmp/ac3-ac12-results.json").write_text(json.dumps({"commit": subprocess.check_output(["git", "-C", "/home/sam/code/dendro/.worktrees/work/dendro-r1", "rev-parse", "HEAD"], text=True).strip(), "rows": rows}, indent=2))
     print("FAILED", len(failed), "OF", len(rows))

@@ -498,11 +498,28 @@ pub fn report_json(
                 let path = source_id.and_then(|id| {
                     sources.iter().find(|source| source.0 == id).map(|source| source.2.clone())
                 });
+                let predecessor = if row.harness == "codex" && row.generation > 1 {
+                    source_id.and_then(|id| {
+                        store.codex_counters(id, row.generation - 1).ok().map(|prior| {
+                            json!({
+                                "generation": row.generation - 1,
+                                "input_tokens": prior.input_tokens,
+                                "cached_input_tokens": prior.cached_input_tokens,
+                                "cache_write_input_tokens": prior.cache_write_input_tokens,
+                                "output_tokens": prior.output_tokens,
+                                "reasoning_output_tokens": prior.reasoning_output_tokens,
+                            })
+                        })
+                    })
+                } else {
+                    None
+                };
                 json!({
                     "source_key": row.source_key,
                     "generation": row.generation,
                     "line": row.seq,
                     "path": path,
+                    "predecessor": predecessor,
                     "input_uncached": row.input_uncached,
                     "output": row.output,
                     "cache_read": row.cache_read,
