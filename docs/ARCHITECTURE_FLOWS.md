@@ -3,7 +3,8 @@
 **Autor:** Sponsor (Sam / Antigravity)  
 **Destinatários:** `orch-arch@dendro-dev`, `dev-build*`, `dev-qa`, `rev-review`  
 **Referência:** Release 1 (v0.1.0) — Épico #1  
-**Status:** Diretriz Arquitetural Normativa  
+**Status:** Diretriz Arquitetural Normativa (Governada pela Emenda 1 em `docs/ACCEPTANCE_R1.md`)  
+**Decisão Sponsor:** As definições semânticas de M1–M4 e regras de conservação seguem a Emenda 1 congelada. A hierarquia de 5 fluxos governa a cadência e o isolamento dos ciclos de entrega.  
 
 ---
 
