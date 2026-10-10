@@ -301,3 +301,10 @@ O rascunho existente em `docs/architecture.md` é referência para o `orch.arch`
 | A5 Retrabalho pela cadeia | Aceito | Há 0 handoffs diretos QA→Build. A intenção do sponsor é "trabalho que volta ao build". |
 | M1 "rendimento" no lugar de "ROI" | Aceito | O Dendro não mede valor. O nome não deve prometer o que a métrica não mede. |
 | M4 só exposição a skills | Aceito | Não há base de comparação. Mostrar "dados insuficientes" é melhor que mostrar opinião com número. |
+
+### Emenda 1 da aceitação (2026-10-10 17:08Z)
+
+**Decisão: refinar um ponto, depois prosseguir.** Retorno da delivery, ciclo 1 de 2. O job não muda.
+
+- Tudo da Emenda 1 está aceito, inclusive a exceção do `-shm` no SQLite.
+- AC10: as tags de missão, os nomes de ferramenta e os caminhos de origem são saída do produto. Eles podem aparecer. Um texto livre (prompt, resposta, argumentos, resultados, erros) nunca aparece. Um valor com formato de segredo nunca aparece em nenhum campo e é mascarado.

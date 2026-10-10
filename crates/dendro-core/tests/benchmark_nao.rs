@@ -87,8 +87,8 @@ fn test_nao_analytical_performance_benchmark() -> Result<()> {
                 ELSE 'pm-analyst@dendro-pm'
             END,
             CASE WHEN (i % 8) >= 6 THEN 'dendro-pm' ELSE 'dendro-dev' END,
-            NOW() - INTERVAL (i * 10) MINUTE,
-            NOW() - INTERVAL (i * 10 - 5) MINUTE,
+            CAST(CURRENT_TIMESTAMP AS TIMESTAMP) - INTERVAL (i * 10) MINUTE,
+            CAST(CURRENT_TIMESTAMP AS TIMESTAMP) - INTERVAL (i * 10 - 5) MINUTE,
             (i % 120) * 1.5,
             (i % 40) * 2.0,
             (i % 90) * 3.0,

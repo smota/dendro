@@ -44,8 +44,7 @@
     "integrationBranch": "main",
     "trunkBranch": "main",
     "referenceKeywords": [
-      "Implements",
-      "Refs"
+      "Implements"
     ],
     "addLabels": [
       "integrated:main",

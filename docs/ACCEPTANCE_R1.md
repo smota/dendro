@@ -6,6 +6,7 @@
 | Entrada | Fase 0 `dendro-r1-p0`, `docs/PRODUCT_SPECIFICATION.md` |
 | Data | 2026-10-10 |
 | Estado | **Congelado** em 2026-10-10. Sponsor aprovou às 17:01Z. Decisão PM: prosseguir (`docs/PRODUCT_SPECIFICATION.md` §12). A1, A2, A5, M1 e M4 aceitos. |
+| Emenda 1 | 2026-10-10. Retorno do `orch.arch` (`transitions/0003.json`), ciclo 1 de 2. Atribuição de missão com sobreposição (§4, AC6). Somente leitura em fontes vivas (AC8, AC10, AC11, AC12). Aprovada pelo `pm.manager` às 17:04Z. Inclui as lacunas semânticas do conselho (QA `qitem-20261010170440-5d776632`, revisão `qitem-20261010170435-20c8a356`): §4, §4.1, AC1, AC4–AC7, AC10, AC11. O job não muda. Ver §9. |
 | Próximo dono | `orch-arch@dendro-dev` (Fase 2) |
 
 Este documento define o que o G1 precisa provar. Ele não escolhe arquivos, crates, schemas nem consultas. Isso é do `orch.arch`.
@@ -84,7 +85,14 @@ Cada métrica é exibida com o nome, a definição abaixo e o caminho até a ori
 | Esperando humano | Estado `needs_input`. |
 | Desconhecido | Estado `unknown` ou sem evidência. Nunca entra em ativo nem em ocioso. |
 
-Um intervalo dura do evento de estado até o próximo evento do mesmo assento, cortado pelos limites do período.
+Regras de intervalo:
+
+1. **Janela de observação do assento** = período `[de, até)` em UTC, recortado pela criação do nó e pela parada do rig ou do nó.
+2. Um estado vale do seu evento até o próximo evento do mesmo assento, a parada do rig ou do nó, ou o fim da janela.
+3. **Estado no início da janela** = último estado antes de `de`. Sem estado anterior: "desconhecido" até o primeiro evento.
+4. Um assento sem nenhum evento na janela fica 100% "desconhecido".
+5. Um intervalo `idle` se divide sempre que a demanda de fila muda (item chega, fecha ou muda de destino). A demanda vem do histórico de estados da fila no instante, não do estado atual.
+6. As cinco faixas são disjuntas e somam exatamente a janela de observação.
 
 ### Pergunta 2 — Handoffs (U3)
 
@@ -92,18 +100,45 @@ Um intervalo dura do evento de estado até o próximo evento do mesmo assento, c
 | --- | --- |
 | Handoff | Um item de fila fechado com `handed_off_to`, de um assento para outro. |
 | Retorno | Um handoff que leva o trabalho de volta a um assento que já tocou o mesmo item ou a mesma cadeia de registro. |
-| Custo de entrada | Tokens de entrada que o assento de destino consome entre reivindicar o item e a primeira ação de escrita (edição, escrita de arquivo, atualização de fila ou handoff). Rótulo obrigatório: "estimativa". |
+| Custo de entrada | Entrada sem cache + leitura de cache + escrita de cache (§4.1) que o assento de destino consome na janela de entrada. Rótulo obrigatório: "estimativa". |
+| Janela de entrada | Começa no instante da reivindicação, inclusivo. A reivindicação não é a ação final. Termina na primeira ação de escrita seguinte, exclusivo. Ação de escrita = ferramenta estruturada de edição ou escrita de arquivo, ou transição de fila do mesmo item (atualização, bloqueio, handoff, fechamento). O Dendro não classifica texto livre de comando (ex.: `bash`) como escrita. |
+| Entrada sem dados | Sem fim classificável, sem sessão ligada ou sem marca de tempo: "sem dados" e o motivo. Nunca zero. |
+| Entrada ambígua | Se o assento tem outro item `in-progress` durante a janela, o custo de entrada fica "ambígua". Um registro de uso nunca conta em dois handoffs. |
 | Tempo de espera | Do handoff até a reivindicação pelo destino. |
 
 ### Pergunta 3 — Tokens e loops (U4)
 
 | Métrica | Definição |
 | --- | --- |
-| Tokens | Entrada, saída, leitura de cache e escrita de cache, como a fonte registra. Somados por sessão, assento, missão e período. |
-| Missão | Valor da tag `mission:<id>` do item de fila. Trabalho sem tag aparece como "sem missão". |
+| Tokens | As quatro categorias da §4.1. Somadas por sessão, assento, missão e período. |
+| Missão | Valor da tag `mission:<id>` do item de fila. |
+| Atribuição de missão | Cada registro de uso recebe a missão do item que o assento tem `in-progress` no instante do registro. Sem item `in-progress`, ou item sem tag: "sem missão". Dois ou mais itens `in-progress` com missões diferentes, ou um item com duas tags `mission:` diferentes: "ambígua". Vários itens da mesma missão: essa missão. O Dendro nunca divide nem estima um registro ambíguo. Cada registro conta em exatamente uma faixa. |
 | Loop de ferramenta | O mesmo assento executa a mesma ferramenta com a mesma entrada normalizada, com falha, 3 ou mais vezes seguidas, em até 10 minutos. |
 | Loop de handoff | O mesmo item ou cadeia passa entre o mesmo par de assentos mais de 2 vezes. |
 | Custo em moeda | Exibido só quando a fonte registra o custo (Pi) ou quando o operador fornece uma tabela de preços. O Dendro nunca inventa um preço. |
+
+Regras de loop de ferramenta:
+
+1. Escopo: uma sessão. Sessões diferentes do mesmo assento não se juntam.
+2. Entrada igual = mesmo nome de ferramenta e mesma entrada depois de remover espaços nas pontas. Nenhuma outra normalização.
+3. Falha = a fonte marca erro (erro da ferramenta ou código de saída diferente de zero). Resultado sem marca = desconhecido. Desconhecido quebra a sequência.
+4. Qualquer outra chamada de ferramenta na mesma sessão quebra a sequência.
+5. Janela: da 1ª à 3ª falha em até 10 minutos, inclusivo (exatamente 10:00 conta).
+6. 4 ou mais falhas seguidas formam **um** episódio, com a contagem total. Não formam vários loops sobrepostos.
+7. Os limiares (3 falhas, 10 minutos, mais de 2 voltas) são configuráveis pelo operador.
+
+### 4.1 Semântica comum
+
+| Regra | Definição |
+| --- | --- |
+| Período | `[de, até)`, UTC, meio aberto. |
+| Ordem e empate | Marca de tempo da fonte, depois a ordem na fonte (linha ou chave). Um evento exatamente em `de` entra. Um evento exatamente em `até` não entra. |
+| Categorias de token | Quatro categorias disjuntas: entrada sem cache, saída, leitura de cache, escrita de cache. Se a fonte inclui o cache na entrada, o cache conta só na categoria de cache. Tokens de raciocínio contam na saída e aparecem também em separado quando a fonte registra. Nenhum token conta duas vezes. |
+| Contadores acumulados | Uma fonte com contador acumulado (Codex) contribui com a diferença entre leituras. Um contador que volta para baixo inicia uma nova geração. A diferença dessa leitura é o próprio valor. |
+| Duplicatas | Um registro com o mesmo id nativo de mensagem conta uma vez (Claude Code). |
+| Uso fora da janela | Um registro de uso conta no instante da sua marca de tempo. Registro sem marca de tempo: fica fora de qualquer janela e entra só no total da sessão, com contagem visível. |
+| Mediana | Com contagem par, é a média dos dois valores centrais. |
+| Divisão por zero | "sem dados", nunca zero nem infinito. |
 
 ### Métricas de decisão do O8 (U7, U8)
 
@@ -124,9 +159,9 @@ Todos rodam nesta máquina, com dados reais, sobre `agentflow-dev` de 2026-10-08
 
 ### AC1 — Primeira execução (O1, G1.1)
 
-- **Dado** uma instalação nova e as fontes desta máquina,
-- **quando** o operador roda o comando de ingestão uma vez,
-- **então** a execução termina em até 5 minutos de relógio,
+- **Dado** um binário já compilado, um banco analítico novo e as fontes desta máquina,
+- **quando** o operador roda a ingestão e pede o primeiro relatório,
+- **então** o relatório fica pronto em até 5 minutos de relógio, contados do início da ingestão (o build não conta),
 - **e** lista cada fonte da tabela §3 como encontrada ou ausente, com o número de registros lidos,
 - **e** uma fonte ausente gera um aviso e não interrompe a execução.
 
@@ -152,7 +187,8 @@ Todos rodam nesta máquina, com dados reais, sobre `agentflow-dev` de 2026-10-08
 - **Dado** `agentflow-dev` e o período,
 - **quando** o operador pede atividade por assento,
 - **então** cada um dos 6 assentos mostra ativo, ocioso com trabalho, ocioso sem trabalho, esperando humano e desconhecido,
-- **e** a soma das cinco faixas é igual à duração observada do assento no período.
+- **e** a soma das cinco faixas é igual à janela de observação do assento (§4),
+- **e** casos de teste cobrem: item que chega e fecha durante um `idle`; estado anterior a `de`; assento sem eventos; assento criado no meio da janela; item que muda de destino.
 
 ### AC5 — Pergunta 2 (O3, G1.4)
 
@@ -160,28 +196,36 @@ Todos rodam nesta máquina, com dados reais, sobre `agentflow-dev` de 2026-10-08
 - **quando** o operador pede handoffs,
 - **então** a contagem por par de assentos é igual à contagem de handoffs na fonte,
 - **e** cada retorno aparece com o caminho completo da cadeia,
-- **e** o custo de entrada aparece por handoff com o rótulo "estimativa", ou "sem dados" quando o assento de destino não tem sessão ligada.
+- **e** o custo de entrada aparece por handoff com o rótulo "estimativa", ou como "sem dados" ou "ambígua" com o motivo (§4),
+- **e** casos de teste cobrem: empate de marca de tempo na reivindicação e no fim, marca ausente, duas reivindicações simultâneas, e uma sessão só com `bash` (resultado: "sem dados").
 
 ### AC6 — Pergunta 3 (O4, G1.5)
 
 - **Dado** o mesmo rig e período,
 - **quando** o operador pede tokens,
-- **então** o total por sessão é igual à soma dos registros de uso dessa sessão na fonte,
-- **e** os totais aparecem por missão e por assento, com "sem missão" para o trabalho sem tag,
+- **então** o total por sessão é igual a um agregado independente da fonte, calculado sem o código de ingestão do Dendro, com as regras da §4.1,
+- **e** casos de teste cobrem: reinício de contador acumulado, mensagem duplicada e cache incluído na entrada,
+- **e** os totais aparecem por missão e por assento, com as faixas "sem missão" e "ambígua",
+- **e**, para cada assento, a soma das missões mais "sem missão" mais "ambígua" é igual ao total do assento,
+- **e** um caso de teste com dois itens `in-progress` de missões diferentes no mesmo instante conta o uso desse instante como "ambígua", e não em nenhuma das duas missões,
 - **e** uma sequência de teste com 3 falhas iguais seguidas em 10 minutos aparece como um loop,
-- **e** uma sequência com 2 falhas iguais não aparece como loop.
+- **e** uma sequência com 2 falhas iguais não aparece como loop,
+- **e** casos de teste cobrem: exatamente 10 minutos, sucesso no meio, ferramenta ou entrada diferente no meio, mesma entrada em outra sessão do mesmo assento, 4 falhas (um episódio), e limiar alterado pelo operador.
 
 ### AC7 — Rastreabilidade (O5, G1.7)
 
 - **Dado** qualquer número das AC4–AC6 e AC9,
 - **quando** o operador pede a origem,
-- **então** o Dendro mostra a definição da métrica e os registros de origem (arquivo e linha, ou tabela e chave),
-- **e** recalcular o número a partir desses registros dá o mesmo valor.
+- **então** o Dendro mostra a definição e a versão da métrica, os limites aplicados, os filtros e os valores de entrada (números e identificadores, com a chave do registro de origem e a geração da fonte),
+- **e** para razões mostra numerador e denominador; para medianas, as amostras; para durações, o estado na borda e as mudanças de demanda,
+- **e** recalcular o número só a partir da saída do rastreio dá o mesmo valor,
+- **e** o rastreio descreve a ingestão que produziu o número. Se a fonte mudou desde então, o rastreio diz isso, em vez de apontar para bytes que não existem mais,
+- **e** a recomputação funciona depois de um acréscimo, de um reinício de fonte e de uma linha alterada no SQLite.
 
 ### AC8 — Reexecução (O6, G1.6)
 
-- **Dado** uma ingestão completa,
-- **quando** o operador roda a ingestão de novo sem mudanças nas fontes,
+- **Dado** uma ingestão completa sobre uma cópia congelada das fontes (sem outro processo escrevendo),
+- **quando** o operador roda a ingestão de novo sobre a mesma cópia,
 - **então** nenhum total muda,
 - **e quando** uma sessão ganha novas linhas e a ingestão roda de novo,
 - **então** só as novas linhas entram, e os totais crescem exatamente pelo valor delas.
@@ -196,17 +240,40 @@ Todos rodam nesta máquina, com dados reais, sobre `agentflow-dev` de 2026-10-08
 
 ### AC10 — Privacidade (O7)
 
-- **Dado** um arquivo de sessão de teste com um texto marcador único no prompt e um token de API falso,
-- **quando** a ingestão roda,
-- **então** uma busca por esses dois textos no armazenamento analítico não encontra nada,
-- **e** as fontes ficam inalteradas (mesmo hash antes e depois).
+Dois tipos de campo:
 
-### AC11 — Somente leitura
+- **Conteúdo:** prompt, resposta, argumentos de ferramenta, resultado de ferramenta e mensagem de erro. Nunca aparece.
+- **Identificador:** tag de missão, nome de ferramenta e caminho de arquivo. É saída do produto. O operador precisa dele nos totais, nos loops e no rastreio. Aparece, salvo quando tem forma de segredo.
 
-- **Dado** as fontes da §3,
+Forma de segredo = um valor que segue um padrão conhecido de credencial (ex.: chaves de API de provedores, tokens do GitHub, chaves da AWS). O teste usa um token falso com um desses padrões.
+
+- **Dado** fontes de teste com um texto marcador único em cada campo de conteúdo e em cada campo de identificador, e um token de API falso em cada campo de conteúdo e de identificador,
+- **quando** a ingestão, os relatórios, o rastreio e as exportações rodam,
+- **então** o marcador dos campos de conteúdo não aparece no armazenamento analítico, nas saídas, nas exportações nem nos diagnósticos,
+- **e** o token falso não aparece em nenhum lugar, em nenhum campo. Num identificador, ele é substituído por uma marca de redação visível,
+- **e** o marcador comum de um identificador pode aparecer, porque é um identificador que o operador precisa ver,
+- **e** a impressão usada para comparar entradas de ferramenta (loops) não permite recuperar a entrada: calcular a impressão de uma entrada conhecida, sem a chave local da máquina, não reproduz o valor armazenado,
+- **e** o arquivo de teste fica inalterado (mesmo hash antes e depois).
+
+### AC11 — Somente leitura: cópia congelada (determinismo)
+
+- **Dado** uma cópia congelada das fontes da §3, sem outro processo escrevendo,
 - **quando** a ingestão roda,
-- **então** nenhum arquivo nem banco de origem muda (hash e data de modificação iguais),
-- **e** nada sai da máquina pela rede.
+- **então** nenhum arquivo nem banco da cópia muda (hash e data de modificação iguais), incluindo o banco SQLite, o WAL e o SHM,
+- **e** nada sai da máquina pela rede,
+- **e** apontar o banco de saída para uma fonte (caminho direto, link simbólico ou hard link) é recusado antes de abrir, e a fonte fica inalterada,
+- **e** a ingestão não lê os próprios arquivos de saída como fonte.
+
+### AC12 — Somente leitura: fontes vivas (segurança)
+
+- **Dado** as fontes vivas da §3, com agentes escrevendo nelas,
+- **quando** a ingestão roda,
+- **então** o Dendro abre cada arquivo e banco de origem só para leitura,
+- **e** o teste falha se o Dendro abrir qualquer fonte para escrita, criar ou apagar um arquivo nas pastas de origem.
+- **Exceção única:** o índice de memória compartilhada SQLite (`-shm`) de um banco vivo. Leitores SQLite atualizam esse índice por projeto. O banco principal e o WAL nunca abrem para escrita.
+- Uma mudança de hash numa fonte viva não prova uma escrita do Dendro. Só a instrumentação de abertura prova.
+
+A AC11 prova determinismo. A AC12 prova que as fontes vivas ficam seguras. Uma não substitui a outra.
 
 ### O8 — Sinal de valor (não é um teste automático)
 
@@ -264,3 +331,26 @@ O sponsor revisa M1–M4 de `agentflow-dev` e registra uma decisão real de topo
 | U7 | Impacto de skills | Não mensurável na R1. Só exposição (M4, A7). |
 | U8 | ROI do assento | Redefinido como rendimento (M1). Sponsor confirma. |
 | U9 | Formato de token e custo de AGY e Grok | `orch.arch`, antes de construir esses conectores. |
+
+---
+
+## 9. Emenda 1 — divisão de responsabilidades
+
+O analista decide o que a métrica significa e o que o teste observa. O `orch.arch` decide como.
+
+| Item do conselho | Dono | Disposição |
+| --- | --- | --- |
+| Missão com sobreposição | Analista | §4 Atribuição de missão; AC6. |
+| Janela de observação do assento | Analista | §4 Regras de intervalo; AC4. |
+| Janela de entrada do handoff | Analista | §4 Janela de entrada; AC5. |
+| Categorias de token, contadores, duplicatas | Analista | §4.1; AC6. O mapeamento por harness é do `orch.arch`. |
+| Regras de loop e limiar configurável | Analista | §4 Regras de loop; AC6. O mecanismo de configuração é do `orch.arch`. |
+| Conteúdo do rastreio | Analista | AC7. O formato e o armazenamento são do `orch.arch`. |
+| Lugares dos marcadores de privacidade | Analista | AC10: conteúdo nunca aparece; identificador aparece, salvo forma de segredo (redigido). Refinado pelo `pm.manager` às 17:06Z. |
+| Impressão de entrada sem recuperação | Analista (o quê), `orch.arch` (como) | AC10 exige que a impressão não seja reproduzível sem a chave local. A escolha do algoritmo é do `orch.arch`. |
+| Saída que aponta para uma fonte | Analista | AC11. |
+| WAL/SHM em fonte viva | Analista | AC12, exceção única do `-shm`. |
+| Bancos antigos com `command_preview` ou `error_message` | `orch.arch` | Não há instalação anterior da R1. Não há migração. O caminho de persistência sai. |
+| Substituições no scaffold (custo não nulo, resolver por substring, `OPENRIG_HOME`, SQLite gravável) | `orch.arch` | Obrigação de arquitetura, não muda o escopo. |
+| Matriz de oráculos AC1–AC12 e base do candidato | `orch.arch` + `dev.qa` | Plano da Fase 3. |
+
