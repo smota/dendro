@@ -1,7 +1,6 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
-use tracing::info;
 
 #[derive(Parser)]
 #[command(name = "dendro")]
@@ -47,20 +46,6 @@ enum Commands {
         from: String,
         #[arg(long, default_value = "2026-10-11T00:00:00Z")]
         to: String,
-    },
-    /// Run daemon in continuous file watching mode
-    Watch {
-        #[arg(short, long, default_value = "dendro.duckdb")]
-        db: PathBuf,
-        #[arg(short, long, default_value = "2")]
-        debounce_secs: u64,
-    },
-    /// Initialize Nao semantic layer files for natural language querying
-    InitNao {
-        #[arg(short, long, default_value = ".")]
-        target: PathBuf,
-        #[arg(short, long, default_value = "dendro.duckdb")]
-        db: PathBuf,
     },
 }
 
@@ -119,49 +104,6 @@ async fn main() -> Result<()> {
         } => {
             let report = dendro_core::trace_json(&db, &metric_id, rig.as_deref(), &from, &to)?;
             println!("{report}");
-        }
-        Commands::Watch { db, debounce_secs } => {
-            info!(
-                "Starting Dendro watcher against {} (debounce: {}s)",
-                dendro_core::redact(&db.display().to_string()),
-                debounce_secs
-            );
-            info!("Dendro watch is outside this R1 proof. Press Ctrl+C to stop.");
-        }
-        Commands::InitNao { target, db } => {
-            if dendro_core::contains_secret(&target.display().to_string())
-                || dendro_core::contains_secret(&db.display().to_string())
-            {
-                anyhow::bail!("refusing a path that contains a secret-shaped value");
-            }
-            info!(
-                "Initializing Nao semantic models in {} pointing to {}",
-                dendro_core::redact(&target.display().to_string()),
-                dendro_core::redact(&db.display().to_string())
-            );
-            let config_content = format!(
-                r#"# Nao configuration for Dendro
-version: 1
-data_source:
-  type: duckdb
-  path: "{}"
-
-metrics:
-  - name: total_cost_usd
-    sql: "SUM(estimated_cost_usd)"
-    description: "Total cost across agent sessions in USD"
-  - name: active_sessions
-    sql: "COUNT(*)"
-    description: "Total number of completed or active agent sessions"
-  - name: avg_tool_calls
-    sql: "AVG(tool_calls_count)"
-    description: "Average number of tool executions per session"
-"#,
-                db.display()
-            );
-            let target_config = target.join("nao_config.yaml");
-            std::fs::write(&target_config, config_content)?;
-            info!("Generated {:?}", target_config);
         }
     }
 

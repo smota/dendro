@@ -175,9 +175,10 @@ pub fn report_json(
             .map(|fact| fact.seat.clone())
             .collect()
     });
-    let usage: Vec<_> = store
-        .load_usage()?
-        .into_iter()
+    let usage_all = store.load_usage()?;
+    let untimestamped_count = usage_all.iter().filter(|row| row.ts.is_none()).count();
+    let usage: Vec<_> = usage_all
+        .iter()
         .filter(|row| match row.ts {
             Some(ts) => ts >= window.from && ts < window.to,
             None => false,
@@ -186,6 +187,7 @@ pub fn report_json(
             Some(set) => set.contains(&(row.harness.clone(), row.native_session.clone())),
             None => true,
         })
+        .cloned()
         .collect();
     let queue_all: Vec<_> = store
         .load_queue()?
@@ -194,11 +196,6 @@ pub fn report_json(
             Some(seats) => seats.contains(&row.source_seat) || seats.contains(&row.dest_seat),
             None => true,
         })
-        .collect();
-    let queue: Vec<_> = queue_all
-        .iter()
-        .filter(|row| row.ts >= window.from && row.ts < window.to)
-        .cloned()
         .collect();
     let edges_all = metrics::handoff_edges(&queue_all);
     let edges: Vec<_> = edges_all
@@ -270,19 +267,36 @@ pub fn report_json(
             .find(|fact| fact.harness == row.harness && fact.native_session == row.native_session)
             .map(|fact| fact.seat.clone());
         let label = match (seat, row.ts) {
-            (Some(seat), Some(ts)) => match metrics::mission_at(&seat, &queue, ts) {
+            (Some(seat), Some(ts)) => match metrics::mission_at(&seat, &queue_all, ts) {
                 metrics::MissionBucket::Mission(name) => name,
                 metrics::MissionBucket::None => "no_mission".into(),
                 metrics::MissionBucket::Ambiguous => "ambiguous".into(),
             },
-            _ => "no_mission".into(),
+            (None, Some(_)) => "unlinked".into(),
+            _ => continue,
         };
         *mission_tokens.entry(label).or_insert(0) +=
             row.input_uncached + row.output + row.cache_read + row.cache_write;
     }
     let mut discovered = std::collections::BTreeSet::<(String, String)>::new();
-    for row in &usage {
+    for row in &usage_all {
         discovered.insert((row.harness.clone(), row.native_session.clone()));
+    }
+    for fact in &identities {
+        discovered.insert((fact.harness.clone(), fact.native_session.clone()));
+    }
+    let mut link_rates = std::collections::BTreeMap::<String, (i64, i64)>::new();
+    for (harness, native) in &discovered {
+        let seats: std::collections::BTreeSet<_> = identities
+            .iter()
+            .filter(|fact| fact.harness == *harness && fact.native_session == *native)
+            .map(|fact| fact.seat.clone())
+            .collect();
+        let entry = link_rates.entry(harness.clone()).or_insert((0, 0));
+        entry.1 += 1;
+        if seats.len() == 1 {
+            entry.0 += 1;
+        }
     }
     let links: Vec<_> = discovered
         .into_iter()
@@ -314,6 +328,13 @@ pub fn report_json(
             "from": redact(from),
             "to": redact(to),
             "usage_rows": usage.len(),
+            "untimestamped_count": untimestamped_count,
+            "link_rates": link_rates.iter().map(|(harness, (linked, discovered_count))| json!({
+                "harness": harness,
+                "linked": linked,
+                "discovered": discovered_count,
+                "status": if *discovered_count == 0 { "no data" } else { "ok" },
+            })).collect::<Vec<_>>(),
             "tokens": tokens,
             "m1_yield": metrics::m1_yield(tokens, nonreturn),
             "m2_return_rate": metrics::m2_return_rate(returns, handoffs),
