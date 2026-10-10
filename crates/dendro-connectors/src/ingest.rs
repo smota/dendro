@@ -42,7 +42,7 @@ pub fn ingest_staged(
                 notes.push(format!("{} files={}", root.name, files.len()));
             }
             "openrig" => {
-                let count = ingest_openrig(&store, &root.path, frozen)?;
+                let count = ingest_openrig(&store, &root.path, frozen, key)?;
                 notes.push(format!("openrig events={count}"));
             }
             "agy" | "grok" => notes.push(format!("{} present-not-parsed", root.name)),
@@ -52,7 +52,12 @@ pub fn ingest_staged(
     Ok(notes)
 }
 
-fn ingest_openrig(store: &AnalyticsStore, sqlite_path: &Path, frozen: bool) -> Result<i64> {
+fn ingest_openrig(
+    store: &AnalyticsStore,
+    sqlite_path: &Path,
+    frozen: bool,
+    key: &[u8],
+) -> Result<i64> {
     let snap_dir = std::env::temp_dir().join(format!("dendro-snap-{}", uuid_suffix()));
     let open_path = if frozen {
         std::fs::create_dir_all(&snap_dir)?;
@@ -108,9 +113,13 @@ fn ingest_openrig(store: &AnalyticsStore, sqlite_path: &Path, frozen: bool) -> R
             store.insert_identity(&IdentityFact {
                 source_key: format!("events:{seq}"),
                 harness: normalize_harness(runtime),
-                native_session: dendro_core::redact(session_id),
-                rig: rig.to_string(),
-                seat: seat.to_string(),
+                native_session: dendro_core::seal_identifier(
+                    key,
+                    &format!("session:{}", normalize_harness(runtime)),
+                    session_id,
+                ),
+                rig: dendro_core::seal_identifier(key, "rig", rig),
+                seat: dendro_core::seal_identifier(key, "seat", seat),
                 ts,
             })?;
         } else if kind == "agent.activity" {
@@ -132,7 +141,7 @@ fn ingest_openrig(store: &AnalyticsStore, sqlite_path: &Path, frozen: bool) -> R
             let Some(when) = when else { continue };
             store.insert_activity(&ActivityFact {
                 source_key: format!("activity:{seq}"),
-                seat: seat.to_string(),
+                seat: dendro_core::seal_identifier(key, "seat", seat),
                 ts: when,
                 state: state.to_string(),
                 seq,
@@ -160,8 +169,10 @@ fn ingest_openrig(store: &AnalyticsStore, sqlite_path: &Path, frozen: bool) -> R
                 .ok()
                 .map(|value| value.with_timezone(&Utc));
             let Some(ts) = ts else { continue };
-            let actor = row.4.clone().unwrap_or_default();
-            let target = row.6.clone().unwrap_or_else(|| actor.clone());
+            let actor_raw = row.4.clone().unwrap_or_default();
+            let target_raw = row.6.clone().unwrap_or_else(|| actor_raw.clone());
+            let actor = dendro_core::seal_identifier(key, "seat", &actor_raw);
+            let target = dendro_core::seal_identifier(key, "seat", &target_raw);
             store.insert_queue(&QueueFact {
                 source_key: format!("queue_transitions:{}", row.0),
                 transition_id: row.0,
@@ -173,7 +184,10 @@ fn ingest_openrig(store: &AnalyticsStore, sqlite_path: &Path, frozen: bool) -> R
                 closure_reason: row.5,
                 closure_target: row.6,
                 chain_id: None,
-                missions: parse_missions(row.7.as_deref()),
+                missions: parse_missions(row.7.as_deref())
+                    .into_iter()
+                    .map(|mission| dendro_core::seal_identifier(key, "mission", &mission))
+                    .collect(),
             })?;
         }
     }

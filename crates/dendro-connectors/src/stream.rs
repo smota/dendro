@@ -108,16 +108,11 @@ pub fn ingest_jsonl_with_key(
             Ok(None) => {}
             Ok(Some(bucket)) => {
                 if let Some(id) = &bucket.message_id {
-                    let redacted_id = redact(id);
-                    let redacted_session = redact(&bucket.native_session);
-                    let key = format!("{harness}\n{redacted_session}\n{redacted_id}");
-                    if !seen_messages.insert(key)
-                        || store.message_seen(
-                            harness,
-                            &redacted_session,
-                            &redacted_id,
-                            generation,
-                        )?
+                    let sealed_session = seal_session(tool_key, harness, &bucket.native_session);
+                    let sealed_id = seal_message(tool_key, id);
+                    let seen = format!("{harness}\n{sealed_session}\n{sealed_id}");
+                    if !seen_messages.insert(seen)
+                        || store.message_seen(harness, &sealed_session, &sealed_id, generation)?
                     {
                         continue;
                     }
@@ -125,8 +120,11 @@ pub fn ingest_jsonl_with_key(
                 usages.push(UsageFact {
                     source_key: format!("{source_id}:{generation}:{line_no}"),
                     harness: harness.to_string(),
-                    native_session: redact(&bucket.native_session),
-                    message_id: bucket.message_id.as_deref().map(redact),
+                    native_session: seal_session(tool_key, harness, &bucket.native_session),
+                    message_id: bucket
+                        .message_id
+                        .as_deref()
+                        .map(|id| seal_message(tool_key, id)),
                     ts: bucket.ts,
                     seq: line_no,
                     input_uncached: bucket.input_uncached,
@@ -169,6 +167,20 @@ pub fn ingest_jsonl_with_key(
         store.record_warning(note)?;
     }
     Ok(())
+}
+
+fn seal_session(key: Option<&[u8]>, harness: &str, raw: &str) -> String {
+    match key {
+        Some(key) => dendro_core::seal_identifier(key, &format!("session:{harness}"), raw),
+        None => raw.to_string(),
+    }
+}
+
+fn seal_message(key: Option<&[u8]>, raw: &str) -> String {
+    match key {
+        Some(key) => dendro_core::seal_identifier(key, "message", raw),
+        None => raw.to_string(),
+    }
 }
 
 fn generation_was_reset(prior: Option<(i64, i64, String)>, generation: i64) -> bool {

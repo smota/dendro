@@ -1,5 +1,5 @@
 use hmac::{Hmac, Mac};
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -75,7 +75,16 @@ pub fn opaque_id(key: &[u8], domain: &str, native: &str) -> String {
     hmac_domain(key, domain, native)
 }
 
-use sha2::Digest;
+/// Join key plus redacted display. Two raw values that redact the same stay distinct.
+pub fn seal_identifier(key: &[u8], domain: &str, raw: &str) -> String {
+    let display = redact(raw);
+    if display == raw {
+        raw.to_string()
+    } else {
+        let opaque = opaque_id(key, domain, raw);
+        format!("{opaque}\t{display}")
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -106,5 +115,17 @@ mod tests {
             tool_fingerprint(key_b, "Write", Some(spaced)).unwrap()
         );
         assert!(tool_fingerprint(key_a, "Write", None).is_none());
+    }
+
+    #[test]
+    fn sealed_secret_ids_stay_distinct() {
+        let key = b"key-a-32-bytes-pad-pad-pad-pad!!";
+        let left = seal_identifier(key, "session", "sess-sk-ant-SECRETA");
+        let right = seal_identifier(key, "session", "sess-sk-ant-SECRETB");
+        assert_ne!(left, right);
+        assert!(!left.contains("SECRETA"));
+        assert!(!right.contains("SECRETB"));
+        assert!(left.contains("[redacted]"));
+        assert_eq!(left.split('\t').nth(1), right.split('\t').nth(1));
     }
 }
