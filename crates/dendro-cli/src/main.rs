@@ -107,15 +107,17 @@ async fn main() -> Result<()> {
         }
         Commands::Watch { db, debounce_secs } => {
             info!(
-                "Starting Dendro watcher against {:?} (debounce: {}s)",
-                db, debounce_secs
+                "Starting Dendro watcher against {} (debounce: {}s)",
+                dendro_core::redact(&db.display().to_string()),
+                debounce_secs
             );
             info!("Dendro watch is outside this R1 proof. Press Ctrl+C to stop.");
         }
         Commands::InitNao { target, db } => {
             info!(
-                "Initializing Nao semantic models in {:?} pointing to {:?}",
-                target, db
+                "Initializing Nao semantic models in {} pointing to {}",
+                dendro_core::redact(&target.display().to_string()),
+                dendro_core::redact(&db.display().to_string())
             );
             let config_content = format!(
                 r#"# Nao configuration for Dendro

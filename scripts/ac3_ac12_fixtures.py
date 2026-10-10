@@ -190,6 +190,28 @@ def main():
     missing = ROOT / "no-such-root"
     rcode, rstdout, rstderr = run(["run", "--db", str(ROOT / "root-name.duckdb"), "--root", f"sk-ant-QA_SYNTHETIC_ROOTNAME_20261010={missing}"])
     check("qa_root_name_stdout", rcode == 0 and "QA_SYNTHETIC_ROOTNAME" not in rstdout + rstderr and "[redacted]" in rstdout, 0, rcode)
+    rig_canary = "sk-ant-QA_SYNTHETIC_RIG"
+    code, text, err = report(analytics, "activity", rig=rig_canary)
+    check("qa_rig_report_stdout", code == 0 and rig_canary not in text + err, 0, code)
+    code, text, err = run(["trace", "--db", str(analytics), "--metric-id", "activity", "--rig", rig_canary, "--from", FROM, "--to", TO])
+    check("qa_rig_trace_stdout", code == 0 and rig_canary not in text + err, 0, code)
+    code, text, err = run(["report", rig_canary, "--db", str(analytics), "--from", FROM, "--to", TO])
+    check("qa_kind_stderr", code != 0 and rig_canary not in text + err, 1, code)
+    code, text, err = run(["trace", "--db", str(analytics), "--metric-id", rig_canary, "--from", FROM, "--to", TO])
+    check("qa_metric_stderr", code != 0 and rig_canary not in text + err, 1, code)
+    families = ["sk-ant-QA", "ghp_QA", "gho_QA", "github_pat_QA", "xai-QA", "AKIAQA", "Bearer QA", "xoxb-QA", "xoxp-QA", "seat-sk-ant-QA"]
+    leaked = []
+    for token in families:
+        for args in (
+            ["report", "activity", "--db", str(analytics), "--rig", token, "--from", FROM, "--to", TO],
+            ["trace", "--db", str(analytics), "--metric-id", "activity", "--rig", token, "--from", FROM, "--to", TO],
+            ["report", token, "--db", str(analytics), "--from", FROM, "--to", TO],
+            ["trace", "--db", str(analytics), "--metric-id", token, "--from", FROM, "--to", TO],
+        ):
+            code, text, err = run(args)
+            if token in text + err:
+                leaked.append(token)
+    check("qa_cli_marker_families", leaked == [], [], leaked)
     failed = [row for row in rows if not row["ok"]]
     Path("/tmp/ac3-ac12-results.json").write_text(json.dumps({"commit": subprocess.check_output(["git", "-C", "/home/sam/code/dendro/.worktrees/work/dendro-r1", "rev-parse", "HEAD"], text=True).strip(), "rows": rows}, indent=2))
     print("FAILED", len(failed), "OF", len(rows))

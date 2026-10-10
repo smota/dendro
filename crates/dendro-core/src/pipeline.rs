@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 
 use crate::metrics::{self, Window};
 use crate::output::{self, load_or_create_key, refuse_aliased_output, with_output_lock};
-use crate::privacy::opaque_id;
+use crate::privacy::{opaque_id, redact};
 use crate::storage::AnalyticsStore;
 
 pub struct RunRequest<'a> {
@@ -142,7 +142,7 @@ pub fn report_json(
         kind,
         "links" | "activity" | "handoffs" | "tokens" | "decisions"
     ) {
-        return Err(anyhow!("unknown report kind {kind}"));
+        return Err(anyhow!("unknown report kind {}", redact(kind)));
     }
     let store = AnalyticsStore::open_read_only(db)?;
     let identities = store.load_identity()?;
@@ -295,9 +295,9 @@ pub fn report_json(
         kind,
         json!({
             "product": "AI Fleet Intelligence",
-            "rig": rig,
-            "from": from,
-            "to": to,
+            "rig": rig.map(redact),
+            "from": redact(from),
+            "to": redact(to),
             "usage_rows": usage.len(),
             "tokens": tokens,
             "m1_yield": metrics::m1_yield(tokens, nonreturn),
@@ -306,7 +306,7 @@ pub fn report_json(
             "m3_chains": chains,
             "m3_paths": paths,
             "m4_impact": metrics::m4_impact(),
-            "kind": kind,
+            "kind": redact(kind),
             "activity": activity_rows,
             "links": links,
             "handoff_edges": edges.iter().map(|edge| json!({
@@ -414,7 +414,7 @@ pub fn trace_json(
             "five disjoint seat bands clipped to the half-open window",
             payload["activity"].clone(),
         ),
-        other => return Err(anyhow!("unknown metric id {other}")),
+        other => return Err(anyhow!("unknown metric id {}", redact(other))),
     };
     Ok(json!({
         "metric_id": metric_id,
@@ -436,9 +436,9 @@ pub fn trace_json(
             "nonreturn_handoffs": payload["nonreturn_handoffs"],
             "window": {"from": from, "to": to},
         },
-        "from": from,
-        "to": to,
-        "rig": rig,
+        "from": redact(from),
+        "to": redact(to),
+        "rig": rig.map(redact),
     }))
 }
 
