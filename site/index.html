@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dendro — Read the Rings of Your AI Agents</title>
+  <meta name="description" content="Local-first telemetry, observability and correlation engine for multi-agent fleets. Powered by Rust, DuckDB, and OpenRig.">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+
+  <!-- Navigation -->
+  <header class="navbar">
+    <div class="nav-container">
+      <a href="#" class="brand">
+        <img src="assets/logo.jpg" alt="Dendro Logo" class="brand-logo">
+        <span class="brand-name">DENDRO</span>
+      </a>
+      <nav class="nav-links">
+        <a href="#metaphor">Dendrocronologia</a>
+        <a href="#rings">Os 3 Anéis</a>
+        <a href="#calculator">Calculadora de ROI</a>
+        <a href="#nao">Nao Analytics</a>
+        <a href="#docs">Documentação</a>
+      </nav>
+      <div class="nav-actions">
+        <a href="https://github.com/smota/dendro" target="_blank" class="btn btn-secondary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          GitHub
+        </a>
+        <a href="#quickstart" class="btn btn-primary">Comece em 5 Min</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="hero">
+    <div class="hero-glow hero-glow-1"></div>
+    <div class="hero-glow hero-glow-2"></div>
+    <div class="container hero-content">
+      <div class="hero-badge">
+        <span class="badge-dot"></span>
+        <span>Local-First Multi-Agent Telemetry & Analytics Engine</span>
+        <span class="badge-tag">dendrorings.ai</span>
+      </div>
+      <h1 class="hero-title">
+        Read the rings of your <span class="gradient-text">AI agents</span>.
+      </h1>
+      <p class="hero-subtitle">
+        Assim como a dendrocronologia decifra a história climática através dos anéis de crescimento das árvores, o Dendro lê as camadas de sessões e handoffs dos seus agentes autônomos para revelar gargalos, retrabalhos ocultos e o ROI real de cada assento.
+      </p>
+      <div class="hero-cta-group">
+        <a href="#quickstart" class="btn btn-primary btn-lg">Instalar em 5 Minutos</a>
+        <a href="#nao" class="btn btn-secondary btn-lg">Explorar com Nao NL</a>
+      </div>
+
+      <!-- Live Terminal Simulation -->
+      <div class="terminal-card">
+        <div class="terminal-header">
+          <div class="terminal-dots">
+            <span class="dot dot-red"></span>
+            <span class="dot dot-yellow"></span>
+            <span class="dot dot-green"></span>
+          </div>
+          <span class="terminal-title">dendro status --db dendro.duckdb</span>
+          <span class="terminal-badge">RUST v0.1.0 • LOCAL-FIRST</span>
+        </div>
+        <div class="terminal-body">
+          <div class="term-line"><span class="term-prompt">$</span> dendro run --db dendro.duckdb</div>
+          <div class="term-line term-muted">▶ Scanning local agent harnesses...</div>
+          <div class="term-line term-success">✓ OpenRig: 6 rigs, 28 nodes, 208 queue rows (19.4 MB)</div>
+          <div class="term-line term-success">✓ Claude Code: 142 sessions, 843k tokens (44.1 MB)</div>
+          <div class="term-line term-success">✓ Codex: 68 session rollouts (29.2 MB)</div>
+          <div class="term-line term-info">ℹ Ingested 418 sessions into DuckDB with incremental watermarks in 0.18s.</div>
+          <div class="term-line"><span class="term-prompt">$</span> dendro status</div>
+          <div class="term-output">
+┌────────────────────┬─────────┬──────────────┬─────────────┬──────────────┬───────────────┐
+│ Rig                │ Seats   │ Handover Eff │ Rework Rate │ Token Burn   │ Seat ROI      │
+├────────────────────┼─────────┼──────────────┼─────────────┼──────────────┼───────────────┤
+│ dendro-dev         │ 6 seats │ 94.2%        │ 4.8% (low)  │ 312k tokens  │ 4.6x speedup  │
+│ agentflow-dev      │ 6 seats │ 76.5%        │ 22.1% (warn)│ 1.4M tokens  │ 1.8x (bloat)  │
+│ dendro-pm          │ 2 seats │ 98.1%        │ 0.0%        │ 88k tokens   │ Converged P0  │
+└────────────────────┴─────────┴──────────────┴─────────────┴──────────────┴───────────────┘
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Metaphor Section -->
+  <section id="metaphor" class="section metaphor-section">
+    <div class="container">
+      <div class="section-badge">Fundamentos</div>
+      <h2 class="section-title">O que a dendrocronologia nos ensinou</h2>
+      <p class="section-subtitle">
+        Ao cortar uma árvore antiga, cada anel concêntrico conta um ano: secas produzem anéis estreitos e densos; anos férteis produzem anéis largos.
+      </p>
+
+      <div class="metaphor-grid">
+        <div class="card metaphor-card">
+          <div class="metaphor-icon">🌲</div>
+          <h3>Os Anéis da Árvore</h3>
+          <p>Registram a passagem do tempo, as tempestades enfrentadas e os períodos de estagnação sem depender da memória de quem cuidou da floresta.</p>
+        </div>
+        <div class="card metaphor-card active-card">
+          <div class="metaphor-icon">🤖</div>
+          <h3>Os Anéis dos Agentes</h3>
+          <p>Cada sessão, cada chamada de ferramenta e cada handoff de fila deixam marcas indelevelmente registradas nos discos locais da sua máquina.</p>
+        </div>
+        <div class="card metaphor-card">
+          <div class="metaphor-icon">⚡</div>
+          <h3>A Revelação do Dendro</h3>
+          <p>O Dendro correlaciona os anéis de baixo nível com a topologia de alto nível (Rigs, Assentos, Missões) para responder se a equipe valeu o custo.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- The 3 Core Rings -->
+  <section id="rings" class="section rings-section">
+    <div class="container">
+      <div class="section-badge">As Três Perguntas Centrais</div>
+      <h2 class="section-title">Os 3 Anéis que Decidem sua Operação</h2>
+      <p class="section-subtitle">
+        Nascido a partir da Discussão #1099 do OpenRig para resolver o que nenhum APM em nuvem consegue enxergar.
+      </p>
+
+      <div class="rings-grid">
+        <!-- Ring 1 -->
+        <div class="card ring-card">
+          <div class="ring-header">
+            <span class="ring-number">01</span>
+            <span class="ring-tag">Pergunta 1</span>
+          </div>
+          <h3>Otimização de Assentos (Seat ROI)</h3>
+          <p class="ring-desc">
+            "Tenho assentos a mais? Quem está produzindo vs. quem está apenas repassando texto sem agregar valor?"
+          </p>
+          <ul class="ring-features">
+            <li><strong>Idle Time vs Active Turns:</strong> Mede ociosidade real e esperas de fila.</li>
+            <li><strong>Velocidade de Convergência:</strong> Quantos turnos cada assento precisou para fechar o tíquete.</li>
+            <li><strong>Detecção de Over-Engineering:</strong> Identifica assentos intermediários desnecessários.</li>
+          </ul>
+        </div>
+
+        <!-- Ring 2 -->
+        <div class="card ring-card highlight-ring">
+          <div class="ring-header">
+            <span class="ring-number">02</span>
+            <span class="ring-tag">Pergunta 2</span>
+          </div>
+          <h3>Eficiência de Handover & Retrabalho</h3>
+          <p class="ring-desc">
+            "Quanto contexto é perdido nas passagens de bastão? Quantas vezes QA devolve para Dev?"
+          </p>
+          <ul class="ring-features">
+            <li><strong>Taxa de Retrabalho (QA $\to$ Dev):</strong> Alerta regressões cíclicas e retrabalho oculto.</li>
+            <li><strong>Context Bloat:</strong> Mede o inchaço de tokens injetados em cada transição de assento.</li>
+            <li><strong>Lossless Transfer:</strong> Garante que contratos de prova cheguem intactos ao revisor.</li>
+          </ul>
+        </div>
+
+        <!-- Ring 3 -->
+        <div class="card ring-card">
+          <div class="ring-header">
+            <span class="ring-number">03</span>
+            <span class="ring-tag">Pergunta 3</span>
+          </div>
+          <h3>Recursos, Custos & Retry Loops</h3>
+          <p class="ring-desc">
+            "Onde os tokens estão queimando? Algum assento entrou em loop infinito de comandos bash falhos?"
+          </p>
+          <ul class="ring-features">
+            <li><strong>Consumo por Missão & Assento:</strong> Input, output e cache tokens perfeitamente faturados.</li>
+            <li><strong>Retry Loop Detector:</strong> Detecta padrões de repetição estéril em ferramentas.</li>
+            <li><strong>Watchdog Alerts:</strong> Integração com alertas de anomalia nativos do OpenRig.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ROI Calculator -->
+  <section id="calculator" class="section calc-section">
+    <div class="container">
+      <div class="section-badge">Simulação Interativa</div>
+      <h2 class="section-title">Calculadora de Desperdício Agêntico</h2>
+      <p class="section-subtitle">
+        Veja quanto tempo e orçamento sua frota economiza ao otimizar handoffs e eliminar assentos redundantes.
+      </p>
+
+      <div class="calc-box">
+        <div class="calc-inputs">
+          <div class="form-group">
+            <label for="seatsInput">Número de Assentos na Frota (Seats):</label>
+            <input type="range" id="seatsInput" min="2" max="20" value="6" step="1">
+            <span class="range-val" id="seatsVal">6 assentos</span>
+          </div>
+          <div class="form-group">
+            <label for="missionsInput">Missões por Semana:</label>
+            <input type="range" id="missionsInput" min="5" max="100" value="25" step="5">
+            <span class="range-val" id="missionsVal">25 missões</span>
+          </div>
+          <div class="form-group">
+            <label for="tokenCostInput">Custo Médio por 1M Tokens (USD):</label>
+            <input type="range" id="tokenCostInput" min="1" max="15" value="5" step="1">
+            <span class="range-val" id="tokenCostVal">$5 / 1M</span>
+          </div>
+        </div>
+
+        <div class="calc-results">
+          <div class="res-card">
+            <span class="res-label">Retrabalho Evitável / Mês</span>
+            <span class="res-num" id="reworkHours">34 horas</span>
+            <span class="res-sub">em iterações de teste falhas</span>
+          </div>
+          <div class="res-card highlight-res">
+            <span class="res-label">Economia Mensal Estimada</span>
+            <span class="res-num" id="savingsAmount">$480 USD</span>
+            <span class="res-sub">em tokens desnecessários poupados</span>
+          </div>
+          <div class="res-card">
+            <span class="res-label">Aumento de Velocidade de Squad</span>
+            <span class="res-num" id="speedupRate">+38%</span>
+            <span class="res-sub">com topologias calibradas</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Conversational Analytics (Nao) -->
+  <section id="nao" class="section nao-section">
+    <div class="container">
+      <div class="section-badge">Linguagem Natural</div>
+      <h2 class="section-title">Pergunte em Português ou Inglês</h2>
+      <p class="section-subtitle">
+        Integração nativa com <strong>Nao</strong> (DuckDB conversational semantics). Sem dashboards fixos e engessados.
+      </p>
+
+      <div class="nao-showcase">
+        <div class="nao-chat">
+          <div class="chat-msg user-msg">
+            <div class="msg-bubble">"Qual assento teve a maior taxa de ociosidade no rig dendro-dev nos últimos 7 dias?"</div>
+          </div>
+          <div class="chat-msg bot-msg">
+            <div class="msg-bubble">
+              <p>O assento <strong>dev-build-jr</strong> registrou <strong>68.4% de ociosidade</strong> no <code>dendro-dev</code>. As tarefas P0 foram resolvidas rapidamente e o pipeline aguardou a revisão do <code>rev-review</code> por 42 minutos.</p>
+              <div class="code-snippet">
+                <code>SELECT seat_id, round(idle_seconds * 100.0 / total_seconds, 1) as idle_pct FROM dim_seats WHERE rig_id = 'dendro-dev';</code>
+              </div>
+            </div>
+          </div>
+          <div class="chat-msg user-msg">
+            <div class="msg-bubble">"Ocorreu algum retry loop de comando bash hoje?"</div>
+          </div>
+          <div class="chat-msg bot-msg">
+            <div class="msg-bubble">
+              <p>✓ <strong>Nenhum loop crítico ativo.</strong> O conector identificou 2 repetições de compilação em <code>orch-arch</code>, com sucesso no segundo turno (0.18s de resolução).</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Quickstart & Docs -->
+  <section id="docs" class="section docs-section">
+    <div class="container">
+      <div class="section-badge">Desenvolvedores</div>
+      <h2 class="section-title">Arquitetura Aberta & Documentação</h2>
+      <p class="section-subtitle">Tudo o que você precisa para rodar, estender e auditar.</p>
+
+      <div class="docs-grid">
+        <div class="card doc-card">
+          <h3>Guia de Adoção Rápida</h3>
+          <p>Instale o binário compilado, execute a primeira varredura em 5 minutos e gere relatórios no terminal.</p>
+          <a href="https://github.com/smota/dendro/blob/main/docs/adoption/README.md" target="_blank" class="doc-link">Ver Guia de Adoção →</a>
+        </div>
+        <div class="card doc-card">
+          <h3>Guia de Extensão de Conectores</h3>
+          <p>Aprenda a implementar a trait <code>HarnessConnector</code> para adicionar Cursor, Windsurf, Devin ou ferramentas proprietárias.</p>
+          <a href="https://github.com/smota/dendro/blob/main/docs/extensions/README.md" target="_blank" class="doc-link">Ver Guia de Extensão →</a>
+        </div>
+        <div class="card doc-card">
+          <h3>Guia do Mantenedor & Arquitetura</h3>
+          <p>Padrões em Rust (zero-copy, streaming BufReader, deny unsafe), schemas DuckDB e governança AgentFlow.</p>
+          <a href="https://github.com/smota/dendro/blob/main/docs/maintainers/README.md" target="_blank" class="doc-link">Ver Guia do Mantenedor →</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container footer-content">
+      <div class="footer-brand">
+        <img src="assets/logo.jpg" alt="Dendro Logo" class="footer-logo">
+        <div>
+          <h4>DENDRO</h4>
+          <p>Reading the rings of your AI agents.</p>
+        </div>
+      </div>
+      <div class="footer-links">
+        <a href="https://github.com/smota/dendro" target="_blank">GitHub</a>
+        <a href="https://github.com/mvschwarz/openrig" target="_blank">OpenRig</a>
+        <a href="https://duckdb.org" target="_blank">DuckDB</a>
+        <a href="https://github.com/getnao/nao" target="_blank">Nao</a>
+      </div>
+      <div class="footer-copy">
+        <p>MIT License © 2026 smota • Domínio Alvo: <strong>dendrorings.ai</strong></p>
+      </div>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

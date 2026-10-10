@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "phase": 0,
+  "role": "product-manager",
+  "seat": "pm.manager",
+  "status": "pass",
+  "reason": null,
+  "body": "Phase 0 — Dendro Release 1 (v0.1.0). Sponsor Go-Ahead 2026-10-10 16:56Z. PM decision: proceed.\n\nJob Statement: When I operate an agent team (rig) that has worked for days, I want to see where time, tokens and rework actually went, by seat, handoff and mission, so I can change topology, handoffs or budget with evidence, not intuition.\n\nStruggling moment: a mission is slow or expensive and the operator cannot say why. Data exists (openrig.sqlite: 208 queue items, 702 transitions, 4169 usage samples; ~180 MB harness logs) but nothing joins cost to seat, handoff or mission. Alternatives fail: transcripts are one seat at a time; provider dashboards are per account; manual SQL lacks tokens; cloud APMs need export and do not model seats.\n\nObservable outcome (G1): O1 first answer within 5 min from existing local logs; O2-O4 answer seat, handoff, cost questions for a named rig and period; O5 every number traces to its source record; O6 re-run does not duplicate totals; O7 no raw prompts or secrets stored; O8 sponsor takes a real decision on dendro-dev or agentflow-dev using seat ROI, handoff efficiency, QA->Build rework and skill impact.\n\nScope for this squad: G1 engine. Harnesses: OpenRig, Claude Code, Codex required; AGY, Pi, Grok next in the same release. Site, brand and the three docs are parallel, owned by Antigravity, outside this squad.\n\nConstraints: local-first, read-only on sources, no raw transcripts or secrets, stack Rust + DuckDB + Nao (sponsor decision), unknown source formats warn and never corrupt.\nAnti-goals: not SaaS/cloud APM; does not control agents; does not judge code quality; does not guess links.\n\nRelease intent: v0.1.0, impact minor, local build, no publication.\n\nUnknowns for analyst: idle definition; handoff context cost; loop definition; seat ROI without judging code quality; skill-impact measurability; session-to-seat linking confidence.\n\nReferences: docs/PRODUCT_SPECIFICATION.md, .agentflow/PRODUCT.md, docs/INTAKE_BRIEFING.md, docs/research/openrig-discussion-1099.md.",
+  "idempotencyKey": "dendro-r1-p0",
+  "uri": "transitions/0001.json"
+}
