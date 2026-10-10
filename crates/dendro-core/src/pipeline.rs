@@ -212,7 +212,73 @@ pub fn report_json(
     let returns = edges.iter().filter(|edge| edge.is_return).count() as i64;
     let (input, output, cache_read, cache_write) = metrics::token_totals(&usage);
     let tokens = input + output + cache_read + cache_write;
-    let nonreturn = handoffs - returns;
+    let nonreturn = edges.iter().filter(|edge| !edge.delivery_returned).count() as i64;
+    let mut seat_tokens = std::collections::BTreeMap::<String, i64>::new();
+    for row in &usage {
+        let Some(seat) = identities
+            .iter()
+            .find(|fact| fact.harness == row.harness && fact.native_session == row.native_session)
+            .map(|fact| fact.seat.clone())
+        else {
+            continue;
+        };
+        *seat_tokens.entry(seat).or_default() +=
+            row.input_uncached + row.output + row.cache_read + row.cache_write;
+    }
+    let mut m1_seat_names = std::collections::BTreeSet::new();
+    for seat in seat_tokens.keys() {
+        m1_seat_names.insert(seat.clone());
+    }
+    for edge in &edges {
+        m1_seat_names.insert(edge.from_seat.clone());
+    }
+    let m1_by_seat: Vec<_> = m1_seat_names
+        .iter()
+        .map(|seat| {
+            let seat_total = *seat_tokens.get(seat).unwrap_or(&0);
+            let deliveries = edges
+                .iter()
+                .filter(|edge| edge.from_seat == *seat && !edge.delivery_returned)
+                .count() as i64;
+            let closed = metrics::closed_item_keys(seat, &queue_all, window);
+            let per_closed = if closed.is_empty() {
+                serde_json::Value::String("no data".into())
+            } else {
+                json!(seat_total as f64 / closed.len() as f64)
+            };
+            json!({
+                "seat": seat,
+                "tokens": seat_total,
+                "nonreturn_deliveries": deliveries,
+                "yield": metrics::m1_yield(seat_total, deliveries),
+                "closed_items": closed.len(),
+                "closed_item_keys": closed,
+                "tokens_per_closed_item": per_closed,
+            })
+        })
+        .collect::<Vec<_>>();
+    let mut pair_counts = std::collections::BTreeMap::<(String, String), (i64, i64)>::new();
+    for edge in &edges {
+        let slot = pair_counts
+            .entry((edge.from_seat.clone(), edge.to_seat.clone()))
+            .or_insert((0, 0));
+        slot.1 += 1;
+        if edge.is_return {
+            slot.0 += 1;
+        }
+    }
+    let m2_pairs: Vec<_> = pair_counts
+        .iter()
+        .map(|((from_seat, to_seat), (pair_returns, pair_handoffs))| {
+            json!({
+                "from": from_seat,
+                "to": to_seat,
+                "returns": pair_returns,
+                "handoffs": pair_handoffs,
+                "return_rate": metrics::m2_return_rate(*pair_returns, *pair_handoffs),
+            })
+        })
+        .collect();
     let activity: Vec<_> = store
         .load_activity()?
         .into_iter()
@@ -337,7 +403,10 @@ pub fn report_json(
             })).collect::<Vec<_>>(),
             "tokens": tokens,
             "m1_yield": metrics::m1_yield(tokens, nonreturn),
+            "m1_by_seat": m1_by_seat,
+            "k2_closed_item": metrics::K2_CLOSED_ITEM,
             "m2_return_rate": metrics::m2_return_rate(returns, handoffs),
+            "m2_pairs": m2_pairs,
             "m3_rework_chains": rework,
             "m3_chains": chains,
             "m3_paths": paths,
@@ -427,7 +496,14 @@ pub fn trace_json(
     let report = report_json(db, "decisions", rig, from, to)?;
     let payload = &report["payload"];
     let (formula, value) = match metric_id {
-        "m1" => ("tokens / nonreturn_handoffs", payload["m1_yield"].clone()),
+        "m1" => (
+            "seat tokens / non-returned deliveries, plus tokens per closed item",
+            json!({
+                "yield": payload["m1_yield"],
+                "by_seat": payload["m1_by_seat"],
+                "closed_item": payload["k2_closed_item"],
+            }),
+        ),
         "m2" => ("returns / handoffs", payload["m2_return_rate"].clone()),
         "m3" => (
             "rework_chains / chains",
@@ -460,6 +536,9 @@ pub fn trace_json(
         "inputs": {
             "tokens": payload["tokens"],
             "m1_yield": payload["m1_yield"],
+            "m1_by_seat": payload["m1_by_seat"],
+            "k2_closed_item": payload["k2_closed_item"],
+            "m2_pairs": payload["m2_pairs"],
             "m2_return_rate": payload["m2_return_rate"],
             "m3_rework_chains": payload["m3_rework_chains"],
             "m3_chains": payload["m3_chains"],

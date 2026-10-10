@@ -203,6 +203,9 @@ pub struct HandoffEdge {
     pub qitem_id: String,
     pub chain_id: Option<String>,
     pub is_return: bool,
+    /// The original delivery was later answered by a return to this seat.
+    /// This is not `is_return` and must not be counted as an M2 return.
+    pub delivery_returned: bool,
     pub source_key: String,
 }
 
@@ -237,10 +240,49 @@ pub fn handoff_edges(queue: &[QueueFact]) -> Vec<HandoffEdge> {
             qitem_id: fact.qitem_id.clone(),
             chain_id: fact.chain_id.clone(),
             is_return,
+            delivery_returned: false,
             source_key: fact.source_key.clone(),
         });
     }
+    for index in 0..edges.len() {
+        let qitem = edges[index].qitem_id.clone();
+        let from = edges[index].from_seat.clone();
+        edges[index].delivery_returned = edges[index + 1..]
+            .iter()
+            .any(|later| later.qitem_id == qitem && later.to_seat == from);
+    }
     edges
+}
+
+pub const K2_CLOSED_ITEM: &str = "Closed item: a queue item whose destination is this seat, counted once, with at least one successful terminal transition inside the half-open window [from, to): state done (closure reason no-follow-on, handed_off_to, escalation, or none) or state handed-off. Excluded: canceled, denied, failed, blocked, unknown or unlisted states, and done with closure reason denied or canceled. Tokens per closed item = seat tokens in the window / closed items; zero closed items = no data.";
+
+fn closed_item_transition(fact: &QueueFact) -> bool {
+    match fact.state.as_str() {
+        "handed-off" => true,
+        "done" => matches!(
+            fact.closure_reason.as_deref(),
+            None | Some("no-follow-on") | Some("handed_off_to") | Some("escalation")
+        ),
+        _ => false,
+    }
+}
+
+/// First qualifying transition per item whose stored destination is this seat.
+pub fn closed_item_keys(seat: &str, queue: &[QueueFact], window: Window) -> Vec<String> {
+    let mut ordered = queue.to_vec();
+    ordered.sort_by(|a, b| a.ts.cmp(&b.ts).then(a.transition_id.cmp(&b.transition_id)));
+    let mut seen = std::collections::BTreeSet::new();
+    let mut keys = Vec::new();
+    for fact in ordered {
+        if fact.dest_seat != seat || fact.ts < window.from || fact.ts >= window.to {
+            continue;
+        }
+        if !closed_item_transition(&fact) || !seen.insert(fact.qitem_id.clone()) {
+            continue;
+        }
+        keys.push(fact.source_key);
+    }
+    keys
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -968,6 +1010,7 @@ mod tests {
                 qitem_id: "i".into(),
                 chain_id: Some("c".into()),
                 is_return: false,
+                delivery_returned: true,
                 source_key: "a".into(),
             },
             HandoffEdge {
@@ -976,6 +1019,7 @@ mod tests {
                 qitem_id: "i".into(),
                 chain_id: Some("c".into()),
                 is_return: false,
+                delivery_returned: false,
                 source_key: "b".into(),
             },
             HandoffEdge {
@@ -984,6 +1028,7 @@ mod tests {
                 qitem_id: "i".into(),
                 chain_id: Some("c".into()),
                 is_return: true,
+                delivery_returned: false,
                 source_key: "c".into(),
             },
         ];
@@ -991,5 +1036,62 @@ mod tests {
         assert_eq!(count, 1);
         assert_eq!(chains, 1);
         assert_eq!(paths.len(), 1);
+    }
+
+    #[test]
+    fn indirect_return_marks_membership_without_inflating_is_return() {
+        let window = Window {
+            from: ts(0),
+            to: ts(60),
+        };
+        let queue = vec![
+            QueueFact {
+                source_key: "t1".into(),
+                transition_id: 1,
+                qitem_id: "item".into(),
+                ts: ts(10),
+                state: "handed-off".into(),
+                source_seat: "A".into(),
+                dest_seat: "B".into(),
+                closure_reason: Some("handed_off_to".into()),
+                closure_target: Some("B".into()),
+                chain_id: None,
+                missions: vec![],
+            },
+            QueueFact {
+                source_key: "t2".into(),
+                transition_id: 2,
+                qitem_id: "item".into(),
+                ts: ts(20),
+                state: "handed-off".into(),
+                source_seat: "B".into(),
+                dest_seat: "C".into(),
+                closure_reason: Some("handed_off_to".into()),
+                closure_target: Some("C".into()),
+                chain_id: None,
+                missions: vec![],
+            },
+            QueueFact {
+                source_key: "t3".into(),
+                transition_id: 3,
+                qitem_id: "item".into(),
+                ts: ts(30),
+                state: "handed-off".into(),
+                source_seat: "C".into(),
+                dest_seat: "A".into(),
+                closure_reason: Some("handed_off_to".into()),
+                closure_target: Some("A".into()),
+                chain_id: None,
+                missions: vec![],
+            },
+        ];
+        let edges = handoff_edges(&queue);
+        assert_eq!(edges.iter().filter(|edge| edge.is_return).count(), 1);
+        assert!(edges[0].delivery_returned);
+        assert!(!edges[1].delivery_returned);
+        assert!(!edges[2].delivery_returned);
+        let closed = closed_item_keys("B", &queue, window);
+        assert_eq!(closed, vec!["t1".to_string()]);
+        assert!(K2_CLOSED_ITEM.contains("zero closed items = no data"));
     }
 }
