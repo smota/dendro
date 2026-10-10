@@ -146,6 +146,52 @@ fn ingest_openrig(
                 state,
                 seq,
             })?;
+        } else if kind == "node.launched" {
+            let Some(seat) = parsed.get("sessionName").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            let Some(when) = ts else { continue };
+            store.upsert_seat_bound(&dendro_core::SeatBound {
+                seat: dendro_core::seal_identifier(key, "seat", seat),
+                created_at: Some(when),
+                stopped_at: None,
+            })?;
+        } else if kind == "queue.created" || kind == "queue.claimed" {
+            let Some(qitem) = parsed.get("qitemId").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            let Some(destination) = parsed.get("destinationSession").and_then(|v| v.as_str())
+            else {
+                continue;
+            };
+            let when = parsed
+                .get("claimedAt")
+                .and_then(|v| v.as_str())
+                .and_then(|text| DateTime::parse_from_rfc3339(text).ok())
+                .map(|value| value.with_timezone(&Utc))
+                .or(ts);
+            let Some(when) = when else { continue };
+            let source = parsed
+                .get("sourceSession")
+                .and_then(|v| v.as_str())
+                .unwrap_or(destination);
+            store.insert_queue(&QueueFact {
+                source_key: format!("events:{kind}:{seq}"),
+                transition_id: seq,
+                qitem_id: dendro_core::seal_identifier(key, "qitem", qitem),
+                ts: when,
+                state: if kind == "queue.claimed" {
+                    "in-progress".to_string()
+                } else {
+                    "pending".to_string()
+                },
+                source_seat: dendro_core::seal_identifier(key, "seat", source),
+                dest_seat: dendro_core::seal_identifier(key, "seat", destination),
+                closure_reason: None,
+                closure_target: None,
+                chain_id: None,
+                missions: Vec::new(),
+            })?;
         }
     }
     let mut transitions = conn.prepare(

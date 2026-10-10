@@ -84,6 +84,9 @@ def main():
     conn.execute("INSERT INTO events VALUES (9,'seat.activity_changed',? ,?)", (json.dumps({"sessionName": "seat-gap", "state": "running", "at": T[0]}), T[0]))
     conn.execute("INSERT INTO events VALUES (10,'seat.activity_changed',? ,?)", (json.dumps({"sessionName": "seat-gap", "at": T[10]}), T[10]))
     conn.execute("INSERT INTO events VALUES (11,'seat.activity_changed',? ,?)", (json.dumps({"sessionName": "seat-secret", "state": "sk-ant-FAKESTATE", "at": T[0]}), T[0]))
+    conn.execute("INSERT INTO events VALUES (14,'node.launched',? ,?)", (json.dumps({"sessionName": "seat-quiet"}), T[0]))
+    conn.execute("INSERT INTO events VALUES (15,'queue.created',? ,?)", (json.dumps({"qitemId": "hist-item", "sourceSession": "seat-src", "destinationSession": "seat-hist"}), T[0]))
+    conn.execute("INSERT INTO events VALUES (16,'queue.claimed',? ,?)", (json.dumps({"qitemId": "hist-item", "destinationSession": "seat-hist", "claimedAt": T[5]}), T[5]))
     conn.execute("""CREATE TABLE queue_transitions (transition_id INTEGER, qitem_id TEXT, ts TEXT, state TEXT, actor_session TEXT, closure_reason TEXT, closure_target TEXT, transition_note TEXT)""")
     conn.executemany("INSERT INTO queue_transitions VALUES (?,?,?,?,?,?,?,?)", [
         (1, "demand", T[10], "pending", "seat-a", None, "seat-a", "[]"),
@@ -169,6 +172,11 @@ def main():
     snapshots = traced.get("inputs", {}).get("destination_snapshots", [])
     current = next((row for row in snapshots if row.get("qitem_id") == "actor-only"), {})
     check("qa_destination_snapshot", current.get("destination") == "seat-current" and current.get("historical") is False, "seat-current", current.get("destination"))
+    hist = [row for row in demand if row.get("qitem_id") == "hist-item"]
+    check("qa_created_claimed_dest", hist and all(row.get("dest") == "seat-hist" for row in hist), "seat-hist", [row.get("dest") for row in hist])
+    code, activity_text, _ = report(analytics, "activity")
+    quiet = next((row for row in json.loads(activity_text)["payload"]["activity"] if row.get("seat") == "seat-quiet"), {}) if code == 0 else {}
+    check("qa_roster_no_event", quiet.get("unknown_secs") == 60 and quiet.get("active_secs") == 0, 60, quiet.get("unknown_secs"))
     _, before_text, _ = report(analytics, "tokens")
     before_rows = json.loads(before_text)["payload"].get("usage_rows")
     code, _, _ = run(["run", "--db", str(analytics), "--root", f"claude={src/'claude'}", "--root", f"codex={src/'codex'}", "--root", f"pi={src/'pi'}", "--root", f"openrig={db}", "--frozen"])

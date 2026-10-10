@@ -289,13 +289,30 @@ pub fn report_json(
             None => true,
         })
         .collect();
+    let bounds = store.load_seat_bounds()?;
     let mut seats: Vec<String> = activity.iter().map(|row| row.seat.clone()).collect();
+    for bound in &bounds {
+        if rig_seats
+            .as_ref()
+            .is_none_or(|seats| seats.contains(&bound.seat))
+        {
+            seats.push(bound.seat.clone());
+        }
+    }
     seats.sort();
     seats.dedup();
     let activity_rows: Vec<_> = seats
         .iter()
         .map(|seat| {
-            let bands = metrics::activity_bands(seat, &activity, &queue_all, window, None, None);
+            let bound = bounds.iter().find(|bound| bound.seat == *seat);
+            let bands = metrics::activity_bands(
+                seat,
+                &activity,
+                &queue_all,
+                window,
+                bound.and_then(|bound| bound.created_at),
+                bound.and_then(|bound| bound.stopped_at),
+            );
             json!({
                 "seat": seat,
                 "active_secs": bands.active_secs,

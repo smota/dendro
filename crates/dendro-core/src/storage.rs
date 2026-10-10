@@ -470,6 +470,42 @@ impl AnalyticsStore {
         Ok(())
     }
 
+    pub fn upsert_seat_bound(&self, bound: &SeatBound) -> Result<()> {
+        self.conn.execute(
+            r#"INSERT INTO seat_bounds (seat, created_at, stopped_at) VALUES (?, ?, ?)
+               ON CONFLICT (seat) DO UPDATE SET
+                 created_at = CASE
+                   WHEN seat_bounds.created_at IS NULL THEN excluded.created_at
+                   WHEN excluded.created_at IS NULL THEN seat_bounds.created_at
+                   WHEN excluded.created_at < seat_bounds.created_at THEN excluded.created_at
+                   ELSE seat_bounds.created_at
+                 END,
+                 stopped_at = COALESCE(seat_bounds.stopped_at, excluded.stopped_at)"#,
+            params![
+                redact(&bound.seat),
+                bound.created_at.map(|t| t.to_rfc3339()),
+                bound.stopped_at.map(|t| t.to_rfc3339()),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn load_seat_bounds(&self) -> Result<Vec<SeatBound>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT seat, CAST(created_at AS VARCHAR), CAST(stopped_at AS VARCHAR) FROM seat_bounds")?;
+        let rows = stmt.query_map([], |row| {
+            let created: Option<String> = row.get(1)?;
+            let stopped: Option<String> = row.get(2)?;
+            Ok(SeatBound {
+                seat: row.get(0)?,
+                created_at: created.as_deref().and_then(parse_stored_ts),
+                stopped_at: stopped.as_deref().and_then(parse_stored_ts),
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
     pub fn load_destination_snapshots(&self) -> Result<Vec<(String, String, String)>> {
         let mut stmt = self.conn.prepare(
             "SELECT qitem_id, destination, snapshot_cutoff FROM destination_snapshots ORDER BY snapshot_cutoff, qitem_id",
