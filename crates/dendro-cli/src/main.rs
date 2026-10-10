@@ -1,6 +1,6 @@
-use std::path::PathBuf;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 use tracing::info;
 
 #[derive(Parser)]
@@ -54,7 +54,10 @@ async fn main() -> Result<()> {
             info!("Dendro is actively reading agent session rings. Press Ctrl+C to stop.");
         }
         Commands::InitNao { target, db } => {
-            info!("Initializing Nao semantic models in {:?} pointing to {:?}", target, db);
+            info!(
+                "Initializing Nao semantic models in {:?} pointing to {:?}",
+                target, db
+            );
             let config_content = format!(
                 r#"# Nao configuration for Dendro
 version: 1
