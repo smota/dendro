@@ -2,7 +2,7 @@
 
 ## 1. Visão Geral
 
-O **Dendro** é um motor local de telemetria, observabilidade e correlação de agentes de IA desenvolvido em **Rust**. 
+Dendro is a local AI Fleet Intelligence engine, written in Rust. Operational Intelligence is the evidence about seats, handoffs, and tokens. Fleet Governance stays with the operator. 
 
 Ele resolve a lacuna de visibilidade em ambientes multi-agentes e multi-runtimes unificando:
 1. **Camada de Orquestração / Topologia (OpenRig)**: Rigs, Assentos (*seats*), Missões, Filas e Watchdogs.

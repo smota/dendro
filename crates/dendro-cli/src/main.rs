@@ -5,7 +5,7 @@ use tracing::info;
 
 #[derive(Parser)]
 #[command(name = "dendro")]
-#[command(about = "Dendro: Reading the rings of your AI agents — Local-first telemetry and analytics engine", long_about = None)]
+#[command(about = "Dendro AI Fleet Intelligence. Operational Intelligence for seat, handoff, and token evidence. Fleet Governance stays with the operator.", long_about = None)]
 #[command(version)]
 struct Cli {
     #[command(subcommand)]
