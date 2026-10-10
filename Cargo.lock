@@ -587,6 +587,7 @@ name = "dendro-resolver"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "dendro-core",
  "serde",
  "serde_json",
