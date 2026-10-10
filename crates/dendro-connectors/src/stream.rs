@@ -629,6 +629,39 @@ mod tests {
                 "2026-10-09T00:00:00Z"
             ],
         ).unwrap();
+        // Live OpenRig writes created_at as UTC seconds without a zone (K4).
+        for (seq, kind, payload, created) in [
+            (
+                4,
+                "node.launched",
+                "{\"rigId\":\"rig-one\",\"nodeId\":\"n1\",\"sessionName\":\"life-seat\"}",
+                "2026-10-09 01:00:00",
+            ),
+            (
+                5,
+                "session.detached",
+                "{\"rigId\":\"rig-one\",\"nodeId\":\"n1\",\"sessionName\":\"life-seat\"}",
+                "2026-10-09 01:30:00",
+            ),
+            (
+                6,
+                "rig.stopped",
+                "{\"rigId\":\"rig-one\"}",
+                "2026-10-09 02:00:00",
+            ),
+            (
+                7,
+                "node.launched",
+                "{\"rigId\":\"rig-one\",\"nodeId\":\"n1\",\"sessionName\":\"life-seat\"}",
+                "2026-10-09 03:00:00",
+            ),
+        ] {
+            conn.execute(
+                "INSERT INTO events VALUES (?,?,?,?)",
+                rusqlite::params![seq, kind, payload, created],
+            )
+            .unwrap();
+        }
         drop(conn);
         let db_path = dir.join("analytics.duckdb");
         drop(AnalyticsStore::open_path(&db_path, "key").unwrap());
@@ -649,6 +682,21 @@ mod tests {
         assert!(activity.iter().all(|row| !row.state.contains("ZZZ")));
         let seats = db.load_seat_bounds().unwrap();
         assert!(seats.iter().all(|row| !row.seat.contains("ZZZSEAT")));
+        let at = |text: &str| dendro_core::parse_utc_time(text);
+        let mut lives: Vec<_> = seats
+            .iter()
+            .filter(|row| row.seat == "life-seat")
+            .map(|row| (row.created_at, row.stopped_at))
+            .collect();
+        lives.sort();
+        assert_eq!(
+            lives,
+            vec![
+                (at("2026-10-09T01:00:00Z"), at("2026-10-09T02:00:00Z")),
+                (at("2026-10-09T03:00:00Z"), None),
+            ],
+            "detach is not a stop; rig stop ends the life; relaunch opens a new one"
+        );
         let identities = db.load_identity().unwrap();
         assert!(identities.iter().any(|row| row.seat == "plain-seat"));
         assert!(identities

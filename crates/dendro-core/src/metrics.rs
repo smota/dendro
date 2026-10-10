@@ -31,18 +31,52 @@ impl Bands {
     }
 }
 
-pub fn observation_span(
-    window: Window,
-    created: Option<DateTime<Utc>>,
-    stopped: Option<DateTime<Utc>>,
-) -> Option<(DateTime<Utc>, DateTime<Utc>)> {
-    let start = created.filter(|c| *c > window.from).unwrap_or(window.from);
-    let end = stopped.filter(|s| *s < window.to).unwrap_or(window.to);
-    if end <= start {
-        None
-    } else {
-        Some((start, end))
+/// One observed part of the window: `[start, end)`, and the launch that began it.
+/// A launch before the window still bounds which earlier states may carry in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ObservedSpan {
+    pub start: DateTime<Utc>,
+    pub end: DateTime<Utc>,
+    pub launched: Option<DateTime<Utc>>,
+}
+
+/// Clips the window to the seat's recorded lives (K4). No lives means no
+/// lifecycle evidence, so the whole window is observed.
+pub fn observation_spans(window: Window, lives: &[SeatBound]) -> Vec<ObservedSpan> {
+    if lives.is_empty() {
+        return vec![ObservedSpan {
+            start: window.from,
+            end: window.to,
+            launched: None,
+        }];
     }
+    let mut spans: Vec<ObservedSpan> = lives
+        .iter()
+        .filter_map(|life| {
+            let start = life
+                .created_at
+                .filter(|c| *c > window.from)
+                .unwrap_or(window.from);
+            let end = life
+                .stopped_at
+                .filter(|s| *s < window.to)
+                .unwrap_or(window.to);
+            (end > start).then_some(ObservedSpan {
+                start,
+                end,
+                launched: life.created_at,
+            })
+        })
+        .collect();
+    spans.sort_by_key(|span| span.start);
+    spans
+}
+
+pub fn observed_secs(spans: &[ObservedSpan]) -> i64 {
+    spans
+        .iter()
+        .map(|span| (span.end - span.start).num_seconds())
+        .sum()
 }
 
 pub fn activity_bands(
@@ -50,24 +84,9 @@ pub fn activity_bands(
     events: &[ActivityFact],
     queue: &[QueueFact],
     window: Window,
-    created: Option<DateTime<Utc>>,
-    stopped: Option<DateTime<Utc>>,
+    lives: &[SeatBound],
 ) -> Bands {
-    let Some((start, end)) = observation_span(window, created, stopped) else {
-        return Bands {
-            active_secs: 0,
-            idle_with_work_secs: 0,
-            idle_without_work_secs: 0,
-            waiting_human_secs: 0,
-            unknown_secs: 0,
-        };
-    };
-    let mut mine: Vec<&ActivityFact> = events.iter().filter(|e| e.seat == seat).collect();
-    mine.sort_by(|a, b| a.ts.cmp(&b.ts).then(a.seq.cmp(&b.seq)));
-    let in_window: Vec<&&ActivityFact> = mine
-        .iter()
-        .filter(|e| e.ts >= start && e.ts < end)
-        .collect();
+    let spans = observation_spans(window, lives);
     let mut bands = Bands {
         active_secs: 0,
         idle_with_work_secs: 0,
@@ -75,49 +94,55 @@ pub fn activity_bands(
         waiting_human_secs: 0,
         unknown_secs: 0,
     };
-    if in_window.is_empty() {
-        add_band(&mut bands, "unknown", false, (end - start).num_seconds());
+    let mut mine: Vec<&ActivityFact> = events.iter().filter(|e| e.seat == seat).collect();
+    mine.sort_by(|a, b| a.ts.cmp(&b.ts).then(a.seq.cmp(&b.seq)));
+    let any_observed_event = mine.iter().any(|e| {
+        spans
+            .iter()
+            .any(|span| e.ts >= span.start && e.ts < span.end)
+    });
+    if !any_observed_event {
+        add_band(&mut bands, "unknown", false, observed_secs(&spans));
         return bands;
     }
-    let carry = mine
-        .iter()
-        .rev()
-        .find(|e| e.ts < start)
-        .map(|e| e.state.as_str())
-        .unwrap_or("unknown");
-    let mut state = carry;
-    let mut points: Vec<(DateTime<Utc>, &str)> = vec![(start, state)];
-    for event in &in_window {
-        points.push((event.ts, event.state.as_str()));
-    }
-    points.push((end, state));
-    // Rebuild with demand splits inside idle.
-    let mut marks: Vec<DateTime<Utc>> = vec![start, end];
-    for event in &in_window {
-        marks.push(event.ts);
-    }
-    for q in queue {
-        if q.ts > start && q.ts < end && (q.dest_seat == seat || q.source_seat == seat) {
-            marks.push(q.ts);
-        }
-    }
-    marks.sort();
-    marks.dedup();
-    for pair in marks.windows(2) {
-        let (a, b) = (pair[0], pair[1]);
-        let secs = (b - a).num_seconds();
-        if secs <= 0 {
-            continue;
-        }
-        let current = mine
+    for span in &spans {
+        // A state never outlives a stop: only this life's events can carry in.
+        let life: Vec<&ActivityFact> = mine
             .iter()
-            .rev()
-            .find(|e| e.ts <= a)
-            .map(|e| e.state.as_str())
-            .unwrap_or("unknown");
-        state = current;
-        let demand = idle_demand(seat, queue, a);
-        add_band(&mut bands, state, demand, secs);
+            .copied()
+            .filter(|e| span.launched.is_none_or(|launched| e.ts >= launched))
+            .collect();
+        let mut marks: Vec<DateTime<Utc>> = vec![span.start, span.end];
+        for event in &life {
+            if event.ts > span.start && event.ts < span.end {
+                marks.push(event.ts);
+            }
+        }
+        for q in queue {
+            if q.ts > span.start
+                && q.ts < span.end
+                && (q.dest_seat == seat || q.source_seat == seat)
+            {
+                marks.push(q.ts);
+            }
+        }
+        marks.sort();
+        marks.dedup();
+        for pair in marks.windows(2) {
+            let (a, b) = (pair[0], pair[1]);
+            let secs = (b - a).num_seconds();
+            if secs <= 0 {
+                continue;
+            }
+            let state = life
+                .iter()
+                .rev()
+                .find(|e| e.ts <= a)
+                .map(|e| e.state.as_str())
+                .unwrap_or("unknown");
+            let demand = idle_demand(seat, queue, a);
+            add_band(&mut bands, state, demand, secs);
+        }
     }
     bands
 }
@@ -722,12 +747,88 @@ mod tests {
                 from: ts(0),
                 to: ts(60),
             },
-            None,
-            None,
+            &[],
         );
         assert_eq!(bands.unknown_secs, 60);
         assert_eq!(bands.active_secs, 0);
         assert_eq!(bands.sum(), 60);
+    }
+
+    fn life(created: Option<i64>, stopped: Option<i64>) -> SeatBound {
+        SeatBound {
+            seat: "dev.build".into(),
+            created_at: created.map(ts),
+            stopped_at: stopped.map(ts),
+        }
+    }
+
+    fn running_at(secs: i64, seq: i64) -> ActivityFact {
+        ActivityFact {
+            source_key: format!("a{seq}"),
+            seat: "dev.build".into(),
+            ts: ts(secs),
+            state: "running".into(),
+            seq,
+        }
+    }
+
+    fn window() -> Window {
+        Window {
+            from: ts(0),
+            to: ts(60),
+        }
+    }
+
+    #[test]
+    fn a_state_does_not_carry_across_a_stop_and_relaunch() {
+        let lives = [life(None, Some(20)), life(Some(40), None)];
+        let events = [running_at(5, 1)];
+        let bands = activity_bands("dev.build", &events, &[], window(), &lives);
+        let spans = observation_spans(window(), &lives);
+        assert_eq!(observed_secs(&spans), 40);
+        assert_eq!(
+            bands.unknown_secs,
+            5 + 20,
+            "before the first event, and after relaunch"
+        );
+        assert_eq!(bands.active_secs, 15);
+        assert_eq!(bands.sum(), observed_secs(&spans));
+    }
+
+    #[test]
+    fn a_launch_before_the_window_still_carries_its_own_state() {
+        let lives = [life(Some(-30), None)];
+        let events = [running_at(-40, 1), running_at(-10, 2), running_at(30, 3)];
+        let bands = activity_bands("dev.build", &events, &[], window(), &lives);
+        assert_eq!(bands.active_secs, 60);
+        let events = [running_at(-40, 1), running_at(30, 2)];
+        let bands = activity_bands("dev.build", &events, &[], window(), &lives);
+        assert_eq!((bands.unknown_secs, bands.active_secs), (30, 30));
+    }
+
+    #[test]
+    fn a_seat_launched_mid_window_is_observed_from_its_launch() {
+        let lives = [life(Some(30), None)];
+        let bands = activity_bands("dev.build", &[running_at(30, 1)], &[], window(), &lives);
+        assert_eq!(bands.active_secs, 30);
+        assert_eq!(bands.sum(), 30);
+    }
+
+    #[test]
+    fn a_seat_stopped_before_the_window_is_not_observed() {
+        let lives = [life(Some(-50), Some(-10))];
+        let spans = observation_spans(window(), &lives);
+        assert!(spans.is_empty());
+        let bands = activity_bands("dev.build", &[running_at(-20, 1)], &[], window(), &lives);
+        assert_eq!(bands.sum(), 0);
+    }
+
+    #[test]
+    fn a_seat_without_lifecycle_events_is_observed_for_the_whole_window() {
+        let spans = observation_spans(window(), &[]);
+        assert_eq!(observed_secs(&spans), 60);
+        let bands = activity_bands("dev.build", &[], &[], window(), &[]);
+        assert_eq!(bands.unknown_secs, 60);
     }
 
     #[test]
@@ -775,8 +876,7 @@ mod tests {
                 from: ts(0),
                 to: ts(60),
             },
-            None,
-            None,
+            &[],
         );
         assert_eq!(bands.idle_with_work_secs, 10);
         assert_eq!(bands.idle_without_work_secs, 50);
@@ -1116,7 +1216,16 @@ mod tests {
         assert!(K2_CLOSED_ITEM.contains("zero closed items = no data"));
     }
 
-    fn q(key: &str, id: i64, item: &str, at: i64, state: &str, source: &str, dest: &str, reason: Option<&str>) -> QueueFact {
+    fn q(
+        key: &str,
+        id: i64,
+        item: &str,
+        at: i64,
+        state: &str,
+        source: &str,
+        dest: &str,
+        reason: Option<&str>,
+    ) -> QueueFact {
         QueueFact {
             source_key: key.into(),
             transition_id: id,
@@ -1134,16 +1243,73 @@ mod tests {
 
     #[test]
     fn closed_items_follow_k2_destination_and_window() {
-        let window = Window { from: ts(0), to: ts(60) };
+        let window = Window {
+            from: ts(0),
+            to: ts(60),
+        };
         let queue = vec![
             q("ok-none", 1, "a", 10, "done", "actor", "seat", None),
-            q("ok-follow", 2, "b", 10, "done", "actor", "seat", Some("no-follow-on")),
-            q("ok-hand", 3, "c", 10, "done", "actor", "seat", Some("handed_off_to")),
-            q("ok-esc", 4, "d", 10, "done", "actor", "seat", Some("escalation")),
+            q(
+                "ok-follow",
+                2,
+                "b",
+                10,
+                "done",
+                "actor",
+                "seat",
+                Some("no-follow-on"),
+            ),
+            q(
+                "ok-hand",
+                3,
+                "c",
+                10,
+                "done",
+                "actor",
+                "seat",
+                Some("handed_off_to"),
+            ),
+            q(
+                "ok-esc",
+                4,
+                "d",
+                10,
+                "done",
+                "actor",
+                "seat",
+                Some("escalation"),
+            ),
             q("ok-state", 5, "e", 10, "handed-off", "actor", "seat", None),
-            q("bad-cancel", 6, "f", 10, "canceled", "actor", "seat", Some("superseded")),
-            q("bad-denied", 7, "g", 10, "done", "actor", "seat", Some("denied")),
-            q("bad-canceled-reason", 8, "h", 10, "done", "actor", "seat", Some("canceled")),
+            q(
+                "bad-cancel",
+                6,
+                "f",
+                10,
+                "canceled",
+                "actor",
+                "seat",
+                Some("superseded"),
+            ),
+            q(
+                "bad-denied",
+                7,
+                "g",
+                10,
+                "done",
+                "actor",
+                "seat",
+                Some("denied"),
+            ),
+            q(
+                "bad-canceled-reason",
+                8,
+                "h",
+                10,
+                "done",
+                "actor",
+                "seat",
+                Some("canceled"),
+            ),
             q("bad-failed", 9, "i", 10, "failed", "actor", "seat", None),
             q("bad-blocked", 10, "j", 10, "blocked", "actor", "seat", None),
             q("bad-unknown", 11, "k", 10, "unknown", "actor", "seat", None),
@@ -1153,7 +1319,10 @@ mod tests {
             q("mirror", 15, "a", 20, "handed-off", "actor", "seat", None),
         ];
         let keys = closed_item_keys("seat", &queue, window);
-        assert_eq!(keys, vec!["ok-none", "ok-follow", "ok-hand", "ok-esc", "ok-state"]);
+        assert_eq!(
+            keys,
+            vec!["ok-none", "ok-follow", "ok-hand", "ok-esc", "ok-state"]
+        );
         assert!(closed_item_keys("nobody", &queue, window).is_empty());
     }
 }

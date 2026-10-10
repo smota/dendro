@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, Result};
 use serde_json::{json, Value};
 
+use crate::facts::SeatBound;
 use crate::metrics::{self, Window};
 use crate::output::{self, load_or_create_key, refuse_aliased_output, with_output_lock};
 use crate::privacy::{contains_secret, opaque_id, redact};
@@ -304,17 +305,23 @@ pub fn report_json(
     let activity_rows: Vec<_> = seats
         .iter()
         .map(|seat| {
-            let bound = bounds.iter().find(|bound| bound.seat == *seat);
-            let bands = metrics::activity_bands(
-                seat,
-                &activity,
-                &queue_all,
-                window,
-                bound.and_then(|bound| bound.created_at),
-                bound.and_then(|bound| bound.stopped_at),
-            );
+            let lives: Vec<SeatBound> = bounds
+                .iter()
+                .filter(|bound| bound.seat == *seat)
+                .cloned()
+                .collect();
+            let bands = metrics::activity_bands(seat, &activity, &queue_all, window, &lives);
+            let spans = metrics::observation_spans(window, &lives);
+            let evidence = |recorded: bool| if recorded { "recorded" } else { "unavailable" };
             json!({
                 "seat": seat,
+                "observed_secs": metrics::observed_secs(&spans),
+                "observed_spans": spans
+                    .iter()
+                    .map(|span| json!({"from": span.start.to_rfc3339(), "to": span.end.to_rfc3339()}))
+                    .collect::<Vec<_>>(),
+                "launch_evidence": evidence(lives.iter().any(|life| life.created_at.is_some())),
+                "stop_evidence": evidence(lives.iter().any(|life| life.stopped_at.is_some())),
                 "active_secs": bands.active_secs,
                 "idle_with_work_secs": bands.idle_with_work_secs,
                 "idle_without_work_secs": bands.idle_without_work_secs,

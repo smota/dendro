@@ -195,7 +195,7 @@ impl AnalyticsStore {
                 invoked BOOLEAN NOT NULL
             );
             CREATE TABLE seat_bounds (
-                seat VARCHAR PRIMARY KEY,
+                seat VARCHAR NOT NULL,
                 created_at TIMESTAMP,
                 stopped_at TIMESTAMP
             );
@@ -470,23 +470,23 @@ impl AnalyticsStore {
         Ok(())
     }
 
-    pub fn upsert_seat_bound(&self, bound: &SeatBound) -> Result<()> {
-        self.conn.execute(
-            r#"INSERT INTO seat_bounds (seat, created_at, stopped_at) VALUES (?, ?, ?)
-               ON CONFLICT (seat) DO UPDATE SET
-                 created_at = CASE
-                   WHEN seat_bounds.created_at IS NULL THEN excluded.created_at
-                   WHEN excluded.created_at IS NULL THEN seat_bounds.created_at
-                   WHEN excluded.created_at < seat_bounds.created_at THEN excluded.created_at
-                   ELSE seat_bounds.created_at
-                 END,
-                 stopped_at = COALESCE(seat_bounds.stopped_at, excluded.stopped_at)"#,
-            params![
-                redact(&bound.seat),
-                bound.created_at.map(|t| t.to_rfc3339()),
-                bound.stopped_at.map(|t| t.to_rfc3339()),
-            ],
-        )?;
+    /// Replaces every seat life. Lives are rebuilt from the whole event history on each ingest.
+    pub fn replace_seat_bounds(&self, bounds: &[SeatBound]) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute("DELETE FROM seat_bounds", [])?;
+        {
+            let mut stmt = tx.prepare(
+                "INSERT INTO seat_bounds (seat, created_at, stopped_at) VALUES (?, ?, ?)",
+            )?;
+            for bound in bounds {
+                stmt.execute(params![
+                    redact(&bound.seat),
+                    bound.created_at.map(|t| t.to_rfc3339()),
+                    bound.stopped_at.map(|t| t.to_rfc3339()),
+                ])?;
+            }
+        }
+        tx.commit()?;
         Ok(())
     }
 
@@ -499,8 +499,8 @@ impl AnalyticsStore {
             let stopped: Option<String> = row.get(2)?;
             Ok(SeatBound {
                 seat: row.get(0)?,
-                created_at: created.as_deref().and_then(parse_stored_ts),
-                stopped_at: stopped.as_deref().and_then(parse_stored_ts),
+                created_at: created.as_deref().and_then(parse_utc_time),
+                stopped_at: stopped.as_deref().and_then(parse_utc_time),
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
@@ -565,7 +565,7 @@ impl AnalyticsStore {
                 harness: row.get(1)?,
                 native_session: row.get(2)?,
                 message_id: row.get(3)?,
-                ts: ts.as_deref().and_then(parse_stored_ts),
+                ts: ts.as_deref().and_then(parse_utc_time),
                 seq: row.get(5)?,
                 input_uncached: row.get(6)?,
                 output: row.get(7)?,
@@ -598,7 +598,7 @@ impl AnalyticsStore {
                 native_session: row.get(2)?,
                 rig: row.get(3)?,
                 seat: row.get(4)?,
-                ts: ts.as_deref().and_then(parse_stored_ts),
+                ts: ts.as_deref().and_then(parse_utc_time),
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
@@ -613,7 +613,7 @@ impl AnalyticsStore {
             Ok(ActivityFact {
                 source_key: row.get(0)?,
                 seat: row.get(1)?,
-                ts: parse_stored_ts(&ts).unwrap_or(chrono::DateTime::<chrono::Utc>::UNIX_EPOCH),
+                ts: parse_utc_time(&ts).unwrap_or(chrono::DateTime::<chrono::Utc>::UNIX_EPOCH),
                 state: row.get(3)?,
                 seq: row.get(4)?,
             })
@@ -634,7 +634,7 @@ impl AnalyticsStore {
                 source_key: row.get(0)?,
                 transition_id: row.get(1)?,
                 qitem_id: row.get(2)?,
-                ts: parse_stored_ts(&ts).unwrap_or(chrono::DateTime::<chrono::Utc>::UNIX_EPOCH),
+                ts: parse_utc_time(&ts).unwrap_or(chrono::DateTime::<chrono::Utc>::UNIX_EPOCH),
                 state: row.get(4)?,
                 source_seat: row.get(5)?,
                 dest_seat: row.get(6)?,
@@ -659,7 +659,7 @@ impl AnalyticsStore {
                 source_key: row.get(0)?,
                 harness: row.get(1)?,
                 native_session: row.get(2)?,
-                ts: ts.as_deref().and_then(parse_stored_ts),
+                ts: ts.as_deref().and_then(parse_utc_time),
                 seq: row.get(4)?,
                 name: row.get(5)?,
                 fingerprint: row.get(6)?,
@@ -760,7 +760,9 @@ impl AnalyticsStore {
     }
 }
 
-fn parse_stored_ts(value: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+/// Parses RFC 3339, or a zone-less `YYYY-MM-DD HH:MM:SS[.f]` read as UTC
+/// (the OpenRig `events.created_at` form).
+pub fn parse_utc_time(value: &str) -> Option<chrono::DateTime<chrono::Utc>> {
     if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(value) {
         return Some(parsed.with_timezone(&chrono::Utc));
     }

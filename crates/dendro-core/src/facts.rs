@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-pub const SCHEMA_VERSION: i32 = 1;
+pub const SCHEMA_VERSION: i32 = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UsageFact {
@@ -83,6 +83,8 @@ pub struct SkillFact {
     pub invoked: bool,
 }
 
+/// One recorded life of a seat (K4). A seat may have several after relaunches.
+/// `None` means no event recorded that edge, never a time read from runtime status.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SeatBound {
     pub seat: String,

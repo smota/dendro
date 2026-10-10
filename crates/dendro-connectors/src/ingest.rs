@@ -81,6 +81,7 @@ fn ingest_openrig(
         }
     }
     let mut count = 0i64;
+    let mut lifecycle = Vec::new();
     let mut stmt = conn.prepare("SELECT seq, type, payload, created_at FROM events")?;
     let rows = stmt.query_map([], |row| {
         Ok((
@@ -96,9 +97,13 @@ fn ingest_openrig(
         let Ok(parsed) = serde_json::from_str::<Value>(&payload) else {
             continue;
         };
-        let ts = DateTime::parse_from_rfc3339(&created_at)
-            .ok()
-            .map(|value| value.with_timezone(&Utc));
+        let ts = dendro_core::parse_utc_time(&created_at);
+        if let Some(event) = lifecycle_event(&kind, &parsed) {
+            if let Some(at) = ts {
+                lifecycle.push((at, seq, event));
+            }
+            continue;
+        }
         if kind == "agent.session_identity" {
             let Some(session_id) = parsed.get("sessionId").and_then(|v| v.as_str()) else {
                 continue;
@@ -146,16 +151,6 @@ fn ingest_openrig(
                 state,
                 seq,
             })?;
-        } else if kind == "node.launched" {
-            let Some(seat) = parsed.get("sessionName").and_then(|v| v.as_str()) else {
-                continue;
-            };
-            let Some(when) = ts else { continue };
-            store.upsert_seat_bound(&dendro_core::SeatBound {
-                seat: dendro_core::seal_identifier(key, "seat", seat),
-                created_at: Some(when),
-                stopped_at: None,
-            })?;
         } else if kind == "queue.created" || kind == "queue.claimed" {
             let Some(qitem) = parsed.get("qitemId").and_then(|v| v.as_str()) else {
                 continue;
@@ -194,6 +189,14 @@ fn ingest_openrig(
             })?;
         }
     }
+    let lives: Vec<dendro_core::SeatBound> = seat_lives(lifecycle)
+        .into_iter()
+        .map(|life| dendro_core::SeatBound {
+            seat: dendro_core::seal_identifier(key, "seat", &life.seat),
+            ..life
+        })
+        .collect();
+    store.replace_seat_bounds(&lives)?;
     let mut transitions = conn.prepare(
         "SELECT transition_id, qitem_id, ts, state, actor_session, closure_reason, closure_target, transition_note FROM queue_transitions",
     );
@@ -268,6 +271,122 @@ fn ingest_openrig(
     Ok(count)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Lifecycle {
+    Launched {
+        rig: String,
+        node: String,
+        seat: String,
+    },
+    SessionStopped {
+        rig: String,
+        node: String,
+        seat: String,
+    },
+    NodeRemoved {
+        rig: String,
+        node: String,
+    },
+    RigEnded {
+        rig: String,
+    },
+}
+
+/// The K4 lifecycle events. `session.detached` is a binding detach, not a stop.
+fn lifecycle_event(kind: &str, payload: &Value) -> Option<Lifecycle> {
+    let text = |name: &str| {
+        payload
+            .get(name)
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+    };
+    let rig = text("rigId").unwrap_or_default();
+    let node = text("nodeId").unwrap_or_default();
+    match kind {
+        "node.launched" => Some(Lifecycle::Launched {
+            rig,
+            node,
+            seat: text("sessionName")?,
+        }),
+        "session.stopped" => Some(Lifecycle::SessionStopped {
+            rig,
+            node,
+            seat: text("sessionName")?,
+        }),
+        "node.removed" => Some(Lifecycle::NodeRemoved {
+            rig,
+            node: text("nodeId")?,
+        }),
+        "rig.stopped" | "rig.deleted" => Some(Lifecycle::RigEnded {
+            rig: text("rigId")?,
+        }),
+        _ => None,
+    }
+}
+
+/// Builds each seat's recorded lives from lifecycle events, ordered by time then
+/// sequence. A relaunch of a running seat continues its life. A stop with no
+/// earlier launch keeps an unknown start. A stop is never inferred.
+fn seat_lives(mut events: Vec<(DateTime<Utc>, i64, Lifecycle)>) -> Vec<dendro_core::SeatBound> {
+    use std::collections::{BTreeMap, BTreeSet};
+    events.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+    let mut node_seat = BTreeMap::<(String, String), String>::new();
+    let mut rig_seats = BTreeMap::<String, BTreeSet<String>>::new();
+    let mut open = BTreeMap::<String, DateTime<Utc>>::new();
+    let mut seen = BTreeSet::<String>::new();
+    let mut lives = Vec::new();
+    // A stop closes the open life, or records one with an unknown start for a
+    // seat never seen before. A repeated stop changes nothing.
+    let stop = |seat: &str,
+                at: DateTime<Utc>,
+                open: &mut BTreeMap<String, DateTime<Utc>>,
+                seen: &mut BTreeSet<String>,
+                lives: &mut Vec<_>| {
+        if let Some(start) = open.remove(seat) {
+            lives.push((seat.to_string(), Some(start), Some(at)));
+        } else if seen.insert(seat.to_string()) {
+            lives.push((seat.to_string(), None, Some(at)));
+        }
+    };
+    for (at, _, event) in events {
+        match event {
+            Lifecycle::Launched { rig, node, seat } => {
+                node_seat.insert((rig.clone(), node), seat.clone());
+                rig_seats.entry(rig).or_default().insert(seat.clone());
+                seen.insert(seat.clone());
+                open.entry(seat).or_insert(at);
+            }
+            Lifecycle::SessionStopped { rig, node, seat } => {
+                node_seat.insert((rig.clone(), node), seat.clone());
+                rig_seats.entry(rig).or_default().insert(seat.clone());
+                stop(&seat, at, &mut open, &mut seen, &mut lives);
+            }
+            Lifecycle::NodeRemoved { rig, node } => {
+                if let Some(seat) = node_seat.get(&(rig, node)).cloned() {
+                    stop(&seat, at, &mut open, &mut seen, &mut lives);
+                }
+            }
+            Lifecycle::RigEnded { rig } => {
+                for seat in rig_seats.get(&rig).cloned().unwrap_or_default() {
+                    stop(&seat, at, &mut open, &mut seen, &mut lives);
+                }
+            }
+        }
+    }
+    lives.extend(
+        open.into_iter()
+            .map(|(seat, start)| (seat, Some(start), None)),
+    );
+    lives
+        .into_iter()
+        .map(|(seat, created_at, stopped_at)| dendro_core::SeatBound {
+            seat,
+            created_at,
+            stopped_at,
+        })
+        .collect()
+}
+
 fn parse_missions(note: Option<&str>) -> Vec<String> {
     let Some(note) = note else {
         return Vec::new();
@@ -300,4 +419,146 @@ fn uuid_suffix() -> String {
         .map(|d| d.as_nanos())
         .unwrap_or(0);
     format!("{nanos:x}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    fn at(secs: i64) -> DateTime<Utc> {
+        Utc.timestamp_opt(1_700_000_000 + secs, 0).unwrap()
+    }
+
+    fn launched(rig: &str, node: &str, seat: &str) -> Lifecycle {
+        Lifecycle::Launched {
+            rig: rig.into(),
+            node: node.into(),
+            seat: seat.into(),
+        }
+    }
+
+    fn lives_of(
+        events: Vec<(DateTime<Utc>, i64, Lifecycle)>,
+        seat: &str,
+    ) -> Vec<(Option<DateTime<Utc>>, Option<DateTime<Utc>>)> {
+        seat_lives(events)
+            .into_iter()
+            .filter(|life| life.seat == seat)
+            .map(|life| (life.created_at, life.stopped_at))
+            .collect()
+    }
+
+    #[test]
+    fn relaunch_after_a_stop_starts_a_new_life() {
+        let events = vec![
+            (at(0), 1, launched("r", "n", "s")),
+            (
+                at(10),
+                2,
+                Lifecycle::SessionStopped {
+                    rig: "r".into(),
+                    node: "n".into(),
+                    seat: "s".into(),
+                },
+            ),
+            (at(20), 3, launched("r", "n", "s")),
+        ];
+        assert_eq!(
+            lives_of(events, "s"),
+            vec![(Some(at(0)), Some(at(10))), (Some(at(20)), None)]
+        );
+    }
+
+    #[test]
+    fn relaunch_of_a_running_seat_continues_its_life() {
+        let events = vec![
+            (at(0), 1, launched("r", "n", "s")),
+            (at(5), 2, launched("r", "n", "s")),
+        ];
+        assert_eq!(lives_of(events, "s"), vec![(Some(at(0)), None)]);
+    }
+
+    #[test]
+    fn rig_stop_and_delete_end_every_seat_of_that_rig_only() {
+        for kind in ["rig.stopped", "rig.deleted"] {
+            let ended = lifecycle_event(kind, &serde_json::json!({"rigId": "a"})).unwrap();
+            let events = vec![
+                (at(0), 1, launched("a", "n1", "a1")),
+                (at(1), 2, launched("a", "n2", "a2")),
+                (at(2), 3, launched("b", "n3", "b1")),
+                (at(9), 4, ended),
+            ];
+            assert_eq!(
+                lives_of(events.clone(), "a1"),
+                vec![(Some(at(0)), Some(at(9)))]
+            );
+            assert_eq!(
+                lives_of(events.clone(), "a2"),
+                vec![(Some(at(1)), Some(at(9)))]
+            );
+            assert_eq!(lives_of(events, "b1"), vec![(Some(at(2)), None)], "{kind}");
+        }
+    }
+
+    #[test]
+    fn node_removal_resolves_the_seat_through_its_launch() {
+        let removed = |node: &str| Lifecycle::NodeRemoved {
+            rig: "r".into(),
+            node: node.into(),
+        };
+        let events = vec![
+            (at(0), 1, launched("r", "n", "s")),
+            (at(4), 2, removed("other")),
+            (at(7), 3, removed("n")),
+        ];
+        let all = seat_lives(events);
+        assert_eq!(all.len(), 1, "an unknown node names no seat");
+        assert_eq!(all[0].stopped_at, Some(at(7)));
+    }
+
+    #[test]
+    fn detach_status_and_unknown_events_are_not_stops() {
+        let payload = serde_json::json!({"rigId": "r", "nodeId": "n", "sessionName": "s"});
+        for kind in [
+            "session.detached",
+            "session.status_changed",
+            "session.cleaned",
+        ] {
+            assert_eq!(lifecycle_event(kind, &payload), None, "{kind}");
+        }
+        let events = vec![(at(0), 1, launched("r", "n", "s"))];
+        assert_eq!(lives_of(events, "s"), vec![(Some(at(0)), None)]);
+    }
+
+    #[test]
+    fn a_stop_without_a_launch_keeps_an_unknown_start_and_counts_once() {
+        let stopped = || Lifecycle::SessionStopped {
+            rig: "r".into(),
+            node: "n".into(),
+            seat: "s".into(),
+        };
+        let events = vec![(at(3), 1, stopped()), (at(8), 2, stopped())];
+        assert_eq!(lives_of(events, "s"), vec![(None, Some(at(3)))]);
+    }
+
+    #[test]
+    fn equal_times_order_by_sequence() {
+        let stopped = Lifecycle::SessionStopped {
+            rig: "r".into(),
+            node: "n".into(),
+            seat: "s".into(),
+        };
+        // Listed out of order; seq 1 (launch) runs before seq 2 (stop).
+        let events = vec![(at(5), 2, stopped), (at(5), 1, launched("r", "n", "s"))];
+        assert_eq!(lives_of(events, "s"), vec![(Some(at(5)), Some(at(5)))]);
+    }
+
+    #[test]
+    fn openrig_created_at_is_utc_seconds_without_a_zone() {
+        assert_eq!(
+            dendro_core::parse_utc_time("2026-10-10 15:38:41"),
+            Some(Utc.with_ymd_and_hms(2026, 10, 10, 15, 38, 41).unwrap())
+        );
+    }
 }
