@@ -874,36 +874,60 @@ pub fn m2_return_rate(returns: i64, handoffs: i64) -> Option<f64> {
     }
 }
 
-pub fn m3_rework(edges: &[HandoffEdge]) -> (i64, i64, Vec<String>) {
-    let mut chains: BTreeMap<String, Vec<&HandoffEdge>> = BTreeMap::new();
+/// The role part of a seat name: before `@`, with `.` read as `-`
+/// (`dev-qa@rig` and `dev.qa` are the same role).
+fn seat_role(seat: &str) -> String {
+    seat.split('@').next().unwrap_or(seat).replace('.', "-")
+}
+
+/// QA (`dev-qa*`) or a review seat: a role with a `review` segment
+/// (`rev-review`, `dev-review`) or the `rev` pod (`rev-*`).
+fn is_gate_seat(seat: &str) -> bool {
+    let role = seat_role(seat);
+    role == "dev-qa"
+        || role.starts_with("dev-qa-")
+        || role == "rev"
+        || role.starts_with("rev-")
+        || role.split('-').any(|part| part == "review")
+}
+
+fn is_build_seat(seat: &str) -> bool {
+    seat_role(seat).starts_with("dev-build")
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Rework {
+    pub chain: String,
+    pub path: String,
+}
+
+/// M3: chains (or items without a chain) whose work comes back to a
+/// `dev-build*` seat after it passed through `dev-qa` or a review seat. Each
+/// chain counts once. The path runs from the chain's first edge to that return.
+pub fn m3_rework(edges: &[HandoffEdge]) -> (Vec<Rework>, i64) {
+    let mut chains: BTreeMap<&str, Vec<&HandoffEdge>> = BTreeMap::new();
     for edge in edges {
-        let key = edge
-            .chain_id
-            .clone()
-            .unwrap_or_else(|| edge.qitem_id.clone());
-        chains.entry(key).or_default().push(edge);
+        chains.entry(edge.chain_key()).or_default().push(edge);
     }
-    let mut rework = 0;
-    let mut paths = Vec::new();
-    for group in chains.values() {
-        let mut saw_gate = false;
-        let mut path = Vec::new();
+    let mut rework = Vec::new();
+    for (chain, group) in &chains {
+        let mut passed_gate = false;
+        let mut path = vec![group[0].from_seat.clone()];
         for edge in group {
-            path.push(edge.from_seat.clone());
             path.push(edge.to_seat.clone());
-            if edge.from_seat.contains("dev.qa") || edge.from_seat.contains("rev") {
-                saw_gate = true;
+            if is_gate_seat(&edge.from_seat) || is_gate_seat(&edge.to_seat) {
+                passed_gate = true;
             }
-            if saw_gate
-                && (edge.to_seat.starts_with("dev-build") || edge.to_seat.starts_with("dev.build"))
-            {
-                rework += 1;
-                paths.push(path.join(" -> "));
+            if passed_gate && !is_gate_seat(&edge.to_seat) && is_build_seat(&edge.to_seat) {
+                rework.push(Rework {
+                    chain: chain.to_string(),
+                    path: path.join(" -> "),
+                });
                 break;
             }
         }
     }
-    (rework, chains.len() as i64, paths)
+    (rework, chains.len() as i64)
 }
 
 pub fn m4_impact() -> &'static str {
@@ -1368,10 +1392,10 @@ mod tests {
                 source_key: "c".into(),
             },
         ];
-        let (count, chains, paths) = m3_rework(&edges);
-        assert_eq!(count, 1);
+        let (rework, chains) = m3_rework(&edges);
+        assert_eq!(rework.len(), 1);
         assert_eq!(chains, 1);
-        assert_eq!(paths.len(), 1);
+        assert_eq!(rework[0].chain, "c");
     }
 
     #[test]
@@ -1683,6 +1707,86 @@ mod tests {
                 .filter(|edge| edge.returned_within(window))
                 .count(),
             2
+        );
+    }
+
+    #[test]
+    fn m3_counts_build_returns_after_qa_or_review_across_chain_items() {
+        let (build, build_sr, qa, review, orch) = (
+            "dev-build@dendro-dev",
+            "dev-build-sr@dendro-dev",
+            "dev-qa@dendro-dev",
+            "rev-review@dendro-dev",
+            "orch-arch@dendro-dev",
+        );
+        // Each step is a new item of the chain, as OpenRig records handoffs.
+        let chain = |name: &str, seats: &[&str]| -> Vec<QueueFact> {
+            seats
+                .windows(2)
+                .enumerate()
+                .map(|(step, pair)| {
+                    let at = step as i64 * 10;
+                    hand(
+                        &format!("{name}-{step}"),
+                        at,
+                        &format!("{name}-item{step}"),
+                        Some(name),
+                        pair[0],
+                        pair[1],
+                    )
+                })
+                .collect()
+        };
+        let mut queue = Vec::new();
+        queue.extend(chain("direct", &[build, qa, build]));
+        queue.extend(chain("via-review", &[build, qa, review, build_sr]));
+        queue.extend(chain("via-orch", &[build, qa, orch, build]));
+        queue.extend(chain(
+            "review-only",
+            &[build_sr, review, build_sr, qa, build],
+        ));
+        queue.extend(chain("no-gate", &[build, orch, build]));
+        queue.extend(chain("gate-after", &[build, orch, build, qa]));
+        queue.extend(chain(
+            "starter-review",
+            &[
+                "dev-build@starter",
+                "dev-review@starter",
+                "dev-build@starter",
+            ],
+        ));
+        let edges = handoff_edges(&queue);
+        let (rework, chains) = m3_rework(&edges);
+        assert_eq!(chains, 7);
+        let counted: Vec<(&str, &str)> = rework
+            .iter()
+            .map(|item| (item.chain.as_str(), item.path.as_str()))
+            .collect();
+        assert_eq!(
+            counted,
+            vec![
+                ("direct", "dev-build@dendro-dev -> dev-qa@dendro-dev -> dev-build@dendro-dev"),
+                (
+                    "review-only",
+                    "dev-build-sr@dendro-dev -> rev-review@dendro-dev -> dev-build-sr@dendro-dev"
+                ),
+                (
+                    "starter-review",
+                    "dev-build@starter -> dev-review@starter -> dev-build@starter"
+                ),
+                (
+                    "via-orch",
+                    "dev-build@dendro-dev -> dev-qa@dendro-dev -> orch-arch@dendro-dev -> dev-build@dendro-dev"
+                ),
+                (
+                    "via-review",
+                    "dev-build@dendro-dev -> dev-qa@dendro-dev -> rev-review@dendro-dev -> dev-build-sr@dendro-dev"
+                ),
+            ],
+            "each chain once; no gate, or a gate only after the return, is not rework"
+        );
+        assert!(
+            is_gate_seat("dev.qa") && is_build_seat("dev.build-jr") && !is_gate_seat("orch-arch")
         );
     }
 

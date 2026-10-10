@@ -210,7 +210,12 @@ pub fn report_json(
         })
         .cloned()
         .collect();
-    let (rework, chains, paths) = metrics::m3_rework(&edges);
+    let (rework_members, chains) = metrics::m3_rework(&edges);
+    let rework = rework_members.len() as i64;
+    let paths: Vec<_> = rework_members
+        .iter()
+        .map(|item| item.path.clone())
+        .collect();
     let handoffs = edges.len() as i64;
     let returns = edges.iter().filter(|edge| edge.is_return).count() as i64;
     let (input, output, cache_read, cache_write) = metrics::token_totals(&usage);
@@ -549,6 +554,7 @@ pub fn report_json(
             "m3_rework_chains": rework,
             "m3_chains": chains,
             "m3_paths": paths,
+            "m3_rework_members": rework_members,
             "m4_impact": metrics::m4_impact(),
             "kind": redact(kind),
             "activity": activity_rows,
@@ -692,6 +698,7 @@ pub fn trace_json(
             "m2_return_rate": payload["m2_return_rate"],
             "m3_rework_chains": payload["m3_rework_chains"],
             "m3_chains": payload["m3_chains"],
+            "m3_rework_members": payload["m3_rework_members"],
             "rows": payload["trace_inputs"],
             "intakes": payload["intakes"],
             "pair_medians": payload["pair_medians"],
