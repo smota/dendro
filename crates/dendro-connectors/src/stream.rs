@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Result};
 use dendro_core::{
-    redact, tool_fingerprint, AnalyticsStore, CodexCounters, ToolFact, UsageFact, WarningNote,
+    tool_fingerprint, AnalyticsStore, CodexCounters, ToolFact, UsageFact, WarningNote,
 };
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -451,7 +451,9 @@ fn claude_tools(
         tools.push(ToolFact {
             source_key: format!("{source_id}:{generation}:{line_no}:{index}"),
             harness: "claude".into(),
-            native_session: redact(session),
+            // Sealed like the usage session, so tools join the same session and seat
+            // and two different secret-shaped sessions stay distinct.
+            native_session: seal_session(key, "claude", session),
             ts,
             seq: line_no * 100 + index as i64,
             name: name.to_string(),
