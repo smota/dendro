@@ -18,6 +18,7 @@ telemetry.duckdb*
 # OpenRig Runtime Excludes
 /.openrig/
 .openrig/
+.agents/
 CLAUDE.local.md
 .claude/settings.local.json
 gate-lane-verdict.json
