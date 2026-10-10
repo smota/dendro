@@ -99,6 +99,33 @@ fn ingest_openrig(
     let mut lifecycle = Vec::new();
     // K5 reroute marks, by raw qitem id.
     let mut rerouted = std::collections::BTreeSet::<String>::new();
+    // Chain of record: a handoff closes the item and opens a new one in the same
+    // chain, so returns are found across the items of one chain.
+    let mut chains = Vec::new();
+    if let Ok(mut stmt) = conn.prepare("SELECT qitem_id, chain_of_record FROM queue_items") {
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+        })?;
+        chains.extend(rows.flatten());
+    }
+    // None when the source has no handed_off_from column: no walk to cross-check.
+    let parents = match conn.prepare("SELECT qitem_id, handed_off_from FROM queue_items") {
+        Ok(mut stmt) => {
+            let rows = stmt.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+            })?;
+            Some(rows.flatten().collect::<Vec<_>>())
+        }
+        Err(_) => None,
+    };
+    let (chain_root, marked) = chain_roots(&chains, parents.as_deref());
+    rerouted.extend(marked);
+    // None: the chain is unavailable, and returns are found within the item only.
+    let chain_of = |qitem: &str| -> Option<String> {
+        chain_root
+            .get(qitem)
+            .map(|root| dendro_core::seal_identifier(key, "qitem", root))
+    };
     let mut stmt = conn.prepare("SELECT seq, type, payload, created_at FROM events")?;
     let rows = stmt.query_map([], |row| {
         Ok((
@@ -189,7 +216,7 @@ fn ingest_openrig(
                 dest_seat: dendro_core::seal_identifier(key, "seat", reroute),
                 closure_reason: None,
                 closure_target: None,
-                chain_id: None,
+                chain_id: chain_of(qitem),
                 missions: Vec::new(),
             })?;
         } else if kind == "queue.created" || kind == "queue.claimed" {
@@ -225,7 +252,7 @@ fn ingest_openrig(
                 dest_seat: dendro_core::seal_identifier(key, "seat", destination),
                 closure_reason: None,
                 closure_target: None,
-                chain_id: None,
+                chain_id: chain_of(qitem),
                 missions: Vec::new(),
             })?;
         }
@@ -285,29 +312,12 @@ fn ingest_openrig(
                     .6
                     .as_deref()
                     .map(|target| dendro_core::seal_identifier(key, "seat", target)),
-                chain_id: None,
+                chain_id: chain_of(&row.1),
                 missions: parse_missions(row.7.as_deref())
                     .into_iter()
                     .map(|mission| dendro_core::seal_identifier(key, "mission", &mission))
                     .collect(),
             })?;
-        }
-    }
-    if let Ok(mut chains) = conn.prepare("SELECT qitem_id, chain_of_record FROM queue_items") {
-        let rows = chains.query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
-        })?;
-        for (qitem, chain) in rows.flatten() {
-            let entries: Vec<String> = chain
-                .as_deref()
-                .and_then(|text| serde_json::from_str(text).ok())
-                .unwrap_or_default();
-            if entries
-                .iter()
-                .any(|entry| entry.starts_with("fallback-from:"))
-            {
-                rerouted.insert(qitem);
-            }
         }
     }
     let mut items =
@@ -335,6 +345,74 @@ fn ingest_openrig(
         let _ = std::fs::remove_dir_all(&snap_dir);
     }
     Ok(count)
+}
+
+/// Each item's chain root. Two source readings must agree: the first item in
+/// `chain_of_record` (the item itself when the list is empty) and the end of the
+/// `handed_off_from` walk. Without the walk column the explicit chain stands
+/// alone. An item gets no root, never a guessed one, when the readings disagree,
+/// the walk meets a cycle or a parent with no row, or chain_of_record is
+/// malformed and the walk cannot finish. Also returns the items with a
+/// `fallback-from:` reroute mark (K5).
+fn chain_roots(
+    chains: &[(String, Option<String>)],
+    parents: Option<&[(String, Option<String>)]>,
+) -> (
+    std::collections::BTreeMap<String, String>,
+    std::collections::BTreeSet<String>,
+) {
+    use std::collections::{BTreeMap, BTreeSet};
+    let parent: Option<BTreeMap<&str, Option<&str>>> = parents.map(|rows| {
+        rows.iter()
+            .map(|(qitem, from)| (qitem.as_str(), from.as_deref().filter(|f| !f.is_empty())))
+            .collect()
+    });
+    let walk = |start: &str| -> Option<String> {
+        let parent = parent.as_ref()?;
+        let mut seen = BTreeSet::new();
+        let mut at = start;
+        loop {
+            if !seen.insert(at) {
+                return None;
+            }
+            match parent.get(at)? {
+                Some(next) => at = next,
+                None => return Some(at.to_string()),
+            }
+        }
+    };
+    let mut roots = BTreeMap::new();
+    let mut marked = BTreeSet::new();
+    for (qitem, chain) in chains {
+        let listed: Option<Vec<String>> = match chain.as_deref() {
+            None | Some("") => Some(Vec::new()),
+            Some(text) => serde_json::from_str(text).ok(),
+        };
+        if let Some(entries) = &listed {
+            if entries
+                .iter()
+                .any(|entry| entry.starts_with("fallback-from:"))
+            {
+                marked.insert(qitem.clone());
+            }
+        }
+        let head = listed.map(|entries| {
+            entries
+                .into_iter()
+                .find(|entry| !entry.starts_with("fallback-from:"))
+                .unwrap_or_else(|| qitem.clone())
+        });
+        let root = match (head, walk(qitem), parent.is_some()) {
+            (head, _, false) => head,
+            (Some(head), Some(walked), true) => (head == walked).then_some(head),
+            (Some(_), None, true) => None,
+            (None, walked, true) => walked,
+        };
+        if let Some(root) = root {
+            roots.insert(qitem.clone(), root);
+        }
+    }
+    (roots, marked)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -873,6 +951,64 @@ mod tests {
             .collect();
         members.sort();
         members
+    }
+
+    fn row(qitem: &str, value: Option<&str>) -> (String, Option<String>) {
+        (qitem.to_string(), value.map(str::to_string))
+    }
+
+    #[test]
+    fn chain_roots_need_agreeing_source_readings_and_never_guess() {
+        let chains = vec![
+            row("a", Some("[]")),
+            row("b", Some("[\"a\"]")),
+            row("c", Some("[\"a\",\"b\",\"fallback-from:seat-x\"]")),
+            row("malformed-ok", Some("not json")),
+            row("malformed-broken", Some("not json")),
+            row("cycle-1", Some("[\"cycle-2\"]")),
+            row("cycle-2", Some("[\"cycle-1\"]")),
+            row("orphan", Some("[\"gone\"]")),
+            row("disagree", Some("[\"a\"]")),
+            row("no-chain-column-value", None),
+        ];
+        let parents = vec![
+            row("a", None),
+            row("b", Some("a")),
+            row("c", Some("b")),
+            row("malformed-ok", Some("a")),
+            row("malformed-broken", Some("gone")),
+            row("cycle-1", Some("cycle-2")),
+            row("cycle-2", Some("cycle-1")),
+            row("orphan", Some("gone")),
+            row("disagree", Some("z")),
+            row("z", None),
+            row("no-chain-column-value", None),
+        ];
+        let (roots, marked) = chain_roots(&chains, Some(&parents));
+        let root = |q: &str| roots.get(q).map(String::as_str);
+        assert_eq!(root("a"), Some("a"), "a root names itself");
+        assert_eq!(root("b"), Some("a"));
+        assert_eq!(
+            root("c"),
+            Some("a"),
+            "the reroute marker is not a chain item"
+        );
+        assert_eq!(root("malformed-ok"), Some("a"), "a finished walk stands in");
+        assert_eq!(root("malformed-broken"), None);
+        assert_eq!(root("cycle-1"), None);
+        assert_eq!(root("cycle-2"), None);
+        assert_eq!(root("orphan"), None, "a parent with no row ends the walk");
+        assert_eq!(
+            root("disagree"),
+            None,
+            "readings that disagree are not guessed"
+        );
+        assert_eq!(root("no-chain-column-value"), Some("no-chain-column-value"));
+        assert!(marked.contains("c") && marked.len() == 1);
+        // Without a handed_off_from column the explicit chain stands alone.
+        let (alone, _) = chain_roots(&chains, None);
+        assert_eq!(alone.get("disagree").map(String::as_str), Some("a"));
+        assert_eq!(alone.get("malformed-ok"), None);
     }
 
     #[test]

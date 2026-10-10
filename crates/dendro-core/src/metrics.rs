@@ -244,10 +244,52 @@ pub struct HandoffEdge {
     pub qitem_id: String,
     pub chain_id: Option<String>,
     pub is_return: bool,
-    /// The original delivery was later answered by a return to this seat.
-    /// This is not `is_return` and must not be counted as an M2 return.
-    pub delivery_returned: bool,
+    /// The first later edge, on the same item or chain, that brought the work
+    /// back to `from_seat`, and its time. This answers the delivery; it is not
+    /// `is_return` and never counts as an M2 return.
+    pub returned_by: Option<(String, DateTime<Utc>)>,
+    pub ts: DateTime<Utc>,
     pub source_key: String,
+}
+
+impl HandoffEdge {
+    /// K6: for M1 a delivery is returned only when the return is inside the
+    /// same half-open window. A later return never changes this window.
+    pub fn returned_within(&self, window: Window) -> bool {
+        self.returned_by
+            .as_ref()
+            .is_some_and(|(_, at)| *at >= window.from && *at < window.to)
+    }
+
+    /// Returns are found within the chain of record, else within the item.
+    pub fn chain_key(&self) -> &str {
+        self.chain_id.as_deref().unwrap_or(&self.qitem_id)
+    }
+}
+
+/// The creation of a non-root chain item. Chain and item ids are sealed alike,
+/// so a differing chain id means the item has a predecessor.
+fn is_successor_creation(fact: &QueueFact) -> bool {
+    fact.source_key.starts_with("events:queue.created:")
+        && fact
+            .chain_id
+            .as_deref()
+            .is_some_and(|chain| chain != fact.qitem_id)
+}
+
+/// The receiver's first claim after a handoff, on any item of the same chain
+/// (OpenRig hands work over on a new item), else on the same item.
+fn receiver_claim<'a>(queue: &'a [QueueFact], edge: &HandoffEdge) -> Option<&'a QueueFact> {
+    let at = edge_time(queue, edge);
+    queue
+        .iter()
+        .filter(|row| {
+            row.chain_id.as_deref().unwrap_or(&row.qitem_id) == edge.chain_key()
+                && row.dest_seat == edge.to_seat
+                && row.state == "in-progress"
+                && row.ts >= at
+        })
+        .min_by_key(|row| (row.ts, row.transition_id))
 }
 
 pub fn handoff_edges(queue: &[QueueFact]) -> Vec<HandoffEdge> {
@@ -257,7 +299,17 @@ pub fn handoff_edges(queue: &[QueueFact]) -> Vec<HandoffEdge> {
     let mut ordered = queue.to_vec();
     ordered.sort_by(|a, b| a.ts.cmp(&b.ts).then(a.transition_id.cmp(&b.transition_id)));
     for fact in ordered {
-        let touch = seen.entry(fact.qitem_id.clone()).or_default();
+        // A handoff opens the next item of the chain, often before the closing
+        // transition is written. That creation is the handoff itself, so the
+        // receiver has not touched the chain yet.
+        if is_successor_creation(&fact) {
+            continue;
+        }
+        let key = fact
+            .chain_id
+            .clone()
+            .unwrap_or_else(|| fact.qitem_id.clone());
+        let touch = seen.entry(key).or_default();
         if !touch.contains(&fact.source_seat) {
             touch.push(fact.source_seat.clone());
         }
@@ -281,16 +333,20 @@ pub fn handoff_edges(queue: &[QueueFact]) -> Vec<HandoffEdge> {
             qitem_id: fact.qitem_id.clone(),
             chain_id: fact.chain_id.clone(),
             is_return,
-            delivery_returned: false,
+            returned_by: None,
+            ts: fact.ts,
             source_key: fact.source_key.clone(),
         });
     }
     for index in 0..edges.len() {
-        let qitem = edges[index].qitem_id.clone();
-        let from = edges[index].from_seat.clone();
-        edges[index].delivery_returned = edges[index + 1..]
+        let returned_by = edges[index + 1..]
             .iter()
-            .any(|later| later.qitem_id == qitem && later.to_seat == from);
+            .find(|later| {
+                later.chain_key() == edges[index].chain_key()
+                    && later.to_seat == edges[index].from_seat
+            })
+            .map(|later| (later.source_key.clone(), later.ts));
+        edges[index].returned_by = returned_by;
     }
     edges
 }
@@ -532,16 +588,7 @@ fn intake_for_edge(
     usages: &[UsageFact],
     seat_of: &impl Fn(&str) -> Option<String>,
 ) -> IntakeRow {
-    let claim = queue
-        .iter()
-        .filter(|row| {
-            row.qitem_id == edge.qitem_id
-                && row.dest_seat == edge.to_seat
-                && row.state == "in-progress"
-                && row.ts >= edge_time(queue, edge)
-        })
-        .min_by_key(|row| (row.ts, row.transition_id));
-    let Some(claim) = claim else {
+    let Some(claim) = receiver_claim(queue, edge) else {
         return intake_row(edge, "no_data", Some("no claim"), None, None, None, vec![]);
     };
     let linked = usages
@@ -579,7 +626,8 @@ fn intake_for_edge(
     };
     let write_at = write.ts.unwrap();
     let overlap = queue.iter().any(|row| {
-        row.qitem_id != edge.qitem_id
+        row.qitem_id != claim.qitem_id
+            && row.qitem_id != edge.qitem_id
             && row.dest_seat == edge.to_seat
             && row.state == "in-progress"
             && row.ts < write_at
@@ -676,6 +724,8 @@ pub struct PairMedian {
     pub from_seat: String,
     pub to_seat: String,
     pub wait_samples: Vec<f64>,
+    /// (handoff source key, claim source key) for each wait sample, in order.
+    pub wait_sample_keys: Vec<(String, String)>,
     pub wait_invalid: i64,
     pub wait_median: Option<f64>,
     pub intake_samples: Vec<f64>,
@@ -696,6 +746,7 @@ pub fn pair_medians(
                 from_seat: edge.from_seat.clone(),
                 to_seat: edge.to_seat.clone(),
                 wait_samples: Vec::new(),
+                wait_sample_keys: Vec::new(),
                 wait_invalid: 0,
                 wait_median: None,
                 intake_samples: Vec::new(),
@@ -703,16 +754,13 @@ pub fn pair_medians(
                 intake_median: None,
             });
         let handoff_at = edge_time(queue, edge);
-        let claim = queue.iter().find(|row| {
-            row.qitem_id == edge.qitem_id
-                && row.dest_seat == edge.to_seat
-                && row.state == "in-progress"
-                && row.ts >= handoff_at
-        });
-        if let Some(claim) = claim {
+        if let Some(claim) = receiver_claim(queue, edge) {
             entry
                 .wait_samples
                 .push((claim.ts - handoff_at).num_seconds() as f64);
+            entry
+                .wait_sample_keys
+                .push((edge.source_key.clone(), claim.source_key.clone()));
         } else {
             entry.wait_invalid += 1;
         }
@@ -1295,7 +1343,8 @@ mod tests {
                 qitem_id: "i".into(),
                 chain_id: Some("c".into()),
                 is_return: false,
-                delivery_returned: true,
+                returned_by: None,
+                ts: ts(0),
                 source_key: "a".into(),
             },
             HandoffEdge {
@@ -1304,7 +1353,8 @@ mod tests {
                 qitem_id: "i".into(),
                 chain_id: Some("c".into()),
                 is_return: false,
-                delivery_returned: false,
+                returned_by: None,
+                ts: ts(0),
                 source_key: "b".into(),
             },
             HandoffEdge {
@@ -1313,7 +1363,8 @@ mod tests {
                 qitem_id: "i".into(),
                 chain_id: Some("c".into()),
                 is_return: true,
-                delivery_returned: false,
+                returned_by: None,
+                ts: ts(0),
                 source_key: "c".into(),
             },
         ];
@@ -1372,9 +1423,10 @@ mod tests {
         ];
         let edges = handoff_edges(&queue);
         assert_eq!(edges.iter().filter(|edge| edge.is_return).count(), 1);
-        assert!(edges[0].delivery_returned);
-        assert!(!edges[1].delivery_returned);
-        assert!(!edges[2].delivery_returned);
+        assert!(edges[0].returned_within(window));
+        assert_eq!(edges[0].returned_by.as_ref().unwrap().0, "t3");
+        assert!(!edges[1].returned_within(window));
+        assert!(!edges[2].returned_within(window));
         // The handoff target is not the item's destination (K2).
         let snapshots = BTreeMap::from([(
             "item".to_string(),
@@ -1565,6 +1617,167 @@ mod tests {
         assert!(k2_closures(&queue, &snapshots, window)
             .iter()
             .all(|(destination, _)| destination.is_some()));
+    }
+
+    /// A handoff on `item` of `chain`: the actor hands the work to `to`.
+    fn hand(
+        key: &str,
+        at: i64,
+        item: &str,
+        chain: Option<&str>,
+        actor: &str,
+        to: &str,
+    ) -> QueueFact {
+        let mut fact = q(key, at, item, at, "done", actor, to, Some("handed_off_to"));
+        fact.closure_target = Some(to.into());
+        fact.chain_id = chain.map(str::to_string);
+        fact
+    }
+
+    fn in_chain(mut fact: QueueFact, chain: &str) -> QueueFact {
+        fact.chain_id = Some(chain.into());
+        fact
+    }
+
+    fn edge<'a>(edges: &'a [HandoffEdge], key: &str) -> &'a HandoffEdge {
+        edges.iter().find(|edge| edge.source_key == key).unwrap()
+    }
+
+    #[test]
+    fn returns_follow_the_chain_across_items() {
+        let window = Window {
+            from: ts(0),
+            to: ts(100),
+        };
+        // OpenRig: each handoff closes the item and opens the next one in the chain.
+        let queue = vec![
+            in_chain(created("i1", 0, "A"), "i1"),
+            in_chain(created("i2", 9, "B"), "i1"), // successor creation, before its handoff
+            hand("h1", 10, "i1", Some("i1"), "A", "B"),
+            in_chain(created("i3", 19, "C"), "i1"),
+            hand("h2", 20, "i2", Some("i1"), "B", "C"),
+            in_chain(created("i4", 29, "A"), "i1"),
+            hand("h3", 30, "i3", Some("i1"), "C", "A"), // indirect return to A
+            in_chain(created("i5", 39, "C"), "i1"),
+            hand("h4", 40, "i4", Some("i1"), "A", "C"), // direct return to C
+        ];
+        let edges = handoff_edges(&queue);
+        assert!(
+            !edge(&edges, "h1").is_return,
+            "a successor creation is not a touch"
+        );
+        assert!(!edge(&edges, "h2").is_return);
+        assert!(edge(&edges, "h3").is_return, "indirect A->B->C->A");
+        assert!(edge(&edges, "h4").is_return, "direct C->A->C");
+        // M1: deliveries answered by a later return to their sender, on any chain item.
+        assert_eq!(edge(&edges, "h1").returned_by.as_ref().unwrap().0, "h3");
+        assert_eq!(edge(&edges, "h2").returned_by, None, "B never gets it back");
+        assert_eq!(edge(&edges, "h3").returned_by.as_ref().unwrap().0, "h4");
+        assert!(edge(&edges, "h1").returned_within(window));
+        // No ratio inflation: two returns among four handoffs, three of four
+        // deliveries counted, with each set kept apart.
+        assert_eq!(edges.iter().filter(|edge| edge.is_return).count(), 2);
+        assert_eq!(
+            edges
+                .iter()
+                .filter(|edge| edge.returned_within(window))
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn an_unavailable_chain_finds_returns_within_the_item_only() {
+        let queue = vec![
+            hand("h1", 10, "i1", None, "A", "B"),
+            hand("h2", 20, "i2", None, "B", "A"),
+        ];
+        let edges = handoff_edges(&queue);
+        assert!(
+            !edge(&edges, "h2").is_return,
+            "different items, no chain: no guess"
+        );
+        assert_eq!(edge(&edges, "h1").returned_by, None);
+        let same_item = vec![
+            hand("h1", 10, "i1", None, "A", "B"),
+            hand("h2", 20, "i1", None, "B", "A"),
+        ];
+        let edges = handoff_edges(&same_item);
+        assert!(edge(&edges, "h2").is_return);
+    }
+
+    #[test]
+    fn k6_m1_counts_a_return_only_inside_the_same_window() {
+        let queue = vec![
+            hand("out", 10, "i1", Some("c"), "A", "B"),
+            hand("back", 60, "i2", Some("c"), "B", "A"),
+        ];
+        let edges = handoff_edges(&queue);
+        let delivery = edge(&edges, "out");
+        let at = |from: i64, to: i64| Window {
+            from: ts(from),
+            to: ts(to),
+        };
+        assert!(delivery.returned_within(at(0, 61)), "return before to");
+        assert!(
+            !delivery.returned_within(at(0, 60)),
+            "return exactly at to is outside"
+        );
+        assert!(
+            !delivery.returned_within(at(0, 30)),
+            "return after to, before the cutoff"
+        );
+        assert!(
+            delivery.returned_within(at(10, 61)),
+            "delivery exactly at from"
+        );
+    }
+
+    #[test]
+    fn the_wait_and_intake_claim_is_on_the_next_chain_item() {
+        let mut claim = in_chain(
+            q(
+                "events:queue.claimed:7",
+                7,
+                "i2",
+                25,
+                "in-progress",
+                "B",
+                "B",
+                None,
+            ),
+            "c",
+        );
+        claim.transition_id = 4_007;
+        let queue = vec![
+            hand("h1", 10, "i1", Some("c"), "A", "B"),
+            claim.clone(),
+            in_chain(
+                q(
+                    "events:queue.claimed:8",
+                    8,
+                    "other",
+                    15,
+                    "in-progress",
+                    "B",
+                    "B",
+                    None,
+                ),
+                "elsewhere",
+            ),
+        ];
+        let edges = handoff_edges(&queue);
+        let medians = pair_medians(&edges, &queue, &[]);
+        assert_eq!(medians[0].wait_samples, vec![15.0]);
+        assert_eq!(
+            medians[0].wait_sample_keys,
+            vec![("h1".to_string(), "events:queue.claimed:7".to_string())]
+        );
+        assert_eq!(medians[0].wait_median, Some(15.0));
+        assert_eq!(
+            receiver_claim(&queue, &edges[0]).map(|row| row.source_key.as_str()),
+            Some(claim.source_key.as_str())
+        );
     }
 
     #[test]

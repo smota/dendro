@@ -432,7 +432,8 @@ impl AnalyticsStore {
                    source_key, transition_id, qitem_id, ts, state, source_seat, dest_seat,
                    closure_reason, closure_target, chain_id, missions
                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT (source_key) DO NOTHING"#,
+               ON CONFLICT (source_key) DO UPDATE SET
+                 chain_id = COALESCE(queue_facts.chain_id, excluded.chain_id)"#,
             params![
                 redact(&fact.source_key),
                 fact.transition_id,

@@ -215,7 +215,10 @@ pub fn report_json(
     let returns = edges.iter().filter(|edge| edge.is_return).count() as i64;
     let (input, output, cache_read, cache_write) = metrics::token_totals(&usage);
     let tokens = input + output + cache_read + cache_write;
-    let nonreturn = edges.iter().filter(|edge| !edge.delivery_returned).count() as i64;
+    let nonreturn = edges
+        .iter()
+        .filter(|edge| !edge.returned_within(window))
+        .count() as i64;
     let mut seat_tokens = std::collections::BTreeMap::<String, i64>::new();
     for row in &usage {
         let Some(seat) = identities
@@ -263,7 +266,7 @@ pub fn report_json(
             let seat_total = *seat_tokens.get(seat).unwrap_or(&0);
             let deliveries = edges
                 .iter()
-                .filter(|edge| edge.from_seat == *seat && !edge.delivery_returned)
+                .filter(|edge| edge.from_seat == *seat && !edge.returned_within(window))
                 .count() as i64;
             let closed =
                 metrics::closed_items(seat, &queue_all, &snapshot_destinations, window);
@@ -294,6 +297,26 @@ pub fn report_json(
             slot.0 += 1;
         }
     }
+    // Every in-window handoff with both classifications kept apart:
+    // is_return (M2 numerator) and returned_within_window (M1, K6).
+    let handoff_members: Vec<_> = edges
+        .iter()
+        .map(|edge| {
+            json!({
+                "source_key": edge.source_key,
+                "at": edge.ts.to_rfc3339(),
+                "from": edge.from_seat,
+                "to": edge.to_seat,
+                "qitem_id": edge.qitem_id,
+                "chain": edge.chain_id,
+                "is_return": edge.is_return,
+                "returned_by": edge.returned_by.as_ref().map(|(key, at)| {
+                    json!({"source_key": key, "at": at.to_rfc3339()})
+                }),
+                "returned_within_window": edge.returned_within(window),
+            })
+        })
+        .collect();
     let m2_pairs: Vec<_> = pair_counts
         .iter()
         .map(|((from_seat, to_seat), (pair_returns, pair_handoffs))| {
@@ -552,6 +575,7 @@ pub fn report_json(
                 "from": row.from_seat,
                 "to": row.to_seat,
                 "wait_samples": row.wait_samples,
+                "wait_sample_keys": row.wait_sample_keys,
                 "wait_invalid": row.wait_invalid,
                 "wait_median": row.wait_median,
                 "intake_samples": row.intake_samples,
@@ -573,12 +597,14 @@ pub fn report_json(
                 "dest": row.dest_seat,
                 "ts": row.ts.to_rfc3339(),
             })).collect::<Vec<_>>(),
-            "nonreturn_handoffs": edges.iter().filter(|edge| !edge.is_return).map(|edge| json!({
+            // M1 denominator membership: deliveries not returned inside the window (K6).
+            "nonreturn_handoffs": edges.iter().filter(|edge| !edge.returned_within(window)).map(|edge| json!({
                 "source_key": edge.source_key,
                 "from": edge.from_seat,
                 "to": edge.to_seat,
                 "qitem_id": edge.qitem_id,
             })).collect::<Vec<_>>(),
+            "handoff_members": handoff_members,
             "destination_snapshots": destination_snapshots.iter().map(|(qitem, snapshot)| json!({
                 "qitem_id": qitem,
                 "destination": snapshot.destination,
@@ -675,6 +701,7 @@ pub fn trace_json(
             "demand_events": payload["demand_events"],
             "destination_snapshots": payload["destination_snapshots"],
             "nonreturn_handoffs": payload["nonreturn_handoffs"],
+            "handoff_members": payload["handoff_members"],
             "window": {"from": from, "to": to},
         },
         "from": redact(from),
