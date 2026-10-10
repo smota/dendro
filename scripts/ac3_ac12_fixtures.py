@@ -74,8 +74,8 @@ def main():
     conn.execute("INSERT INTO events VALUES (2,'agent.session_identity',? ,?)", (json.dumps({"sessionId": f"sess-{secret_a}", "runtime": "claude-code", "sessionName": f"seat-{secret_a}", "rigId": "r1"}), FROM))
     conn.execute("INSERT INTO events VALUES (3,'agent.session_identity',? ,?)", (json.dumps({"sessionId": f"sess-{secret_b}", "runtime": "claude-code", "sessionName": f"seat-{secret_b}", "rigId": "r1"}), FROM))
     conn.execute("INSERT INTO events VALUES (6,'agent.session_identity',? ,?)", (json.dumps({"sessionId": "s-b", "runtime": "claude-code", "sessionName": "seat-b", "rigId": "r1"}), FROM))
-    conn.execute("INSERT INTO events VALUES (4,'agent.activity',? ,?)", (json.dumps({"sessionName": "seat-a", "activity": {"state": "idle", "eventAt": T[0]}}), T[0]))
-    conn.execute("INSERT INTO events VALUES (5,'agent.activity',? ,?)", (json.dumps({"sessionName": "seat-old", "activity": {"state": "running", "eventAt": "2026-10-08T00:00:00Z"}}), "2026-10-08T00:00:00Z"))
+    conn.execute("INSERT INTO events VALUES (4,'seat.activity_changed',? ,?)", (json.dumps({"sessionName": "seat-a", "state": "idle", "at": T[0]}), T[0]))
+    conn.execute("INSERT INTO events VALUES (5,'seat.activity_changed',? ,?)", (json.dumps({"sessionName": "seat-old", "state": "running", "at": "2026-10-08T00:00:00Z"}), "2026-10-08T00:00:00Z"))
     conn.execute("""CREATE TABLE queue_transitions (transition_id INTEGER, qitem_id TEXT, ts TEXT, state TEXT, actor_session TEXT, closure_reason TEXT, closure_target TEXT, transition_note TEXT)""")
     conn.executemany("INSERT INTO queue_transitions VALUES (?,?,?,?,?,?,?,?)", [
         (1, "demand", T[10], "pending", "seat-a", None, "seat-a", "[]"),
@@ -155,6 +155,11 @@ def main():
     code, _, _ = run(["run", "--db", str(link), "--root", f"claude={src/'claude'}"])
     after_link = hashlib.sha256((src / "claude" / "s.jsonl").read_bytes()).hexdigest()
     check("ac11_hardlink", code != 0 and before == after_link, "refused", code)
+    code, isolated, _ = report(analytics, "activity", rig="nonexistent-rig")
+    isolated_payload = json.loads(isolated)["payload"] if code == 0 else {}
+    check("qa_nonexistent_rig", isolated_payload.get("activity") == [] and isolated_payload.get("tool_loops") == [], [], isolated_payload.get("activity"))
+    tcode, ttext, _ = run(["trace", "--db", str(analytics), "--metric-id", "activity", "--rig", "nonexistent-rig", "--from", FROM, "--to", TO])
+    check("qa_trace_activity", tcode == 0 and json.loads(ttext).get("metric_id") == "activity", 0, tcode)
     failed = [row for row in rows if not row["ok"]]
     Path("/tmp/ac3-ac12-results.json").write_text(json.dumps({"commit": subprocess.check_output(["git", "-C", "/home/sam/code/dendro/.worktrees/work/dendro-r1", "rev-parse", "HEAD"], text=True).strip(), "rows": rows}, indent=2))
     print("FAILED", len(failed), "OF", len(rows))

@@ -122,25 +122,26 @@ fn ingest_openrig(
                 seat: dendro_core::seal_identifier(key, "seat", seat),
                 ts,
             })?;
-        } else if kind == "agent.activity" {
-            let Some(activity) = parsed.get("activity") else {
+        } else if kind == "seat.activity_changed" {
+            let Some(state) = parsed.get("state").and_then(|v| v.as_str()) else {
                 continue;
             };
-            let Some(state) = activity.get("state").and_then(|v| v.as_str()) else {
+            let Some(seat) = parsed
+                .get("sessionName")
+                .and_then(|v| v.as_str())
+                .or_else(|| parsed.get("seat").and_then(|v| v.as_str()))
+            else {
                 continue;
             };
-            let Some(seat) = parsed.get("sessionName").and_then(|v| v.as_str()) else {
-                continue;
-            };
-            let when = activity
-                .get("eventAt")
+            let when = parsed
+                .get("at")
                 .and_then(|v| v.as_str())
                 .and_then(|text| DateTime::parse_from_rfc3339(text).ok())
                 .map(|value| value.with_timezone(&Utc))
                 .or(ts);
             let Some(when) = when else { continue };
             store.insert_activity(&ActivityFact {
-                source_key: format!("activity:{seq}"),
+                source_key: format!("seat.activity_changed:{seq}"),
                 seat: dendro_core::seal_identifier(key, "seat", seat),
                 ts: when,
                 state: state.to_string(),
@@ -176,13 +177,16 @@ fn ingest_openrig(
             store.insert_queue(&QueueFact {
                 source_key: format!("queue_transitions:{}", row.0),
                 transition_id: row.0,
-                qitem_id: row.1,
+                qitem_id: dendro_core::seal_identifier(key, "qitem", &row.1),
                 ts,
                 state: row.3,
                 source_seat: actor,
                 dest_seat: target,
                 closure_reason: row.5,
-                closure_target: row.6,
+                closure_target: row
+                    .6
+                    .as_deref()
+                    .map(|target| dendro_core::seal_identifier(key, "seat", target)),
                 chain_id: None,
                 missions: parse_missions(row.7.as_deref())
                     .into_iter()

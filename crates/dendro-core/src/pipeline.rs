@@ -172,23 +172,43 @@ pub fn report_json(
             None => true,
         })
         .collect();
-    let queue: Vec<_> = store
+    let queue_all: Vec<_> = store
         .load_queue()?
         .into_iter()
-        .filter(|row| row.ts >= window.from && row.ts < window.to)
         .filter(|row| match &rig_seats {
             Some(seats) => seats.contains(&row.source_seat) || seats.contains(&row.dest_seat),
             None => true,
         })
         .collect();
-    let edges = metrics::handoff_edges(&queue);
+    let queue: Vec<_> = queue_all
+        .iter()
+        .filter(|row| row.ts >= window.from && row.ts < window.to)
+        .cloned()
+        .collect();
+    let edges_all = metrics::handoff_edges(&queue_all);
+    let edges: Vec<_> = edges_all
+        .iter()
+        .filter(|edge| {
+            queue_all.iter().any(|row| {
+                row.source_key == edge.source_key && row.ts >= window.from && row.ts < window.to
+            })
+        })
+        .cloned()
+        .collect();
     let (rework, chains, paths) = metrics::m3_rework(&edges);
     let handoffs = edges.len() as i64;
     let returns = edges.iter().filter(|edge| edge.is_return).count() as i64;
     let (input, output, cache_read, cache_write) = metrics::token_totals(&usage);
     let tokens = input + output + cache_read + cache_write;
     let nonreturn = handoffs - returns;
-    let activity = store.load_activity()?;
+    let activity: Vec<_> = store
+        .load_activity()?
+        .into_iter()
+        .filter(|row| match &rig_seats {
+            Some(seats) => seats.contains(&row.seat),
+            None => true,
+        })
+        .collect();
     let mut seats: Vec<String> = activity.iter().map(|row| row.seat.clone()).collect();
     seats.sort();
     seats.dedup();
@@ -207,7 +227,18 @@ pub fn report_json(
             })
         })
         .collect();
-    let tools = store.load_tools()?;
+    let tools: Vec<_> = store
+        .load_tools()?
+        .into_iter()
+        .filter(|tool| match tool.ts {
+            Some(ts) => ts >= window.from && ts < window.to,
+            None => false,
+        })
+        .filter(|tool| match &allowed {
+            Some(set) => set.contains(&(tool.harness.clone(), tool.native_session.clone())),
+            None => rig_seats.is_none(),
+        })
+        .collect();
     let loops = metrics::tool_loops(&tools, 3, 600);
     let seat_of = |native: &str| {
         identities
@@ -360,6 +391,10 @@ pub fn trace_json(
             "even-sample median of wait seconds and intake tokens",
             payload["pair_medians"].clone(),
         ),
+        "activity" => (
+            "five disjoint seat bands clipped to the half-open window",
+            payload["activity"].clone(),
+        ),
         other => return Err(anyhow!("unknown metric id {other}")),
     };
     Ok(json!({
@@ -376,6 +411,7 @@ pub fn trace_json(
             "rows": payload["trace_inputs"],
             "intakes": payload["intakes"],
             "pair_medians": payload["pair_medians"],
+            "activity": payload["activity"],
             "window": {"from": from, "to": to},
         },
         "from": from,
