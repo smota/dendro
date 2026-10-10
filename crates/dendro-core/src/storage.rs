@@ -483,8 +483,7 @@ impl AnalyticsStore {
             Ok(ActivityFact {
                 source_key: row.get(0)?,
                 seat: row.get(1)?,
-                ts: parse_stored_ts(&ts)
-                    .unwrap_or_else(|| chrono::DateTime::<chrono::Utc>::UNIX_EPOCH),
+                ts: parse_stored_ts(&ts).unwrap_or(chrono::DateTime::<chrono::Utc>::UNIX_EPOCH),
                 state: row.get(3)?,
                 seq: row.get(4)?,
             })
@@ -505,8 +504,7 @@ impl AnalyticsStore {
                 source_key: row.get(0)?,
                 transition_id: row.get(1)?,
                 qitem_id: row.get(2)?,
-                ts: parse_stored_ts(&ts)
-                    .unwrap_or_else(|| chrono::DateTime::<chrono::Utc>::UNIX_EPOCH),
+                ts: parse_stored_ts(&ts).unwrap_or(chrono::DateTime::<chrono::Utc>::UNIX_EPOCH),
                 state: row.get(4)?,
                 source_seat: row.get(5)?,
                 dest_seat: row.get(6)?,
