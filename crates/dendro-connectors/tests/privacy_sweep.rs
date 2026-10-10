@@ -231,8 +231,12 @@ fn sources(dir: &Path, c: &dyn Fn(&str) -> String) -> Vec<SourceRoot> {
     )
     .unwrap();
     let snapshot = json!({
-        "nodes": [{"id": "n1", "logicalId": c("logical"), "agentRef": c("agentref"), "resolvedSpecName": c("spec")}],
-        "sessions": [{"nodeId": "n1", "sessionName": s1}],
+        "nodes": [
+            {"id": "n1", "logicalId": "plain.logical", "agentRef": c("agentref"), "resolvedSpecName": c("spec")},
+            // AgentFlow seats store their logical id as role evidence.
+            {"id": "n2", "logicalId": c("logical"), "agentRef": "local:agents/agentflow", "resolvedSpecName": "agentflow-seat"}
+        ],
+        "sessions": [{"nodeId": "n1", "sessionName": s1}, {"nodeId": "n2", "sessionName": s2}],
     });
     conn.execute("INSERT INTO snapshots VALUES (?)", [snapshot.to_string()])
         .unwrap();
