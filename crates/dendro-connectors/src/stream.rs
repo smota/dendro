@@ -18,6 +18,7 @@ struct Buckets {
     currency_total: Option<f64>,
     message_id: Option<String>,
     native_session: String,
+    ts: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 pub fn ingest_jsonl(
@@ -106,7 +107,7 @@ pub fn ingest_jsonl(
                     harness: harness.to_string(),
                     native_session: bucket.native_session,
                     message_id: bucket.message_id,
-                    ts: None,
+                    ts: bucket.ts,
                     seq: line_no,
                     input_uncached: bucket.input_uncached,
                     output: bucket.output,
@@ -248,6 +249,7 @@ fn parse_codex(value: &Value, counters: &mut CodexCounters) -> Result<Option<Buc
             .and_then(|v| v.as_str())
             .unwrap_or("codex-session")
             .to_string(),
+        ts: timestamp_of(value),
     }))
 }
 
@@ -272,6 +274,7 @@ fn parse_claude(value: &Value) -> Result<Option<Buckets>, String> {
             .and_then(|v| v.as_str())
             .unwrap_or("claude-session")
             .to_string(),
+        ts: timestamp_of(value),
     }))
 }
 
@@ -294,7 +297,22 @@ fn parse_pi(value: &Value) -> Result<Option<Buckets>, String> {
         currency_total,
         message_id: value.get("id").and_then(|v| v.as_str()).map(str::to_string),
         native_session: "pi-session".into(),
+        ts: timestamp_of(value),
     }))
+}
+
+fn timestamp_of(value: &Value) -> Option<chrono::DateTime<chrono::Utc>> {
+    let text = value
+        .get("timestamp")
+        .and_then(|item| item.as_str())
+        .or_else(|| {
+            value
+                .pointer("/message/timestamp")
+                .and_then(|item| item.as_str())
+        })?;
+    chrono::DateTime::parse_from_rfc3339(text)
+        .ok()
+        .map(|parsed| parsed.with_timezone(&chrono::Utc))
 }
 
 fn json_i64(value: &Value, key: &str) -> Result<i64, String> {

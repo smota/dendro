@@ -430,7 +430,7 @@ impl AnalyticsStore {
 
     pub fn load_usage(&self) -> Result<Vec<UsageFact>> {
         let mut stmt = self.conn.prepare(
-            r#"SELECT source_key, harness, native_session, message_id, ts, seq,
+            r#"SELECT source_key, harness, native_session, message_id, CAST(ts AS VARCHAR), seq,
                       input_uncached, output_tokens, cache_read, cache_write, reasoning,
                       currency_total, generation
                FROM usage_facts ORDER BY ts NULLS LAST, seq"#,
@@ -442,11 +442,7 @@ impl AnalyticsStore {
                 harness: row.get(1)?,
                 native_session: row.get(2)?,
                 message_id: row.get(3)?,
-                ts: ts.and_then(|s| {
-                    chrono::DateTime::parse_from_rfc3339(&s)
-                        .ok()
-                        .map(|d| d.with_timezone(&chrono::Utc))
-                }),
+                ts: ts.as_deref().and_then(parse_stored_ts),
                 seq: row.get(5)?,
                 input_uncached: row.get(6)?,
                 output: row.get(7)?,
@@ -462,7 +458,7 @@ impl AnalyticsStore {
 
     pub fn load_identity(&self) -> Result<Vec<IdentityFact>> {
         let mut stmt = self.conn.prepare(
-            "SELECT source_key, harness, native_session, rig, seat, ts FROM identity_facts",
+            "SELECT source_key, harness, native_session, rig, seat, CAST(ts AS VARCHAR) FROM identity_facts",
         )?;
         let rows = stmt.query_map([], |row| {
             let ts: Option<String> = row.get(5)?;
@@ -472,11 +468,7 @@ impl AnalyticsStore {
                 native_session: row.get(2)?,
                 rig: row.get(3)?,
                 seat: row.get(4)?,
-                ts: ts.and_then(|s| {
-                    chrono::DateTime::parse_from_rfc3339(&s)
-                        .ok()
-                        .map(|d| d.with_timezone(&chrono::Utc))
-                }),
+                ts: ts.as_deref().and_then(parse_stored_ts),
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
@@ -484,16 +476,15 @@ impl AnalyticsStore {
 
     pub fn load_activity(&self) -> Result<Vec<ActivityFact>> {
         let mut stmt = self.conn.prepare(
-            "SELECT source_key, seat, ts, state, seq FROM activity_facts ORDER BY seat, ts, seq",
+            "SELECT source_key, seat, CAST(ts AS VARCHAR), state, seq FROM activity_facts ORDER BY seat, ts, seq",
         )?;
         let rows = stmt.query_map([], |row| {
             let ts: String = row.get(2)?;
             Ok(ActivityFact {
                 source_key: row.get(0)?,
                 seat: row.get(1)?,
-                ts: chrono::DateTime::parse_from_rfc3339(&ts)
-                    .map(|d| d.with_timezone(&chrono::Utc))
-                    .unwrap_or_else(|_| chrono::DateTime::<chrono::Utc>::UNIX_EPOCH),
+                ts: parse_stored_ts(&ts)
+                    .unwrap_or_else(|| chrono::DateTime::<chrono::Utc>::UNIX_EPOCH),
                 state: row.get(3)?,
                 seq: row.get(4)?,
             })
@@ -503,7 +494,7 @@ impl AnalyticsStore {
 
     pub fn load_queue(&self) -> Result<Vec<QueueFact>> {
         let mut stmt = self.conn.prepare(
-            r#"SELECT source_key, transition_id, qitem_id, ts, state, source_seat, dest_seat,
+            r#"SELECT source_key, transition_id, qitem_id, CAST(ts AS VARCHAR), state, source_seat, dest_seat,
                       closure_reason, closure_target, chain_id, missions
                FROM queue_facts ORDER BY ts, transition_id"#,
         )?;
@@ -514,9 +505,8 @@ impl AnalyticsStore {
                 source_key: row.get(0)?,
                 transition_id: row.get(1)?,
                 qitem_id: row.get(2)?,
-                ts: chrono::DateTime::parse_from_rfc3339(&ts)
-                    .map(|d| d.with_timezone(&chrono::Utc))
-                    .unwrap_or_else(|_| chrono::DateTime::<chrono::Utc>::UNIX_EPOCH),
+                ts: parse_stored_ts(&ts)
+                    .unwrap_or_else(|| chrono::DateTime::<chrono::Utc>::UNIX_EPOCH),
                 state: row.get(4)?,
                 source_seat: row.get(5)?,
                 dest_seat: row.get(6)?,
@@ -531,7 +521,7 @@ impl AnalyticsStore {
 
     pub fn load_tools(&self) -> Result<Vec<ToolFact>> {
         let mut stmt = self.conn.prepare(
-            r#"SELECT source_key, harness, native_session, ts, seq, tool_name, fingerprint,
+            r#"SELECT source_key, harness, native_session, CAST(ts AS VARCHAR), seq, tool_name, fingerprint,
                       failed, structured_write, generation
                FROM tool_facts ORDER BY native_session, ts NULLS LAST, seq"#,
         )?;
@@ -541,11 +531,7 @@ impl AnalyticsStore {
                 source_key: row.get(0)?,
                 harness: row.get(1)?,
                 native_session: row.get(2)?,
-                ts: ts.and_then(|s| {
-                    chrono::DateTime::parse_from_rfc3339(&s)
-                        .ok()
-                        .map(|d| d.with_timezone(&chrono::Utc))
-                }),
+                ts: ts.as_deref().and_then(parse_stored_ts),
                 seq: row.get(4)?,
                 name: row.get(5)?,
                 fingerprint: row.get(6)?,
@@ -632,6 +618,18 @@ impl AnalyticsStore {
         }
         Ok(false)
     }
+}
+
+fn parse_stored_ts(value: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(value) {
+        return Some(parsed.with_timezone(&chrono::Utc));
+    }
+    for format in ["%Y-%m-%d %H:%M:%S%.f", "%Y-%m-%d %H:%M:%S"] {
+        if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(value.trim(), format) {
+            return Some(naive.and_utc());
+        }
+    }
+    None
 }
 
 fn refuse_legacy(conn: &Connection) -> Result<()> {
