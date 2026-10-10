@@ -219,6 +219,27 @@ fn ingest_openrig(
                 chain_id: chain_of(qitem),
                 missions: Vec::new(),
             })?;
+        } else if kind == "queue.unclaimed" {
+            // Not a closure and no destination change: it ends an in-progress interval (K5).
+            let text = |name: &str| parsed.get(name).and_then(|v| v.as_str());
+            let (Some(qitem), Some(destination), Some(when)) =
+                (text("qitemId"), text("destinationSession"), ts)
+            else {
+                continue;
+            };
+            store.insert_queue(&QueueFact {
+                source_key: format!("events:{kind}:{seq}"),
+                transition_id: seq,
+                qitem_id: dendro_core::seal_identifier(key, "qitem", qitem),
+                ts: when,
+                state: "pending".to_string(),
+                source_seat: dendro_core::seal_identifier(key, "seat", destination),
+                dest_seat: dendro_core::seal_identifier(key, "seat", destination),
+                closure_reason: None,
+                closure_target: None,
+                chain_id: chain_of(qitem),
+                missions: Vec::new(),
+            })?;
         } else if kind == "queue.created" || kind == "queue.claimed" {
             let Some(qitem) = parsed.get("qitemId").and_then(|v| v.as_str()) else {
                 continue;
@@ -313,11 +334,28 @@ fn ingest_openrig(
                     .as_deref()
                     .map(|target| dendro_core::seal_identifier(key, "seat", target)),
                 chain_id: chain_of(&row.1),
-                missions: parse_missions(row.7.as_deref())
-                    .into_iter()
-                    .map(|mission| dendro_core::seal_identifier(key, "mission", &mission))
-                    .collect(),
+                missions: Vec::new(),
             })?;
+        }
+    }
+    // K3: mission tags as set at creation. OpenRig 0.6.6 only appends
+    // prompt-episode and recovery tags after creation, never mission tags.
+    let mut item_missions = std::collections::BTreeMap::<String, Vec<String>>::new();
+    if let Ok(mut stmt) = conn.prepare("SELECT qitem_id, tags FROM queue_items") {
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+        })?;
+        for (qitem, tags) in rows.flatten() {
+            let tags: Vec<String> = tags
+                .as_deref()
+                .and_then(|text| serde_json::from_str(text).ok())
+                .unwrap_or_default();
+            let missions = tags
+                .iter()
+                .filter_map(|tag| tag.strip_prefix("mission:"))
+                .map(|mission| dendro_core::seal_identifier(key, "mission", mission))
+                .collect();
+            item_missions.insert(qitem, missions);
         }
     }
     let mut items =
@@ -338,6 +376,7 @@ fn ingest_openrig(
                 &dendro_core::seal_identifier(key, "seat", &destination),
                 &cutoff,
                 rerouted.contains(&row.0),
+                item_missions.get(&row.0).map(Vec::as_slice).unwrap_or(&[]),
             )?;
         }
     }
@@ -531,13 +570,6 @@ fn seat_lives(mut events: Vec<(DateTime<Utc>, i64, Lifecycle)>) -> Vec<dendro_co
             stopped_at,
         })
         .collect()
-}
-
-fn parse_missions(note: Option<&str>) -> Vec<String> {
-    let Some(note) = note else {
-        return Vec::new();
-    };
-    serde_json::from_str::<Vec<String>>(note).unwrap_or_default()
 }
 
 pub(crate) fn stable_source_id(root_name: &str, root: &Path, file: &Path, key: &[u8]) -> String {

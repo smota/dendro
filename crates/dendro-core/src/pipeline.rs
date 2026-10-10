@@ -415,7 +415,15 @@ pub fn report_json(
     };
     let intakes = metrics::handoff_intakes(&edges, &queue_all, &tools, &usage, seat_of);
     let medians = metrics::pair_medians(&edges, &queue_all, &intakes);
+    // AC6 / K3: each in-window usage record lands in exactly one band. Per seat,
+    // missions + no_mission + ambiguous = the seat total. Unlinked usage stays
+    // apart from "no mission"; untimestamped usage is counted all-time only.
     let mut mission_tokens = std::collections::BTreeMap::<String, i64>::new();
+    let mut ambiguous_by_reason = std::collections::BTreeMap::<String, i64>::new();
+    let mut seat_bands =
+        std::collections::BTreeMap::<String, std::collections::BTreeMap<String, i64>>::new();
+    let mut seat_reasons =
+        std::collections::BTreeMap::<String, std::collections::BTreeMap<String, i64>>::new();
     for row in &usage {
         let mut bound_seats: Vec<String> = identities
             .iter()
@@ -429,18 +437,65 @@ pub fn report_json(
         } else {
             None
         };
-        let label = match (seat, row.ts) {
-            (Some(seat), Some(ts)) => match metrics::mission_at(&seat, &queue_all, ts) {
-                metrics::MissionBucket::Mission(name) => name,
-                metrics::MissionBucket::None => "no_mission".into(),
-                metrics::MissionBucket::Ambiguous => "ambiguous".into(),
-            },
-            (None, Some(_)) => "unlinked".into(),
-            _ => continue,
+        let amount = row.input_uncached + row.output + row.cache_read + row.cache_write;
+        let (Some(seat), Some(ts)) = (seat, row.ts) else {
+            *mission_tokens.entry("unlinked".into()).or_insert(0) += amount;
+            continue;
         };
-        *mission_tokens.entry(label).or_insert(0) +=
-            row.input_uncached + row.output + row.cache_read + row.cache_write;
+        let label = match metrics::mission_at(&seat, &queue_all, &snapshot_destinations, ts) {
+            metrics::MissionBucket::Mission(name) => format!("mission:{name}"),
+            metrics::MissionBucket::None => "no_mission".into(),
+            metrics::MissionBucket::Ambiguous(reason) => {
+                *ambiguous_by_reason.entry(reason.into()).or_insert(0) += amount;
+                *seat_reasons
+                    .entry(seat.clone())
+                    .or_default()
+                    .entry(reason.into())
+                    .or_insert(0) += amount;
+                "ambiguous".into()
+            }
+        };
+        *mission_tokens.entry(label.clone()).or_insert(0) += amount;
+        *seat_bands
+            .entry(seat)
+            .or_default()
+            .entry(label)
+            .or_insert(0) += amount;
     }
+    let mission_by_seat: Vec<_> = seat_bands
+        .iter()
+        .map(|(seat, bands)| {
+            let total: i64 = bands.values().sum();
+            json!({
+                "seat": seat,
+                "total": total,
+                "bands": bands,
+                "ambiguous_by_reason": seat_reasons.get(seat).cloned().unwrap_or_default(),
+                "conserved": total
+                    == bands.iter().filter(|(label, _)| label.starts_with("mission:")).map(|(_, v)| v).sum::<i64>()
+                        + bands.get("no_mission").copied().unwrap_or(0)
+                        + bands.get("ambiguous").copied().unwrap_or(0),
+            })
+        })
+        .collect();
+    let snapshot_rows: Vec<_> = destination_snapshots
+        .iter()
+        .map(|(qitem, snapshot)| {
+            json!({
+                "qitem_id": qitem,
+                "destination": snapshot.destination,
+                "snapshot_cutoff": snapshot.cutoff,
+                "reroute_marked": snapshot.reroute_marked,
+                "missions": snapshot.missions,
+                "historical": false,
+            })
+        })
+        .collect();
+    let untimestamped_tokens: i64 = usage_all
+        .iter()
+        .filter(|row| row.ts.is_none())
+        .map(|row| row.input_uncached + row.output + row.cache_read + row.cache_write)
+        .sum();
     let mut discovered = std::collections::BTreeSet::<(String, String)>::new();
     for row in &usage_all {
         discovered.insert((row.harness.clone(), row.native_session.clone()));
@@ -589,6 +644,9 @@ pub fn report_json(
                 "intake_median": row.intake_median,
             })).collect::<Vec<_>>(),
             "mission_tokens": mission_tokens,
+            "mission_ambiguous_by_reason": ambiguous_by_reason,
+            "mission_by_seat": mission_by_seat,
+            "untimestamped_tokens_all_time": untimestamped_tokens,
             "tool_loops": loops.iter().map(|item| json!({"session": item.session, "tool": item.tool, "count": item.count})).collect::<Vec<_>>(),
             "activity_events": activity.iter().map(|row| json!({
                 "source_key": row.source_key,
@@ -611,13 +669,7 @@ pub fn report_json(
                 "qitem_id": edge.qitem_id,
             })).collect::<Vec<_>>(),
             "handoff_members": handoff_members,
-            "destination_snapshots": destination_snapshots.iter().map(|(qitem, snapshot)| json!({
-                "qitem_id": qitem,
-                "destination": snapshot.destination,
-                "snapshot_cutoff": snapshot.cutoff,
-                "reroute_marked": snapshot.reroute_marked,
-                "historical": false,
-            })).collect::<Vec<_>>(),
+            "destination_snapshots": snapshot_rows,
             "trace_inputs": trace_inputs,
         }),
     ))
@@ -1053,6 +1105,155 @@ mod tests {
             trace["inputs"]["nonreturn_handoffs"],
             p["nonreturn_handoffs"]
         );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn mission_bands_conserve_per_seat_with_reasons_and_separate_counts() {
+        use chrono::TimeZone;
+        let at = |m: u32| chrono::Utc.with_ymd_and_hms(2026, 10, 9, 1, m, 0).unwrap();
+        let dir = std::env::temp_dir().join(format!("dendro-missions-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("analytics.duckdb");
+        let store = AnalyticsStore::open_path(&db, "kid").unwrap();
+        let usage = |key: &str, session: &str, m: Option<u32>, tokens: i64| crate::UsageFact {
+            source_key: key.into(),
+            harness: "claude".into(),
+            native_session: session.into(),
+            message_id: Some(key.into()),
+            ts: m.map(at),
+            seq: 0,
+            input_uncached: tokens,
+            output: 0,
+            cache_read: 0,
+            cache_write: 0,
+            reasoning: 0,
+            currency_total: None,
+            generation: 0,
+            predecessor_source_key: None,
+            predecessor_reason: None,
+            prior_input_tokens: None,
+            prior_cached_input_tokens: None,
+            prior_cache_write_input_tokens: None,
+            prior_output_tokens: None,
+            prior_reasoning_output_tokens: None,
+        };
+        store
+            .commit_file_batch(
+                "src",
+                "claude",
+                "p",
+                0,
+                0,
+                "h",
+                None,
+                &[
+                    usage("u-mission", "s-build", Some(5), 100), // one in progress: mission
+                    usage("u-conflict", "s-build", Some(15), 10), // two missions: ambiguous
+                    usage("u-none", "s-build", Some(25), 1),     // closed: no mission
+                    usage("u-history", "s-qa", Some(5), 7),      // claim without creation
+                    usage("u-unlinked", "s-nobody", Some(5), 1000),
+                    usage("u-untimed", "s-build", None, 50),
+                ],
+                &[],
+            )
+            .unwrap();
+        for (session, seat) in [("s-build", "dev.build"), ("s-qa", "dev.qa")] {
+            store
+                .insert_identity(&crate::IdentityFact {
+                    source_key: format!("id-{session}"),
+                    harness: "claude".into(),
+                    native_session: session.into(),
+                    rig: "r".into(),
+                    seat: seat.into(),
+                    ts: Some(at(0)),
+                })
+                .unwrap();
+        }
+        let fact = |key: &str, m: u32, item: &str, state: &str, seat: &str| crate::QueueFact {
+            source_key: key.into(),
+            transition_id: m as i64,
+            qitem_id: item.into(),
+            ts: at(m),
+            state: state.into(),
+            source_seat: seat.into(),
+            dest_seat: seat.into(),
+            closure_reason: None,
+            closure_target: None,
+            chain_id: None,
+            missions: vec![],
+        };
+        for row in [
+            fact("events:queue.created:1", 0, "i1", "pending", "dev.build"),
+            fact(
+                "events:queue.claimed:2",
+                1,
+                "i1",
+                "in-progress",
+                "dev.build",
+            ),
+            fact("events:queue.created:3", 0, "i2", "pending", "dev.build"),
+            fact(
+                "events:queue.claimed:4",
+                10,
+                "i2",
+                "in-progress",
+                "dev.build",
+            ),
+            fact("queue_transitions:5", 20, "i1", "done", "dev.build"),
+            fact("queue_transitions:6", 20, "i2", "done", "dev.build"),
+            fact("events:queue.claimed:7", 1, "old", "in-progress", "dev.qa"),
+        ] {
+            store.insert_queue(&row).unwrap();
+        }
+        for (item, seat, mission) in [
+            ("i1", "dev.build", "one"),
+            ("i2", "dev.build", "two"),
+            ("old", "dev.qa", "one"),
+        ] {
+            store
+                .insert_destination_snapshot(item, seat, "c", false, &[mission.to_string()])
+                .unwrap();
+        }
+        store.checkpoint().unwrap();
+        drop(store);
+        let report = report_json(
+            &db,
+            "decisions",
+            None,
+            "2026-10-09T01:00:00Z",
+            "2026-10-09T02:00:00Z",
+        )
+        .unwrap();
+        let p = &report["payload"];
+        assert_eq!(
+            p["mission_tokens"],
+            json!({"mission:one": 100, "ambiguous": 17, "no_mission": 1, "unlinked": 1000})
+        );
+        assert_eq!(
+            p["mission_ambiguous_by_reason"],
+            json!({"conflicting missions": 10, "insufficient history": 7})
+        );
+        let seats = p["mission_by_seat"].as_array().unwrap();
+        let build = seats.iter().find(|row| row["seat"] == "dev.build").unwrap();
+        assert_eq!(build["total"], 111);
+        assert_eq!(build["conserved"], true);
+        assert_eq!(
+            build["bands"],
+            json!({"mission:one": 100, "ambiguous": 10, "no_mission": 1})
+        );
+        let qa = seats.iter().find(|row| row["seat"] == "dev.qa").unwrap();
+        assert_eq!(
+            qa["ambiguous_by_reason"],
+            json!({"insufficient history": 7})
+        );
+        assert!(seats.iter().all(|row| row["conserved"] == true));
+        assert_eq!(
+            p["untimestamped_tokens_all_time"], 50,
+            "untimed usage is outside every window"
+        );
+        assert_eq!(p["untimestamped_count"], 1);
         let _ = fs::remove_dir_all(&dir);
     }
 

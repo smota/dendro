@@ -188,41 +188,97 @@ fn add_band(bands: &mut Bands, state: &str, demand: bool, secs: i64) {
 pub enum MissionBucket {
     Mission(String),
     None,
-    Ambiguous,
+    /// Ambiguous, with its visible reason (K3).
+    Ambiguous(&'static str),
 }
 
-pub fn mission_at(seat: &str, queue: &[QueueFact], ts: DateTime<Utc>) -> MissionBucket {
-    let mut latest: std::collections::BTreeMap<&str, &QueueFact> =
-        std::collections::BTreeMap::new();
-    for fact in queue.iter().filter(|q| q.ts <= ts && q.dest_seat == seat) {
-        latest.insert(fact.qitem_id.as_str(), fact);
-    }
-    let open: Vec<&QueueFact> = latest
-        .values()
+pub const AMBIGUOUS_INSUFFICIENT_HISTORY: &str = "insufficient history";
+pub const AMBIGUOUS_CONFLICTING_MISSIONS: &str = "conflicting missions";
+pub const AMBIGUOUS_TAG_CHANGE: &str = "detectable tag change";
+
+/// The item's state at `ts` from all of its queue records: created (pending),
+/// claimed (in-progress), unclaimed (pending, K5) and transitions.
+fn item_state_at<'a>(item: &[&'a QueueFact], ts: DateTime<Utc>) -> Option<&'a QueueFact> {
+    item.iter()
         .copied()
-        .filter(|q| q.state == "in-progress")
-        .collect();
-    if open.is_empty() {
+        .filter(|row| row.ts <= ts)
+        .max_by_key(|row| (row.ts, row.transition_id))
+}
+
+/// K3 mission attribution of a usage record of `seat` at `ts`. An item is the
+/// seat's when it is in-progress at `ts` and its K5 destination then is the
+/// seat; the actor is never the destination and the current destination is
+/// never painted backward. An in-progress item whose destination cannot be
+/// proven, but whose claim or snapshot names this seat, makes the usage
+/// ambiguous with "insufficient history". Missions are the item's `mission:`
+/// tags as set at creation; stored readings that disagree are a detectable
+/// tag change. Reason order: insufficient history, tag change, conflicting.
+pub fn mission_at(
+    seat: &str,
+    queue: &[QueueFact],
+    snapshots: &BTreeMap<String, Vec<DestinationSnapshot>>,
+    ts: DateTime<Utc>,
+) -> MissionBucket {
+    let mut items: BTreeMap<&str, Vec<&QueueFact>> = BTreeMap::new();
+    for fact in queue {
+        items.entry(fact.qitem_id.as_str()).or_default().push(fact);
+    }
+    let mut owned = Vec::new();
+    let mut insufficient = false;
+    for (qitem, facts) in &items {
+        let Some(state) = item_state_at(facts, ts) else {
+            continue;
+        };
+        if state.state != "in-progress" {
+            continue;
+        }
+        let mut probe = state.clone();
+        probe.ts = ts;
+        match destination_at(&probe, queue, snapshots) {
+            Ok((destination, _, _)) if destination == seat => owned.push(*qitem),
+            Ok(_) => {}
+            Err(_) => {
+                let named = facts.iter().any(|row| {
+                    row.source_key.starts_with("events:queue.claimed:")
+                        && row.dest_seat == seat
+                        && row.ts <= ts
+                }) || snapshots
+                    .get(*qitem)
+                    .and_then(|rows| rows.last())
+                    .is_some_and(|snapshot| snapshot.destination == seat);
+                insufficient |= named;
+            }
+        }
+    }
+    if insufficient {
+        return MissionBucket::Ambiguous(AMBIGUOUS_INSUFFICIENT_HISTORY);
+    }
+    if owned.is_empty() {
         return MissionBucket::None;
     }
     let mut missions = Vec::new();
-    for item in open {
-        if item.missions.len() > 1 {
-            return MissionBucket::Ambiguous;
+    let mut conflicting = false;
+    for qitem in owned {
+        let Some(readings) = snapshots.get(qitem).filter(|rows| !rows.is_empty()) else {
+            return MissionBucket::Ambiguous(AMBIGUOUS_INSUFFICIENT_HISTORY);
+        };
+        if readings
+            .windows(2)
+            .any(|pair| pair[0].missions != pair[1].missions)
+        {
+            return MissionBucket::Ambiguous(AMBIGUOUS_TAG_CHANGE);
         }
-        if let Some(m) = item.missions.first() {
-            missions.push(m.clone());
-        }
-    }
-    if missions.is_empty() {
-        return MissionBucket::None;
+        let tags = &readings[readings.len() - 1].missions;
+        conflicting |= tags.len() > 1;
+        missions.extend(tags.iter().cloned());
     }
     missions.sort();
     missions.dedup();
-    if missions.len() == 1 {
-        MissionBucket::Mission(missions.remove(0))
-    } else {
-        MissionBucket::Ambiguous
+    match missions.len() {
+        _ if conflicting => MissionBucket::Ambiguous(AMBIGUOUS_CONFLICTING_MISSIONS),
+        0 => MissionBucket::None,
+        1 => MissionBucket::Mission(missions.remove(0)),
+        _ => MissionBucket::Ambiguous(AMBIGUOUS_CONFLICTING_MISSIONS),
     }
 }
 
@@ -1119,39 +1175,168 @@ mod tests {
         assert_eq!(bands.sum(), 60);
     }
 
+    fn tagged(destination: &str, missions: &[&str]) -> DestinationSnapshot {
+        DestinationSnapshot {
+            destination: destination.into(),
+            cutoff: "t".into(),
+            reroute_marked: false,
+            missions: missions.iter().map(|m| m.to_string()).collect(),
+        }
+    }
+
+    fn claimed(item: &str, at: i64, seat: &str) -> QueueFact {
+        let mut fact = q(
+            &format!("events:queue.claimed:{item}{at}"),
+            0,
+            item,
+            at,
+            "in-progress",
+            seat,
+            seat,
+            None,
+        );
+        fact.transition_id = 5_000 + at;
+        fact
+    }
+
     #[test]
-    fn overlapping_missions_are_ambiguous_and_conserve() {
+    fn two_in_progress_items_with_different_missions_are_ambiguous() {
         let queue = vec![
-            QueueFact {
-                source_key: "a".into(),
-                transition_id: 1,
-                qitem_id: "i1".into(),
-                ts: ts(0),
-                state: "in-progress".into(),
-                source_seat: "s".into(),
-                dest_seat: "dev.build".into(),
-                closure_reason: None,
-                closure_target: None,
-                chain_id: None,
-                missions: vec!["one".into()],
-            },
-            QueueFact {
-                source_key: "b".into(),
-                transition_id: 2,
-                qitem_id: "i2".into(),
-                ts: ts(0),
-                state: "in-progress".into(),
-                source_seat: "s".into(),
-                dest_seat: "dev.build".into(),
-                closure_reason: None,
-                closure_target: None,
-                chain_id: None,
-                missions: vec!["two".into()],
-            },
+            created("i1", 0, "dev.build"),
+            claimed("i1", 1, "dev.build"),
+            created("i2", 0, "dev.build"),
+            claimed("i2", 2, "dev.build"),
+        ];
+        let snapshots = BTreeMap::from([
+            ("i1".to_string(), vec![tagged("dev.build", &["one"])]),
+            ("i2".to_string(), vec![tagged("dev.build", &["two"])]),
+        ]);
+        assert_eq!(
+            mission_at("dev.build", &queue, &snapshots, ts(5)),
+            MissionBucket::Ambiguous(AMBIGUOUS_CONFLICTING_MISSIONS)
+        );
+        // Same mission on both: that mission.
+        let same = BTreeMap::from([
+            ("i1".to_string(), vec![tagged("dev.build", &["one"])]),
+            ("i2".to_string(), vec![tagged("dev.build", &["one"])]),
+        ]);
+        assert_eq!(
+            mission_at("dev.build", &queue, &same, ts(5)),
+            MissionBucket::Mission("one".into())
+        );
+    }
+
+    #[test]
+    fn k3_mission_follows_in_progress_intervals_and_destination() {
+        let snapshots = BTreeMap::from([
+            ("i1".to_string(), vec![tagged("dev.build", &["one"])]),
+            (
+                "two-tags".to_string(),
+                vec![tagged("dev.build", &["one", "two"])],
+            ),
+            ("untagged".to_string(), vec![tagged("dev.build", &[])]),
+        ]);
+        let mut unclaim = q(
+            "events:queue.unclaimed:9",
+            0,
+            "i1",
+            20,
+            "pending",
+            "dev.build",
+            "dev.build",
+            None,
+        );
+        unclaim.transition_id = 6_020;
+        let queue = vec![
+            created("i1", 0, "dev.build"),
+            claimed("i1", 10, "dev.build"),
+            unclaim,
+            claimed("i1", 30, "dev.build"),
+            done("closed", 1, "i1", 40),
+        ];
+        let at = |t| mission_at("dev.build", &queue, &snapshots, ts(t));
+        assert_eq!(at(5), MissionBucket::None, "pending, not in progress");
+        assert_eq!(
+            at(10),
+            MissionBucket::Mission("one".into()),
+            "claim applies at its instant"
+        );
+        assert_eq!(at(25), MissionBucket::None, "unclaim ends the interval");
+        assert_eq!(at(35), MissionBucket::Mission("one".into()));
+        assert_eq!(at(45), MissionBucket::None, "closed");
+        // The actor of a transition is not the destination.
+        let actor = vec![
+            created("i1", 0, "dev.build"),
+            q(
+                "t-actor",
+                1,
+                "i1",
+                5,
+                "in-progress",
+                "orch",
+                "unknown",
+                None,
+            ),
         ];
         assert_eq!(
-            mission_at("dev.build", &queue, ts(5)),
-            MissionBucket::Ambiguous
+            mission_at("orch", &actor, &snapshots, ts(8)),
+            MissionBucket::None
+        );
+        assert_eq!(
+            mission_at("dev.build", &actor, &snapshots, ts(8)),
+            MissionBucket::Mission("one".into())
+        );
+        let two = vec![
+            created("two-tags", 0, "dev.build"),
+            claimed("two-tags", 1, "dev.build"),
+        ];
+        assert_eq!(
+            mission_at("dev.build", &two, &snapshots, ts(5)),
+            MissionBucket::Ambiguous(AMBIGUOUS_CONFLICTING_MISSIONS),
+            "one item with two mission tags"
+        );
+        let untagged = vec![
+            created("untagged", 0, "dev.build"),
+            claimed("untagged", 1, "dev.build"),
+        ];
+        assert_eq!(
+            mission_at("dev.build", &untagged, &snapshots, ts(5)),
+            MissionBucket::None,
+            "an untagged item is no mission"
+        );
+    }
+
+    #[test]
+    fn k3_unprovable_history_or_tags_are_ambiguous_with_their_reason() {
+        // No creation in history; the claim names the seat: insufficient history.
+        let queue = vec![claimed("old", 1, "dev.build")];
+        let snapshots = BTreeMap::from([("old".to_string(), vec![tagged("dev.build", &["one"])])]);
+        assert_eq!(
+            mission_at("dev.build", &queue, &snapshots, ts(5)),
+            MissionBucket::Ambiguous(AMBIGUOUS_INSUFFICIENT_HISTORY)
+        );
+        assert_eq!(
+            mission_at("someone-else", &queue, &snapshots, ts(5)),
+            MissionBucket::None,
+            "an unprovable item that names another seat does not touch this one"
+        );
+        // Owned, but no snapshot to read tags from.
+        let no_tags = vec![
+            created("bare", 0, "dev.build"),
+            claimed("bare", 1, "dev.build"),
+        ];
+        assert_eq!(
+            mission_at("dev.build", &no_tags, &BTreeMap::new(), ts(5)),
+            MissionBucket::Ambiguous(AMBIGUOUS_INSUFFICIENT_HISTORY)
+        );
+        // Stored readings disagree on the mission tags.
+        let changed = BTreeMap::from([(
+            "bare".to_string(),
+            vec![tagged("dev.build", &["one"]), tagged("dev.build", &["two"])],
+        )]);
+        assert_eq!(
+            mission_at("dev.build", &no_tags, &changed, ts(5)),
+            MissionBucket::Ambiguous(AMBIGUOUS_TAG_CHANGE)
         );
     }
 
@@ -1458,6 +1643,7 @@ mod tests {
                 destination: "A".into(),
                 cutoff: "t".into(),
                 reroute_marked: false,
+                missions: Vec::new(),
             }],
         )]);
         // A snapshot without the creation in history proves nothing (K5).
@@ -1575,6 +1761,7 @@ mod tests {
             destination: destination.into(),
             cutoff: cutoff.into(),
             reroute_marked: marked,
+            missions: Vec::new(),
         }
     }
 

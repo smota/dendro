@@ -169,6 +169,7 @@ pub const TEXT_COLUMNS: &[&str] = &[
     "destination_snapshots.qitem_id",
     "destination_snapshots.destination",
     "destination_snapshots.snapshot_cutoff",
+    "destination_snapshots.missions",
 ];
 
 #[cfg(test)]

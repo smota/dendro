@@ -83,13 +83,15 @@ pub struct SkillFact {
     pub invoked: bool,
 }
 
-/// An item's `queue_items.destination_session` at one ingest, with its cutoff
+/// An item's `queue_items.destination_session` and mission tags at one ingest, with its cutoff
 /// (`queue_items.ts_updated`) and whether the source shows a K5 reroute mark.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DestinationSnapshot {
     pub destination: String,
     pub cutoff: String,
     pub reroute_marked: bool,
+    /// The item's `mission:` tag values at this reading (K3: tags as set at creation).
+    pub missions: Vec<String>,
 }
 
 /// One recorded life of a seat (K4). A seat may have several after relaunches.

@@ -751,6 +751,19 @@ mod tests {
             [],
         )
         .unwrap();
+        // Missions come from mission: tags on the item (K3), not from notes.
+        conn.execute(
+            "CREATE TABLE queue_items (qitem_id TEXT, destination_session TEXT, ts_updated TEXT, tags TEXT)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO queue_items VALUES ('plain-item','plain-seat','2026-10-09T00:00:10Z',?)",
+            rusqlite::params![
+                "[\"mission:plain-mission\",\"mission:sk-ant-ZZZMISSION\",\"slice:x\"]"
+            ],
+        )
+        .unwrap();
         drop(conn);
         let db_path = dir.join("analytics.duckdb");
         drop(AnalyticsStore::open_path(&db_path, "key").unwrap());
@@ -781,14 +794,21 @@ mod tests {
             .as_deref()
             .unwrap_or("")
             .contains("ZZZREASON")));
-        assert!(queue.iter().any(|row| row
-            .missions
+        assert!(
+            queue.iter().all(|row| row.missions.is_empty()),
+            "notes are not missions"
+        );
+        let snapshots = db.load_destination_snapshots().unwrap();
+        let missions: Vec<&String> = snapshots.iter().flat_map(|(_, s)| &s.missions).collect();
+        assert!(missions.iter().any(|mission| *mission == "plain-mission"));
+        assert!(missions
             .iter()
-            .any(|mission| mission == "plain-mission")));
-        assert!(queue.iter().all(|row| row
-            .missions
-            .iter()
-            .all(|mission| !mission.contains("ZZZMISSION"))));
+            .all(|mission| !mission.contains("ZZZMISSION")));
+        assert_eq!(
+            missions.len(),
+            2,
+            "only mission: tags, the secret one sealed"
+        );
         assert!(queue.iter().all(|row| row.chain_id.is_none()));
         assert_eq!(db.skill_count().unwrap(), 0);
         drop(db);

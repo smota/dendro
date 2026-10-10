@@ -209,7 +209,8 @@ impl AnalyticsStore {
                 qitem_id VARCHAR NOT NULL,
                 destination VARCHAR NOT NULL,
                 snapshot_cutoff VARCHAR NOT NULL,
-                reroute_marked BOOLEAN NOT NULL
+                reroute_marked BOOLEAN NOT NULL,
+                missions VARCHAR NOT NULL
             );
             "#,
         )?;
@@ -460,17 +461,20 @@ impl AnalyticsStore {
         destination: &str,
         cutoff: &str,
         reroute_marked: bool,
+        missions: &[String],
     ) -> Result<()> {
         let qitem_id = redact(qitem_id);
         let destination = redact(destination);
         let cutoff = redact(cutoff);
-        let source_key = format!("queue_items:{qitem_id}:{destination}:{cutoff}");
+        let missions =
+            serde_json::to_string(&missions.iter().map(|m| redact(m)).collect::<Vec<_>>())?;
+        let source_key = format!("queue_items:{qitem_id}:{destination}:{cutoff}:{missions}");
         self.conn.execute(
-            r#"INSERT INTO destination_snapshots (source_key, qitem_id, destination, snapshot_cutoff, reroute_marked)
-               VALUES (?, ?, ?, ?, ?)
+            r#"INSERT INTO destination_snapshots (source_key, qitem_id, destination, snapshot_cutoff, reroute_marked, missions)
+               VALUES (?, ?, ?, ?, ?, ?)
                ON CONFLICT (source_key) DO UPDATE SET
                  reroute_marked = destination_snapshots.reroute_marked OR excluded.reroute_marked"#,
-            params![source_key, qitem_id, destination, cutoff, reroute_marked],
+            params![source_key, qitem_id, destination, cutoff, reroute_marked, missions],
         )?;
         Ok(())
     }
@@ -514,15 +518,17 @@ impl AnalyticsStore {
     /// Every stored snapshot, oldest cutoff first, as (qitem, snapshot).
     pub fn load_destination_snapshots(&self) -> Result<Vec<(String, DestinationSnapshot)>> {
         let mut stmt = self.conn.prepare(
-            "SELECT qitem_id, destination, snapshot_cutoff, reroute_marked FROM destination_snapshots ORDER BY snapshot_cutoff, qitem_id",
+            "SELECT qitem_id, destination, snapshot_cutoff, reroute_marked, missions FROM destination_snapshots ORDER BY snapshot_cutoff, qitem_id",
         )?;
         let rows = stmt.query_map([], |row| {
+            let missions: String = row.get(4)?;
             Ok((
                 row.get::<_, String>(0)?,
                 DestinationSnapshot {
                     destination: row.get(1)?,
                     cutoff: row.get(2)?,
                     reroute_marked: row.get(3)?,
+                    missions: serde_json::from_str(&missions).unwrap_or_default(),
                 },
             ))
         })?;
@@ -971,6 +977,16 @@ mod tests {
                 reason: canary.into(),
             })
             .unwrap();
+        store
+            .insert_destination_snapshot(canary, canary, canary, true, &[canary.to_string()])
+            .unwrap();
+        store
+            .replace_seat_bounds(&[SeatBound {
+                seat: canary.into(),
+                created_at: Some(now),
+                stopped_at: None,
+            }])
+            .unwrap();
         let mut checked = 0usize;
         for qualified in crate::privacy::TEXT_COLUMNS {
             let (table, column) = qualified.split_once('.').unwrap();
@@ -992,11 +1008,15 @@ mod tests {
             })
             .unwrap();
         assert_eq!(reason, "handed_off_to");
-        let bounds: i64 = store
-            .conn
-            .query_row("SELECT COUNT(*) FROM seat_bounds", [], |row| row.get(0))
-            .unwrap();
-        assert_eq!(bounds, 0);
+        for table in ["seat_bounds", "destination_snapshots"] {
+            let rows: i64 = store
+                .conn
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(rows, 1, "{table} row carries the canary and was checked");
+        }
     }
 
     #[test]
