@@ -31,10 +31,10 @@ pub fn ingest_staged(
         match root.name.as_str() {
             "claude" | "codex" | "pi" => {
                 let files = walk_jsonl(&root.path);
-                for (index, file) in files.iter().enumerate() {
+                for file in &files {
                     stream::ingest_jsonl_with_key(
                         &store,
-                        &format!("{}:{}", root.name, index),
+                        &stable_source_id(&root.name, &root.path, file, key),
                         &root.name,
                         file,
                         Some(key),
@@ -273,6 +273,15 @@ fn parse_missions(note: Option<&str>) -> Vec<String> {
         return Vec::new();
     };
     serde_json::from_str::<Vec<String>>(note).unwrap_or_default()
+}
+
+fn stable_source_id(root_name: &str, root: &Path, file: &Path, key: &[u8]) -> String {
+    let relative = file.strip_prefix(root).unwrap_or(file);
+    dendro_core::seal_identifier(
+        key,
+        "source",
+        &format!("{root_name}:{}", relative.display()),
+    )
 }
 
 fn normalize_harness(key: &[u8], runtime: &str) -> String {

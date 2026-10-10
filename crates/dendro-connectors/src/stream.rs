@@ -753,6 +753,65 @@ mod tests {
     }
 
     #[test]
+    fn source_identity_follows_path_not_directory_order() {
+        let dir = std::env::temp_dir().join(format!("dendro-source-id-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let root = dir.join("codex");
+        fs::create_dir_all(&root).unwrap();
+        let line = |input: i64| {
+            format!(
+                "{{\"type\":\"event_msg\",\"payload\":{{\"type\":\"token_count\",\"info\":{{\"total_token_usage\":{{\"input_tokens\":{input},\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":0,\"reasoning_output_tokens\":0,\"total_tokens\":{input}}}}}}}}}\n"
+            )
+        };
+        write(&root.join("a.jsonl"), &line(10));
+        write(&root.join("b.jsonl"), &line(20));
+        let db_path = dir.join("analytics.duckdb");
+        drop(AnalyticsStore::open_path(&db_path, "key").unwrap());
+        let roots = [crate::SourceRoot {
+            name: "codex".into(),
+            path: root.clone(),
+        }];
+        let ingest =
+            || crate::ingest_staged(&db_path, &roots, false, b"source-column-test-key").unwrap();
+        ingest();
+        let db = AnalyticsStore::open_path(&db_path, "key").unwrap();
+        let a = db.source_state("codex:a.jsonl").unwrap().unwrap();
+        let b = db.source_state("codex:b.jsonl").unwrap().unwrap();
+        assert!(db.source_state("codex:0").unwrap().is_none());
+        drop(db);
+        let mut extra = fs::OpenOptions::new()
+            .append(true)
+            .open(root.join("b.jsonl"))
+            .unwrap();
+        extra.write_all(line(30).as_bytes()).unwrap();
+        ingest();
+        let db = AnalyticsStore::open_path(&db_path, "key").unwrap();
+        let b_after = db.source_state("codex:b.jsonl").unwrap().unwrap();
+        assert_eq!(b_after.0, b.0);
+        assert!(b_after.1 > b.1);
+        assert_eq!(db.source_state("codex:a.jsonl").unwrap().unwrap().0, a.0);
+        drop(db);
+        fs::remove_file(root.join("a.jsonl")).unwrap();
+        write(&root.join("c.jsonl"), &line(4));
+        ingest();
+        let db = AnalyticsStore::open_path(&db_path, "key").unwrap();
+        assert!(db.source_state("codex:c.jsonl").unwrap().is_some());
+        assert!(db.source_state("codex:a.jsonl").unwrap().is_some());
+        assert_ne!(
+            db.source_state("codex:c.jsonl").unwrap().unwrap().2,
+            db.source_state("codex:a.jsonl").unwrap().unwrap().2
+        );
+        drop(db);
+        write(&root.join("b.jsonl"), &line(1));
+        ingest();
+        let db = AnalyticsStore::open_path(&db_path, "key").unwrap();
+        let replaced = db.source_state("codex:b.jsonl").unwrap().unwrap();
+        assert!(replaced.0 > b.0);
+        drop(db);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn source_hash_counter_snapshot_and_warning_reason_are_not_raw_secrets() {
         let dir = std::env::temp_dir().join(format!("dendro-source-rest-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
@@ -795,7 +854,7 @@ mod tests {
         ];
         crate::ingest_staged(&db_path, &roots, false, b"source-column-test-key").unwrap();
         let db = AnalyticsStore::open_path(&db_path, "key").unwrap();
-        let state = db.source_state("codex:0").unwrap().unwrap();
+        let state = db.source_state("codex:rollout.jsonl").unwrap().unwrap();
         assert_eq!(state.2.len(), 64);
         assert!(state.2.chars().all(|ch| ch.is_ascii_hexdigit()));
         assert!(!state.2.contains("ZZZ"));
