@@ -163,6 +163,10 @@ pub const TEXT_COLUMNS: &[&str] = &[
     "seat_bounds.seat",
     "warnings.path",
     "warnings.reason",
+    "destination_snapshots.source_key",
+    "destination_snapshots.qitem_id",
+    "destination_snapshots.destination",
+    "destination_snapshots.snapshot_cutoff",
 ];
 
 #[cfg(test)]

@@ -197,6 +197,12 @@ impl AnalyticsStore {
                 line_no BIGINT,
                 reason VARCHAR NOT NULL
             );
+            CREATE TABLE destination_snapshots (
+                source_key VARCHAR PRIMARY KEY,
+                qitem_id VARCHAR NOT NULL,
+                destination VARCHAR NOT NULL,
+                snapshot_cutoff VARCHAR NOT NULL
+            );
             "#,
         )?;
         self.conn.execute(
@@ -413,6 +419,39 @@ impl AnalyticsStore {
             ],
         )?;
         Ok(())
+    }
+
+    pub fn insert_destination_snapshot(
+        &self,
+        qitem_id: &str,
+        destination: &str,
+        cutoff: &str,
+    ) -> Result<()> {
+        let qitem_id = redact(qitem_id);
+        let destination = redact(destination);
+        let cutoff = redact(cutoff);
+        let source_key = format!("queue_items:{qitem_id}:{destination}:{cutoff}");
+        self.conn.execute(
+            r#"INSERT INTO destination_snapshots (source_key, qitem_id, destination, snapshot_cutoff)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT (source_key) DO NOTHING"#,
+            params![source_key, qitem_id, destination, cutoff],
+        )?;
+        Ok(())
+    }
+
+    pub fn load_destination_snapshots(&self) -> Result<Vec<(String, String, String)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT qitem_id, destination, snapshot_cutoff FROM destination_snapshots ORDER BY snapshot_cutoff, qitem_id",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
     pub fn insert_skill(&self, fact: &SkillFact) -> Result<()> {
@@ -835,7 +874,7 @@ mod tests {
             assert_eq!(hits, 0, "{qualified}");
             checked += 1;
         }
-        assert_eq!(checked, 40);
+        assert_eq!(checked, crate::privacy::TEXT_COLUMNS.len());
         let state: String = store
             .conn
             .query_row("SELECT state FROM activity_facts", [], |row| row.get(0))

@@ -196,6 +196,26 @@ fn ingest_openrig(
             })?;
         }
     }
+    let mut items =
+        conn.prepare("SELECT qitem_id, destination_session, ts_updated FROM queue_items");
+    if let Ok(ref mut stmt) = items {
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })?;
+        for row in rows.flatten() {
+            let Some(destination) = row.1 else { continue };
+            let cutoff = row.2.unwrap_or_else(|| "unknown".to_string());
+            store.insert_destination_snapshot(
+                &dendro_core::seal_identifier(key, "qitem", &row.0),
+                &dendro_core::seal_identifier(key, "seat", &destination),
+                &cutoff,
+            )?;
+        }
+    }
     if frozen {
         let _ = std::fs::remove_dir_all(&snap_dir);
     }

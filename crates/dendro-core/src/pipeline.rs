@@ -176,6 +176,7 @@ pub fn report_json(
             .collect()
     });
     let sources = store.load_sources()?;
+    let destination_snapshots = store.load_destination_snapshots()?;
     let usage_all = store.load_usage()?;
     let untimestamped_count = usage_all.iter().filter(|row| row.ts.is_none()).count();
     let usage: Vec<_> = usage_all
@@ -472,6 +473,12 @@ pub fn report_json(
                 "to": edge.to_seat,
                 "qitem_id": edge.qitem_id,
             })).collect::<Vec<_>>(),
+            "destination_snapshots": destination_snapshots.iter().map(|(qitem, destination, cutoff)| json!({
+                "qitem_id": qitem,
+                "destination": destination,
+                "snapshot_cutoff": cutoff,
+                "historical": false,
+            })).collect::<Vec<_>>(),
             "trace_inputs": usage.iter().map(|row| {
                 let suffix = format!(":{}:{}", row.generation, row.seq);
                 let source_id = row.source_key.strip_suffix(&suffix);
@@ -568,6 +575,7 @@ pub fn trace_json(
             "activity": payload["activity"],
             "activity_events": payload["activity_events"],
             "demand_events": payload["demand_events"],
+            "destination_snapshots": payload["destination_snapshots"],
             "nonreturn_handoffs": payload["nonreturn_handoffs"],
             "window": {"from": from, "to": to},
         },

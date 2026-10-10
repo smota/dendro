@@ -101,6 +101,8 @@ def main():
         (7, "secret-b", T[20], "in-progress", f"seat-{secret_b}", None, f"seat-{secret_b}", json.dumps([f"mission-{secret_b}"])),
         (16, "actor-only", T[10], "pending", "seat-actor", None, None, "[]"),
     ])
+    conn.execute("CREATE TABLE queue_items (qitem_id TEXT, destination_session TEXT, ts_updated TEXT)")
+    conn.execute("INSERT INTO queue_items VALUES ('actor-only', 'seat-current', '2026-10-09T00:00:10Z')")
     conn.commit(); conn.close()
     out = ROOT / "out"; out.mkdir()
     analytics = out / "analytics.duckdb"
@@ -159,6 +161,9 @@ def main():
     demand = traced.get("inputs", {}).get("demand_events", [])
     actor_only = [row for row in demand if row.get("qitem_id") == "actor-only"]
     check("qa_actor_is_not_destination", actor_only and all(row.get("dest") == "unknown" for row in actor_only), "unknown", actor_only[0].get("dest") if actor_only else None)
+    snapshots = traced.get("inputs", {}).get("destination_snapshots", [])
+    current = next((row for row in snapshots if row.get("qitem_id") == "actor-only"), {})
+    check("qa_destination_snapshot", current.get("destination") == "seat-current" and current.get("historical") is False, "seat-current", current.get("destination"))
     _, before_text, _ = report(analytics, "tokens")
     before_rows = json.loads(before_text)["payload"].get("usage_rows")
     code, _, _ = run(["run", "--db", str(analytics), "--root", f"claude={src/'claude'}", "--root", f"codex={src/'codex'}", "--root", f"pi={src/'pi'}", "--root", f"openrig={db}", "--frozen"])
