@@ -234,6 +234,7 @@ impl AnalyticsStore {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn commit_file_batch(
         &self,
         source_id: &str,

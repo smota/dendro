@@ -29,8 +29,7 @@ pub fn redact(input: &str) -> String {
                 end += 1;
             }
             if end > start + marker.len() || *marker == "Bearer " {
-                let replace_end = if *marker == "Bearer " { end } else { end };
-                out.replace_range(start..replace_end, "[redacted]");
+                out.replace_range(start..end, "[redacted]");
                 search_from = start + "[redacted]".len();
             } else {
                 search_from = start + marker.len();
@@ -65,7 +64,11 @@ pub fn tool_fingerprint(key: &[u8], tool: &str, lexical: Option<&str>) -> Option
     if trimmed.is_empty() {
         return None;
     }
-    Some(hmac_domain(key, "tool-input", &format!("{tool}\n{trimmed}")))
+    Some(hmac_domain(
+        key,
+        "tool-input",
+        &format!("{tool}\n{trimmed}"),
+    ))
 }
 
 pub fn opaque_id(key: &[u8], domain: &str, native: &str) -> String {
@@ -98,7 +101,10 @@ mod tests {
         let left = tool_fingerprint(key_a, "Write", Some(spaced)).unwrap();
         let right = tool_fingerprint(key_a, "Write", Some(ordered)).unwrap();
         assert_ne!(left, right);
-        assert_ne!(left, tool_fingerprint(key_b, "Write", Some(spaced)).unwrap());
+        assert_ne!(
+            left,
+            tool_fingerprint(key_b, "Write", Some(spaced)).unwrap()
+        );
         assert!(tool_fingerprint(key_a, "Write", None).is_none());
     }
 }

@@ -455,4 +455,79 @@ mod tests {
         drop(conn);
         let _ = fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    #[ignore = "reads this machine's local logs; run explicitly for AC1"]
+    fn ac1_real_logs_finish_within_five_minutes() {
+        let started = std::time::Instant::now();
+        let home = std::env::var("HOME").unwrap();
+        let db = store();
+        let mut found = Vec::new();
+        let roots = [
+            ("claude", PathBuf::from(&home).join(".claude/projects")),
+            ("codex", PathBuf::from(&home).join(".codex/sessions")),
+            ("pi", PathBuf::from(&home).join(".openrig/state/pi")),
+        ];
+        for (harness, root) in roots {
+            if !root.exists() {
+                found.push(format!("{harness} missing"));
+                continue;
+            }
+            let mut files = 0usize;
+            for entry in walk_jsonl(&root) {
+                files += 1;
+                ingest_jsonl(&db, &format!("{harness}:{files}"), harness, &entry).unwrap();
+            }
+            found.push(format!("{harness} files={files}"));
+        }
+        let sqlite = PathBuf::from(&home).join(".openrig/openrig.sqlite");
+        if sqlite.exists() {
+            let snap = std::env::temp_dir().join(format!("dendro-ac1-snap-{}", std::process::id()));
+            let copied = copy_sqlite_trio(&sqlite, &snap).unwrap();
+            let uri = format!("file:{}?mode=ro", copied.display());
+            let flags = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI;
+            let conn = rusqlite::Connection::open_with_flags(uri, flags).unwrap();
+            let n: i64 = conn
+                .query_row("SELECT COUNT(*) FROM events", [], |row| row.get(0))
+                .unwrap();
+            found.push(format!("openrig events={n}"));
+            let _ = fs::remove_dir_all(&snap);
+        } else {
+            found.push("openrig missing".into());
+        }
+        for label in ["agy", "grok"] {
+            found.push(format!("{label} not-required"));
+        }
+        let elapsed = started.elapsed();
+        eprintln!("AC1 {} ms {:?}", elapsed.as_millis(), found);
+        assert!(elapsed.as_secs() <= 300, "AC1 exceeded 300s: {elapsed:?}");
+    }
+}
+
+#[cfg(test)]
+fn walk_jsonl(root: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let entries = match fs::read_dir(&dir) {
+            Ok(entries) => entries,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let meta = match fs::symlink_metadata(&path) {
+                Ok(meta) => meta,
+                Err(_) => continue,
+            };
+            if meta.file_type().is_symlink() {
+                continue;
+            }
+            if meta.file_type().is_dir() {
+                stack.push(path);
+            } else if path.extension().and_then(|ext| ext.to_str()) == Some("jsonl") {
+                out.push(path);
+            }
+        }
+    }
+    out
 }

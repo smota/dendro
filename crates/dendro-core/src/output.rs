@@ -19,6 +19,7 @@ pub fn with_output_lock<T>(lock_path: &Path, body: impl FnOnce() -> Result<T>) -
         .read(true)
         .write(true)
         .create(true)
+        .truncate(false)
         .mode(0o600)
         .open(lock_path)?;
     let mut lock = RwLock::new(file);
@@ -75,7 +76,8 @@ pub fn read_key(path: &Path) -> Result<KeyMaterial> {
     if body.len() < 4 + 4 + 32 + 32 || &body[..4] != MAGIC {
         return Err(anyhow!("analytics key file is not valid"));
     }
-    let id = String::from_utf8(body[8..40].to_vec()).map_err(|_| anyhow!("analytics key id is invalid"))?;
+    let id = String::from_utf8(body[8..40].to_vec())
+        .map_err(|_| anyhow!("analytics key id is invalid"))?;
     let mut bytes = [0u8; 32];
     bytes.copy_from_slice(&body[40..72]);
     if key_id(&bytes) != id {
@@ -85,7 +87,10 @@ pub fn read_key(path: &Path) -> Result<KeyMaterial> {
 }
 
 pub fn refuse_aliased_output(dest: &Path, source_roots: &[PathBuf]) -> Result<()> {
-    if dest.symlink_metadata().is_ok_and(|m| m.file_type().is_symlink()) {
+    if dest
+        .symlink_metadata()
+        .is_ok_and(|m| m.file_type().is_symlink())
+    {
         return Err(anyhow!("refusing symlink analytics output"));
     }
     let dest_parent = dest.parent().unwrap_or_else(|| Path::new("."));
@@ -104,12 +109,16 @@ pub fn refuse_aliased_output(dest: &Path, source_roots: &[PathBuf]) -> Result<()
         }
         for root in source_roots {
             if same_inode_under(root, &dest_meta)? {
-                return Err(anyhow!("refusing analytics output that aliases a source file"));
+                return Err(anyhow!(
+                    "refusing analytics output that aliases a source file"
+                ));
             }
         }
         let wal = wal_sibling(dest);
         if wal.exists() {
-            return Err(anyhow!("refusing output that already has a DuckDB wal sibling"));
+            return Err(anyhow!(
+                "refusing output that already has a DuckDB wal sibling"
+            ));
         }
     }
     Ok(())
@@ -173,7 +182,11 @@ mod tests {
         assert_eq!(created.bytes, loaded.bytes);
         let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600);
-        let err = OpenOptions::new().write(true).create_new(true).open(&path).unwrap_err();
+        let err = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::AlreadyExists);
         let _ = fs::remove_dir_all(&dir);
     }
