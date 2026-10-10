@@ -323,6 +323,14 @@ fn is_event_record(fact: &QueueFact) -> bool {
 }
 
 pub const INSUFFICIENT_HISTORY: &str = "insufficient history";
+pub const NO_CREATION_IN_HISTORY: &str =
+    "insufficient history: the item's queue.created is outside the event history";
+pub const UNTIMED_REROUTE_MARK: &str = "insufficient history: a reroute mark without a timed qitem.fallback_routed event, so the reroute cannot be placed before or after the closure";
+/// Two readings of queue_items.destination_session at different cutoffs show
+/// the destination changed. Without a reroute event the change has no time,
+/// so it conflicts with any single destination for the closure (K5 needs proof
+/// of no change to use the current value).
+pub const CONFLICTING_SNAPSHOTS: &str = "insufficient history: stored destination snapshots disagree, which is conflicting historical evidence of an untimed change";
 
 /// K5: the item's destination at `fact`, with the source evidence for it.
 /// History first: the latest created or reroute event at or before `fact`.
@@ -333,7 +341,7 @@ pub fn destination_at(
     fact: &QueueFact,
     queue: &[QueueFact],
     snapshots: &BTreeMap<String, Vec<DestinationSnapshot>>,
-) -> Option<(String, String, Option<String>)> {
+) -> Result<(String, String, Option<String>), &'static str> {
     let item: Vec<&QueueFact> = queue
         .iter()
         .filter(|row| row.qitem_id == fact.qitem_id)
@@ -348,28 +356,39 @@ pub fn destination_at(
         .get(&fact.qitem_id)
         .map(Vec::as_slice)
         .unwrap_or(&[]);
-    let marked = rerouted_by_event
-        || item_snapshots
+    // Timed reroute events resolve the destination at any instant, so marks
+    // only block when no such event exists.
+    if !rerouted_by_event {
+        if item_snapshots
             .iter()
             .any(|snapshot| snapshot.reroute_marked)
-        || item_snapshots
+        {
+            return Err(UNTIMED_REROUTE_MARK);
+        }
+        if item_snapshots
             .windows(2)
-            .any(|pair| pair[0].destination != pair[1].destination);
-    if marked && !rerouted_by_event {
-        return None;
+            .any(|pair| pair[0].destination != pair[1].destination)
+        {
+            return Err(CONFLICTING_SNAPSHOTS);
+        }
     }
     if let Some(row) = item
         .iter()
         .filter(|row| is_destination_record(row) && row.ts <= fact.ts)
         .max_by_key(|row| (row.ts, row.transition_id))
     {
-        return Some((row.dest_seat.clone(), row.source_key.clone(), None));
+        return Ok((row.dest_seat.clone(), row.source_key.clone(), None));
     }
-    if !created || marked {
-        return None;
+    if !created {
+        return Err(NO_CREATION_IN_HISTORY);
     }
-    let latest = item_snapshots.last()?;
-    Some((
+    // Reached only when the creation is recorded after this transition. A
+    // reroute event then leaves the current value unproven.
+    if rerouted_by_event {
+        return Err(UNTIMED_REROUTE_MARK);
+    }
+    let latest = item_snapshots.last().ok_or(NO_CREATION_IN_HISTORY)?;
+    Ok((
         latest.destination.clone(),
         "destination_snapshot".to_string(),
         Some(latest.cutoff.clone()),
@@ -389,7 +408,8 @@ pub struct ClosedItem {
 
 /// K2 membership for every seat: each item once, at its first qualifying
 /// transition inside the window, with its destination or `None` when unknown.
-/// For `None` (K5 insufficient history) the item counts for no seat.
+/// For `None` (K5 insufficient history) the item counts for no seat, and
+/// `destination_evidence` names the reason.
 pub fn k2_closures(
     queue: &[QueueFact],
     snapshots: &BTreeMap<String, Vec<DestinationSnapshot>>,
@@ -407,8 +427,8 @@ pub fn k2_closures(
             continue;
         }
         let (destination, evidence, cutoff) = match destination_at(fact, queue, snapshots) {
-            Some((destination, evidence, cutoff)) => (Some(destination), evidence, cutoff),
-            None => (None, INSUFFICIENT_HISTORY.to_string(), None),
+            Ok((destination, evidence, cutoff)) => (Some(destination), evidence, cutoff),
+            Err(reason) => (None, reason.to_string(), None),
         };
         closures.push((
             destination,
@@ -1548,6 +1568,41 @@ mod tests {
     }
 
     #[test]
+    fn k5_untimed_mark_blocks_but_a_timed_reroute_after_the_closure_does_not() {
+        let window = Window {
+            from: ts(0),
+            to: ts(60),
+        };
+        // Same closure time, same marked snapshot; only the reroute event differs.
+        let marked = BTreeMap::from([
+            ("u".to_string(), vec![snapshot("seat-b", "t9", true)]),
+            ("t".to_string(), vec![snapshot("seat-b", "t9", true)]),
+        ]);
+        let queue = vec![
+            created("u", -10, "seat-a"),
+            done("untimed", 1, "u", 10),
+            created("t", -10, "seat-a"),
+            done("timed", 2, "t", 10),
+            rerouted("t", 20, "seat-a", "seat-b"),
+        ];
+        let closures = k2_closures(&queue, &marked, window);
+        assert_eq!(closures[0].0, None);
+        assert_eq!(closures[0].1.destination_evidence, UNTIMED_REROUTE_MARK);
+        assert_eq!(closures[1].0.as_deref(), Some("seat-a"));
+        assert_eq!(closures[1].1.destination_evidence, "events:queue.created:t");
+        // Disagreeing snapshots are likewise resolved by a timed reroute event.
+        let drifted = BTreeMap::from([(
+            "t".to_string(),
+            vec![
+                snapshot("seat-a", "t1", false),
+                snapshot("seat-b", "t2", false),
+            ],
+        )]);
+        let resolved = k2_closures(&queue[2..], &drifted, window);
+        assert_eq!(resolved[0].0.as_deref(), Some("seat-a"));
+    }
+
+    #[test]
     fn k5_without_proof_of_no_change_is_insufficient_history() {
         let window = Window {
             from: ts(0),
@@ -1585,10 +1640,22 @@ mod tests {
             .map(|(_, item)| item.transition.as_str())
             .collect();
         assert_eq!(insufficient, vec!["no-created", "marked", "drifted"]);
-        assert!(closures
+        let reasons: Vec<&str> = closures
             .iter()
             .filter(|(destination, _)| destination.is_none())
-            .all(|(_, item)| item.destination_evidence == INSUFFICIENT_HISTORY));
+            .map(|(_, item)| item.destination_evidence.as_str())
+            .collect();
+        assert_eq!(
+            reasons,
+            vec![
+                NO_CREATION_IN_HISTORY,
+                UNTIMED_REROUTE_MARK,
+                CONFLICTING_SNAPSHOTS
+            ]
+        );
+        assert!(reasons
+            .iter()
+            .all(|reason| reason.starts_with(INSUFFICIENT_HISTORY)));
         for seat in ["seat-a", "seat-b", "actor", "unknown"] {
             let seat_members = members(&closed_items(seat, &queue, &snapshots, window))
                 .into_iter()
