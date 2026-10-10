@@ -213,13 +213,13 @@ pub fn handoff_edges(queue: &[QueueFact]) -> Vec<HandoffEdge> {
     let mut ordered = queue.to_vec();
     ordered.sort_by(|a, b| a.ts.cmp(&b.ts).then(a.transition_id.cmp(&b.transition_id)));
     for fact in ordered {
+        let touch = seen.entry(fact.qitem_id.clone()).or_default();
+        if !touch.contains(&fact.source_seat) {
+            touch.push(fact.source_seat.clone());
+        }
         if fact.closure_reason.as_deref() != Some("handed_off_to") {
-            if !seen.contains_key(&fact.qitem_id) {
-                seen.insert(fact.qitem_id.clone(), vec![fact.dest_seat.clone()]);
-            } else if let Some(seats) = seen.get_mut(&fact.qitem_id) {
-                if !seats.contains(&fact.dest_seat) {
-                    seats.push(fact.dest_seat.clone());
-                }
+            if !touch.contains(&fact.dest_seat) {
+                touch.push(fact.dest_seat.clone());
             }
             continue;
         }
@@ -227,17 +227,18 @@ pub fn handoff_edges(queue: &[QueueFact]) -> Vec<HandoffEdge> {
             .closure_target
             .clone()
             .unwrap_or_else(|| fact.dest_seat.clone());
-        let prior = seen.get(&fact.qitem_id).cloned().unwrap_or_default();
-        let is_return = prior.iter().any(|seat| seat == &to);
+        let is_return = touch.iter().any(|seat| seat == &to);
+        if !touch.contains(&to) {
+            touch.push(to.clone());
+        }
         edges.push(HandoffEdge {
             from_seat: fact.source_seat.clone(),
-            to_seat: to.clone(),
+            to_seat: to,
             qitem_id: fact.qitem_id.clone(),
             chain_id: fact.chain_id.clone(),
             is_return,
             source_key: fact.source_key.clone(),
         });
-        seen.entry(fact.qitem_id.clone()).or_default().push(to);
     }
     edges
 }
