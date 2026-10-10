@@ -242,6 +242,17 @@ def main():
             if token in text + err:
                 leaked.append(token)
     check("qa_cli_marker_families", leaked == [], [], leaked)
+    surface_leaks = []
+    for token in families:
+        for kind in ("links", "activity", "handoffs", "tokens", "decisions"):
+            code, text, err = report(analytics, kind, rig=token)
+            if code != 0 or token in text + err:
+                surface_leaks.append(f"report:{kind}")
+        for metric in ("m1", "m2", "m3", "m4", "tokens", "intake", "medians", "activity"):
+            code, text, err = run(["trace", "--db", str(analytics), "--metric-id", metric, "--rig", token, "--from", FROM, "--to", TO])
+            if code != 0 or token in text + err:
+                surface_leaks.append(f"trace:{metric}")
+    check("qa_all_kinds_and_traces_hide_families", surface_leaks == [], [], surface_leaks[:8])
     code, text, err = run(["--not-a-flag", "sk-ant-QA_SYNTHETIC_FLAG"])
     check("qa_clap_unknown_flag", code != 0 and "QA_SYNTHETIC_FLAG" not in text + err, 1, code)
     code, text, err = run(["--help"])
