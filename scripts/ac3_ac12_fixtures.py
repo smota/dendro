@@ -78,6 +78,9 @@ def main():
     conn.execute("INSERT INTO events VALUES (5,'seat.activity_changed',? ,?)", (json.dumps({"sessionName": "seat-old", "state": "running", "at": "2026-10-08T00:00:00Z"}), "2026-10-08T00:00:00Z"))
     conn.execute("INSERT INTO events VALUES (7,'seat.activity_changed',? ,?)", (json.dumps({"sessionName": "seat-carry", "state": "idle", "at": T[0]}), T[0]))
     conn.execute("INSERT INTO events VALUES (8,'seat.activity_changed',? ,?)", (json.dumps({"sessionName": "seat-cross", "state": "idle", "at": T[0]}), T[0]))
+    conn.execute("INSERT INTO events VALUES (9,'seat.activity_changed',? ,?)", (json.dumps({"sessionName": "seat-gap", "state": "running", "at": T[0]}), T[0]))
+    conn.execute("INSERT INTO events VALUES (10,'seat.activity_changed',? ,?)", (json.dumps({"sessionName": "seat-gap", "at": T[10]}), T[10]))
+    conn.execute("INSERT INTO events VALUES (11,'seat.activity_changed',? ,?)", (json.dumps({"sessionName": "seat-secret", "state": "sk-ant-FAKESTATE", "at": T[0]}), T[0]))
     conn.execute("""CREATE TABLE queue_transitions (transition_id INTEGER, qitem_id TEXT, ts TEXT, state TEXT, actor_session TEXT, closure_reason TEXT, closure_target TEXT, transition_note TEXT)""")
     conn.executemany("INSERT INTO queue_transitions VALUES (?,?,?,?,?,?,?,?)", [
         (1, "demand", T[10], "pending", "seat-a", None, "seat-a", "[]"),
@@ -124,6 +127,11 @@ def main():
     check("qa_carry_in_demand", carry.get("idle_with_work_secs") == 60 and carry.get("idle_without_work_secs") == 0, 60, carry.get("idle_with_work_secs"))
     cross = next((row for row in act if row["seat"] == "seat-cross"), {})
     check("qa_cross_window_terminal", cross.get("idle_with_work_secs") == 10 and cross.get("idle_without_work_secs") == 50, 10, cross.get("idle_with_work_secs"))
+    gap = next((row for row in act if row["seat"] == "seat-gap"), {})
+    check("qa_missing_state_is_unknown", gap.get("active_secs") == 10 and gap.get("unknown_secs") == 50, 50, gap.get("unknown_secs"))
+    secret = next((row for row in act if row["seat"] == "seat-secret"), {})
+    db_bytes = analytics.read_bytes()
+    check("qa_activity_state_canary", secret.get("unknown_secs") == 60 and b"FAKESTATE" not in db_bytes and "FAKESTATE" not in activity, 60, secret.get("unknown_secs"))
     code, handoffs, _ = report(analytics, "handoffs")
     edges = json.loads(handoffs)["payload"]["handoff_edges"] if code == 0 else []
     check("ac5_one_return", sum(1 for edge in edges if edge.get("return")) == 1, 1, sum(1 for edge in edges if edge.get("return")))

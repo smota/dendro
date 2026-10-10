@@ -112,10 +112,10 @@ fn ingest_openrig(
             let rig = rig_names.get(rig_id).map(String::as_str).unwrap_or(rig_id);
             store.insert_identity(&IdentityFact {
                 source_key: format!("events:{seq}"),
-                harness: normalize_harness(runtime),
+                harness: normalize_harness(key, runtime),
                 native_session: dendro_core::seal_identifier(
                     key,
-                    &format!("session:{}", normalize_harness(runtime)),
+                    &format!("session:{}", normalize_harness(key, runtime)),
                     session_id,
                 ),
                 rig: dendro_core::seal_identifier(key, "rig", rig),
@@ -123,9 +123,7 @@ fn ingest_openrig(
                 ts,
             })?;
         } else if kind == "seat.activity_changed" {
-            let Some(state) = parsed.get("state").and_then(|v| v.as_str()) else {
-                continue;
-            };
+            let state = dendro_core::activity_state(parsed.get("state").and_then(|v| v.as_str()));
             let Some(seat) = parsed
                 .get("sessionName")
                 .and_then(|v| v.as_str())
@@ -144,7 +142,7 @@ fn ingest_openrig(
                 source_key: format!("seat.activity_changed:{seq}"),
                 seat: dendro_core::seal_identifier(key, "seat", seat),
                 ts: when,
-                state: state.to_string(),
+                state,
                 seq,
             })?;
         }
@@ -179,10 +177,10 @@ fn ingest_openrig(
                 transition_id: row.0,
                 qitem_id: dendro_core::seal_identifier(key, "qitem", &row.1),
                 ts,
-                state: row.3,
+                state: dendro_core::queue_state(&row.3),
                 source_seat: actor,
                 dest_seat: target,
-                closure_reason: row.5,
+                closure_reason: dendro_core::closure_reason(row.5.as_deref()),
                 closure_target: row
                     .6
                     .as_deref()
@@ -208,13 +206,13 @@ fn parse_missions(note: Option<&str>) -> Vec<String> {
     serde_json::from_str::<Vec<String>>(note).unwrap_or_default()
 }
 
-fn normalize_harness(runtime: &str) -> String {
-    match runtime {
-        "claude-code" | "claude" => "claude".to_string(),
-        "codex" => "codex".to_string(),
-        "pi" => "pi".to_string(),
-        other => other.to_string(),
-    }
+fn normalize_harness(key: &[u8], runtime: &str) -> String {
+    let name = if runtime == "claude-code" {
+        "claude"
+    } else {
+        runtime
+    };
+    dendro_core::seal_identifier(key, "harness", name)
 }
 
 fn uuid_suffix() -> String {

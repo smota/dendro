@@ -77,6 +77,14 @@ pub fn opaque_id(key: &[u8], domain: &str, native: &str) -> String {
 
 /// Join key plus redacted display. Two raw values that redact the same stay distinct.
 pub fn seal_identifier(key: &[u8], domain: &str, raw: &str) -> String {
+    if let Some((opaque, display)) = raw.split_once('\t') {
+        if display == "[redacted]"
+            && !opaque.is_empty()
+            && opaque.bytes().all(|b| b.is_ascii_hexdigit())
+        {
+            return raw.to_string();
+        }
+    }
     let display = redact(raw);
     if display == raw {
         raw.to_string()
@@ -85,6 +93,73 @@ pub fn seal_identifier(key: &[u8], domain: &str, raw: &str) -> String {
         format!("{opaque}\t{display}")
     }
 }
+
+/// Closed activity vocabulary. Anything else, including a missing value, is unknown.
+pub fn activity_state(raw: Option<&str>) -> String {
+    match raw {
+        Some("running" | "idle" | "needs_input" | "unknown") => {
+            raw.unwrap_or("unknown").to_string()
+        }
+        _ => "unknown".to_string(),
+    }
+}
+
+/// Installed queue states. Unknown is neither open demand nor a successful close.
+pub fn queue_state(raw: &str) -> String {
+    match raw {
+        "pending" | "in-progress" | "blocked" | "done" | "failed" | "denied" | "canceled"
+        | "handed-off" | "unknown" => raw.to_string(),
+        _ => "unknown".to_string(),
+    }
+}
+
+/// Open text. The handoff sentinel and ordinary reasons stay; secret-shaped text is redacted.
+pub fn closure_reason(raw: Option<&str>) -> Option<String> {
+    raw.map(redact)
+}
+
+pub const TEXT_COLUMNS: &[&str] = &[
+    "dendro_meta.key_id",
+    "source_files.source_id",
+    "source_files.harness",
+    "source_files.display_path",
+    "source_files.prefix_sha256",
+    "codex_counters.source_id",
+    "usage_facts.source_key",
+    "usage_facts.harness",
+    "usage_facts.native_session",
+    "usage_facts.message_id",
+    "usage_facts.source_id",
+    "tool_facts.source_key",
+    "tool_facts.harness",
+    "tool_facts.native_session",
+    "tool_facts.tool_name",
+    "tool_facts.fingerprint",
+    "tool_facts.source_id",
+    "identity_facts.source_key",
+    "identity_facts.harness",
+    "identity_facts.native_session",
+    "identity_facts.rig",
+    "identity_facts.seat",
+    "activity_facts.source_key",
+    "activity_facts.seat",
+    "activity_facts.state",
+    "queue_facts.source_key",
+    "queue_facts.qitem_id",
+    "queue_facts.state",
+    "queue_facts.source_seat",
+    "queue_facts.dest_seat",
+    "queue_facts.closure_reason",
+    "queue_facts.closure_target",
+    "queue_facts.chain_id",
+    "queue_facts.missions",
+    "skill_facts.source_key",
+    "skill_facts.seat",
+    "skill_facts.skill",
+    "seat_bounds.seat",
+    "warnings.path",
+    "warnings.reason",
+];
 
 #[cfg(test)]
 mod tests {
@@ -115,6 +190,43 @@ mod tests {
             tool_fingerprint(key_b, "Write", Some(spaced)).unwrap()
         );
         assert!(tool_fingerprint(key_a, "Write", None).is_none());
+    }
+
+    #[test]
+    fn activity_and_queue_states_drop_secret_text_without_changing_known_values() {
+        assert_eq!(activity_state(Some("running")), "running");
+        assert_eq!(activity_state(Some("idle")), "idle");
+        assert_eq!(activity_state(Some("needs_input")), "needs_input");
+        assert_eq!(activity_state(None), "unknown");
+        assert_eq!(activity_state(Some("sk-ant-FAKESTATE")), "unknown");
+        assert_eq!(queue_state("pending"), "pending");
+        assert_eq!(queue_state("handed-off"), "handed-off");
+        assert_eq!(queue_state("sk-ant-FAKESTATE"), "unknown");
+        assert_eq!(
+            closure_reason(Some("handed_off_to")).as_deref(),
+            Some("handed_off_to")
+        );
+        assert_eq!(
+            closure_reason(Some("no-follow-on")).as_deref(),
+            Some("no-follow-on")
+        );
+        assert_eq!(
+            closure_reason(Some("superseded")).as_deref(),
+            Some("superseded")
+        );
+        assert!(closure_reason(None).is_none());
+        let secret = closure_reason(Some("note sk-ant-FAKESTATE")).unwrap();
+        assert!(!secret.contains("FAKESTATE"));
+        assert!(secret.contains("note"));
+    }
+
+    #[test]
+    fn seal_does_not_wrap_an_already_sealed_identifier() {
+        let key = b"key-a-32-bytes-pad-pad-pad-pad!!";
+        let once = seal_identifier(key, "chain", "item-sk-ant-FAKESTATE");
+        let twice = seal_identifier(key, "chain", &once);
+        assert_eq!(once, twice);
+        assert!(!twice.contains("FAKESTATE"));
     }
 
     #[test]

@@ -4,7 +4,7 @@ use anyhow::{anyhow, Result};
 use duckdb::{params, Connection};
 
 use crate::facts::*;
-use crate::privacy::redact;
+use crate::privacy::{activity_state, closure_reason, queue_state, redact};
 
 /// Legacy entry point retained so the untouched watcher/CLI still typecheck.
 /// It does not create or migrate the pre-R1 tables.
@@ -381,7 +381,7 @@ impl AnalyticsStore {
                 fact.source_key,
                 redact(&fact.seat),
                 fact.ts.to_rfc3339(),
-                fact.state,
+                activity_state(Some(fact.state.as_str())),
                 fact.seq
             ],
         )?;
@@ -400,12 +400,12 @@ impl AnalyticsStore {
                 fact.transition_id,
                 fact.qitem_id,
                 fact.ts.to_rfc3339(),
-                fact.state,
+                queue_state(&fact.state),
                 redact(&fact.source_seat),
                 redact(&fact.dest_seat),
-                fact.closure_reason.as_deref().map(redact),
+                closure_reason(fact.closure_reason.as_deref()),
                 fact.closure_target.as_deref().map(redact),
-                fact.chain_id.as_deref(),
+                fact.chain_id.as_deref().map(redact),
                 serde_json::to_string(
                     &fact.missions.iter().map(|m| redact(m)).collect::<Vec<_>>()
                 )?
@@ -652,6 +652,72 @@ fn refuse_legacy(conn: &Connection) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Utc;
+
+    #[test]
+    fn text_columns_match_the_created_schema() {
+        let store = AnalyticsStore::open_in_memory("key").unwrap();
+        let mut stmt = store
+            .conn
+            .prepare("SELECT table_name, column_name FROM information_schema.columns WHERE data_type = 'VARCHAR' ORDER BY table_name, column_name")
+            .unwrap();
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(format!(
+                    "{}.{}",
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?
+                ))
+            })
+            .unwrap();
+        let mut got: Vec<String> = rows.map(|row| row.unwrap()).collect();
+        got.sort();
+        let mut expect: Vec<String> = crate::privacy::TEXT_COLUMNS
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect();
+        expect.sort();
+        assert_eq!(got, expect);
+    }
+
+    #[test]
+    fn secret_activity_state_is_stored_as_unknown() {
+        let store = AnalyticsStore::open_in_memory("key").unwrap();
+        store
+            .insert_activity(&ActivityFact {
+                source_key: "activity:1".into(),
+                seat: "seat-a".into(),
+                ts: Utc::now(),
+                state: "sk-ant-FAKESTATE".into(),
+                seq: 1,
+            })
+            .unwrap();
+        let rows = store.load_activity().unwrap();
+        assert_eq!(rows[0].state, "unknown");
+        store
+            .insert_queue(&QueueFact {
+                source_key: "queue:1".into(),
+                transition_id: 1,
+                qitem_id: "q".into(),
+                ts: Utc::now(),
+                state: "sk-ant-FAKESTATE".into(),
+                source_seat: "seat-a".into(),
+                dest_seat: "seat-a".into(),
+                closure_reason: Some("handed_off_to".into()),
+                closure_target: None,
+                chain_id: Some("chain-sk-ant-FAKESTATE".into()),
+                missions: vec![],
+            })
+            .unwrap();
+        let queue = store.load_queue().unwrap();
+        assert_eq!(queue[0].state, "unknown");
+        assert_eq!(queue[0].closure_reason.as_deref(), Some("handed_off_to"));
+        assert!(!queue[0]
+            .chain_id
+            .as_deref()
+            .unwrap_or("")
+            .contains("FAKESTATE"));
+    }
 
     #[test]
     fn legacy_schema_is_refused_without_rewrite() {
