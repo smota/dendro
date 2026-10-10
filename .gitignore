@@ -1,0 +1,37 @@
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+
+# DuckDB & Local Analytics Storage
+*.duckdb
+*.duckdb.wal
+*.duckdb.tmp
+dendro.duckdb*
+telemetry.duckdb*
+
+# SQLite temp & journal files
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite-journal
+
+# OpenRig Runtime Excludes
+/.openrig/
+.openrig/
+CLAUDE.local.md
+.claude/settings.local.json
+gate-lane-verdict.json
+
+# AgentFlow SDLC Run artifacts & Worktrees
+.agent-runs/
+.worktrees/
+node_modules/
+
+# OS and Editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/

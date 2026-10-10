@@ -1,0 +1,39 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/dendro-core",
+    "crates/dendro-connectors",
+    "crates/dendro-resolver",
+    "crates/dendro-watcher",
+    "crates/dendro-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["smota"]
+license = "MIT"
+repository = "https://github.com/smota/dendro"
+readme = "README.md"
+keywords = ["agents", "observability", "telemetry", "duckdb", "openrig"]
+
+[workspace.dependencies]
+dendro-core = { path = "crates/dendro-core" }
+dendro-connectors = { path = "crates/dendro-connectors" }
+dendro-resolver = { path = "crates/dendro-resolver" }
+dendro-watcher = { path = "crates/dendro-watcher" }
+
+tokio = { version = "1.38", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+duckdb = { version = "1.1", features = ["bundled"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+anyhow = "1.0"
+thiserror = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+notify = "6.1"
+notify-debouncer-mini = "0.4"
+clap = { version = "4.5", features = ["derive"] }
+async-trait = "0.1"
+chrono = { version = "0.4", features = ["serde"] }

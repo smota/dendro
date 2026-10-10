@@ -1,0 +1,22 @@
+[package]
+name = "dendro-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "dendro"
+path = "src/main.rs"
+
+[dependencies]
+dendro-core.workspace = true
+dendro-connectors.workspace = true
+dendro-resolver.workspace = true
+dendro-watcher.workspace = true
+
+tokio.workspace = true
+clap.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
