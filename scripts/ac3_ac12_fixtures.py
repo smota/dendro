@@ -253,6 +253,41 @@ def main():
             if code != 0 or token in text + err:
                 surface_leaks.append(f"trace:{metric}")
     check("qa_all_kinds_and_traces_hide_families", surface_leaks == [], [], surface_leaks[:8])
+    payload_leaks = []
+    nonempty = []
+    for kind in ("links", "activity", "handoffs", "tokens", "decisions"):
+        code, text, err = report(analytics, kind, rig="rig-one")
+        body = json.loads(text)["payload"] if code == 0 else {}
+        present = {
+            "links": bool(body.get("links")),
+            "activity": bool(body.get("activity")),
+            "handoffs": bool(body.get("handoff_edges")),
+            "tokens": (body.get("usage_rows") or 0) > 0,
+            "decisions": body.get("m1_by_seat") is not None,
+        }[kind]
+        if code != 0 or not present or secret_a in text + err:
+            payload_leaks.append(kind)
+        else:
+            nonempty.append(kind)
+    for metric in ("m1", "m2", "m3", "m4", "tokens", "intake", "medians", "activity"):
+        code, text, err = run(["trace", "--db", str(analytics), "--metric-id", metric, "--rig", "rig-one", "--from", FROM, "--to", TO])
+        data = json.loads(text) if code == 0 else {}
+        inputs = data.get("inputs") or {}
+        present = {
+            "tokens": bool(inputs.get("rows")),
+            "activity": bool(inputs.get("activity")),
+            "m1": bool(inputs.get("nonreturn_handoffs")) and bool(inputs.get("k2_closed_item")),
+            "m2": bool(inputs.get("m2_pairs")),
+            "m3": inputs.get("m3_chains") not in (None, 0),
+            "m4": isinstance(data.get("value"), str) and "insufficient data" in data.get("value"),
+            "intake": bool(inputs.get("intakes")),
+            "medians": bool(inputs.get("pair_medians")),
+        }[metric]
+        if code != 0 or not present or secret_a in text + err:
+            payload_leaks.append(metric)
+        else:
+            nonempty.append(metric)
+    check("qa_linked_rig_payloads_hide_secret", payload_leaks == [] and len(nonempty) == 13, nonempty, payload_leaks)
     code, text, err = run(["--not-a-flag", "sk-ant-QA_SYNTHETIC_FLAG"])
     check("qa_clap_unknown_flag", code != 0 and "QA_SYNTHETIC_FLAG" not in text + err, 1, code)
     code, text, err = run(["--help"])
