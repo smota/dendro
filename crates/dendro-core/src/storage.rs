@@ -85,7 +85,8 @@ impl AnalyticsStore {
 
     pub fn open_read_only(path: &Path) -> Result<Self> {
         let config = duckdb::Config::default().access_mode(duckdb::AccessMode::ReadOnly)?;
-        let conn = Connection::open_with_flags(path, config)?;
+        let conn = Connection::open_with_flags(path, config)
+            .map_err(|_| anyhow!("analytics database could not be opened"))?;
         refuse_legacy(&conn)?;
         let (version, key_id): (i32, String) = conn.query_row(
             "SELECT schema_version, key_id FROM dendro_meta",
@@ -837,6 +838,137 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM seat_bounds", [], |row| row.get(0))
             .unwrap();
         assert_eq!(bounds, 0);
+    }
+
+    #[test]
+    fn privacy_matrix_covers_every_marker_family_on_disk() {
+        let dir = std::env::temp_dir().join(format!("dendro-matrix-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("analytics.duckdb");
+        let store = AnalyticsStore::open_path(&path, "key").unwrap();
+        let families = [
+            "sk-ZZZ1",
+            "sk-ant-ZZZ2",
+            "ghp_ZZZ3",
+            "gho_ZZZ4",
+            "github_pat_ZZZ5",
+            "xai-ZZZ6",
+            "AKIAZZZ7",
+            "Bearer ZZZ8",
+            "xoxb-ZZZ9",
+            "xoxp-ZZZ0",
+        ];
+        for (index, token) in families.iter().enumerate() {
+            let now = Utc::now();
+            store
+                .insert_activity(&ActivityFact {
+                    source_key: format!("act-{token}"),
+                    seat: (*token).into(),
+                    ts: now,
+                    state: (*token).into(),
+                    seq: index as i64,
+                })
+                .unwrap();
+            store
+                .insert_queue(&QueueFact {
+                    source_key: format!("q-{token}"),
+                    transition_id: index as i64,
+                    qitem_id: (*token).into(),
+                    ts: now,
+                    state: (*token).into(),
+                    source_seat: (*token).into(),
+                    dest_seat: (*token).into(),
+                    closure_reason: Some((*token).into()),
+                    closure_target: Some((*token).into()),
+                    chain_id: Some((*token).into()),
+                    missions: vec![(*token).into()],
+                })
+                .unwrap();
+            store
+                .record_warning(&WarningNote {
+                    path: (*token).into(),
+                    line: Some(1),
+                    reason: (*token).into(),
+                })
+                .unwrap();
+            store
+                .insert_identity(&IdentityFact {
+                    source_key: format!("id-{token}"),
+                    harness: (*token).into(),
+                    native_session: (*token).into(),
+                    rig: (*token).into(),
+                    seat: (*token).into(),
+                    ts: Some(now),
+                })
+                .unwrap();
+            store
+                .insert_skill(&SkillFact {
+                    source_key: format!("skill-{token}"),
+                    seat: (*token).into(),
+                    skill: (*token).into(),
+                    invoked: true,
+                })
+                .unwrap();
+            store
+                .commit_file_batch(
+                    token,
+                    token,
+                    token,
+                    index as i64 + 1,
+                    0,
+                    token,
+                    None,
+                    &[UsageFact {
+                        source_key: format!("use-{token}"),
+                        harness: (*token).into(),
+                        native_session: (*token).into(),
+                        message_id: Some((*token).into()),
+                        ts: Some(now),
+                        seq: index as i64,
+                        input_uncached: 1,
+                        output: 1,
+                        cache_read: 0,
+                        cache_write: 0,
+                        reasoning: 0,
+                        currency_total: None,
+                        generation: index as i64 + 1,
+                    }],
+                    &[ToolFact {
+                        source_key: format!("tool-{token}"),
+                        harness: (*token).into(),
+                        native_session: (*token).into(),
+                        ts: Some(now),
+                        seq: index as i64,
+                        name: (*token).into(),
+                        fingerprint: Some((*token).into()),
+                        failed: None,
+                        structured_write: false,
+                        generation: index as i64 + 1,
+                    }],
+                )
+                .unwrap();
+        }
+        for qualified in crate::privacy::TEXT_COLUMNS {
+            let (table, column) = qualified.split_once('.').unwrap();
+            let sql = format!(
+                "SELECT COUNT(*) FROM {table} WHERE CAST({column} AS VARCHAR) LIKE '%ZZZ%'"
+            );
+            let hits: i64 = store.conn.query_row(&sql, [], |row| row.get(0)).unwrap();
+            assert_eq!(hits, 0, "{qualified}");
+        }
+        store.checkpoint().unwrap();
+        drop(store);
+        let mut bytes = std::fs::read(&path).unwrap();
+        let wal = path.with_extension("duckdb.wal");
+        if wal.exists() {
+            bytes.extend(std::fs::read(&wal).unwrap());
+        }
+        let blob = String::from_utf8_lossy(&bytes);
+        for token in families {
+            assert!(!blob.contains(token), "{token}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

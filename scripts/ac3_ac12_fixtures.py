@@ -212,6 +212,14 @@ def main():
             if token in text + err:
                 leaked.append(token)
     check("qa_cli_marker_families", leaked == [], [], leaked)
+    code, text, err = run(["--not-a-flag", "sk-ant-QA_SYNTHETIC_FLAG"])
+    check("qa_clap_unknown_flag", code != 0 and "QA_SYNTHETIC_FLAG" not in text + err, 1, code)
+    code, text, err = run(["--help"])
+    check("qa_ordinary_help", code == 0 and "report" in text and "QA_SYNTHETIC_FLAG" not in text, 0, code)
+    code, text, err = run(["report", "activity", "--db", str(ROOT / "sk-ant-QA_SYNTHETIC_DB"), "--from", FROM, "--to", TO])
+    check("qa_secret_db_path", code != 0 and "QA_SYNTHETIC_DB" not in text + err, 1, code)
+    code, text, err = run(["init-nao", "--target", str(ROOT / "sk-ant-QA_SYNTHETIC_NAO"), "--db", str(analytics)])
+    check("qa_secret_nao_path", code != 0 and "QA_SYNTHETIC_NAO" not in text + err and not (ROOT / "sk-ant-QA_SYNTHETIC_NAO").exists(), 1, code)
     failed = [row for row in rows if not row["ok"]]
     Path("/tmp/ac3-ac12-results.json").write_text(json.dumps({"commit": subprocess.check_output(["git", "-C", "/home/sam/code/dendro/.worktrees/work/dendro-r1", "rev-parse", "HEAD"], text=True).strip(), "rows": rows}, indent=2))
     print("FAILED", len(failed), "OF", len(rows))

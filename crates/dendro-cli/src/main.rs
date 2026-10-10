@@ -67,7 +67,22 @@ enum Commands {
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
-    let cli = Cli::parse();
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(err) => {
+            use clap::error::ErrorKind;
+            if matches!(
+                err.kind(),
+                ErrorKind::DisplayHelp | ErrorKind::DisplayVersion
+            ) {
+                err.print()?;
+                std::process::exit(0);
+            }
+            let code = err.exit_code();
+            eprintln!("{}", dendro_core::redact(&err.to_string()));
+            std::process::exit(code);
+        }
+    };
 
     match cli.command {
         Commands::Run { db, root, frozen } => {
@@ -114,6 +129,11 @@ async fn main() -> Result<()> {
             info!("Dendro watch is outside this R1 proof. Press Ctrl+C to stop.");
         }
         Commands::InitNao { target, db } => {
+            if dendro_core::contains_secret(&target.display().to_string())
+                || dendro_core::contains_secret(&db.display().to_string())
+            {
+                anyhow::bail!("refusing a path that contains a secret-shaped value");
+            }
             info!(
                 "Initializing Nao semantic models in {} pointing to {}",
                 dendro_core::redact(&target.display().to_string()),

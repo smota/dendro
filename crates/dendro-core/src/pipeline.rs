@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 
 use crate::metrics::{self, Window};
 use crate::output::{self, load_or_create_key, refuse_aliased_output, with_output_lock};
-use crate::privacy::{opaque_id, redact};
+use crate::privacy::{contains_secret, opaque_id, redact};
 use crate::storage::AnalyticsStore;
 
 pub struct RunRequest<'a> {
@@ -20,6 +20,10 @@ where
 {
     if source_roots.is_empty() {
         return Err(anyhow!("at least one source root is required"));
+    }
+    refuse_secret_path(db)?;
+    for root in source_roots {
+        refuse_secret_path(root)?;
     }
     let parent = db.parent().unwrap_or_else(|| Path::new("."));
     fs::create_dir_all(parent)?;
@@ -130,6 +134,16 @@ pub fn opaque_session(key: &[u8], harness: &str, native: &str) -> String {
     opaque_id(key, "session", &format!("{harness}\n{native}"))
 }
 
+fn refuse_secret_path(path: &Path) -> Result<()> {
+    let shown = path.display().to_string();
+    if contains_secret(&shown) {
+        return Err(anyhow!(
+            "refusing a path that contains a secret-shaped value"
+        ));
+    }
+    Ok(())
+}
+
 pub fn report_json(
     db: &Path,
     kind: &str,
@@ -137,6 +151,7 @@ pub fn report_json(
     from: &str,
     to: &str,
 ) -> Result<Value> {
+    refuse_secret_path(db)?;
     let window = parse_window(from, to)?;
     if !matches!(
         kind,

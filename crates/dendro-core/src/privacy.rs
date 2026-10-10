@@ -17,6 +17,10 @@ const SECRET_MARKERS: &[&str] = &[
 ];
 
 /// Redact secret-shaped substrings. Ordinary identifiers are unchanged.
+pub fn contains_secret(input: &str) -> bool {
+    redact(input) != input
+}
+
 pub fn redact(input: &str) -> String {
     let mut out = input.to_string();
     for marker in SECRET_MARKERS {
