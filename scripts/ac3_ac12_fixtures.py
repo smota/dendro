@@ -56,6 +56,7 @@ def main():
         json.dumps({"type": "assistant", "timestamp": "2026-10-09T00:00:35Z", "sessionId": "s-b", "message": {"id": "w5", "usage": {"input_tokens": 3, "output_tokens": 0, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}}}),
         json.dumps({"type": "assistant", "timestamp": T[40], "sessionId": "s-b", "message": {"id": "w10", "content": [{"type": "tool_use", "name": "Write", "input": "file", "is_error": False}], "usage": {"input_tokens": 9, "output_tokens": 0, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}}}),
         json.dumps({"type": "assistant", "timestamp": T[10], "sessionId": "s-b", "message": {"id": "bash", "content": [{"type": "tool_use", "name": "Bash", "input": "echo", "is_error": False}]}}),
+        json.dumps({"type": "assistant", "timestamp": T[10], "sessionId": "s-b", "message": {"id": "secret-tool", "content": [{"type": "tool_use", "name": "sk-ant-TOOLNAME", "input": "echo", "is_error": False}]}}),
         "not-json",
     ]) + "\npartial")
     (src / "codex" / "c.jsonl").write_text("\n".join([
@@ -98,6 +99,7 @@ def main():
         (12, "wait2", "2026-10-09T00:00:15Z", "done", "seat-b", None, "seat-b", "[]"),
         (6, "secret-a", T[10], "in-progress", f"seat-{secret_a}", None, f"seat-{secret_a}", json.dumps([f"mission-{secret_a}"])),
         (7, "secret-b", T[20], "in-progress", f"seat-{secret_b}", None, f"seat-{secret_b}", json.dumps([f"mission-{secret_b}"])),
+        (16, "actor-only", T[10], "pending", "seat-actor", None, None, "[]"),
     ])
     conn.commit(); conn.close()
     out = ROOT / "out"; out.mkdir()
@@ -113,7 +115,7 @@ def main():
     sessions = [row.get("native_session") for row in payload.get("links", []) if "sess-" in str(row.get("native_session"))]
     check("ac10_secret_sessions_distinct", len(set(sessions)) == 2, 2, len(set(sessions)))
     blob = analytics.read_bytes().decode("latin1") + text + stdout + stderr
-    check("ac10_no_secret", secret_a not in blob and secret_b not in blob and canary not in blob, True, secret_a not in blob and secret_b not in blob and canary not in blob)
+    check("ac10_no_secret", secret_a not in blob and secret_b not in blob and canary not in blob and "TOOLNAME" not in blob, True, "TOOLNAME" not in blob)
     check("ac10_redacted_visible", "[redacted]" in blob, True, "[redacted]" in blob)
     code, activity, _ = report(analytics, "activity")
     act = json.loads(activity)["payload"]["activity"] if code == 0 else []
@@ -154,6 +156,9 @@ def main():
     check("ac7_trace_replay", replay == traced.get("value"), traced.get("value"), replay)
     rows_in = traced.get("inputs", {}).get("rows", [])
     check("qa_trace_provenance", rows_in and all("generation" in row and "line" in row and "path" in row for row in rows_in), True, bool(rows_in))
+    demand = traced.get("inputs", {}).get("demand_events", [])
+    actor_only = [row for row in demand if row.get("qitem_id") == "actor-only"]
+    check("qa_actor_is_not_destination", actor_only and all(row.get("dest") == "unknown" for row in actor_only), "unknown", actor_only[0].get("dest") if actor_only else None)
     _, before_text, _ = report(analytics, "tokens")
     before_rows = json.loads(before_text)["payload"].get("usage_rows")
     code, _, _ = run(["run", "--db", str(analytics), "--root", f"claude={src/'claude'}", "--root", f"codex={src/'codex'}", "--root", f"pi={src/'pi'}", "--root", f"openrig={db}", "--frozen"])
