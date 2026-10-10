@@ -330,10 +330,18 @@ pub fn report_json(
     let medians = metrics::pair_medians(&edges, &queue_all, &intakes);
     let mut mission_tokens = std::collections::BTreeMap::<String, i64>::new();
     for row in &usage {
-        let seat = identities
+        let mut bound_seats: Vec<String> = identities
             .iter()
-            .find(|fact| fact.harness == row.harness && fact.native_session == row.native_session)
-            .map(|fact| fact.seat.clone());
+            .filter(|fact| fact.harness == row.harness && fact.native_session == row.native_session)
+            .map(|fact| fact.seat.clone())
+            .collect();
+        bound_seats.sort();
+        bound_seats.dedup();
+        let seat = if bound_seats.len() == 1 {
+            bound_seats.pop()
+        } else {
+            None
+        };
         let label = match (seat, row.ts) {
             (Some(seat), Some(ts)) => match metrics::mission_at(&seat, &queue_all, ts) {
                 metrics::MissionBucket::Mission(name) => name,
@@ -382,17 +390,22 @@ pub fn report_json(
                 .iter()
                 .filter(|fact| fact.harness == harness && fact.native_session == native)
                 .collect();
+            let mut bound: Vec<&str> = matches.iter().map(|fact| fact.seat.as_str()).collect();
+            bound.sort();
+            bound.dedup();
             let status = if matches.is_empty() {
                 "unlinked"
-            } else {
+            } else if bound.len() == 1 {
                 "linked"
+            } else {
+                "collision"
             };
             json!({
                 "harness": harness,
                 "native_session": native,
                 "status": status,
-                "rig": matches.first().map(|fact| fact.rig.clone()),
-                "seat": matches.first().map(|fact| fact.seat.clone()),
+                "rig": if bound.len() == 1 { matches.first().map(|fact| fact.rig.clone()) } else { None },
+                "seat": if bound.len() == 1 { matches.first().map(|fact| fact.seat.clone()) } else { None },
                 "evidence": matches.iter().map(|fact| fact.source_key.clone()).collect::<Vec<_>>(),
             })
         })

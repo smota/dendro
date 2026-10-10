@@ -75,6 +75,8 @@ def main():
     conn.execute("INSERT INTO events VALUES (2,'agent.session_identity',? ,?)", (json.dumps({"sessionId": f"sess-{secret_a}", "runtime": "claude-code", "sessionName": f"seat-{secret_a}", "rigId": "r1"}), FROM))
     conn.execute("INSERT INTO events VALUES (3,'agent.session_identity',? ,?)", (json.dumps({"sessionId": f"sess-{secret_b}", "runtime": "claude-code", "sessionName": f"seat-{secret_b}", "rigId": "r1"}), FROM))
     conn.execute("INSERT INTO events VALUES (6,'agent.session_identity',? ,?)", (json.dumps({"sessionId": "s-b", "runtime": "claude-code", "sessionName": "seat-b", "rigId": "r1"}), FROM))
+    conn.execute("INSERT INTO events VALUES (12,'agent.session_identity',? ,?)", (json.dumps({"sessionId": "s-collide", "runtime": "claude-code", "sessionName": "seat-left", "rigId": "r1"}), FROM))
+    conn.execute("INSERT INTO events VALUES (13,'agent.session_identity',? ,?)", (json.dumps({"sessionId": "s-collide", "runtime": "claude-code", "sessionName": "seat-right", "rigId": "r1"}), FROM))
     conn.execute("INSERT INTO events VALUES (4,'seat.activity_changed',? ,?)", (json.dumps({"sessionName": "seat-a", "state": "idle", "at": T[0]}), T[0]))
     conn.execute("INSERT INTO events VALUES (5,'seat.activity_changed',? ,?)", (json.dumps({"sessionName": "seat-old", "state": "running", "at": "2026-10-08T00:00:00Z"}), "2026-10-08T00:00:00Z"))
     conn.execute("INSERT INTO events VALUES (7,'seat.activity_changed',? ,?)", (json.dumps({"sessionName": "seat-carry", "state": "idle", "at": T[0]}), T[0]))
@@ -232,6 +234,19 @@ def main():
     check("qa_secret_db_path", code != 0 and "QA_SYNTHETIC_DB" not in text + err, 1, code)
     code, text, err = run(["init-nao", "--target", str(ROOT / "sk-ant-QA_SYNTHETIC_NAO"), "--db", str(analytics)])
     check("qa_secret_nao_path", code != 0 and "QA_SYNTHETIC_NAO" not in text + err and not (ROOT / "sk-ant-QA_SYNTHETIC_NAO").exists(), 1, code)
+    leaked_surfaces = []
+    for kind in ("links", "activity", "handoffs", "tokens", "decisions"):
+        code, text, err = report(analytics, kind)
+        if secret_a in text + err:
+            leaked_surfaces.append(kind)
+    for metric in ("m1", "m2", "m3", "m4", "tokens", "intake", "medians", "activity"):
+        code, text, err = run(["trace", "--db", str(analytics), "--metric-id", metric, "--from", FROM, "--to", TO])
+        if code != 0 or secret_a in text + err:
+            leaked_surfaces.append(metric)
+    check("qa_all_surfaces_hide_secret", leaked_surfaces == [], [], leaked_surfaces)
+    code, links_all, _ = report(analytics, "links")
+    collide = next((row for row in json.loads(links_all)["payload"]["links"] if row.get("native_session") == "s-collide"), {}) if code == 0 else {}
+    check("qa_identity_collision", collide.get("status") == "collision" and collide.get("seat") is None, "collision", collide.get("status"))
     failed = [row for row in rows if not row["ok"]]
     Path("/tmp/ac3-ac12-results.json").write_text(json.dumps({"commit": subprocess.check_output(["git", "-C", "/home/sam/code/dendro/.worktrees/work/dendro-r1", "rev-parse", "HEAD"], text=True).strip(), "rows": rows}, indent=2))
     print("FAILED", len(failed), "OF", len(rows))
