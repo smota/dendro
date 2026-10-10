@@ -35,18 +35,18 @@ This document serves as the authoritative, human-readable index of **Dendro's Mu
 
 | Issue | Title | Capabilities | Status |
 | :--- | :--- | :--- | :--- |
-| **[#1](https://github.com/smota/dendro/issues/1)** | **Goal 1 (Epic)** | Core Engine Specification & Multi-Crate Architecture | In Progress |
-| **[#2](https://github.com/smota/dendro/issues/2)** | `feat(core): Source Discovery and Linking` | OpenRig, Claude, Codex, Pi zero-copy stream readers | Implemented (`c0af583`, `1d376c7`) |
-| **[#3](https://github.com/smota/dendro/issues/3)** | `feat(analytics): Question 1 — Seat Dynamics` | 5 disjoint activity bands (active, idle-with-work, unknown) | Implemented (`10a0bd0`) |
-| **[#4](https://github.com/smota/dendro/issues/4)** | `feat(analytics): Question 2 — Handover Flow` | Handoff counting, returns, intake cost window | Implemented (`10a0bd0`) |
-| **[#5](https://github.com/smota/dendro/issues/5)** | `feat(analytics): Question 3 — Token Burn` | Token attribution by mission/seat, tool loop detection | Implemented (`10a0bd0`) |
-| **[#6](https://github.com/smota/dendro/issues/6)** | `feat(storage): DuckDB Engine & Privacy` | Local storage, key-salt hashing, symlink guards | Implemented (`0e38b9c`, `4e88ce7`) |
-| **[#13](https://github.com/smota/dendro/issues/13)** | `feat(engine): Live-Producer Snapshotting` | Atomic byte-cutoff manifests for live producer runs | Backlog / Candidate Proven |
+| **[#1](https://github.com/smota/dendro/issues/1)** | **Goal 1 (Epic)** | Core Engine Specification & Multi-Crate Architecture | In Delivery ([PR #11](https://github.com/smota/dendro/pull/11)) |
+| **[#2](https://github.com/smota/dendro/issues/2)** | `feat(core): Source Discovery and Linking` | OpenRig, Claude, Codex, Pi zero-copy stream readers | In Delivery ([PR #11](https://github.com/smota/dendro/pull/11)) |
+| **[#3](https://github.com/smota/dendro/issues/3)** | `feat(analytics): Question 1 — Seat Dynamics` | 5 disjoint activity bands (active, idle-with-work, unknown) | In Delivery ([PR #11](https://github.com/smota/dendro/pull/11)) |
+| **[#4](https://github.com/smota/dendro/issues/4)** | `feat(analytics): Question 2 — Handover Flow` | Handoff counting, returns, intake cost window | In Delivery ([PR #11](https://github.com/smota/dendro/pull/11)) |
+| **[#5](https://github.com/smota/dendro/issues/5)** | `feat(analytics): Question 3 — Token Burn` | Token attribution by mission/seat, tool loop detection | In Delivery ([PR #11](https://github.com/smota/dendro/pull/11)) |
+| **[#6](https://github.com/smota/dendro/issues/6)** | `feat(storage): DuckDB Engine & Privacy` | Local storage, key-salt hashing, symlink guards | In Delivery ([PR #11](https://github.com/smota/dendro/pull/11)) |
+| **[#13](https://github.com/smota/dendro/issues/13)** | `feat(engine): Live-Producer Snapshotting` | Atomic byte-cutoff manifests for live producer runs | Milestone v0.2.0 / Sealed Replay |
 
 ---
 
 ## 💬 Goal 2 (Epic #7): Conversational & Semantic Analytics with Nao
-* **Status:** Backlog / Ready for Phase 1 Specification
+* **Status:** Backlog / Milestone v0.2.0
 * **Objective:** Enable plain English querying of fleet dynamics over local DuckDB without rigid dashboards.
 
 | Issue | Title | Capabilities | Status |
@@ -54,9 +54,9 @@ This document serves as the authoritative, human-readable index of **Dendro's Mu
 | **[#7](https://github.com/smota/dendro/issues/7)** | **Goal 2 (Epic)** | Conversational & Semantic Analytics Architecture | Backlog |
 | **[#12](https://github.com/smota/dendro/issues/12)** | `feat(analytics): Rework Vortex Detection` | Automatic circular feedback loop detection & friction heatmaps | Backlog |
 | **[#14](https://github.com/smota/dendro/issues/14)** | `feat(tui): Interactive Seat Ribbon Timeline` | Ratatui TUI with stacked ribbons & curiosity breadcrumbs | Backlog |
-| **[#16](https://github.com/smota/dendro/issues/16)** | `feat(nao): 4 Semantic Materialized Views` | `v_seat_idle`, `v_handoff_rework`, `v_token_burn`, `v_governance` | Benchmarked (<20ms) |
+| **[#16](https://github.com/smota/dendro/issues/16)** | `feat(nao): 4 Semantic Materialized Views` | `v_seat_idle`, `v_handoff_rework`, `v_token_burn`, `v_governance` | Backlog (Benchmarked <20ms prototype) |
 | **[#17](https://github.com/smota/dendro/issues/17)** | `feat(nao): 6 Interrogation Patterns` | Compare, Rank, Explain, Verify, Trace, Limit patterns | Backlog |
-| **[#18](https://github.com/smota/dendro/issues/18)** | `test(nao): Sub-Millisecond Benchmark Suite`| Automated regression assertion gate for query latency | Implemented (`9c55b60`) |
+| **[#18](https://github.com/smota/dendro/issues/18)** | `test(nao): Sub-Millisecond Benchmark Suite`| Automated regression assertion gate for query latency | Backlog (Prototype suite ready) |
 
 ---
 
