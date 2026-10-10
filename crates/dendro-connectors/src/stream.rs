@@ -773,11 +773,20 @@ mod tests {
         }];
         let ingest =
             || crate::ingest_staged(&db_path, &roots, false, b"source-column-test-key").unwrap();
+        let id = |name: &str| {
+            crate::ingest::stable_source_id(
+                "codex",
+                &root,
+                &root.join(name),
+                b"source-column-test-key",
+            )
+        };
         ingest();
         let db = AnalyticsStore::open_path(&db_path, "key").unwrap();
-        let a = db.source_state("codex:a.jsonl").unwrap().unwrap();
-        let b = db.source_state("codex:b.jsonl").unwrap().unwrap();
+        let a = db.source_state(&id("a.jsonl")).unwrap().unwrap();
+        let b = db.source_state(&id("b.jsonl")).unwrap().unwrap();
         assert!(db.source_state("codex:0").unwrap().is_none());
+        assert_ne!(id("a.jsonl"), id("b.jsonl"));
         drop(db);
         let mut extra = fs::OpenOptions::new()
             .append(true)
@@ -786,27 +795,102 @@ mod tests {
         extra.write_all(line(30).as_bytes()).unwrap();
         ingest();
         let db = AnalyticsStore::open_path(&db_path, "key").unwrap();
-        let b_after = db.source_state("codex:b.jsonl").unwrap().unwrap();
+        let b_after = db.source_state(&id("b.jsonl")).unwrap().unwrap();
         assert_eq!(b_after.0, b.0);
         assert!(b_after.1 > b.1);
-        assert_eq!(db.source_state("codex:a.jsonl").unwrap().unwrap().0, a.0);
+        assert_eq!(db.source_state(&id("a.jsonl")).unwrap().unwrap().0, a.0);
         drop(db);
         fs::remove_file(root.join("a.jsonl")).unwrap();
         write(&root.join("c.jsonl"), &line(4));
         ingest();
         let db = AnalyticsStore::open_path(&db_path, "key").unwrap();
-        assert!(db.source_state("codex:c.jsonl").unwrap().is_some());
-        assert!(db.source_state("codex:a.jsonl").unwrap().is_some());
+        assert!(db.source_state(&id("c.jsonl")).unwrap().is_some());
+        assert!(db.source_state(&id("a.jsonl")).unwrap().is_some());
         assert_ne!(
-            db.source_state("codex:c.jsonl").unwrap().unwrap().2,
-            db.source_state("codex:a.jsonl").unwrap().unwrap().2
+            db.source_state(&id("c.jsonl")).unwrap().unwrap().2,
+            db.source_state(&id("a.jsonl")).unwrap().unwrap().2
         );
         drop(db);
         write(&root.join("b.jsonl"), &line(1));
         ingest();
         let db = AnalyticsStore::open_path(&db_path, "key").unwrap();
-        let replaced = db.source_state("codex:b.jsonl").unwrap().unwrap();
+        let replaced = db.source_state(&id("b.jsonl")).unwrap().unwrap();
         assert!(replaced.0 > b.0);
+        drop(db);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn same_relative_name_under_two_roots_does_not_share_a_watermark() {
+        let dir = std::env::temp_dir().join(format!("dendro-two-roots-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let left = dir.join("left");
+        let right = dir.join("right");
+        fs::create_dir_all(&left).unwrap();
+        fs::create_dir_all(&right).unwrap();
+        let line = |input: i64| {
+            format!(
+                "{{\"type\":\"event_msg\",\"payload\":{{\"type\":\"token_count\",\"info\":{{\"total_token_usage\":{{\"input_tokens\":{input},\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":0,\"reasoning_output_tokens\":0,\"total_tokens\":{input}}}}}}}}}\n"
+            )
+        };
+        write(&left.join("x.jsonl"), &line(10));
+        write(&right.join("x.jsonl"), &line(40));
+        let db_path = dir.join("analytics.duckdb");
+        let left_id = crate::ingest::stable_source_id(
+            "codex",
+            &left,
+            &left.join("x.jsonl"),
+            b"source-column-test-key",
+        );
+        let right_id = crate::ingest::stable_source_id(
+            "codex",
+            &right,
+            &right.join("x.jsonl"),
+            b"source-column-test-key",
+        );
+        assert_ne!(left_id, right_id);
+        let secret_left = dir.join("sk-ant-ZZZONE");
+        let secret_right = dir.join("sk-ant-ZZZTWO");
+        let secret_left_id = crate::ingest::stable_source_id(
+            "codex",
+            &secret_left,
+            &secret_left.join("x.jsonl"),
+            b"source-column-test-key",
+        );
+        let secret_right_id = crate::ingest::stable_source_id(
+            "codex",
+            &secret_right,
+            &secret_right.join("x.jsonl"),
+            b"source-column-test-key",
+        );
+        assert_ne!(secret_left_id, secret_right_id);
+        assert!(!secret_left_id.contains("ZZZONE"));
+        assert!(!secret_right_id.contains("ZZZTWO"));
+        drop(AnalyticsStore::open_path(&db_path, "key").unwrap());
+        let roots = [
+            crate::SourceRoot {
+                name: "codex".into(),
+                path: left.clone(),
+            },
+            crate::SourceRoot {
+                name: "codex".into(),
+                path: right.clone(),
+            },
+        ];
+        crate::ingest_staged(&db_path, &roots, false, b"source-column-test-key").unwrap();
+        let db = AnalyticsStore::open_path(&db_path, "key").unwrap();
+        let left_state = db.source_state(&left_id).unwrap().unwrap();
+        let right_state = db.source_state(&right_id).unwrap().unwrap();
+        assert_ne!(left_state.2, right_state.2);
+        drop(db);
+        write(&left.join("x.jsonl"), &line(1));
+        crate::ingest_staged(&db_path, &roots, false, b"source-column-test-key").unwrap();
+        let db = AnalyticsStore::open_path(&db_path, "key").unwrap();
+        assert!(db.source_state(&left_id).unwrap().unwrap().0 > left_state.0);
+        assert_eq!(
+            db.source_state(&right_id).unwrap().unwrap().0,
+            right_state.0
+        );
         drop(db);
         let _ = fs::remove_dir_all(&dir);
     }
@@ -841,6 +925,12 @@ mod tests {
         .unwrap();
         drop(conn);
         let db_path = dir.join("analytics.duckdb");
+        let source_id = crate::ingest::stable_source_id(
+            "codex",
+            &codex,
+            &codex.join("rollout.jsonl"),
+            b"source-column-test-key",
+        );
         drop(AnalyticsStore::open_path(&db_path, "key").unwrap());
         let roots = [
             crate::SourceRoot {
@@ -854,7 +944,7 @@ mod tests {
         ];
         crate::ingest_staged(&db_path, &roots, false, b"source-column-test-key").unwrap();
         let db = AnalyticsStore::open_path(&db_path, "key").unwrap();
-        let state = db.source_state("codex:rollout.jsonl").unwrap().unwrap();
+        let state = db.source_state(&source_id).unwrap().unwrap();
         assert_eq!(state.2.len(), 64);
         assert!(state.2.chars().all(|ch| ch.is_ascii_hexdigit()));
         assert!(!state.2.contains("ZZZ"));

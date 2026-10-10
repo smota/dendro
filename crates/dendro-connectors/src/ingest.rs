@@ -275,12 +275,12 @@ fn parse_missions(note: Option<&str>) -> Vec<String> {
     serde_json::from_str::<Vec<String>>(note).unwrap_or_default()
 }
 
-fn stable_source_id(root_name: &str, root: &Path, file: &Path, key: &[u8]) -> String {
+pub(crate) fn stable_source_id(root_name: &str, root: &Path, file: &Path, key: &[u8]) -> String {
     let relative = file.strip_prefix(root).unwrap_or(file);
     dendro_core::seal_identifier(
         key,
         "source",
-        &format!("{root_name}:{}", relative.display()),
+        &format!("{root_name}\n{}\n{}", root.display(), relative.display()),
     )
 }
 
