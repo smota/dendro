@@ -235,6 +235,10 @@ pub fn report_json(
     for edge in &edges {
         m1_seat_names.insert(edge.from_seat.clone());
     }
+    let snapshot_destinations: std::collections::BTreeMap<String, String> = destination_snapshots
+        .iter()
+        .map(|(qitem, destination, _)| (qitem.clone(), destination.clone()))
+        .collect();
     let m1_by_seat: Vec<_> = m1_seat_names
         .iter()
         .map(|seat| {
@@ -243,7 +247,8 @@ pub fn report_json(
                 .iter()
                 .filter(|edge| edge.from_seat == *seat && !edge.delivery_returned)
                 .count() as i64;
-            let closed = metrics::closed_item_keys(seat, &queue_all, window);
+            let closed =
+                metrics::closed_items(seat, &queue_all, &snapshot_destinations, window);
             let per_closed = if closed.is_empty() {
                 serde_json::Value::String("no data".into())
             } else {
@@ -255,7 +260,8 @@ pub fn report_json(
                 "nonreturn_deliveries": deliveries,
                 "yield": metrics::m1_yield(seat_total, deliveries),
                 "closed_items": closed.len(),
-                "closed_item_keys": closed,
+                "closed_item_keys": closed.iter().map(|item| item.transition.clone()).collect::<Vec<_>>(),
+                "closed_item_members": closed,
                 "tokens_per_closed_item": per_closed,
             })
         })
@@ -760,6 +766,130 @@ mod tests {
             "launched_at": null,
             "stopped_at": "2026-10-09T02:00:00+00:00",
         })));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn m1_report_and_trace_carry_k2_verbatim_and_member_evidence() {
+        use chrono::TimeZone;
+        let at = |h: u32| chrono::Utc.with_ymd_and_hms(2026, 10, 9, h, 0, 0).unwrap();
+        let dir = std::env::temp_dir().join(format!("dendro-k2-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("analytics.duckdb");
+        let store = AnalyticsStore::open_path(&db, "kid").unwrap();
+        let fact = |key: &str,
+                    id,
+                    item: &str,
+                    h,
+                    state: &str,
+                    source: &str,
+                    dest: &str,
+                    reason: Option<&str>| {
+            crate::QueueFact {
+                source_key: key.into(),
+                transition_id: id,
+                qitem_id: item.into(),
+                ts: at(h),
+                state: state.into(),
+                source_seat: source.into(),
+                dest_seat: dest.into(),
+                closure_reason: reason.map(str::to_string),
+                closure_target: (state == "done" && reason == Some("handed_off_to"))
+                    .then(|| dest.to_string()),
+                chain_id: None,
+                missions: vec![],
+            }
+        };
+        for row in [
+            fact(
+                "events:queue.created:1",
+                1,
+                "x",
+                1,
+                "pending",
+                "orch",
+                "seat-a",
+                None,
+            ),
+            fact(
+                "queue_transitions:10",
+                10,
+                "x",
+                2,
+                "done",
+                "seat-a",
+                "seat-b",
+                Some("handed_off_to"),
+            ),
+            fact(
+                "events:queue.created:2",
+                2,
+                "y",
+                1,
+                "pending",
+                "orch",
+                "seat-a",
+                None,
+            ),
+            fact(
+                "queue_transitions:11",
+                11,
+                "y",
+                2,
+                "done",
+                "seat-c",
+                "seat-d",
+                Some("handed_off_to"),
+            ),
+        ] {
+            store.insert_queue(&row).unwrap();
+        }
+        store.checkpoint().unwrap();
+        drop(store);
+        let (from, to) = ("2026-10-09T00:00:00Z", "2026-10-09T04:00:00Z");
+        let register = include_str!("../../../docs/ACCEPTANCE_R1_CLARIFICATIONS.md");
+        let report = report_json(&db, "decisions", None, from, to).unwrap();
+        let k2 = report["payload"]["k2_closed_item"].as_str().unwrap();
+        assert!(
+            register.contains(&format!("| {k2} **The M1 report")),
+            "K2 text is verbatim"
+        );
+        let seats = report["payload"]["m1_by_seat"].as_array().unwrap();
+        let seat = |name: &str| {
+            seats
+                .iter()
+                .find(|row| row["seat"] == name)
+                .unwrap()
+                .clone()
+        };
+        let a = seat("seat-a");
+        assert_eq!(
+            a["closed_items"], 2,
+            "destination, not actor: y was closed by seat-c"
+        );
+        assert_eq!(
+            a["closed_item_keys"],
+            json!(["queue_transitions:10", "queue_transitions:11"])
+        );
+        assert_eq!(
+            a["closed_item_members"][1],
+            json!({
+                "qitem": "y",
+                "transition": "queue_transitions:11",
+                "at": "2026-10-09T02:00:00+00:00",
+                "state": "done",
+                "closure_reason": "handed_off_to",
+                "destination_evidence": "events:queue.created:2",
+            })
+        );
+        let c = seat("seat-c");
+        assert_eq!(c["closed_items"], 0);
+        assert_eq!(c["tokens_per_closed_item"], "no data");
+        let trace = trace_json(&db, "m1", None, from, to).unwrap();
+        assert_eq!(trace["value"]["closed_item"], k2);
+        assert_eq!(trace["inputs"]["k2_closed_item"], k2);
+        assert_eq!(trace["value"]["by_seat"], report["payload"]["m1_by_seat"]);
         let _ = fs::remove_dir_all(&dir);
     }
 

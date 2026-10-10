@@ -308,22 +308,81 @@ fn closed_item_transition(fact: &QueueFact) -> bool {
     }
 }
 
-/// First qualifying transition per item whose stored destination is this seat.
-pub fn closed_item_keys(seat: &str, queue: &[QueueFact], window: Window) -> Vec<String> {
-    let mut ordered = queue.to_vec();
+/// A source record of an item's destination: `queue.created` or `queue.claimed`.
+/// Transition rows store the handoff target or actor instead, never the item's destination.
+fn is_destination_record(fact: &QueueFact) -> bool {
+    fact.source_key.starts_with("events:queue.created:")
+        || fact.source_key.starts_with("events:queue.claimed:")
+}
+
+/// The item's destination at `fact`, and the source evidence for it: the latest
+/// created or claimed event at or before the transition, else the item snapshot.
+pub fn destination_at(
+    fact: &QueueFact,
+    queue: &[QueueFact],
+    snapshots: &BTreeMap<String, String>,
+) -> Option<(String, String)> {
+    queue
+        .iter()
+        .filter(|row| {
+            row.qitem_id == fact.qitem_id && is_destination_record(row) && row.ts <= fact.ts
+        })
+        .max_by(|a, b| a.ts.cmp(&b.ts).then(a.transition_id.cmp(&b.transition_id)))
+        .map(|row| (row.dest_seat.clone(), row.source_key.clone()))
+        .or_else(|| {
+            snapshots
+                .get(&fact.qitem_id)
+                .map(|dest| (dest.clone(), "destination_snapshot".to_string()))
+        })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ClosedItem {
+    pub qitem: String,
+    pub transition: String,
+    pub at: String,
+    pub state: String,
+    pub closure_reason: Option<String>,
+    pub destination_evidence: String,
+}
+
+/// K2: each item counts once, for the seat that was its destination at its first
+/// qualifying transition inside the window. The actor does not matter.
+pub fn closed_items(
+    seat: &str,
+    queue: &[QueueFact],
+    snapshots: &BTreeMap<String, String>,
+    window: Window,
+) -> Vec<ClosedItem> {
+    let mut ordered: Vec<&QueueFact> = queue
+        .iter()
+        .filter(|fact| !is_destination_record(fact))
+        .collect();
     ordered.sort_by(|a, b| a.ts.cmp(&b.ts).then(a.transition_id.cmp(&b.transition_id)));
     let mut seen = std::collections::BTreeSet::new();
-    let mut keys = Vec::new();
+    let mut items = Vec::new();
     for fact in ordered {
-        if fact.dest_seat != seat || fact.ts < window.from || fact.ts >= window.to {
+        if fact.ts < window.from || fact.ts >= window.to || !closed_item_transition(fact) {
             continue;
         }
-        if !closed_item_transition(&fact) || !seen.insert(fact.qitem_id.clone()) {
+        if !seen.insert(fact.qitem_id.as_str()) {
             continue;
         }
-        keys.push(fact.source_key);
+        let Some((destination, evidence)) = destination_at(fact, queue, snapshots) else {
+            continue;
+        };
+        if destination == seat {
+            items.push(ClosedItem {
+                qitem: fact.qitem_id.clone(),
+                transition: fact.source_key.clone(),
+                at: fact.ts.to_rfc3339(),
+                state: fact.state.clone(),
+                closure_reason: fact.closure_reason.clone(),
+                destination_evidence: evidence,
+            });
+        }
     }
-    keys
+    items
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1241,8 +1300,12 @@ mod tests {
         assert!(edges[0].delivery_returned);
         assert!(!edges[1].delivery_returned);
         assert!(!edges[2].delivery_returned);
-        let closed = closed_item_keys("B", &queue, window);
-        assert_eq!(closed, vec!["t1".to_string()]);
+        // The handoff target is not the item's destination (K2).
+        let snapshots = BTreeMap::from([("item".to_string(), "A".to_string())]);
+        assert!(closed_items("B", &queue, &snapshots, window).is_empty());
+        let closed = closed_items("A", &queue, &snapshots, window);
+        assert_eq!(closed.len(), 1);
+        assert_eq!(closed[0].transition, "t1");
         assert!(K2_CLOSED_ITEM.contains("zero closed items = no data"));
     }
 
@@ -1271,88 +1334,133 @@ mod tests {
         }
     }
 
+    fn created(item: &str, at: i64, dest: &str) -> QueueFact {
+        let mut fact = q(
+            &format!("events:queue.created:{item}"),
+            0,
+            item,
+            at,
+            "pending",
+            "orch",
+            dest,
+            None,
+        );
+        fact.transition_id = 1_000 + at;
+        fact
+    }
+
+    fn members(items: &[ClosedItem]) -> Vec<&str> {
+        items.iter().map(|item| item.transition.as_str()).collect()
+    }
+
     #[test]
-    fn closed_items_follow_k2_destination_and_window() {
+    fn closed_items_follow_k2_states_reasons_and_window() {
         let window = Window {
             from: ts(0),
             to: ts(60),
         };
-        let queue = vec![
-            q("ok-none", 1, "a", 10, "done", "actor", "seat", None),
-            q(
-                "ok-follow",
-                2,
-                "b",
-                10,
-                "done",
-                "actor",
-                "seat",
-                Some("no-follow-on"),
-            ),
-            q(
-                "ok-hand",
-                3,
-                "c",
-                10,
-                "done",
-                "actor",
-                "seat",
-                Some("handed_off_to"),
-            ),
-            q(
-                "ok-esc",
-                4,
-                "d",
-                10,
-                "done",
-                "actor",
-                "seat",
-                Some("escalation"),
-            ),
-            q("ok-state", 5, "e", 10, "handed-off", "actor", "seat", None),
-            q(
-                "bad-cancel",
-                6,
-                "f",
-                10,
-                "canceled",
-                "actor",
-                "seat",
-                Some("superseded"),
-            ),
-            q(
-                "bad-denied",
-                7,
-                "g",
-                10,
-                "done",
-                "actor",
-                "seat",
-                Some("denied"),
-            ),
-            q(
-                "bad-canceled-reason",
-                8,
-                "h",
-                10,
-                "done",
-                "actor",
-                "seat",
-                Some("canceled"),
-            ),
-            q("bad-failed", 9, "i", 10, "failed", "actor", "seat", None),
-            q("bad-blocked", 10, "j", 10, "blocked", "actor", "seat", None),
-            q("bad-unknown", 11, "k", 10, "unknown", "actor", "seat", None),
-            q("actor-not-dest", 12, "l", 10, "done", "seat", "other", None),
-            q("too-early", 13, "m", -1, "done", "actor", "seat", None),
-            q("at-end", 14, "n", 60, "done", "actor", "seat", None),
-            q("mirror", 15, "a", 20, "handed-off", "actor", "seat", None),
-        ];
-        let keys = closed_item_keys("seat", &queue, window);
+        let mut queue = Vec::new();
+        for item in "abcdefghijkmno".chars() {
+            queue.push(created(&item.to_string(), -100, "seat"));
+        }
+        // The actor and the stored handoff target are never the destination.
+        let other = |key: &str, id, item: &str, state, reason| {
+            q(key, id, item, 10, state, "someone", "elsewhere", reason)
+        };
+        queue.extend([
+            other("ok-none", 1, "a", "done", None),
+            other("ok-follow", 2, "b", "done", Some("no-follow-on")),
+            other("ok-hand", 3, "c", "done", Some("handed_off_to")),
+            other("ok-esc", 4, "d", "done", Some("escalation")),
+            other("ok-state", 5, "e", "handed-off", Some("handed_off_to")),
+            other("bad-cancel", 6, "f", "canceled", None),
+            other("bad-denied", 7, "g", "done", Some("denied")),
+            other("bad-canceled-reason", 8, "h", "done", Some("canceled")),
+            other("bad-failed", 9, "i", "failed", None),
+            other("bad-blocked", 10, "j", "blocked", None),
+            other("bad-unknown", 11, "k", "unknown", None),
+            other("bad-unlisted-reason", 12, "o", "done", Some("superseded")),
+            q("too-early", 13, "m", -1, "done", "seat", "seat", None),
+            q("at-start", 14, "m", 0, "done", "x", "x", None),
+            q("at-end", 15, "n", 60, "done", "seat", "seat", None),
+            q("open", 16, "a", 5, "in-progress", "seat", "seat", None),
+            q("mirror", 17, "a", 20, "handed-off", "x", "x", None),
+            q("repeat", 18, "c", 30, "done", "x", "x", None),
+        ]);
+        let none = BTreeMap::new();
+        let items = closed_items("seat", &queue, &none, window);
         assert_eq!(
-            keys,
-            vec!["ok-none", "ok-follow", "ok-hand", "ok-esc", "ok-state"]
+            members(&items),
+            vec![
+                "at-start",
+                "ok-none",
+                "ok-follow",
+                "ok-hand",
+                "ok-esc",
+                "ok-state"
+            ]
         );
-        assert!(closed_item_keys("nobody", &queue, window).is_empty());
+        assert!(items.iter().all(|item| item
+            .destination_evidence
+            .starts_with("events:queue.created:")));
+        assert!(closed_items("elsewhere", &queue, &none, window).is_empty());
+        assert!(closed_items("someone", &queue, &none, window).is_empty());
+        assert!(K2_CLOSED_ITEM.contains("zero closed items = no data"));
+    }
+
+    #[test]
+    fn closed_item_destination_comes_from_history_then_snapshot() {
+        let window = Window {
+            from: ts(0),
+            to: ts(60),
+        };
+        let mut claimed = q(
+            "events:queue.claimed:9",
+            2_000,
+            "a",
+            5,
+            "in-progress",
+            "seat-b",
+            "seat-b",
+            None,
+        );
+        claimed.source_key = "events:queue.claimed:9".into();
+        let queue = vec![
+            created("a", -10, "seat-a"),
+            claimed,
+            q("closed-a", 1, "a", 10, "done", "seat-b", "unknown", None),
+            q("closed-b", 2, "b", 10, "done", "actor", "unknown", None),
+            q("closed-c", 3, "c", 10, "done", "actor", "unknown", None),
+            // A claim after the closure does not move the closure.
+            created("d", -10, "seat-a"),
+            q("closed-d", 4, "d", 10, "done", "actor", "unknown", None),
+            q(
+                "events:queue.claimed:99",
+                2_001,
+                "d",
+                20,
+                "in-progress",
+                "seat-b",
+                "seat-b",
+                None,
+            ),
+        ];
+        let snapshots = BTreeMap::from([
+            ("a".to_string(), "seat-a".to_string()),
+            ("b".to_string(), "seat-b".to_string()),
+        ]);
+        let b = closed_items("seat-b", &queue, &snapshots, window);
+        assert_eq!(members(&b), vec!["closed-a", "closed-b"]);
+        assert_eq!(b[0].destination_evidence, "events:queue.claimed:9");
+        assert_eq!(b[1].destination_evidence, "destination_snapshot");
+        let a = closed_items("seat-a", &queue, &snapshots, window);
+        assert_eq!(members(&a), vec!["closed-d"]);
+        // No destination evidence at all: the item is not anyone's closed item.
+        assert!(["seat-a", "seat-b", "actor", "unknown"]
+            .iter()
+            .all(
+                |seat| !members(&closed_items(seat, &queue, &snapshots, window))
+                    .contains(&"closed-c")
+            ));
     }
 }
