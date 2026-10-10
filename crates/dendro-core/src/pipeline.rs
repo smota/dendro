@@ -209,6 +209,14 @@ pub fn report_json(
         .collect();
     let tools = store.load_tools()?;
     let loops = metrics::tool_loops(&tools, 3, 600);
+    let seat_of = |native: &str| {
+        identities
+            .iter()
+            .find(|fact| fact.native_session == native)
+            .map(|fact| fact.seat.clone())
+    };
+    let intakes = metrics::handoff_intakes(&edges, &queue, &tools, &usage, seat_of);
+    let medians = metrics::pair_medians(&edges, &queue, &intakes);
     let mut mission_tokens = std::collections::BTreeMap::<String, i64>::new();
     for row in &usage {
         let seat = identities
@@ -274,7 +282,28 @@ pub fn report_json(
                 "from": edge.from_seat,
                 "to": edge.to_seat,
                 "return": edge.is_return,
+                "qitem_id": edge.qitem_id,
                 "source_key": edge.source_key,
+            })).collect::<Vec<_>>(),
+            "intakes": intakes.iter().map(|row| json!({
+                "qitem_id": row.qitem_id,
+                "to": row.to_seat,
+                "status": row.status,
+                "reason": row.reason,
+                "tokens": row.tokens,
+                "claim": row.claim,
+                "write": row.write,
+                "samples": row.samples,
+            })).collect::<Vec<_>>(),
+            "pair_medians": medians.iter().map(|row| json!({
+                "from": row.from_seat,
+                "to": row.to_seat,
+                "wait_samples": row.wait_samples,
+                "wait_invalid": row.wait_invalid,
+                "wait_median": row.wait_median,
+                "intake_samples": row.intake_samples,
+                "intake_invalid": row.intake_invalid,
+                "intake_median": row.intake_median,
             })).collect::<Vec<_>>(),
             "mission_tokens": mission_tokens,
             "tool_loops": loops.iter().map(|item| json!({"session": item.session, "tool": item.tool, "count": item.count})).collect::<Vec<_>>(),
@@ -323,6 +352,14 @@ pub fn trace_json(
             "sum of four token buckets in the half-open window",
             payload["tokens"].clone(),
         ),
+        "intake" => (
+            "claim-inclusive to first structured write, exclusive",
+            payload["intakes"].clone(),
+        ),
+        "medians" => (
+            "even-sample median of wait seconds and intake tokens",
+            payload["pair_medians"].clone(),
+        ),
         other => return Err(anyhow!("unknown metric id {other}")),
     };
     Ok(json!({
@@ -337,6 +374,9 @@ pub fn trace_json(
             "m3_rework_chains": payload["m3_rework_chains"],
             "m3_chains": payload["m3_chains"],
             "rows": payload["trace_inputs"],
+            "intakes": payload["intakes"],
+            "pair_medians": payload["pair_medians"],
+            "window": {"from": from, "to": to},
         },
         "from": from,
         "to": to,

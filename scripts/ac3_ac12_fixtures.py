@@ -50,6 +50,12 @@ def main():
         json.dumps({"type": "assistant", "timestamp": "2026-10-09T00:00:11Z", "sessionId": f"sess-{secret_a}", "message": {"id": "b", "content": [{"type": "tool_use", "name": "Read", "input": " same ", "is_error": True}]}}),
         json.dumps({"type": "assistant", "timestamp": "2026-10-09T00:00:12Z", "sessionId": f"sess-{secret_a}", "message": {"id": "c", "content": [{"type": "tool_use", "name": "Read", "input": " same ", "is_error": True}]}}),
         json.dumps({"type": "assistant", "timestamp": T[20], "sessionId": f"sess-{secret_b}", "message": {"id": "d", "usage": {"input_tokens": 4, "output_tokens": 0, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}}}),
+        json.dumps({"type": "assistant", "timestamp": T[10], "sessionId": "s-b", "message": {"id": "early", "usage": {"input_tokens": 1, "output_tokens": 0, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}}}),
+        json.dumps({"type": "assistant", "timestamp": "2026-10-09T00:00:15Z", "sessionId": "s-b", "message": {"id": "early-write", "content": [{"type": "tool_use", "name": "Write", "input": "early", "is_error": False}]}}),
+        json.dumps({"type": "assistant", "timestamp": T[30], "sessionId": "s-b", "message": {"id": "w0", "usage": {"input_tokens": 2, "output_tokens": 0, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}}}),
+        json.dumps({"type": "assistant", "timestamp": "2026-10-09T00:00:35Z", "sessionId": "s-b", "message": {"id": "w5", "usage": {"input_tokens": 3, "output_tokens": 0, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}}}),
+        json.dumps({"type": "assistant", "timestamp": T[40], "sessionId": "s-b", "message": {"id": "w10", "content": [{"type": "tool_use", "name": "Write", "input": "file", "is_error": False}], "usage": {"input_tokens": 9, "output_tokens": 0, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}}}),
+        json.dumps({"type": "assistant", "timestamp": T[10], "sessionId": "s-b", "message": {"id": "bash", "content": [{"type": "tool_use", "name": "Bash", "input": "echo", "is_error": False}]}}),
         "not-json",
     ]) + "\npartial")
     (src / "codex" / "c.jsonl").write_text("\n".join([
@@ -67,6 +73,7 @@ def main():
     conn.execute("INSERT INTO events VALUES (1,'agent.session_identity',? ,?)", (json.dumps({"sessionId": "s-linked", "runtime": "claude-code", "sessionName": "seat-a", "rigId": "r1"}), FROM))
     conn.execute("INSERT INTO events VALUES (2,'agent.session_identity',? ,?)", (json.dumps({"sessionId": f"sess-{secret_a}", "runtime": "claude-code", "sessionName": f"seat-{secret_a}", "rigId": "r1"}), FROM))
     conn.execute("INSERT INTO events VALUES (3,'agent.session_identity',? ,?)", (json.dumps({"sessionId": f"sess-{secret_b}", "runtime": "claude-code", "sessionName": f"seat-{secret_b}", "rigId": "r1"}), FROM))
+    conn.execute("INSERT INTO events VALUES (6,'agent.session_identity',? ,?)", (json.dumps({"sessionId": "s-b", "runtime": "claude-code", "sessionName": "seat-b", "rigId": "r1"}), FROM))
     conn.execute("INSERT INTO events VALUES (4,'agent.activity',? ,?)", (json.dumps({"sessionName": "seat-a", "activity": {"state": "idle", "eventAt": T[0]}}), T[0]))
     conn.execute("INSERT INTO events VALUES (5,'agent.activity',? ,?)", (json.dumps({"sessionName": "seat-old", "activity": {"state": "running", "eventAt": "2026-10-08T00:00:00Z"}}), "2026-10-08T00:00:00Z"))
     conn.execute("""CREATE TABLE queue_transitions (transition_id INTEGER, qitem_id TEXT, ts TEXT, state TEXT, actor_session TEXT, closure_reason TEXT, closure_target TEXT, transition_note TEXT)""")
@@ -77,6 +84,10 @@ def main():
         (8, "alpha", T[0], "done", "seat-a", None, "seat-a", "[]"),
         (4, "chain", T[30], "handed-off", "seat-a", "handed_off_to", "seat-b", "[]"),
         (5, "chain", T[40], "handed-off", "seat-b", "handed_off_to", "seat-a", "[]"),
+        (9, "chain", T[30], "in-progress", "seat-b", None, "seat-b", "[]"),
+        (10, "wait2", T[0], "handed-off", "seat-a", "handed_off_to", "seat-b", "[]"),
+        (11, "wait2", T[10], "in-progress", "seat-b", None, "seat-b", "[]"),
+        (12, "wait2", "2026-10-09T00:00:15Z", "done", "seat-b", None, "seat-b", "[]"),
         (6, "secret-a", T[10], "in-progress", f"seat-{secret_a}", None, f"seat-{secret_a}", json.dumps([f"mission-{secret_a}"])),
         (7, "secret-b", T[20], "in-progress", f"seat-{secret_b}", None, f"seat-{secret_b}", json.dumps([f"mission-{secret_b}"])),
     ])
@@ -107,6 +118,17 @@ def main():
     code, handoffs, _ = report(analytics, "handoffs")
     edges = json.loads(handoffs)["payload"]["handoff_edges"] if code == 0 else []
     check("ac5_one_return", sum(1 for edge in edges if edge.get("return")) == 1, 1, sum(1 for edge in edges if edge.get("return")))
+    intakes = json.loads(handoffs)["payload"].get("intakes")
+    check("ac5_intakes_present", intakes is not None, True, intakes is not None)
+    estimate = next((row for row in intakes or [] if row.get("tokens") == 5), {})
+    check("ac5_intake_tokens", estimate.get("tokens") == 5, 5, estimate.get("tokens"))
+    ambiguous = [row for row in intakes or [] if row.get("status") == "ambiguous"]
+    nodata = [row for row in intakes or [] if row.get("status") == "no_data"]
+    check("ac5_no_data", len(nodata) >= 1, ">=1", len(nodata))
+    medians = json.loads(handoffs)["payload"].get("pair_medians")
+    check("ac5_medians_present", medians is not None, True, medians is not None)
+    pair = next((row for row in medians or [] if row.get("from") == "seat-a" and row.get("to") == "seat-b"), {})
+    check("ac5_even_median", pair.get("wait_median") == 5, 5, pair.get("wait_median"))
     loops = json.loads(handoffs)["payload"].get("tool_loops", [])
     check("ac6_loop", len(loops) == 1 and loops[0].get("count") == 3, 3, loops[0].get("count") if loops else 0)
     code, traced, _ = run(["trace", "--db", str(analytics), "--metric-id", "tokens", "--from", FROM, "--to", TO])

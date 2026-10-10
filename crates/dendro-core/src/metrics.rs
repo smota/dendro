@@ -284,6 +284,248 @@ pub fn intake_cost(
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IntakeRow {
+    pub qitem_id: String,
+    pub to_seat: String,
+    pub status: String,
+    pub reason: Option<String>,
+    pub tokens: Option<i64>,
+    pub claim: Option<String>,
+    pub write: Option<String>,
+    pub samples: Vec<String>,
+}
+
+pub fn handoff_intakes(
+    edges: &[HandoffEdge],
+    queue: &[QueueFact],
+    tools: &[ToolFact],
+    usages: &[UsageFact],
+    seat_of: impl Fn(&str) -> Option<String>,
+) -> Vec<IntakeRow> {
+    edges
+        .iter()
+        .map(|edge| intake_for_edge(edge, queue, tools, usages, &seat_of))
+        .collect()
+}
+
+fn intake_for_edge(
+    edge: &HandoffEdge,
+    queue: &[QueueFact],
+    tools: &[ToolFact],
+    usages: &[UsageFact],
+    seat_of: &impl Fn(&str) -> Option<String>,
+) -> IntakeRow {
+    let claim = queue
+        .iter()
+        .filter(|row| {
+            row.qitem_id == edge.qitem_id
+                && row.dest_seat == edge.to_seat
+                && row.state == "in-progress"
+                && row.ts >= edge_time(queue, edge)
+        })
+        .min_by_key(|row| (row.ts, row.transition_id));
+    let Some(claim) = claim else {
+        return intake_row(edge, "no_data", Some("no claim"), None, None, None, vec![]);
+    };
+    let linked = usages
+        .iter()
+        .any(|usage| seat_of(&usage.native_session).as_deref() == Some(edge.to_seat.as_str()));
+    if !linked {
+        return intake_row(
+            edge,
+            "no_data",
+            Some("no linked session"),
+            None,
+            Some(claim.ts.to_rfc3339()),
+            None,
+            vec![],
+        );
+    }
+    let write = tools
+        .iter()
+        .filter(|tool| {
+            tool.structured_write
+                && tool.ts.is_some_and(|ts| ts >= claim.ts)
+                && seat_of(&tool.native_session).as_deref() == Some(edge.to_seat.as_str())
+        })
+        .min_by_key(|tool| (tool.ts, tool.seq));
+    let Some(write) = write else {
+        return intake_row(
+            edge,
+            "no_data",
+            Some("no structured write"),
+            None,
+            Some(claim.ts.to_rfc3339()),
+            None,
+            vec![],
+        );
+    };
+    let write_at = write.ts.unwrap();
+    let overlap = queue.iter().any(|row| {
+        row.qitem_id != edge.qitem_id
+            && row.dest_seat == edge.to_seat
+            && row.state == "in-progress"
+            && row.ts < write_at
+            && !closed_before(queue, row, claim.ts)
+    });
+    if overlap {
+        return intake_row(
+            edge,
+            "ambiguous",
+            Some("overlapping claim"),
+            None,
+            Some(claim.ts.to_rfc3339()),
+            Some(write_at.to_rfc3339()),
+            vec![],
+        );
+    }
+    let mut tokens = 0i64;
+    let mut samples = Vec::new();
+    let mut any = false;
+    for usage in usages {
+        let Some(ts) = usage.ts else { continue };
+        if seat_of(&usage.native_session).as_deref() != Some(edge.to_seat.as_str()) {
+            continue;
+        }
+        if ts >= claim.ts && ts < write_at {
+            any = true;
+            let part = usage.input_uncached + usage.cache_read + usage.cache_write;
+            tokens += part;
+            samples.push(usage.source_key.clone());
+        }
+    }
+    if !any {
+        return intake_row(
+            edge,
+            "no_data",
+            Some("no timestamped usage"),
+            None,
+            Some(claim.ts.to_rfc3339()),
+            Some(write_at.to_rfc3339()),
+            samples,
+        );
+    }
+    intake_row(
+        edge,
+        "estimate",
+        None,
+        Some(tokens),
+        Some(claim.ts.to_rfc3339()),
+        Some(write_at.to_rfc3339()),
+        samples,
+    )
+}
+
+fn edge_time(queue: &[QueueFact], edge: &HandoffEdge) -> DateTime<Utc> {
+    queue
+        .iter()
+        .find(|row| row.source_key == edge.source_key)
+        .map(|row| row.ts)
+        .unwrap_or(DateTime::<Utc>::UNIX_EPOCH)
+}
+
+fn closed_before(queue: &[QueueFact], open: &QueueFact, at: DateTime<Utc>) -> bool {
+    queue.iter().any(|row| {
+        row.qitem_id == open.qitem_id
+            && row.ts <= at
+            && row.transition_id >= open.transition_id
+            && matches!(row.state.as_str(), "done" | "handed-off" | "canceled")
+    })
+}
+
+fn intake_row(
+    edge: &HandoffEdge,
+    status: &str,
+    reason: Option<&str>,
+    tokens: Option<i64>,
+    claim: Option<String>,
+    write: Option<String>,
+    samples: Vec<String>,
+) -> IntakeRow {
+    IntakeRow {
+        qitem_id: edge.qitem_id.clone(),
+        to_seat: edge.to_seat.clone(),
+        status: status.to_string(),
+        reason: reason.map(str::to_string),
+        tokens,
+        claim,
+        write,
+        samples,
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PairMedian {
+    pub from_seat: String,
+    pub to_seat: String,
+    pub wait_samples: Vec<f64>,
+    pub wait_invalid: i64,
+    pub wait_median: Option<f64>,
+    pub intake_samples: Vec<f64>,
+    pub intake_invalid: i64,
+    pub intake_median: Option<f64>,
+}
+
+pub fn pair_medians(
+    edges: &[HandoffEdge],
+    queue: &[QueueFact],
+    intakes: &[IntakeRow],
+) -> Vec<PairMedian> {
+    let mut pairs: BTreeMap<(String, String), PairMedian> = BTreeMap::new();
+    for edge in edges {
+        let entry = pairs
+            .entry((edge.from_seat.clone(), edge.to_seat.clone()))
+            .or_insert_with(|| PairMedian {
+                from_seat: edge.from_seat.clone(),
+                to_seat: edge.to_seat.clone(),
+                wait_samples: Vec::new(),
+                wait_invalid: 0,
+                wait_median: None,
+                intake_samples: Vec::new(),
+                intake_invalid: 0,
+                intake_median: None,
+            });
+        let handoff_at = edge_time(queue, edge);
+        let claim = queue.iter().find(|row| {
+            row.qitem_id == edge.qitem_id
+                && row.dest_seat == edge.to_seat
+                && row.state == "in-progress"
+                && row.ts >= handoff_at
+        });
+        if let Some(claim) = claim {
+            entry
+                .wait_samples
+                .push((claim.ts - handoff_at).num_seconds() as f64);
+        } else {
+            entry.wait_invalid += 1;
+        }
+    }
+    for intake in intakes {
+        let Some(edge) = edges
+            .iter()
+            .find(|edge| edge.qitem_id == intake.qitem_id && edge.to_seat == intake.to_seat)
+        else {
+            continue;
+        };
+        let Some(entry) = pairs.get_mut(&(edge.from_seat.clone(), edge.to_seat.clone())) else {
+            continue;
+        };
+        if intake.status == "estimate" {
+            if let Some(tokens) = intake.tokens {
+                entry.intake_samples.push(tokens as f64);
+            }
+        } else {
+            entry.intake_invalid += 1;
+        }
+    }
+    for entry in pairs.values_mut() {
+        entry.wait_median = even_median(entry.wait_samples.clone());
+        entry.intake_median = even_median(entry.intake_samples.clone());
+    }
+    pairs.into_values().collect()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ToolLoop {
     pub session: String,
     pub tool: String,
