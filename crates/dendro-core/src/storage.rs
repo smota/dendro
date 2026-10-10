@@ -213,7 +213,7 @@ impl AnalyticsStore {
     pub fn record_warning(&self, note: &WarningNote) -> Result<()> {
         self.conn.execute(
             "INSERT INTO warnings (path, line_no, reason) VALUES (?, ?, ?)",
-            params![redact(&note.path), note.line, note.reason],
+            params![redact(&note.path), note.line, redact(&note.reason)],
         )?;
         Ok(())
     }
@@ -272,12 +272,12 @@ impl AnalyticsStore {
                  byte_offset = excluded.byte_offset,
                  prefix_sha256 = excluded.prefix_sha256"#,
             params![
-                source_id,
-                harness,
+                redact(source_id),
+                redact(harness),
                 redact(display_path),
                 generation,
                 byte_offset,
-                prefix_sha256
+                redact(prefix_sha256)
             ],
         )?;
         if let Some(c) = counters {
@@ -293,7 +293,7 @@ impl AnalyticsStore {
                      output_tokens = excluded.output_tokens,
                      reasoning_output_tokens = excluded.reasoning_output_tokens"#,
                 params![
-                    source_id,
+                    redact(source_id),
                     generation,
                     c.input_tokens,
                     c.cached_input_tokens,
@@ -312,8 +312,8 @@ impl AnalyticsStore {
                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT (source_key) DO NOTHING"#,
                 params![
-                    u.source_key,
-                    u.harness,
+                    redact(&u.source_key),
+                    redact(&u.harness),
                     redact(&u.native_session),
                     u.message_id.as_deref().map(redact),
                     u.ts.map(|t| t.to_rfc3339()),
@@ -325,7 +325,7 @@ impl AnalyticsStore {
                     u.reasoning,
                     u.currency_total,
                     u.generation,
-                    source_id
+                    redact(source_id)
                 ],
             )?;
         }
@@ -337,17 +337,17 @@ impl AnalyticsStore {
                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT (source_key) DO NOTHING"#,
                 params![
-                    t.source_key,
-                    t.harness,
+                    redact(&t.source_key),
+                    redact(&t.harness),
                     redact(&t.native_session),
                     t.ts.map(|v| v.to_rfc3339()),
                     t.seq,
                     redact(&t.name),
-                    t.fingerprint,
+                    t.fingerprint.as_deref().map(redact),
                     t.failed,
                     t.structured_write,
                     t.generation,
-                    source_id
+                    redact(source_id)
                 ],
             )?;
         }
@@ -361,8 +361,8 @@ impl AnalyticsStore {
                VALUES (?, ?, ?, ?, ?, ?)
                ON CONFLICT (source_key) DO NOTHING"#,
             params![
-                fact.source_key,
-                fact.harness,
+                redact(&fact.source_key),
+                redact(&fact.harness),
                 redact(&fact.native_session),
                 redact(&fact.rig),
                 redact(&fact.seat),
@@ -378,7 +378,7 @@ impl AnalyticsStore {
                VALUES (?, ?, ?, ?, ?)
                ON CONFLICT (source_key) DO NOTHING"#,
             params![
-                fact.source_key,
+                redact(&fact.source_key),
                 redact(&fact.seat),
                 fact.ts.to_rfc3339(),
                 activity_state(Some(fact.state.as_str())),
@@ -396,9 +396,9 @@ impl AnalyticsStore {
                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT (source_key) DO NOTHING"#,
             params![
-                fact.source_key,
+                redact(&fact.source_key),
                 fact.transition_id,
-                fact.qitem_id,
+                redact(&fact.qitem_id),
                 fact.ts.to_rfc3339(),
                 queue_state(&fact.state),
                 redact(&fact.source_seat),
@@ -419,7 +419,7 @@ impl AnalyticsStore {
             r#"INSERT INTO skill_facts (source_key, seat, skill, invoked) VALUES (?, ?, ?, ?)
                ON CONFLICT (source_key) DO NOTHING"#,
             params![
-                fact.source_key,
+                redact(&fact.source_key),
                 redact(&fact.seat),
                 redact(&fact.skill),
                 fact.invoked
@@ -717,6 +717,126 @@ mod tests {
             .as_deref()
             .unwrap_or("")
             .contains("FAKESTATE"));
+    }
+
+    #[test]
+    fn privacy_matrix_keeps_canaries_out_of_every_text_column() {
+        let store = AnalyticsStore::open_in_memory("key").unwrap();
+        let canary = "sk-ant-QA_SYNTHETIC_MATRIX";
+        let now = Utc::now();
+        store
+            .commit_file_batch(
+                canary,
+                canary,
+                canary,
+                1,
+                0,
+                canary,
+                None,
+                &[UsageFact {
+                    source_key: canary.into(),
+                    harness: canary.into(),
+                    native_session: canary.into(),
+                    message_id: Some(canary.into()),
+                    ts: Some(now),
+                    seq: 1,
+                    input_uncached: 1,
+                    output: 1,
+                    cache_read: 0,
+                    cache_write: 0,
+                    reasoning: 0,
+                    currency_total: None,
+                    generation: 1,
+                }],
+                &[ToolFact {
+                    source_key: format!("tool-{canary}"),
+                    harness: canary.into(),
+                    native_session: canary.into(),
+                    ts: Some(now),
+                    seq: 1,
+                    name: canary.into(),
+                    fingerprint: Some(canary.into()),
+                    failed: Some(false),
+                    structured_write: false,
+                    generation: 1,
+                }],
+            )
+            .unwrap();
+        store
+            .insert_identity(&IdentityFact {
+                source_key: format!("id-{canary}"),
+                harness: canary.into(),
+                native_session: canary.into(),
+                rig: canary.into(),
+                seat: canary.into(),
+                ts: Some(now),
+            })
+            .unwrap();
+        store
+            .insert_activity(&ActivityFact {
+                source_key: format!("act-{canary}"),
+                seat: canary.into(),
+                ts: now,
+                state: canary.into(),
+                seq: 1,
+            })
+            .unwrap();
+        store
+            .insert_queue(&QueueFact {
+                source_key: format!("q-{canary}"),
+                transition_id: 1,
+                qitem_id: canary.into(),
+                ts: now,
+                state: canary.into(),
+                source_seat: canary.into(),
+                dest_seat: canary.into(),
+                closure_reason: Some("handed_off_to".into()),
+                closure_target: Some(canary.into()),
+                chain_id: Some(canary.into()),
+                missions: vec![canary.into()],
+            })
+            .unwrap();
+        store
+            .insert_skill(&SkillFact {
+                source_key: format!("skill-{canary}"),
+                seat: canary.into(),
+                skill: canary.into(),
+                invoked: true,
+            })
+            .unwrap();
+        store
+            .record_warning(&WarningNote {
+                path: canary.into(),
+                line: Some(1),
+                reason: canary.into(),
+            })
+            .unwrap();
+        let mut checked = 0usize;
+        for qualified in crate::privacy::TEXT_COLUMNS {
+            let (table, column) = qualified.split_once('.').unwrap();
+            let sql = format!("SELECT COUNT(*) FROM {table} WHERE CAST({column} AS VARCHAR) LIKE '%QA_SYNTHETIC_MATRIX%'");
+            let hits: i64 = store.conn.query_row(&sql, [], |row| row.get(0)).unwrap();
+            assert_eq!(hits, 0, "{qualified}");
+            checked += 1;
+        }
+        assert_eq!(checked, 40);
+        let state: String = store
+            .conn
+            .query_row("SELECT state FROM activity_facts", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(state, "unknown");
+        let reason: String = store
+            .conn
+            .query_row("SELECT closure_reason FROM queue_facts", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(reason, "handed_off_to");
+        let bounds: i64 = store
+            .conn
+            .query_row("SELECT COUNT(*) FROM seat_bounds", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(bounds, 0);
     }
 
     #[test]

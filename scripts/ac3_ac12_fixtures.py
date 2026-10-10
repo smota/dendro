@@ -187,6 +187,9 @@ def main():
     carry_open = [row for row in demand if row.get("dest") == "seat-carry" and row.get("state") == "pending"]
     carry_closed = [row for row in demand if row.get("dest") == "seat-carry" and row.get("state") in {"done", "canceled"}]
     check("qa_trace_replay_carry", rcode == 0 and len(carry_open) == 1 and len(carry_closed) == 0, 60, 60 if len(carry_open) == 1 and not carry_closed else 0)
+    missing = ROOT / "no-such-root"
+    rcode, rstdout, rstderr = run(["run", "--db", str(ROOT / "root-name.duckdb"), "--root", f"sk-ant-QA_SYNTHETIC_ROOTNAME_20261010={missing}"])
+    check("qa_root_name_stdout", rcode == 0 and "QA_SYNTHETIC_ROOTNAME" not in rstdout + rstderr and "[redacted]" in rstdout, 0, rcode)
     failed = [row for row in rows if not row["ok"]]
     Path("/tmp/ac3-ac12-results.json").write_text(json.dumps({"commit": subprocess.check_output(["git", "-C", "/home/sam/code/dendro/.worktrees/work/dendro-r1", "rev-parse", "HEAD"], text=True).strip(), "rows": rows}, indent=2))
     print("FAILED", len(failed), "OF", len(rows))

@@ -23,8 +23,9 @@ pub fn ingest_staged(
     let store = AnalyticsStore::open_staged(staged_db)?;
     let mut notes = Vec::new();
     for root in roots {
+        let shown = dendro_core::redact(&root.name);
         if !root.path.exists() {
-            notes.push(format!("{} missing", root.name));
+            notes.push(format!("{shown} missing"));
             continue;
         }
         match root.name.as_str() {
@@ -39,14 +40,14 @@ pub fn ingest_staged(
                         Some(key),
                     )?;
                 }
-                notes.push(format!("{} files={}", root.name, files.len()));
+                notes.push(format!("{shown} files={}", files.len()));
             }
             "openrig" => {
                 let count = ingest_openrig(&store, &root.path, frozen, key)?;
                 notes.push(format!("openrig events={count}"));
             }
-            "agy" | "grok" => notes.push(format!("{} present-not-parsed", root.name)),
-            other => notes.push(format!("{other} unsupported")),
+            "agy" | "grok" => notes.push(format!("{shown} present-not-parsed")),
+            _ => notes.push(format!("{shown} unsupported")),
         }
     }
     Ok(notes)
