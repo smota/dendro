@@ -170,9 +170,11 @@ fn ingest_openrig(
                 .map(|value| value.with_timezone(&Utc));
             let Some(ts) = ts else { continue };
             let actor_raw = row.4.clone().unwrap_or_default();
-            let target_raw = row.6.clone().unwrap_or_else(|| actor_raw.clone());
             let actor = dendro_core::seal_identifier(key, "seat", &actor_raw);
-            let target = dendro_core::seal_identifier(key, "seat", &target_raw);
+            let target = match row.6.as_deref() {
+                Some(value) => dendro_core::seal_identifier(key, "seat", value),
+                None => "unknown".to_string(),
+            };
             store.insert_queue(&QueueFact {
                 source_key: format!("queue_transitions:{}", row.0),
                 transition_id: row.0,
