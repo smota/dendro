@@ -1,314 +1,344 @@
-# Dendro — Especificação de Produto (Fase 0)
+# Dendro — Product Specification (Phase 0)
 
-| Campo | Valor |
+| Field | Value |
 | --- | --- |
-| Dono | `pm.manager` (`pm-manager@dendro-pm`) |
+| Owner | `pm.manager` (`pm-manager@dendro-pm`) |
 | Sponsor | Sam |
-| Data | 2026-10-10 |
-| Estado | Go-Ahead do sponsor em 2026-10-10 16:56Z. Fase 0 registrada (`dendro-r1-p0`). |
-| Fonte | `docs/INTAKE_BRIEFING.md`, `docs/research/openrig-discussion-1099.md`, dados locais |
-| Próximo dono | `pm.analyst` (Fase 1) |
+| Date | 2026-10-10 |
+| State | Sponsor Go-Ahead 2026-10-10 16:56Z. Phase 0 recorded (`dendro-r1-p0`). Acceptance frozen: `docs/ACCEPTANCE_R1.md` Amendment 1. |
+| Sources | `docs/INTAKE_BRIEFING.md`, `docs/research/openrig-discussion-1099.md`, local data |
+| Next owner | `pm.analyst` (Phase 1), then `dendro-dev` (Phase 2+) |
+
+`docs/ACCEPTANCE_R1.md` (Amendment 1) is the authoritative definition of R1 metrics and acceptance. Where this document and that one differ on metric meaning, that one wins.
 
 ---
 
-## 1. Conclusão
+## 0. Positioning
 
-**Recomendação: prosseguir com o motor local (Goal 1). Pausar site, domínio e marca até o Goal 1 provar valor.**
+**Dendro is AI Fleet Intelligence: an operational intelligence and governance engine for agent fleets.**
 
-Motivos:
+- Approved framings: "AI Fleet Intelligence", "Operational Intelligence & Governance Engine", "Agentic Fleet Analytics & Decision Platform".
+- Banned: the word "telemetry" in positioning, docs, marketing and interfaces. Dendro is not a monitoring or APM product.
+- Why this fits the job: the operator does not want more signals. The operator wants a decision about topology, handoffs and budget (§2, O8). The product is judged by decisions, not by data collected.
 
-1. **Um job real e urgente existe.** O operador de um rig multi-agente não consegue dizer se a topologia valeu o custo. Os dados existem. A resposta não existe.
-2. **O briefing junta três jobs diferentes.** Motor (operar), documentação (adotar/estender) e site (convencer um comprador). Só o primeiro tem usuário presente e dor medida hoje.
-3. **"MVP para amanhã" com cinco frentes não cabe.** Um escopo honesto para amanhã é: o operador responde às três perguntas para um rig real, a partir dos dados desta máquina.
-4. **O site depende do motor.** Sem números reais, a landing page só promete. Com o Goal 1 pronto, o site mostra prova.
+Source: sponsor directive, 2026-10-10 17:58Z.
 
-### Decisão do sponsor (2026-10-10 16:56Z)
+---
 
-O sponsor concedeu o Go-Ahead para a Release 1 (`v0.1.0`) e ajustou a recomendação:
+## 1. Conclusion
 
-1. **Motor:** OpenRig, Claude Code e Codex obrigatórios. AGY, Pi e Grok em seguida, na mesma release.
-2. **Site, marca e documentação:** aprovados em paralelo. O Antigravity é o dono, fora deste squad. O squad de produto não define esse escopo.
-3. **Teste de valor (O8):** métricas de decisão executiva nos rigs `dendro-dev` e `agentflow-dev`: ROI do assento, eficiência de handoff, retrabalho QA→Build e impacto de skills.
+**Recommendation: proceed with the local engine (Goal 1).**
 
-Decisão PM registrada: **prosseguir**.
+Reasons:
+
+1. **A real, urgent job exists.** The operator of a multi-agent rig cannot say whether the topology was worth its cost. The data exists. The answer does not.
+2. **The briefing combines three different jobs.** Engine (operate), documentation (adopt and extend), site (convince a buyer). Only the first has a present user and a measured pain today.
+3. **Five workstreams do not fit in "tomorrow".** An honest scope for tomorrow is: the operator answers the three questions for a real rig, from the data on this machine.
+4. **The site depends on the engine.** Without real numbers, a landing page only promises. With Goal 1 done, the site shows proof.
+
+### Sponsor decision (2026-10-10 16:56Z)
+
+The sponsor granted the Go-Ahead for Release 1 (`v0.1.0`) and adjusted the recommendation:
+
+1. **Engine:** OpenRig, Claude Code and Codex required. AGY, Pi and Grok next, in the same release. (Pi became required: see §12.)
+2. **Site, brand and documentation:** approved in parallel. Antigravity owns them, outside this squad. The product squad does not define that scope.
+3. **Value test (O8):** executive decision metrics on `dendro-dev` and `agentflow-dev`: seat ROI, handoff efficiency, QA→Build rework and skill impact. (Refined in §12.)
+
+PM decision recorded: **proceed**.
 
 ---
 
 ## 2. Job Statement
 
-> **Quando** eu opero uma equipe de agentes (rig) que já trabalhou por dias,
-> **quero** ver onde o tempo, os tokens e o retrabalho realmente foram, por assento, handoff e missão,
-> **para que** eu possa mudar a topologia, os handoffs ou o orçamento com evidência, e não com intuição.
+> **When** I operate an agent team (rig) that has worked for days,
+> **I want to** see where time, tokens and rework actually went, by seat, handoff and mission,
+> **so I can** change the topology, the handoffs or the budget with evidence, not intuition.
 
-### Jobs relacionados (fora do Goal 1)
+### Related jobs (outside Goal 1)
 
-| Job | Usuário | Estado |
+| Job | User | State |
 | --- | --- | --- |
-| Quando eu adoto o Dendro, quero respostas em 5 minutos, para que eu decida se ele fica. | Novo operador | Parte do Goal 1 (primeira execução) |
-| Quando eu uso um harness não suportado, quero plugar um conector, para que meus dados entrem. | Contribuidor | Goal 3 |
-| Quando eu avalio ferramentas para minha equipe de IA, quero ver prova do valor, para que eu justifique a adoção. | CTO / Head de IA | Goal 4. Não validado. |
+| When I adopt Dendro, I want answers in 5 minutes, so I can decide whether it stays. | New operator | Part of Goal 1 (first run) |
+| When I use an unsupported harness, I want to plug in a connector, so my data gets in. | Contributor | Goal 3 |
+| When I evaluate tools for my AI team, I want proof of value, so I can justify adoption. | CTO / Head of AI | Goal 4. Not validated. |
 
 ---
 
-## 3. Momento de luta
+## 3. Struggling moment
 
-O operador termina uma missão. A missão demorou ou custou caro. Ele não sabe por quê.
+The operator finishes a mission. The mission was slow or expensive. The operator does not know why.
 
-Evidência nesta máquina (2026-10-10):
+Evidence on this machine (2026-10-10):
 
-| Fonte | Volume | O que falta |
+| Source | Volume | What is missing |
 | --- | --- | --- |
-| `~/.openrig/openrig.sqlite` | 6 rigs, 28 nós, 208 itens de fila, 702 transições, 4.169 amostras de uso, 133 eventos de watchdog | Nenhuma visão junta transições com custo |
-| `~/.claude/projects` | 44 MB | Tokens por sessão, sem assento nem missão |
-| `~/.codex/sessions` | 29 MB | Outro formato, sem vínculo com o rig |
-| `~/.gemini/antigravity-cli/brain` | 105 MB | Outro formato, sem vínculo com o rig |
-| `~/.pi`, `~/.grok` | < 1 MB | Outro formato |
+| `~/.openrig/openrig.sqlite` | 6 rigs, 28 nodes, 208 queue items, 702 transitions, 4,169 usage samples, 133 watchdog events | No view joins transitions with cost |
+| `~/.claude/projects` | 44 MB | Tokens per session, no seat or mission |
+| `~/.codex/sessions` | 29 MB | Different format, no link to the rig |
+| `~/.gemini/antigravity-cli/brain` | 105 MB | Different format, no link to the rig |
+| `~/.pi`, `~/.grok` | < 1 MB | Different format |
 
 ```
- missão lenta/cara
+ slow/expensive mission
         │
         ▼
- "Foi o prompt? Um loop? Um handoff ruim? Um assento inútil?"
+ "Was it the prompt? A loop? A bad handoff? A useless seat?"
         │
-        ├── rig capture / transcript  → um assento por vez, sem custo
-        ├── logs do harness           → custo sem assento nem missão
-        ├── openrig.sqlite            → filas sem custo, SQL manual
-        └── APM de nuvem              → latência de API, sem conceito de assento
+        ├── rig capture / transcript  → one seat at a time, no cost
+        ├── harness logs              → cost without seat or mission
+        ├── openrig.sqlite            → queues without cost, manual SQL
+        └── cloud APM                 → API latency, no concept of a seat
         │
         ▼
- decisão por intuição  (ou nenhuma decisão)
+ decision by intuition  (or no decision)
 ```
 
-### Falhas das alternativas atuais
+### Failures of current alternatives
 
-| Alternativa | Onde falha |
+| Alternative | Where it fails |
 | --- | --- |
-| Ler transcripts e `rig capture` | Um assento por vez. Sem total. Sem custo. Não escala além de 2–3 assentos. |
-| Painel de uso do provedor | Total por conta. Não separa rig, assento ou missão. |
-| SQL manual no `openrig.sqlite` | Sem dados de tokens dos harnesses. Exige conhecer o schema. Ninguém repete. |
-| APM de nuvem (Langfuse, Datadog etc.) | Exige instrumentar e enviar dados para fora. Modela chamadas de API, não assentos e handoffs. |
-| Não fazer nada | O operador mantém assentos que só repassam texto e paga por loops que ninguém vê. |
+| Read transcripts and `rig capture` | One seat at a time. No totals. No cost. Does not scale beyond 2–3 seats. |
+| Provider usage dashboard | Totals per account. Does not separate rig, seat or mission. |
+| Manual SQL on `openrig.sqlite` | No harness token data. Requires schema knowledge. Nobody repeats it. |
+| Cloud APM (Langfuse, Datadog, etc.) | Requires instrumentation and sending data off the machine. Models API calls, not seats and handoffs. |
+| Do nothing | The operator keeps seats that only relay text and pays for loops nobody sees. |
 
 ---
 
-## 4. Forças do progresso
+## 4. Forces of progress
 
 ```
-        A FAVOR DA MUDANÇA                     CONTRA A MUDANÇA
+        FOR THE CHANGE                         AGAINST THE CHANGE
  ┌──────────────────────────────┐     ┌──────────────────────────────┐
- │ PUSH                         │     │ ANSIEDADE                    │
- │ • custo cresce sem explicação│     │ • números errados levam a    │
- │ • rigs com 6+ assentos       │     │   decisões erradas           │
- │ • retrabalho QA→Build oculto │     │ • ler transcripts expõe      │
- │                              │     │   segredos                   │
- │ PULL                         │     │ • mais uma ferramenta a      │
- │ • local, sem enviar dados    │     │   manter                     │
- │ • respostas em linguagem     │     │                              │
- │   natural                    │     │ INÉRCIA                      │
- │ • decidir a topologia com    │     │ • "eu leio os logs quando    │
- │   evidência                  │     │   preciso"                   │
+ │ PUSH                         │     │ ANXIETY                      │
+ │ • cost grows unexplained     │     │ • wrong numbers lead to      │
+ │ • rigs with 6+ seats         │     │   wrong decisions            │
+ │ • hidden QA→Build rework     │     │ • reading transcripts        │
+ │                              │     │   exposes secrets            │
+ │ PULL                         │     │ • one more tool to maintain  │
+ │ • local, no data leaves      │     │                              │
+ │ • natural-language answers   │     │ INERTIA                      │
+ │ • decide topology with       │     │ • "I read the logs when I    │
+ │   evidence                   │     │   need to"                   │
  └──────────────────────────────┘     └──────────────────────────────┘
 ```
 
-Implicações para o produto:
+Product implications:
 
-1. **Confiança antes de amplitude.** Cada número deve levar ao registro de origem. Um número errado custa mais do que um número ausente.
-2. **Local e somente leitura.** O Dendro nunca escreve nas fontes. Nenhum dado sai da máquina.
-3. **Segredos ficam fora.** O conteúdo dos prompts não vai para o banco por padrão. Isso preserva `no-raw-secrets-or-transcripts`.
-4. **Zero manutenção.** Um comando gera as respostas. Rodar de novo só lê o que mudou.
+1. **Trust before breadth.** Every number must lead to its source record. A wrong number costs more than a missing one.
+2. **Local and read-only.** Dendro never writes to sources. No data leaves the machine.
+3. **Secrets stay out.** Prompt content does not enter the store by default. This preserves `no-raw-secrets-or-transcripts`.
+4. **Zero maintenance.** One command produces the answers. Re-running reads only what changed.
 
-### Dimensões
+### Dimensions
 
-| Dimensão | Progresso desejado |
+| Dimension | Desired progress |
 | --- | --- |
-| Funcional | Responder às três perguntas para um rig e um período. |
-| Emocional | Sair do "acho que o rig está caro" para o "sei onde está o custo". |
-| Social | Mostrar ao time ou ao comprador por que a topologia tem essa forma. |
+| Functional | Answer the three questions for a rig and a period. |
+| Emotional | Move from "I think the rig is expensive" to "I know where the cost is". |
+| Social | Show the team or the buyer why the topology has its shape. |
 
 ---
 
-## 5. Resultado observável
+## 5. Observable outcome
 
-O Goal 1 está feito quando isto é verdade para o operador, nesta máquina, com dados reais:
+Goal 1 is done when this is true for the operator, on this machine, with real data:
 
-| # | Mudança observável |
+| # | Observable change |
 | --- | --- |
-| O1 | Partindo dos logs existentes, o operador obtém a primeira resposta em até 5 minutos após a instalação. |
-| O2 | Para um rig nomeado e um período, o operador vê o trabalho ativo e o tempo ocioso de cada assento. (Pergunta 1) |
-| O3 | Para o mesmo rig, o operador vê cada handoff, quantas vezes o trabalho voltou e o custo de contexto da transferência. (Pergunta 2) |
-| O4 | Para o mesmo rig, o operador vê o consumo de tokens por missão e assento, e os loops de retry detectados. (Pergunta 3) |
-| O5 | O operador consegue rastrear qualquer número até o registro de origem (arquivo e linha, ou linha da tabela). |
-| O6 | Ao rodar de novo, só os dados novos entram, e os totais não duplicam. |
-| O7 | Nenhum conteúdo de prompt e nenhum segredo fica no armazenamento analítico. |
-| O8 | Sinal de valor: com base no Dendro, o sponsor toma pelo menos uma decisão real de topologia, handoff ou orçamento em `dendro-dev` ou `agentflow-dev`, usando quatro métricas de decisão: ROI do assento, eficiência de handoff, retrabalho QA→Build e impacto de skills. |
+| O1 | From existing logs, the operator gets the first answer within 5 minutes of installation. |
+| O2 | For a named rig and period, the operator sees each seat's active work and idle time. (Question 1) |
+| O3 | For the same rig, the operator sees each handoff, how often work came back, and the context cost of the transfer. (Question 2) |
+| O4 | For the same rig, the operator sees token consumption by mission and seat, and detected retry loops. (Question 3) |
+| O5 | The operator can trace any number to its source record (file and line, or table row). |
+| O6 | On re-run, only new data enters, and totals do not duplicate. |
+| O7 | No prompt content and no secret is kept in the analytical store. |
+| O8 | Value signal: based on Dendro, the sponsor makes at least one real topology, handoff or budget decision on `agentflow-dev` (and `dendro-dev` once it has real work), using the decision metrics defined in `docs/ACCEPTANCE_R1.md` (M1 seat yield, M2 handoff efficiency, M3 build rework, M4 skill exposure). |
 
-O O8 é o teste do produto. O1 a O7 são condições para o O8.
+O8 is the product test. O1 to O7 are conditions for O8.
 
 ---
 
-## 6. Goals e histórias (rascunho para o analista)
+## 6. Goals and stories
 
-Os critérios de aceitação são do `pm.analyst`. Abaixo estão sinais de aceitação no nível do resultado. O analista os torna testáveis e congela.
-A arquitetura é do `orch.arch`. Esta seção não escolhe arquivos, crates nem schemas.
+Acceptance criteria are owned by `pm.analyst` and frozen in `docs/ACCEPTANCE_R1.md`. Below are outcome-level acceptance signals only.
+Architecture is owned by `orch.arch`. This section does not choose files, crates or schemas.
 
 ```
- G1 Motor local (AGORA) ──► G2 Respostas guiadas ──► G3 Extensibilidade
+ G1 Local engine (NOW) ──► G2 Guided answers ──► G3 Extensibility
         │                                              │
-        └──────────── prova real ─────────────► G4 Presença pública
+        └──────────── real proof ─────────────► G4 Public presence
 ```
 
-### G1 — O operador responde às três perguntas para um rig real (AGORA)
+### G1 — The operator answers the three questions for a real rig (NOW, R1)
 
-| História | Sinal de aceitação |
+| Story | Acceptance signal |
 | --- | --- |
-| G1.1 Como operador, eu rodo um comando e o Dendro lê as fontes locais encontradas. | Informa quais fontes encontrou, quais faltam e quantos registros leu de cada. |
-| G1.2 Como operador, vejo as sessões dos harnesses ligadas ao rig, assento e missão certos. | Uma sessão sem vínculo aparece como "sem vínculo", sem palpite. A taxa de vínculo aparece. |
-| G1.3 Como operador, vejo o ativo e o ocioso por assento. | Responde à Pergunta 1 para `dendro-dev` nos últimos 7 dias. |
-| G1.4 Como operador, vejo handoffs e retrabalho. | Responde à Pergunta 2. Uma volta QA→Build conta como retrabalho. |
-| G1.5 Como operador, vejo a queima de tokens e os loops. | Responde à Pergunta 3. Um comando repetido com falha aparece como loop. |
-| G1.6 Como operador, rodo de novo e só os dados novos entram. | A segunda execução sem mudanças não altera nenhum total. |
-| G1.7 Como operador, confio nos números. | Cada métrica tem uma definição escrita e um caminho até a origem. |
-| G1.8 Como operador, vejo o ROI de cada assento. | Para `dendro-dev`, mostra o que cada assento custou e o que entregou adiante. |
-| G1.9 Como operador, vejo o impacto de uma skill. | Compara o trabalho com e sem a skill carregada, ou mostra "dados insuficientes". |
+| G1.1 As an operator, I run one command and Dendro reads the local sources it finds. | Reports which sources were found, which are missing, and how many records it read from each. |
+| G1.2 As an operator, I see harness sessions linked to the right rig, seat and mission. | An unlinked session shows as "unlinked", with no guess. The link rate is shown. |
+| G1.3 As an operator, I see active and idle time per seat. | Answers Question 1 for the reference rig over the period. |
+| G1.4 As an operator, I see handoffs and rework. | Answers Question 2. Work returning to build counts as rework. |
+| G1.5 As an operator, I see token burn and loops. | Answers Question 3. A repeated failing command shows as a loop. |
+| G1.6 As an operator, I re-run and only new data enters. | A second run without changes does not alter any total. |
+| G1.7 As an operator, I trust the numbers. | Each metric has a written definition and a path to its source. |
+| G1.8 As an operator, I see each seat's yield. | For the reference rig, shows what each seat consumed and what it passed on that did not come back. |
+| G1.9 As an operator, I see skill exposure. | Shows which skills each seat had loaded. Impact shows "insufficient data" until a valid comparison exists. |
 
-Prioridade dos harnesses no G1 (decisão do sponsor): **OpenRig, Claude Code e Codex obrigatórios.** AGY, Pi e Grok entram na mesma release, depois dos três primeiros.
+Harnesses in G1: **OpenRig, Claude Code, Codex and Pi required.** AGY and Grok follow in the same release.
 
-### G2 — O operador pergunta em linguagem natural (PRÓXIMO)
+### G2 — The operator asks in natural language (NEXT, not R1)
 
-| História | Sinal de aceitação |
+| Story | Acceptance signal |
 | --- | --- |
-| G2.1 Como operador, faço as três perguntas em linguagem natural (Nao). | As respostas batem com as do G1 para o mesmo período. |
-| G2.2 Como operador, abro um painel inicial por pergunta. | Três painéis, um por pergunta, com dados reais. |
-| G2.3 Como operador, recebo um alerta de queima ou loop anômalo. | O alerta aparece antes que o operador perceba sozinho. O limiar é configurável. |
-| G2.4 Como operador, mantenho as respostas atualizadas sem rodar comandos. | O modo contínuo reflete novos dados em minutos. |
+| G2.1 As an operator, I ask the three questions in natural language (Nao). | Answers match G1 for the same period. |
+| G2.2 As an operator, I open one starter dashboard per question. | Three dashboards, one per question, with real data. |
+| G2.3 As an operator, I get an alert on anomalous burn or loops. | The alert arrives before the operator notices alone. Threshold is configurable. |
+| G2.4 As an operator, I keep answers current without running commands. | Continuous mode reflects new data within minutes. |
 
-### G3 — Um contribuidor pluga um novo harness (DEPOIS)
+### G3 — A contributor plugs in a new harness (LATER)
 
-| História | Sinal de aceitação |
+| Story | Acceptance signal |
 | --- | --- |
-| G3.1 Como contribuidor, adiciono um conector seguindo um guia. | Um conector novo funciona sem mudar o núcleo. |
-| G3.2 Como mantenedor, entendo a arquitetura e as convenções. | Um novo builder entrega a primeira mudança usando só a documentação. |
-| G3.3 Como novo operador, sigo o quickstart. | Um operador sem ajuda chega ao O1 em até 5 minutos. |
+| G3.1 As a contributor, I add a connector by following a guide. | A new connector works without changing the core. |
+| G3.2 As a maintainer, I understand the architecture and conventions. | A new builder ships a first change using only the documentation. |
+| G3.3 As a new operator, I follow the quickstart. | An unassisted operator reaches O1 within 5 minutes. |
 
-### G4 — Um comprador entende o valor (paralelo, dono: Antigravity)
+### G4 — A buyer understands the value (parallel, owner: Antigravity)
 
-O sponsor aprovou o G4 e a documentação do G3 em paralelo, com o Antigravity como dono. As histórias abaixo ficam como referência. Elas não entram na Fase 1 deste squad.
+The sponsor approved G4 and the G3 documentation in parallel, owned by Antigravity. The stories below are reference only. They are not in this squad's Phase 1.
 
-| História | Sinal de aceitação |
+| Story | Acceptance signal |
 | --- | --- |
-| G4.1 Como CTO, entendo em 30 segundos o que o Dendro responde. | Validar com 3–5 pessoas do público-alvo antes de construir. |
-| G4.2 Como visitante, vejo a metáfora dos anéis com dados reais. | Usa números reais do G1, não dados inventados. |
-| G4.3 Domínio, logotipo e identidade visual. | Decisão do sponsor. Ver §9. |
+| G4.1 As a CTO, I understand in 30 seconds what Dendro answers. | Validate with 3–5 people from the target audience before building. |
+| G4.2 As a visitor, I see the tree-ring metaphor with real data. | Uses real G1 numbers, not invented data. |
+| G4.3 Domain, logo and visual identity. | Sponsor decision. Buying a domain is an external, paid action and requires explicit sponsor approval. |
 
-### Matriz de prioridade
+### Priority matrix
 
-| | Valor alto | Valor incerto |
+| | High value | Uncertain value |
 | --- | --- | --- |
-| **Viável agora** | G1 (OpenRig + Claude Code), G1.7 | G2.1 Nao |
-| **Depende do G1** | G2.2–G2.4, G3.3 | G4 site, marca, domínio |
+| **Feasible now** | G1, G1.7 | G2.1 Nao |
+| **Depends on G1** | G2.2–G2.4, G3.3 | G4 site, brand, domain |
 
 ---
 
-## 7. Restrições e anti-goals
+## 7. Constraints and anti-goals
 
-### Restrições
+### Constraints
 
-1. Local-first. Nenhum dado sai da máquina.
-2. Somente leitura sobre as fontes (`~/.openrig`, `~/.claude`, `~/.codex`, `~/.gemini`, `~/.pi`, `~/.grok`).
-3. Sem conteúdo bruto de prompts nem segredos no armazenamento.
-4. Stack já decidida pelo sponsor: Rust, DuckDB, Nao. A decisão é do sponsor. Não reabrir.
-5. As fontes mudam de formato. Um formato desconhecido gera aviso, não falha nem dado errado.
+1. Local-first. No data leaves the machine.
+2. Read-only on sources (`~/.openrig`, `~/.claude`, `~/.codex`, `~/.gemini`, `~/.pi`, `~/.grok`).
+3. No raw prompt content and no secrets in the store.
+4. Stack decided by the sponsor: Rust, DuckDB, Nao. Not reopened.
+5. Sources change format. An unknown format produces a warning, never a failure or wrong data.
+6. English for interfaces, docs, code and tickets (sponsor directive, 2026-10-10 17:57Z).
 
 ### Anti-goals
 
-1. Não é um APM de nuvem nem um SaaS.
-2. Não controla nem reinicia agentes. Observa. Não age.
-3. Não avalia a qualidade do código produzido pelos agentes.
-4. O site não mostra números inventados como se fossem reais.
-5. Não adivinha vínculos. "Sem vínculo" é melhor que um vínculo errado.
+1. Not a cloud APM and not SaaS.
+2. Does not control or restart agents. It observes. It does not act.
+3. Does not judge the quality of code produced by agents.
+4. The site does not show invented numbers as if they were real.
+5. Does not guess links. "Unlinked" is better than a wrong link.
 
 ---
 
-## 8. Intenção de release
+## 8. Release intent
 
-| Campo | Valor |
+| Field | Value |
 | --- | --- |
-| Release | `v0.1.0` — prévia local do G1 |
-| Impacto | `minor` (primeiro incremento funcional) |
-| Público | Sponsor. Rigs de teste: `dendro-dev`, `agentflow-dev`. |
-| Canal | Build local a partir do repositório. Sem publicação, sem crates.io, sem site. |
-| Critério de saída | O1–O7 verificados com dados reais. O8 observado pelo sponsor. |
-| Paralelo | Site, marca e as três documentações: Antigravity. A compra de domínio exige aprovação explícita do sponsor. |
-| Depois | `v0.2` = G2. |
+| Release | `v0.1.0` — local preview of G1 |
+| Impact | `minor` (first functional increment) |
+| Audience | Sponsor. Reference rig: `agentflow-dev`. `dendro-dev` once it has real work. |
+| Channel | Local build from the repository. No publication, no crates.io. |
+| Exit criterion | AC1–AC12 in `docs/ACCEPTANCE_R1.md` verified with real data. O8 observed by the sponsor. |
+| Delivery path | Squad-only: `dendro-dev` Phase 4 build → `dev-qa` Phase 5 independent validation → `rev-review` Phase 6 four-eyes audit → PR #11 merge. No bypass commits to `main`. |
+| Not in v0.1.0 | Nao (G2) is non-normative for R1, even where code exists on `main`. |
+| Parallel | Site, brand and the three documentation sets: Antigravity. |
+| Next | `v0.2` = G2. |
 
 ---
 
-## 9. Decisões do sponsor (resolvidas em 2026-10-10 16:56Z; ver §1)
+## 9. Sponsor decisions (resolved 2026-10-10)
 
-| # | Pergunta | Recomendação do PM |
+| # | Question | Resolution |
 | --- | --- | --- |
-| D1 | Aceita reduzir "amanhã" ao G1 (OpenRig + Claude Code)? | Sim. Cinco frentes em um dia produzem cinco frentes rasas. |
-| D2 | Pausa G4 (site, domínio, marca) até o O8? | Sim. Se quiser reservar um domínio agora, é uma ação externa e paga. Exige sua aprovação explícita. Nenhum agente compra domínio. |
-| D3 | O público inicial é só você, ou há outros operadores para validar? | Nomear 1–2 operadores externos aumenta a confiança no O1 e no G3.3. |
-| D4 | Qual decisão real você quer tomar com o Dendro primeiro? | Ela vira o teste do O8. Exemplo: "o assento `dev-build-jr` vale a pena?" |
+| D1 | Scope for R1 | Engine. OpenRig, Claude Code, Codex, Pi required; AGY, Grok next. |
+| D2 | Site, domain, brand | Parallel, owned by Antigravity. |
+| D3/D4 | Value test | Executive decision metrics on local rigs. Defined in `docs/ACCEPTANCE_R1.md`. |
+| D5–D7 | Conflicting issues and flows doc | Option A (17:45Z): Amendment 1 is authoritative. |
+| D8 | Nao and delivery path | Nao is G2, non-normative for R1. All implementation flows through `dendro-dev` (17:57Z). |
 
 ---
 
-## 10. Desenho da solução: limites de propriedade
+## 10. Solution design: ownership boundaries
 
-O briefing pede também o desenho da solução: schemas, fluxos, painéis, arquitetura do site. Esse desenho não é da Fase 0.
-
-| Artefato | Dono | Fase |
+| Artifact | Owner | Phase |
 | --- | --- | --- |
-| Job, resultado, release | `pm.manager` | 0 (este documento) |
-| Critérios de aceitação testáveis, escopo, suposições | `pm.analyst` | 1 |
-| Arquitetura, schemas analíticos, fluxos, plano | `orch.arch` (`dendro-dev`) | 2+ |
-| Painéis Nao, site | Delivery, após o G1 | G2 / G4 |
+| Job, outcome, release intent | `pm.manager` | 0 (this document) |
+| Testable acceptance, scope, assumptions | `pm.analyst` | 1 (`docs/ACCEPTANCE_R1.md`) |
+| Architecture, analytical schemas, flows, plan | `orch.arch` (`dendro-dev`) | 2+ |
+| Nao dashboards, site | Delivery after G1 / Antigravity | G2 / G4 |
 
-O rascunho existente em `docs/architecture.md` é referência para o `orch.arch`. Não é requisito.
+`docs/architecture.md` and `docs/ARCHITECTURE_FLOWS.md` are input for `orch.arch`. Where they differ from Amendment 1 on metric meaning, Amendment 1 wins.
 
 ```
- Sam ──Go-Ahead──► pm.manager ──Fase 0──► pm.analyst ──Fase 1──► orch-arch@dendro-dev ──► build/qa/review
+ Sam ──Go-Ahead──► pm.manager ──Phase 0──► pm.analyst ──Phase 1──► orch-arch@dendro-dev ──► build/qa/review
                        ▲                      │                         │
-                       └──── retorno ─────────┘◄──────── retorno ───────┘
+                       └────── return ────────┘◄──────── return ────────┘
 ```
 
 ---
 
-## 11. Desconhecidos
+## 11. Unknowns
 
-| # | Desconhecido | Por que importa | Quem resolve |
-| --- | --- | --- | --- |
-| U1 | Como ligar uma sessão do harness ao assento com confiança (bindings, tmux, pid, cwd)? | Sem vínculo, as perguntas 1–3 não fecham. | `orch.arch`, com o analista |
-| U2 | O que conta como "ocioso" (sem turno, ou à espera de fila)? | Muda a resposta à Pergunta 1. | `pm.analyst` define, sponsor confirma |
-| U3 | Como medir o "custo de contexto" de um handoff? | Muda a resposta à Pergunta 2. | `pm.analyst` |
-| U4 | O que é um "loop" (N repetições? com falha? em quanto tempo)? | Evita falsos alarmes. | `pm.analyst` |
-| U5 | Os formatos de Codex, AGY, Pi e Grok são estáveis? | Risco de manutenção dos conectores. | `orch.arch` |
-| U6 | Como o Nao consulta o DuckDB local nesta versão? | Viabilidade do G2. | `orch.arch` |
-| U7 | Como medir o "impacto de skills" (as fontes registram a skill carregada? Há base de comparação)? | Métrica de decisão nova do sponsor. Pode não ter dados. | `pm.analyst` + `orch.arch` |
-| U8 | Como definir o "ROI do assento" sem medir a qualidade do código (anti-goal 3)? | Evita uma métrica que promete mais do que mede. | `pm.analyst`, sponsor confirma |
+Resolutions are in `docs/ACCEPTANCE_R1.md` §4 and §8.
+
+| # | Unknown | State |
+| --- | --- | --- |
+| U1 | Session-to-seat linking | Resolved: OpenRig session identity events. |
+| U2 | Definition of idle | Resolved by the analyst. |
+| U3 | Handoff context cost | Resolved as a labelled estimate. |
+| U4 | Definition of a loop | Resolved, thresholds configurable. |
+| U5 | Format stability of Codex, AGY, Pi, Grok | `orch.arch`. AC2 limits damage. |
+| U6 | Nao over local DuckDB | Out of R1 (G2). |
+| U7 | Skill impact | Not measurable in R1. Exposure only. |
+| U8 | Seat ROI without judging code quality | Redefined as seat yield (M1). |
 
 ---
 
-## 12. Decisão PM antes do congelamento (2026-10-10 17:05Z)
+## 12. Decision log
 
-**Decisão: prosseguir.** O sponsor aprovou `docs/ACCEPTANCE_R1.md` às 17:01Z. O job não muda. Os ajustes abaixo refinam o escopo da R1 e não exigem retorno à Fase 0.
+### PM decision before freeze (2026-10-10 17:05Z)
 
-| Ponto da aceitação | Decisão | Motivo |
+**Decision: proceed.** The sponsor approved `docs/ACCEPTANCE_R1.md` at 17:01Z. The job does not change. The adjustments below refine R1 scope and do not require a return to Phase 0.
+
+| Acceptance item | Decision | Reason |
 | --- | --- | --- |
-| A1 Pi obrigatório | Aceito | Em `agentflow-dev`, `orch.arch` e `rev.review` rodam em Pi. Em `dendro-dev`, todos os builders rodam em Pi. Sem Pi, o O8 fica sem custo nos assentos centrais. O Pi já estava na R1. A mudança é só de ordem. |
-| A2 Rig de referência `agentflow-dev` | Aceito | `dendro-dev` tem 0 itens de fila (verificado). O O8 em `dendro-dev` espera trabalho real. |
-| A5 Retrabalho pela cadeia | Aceito | Há 0 handoffs diretos QA→Build. A intenção do sponsor é "trabalho que volta ao build". |
-| M1 "rendimento" no lugar de "ROI" | Aceito | O Dendro não mede valor. O nome não deve prometer o que a métrica não mede. |
-| M4 só exposição a skills | Aceito | Não há base de comparação. Mostrar "dados insuficientes" é melhor que mostrar opinião com número. |
+| A1 Pi required | Accepted | On `agentflow-dev`, `orch.arch` and `rev.review` run on Pi. On `dendro-dev`, all builders run on Pi. Without Pi, O8 lacks cost for the central seats. Pi was already in R1. Only the order changes. |
+| A2 Reference rig `agentflow-dev` | Accepted | `dendro-dev` has 0 queue items (verified). O8 on `dendro-dev` waits for real work. |
+| A5 Rework by item chain | Accepted | There are 0 direct QA→Build handoffs. The sponsor's intent is "work that returns to build". |
+| M1 "yield" instead of "ROI" | Accepted | Dendro does not measure value. The name must not promise what the metric does not measure. |
+| M4 skill exposure only | Accepted | No comparison baseline exists. "Insufficient data" beats an opinion with a number. |
 
-### Emenda 1 da aceitação (2026-10-10 17:08Z)
+### Acceptance Amendment 1 (2026-10-10 17:08Z)
 
-**Decisão: refinar um ponto, depois prosseguir.** Retorno da delivery, ciclo 1 de 2. O job não muda.
+**Decision: refine one point, then proceed.** Delivery return, cycle 1 of 2. The job does not change.
 
-- Tudo da Emenda 1 está aceito, inclusive a exceção do `-shm` no SQLite.
-- AC10: as tags de missão, os nomes de ferramenta e os caminhos de origem são saída do produto. Eles podem aparecer. Um texto livre (prompt, resposta, argumentos, resultados, erros) nunca aparece. Um valor com formato de segredo nunca aparece em nenhum campo e é mascarado.
+- All of Amendment 1 is accepted, including the SQLite `-shm` exception.
+- AC10: mission tags, tool names and source paths are product output. They may appear. Free text (prompts, responses, tool arguments, tool results, errors) never appears. A secret-shaped value never appears in any field and is masked.
 
-### Decisão do sponsor: Opção A (2026-10-10 17:45Z)
+### Sponsor decision: Option A (2026-10-10 17:45Z)
 
-A Emenda 1 (`docs/ACCEPTANCE_R1.md`, sha256 `046c1722`) é a definição autoritativa das métricas e das regras de conservação. As issues e o `ARCHITECTURE_FLOWS.md` seguem essa emenda. Commits: `fa6dad0`, `3c74b65`.
+Amendment 1 (`docs/ACCEPTANCE_R1.md`, sha256 `046c1722`) is the authoritative definition of metrics and conservation rules. Issues and `ARCHITECTURE_FLOWS.md` follow it. Commits: `fa6dad0`, `3c74b65`.
+
+### Sponsor directive (2026-10-10 17:57Z)
+
+1. Nao is Goal 2 and non-normative for R1. `orch.arch` has authority over canonical R1 schema on `work/dendro-r1` (PR #11).
+2. All product implementation flows through `dendro-dev`. No bypass commits to `main`.
+3. Interfaces, docs, code and tickets are in English.
+4. Sequence: `dev-build-sr` Phase 4 → `dev-qa` Phase 5 → `rev-review` Phase 6 → PR #11 merge.
+
+### Sponsor positioning directive (2026-10-10 17:58Z)
+
+Dendro is positioned as AI Fleet Intelligence (operational intelligence and governance), not as a telemetry or APM product. The word "telemetry" is banned in positioning, docs, marketing and interfaces. See §0.

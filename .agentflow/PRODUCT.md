@@ -1,43 +1,47 @@
-# Dendro — Registro de Produto
+# Dendro — Product Record
 
-Fonte completa: `docs/PRODUCT_SPECIFICATION.md`. Dono: `pm.manager`. Estado: Go-Ahead do sponsor em 2026-10-10 16:56Z. Fase 0 registrada (`dendro-r1-p0`).
+Full source: `docs/PRODUCT_SPECIFICATION.md`. Authoritative acceptance: `docs/ACCEPTANCE_R1.md` (Amendment 1). Owner: `pm.manager`. State: sponsor Go-Ahead 2026-10-10 16:56Z; Phase 0 recorded (`dendro-r1-p0`); acceptance frozen.
+
+## Positioning
+
+Dendro is an **AI Fleet Intelligence** product: an operational intelligence and governance engine for agent fleets. It is not a monitoring, APM or "telemetry" product, and that word is not used in positioning, docs, marketing or interfaces (sponsor directive, 2026-10-10 17:58Z).
 
 ## Job Statement
 
-Quando eu opero uma equipe de agentes (rig) que já trabalhou por dias,
-quero ver onde o tempo, os tokens e o retrabalho realmente foram, por assento, handoff e missão,
-para que eu possa mudar a topologia, os handoffs ou o orçamento com evidência, e não com intuição.
+When I operate an agent team (rig) that has worked for days,
+I want to see where time, tokens and rework actually went, by seat, handoff and mission,
+so I can change the topology, the handoffs or the budget with evidence, not intuition.
 
-## Usuário
+## User
 
-Primário: operador de um rig OpenRig multi-agente (sponsor). Secundário: contribuidor (G3). Comprador (G4): não validado.
+Primary: operator of a multi-agent OpenRig rig (sponsor). Secondary: contributor (G3). Buyer (G4): not validated.
 
-## Resultado observável (G1)
+## Observable outcome (G1)
 
-- O1: primeira resposta em até 5 minutos, partindo dos logs locais existentes.
-- O2–O4: responde às perguntas de assentos, handoffs e custos para um rig e um período nomeados.
-- O5: cada número leva ao registro de origem.
-- O6: rodar de novo não duplica os totais.
-- O7: nenhum prompt bruto nem segredo armazenado.
-- O8: o sponsor toma uma decisão real em `dendro-dev` ou `agentflow-dev` usando ROI do assento, eficiência de handoff, retrabalho QA→Build e impacto de skills.
+- O1: first answer within 5 minutes, from existing local logs.
+- O2–O4: answers the seat, handoff and cost questions for a named rig and period.
+- O5: every number leads to its source record.
+- O6: re-running does not duplicate totals.
+- O7: no raw prompts or secrets stored.
+- O8: the sponsor makes a real decision on `agentflow-dev` (and `dendro-dev` once it has real work) using M1 seat yield, M2 handoff efficiency, M3 build rework and M4 skill exposure.
 
-## Escopo
+## Scope
 
-| Goal | Estado |
+| Goal | State |
 | --- | --- |
-| G1 Motor local (OpenRig, Claude Code, Codex, Pi; depois AGY, Grok) | Prosseguir |
-| G2 Linguagem natural, painéis, alertas | Próximo |
-| G3 Extensibilidade | Depois. As três documentações: paralelo, Antigravity |
-| G4 Site, marca | Paralelo, Antigravity (fora deste squad) |
+| G1 Local engine (OpenRig, Claude Code, Codex, Pi; then AGY, Grok) | R1 — proceed |
+| G2 Natural language (Nao), dashboards, alerts | Next. Non-normative for R1. |
+| G3 Extensibility | Later. The three documentation sets: parallel, Antigravity |
+| G4 Site, brand | Parallel, Antigravity (outside this squad) |
 
 ## Anti-goals
 
-Não é SaaS nem APM de nuvem. Não controla agentes. Não avalia a qualidade do código. Não adivinha vínculos. O site não mostra números inventados como reais.
+Not SaaS or cloud APM. Does not control agents. Does not judge code quality. Does not guess links. The site does not show invented numbers as real.
 
-## Intenção de release
+## Release intent
 
-`v0.1.0`, impacto `minor`, build local, sem publicação.
+`v0.1.0`, impact `minor`, local build, no publication. Path: `dendro-dev` Phase 4 → Phase 5 QA → Phase 6 four-eyes review → PR #11 merge. No bypass commits to `main`. English for interfaces, docs, code and tickets.
 
-## Decisão PM
+## PM decision
 
-Prosseguir. Fase 0 entregue ao `pm.analyst`. Antes do congelamento (17:05Z): prosseguir com `docs/ACCEPTANCE_R1.md`. Pi obrigatório, rig de referência `agentflow-dev`, M1 = rendimento do assento, M4 = só exposição a skills. Ver §12 da especificação.
+Proceed. Before freeze (17:05Z): proceed with `docs/ACCEPTANCE_R1.md`. Pi required, reference rig `agentflow-dev`, M1 = seat yield, M4 = skill exposure only. Sponsor Option A (17:45Z): Amendment 1 is authoritative. See §12 of the specification.
