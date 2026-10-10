@@ -602,7 +602,11 @@ mod tests {
         );
         let sqlite_path = dir.join("openrig.sqlite");
         let conn = rusqlite::Connection::open(&sqlite_path).unwrap();
-        conn.execute("CREATE TABLE events (seq INTEGER, type TEXT, payload TEXT, created_at TEXT)", []).unwrap();
+        conn.execute(
+            "CREATE TABLE events (seq INTEGER, type TEXT, payload TEXT, created_at TEXT)",
+            [],
+        )
+        .unwrap();
         conn.execute(
             "INSERT INTO events VALUES (1,'seat.activity_changed',?,?)",
             rusqlite::params![
@@ -616,7 +620,8 @@ mod tests {
                 "{\"sessionName\":\"sk-ant-ZZZSEAT\"}",
                 "2026-10-09T00:00:00Z"
             ],
-        ).unwrap();
+        )
+        .unwrap();
         conn.execute(
             "INSERT INTO events VALUES (3,'agent.session_identity',?,?)",
             rusqlite::params![
@@ -628,8 +633,14 @@ mod tests {
         let db_path = dir.join("analytics.duckdb");
         drop(AnalyticsStore::open_path(&db_path, "key").unwrap());
         let roots = [
-            crate::SourceRoot { name: "claude".into(), path: secret_dir },
-            crate::SourceRoot { name: "openrig".into(), path: sqlite_path },
+            crate::SourceRoot {
+                name: "claude".into(),
+                path: secret_dir,
+            },
+            crate::SourceRoot {
+                name: "openrig".into(),
+                path: sqlite_path,
+            },
         ];
         crate::ingest_staged(&db_path, &roots, false, b"source-column-test-key").unwrap();
         let db = AnalyticsStore::open_path(&db_path, "key").unwrap();
@@ -640,10 +651,16 @@ mod tests {
         assert!(seats.iter().all(|row| !row.seat.contains("ZZZSEAT")));
         let identities = db.load_identity().unwrap();
         assert!(identities.iter().any(|row| row.seat == "plain-seat"));
-        assert!(identities.iter().any(|row| row.native_session == "plain-session"));
+        assert!(identities
+            .iter()
+            .any(|row| row.native_session == "plain-session"));
         let usage = db.load_usage().unwrap();
-        assert!(usage.iter().any(|row| row.native_session == "plain-session"));
-        assert!(usage.iter().all(|row| !row.native_session.contains("ZZZSESS")));
+        assert!(usage
+            .iter()
+            .any(|row| row.native_session == "plain-session"));
+        assert!(usage
+            .iter()
+            .all(|row| !row.native_session.contains("ZZZSESS")));
         drop(db);
         let bytes = fs::read(&db_path).unwrap();
         let blob = String::from_utf8_lossy(&bytes);
