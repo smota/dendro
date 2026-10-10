@@ -152,6 +152,8 @@ def main():
     traced = json.loads(traced) if code == 0 else {}
     replay = sum(r["input_uncached"] + r["output"] + r["cache_read"] + r["cache_write"] for r in traced.get("inputs", {}).get("rows", []))
     check("ac7_trace_replay", replay == traced.get("value"), traced.get("value"), replay)
+    rows_in = traced.get("inputs", {}).get("rows", [])
+    check("qa_trace_provenance", rows_in and all("generation" in row and "line" in row and "path" in row for row in rows_in), True, bool(rows_in))
     _, before_text, _ = report(analytics, "tokens")
     before_rows = json.loads(before_text)["payload"].get("usage_rows")
     code, _, _ = run(["run", "--db", str(analytics), "--root", f"claude={src/'claude'}", "--root", f"codex={src/'codex'}", "--root", f"pi={src/'pi'}", "--root", f"openrig={db}", "--frozen"])

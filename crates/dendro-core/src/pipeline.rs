@@ -175,6 +175,7 @@ pub fn report_json(
             .map(|fact| fact.seat.clone())
             .collect()
     });
+    let sources = store.load_sources()?;
     let usage_all = store.load_usage()?;
     let untimestamped_count = usage_all.iter().filter(|row| row.ts.is_none()).count();
     let usage: Vec<_> = usage_all
@@ -351,6 +352,15 @@ pub fn report_json(
     for fact in &identities {
         discovered.insert((fact.harness.clone(), fact.native_session.clone()));
     }
+    for (source_id, harness, _path, _generation) in &sources {
+        let prefix = format!("{source_id}:");
+        let has_usage = usage_all
+            .iter()
+            .any(|row| row.source_key.starts_with(&prefix));
+        if !has_usage {
+            discovered.insert((harness.clone(), format!("file:{source_id}")));
+        }
+    }
     let mut link_rates = std::collections::BTreeMap::<String, (i64, i64)>::new();
     for (harness, native) in &discovered {
         let seats: std::collections::BTreeSet<_> = identities
@@ -462,13 +472,23 @@ pub fn report_json(
                 "to": edge.to_seat,
                 "qitem_id": edge.qitem_id,
             })).collect::<Vec<_>>(),
-            "trace_inputs": usage.iter().map(|row| json!({
-                "source_key": row.source_key,
-                "input_uncached": row.input_uncached,
-                "output": row.output,
-                "cache_read": row.cache_read,
-                "cache_write": row.cache_write,
-            })).collect::<Vec<_>>(),
+            "trace_inputs": usage.iter().map(|row| {
+                let suffix = format!(":{}:{}", row.generation, row.seq);
+                let source_id = row.source_key.strip_suffix(&suffix);
+                let path = source_id.and_then(|id| {
+                    sources.iter().find(|source| source.0 == id).map(|source| source.2.clone())
+                });
+                json!({
+                    "source_key": row.source_key,
+                    "generation": row.generation,
+                    "line": row.seq,
+                    "path": path,
+                    "input_uncached": row.input_uncached,
+                    "output": row.output,
+                    "cache_read": row.cache_read,
+                    "cache_write": row.cache_write,
+                })
+            }).collect::<Vec<_>>(),
         }),
     ))
 }

@@ -429,6 +429,21 @@ impl AnalyticsStore {
         Ok(())
     }
 
+    pub fn load_sources(&self) -> Result<Vec<(String, String, String, i64)>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT source_id, harness, display_path, generation FROM source_files")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)?,
+            ))
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
     pub fn load_usage(&self) -> Result<Vec<UsageFact>> {
         let mut stmt = self.conn.prepare(
             r#"SELECT source_key, harness, native_session, message_id, CAST(ts AS VARCHAR), seq,
@@ -957,13 +972,20 @@ mod tests {
             let hits: i64 = store.conn.query_row(&sql, [], |row| row.get(0)).unwrap();
             assert_eq!(hits, 0, "{qualified}");
         }
+        let wal = {
+            let mut name = path.file_name().unwrap().to_os_string();
+            name.push(".wal");
+            path.with_file_name(name)
+        };
+        assert!(wal.exists(), "expected a DuckDB wal before checkpoint");
+        let wal_bytes = std::fs::read(&wal).unwrap();
+        let wal_blob = String::from_utf8_lossy(&wal_bytes);
+        for token in families {
+            assert!(!wal_blob.contains(token), "wal {token}");
+        }
         store.checkpoint().unwrap();
         drop(store);
-        let mut bytes = std::fs::read(&path).unwrap();
-        let wal = path.with_extension("duckdb.wal");
-        if wal.exists() {
-            bytes.extend(std::fs::read(&wal).unwrap());
-        }
+        let bytes = std::fs::read(&path).unwrap();
         let blob = String::from_utf8_lossy(&bytes);
         for token in families {
             assert!(!blob.contains(token), "{token}");
