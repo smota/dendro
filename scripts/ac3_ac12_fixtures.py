@@ -87,6 +87,8 @@ def main():
     conn.execute("INSERT INTO events VALUES (14,'node.launched',? ,?)", (json.dumps({"sessionName": "seat-quiet"}), T[0]))
     conn.execute("INSERT INTO events VALUES (15,'queue.created',? ,?)", (json.dumps({"qitemId": "hist-item", "sourceSession": "seat-src", "destinationSession": "seat-hist"}), T[0]))
     conn.execute("INSERT INTO events VALUES (16,'queue.claimed',? ,?)", (json.dumps({"qitemId": "hist-item", "destinationSession": "seat-hist", "claimedAt": T[5]}), T[5]))
+    conn.execute("INSERT INTO events VALUES (17,'queue.created',? ,?)", (json.dumps({"qitemId": "hist-change", "sourceSession": "seat-src", "destinationSession": "seat-early"}), T[0]))
+    conn.execute("INSERT INTO events VALUES (18,'queue.claimed',? ,?)", (json.dumps({"qitemId": "hist-change", "destinationSession": "seat-late", "claimedAt": T[20]}), T[20]))
     conn.execute("""CREATE TABLE queue_transitions (transition_id INTEGER, qitem_id TEXT, ts TEXT, state TEXT, actor_session TEXT, closure_reason TEXT, closure_target TEXT, transition_note TEXT)""")
     conn.executemany("INSERT INTO queue_transitions VALUES (?,?,?,?,?,?,?,?)", [
         (1, "demand", T[10], "pending", "seat-a", None, "seat-a", "[]"),
@@ -174,6 +176,9 @@ def main():
     check("qa_destination_snapshot", current.get("destination") == "seat-current" and current.get("historical") is False, "seat-current", current.get("destination"))
     hist = [row for row in demand if row.get("qitem_id") == "hist-item"]
     check("qa_created_claimed_dest", hist and all(row.get("dest") == "seat-hist" for row in hist), "seat-hist", [row.get("dest") for row in hist])
+    changed = [row for row in demand if row.get("qitem_id") == "hist-change"]
+    changed.sort(key=lambda row: row.get("ts") or "")
+    check("qa_dest_changes_inside_window", [row.get("dest") for row in changed] == ["seat-early", "seat-late"], ["seat-early", "seat-late"], [row.get("dest") for row in changed])
     code, activity_text, _ = report(analytics, "activity")
     quiet = next((row for row in json.loads(activity_text)["payload"]["activity"] if row.get("seat") == "seat-quiet"), {}) if code == 0 else {}
     check("qa_roster_no_event", quiet.get("unknown_secs") == 60 and quiet.get("active_secs") == 0, 60, quiet.get("unknown_secs"))
