@@ -308,3 +308,7 @@ O rascunho existente em `docs/architecture.md` é referência para o `orch.arch`
 
 - Tudo da Emenda 1 está aceito, inclusive a exceção do `-shm` no SQLite.
 - AC10: as tags de missão, os nomes de ferramenta e os caminhos de origem são saída do produto. Eles podem aparecer. Um texto livre (prompt, resposta, argumentos, resultados, erros) nunca aparece. Um valor com formato de segredo nunca aparece em nenhum campo e é mascarado.
+
+### Decisão do sponsor: Opção A (2026-10-10 17:45Z)
+
+A Emenda 1 (`docs/ACCEPTANCE_R1.md`, sha256 `046c1722`) é a definição autoritativa das métricas e das regras de conservação. As issues e o `ARCHITECTURE_FLOWS.md` seguem essa emenda. Commits: `fa6dad0`, `3c74b65`.
