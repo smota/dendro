@@ -287,3 +287,17 @@ O rascunho existente em `docs/architecture.md` é referência para o `orch.arch`
 | U6 | Como o Nao consulta o DuckDB local nesta versão? | Viabilidade do G2. | `orch.arch` |
 | U7 | Como medir o "impacto de skills" (as fontes registram a skill carregada? Há base de comparação)? | Métrica de decisão nova do sponsor. Pode não ter dados. | `pm.analyst` + `orch.arch` |
 | U8 | Como definir o "ROI do assento" sem medir a qualidade do código (anti-goal 3)? | Evita uma métrica que promete mais do que mede. | `pm.analyst`, sponsor confirma |
+
+---
+
+## 12. Decisão PM antes do congelamento (2026-10-10 17:05Z)
+
+**Decisão: prosseguir.** O sponsor aprovou `docs/ACCEPTANCE_R1.md` às 17:01Z. O job não muda. Os ajustes abaixo refinam o escopo da R1 e não exigem retorno à Fase 0.
+
+| Ponto da aceitação | Decisão | Motivo |
+| --- | --- | --- |
+| A1 Pi obrigatório | Aceito | Em `agentflow-dev`, `orch.arch` e `rev.review` rodam em Pi. Em `dendro-dev`, todos os builders rodam em Pi. Sem Pi, o O8 fica sem custo nos assentos centrais. O Pi já estava na R1. A mudança é só de ordem. |
+| A2 Rig de referência `agentflow-dev` | Aceito | `dendro-dev` tem 0 itens de fila (verificado). O O8 em `dendro-dev` espera trabalho real. |
+| A5 Retrabalho pela cadeia | Aceito | Há 0 handoffs diretos QA→Build. A intenção do sponsor é "trabalho que volta ao build". |
+| M1 "rendimento" no lugar de "ROI" | Aceito | O Dendro não mede valor. O nome não deve prometer o que a métrica não mede. |
+| M4 só exposição a skills | Aceito | Não há base de comparação. Mostrar "dados insuficientes" é melhor que mostrar opinião com número. |

@@ -25,7 +25,7 @@ Primário: operador de um rig OpenRig multi-agente (sponsor). Secundário: contr
 
 | Goal | Estado |
 | --- | --- |
-| G1 Motor local (OpenRig, Claude Code, Codex; depois AGY, Pi, Grok) | Prosseguir |
+| G1 Motor local (OpenRig, Claude Code, Codex, Pi; depois AGY, Grok) | Prosseguir |
 | G2 Linguagem natural, painéis, alertas | Próximo |
 | G3 Extensibilidade | Depois. As três documentações: paralelo, Antigravity |
 | G4 Site, marca | Paralelo, Antigravity (fora deste squad) |
@@ -40,4 +40,4 @@ Não é SaaS nem APM de nuvem. Não controla agentes. Não avalia a qualidade do
 
 ## Decisão PM
 
-Prosseguir. Fase 0 entregue ao `pm.analyst`.
+Prosseguir. Fase 0 entregue ao `pm.analyst`. Antes do congelamento (17:05Z): prosseguir com `docs/ACCEPTANCE_R1.md`. Pi obrigatório, rig de referência `agentflow-dev`, M1 = rendimento do assento, M4 = só exposição a skills. Ver §12 da especificação.
