@@ -959,6 +959,97 @@ mod tests {
     }
 
     #[test]
+    fn exposed_handoff_sets_reproduce_m1_m2_and_pair_samples() {
+        use chrono::TimeZone;
+        let at = |m: u32| chrono::Utc.with_ymd_and_hms(2026, 10, 9, 1, m, 0).unwrap();
+        let dir = std::env::temp_dir().join(format!("dendro-m1m2-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("analytics.duckdb");
+        let store = AnalyticsStore::open_path(&db, "kid").unwrap();
+        let fact = |key: &str, m: u32, item: &str, state: &str, actor: &str, to: &str| {
+            let handoff = state == "done";
+            crate::QueueFact {
+                source_key: key.into(),
+                transition_id: m as i64,
+                qitem_id: item.into(),
+                ts: at(m),
+                state: state.into(),
+                source_seat: actor.into(),
+                dest_seat: to.into(),
+                closure_reason: handoff.then(|| "handed_off_to".to_string()),
+                closure_target: handoff.then(|| to.to_string()),
+                chain_id: Some("i1".into()),
+                missions: vec![],
+            }
+        };
+        for row in [
+            fact("events:queue.created:1", 0, "i1", "pending", "orch", "A"),
+            fact("events:queue.created:2", 9, "i2", "pending", "A", "B"),
+            fact("queue_transitions:10", 10, "i1", "done", "A", "B"),
+            fact("events:queue.claimed:3", 12, "i2", "in-progress", "B", "B"),
+            fact("events:queue.created:4", 19, "i3", "pending", "B", "A"),
+            fact("queue_transitions:20", 20, "i2", "done", "B", "A"),
+            fact("events:queue.claimed:5", 26, "i3", "in-progress", "A", "A"),
+            // Returned after the window: the A delivery of i3 stays not returned (K6).
+            fact("queue_transitions:40", 40, "i3", "done", "A", "B"),
+        ] {
+            store.insert_queue(&row).unwrap();
+        }
+        store.checkpoint().unwrap();
+        drop(store);
+        let (from, to) = ("2026-10-09T01:00:00Z", "2026-10-09T01:30:00Z");
+        let report = report_json(&db, "decisions", None, from, to).unwrap();
+        let p = &report["payload"];
+        let members = p["handoff_members"].as_array().unwrap();
+        assert_eq!(members.len(), 2);
+        let returns = members.iter().filter(|m| m["is_return"] == true).count();
+        assert_eq!(returns, 1, "B->A returns to A across items");
+        assert_eq!(p["m2_return_rate"], json!(0.5));
+        let returned: Vec<_> = members
+            .iter()
+            .filter(|m| m["returned_within_window"] == true)
+            .map(|m| m["source_key"].as_str().unwrap())
+            .collect();
+        assert_eq!(returned, vec!["queue_transitions:10"]);
+        let nonreturn: Vec<_> = p["nonreturn_handoffs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| m["source_key"].as_str().unwrap())
+            .collect();
+        assert_eq!(nonreturn, vec!["queue_transitions:20"]);
+        let seats = p["m1_by_seat"].as_array().unwrap();
+        let deliveries = |seat: &str| {
+            seats.iter().find(|row| row["seat"] == seat).unwrap()["nonreturn_deliveries"].clone()
+        };
+        assert_eq!(
+            deliveries("A"),
+            0,
+            "A's delivery came back inside the window"
+        );
+        assert_eq!(
+            deliveries("B"),
+            1,
+            "B's return to A is not answered inside the window"
+        );
+        let medians = p["pair_medians"].as_array().unwrap();
+        let ab = medians.iter().find(|row| row["from"] == "A").unwrap();
+        assert_eq!(ab["wait_samples"], json!([120.0]));
+        assert_eq!(
+            ab["wait_sample_keys"],
+            json!([["queue_transitions:10", "events:queue.claimed:3"]])
+        );
+        let trace = trace_json(&db, "m2", None, from, to).unwrap();
+        assert_eq!(trace["inputs"]["handoff_members"], p["handoff_members"]);
+        assert_eq!(
+            trace["inputs"]["nonreturn_handoffs"],
+            p["nonreturn_handoffs"]
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn empty_roots_fail_before_a_database_is_created() {
         let dir = std::env::temp_dir().join(format!("dendro-empty-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
