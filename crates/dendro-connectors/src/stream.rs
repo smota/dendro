@@ -504,8 +504,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
-fn walk_jsonl(root: &Path) -> Vec<PathBuf> {
+pub fn walk_jsonl(root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {

@@ -68,8 +68,24 @@ impl AnalyticsStore {
         })
     }
 
-    pub fn open_read_only(path: &Path) -> Result<Self> {
+    /// Opens a database this process just created in a private staging directory.
+    pub fn open_staged(path: &Path) -> Result<Self> {
         let conn = Connection::open(path)?;
+        refuse_legacy(&conn)?;
+        let (version, key_id): (i32, String) = conn.query_row(
+            "SELECT schema_version, key_id FROM dendro_meta",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        if version != SCHEMA_VERSION {
+            return Err(anyhow!("unsupported analytics schema version {version}"));
+        }
+        Ok(Self { conn, key_id })
+    }
+
+    pub fn open_read_only(path: &Path) -> Result<Self> {
+        let config = duckdb::Config::default().access_mode(duckdb::AccessMode::ReadOnly)?;
+        let conn = Connection::open_with_flags(path, config)?;
         refuse_legacy(&conn)?;
         let (version, key_id): (i32, String) = conn.query_row(
             "SELECT schema_version, key_id FROM dendro_meta",

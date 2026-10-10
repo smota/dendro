@@ -1,0 +1,176 @@
+use std::path::{Path, PathBuf};
+
+use anyhow::Result;
+use chrono::{DateTime, Utc};
+use dendro_core::{ActivityFact, AnalyticsStore, IdentityFact, QueueFact};
+use rusqlite::OpenFlags;
+use serde_json::Value;
+
+use crate::stream::{self, walk_jsonl};
+
+#[derive(Debug, Clone)]
+pub struct SourceRoot {
+    pub name: String,
+    pub path: PathBuf,
+}
+
+pub fn ingest_staged(staged_db: &Path, roots: &[SourceRoot], frozen: bool) -> Result<Vec<String>> {
+    let store = AnalyticsStore::open_staged(staged_db)?;
+    let mut notes = Vec::new();
+    for root in roots {
+        if !root.path.exists() {
+            notes.push(format!("{} missing", root.name));
+            continue;
+        }
+        match root.name.as_str() {
+            "claude" | "codex" | "pi" => {
+                let files = walk_jsonl(&root.path);
+                for (index, file) in files.iter().enumerate() {
+                    stream::ingest_jsonl(
+                        &store,
+                        &format!("{}:{}", root.name, index),
+                        &root.name,
+                        file,
+                    )?;
+                }
+                notes.push(format!("{} files={}", root.name, files.len()));
+            }
+            "openrig" => {
+                let count = ingest_openrig(&store, &root.path, frozen)?;
+                notes.push(format!("openrig events={count}"));
+            }
+            "agy" | "grok" => notes.push(format!("{} present-not-parsed", root.name)),
+            other => notes.push(format!("{other} unsupported")),
+        }
+    }
+    Ok(notes)
+}
+
+fn ingest_openrig(store: &AnalyticsStore, sqlite_path: &Path, frozen: bool) -> Result<i64> {
+    let snap_dir = std::env::temp_dir().join(format!("dendro-snap-{}", uuid_suffix()));
+    let open_path = if frozen {
+        std::fs::create_dir_all(&snap_dir)?;
+        stream::copy_sqlite_trio(sqlite_path, &snap_dir)?
+    } else {
+        sqlite_path.to_path_buf()
+    };
+    let uri = format!("file:{}?mode=ro", open_path.display());
+    let conn = rusqlite::Connection::open_with_flags(
+        uri,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI,
+    )?;
+    let mut count = 0i64;
+    let mut stmt = conn.prepare("SELECT seq, type, payload, created_at FROM events")?;
+    let rows = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+        ))
+    })?;
+    for row in rows {
+        let (seq, kind, payload, created_at) = row?;
+        count += 1;
+        let Ok(parsed) = serde_json::from_str::<Value>(&payload) else {
+            continue;
+        };
+        let ts = DateTime::parse_from_rfc3339(&created_at)
+            .ok()
+            .map(|value| value.with_timezone(&Utc));
+        if kind == "agent.session_identity" {
+            let Some(session_id) = parsed.get("sessionId").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            let Some(runtime) = parsed.get("runtime").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            let Some(seat) = parsed.get("sessionName").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            let rig = parsed.get("rigId").and_then(|v| v.as_str()).unwrap_or("");
+            store.insert_identity(&IdentityFact {
+                source_key: format!("events:{seq}"),
+                harness: runtime.to_string(),
+                native_session: session_id.to_string(),
+                rig: rig.to_string(),
+                seat: seat.to_string(),
+                ts,
+            })?;
+        } else if kind == "agent.activity" {
+            let Some(activity) = parsed.get("activity") else {
+                continue;
+            };
+            let Some(state) = activity.get("state").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            let Some(seat) = parsed.get("sessionName").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            let when = activity
+                .get("eventAt")
+                .and_then(|v| v.as_str())
+                .and_then(|text| DateTime::parse_from_rfc3339(text).ok())
+                .map(|value| value.with_timezone(&Utc))
+                .or(ts);
+            let Some(when) = when else { continue };
+            store.insert_activity(&ActivityFact {
+                source_key: format!("activity:{seq}"),
+                seat: seat.to_string(),
+                ts: when,
+                state: state.to_string(),
+                seq,
+            })?;
+        }
+    }
+    let mut transitions = conn.prepare(
+        "SELECT transition_id, qitem_id, ts, state, actor_session, closure_reason, closure_target FROM queue_transitions",
+    );
+    if let Ok(ref mut stmt) = transitions {
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, Option<String>>(4)?,
+                row.get::<_, Option<String>>(5)?,
+                row.get::<_, Option<String>>(6)?,
+            ))
+        })?;
+        for row in rows.flatten() {
+            let ts = DateTime::parse_from_rfc3339(&row.2)
+                .ok()
+                .map(|value| value.with_timezone(&Utc));
+            let Some(ts) = ts else { continue };
+            let actor = row.4.clone().unwrap_or_default();
+            let target = row.6.clone().unwrap_or_else(|| actor.clone());
+            store.insert_queue(&QueueFact {
+                source_key: format!("queue_transitions:{}", row.0),
+                transition_id: row.0,
+                qitem_id: row.1,
+                ts,
+                state: row.3,
+                source_seat: actor,
+                dest_seat: target,
+                closure_reason: row.5,
+                closure_target: row.6,
+                chain_id: None,
+                missions: Vec::new(),
+            })?;
+        }
+    }
+    if frozen {
+        let _ = std::fs::remove_dir_all(&snap_dir);
+    }
+    Ok(count)
+}
+
+fn uuid_suffix() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    format!("{nanos:x}")
+}
