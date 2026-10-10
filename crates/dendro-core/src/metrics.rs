@@ -69,7 +69,23 @@ pub fn observation_spans(window: Window, lives: &[SeatBound]) -> Vec<ObservedSpa
         })
         .collect();
     spans.sort_by_key(|span| span.start);
-    spans
+    // Lives of one seat from two sources may overlap; count each second once.
+    let mut merged: Vec<ObservedSpan> = Vec::new();
+    for span in spans {
+        match merged.last_mut() {
+            Some(last) if span.start <= last.end => {
+                if span.end > last.end {
+                    last.end = span.end;
+                }
+                last.launched = match (last.launched, span.launched) {
+                    (Some(a), Some(b)) => Some(a.min(b)),
+                    _ => None,
+                };
+            }
+            _ => merged.push(span),
+        }
+    }
+    merged
 }
 
 pub fn observed_secs(spans: &[ObservedSpan]) -> i64 {
@@ -821,6 +837,20 @@ mod tests {
         assert!(spans.is_empty());
         let bands = activity_bands("dev.build", &[running_at(-20, 1)], &[], window(), &lives);
         assert_eq!(bands.sum(), 0);
+    }
+
+    #[test]
+    fn overlapping_lives_from_two_sources_count_once() {
+        let lives = [
+            life(Some(10), Some(40)),
+            life(Some(20), None),
+            life(Some(50), None),
+        ];
+        let spans = observation_spans(window(), &lives);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(observed_secs(&spans), 50);
+        let bands = activity_bands("dev.build", &[running_at(10, 1)], &[], window(), &lives);
+        assert_eq!(bands.sum(), 50);
     }
 
     #[test]

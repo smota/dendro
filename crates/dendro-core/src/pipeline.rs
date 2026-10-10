@@ -331,6 +331,17 @@ pub fn report_json(
             })
         })
         .collect();
+    let seat_lives: Vec<_> = bounds
+        .iter()
+        .filter(|bound| seats.contains(&bound.seat))
+        .map(|bound| {
+            json!({
+                "seat": bound.seat,
+                "launched_at": bound.created_at.map(|t| t.to_rfc3339()),
+                "stopped_at": bound.stopped_at.map(|t| t.to_rfc3339()),
+            })
+        })
+        .collect();
     let tools: Vec<_> = store
         .load_tools()?
         .into_iter()
@@ -491,6 +502,7 @@ pub fn report_json(
             "m4_impact": metrics::m4_impact(),
             "kind": redact(kind),
             "activity": activity_rows,
+            "seat_lives": seat_lives,
             "links": links,
             "handoff_edges": edges.iter().map(|edge| json!({
                 "from": edge.from_seat,
@@ -624,6 +636,7 @@ pub fn trace_json(
             "intakes": payload["intakes"],
             "pair_medians": payload["pair_medians"],
             "activity": payload["activity"],
+            "seat_lives": payload["seat_lives"],
             "activity_events": payload["activity_events"],
             "demand_events": payload["demand_events"],
             "destination_snapshots": payload["destination_snapshots"],
@@ -675,6 +688,78 @@ mod tests {
         )
         .is_err());
         assert!(report_json(&db, "tokens", None, "not-a-time", "2026-10-11T00:00:00Z").is_err());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn report_and_trace_expose_the_lifecycle_behind_the_bands() {
+        use chrono::TimeZone;
+        let at = |h: u32| chrono::Utc.with_ymd_and_hms(2026, 10, 9, h, 0, 0).unwrap();
+        let dir = std::env::temp_dir().join(format!("dendro-lives-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("analytics.duckdb");
+        let store = AnalyticsStore::open_path(&db, "kid").unwrap();
+        let life = |seat: &str, created: Option<u32>, stopped: Option<u32>| crate::SeatBound {
+            seat: seat.into(),
+            created_at: created.map(at),
+            stopped_at: stopped.map(at),
+        };
+        store
+            .replace_seat_bounds(&[
+                life("relaunched", Some(1), Some(2)),
+                life("relaunched", Some(3), None),
+                life("no-stop", Some(1), None),
+                life("stop-only", None, Some(2)),
+            ])
+            .unwrap();
+        store
+            .insert_activity(&crate::ActivityFact {
+                source_key: "a1".into(),
+                seat: "relaunched".into(),
+                ts: at(1),
+                state: "running".into(),
+                seq: 1,
+            })
+            .unwrap();
+        store.checkpoint().unwrap();
+        drop(store);
+        let (from, to) = ("2026-10-09T00:00:00Z", "2026-10-09T04:00:00Z");
+        let report = report_json(&db, "activity", None, from, to).unwrap();
+        let rows = report["payload"]["activity"].as_array().unwrap();
+        let row = |seat: &str| rows.iter().find(|row| row["seat"] == seat).unwrap().clone();
+        let relaunched = row("relaunched");
+        assert_eq!(relaunched["observed_secs"], 7200);
+        assert_eq!(relaunched["sum"], 7200);
+        assert_eq!(relaunched["active_secs"], 3600);
+        assert_eq!(
+            relaunched["unknown_secs"], 3600,
+            "no state carries past the stop"
+        );
+        assert_eq!(
+            relaunched["observed_spans"],
+            json!([
+                {"from": "2026-10-09T01:00:00+00:00", "to": "2026-10-09T02:00:00+00:00"},
+                {"from": "2026-10-09T03:00:00+00:00", "to": "2026-10-09T04:00:00+00:00"},
+            ])
+        );
+        assert_eq!(relaunched["stop_evidence"], "recorded");
+        let no_stop = row("no-stop");
+        assert_eq!(no_stop["stop_evidence"], "unavailable");
+        assert_eq!(no_stop["launch_evidence"], "recorded");
+        assert_eq!(no_stop["unknown_secs"], 3 * 3600);
+        let stop_only = row("stop-only");
+        assert_eq!(stop_only["launch_evidence"], "unavailable");
+        assert_eq!(stop_only["observed_secs"], 2 * 3600);
+        let trace = trace_json(&db, "activity", None, from, to).unwrap();
+        assert_eq!(trace["value"], report["payload"]["activity"]);
+        let lives = trace["inputs"]["seat_lives"].as_array().unwrap();
+        assert_eq!(lives.len(), 4);
+        assert!(lives.contains(&json!({
+            "seat": "stop-only",
+            "launched_at": null,
+            "stopped_at": "2026-10-09T02:00:00+00:00",
+        })));
         let _ = fs::remove_dir_all(&dir);
     }
 

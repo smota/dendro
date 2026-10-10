@@ -22,9 +22,14 @@ pub fn ingest_staged(
 ) -> Result<Vec<String>> {
     let store = AnalyticsStore::open_staged(staged_db)?;
     let mut notes = Vec::new();
+    let mut lives = Vec::new();
+    let mut lifecycle_complete = true;
     for root in roots {
         let shown = dendro_core::redact(&root.name);
         if !root.path.exists() {
+            if root.name == "openrig" {
+                lifecycle_complete = false;
+            }
             notes.push(format!("{shown} missing"));
             continue;
         }
@@ -43,11 +48,20 @@ pub fn ingest_staged(
                 notes.push(format!("{shown} files={}", files.len()));
             }
             "openrig" => {
-                let count = ingest_openrig(&store, &root.path, frozen, key)?;
+                let count = ingest_openrig(&store, &root.path, frozen, key, &mut lives)?;
                 notes.push(format!("openrig events={count}"));
             }
             "agy" | "grok" => notes.push(format!("{shown} present-not-parsed")),
             _ => notes.push(format!("{shown} unsupported")),
+        }
+    }
+    // Lives come from the whole history of every OpenRig root, so they are
+    // replaced once. A missing root keeps the stored lives rather than erase them.
+    if roots.iter().any(|root| root.name == "openrig") {
+        if lifecycle_complete {
+            store.replace_seat_bounds(&lives)?;
+        } else {
+            notes.push("openrig lifecycle unchanged: a root is missing".to_string());
         }
     }
     Ok(notes)
@@ -58,6 +72,7 @@ fn ingest_openrig(
     sqlite_path: &Path,
     frozen: bool,
     key: &[u8],
+    lives: &mut Vec<dendro_core::SeatBound>,
 ) -> Result<i64> {
     let snap_dir = std::env::temp_dir().join(format!("dendro-snap-{}", uuid_suffix()));
     let open_path = if frozen {
@@ -189,14 +204,14 @@ fn ingest_openrig(
             })?;
         }
     }
-    let lives: Vec<dendro_core::SeatBound> = seat_lives(lifecycle)
-        .into_iter()
-        .map(|life| dendro_core::SeatBound {
-            seat: dendro_core::seal_identifier(key, "seat", &life.seat),
-            ..life
-        })
-        .collect();
-    store.replace_seat_bounds(&lives)?;
+    lives.extend(
+        seat_lives(lifecycle)
+            .into_iter()
+            .map(|life| dendro_core::SeatBound {
+                seat: dendro_core::seal_identifier(key, "seat", &life.seat),
+                ..life
+            }),
+    );
     let mut transitions = conn.prepare(
         "SELECT transition_id, qitem_id, ts, state, actor_session, closure_reason, closure_target, transition_note FROM queue_transitions",
     );
@@ -292,7 +307,9 @@ enum Lifecycle {
     },
 }
 
-/// The K4 lifecycle events. `session.detached` is a binding detach, not a stop.
+/// The K4 lifecycle events. `seat.fresh_launched` is launch evidence only: it
+/// never proves the retired generation stopped. `session.detached` is a binding
+/// detach, not a stop.
 fn lifecycle_event(kind: &str, payload: &Value) -> Option<Lifecycle> {
     let text = |name: &str| {
         payload
@@ -303,7 +320,7 @@ fn lifecycle_event(kind: &str, payload: &Value) -> Option<Lifecycle> {
     let rig = text("rigId").unwrap_or_default();
     let node = text("nodeId").unwrap_or_default();
     match kind {
-        "node.launched" => Some(Lifecycle::Launched {
+        "node.launched" | "seat.fresh_launched" => Some(Lifecycle::Launched {
             rig,
             node,
             seat: text("sessionName")?,
@@ -480,6 +497,34 @@ mod tests {
     }
 
     #[test]
+    fn a_fresh_launch_opens_a_life_and_never_closes_one() {
+        let payload = serde_json::json!({
+            "rigId": "r", "nodeId": "n", "sessionName": "s", "sessionId": "new",
+            "supersededSessionIds": ["old"], "retiringGeneration": "g1", "newGeneration": "g2"
+        });
+        let fresh = || lifecycle_event("seat.fresh_launched", &payload).unwrap();
+        assert_eq!(fresh(), launched("r", "n", "s"));
+        // While running: no stop for the retired generation, the life continues.
+        let events = vec![(at(0), 1, launched("r", "n", "s")), (at(5), 2, fresh())];
+        assert_eq!(lives_of(events, "s"), vec![(Some(at(0)), None)]);
+        // After a stop: it opens a new life.
+        let events = vec![
+            (at(0), 1, launched("r", "n", "s")),
+            (at(5), 2, lifecycle_event("rig.stopped", &payload).unwrap()),
+            (at(9), 3, fresh()),
+        ];
+        assert_eq!(
+            lives_of(events, "s"),
+            vec![(Some(at(0)), Some(at(5))), (Some(at(9)), None)]
+        );
+        // As the only event: it opens the first life.
+        assert_eq!(
+            lives_of(vec![(at(3), 1, fresh())], "s"),
+            vec![(Some(at(3)), None)]
+        );
+    }
+
+    #[test]
     fn rig_stop_and_delete_end_every_seat_of_that_rig_only() {
         for kind in ["rig.stopped", "rig.deleted"] {
             let ended = lifecycle_event(kind, &serde_json::json!({"rigId": "a"})).unwrap();
@@ -552,6 +597,72 @@ mod tests {
         // Listed out of order; seq 1 (launch) runs before seq 2 (stop).
         let events = vec![(at(5), 2, stopped), (at(5), 1, launched("r", "n", "s"))];
         assert_eq!(lives_of(events, "s"), vec![(Some(at(5)), Some(at(5)))]);
+    }
+
+    fn openrig_root(dir: &Path, name: &str, seat: &str) -> SourceRoot {
+        let path = dir.join(format!("{name}.sqlite"));
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute(
+            "CREATE TABLE events (seq INTEGER, type TEXT, payload TEXT, created_at TEXT)",
+            [],
+        )
+        .unwrap();
+        let payload =
+            format!("{{\"rigId\":\"{name}\",\"nodeId\":\"n\",\"sessionName\":\"{seat}\"}}");
+        conn.execute(
+            "INSERT INTO events VALUES (1,'node.launched',?,'2026-10-09 01:00:00')",
+            [&payload],
+        )
+        .unwrap();
+        SourceRoot {
+            name: "openrig".into(),
+            path,
+        }
+    }
+
+    fn stored_seats(db: &Path) -> Vec<String> {
+        let store = AnalyticsStore::open_path(db, "key").unwrap();
+        let mut seats: Vec<String> = store
+            .load_seat_bounds()
+            .unwrap()
+            .into_iter()
+            .map(|life| life.seat)
+            .collect();
+        seats.sort();
+        seats
+    }
+
+    #[test]
+    fn openrig_roots_do_not_erase_each_others_lives() {
+        let dir = std::env::temp_dir().join(format!("dendro-roots-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("analytics.duckdb");
+        drop(AnalyticsStore::open_path(&db, "key").unwrap());
+        let roots = [
+            openrig_root(&dir, "rig-a", "seat-a"),
+            openrig_root(&dir, "rig-b", "seat-b"),
+        ];
+        let key = b"roots-test-key";
+        ingest_staged(&db, &roots, false, key).unwrap();
+        assert_eq!(stored_seats(&db), vec!["seat-a", "seat-b"]);
+        // A second run rebuilds the same lives, without duplicates.
+        ingest_staged(&db, &roots, false, key).unwrap();
+        assert_eq!(stored_seats(&db), vec!["seat-a", "seat-b"]);
+        // A run with one root missing keeps every stored life.
+        let partial = [
+            roots[0].clone(),
+            SourceRoot {
+                name: "openrig".into(),
+                path: dir.join("absent.sqlite"),
+            },
+        ];
+        let notes = ingest_staged(&db, &partial, false, key).unwrap();
+        assert!(notes
+            .iter()
+            .any(|note| note == "openrig lifecycle unchanged: a root is missing"));
+        assert_eq!(stored_seats(&db), vec!["seat-a", "seat-b"]);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
