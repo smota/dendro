@@ -1,3 +1,5 @@
+// The report payload is one large json! literal.
+#![recursion_limit = "256"]
 #![deny(unsafe_code)]
 
 pub mod facts;

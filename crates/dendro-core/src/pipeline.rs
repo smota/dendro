@@ -210,12 +210,18 @@ pub fn report_json(
         })
         .cloned()
         .collect();
-    let (rework_members, chains) = metrics::m3_rework(&edges);
-    let rework = rework_members.len() as i64;
-    let paths: Vec<_> = rework_members
-        .iter()
-        .map(|item| item.path.clone())
-        .collect();
+    let roles = metrics::seat_roles(&store.load_seat_roles()?);
+    let m3 = metrics::m3_rework(&edges, &roles);
+    let rework = m3.rework.len() as i64;
+    let chains = m3.chains;
+    let paths: Vec<_> = m3.rework.iter().map(|item| item.path.clone()).collect();
+    let rework_members = &m3.rework;
+    let m3_unknown = &m3.unknown;
+    let m3_proportion = if chains == 0 {
+        serde_json::Value::String("no data".into())
+    } else {
+        json!(rework as f64 / chains as f64)
+    };
     let handoffs = edges.len() as i64;
     let returns = edges.iter().filter(|edge| edge.is_return).count() as i64;
     let (input, output, cache_read, cache_write) = metrics::token_totals(&usage);
@@ -610,6 +616,9 @@ pub fn report_json(
             "m3_chains": chains,
             "m3_paths": paths,
             "m3_rework_members": rework_members,
+            "m3_unknown_chains": m3_unknown.len(),
+            "m3_unknown_members": m3_unknown,
+            "m3_rework_proportion": m3_proportion,
             "m4_impact": metrics::m4_impact(),
             "kind": redact(kind),
             "activity": activity_rows,
@@ -751,6 +760,9 @@ pub fn trace_json(
             "m3_rework_chains": payload["m3_rework_chains"],
             "m3_chains": payload["m3_chains"],
             "m3_rework_members": payload["m3_rework_members"],
+            "m3_unknown_chains": payload["m3_unknown_chains"],
+            "m3_unknown_members": payload["m3_unknown_members"],
+            "m3_rework_proportion": payload["m3_rework_proportion"],
             "rows": payload["trace_inputs"],
             "intakes": payload["intakes"],
             "pair_medians": payload["pair_medians"],

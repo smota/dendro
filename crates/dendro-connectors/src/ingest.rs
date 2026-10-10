@@ -358,6 +358,18 @@ fn ingest_openrig(
             item_missions.insert(qitem, missions);
         }
     }
+    if let Ok(mut stmt) = conn.prepare("SELECT data FROM snapshots") {
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        for data in rows.flatten() {
+            for (seat, role, evidence) in snapshot_roles(&data) {
+                store.insert_seat_role(
+                    &dendro_core::seal_identifier(key, "seat", &seat),
+                    role,
+                    &evidence,
+                )?;
+            }
+        }
+    }
     let mut items =
         conn.prepare("SELECT qitem_id, destination_session, ts_updated FROM queue_items");
     if let Ok(ref mut stmt) = items {
@@ -452,6 +464,54 @@ fn chain_roots(
         }
     }
     (roots, marked)
+}
+
+/// K7 role evidence from one recorded rig snapshot: (session, role, evidence).
+/// AgentFlow phase seats (`agentflow-seat` spec) check when they are `dev.qa`
+/// or `rev.review`. Elsewhere a seat checks when its recorded spec is a QA or
+/// review spec. Every other recorded seat is `other`. Names are never read.
+fn snapshot_roles(data: &str) -> Vec<(String, &'static str, String)> {
+    let Ok(snapshot) = serde_json::from_str::<Value>(data) else {
+        return Vec::new();
+    };
+    let text =
+        |value: &Value, name: &str| value.get(name).and_then(|v| v.as_str()).map(str::to_string);
+    let nodes: std::collections::BTreeMap<String, &Value> = snapshot
+        .get("nodes")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|node| Some((text(node, "id")?, node)))
+        .collect();
+    let mut roles = Vec::new();
+    for session in snapshot
+        .get("sessions")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+    {
+        let (Some(name), Some(node)) = (
+            text(session, "sessionName"),
+            text(session, "nodeId").and_then(|id| nodes.get(&id).copied()),
+        ) else {
+            continue;
+        };
+        let spec = text(node, "resolvedSpecName").unwrap_or_default();
+        let agent = text(node, "agentRef").unwrap_or_default();
+        let logical = text(node, "logicalId").unwrap_or_default();
+        let (role, evidence) = if spec == "agentflow-seat" {
+            let check = logical == "dev.qa" || logical == "rev.review";
+            (check, format!("agentflow-seat:{logical}"))
+        } else {
+            let last = agent.rsplit('/').next().unwrap_or("");
+            let check = ["qa", "review", "reviewer"]
+                .iter()
+                .any(|kind| spec == *kind || last == *kind);
+            (check, format!("spec:{agent}|{spec}"))
+        };
+        roles.push((name, if role { "check" } else { "other" }, evidence));
+    }
+    roles
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1041,6 +1101,64 @@ mod tests {
         let (alone, _) = chain_roots(&chains, None);
         assert_eq!(alone.get("disagree").map(String::as_str), Some("a"));
         assert_eq!(alone.get("malformed-ok"), None);
+    }
+
+    #[test]
+    fn snapshot_roles_come_from_recorded_specs_not_names() {
+        let snapshot = serde_json::json!({
+            "nodes": [
+                {"id": "n1", "logicalId": "dev.qa", "agentRef": "local:agents/agentflow", "resolvedSpecName": "agentflow-seat"},
+                {"id": "n2", "logicalId": "rev.review", "agentRef": "local:agents/agentflow", "resolvedSpecName": "agentflow-seat"},
+                {"id": "n3", "logicalId": "orch.arch", "agentRef": "local:agents/agentflow", "resolvedSpecName": "agentflow-seat"},
+                {"id": "n4", "logicalId": "dev.review", "agentRef": "local:../../../agents/development/qa", "resolvedSpecName": "qa"},
+                {"id": "n5", "logicalId": "dev.build", "agentRef": "local:../../../agents/development/implementer", "resolvedSpecName": "implementer"},
+                {"id": "n6", "logicalId": "rev.lookalike", "agentRef": "local:agents/other", "resolvedSpecName": "writer"}
+            ],
+            "sessions": [
+                {"nodeId": "n1", "sessionName": "dev-qa@agentflow-dev"},
+                {"nodeId": "n2", "sessionName": "rev-review@agentflow-dev"},
+                {"nodeId": "n3", "sessionName": "orch-arch@agentflow-dev"},
+                {"nodeId": "n4", "sessionName": "dev-review@starter"},
+                {"nodeId": "n5", "sessionName": "dev-build@starter"},
+                {"nodeId": "n6", "sessionName": "rev-lookalike@other"},
+                {"nodeId": "missing", "sessionName": "ghost@rig"}
+            ]
+        });
+        let roles = snapshot_roles(&snapshot.to_string());
+        let role = |seat: &str| {
+            roles
+                .iter()
+                .find(|row| row.0 == seat)
+                .map(|row| (row.1, row.2.as_str()))
+        };
+        assert_eq!(
+            role("dev-qa@agentflow-dev"),
+            Some(("check", "agentflow-seat:dev.qa"))
+        );
+        assert_eq!(
+            role("rev-review@agentflow-dev"),
+            Some(("check", "agentflow-seat:rev.review"))
+        );
+        assert_eq!(
+            role("orch-arch@agentflow-dev"),
+            Some(("other", "agentflow-seat:orch.arch"))
+        );
+        assert_eq!(
+            role("dev-review@starter"),
+            Some(("check", "spec:local:../../../agents/development/qa|qa"))
+        );
+        assert_eq!(role("dev-build@starter").unwrap().0, "other");
+        assert_eq!(
+            role("rev-lookalike@other").unwrap().0,
+            "other",
+            "a rev- name is not evidence"
+        );
+        assert_eq!(
+            role("ghost@rig"),
+            None,
+            "a session without its node has no evidence"
+        );
+        assert!(snapshot_roles("not json").is_empty());
     }
 
     #[test]

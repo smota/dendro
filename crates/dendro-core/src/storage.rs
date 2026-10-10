@@ -199,6 +199,12 @@ impl AnalyticsStore {
                 created_at TIMESTAMP,
                 stopped_at TIMESTAMP
             );
+            CREATE TABLE seat_roles (
+                seat VARCHAR NOT NULL,
+                role VARCHAR NOT NULL,
+                evidence VARCHAR NOT NULL,
+                PRIMARY KEY (seat, role, evidence)
+            );
             CREATE TABLE warnings (
                 path VARCHAR NOT NULL,
                 line_no BIGINT,
@@ -497,6 +503,24 @@ impl AnalyticsStore {
         }
         tx.commit()?;
         Ok(())
+    }
+
+    /// One recorded role observation for a seat (K7): `check` or `other`, with
+    /// the snapshot evidence it came from.
+    pub fn insert_seat_role(&self, seat: &str, role: &str, evidence: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO seat_roles (seat, role, evidence) VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
+            params![redact(seat), redact(role), redact(evidence)],
+        )?;
+        Ok(())
+    }
+
+    pub fn load_seat_roles(&self) -> Result<Vec<(String, String, String)>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT seat, role, evidence FROM seat_roles ORDER BY seat, role, evidence")?;
+        let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
     pub fn load_seat_bounds(&self) -> Result<Vec<SeatBound>> {
@@ -980,6 +1004,7 @@ mod tests {
         store
             .insert_destination_snapshot(canary, canary, canary, true, &[canary.to_string()])
             .unwrap();
+        store.insert_seat_role(canary, canary, canary).unwrap();
         store
             .replace_seat_bounds(&[SeatBound {
                 seat: canary.into(),
@@ -1008,7 +1033,7 @@ mod tests {
             })
             .unwrap();
         assert_eq!(reason, "handed_off_to");
-        for table in ["seat_bounds", "destination_snapshots"] {
+        for table in ["seat_bounds", "destination_snapshots", "seat_roles"] {
             let rows: i64 = store
                 .conn
                 .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {

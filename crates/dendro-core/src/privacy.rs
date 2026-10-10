@@ -170,6 +170,9 @@ pub const TEXT_COLUMNS: &[&str] = &[
     "destination_snapshots.destination",
     "destination_snapshots.snapshot_cutoff",
     "destination_snapshots.missions",
+    "seat_roles.seat",
+    "seat_roles.role",
+    "seat_roles.evidence",
 ];
 
 #[cfg(test)]

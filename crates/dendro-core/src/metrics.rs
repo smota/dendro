@@ -930,60 +930,154 @@ pub fn m2_return_rate(returns: i64, handoffs: i64) -> Option<f64> {
     }
 }
 
-/// The role part of a seat name: before `@`, with `.` read as `-`
-/// (`dev-qa@rig` and `dev.qa` are the same role).
-fn seat_role(seat: &str) -> String {
-    seat.split('@').next().unwrap_or(seat).replace('.', "-")
-}
-
-/// QA (`dev-qa*`) or a review seat: a role with a `review` segment
-/// (`rev-review`, `dev-review`) or the `rev` pod (`rev-*`).
-fn is_gate_seat(seat: &str) -> bool {
-    let role = seat_role(seat);
-    role == "dev-qa"
-        || role.starts_with("dev-qa-")
-        || role == "rev"
-        || role.starts_with("rev-")
-        || role.split('-').any(|part| part == "review")
-}
-
+/// K7: build seats are the contract-named `dev-build*` members, by name.
 fn is_build_seat(seat: &str) -> bool {
-    seat_role(seat).starts_with("dev-build")
+    seat.split('@')
+        .next()
+        .unwrap_or(seat)
+        .replace('.', "-")
+        .starts_with("dev-build")
+}
+
+/// A seat's M3 role from recorded evidence (K7). Names never decide a check.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SeatRole {
+    Check(Vec<String>),
+    Other,
+    Unknown(&'static str),
+}
+
+pub const ROLE_NOT_RECORDED: &str = "no recorded role evidence";
+pub const ROLE_CONFLICTING: &str = "conflicting recorded role evidence";
+
+/// Resolves stored (seat, role, evidence) observations into one role per seat.
+pub fn seat_roles(rows: &[(String, String, String)]) -> BTreeMap<String, SeatRole> {
+    let mut by_seat: BTreeMap<&str, Vec<&(String, String, String)>> = BTreeMap::new();
+    for row in rows {
+        by_seat.entry(row.0.as_str()).or_default().push(row);
+    }
+    by_seat
+        .into_iter()
+        .map(|(seat, rows)| {
+            let check: Vec<String> = rows
+                .iter()
+                .filter(|row| row.1 == "check")
+                .map(|row| row.2.clone())
+                .collect();
+            let other = rows.iter().any(|row| row.1 == "other");
+            let role = match (check.is_empty(), other) {
+                (false, true) => SeatRole::Unknown(ROLE_CONFLICTING),
+                (false, false) => SeatRole::Check(check),
+                (true, _) => SeatRole::Other,
+            };
+            (seat.to_string(), role)
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Rework {
     pub chain: String,
     pub path: String,
+    /// The checking seats the work passed before it came back, with evidence.
+    pub checks: Vec<(String, Vec<String>)>,
 }
 
-/// M3: chains (or items without a chain) whose work comes back to a
-/// `dev-build*` seat after it passed through `dev-qa` or a review seat. Each
-/// chain counts once. The path runs from the chain's first edge to that return.
-pub fn m3_rework(edges: &[HandoffEdge]) -> (Vec<Rework>, i64) {
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct UnknownChain {
+    pub chain: String,
+    pub path: String,
+    /// Role-unknown seats passed before a return to build, with the reason.
+    pub unknown_seats: Vec<(String, String)>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct M3 {
+    pub rework: Vec<Rework>,
+    pub unknown: Vec<UnknownChain>,
+    /// Chains in the window, without the unknown ones (K7 denominator).
+    pub chains: i64,
+}
+
+/// M3 (K7): a chain is rework when work comes back to a build seat after it
+/// passed a checking seat. A chain passes a seat when that seat was the
+/// destination of one of its items, so the sender of a handoff counts. A
+/// return after passes through role-unknown seats only makes an unknown chain,
+/// left out of both the count and the denominator. Each chain counts once.
+pub fn m3_rework(edges: &[HandoffEdge], roles: &BTreeMap<String, SeatRole>) -> M3 {
+    let role_of = |seat: &str| {
+        roles
+            .get(seat)
+            .cloned()
+            .unwrap_or(SeatRole::Unknown(ROLE_NOT_RECORDED))
+    };
     let mut chains: BTreeMap<&str, Vec<&HandoffEdge>> = BTreeMap::new();
     for edge in edges {
         chains.entry(edge.chain_key()).or_default().push(edge);
     }
-    let mut rework = Vec::new();
+    let mut result = M3 {
+        rework: Vec::new(),
+        unknown: Vec::new(),
+        chains: 0,
+    };
     for (chain, group) in &chains {
-        let mut passed_gate = false;
         let mut path = vec![group[0].from_seat.clone()];
+        let mut checks: Vec<(String, Vec<String>)> = Vec::new();
+        let mut unknowns: Vec<(String, String)> = Vec::new();
+        let mut unknown_return = None;
+        let pass = |seat: &str,
+                    checks: &mut Vec<(String, Vec<String>)>,
+                    unknowns: &mut Vec<(String, String)>| {
+            if is_build_seat(seat) {
+                return;
+            }
+            match role_of(seat) {
+                SeatRole::Check(evidence) => {
+                    if !checks.iter().any(|(name, _)| name == seat) {
+                        checks.push((seat.to_string(), evidence));
+                    }
+                }
+                SeatRole::Other => {}
+                SeatRole::Unknown(reason) => {
+                    if !unknowns.iter().any(|(name, _)| name == seat) {
+                        unknowns.push((seat.to_string(), reason.to_string()));
+                    }
+                }
+            }
+        };
+        let mut rework = None;
         for edge in group {
+            pass(&edge.from_seat, &mut checks, &mut unknowns);
             path.push(edge.to_seat.clone());
-            if is_gate_seat(&edge.from_seat) || is_gate_seat(&edge.to_seat) {
-                passed_gate = true;
+            if is_build_seat(&edge.to_seat) {
+                if !checks.is_empty() {
+                    rework = Some(Rework {
+                        chain: chain.to_string(),
+                        path: path.join(" -> "),
+                        checks: checks.clone(),
+                    });
+                    break;
+                }
+                if !unknowns.is_empty() && unknown_return.is_none() {
+                    unknown_return = Some(UnknownChain {
+                        chain: chain.to_string(),
+                        path: path.join(" -> "),
+                        unknown_seats: unknowns.clone(),
+                    });
+                }
             }
-            if passed_gate && !is_gate_seat(&edge.to_seat) && is_build_seat(&edge.to_seat) {
-                rework.push(Rework {
-                    chain: chain.to_string(),
-                    path: path.join(" -> "),
-                });
-                break;
+            pass(&edge.to_seat, &mut checks, &mut unknowns);
+        }
+        match (rework, unknown_return) {
+            (Some(rework), _) => {
+                result.rework.push(rework);
+                result.chains += 1;
             }
+            (None, Some(unknown)) => result.unknown.push(unknown),
+            (None, None) => result.chains += 1,
         }
     }
-    (rework, chains.len() as i64)
+    result
 }
 
 pub fn m4_impact() -> &'static str {
@@ -1577,10 +1671,20 @@ mod tests {
                 source_key: "c".into(),
             },
         ];
-        let (rework, chains) = m3_rework(&edges);
-        assert_eq!(rework.len(), 1);
-        assert_eq!(chains, 1);
-        assert_eq!(rework[0].chain, "c");
+        let roles = BTreeMap::from([
+            (
+                "dev.qa".to_string(),
+                SeatRole::Check(vec!["agentflow-seat:dev.qa".into()]),
+            ),
+            (
+                "rev-review".to_string(),
+                SeatRole::Check(vec!["agentflow-seat:rev.review".into()]),
+            ),
+        ]);
+        let m3 = m3_rework(&edges, &roles);
+        assert_eq!(m3.rework.len(), 1);
+        assert_eq!(m3.chains, 1);
+        assert_eq!(m3.rework[0].chain, "c");
     }
 
     #[test]
@@ -1898,24 +2002,49 @@ mod tests {
     }
 
     #[test]
-    fn m3_counts_build_returns_after_qa_or_review_across_chain_items() {
-        let (build, build_sr, qa, review, orch) = (
+    fn k7_m3_uses_recorded_roles_and_keeps_unknown_chains_apart() {
+        let (build, build_sr, qa, review, orch, starter_qa, stranger) = (
             "dev-build@dendro-dev",
             "dev-build-sr@dendro-dev",
             "dev-qa@dendro-dev",
             "rev-review@dendro-dev",
             "orch-arch@dendro-dev",
+            "dev-review@starter",
+            "rev-review@unrecorded",
         );
+        let roles = seat_roles(&[
+            (qa.into(), "check".into(), "agentflow-seat:dev.qa".into()),
+            (
+                review.into(),
+                "check".into(),
+                "agentflow-seat:rev.review".into(),
+            ),
+            (
+                orch.into(),
+                "other".into(),
+                "agentflow-seat:orch.arch".into(),
+            ),
+            (
+                starter_qa.into(),
+                "check".into(),
+                "spec:local:agents/development/qa|qa".into(),
+            ),
+            ("split@rig".into(), "check".into(), "spec:a|qa".into()),
+            (
+                "split@rig".into(),
+                "other".into(),
+                "spec:b|implementer".into(),
+            ),
+        ]);
         // Each step is a new item of the chain, as OpenRig records handoffs.
         let chain = |name: &str, seats: &[&str]| -> Vec<QueueFact> {
             seats
                 .windows(2)
                 .enumerate()
                 .map(|(step, pair)| {
-                    let at = step as i64 * 10;
                     hand(
                         &format!("{name}-{step}"),
-                        at,
+                        step as i64 * 10,
                         &format!("{name}-item{step}"),
                         Some(name),
                         pair[0],
@@ -1928,53 +2057,64 @@ mod tests {
         queue.extend(chain("direct", &[build, qa, build]));
         queue.extend(chain("via-review", &[build, qa, review, build_sr]));
         queue.extend(chain("via-orch", &[build, qa, orch, build]));
+        queue.extend(chain("sender-qualifies", &[orch, qa, build])); // qa sends the return
         queue.extend(chain(
-            "review-only",
-            &[build_sr, review, build_sr, qa, build],
+            "starter-qa",
+            &["dev-build@starter", starter_qa, "dev-build@starter"],
         ));
-        queue.extend(chain("no-gate", &[build, orch, build]));
-        queue.extend(chain("gate-after", &[build, orch, build, qa]));
+        queue.extend(chain("no-check", &[build, orch, build]));
+        queue.extend(chain("check-after", &[build, orch, build, qa]));
+        queue.extend(chain("unknown-only", &[build, stranger, build]));
+        queue.extend(chain("conflict-only", &[build, "split@rig", build]));
         queue.extend(chain(
-            "starter-review",
-            &[
-                "dev-build@starter",
-                "dev-review@starter",
-                "dev-build@starter",
-            ],
+            "unknown-then-check",
+            &[build, stranger, build, qa, build],
         ));
+        queue.extend(chain("unknown-no-return", &[build, stranger, orch]));
         let edges = handoff_edges(&queue);
-        let (rework, chains) = m3_rework(&edges);
-        assert_eq!(chains, 7);
-        let counted: Vec<(&str, &str)> = rework
+        let m3 = m3_rework(&edges, &roles);
+        let rework: Vec<&str> = m3.rework.iter().map(|r| r.chain.as_str()).collect();
+        assert_eq!(
+            rework,
+            vec![
+                "direct",
+                "sender-qualifies",
+                "starter-qa",
+                "unknown-then-check",
+                "via-orch",
+                "via-review"
+            ]
+        );
+        let unknown: Vec<(&str, &str)> = m3
+            .unknown
             .iter()
-            .map(|item| (item.chain.as_str(), item.path.as_str()))
+            .map(|u| (u.chain.as_str(), u.unknown_seats[0].1.as_str()))
             .collect();
         assert_eq!(
-            counted,
+            unknown,
             vec![
-                ("direct", "dev-build@dendro-dev -> dev-qa@dendro-dev -> dev-build@dendro-dev"),
-                (
-                    "review-only",
-                    "dev-build-sr@dendro-dev -> rev-review@dendro-dev -> dev-build-sr@dendro-dev"
-                ),
-                (
-                    "starter-review",
-                    "dev-build@starter -> dev-review@starter -> dev-build@starter"
-                ),
-                (
-                    "via-orch",
-                    "dev-build@dendro-dev -> dev-qa@dendro-dev -> orch-arch@dendro-dev -> dev-build@dendro-dev"
-                ),
-                (
-                    "via-review",
-                    "dev-build@dendro-dev -> dev-qa@dendro-dev -> rev-review@dendro-dev -> dev-build-sr@dendro-dev"
-                ),
-            ],
-            "each chain once; no gate, or a gate only after the return, is not rework"
+                ("conflict-only", ROLE_CONFLICTING),
+                ("unknown-only", ROLE_NOT_RECORDED)
+            ]
         );
-        assert!(
-            is_gate_seat("dev.qa") && is_build_seat("dev.build-jr") && !is_gate_seat("orch-arch")
+        // Denominator: 11 chains minus 2 unknown.
+        assert_eq!(m3.chains, 9);
+        let starter = m3.rework.iter().find(|r| r.chain == "starter-qa").unwrap();
+        assert_eq!(
+            starter.checks,
+            vec![(
+                starter_qa.to_string(),
+                vec!["spec:local:agents/development/qa|qa".to_string()]
+            )],
+            "a QA spec, not the name, makes dev-review@starter a check"
         );
+        assert_eq!(
+            m3.rework.iter().find(|r| r.chain == "via-review").unwrap().path,
+            "dev-build@dendro-dev -> dev-qa@dendro-dev -> rev-review@dendro-dev -> dev-build-sr@dendro-dev"
+        );
+        // A name that looks like a review seat is not evidence.
+        assert_eq!(roles.get(stranger), None);
+        assert!(is_build_seat("dev.build-jr") && !is_build_seat("orch-arch"));
     }
 
     #[test]
