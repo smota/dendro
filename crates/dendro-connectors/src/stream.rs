@@ -585,6 +585,75 @@ mod tests {
     }
 
     #[test]
+    fn source_identity_activity_and_warning_paths_drop_credential_text() {
+        let dir = std::env::temp_dir().join(format!("dendro-source-cols-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let secret_dir = dir.join("sk-ant-ZZZPATH");
+        fs::create_dir_all(&secret_dir).unwrap();
+        let jsonl = secret_dir.join("session.jsonl");
+        write(
+            &jsonl,
+            concat!(
+                "not-json\n",
+                "{\"type\":\"assistant\",\"sessionId\":\"sk-ant-ZZZSESS\",\"message\":{\"id\":\"m1\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}\n",
+                "{\"type\":\"assistant\",\"sessionId\":\"plain-session\",\"message\":{\"id\":\"m2\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}\n",
+            ),
+        );
+        let sqlite_path = dir.join("openrig.sqlite");
+        let conn = rusqlite::Connection::open(&sqlite_path).unwrap();
+        conn.execute("CREATE TABLE events (seq INTEGER, type TEXT, payload TEXT, created_at TEXT)", []).unwrap();
+        conn.execute(
+            "INSERT INTO events VALUES (1,'seat.activity_changed',?,?)",
+            rusqlite::params![
+                "{\"sessionName\":\"plain-activity-seat\",\"state\":\"sk-ant-ZZZSTATE\",\"at\":\"2026-10-09T00:00:00Z\"}",
+                "2026-10-09T00:00:00Z"
+            ],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO events VALUES (2,'node.launched',?,?)",
+            rusqlite::params![
+                "{\"sessionName\":\"sk-ant-ZZZSEAT\"}",
+                "2026-10-09T00:00:00Z"
+            ],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO events VALUES (3,'agent.session_identity',?,?)",
+            rusqlite::params![
+                "{\"sessionId\":\"plain-session\",\"runtime\":\"claude\",\"sessionName\":\"plain-seat\",\"rigId\":\"rig-one\"}",
+                "2026-10-09T00:00:00Z"
+            ],
+        ).unwrap();
+        drop(conn);
+        let db_path = dir.join("analytics.duckdb");
+        drop(AnalyticsStore::open_path(&db_path, "key").unwrap());
+        let roots = [
+            crate::SourceRoot { name: "claude".into(), path: secret_dir },
+            crate::SourceRoot { name: "openrig".into(), path: sqlite_path },
+        ];
+        crate::ingest_staged(&db_path, &roots, false, b"source-column-test-key").unwrap();
+        let db = AnalyticsStore::open_path(&db_path, "key").unwrap();
+        let activity = db.load_activity().unwrap();
+        assert!(activity.iter().any(|row| row.state == "unknown"));
+        assert!(activity.iter().all(|row| !row.state.contains("ZZZ")));
+        let seats = db.load_seat_bounds().unwrap();
+        assert!(seats.iter().all(|row| !row.seat.contains("ZZZSEAT")));
+        let identities = db.load_identity().unwrap();
+        assert!(identities.iter().any(|row| row.seat == "plain-seat"));
+        assert!(identities.iter().any(|row| row.native_session == "plain-session"));
+        let usage = db.load_usage().unwrap();
+        assert!(usage.iter().any(|row| row.native_session == "plain-session"));
+        assert!(usage.iter().all(|row| !row.native_session.contains("ZZZSESS")));
+        drop(db);
+        let bytes = fs::read(&db_path).unwrap();
+        let blob = String::from_utf8_lossy(&bytes);
+        for token in ["ZZZPATH", "ZZZSESS", "ZZZSTATE", "ZZZSEAT"] {
+            assert!(!blob.contains(token), "{token}");
+        }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn codex_uses_only_cumulative_token_count_and_reset() {
         let dir = std::env::temp_dir().join(format!("dendro-codex-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
