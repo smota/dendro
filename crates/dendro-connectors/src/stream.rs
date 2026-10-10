@@ -86,11 +86,13 @@ pub fn ingest_jsonl_with_key(
         pending.push((line_no, buf[..buf.len() - 1].to_vec()));
     }
     let prefix_sha = hex::encode(hasher.finalize());
-    let mut counters = if generation_was_reset(prior, generation) {
+    let reset_generation = generation_was_reset(prior, generation);
+    let mut counters = if reset_generation {
         CodexCounters::default()
     } else {
         store.codex_counters(source_id, generation)?
     };
+    let mut first_codex_in_this_call = true;
     let mut usages = Vec::new();
     let mut tools = Vec::new();
     let mut warnings = Vec::new();
@@ -148,13 +150,29 @@ pub fn ingest_jsonl_with_key(
                     prior_output_tokens: bucket.prior_output_tokens,
                     prior_reasoning_output_tokens: bucket.prior_reasoning_output_tokens,
                 });
-                if bucket.predecessor_reason.as_deref() == Some("prior") {
-                    if let Some(prior) = usages.iter().rev().nth(1) {
-                        let key = prior.source_key.clone();
-                        if let Some(current) = usages.last_mut() {
-                            current.predecessor_source_key = Some(key);
-                        }
+                if harness == "codex" && reset_generation && first_codex_in_this_call {
+                    if let Some(current) = usages.last_mut() {
+                        current.predecessor_reason = Some("reset".into());
+                        current.predecessor_source_key = None;
+                        current.prior_input_tokens = None;
+                        current.prior_cached_input_tokens = None;
+                        current.prior_cache_write_input_tokens = None;
+                        current.prior_output_tokens = None;
+                        current.prior_reasoning_output_tokens = None;
                     }
+                } else if bucket.predecessor_reason.as_deref() == Some("prior") {
+                    let key = usages
+                        .iter()
+                        .rev()
+                        .nth(1)
+                        .map(|prior| prior.source_key.clone())
+                        .or(store.latest_usage_key(source_id, generation).ok().flatten());
+                    if let Some(current) = usages.last_mut() {
+                        current.predecessor_source_key = key;
+                    }
+                }
+                if harness == "codex" {
+                    first_codex_in_this_call = false;
                 }
             }
             Err(reason) => warnings.push(WarningNote {
@@ -545,6 +563,55 @@ mod tests {
         // first exclusive 10-4-1=5; second delta input 20 cached 6 write 0 => 14; reset contributes 5.
         assert_eq!(db.latest_usage_totals("x").unwrap().0, 5 + 14 + 5);
         assert_eq!(db.latest_usage_totals("x").unwrap().1, 2 + 3 + 1);
+        let rows = db.load_usage().unwrap();
+        assert_eq!(rows[0].predecessor_reason.as_deref(), Some("baseline"));
+        assert!(rows[0].prior_input_tokens.is_none());
+        assert_eq!(rows[1].predecessor_reason.as_deref(), Some("prior"));
+        assert_eq!(rows[1].prior_input_tokens, Some(10));
+        assert_eq!(
+            rows[1].predecessor_source_key.as_deref(),
+            Some(rows[0].source_key.as_str())
+        );
+        assert_eq!(rows[2].predecessor_reason.as_deref(), Some("reset"));
+        assert!(rows[2].prior_input_tokens.is_none());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn codex_append_keeps_same_generation_prior_and_replacement_resets() {
+        let dir = std::env::temp_dir().join(format!("dendro-codex-append-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("rollout.jsonl");
+        write(
+            &path,
+            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":10,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":0,\"reasoning_output_tokens\":0,\"total_tokens\":10}}}}\n",
+        );
+        let db = store();
+        ingest_jsonl(&db, "x", "codex", &path).unwrap();
+        let mut file = fs::OpenOptions::new().append(true).open(&path).unwrap();
+        file.write_all(b"{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":30,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":0,\"reasoning_output_tokens\":0,\"total_tokens\":30}}}}\n").unwrap();
+        ingest_jsonl(&db, "x", "codex", &path).unwrap();
+        let rows = db.load_usage().unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[1].predecessor_reason.as_deref(), Some("prior"));
+        assert_eq!(rows[1].prior_input_tokens, Some(10));
+        assert_eq!(rows[1].generation, rows[0].generation);
+        assert_eq!(
+            rows[1].predecessor_source_key.as_deref(),
+            Some(rows[0].source_key.as_str())
+        );
+        write(
+            &path,
+            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":4,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":0,\"reasoning_output_tokens\":0,\"total_tokens\":4}}}}\n",
+        );
+        ingest_jsonl(&db, "x", "codex", &path).unwrap();
+        let rows = db.load_usage().unwrap();
+        let newest = rows.iter().max_by_key(|row| row.generation).unwrap();
+        assert!(newest.generation > rows[0].generation);
+        assert_eq!(newest.predecessor_reason.as_deref(), Some("reset"));
+        assert!(newest.prior_input_tokens.is_none());
+        assert_eq!(newest.input_uncached, 4);
         let _ = fs::remove_dir_all(&dir);
     }
 

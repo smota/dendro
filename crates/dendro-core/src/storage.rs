@@ -244,6 +244,18 @@ impl AnalyticsStore {
         }
     }
 
+    pub fn latest_usage_key(&self, source_id: &str, generation: i64) -> Result<Option<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT source_key FROM usage_facts WHERE source_id = ? AND generation = ? ORDER BY seq DESC LIMIT 1",
+        )?;
+        let mut rows = stmt.query(params![source_id, generation])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(row.get(0)?))
+        } else {
+            Ok(None)
+        }
+    }
+
     pub fn codex_counters(&self, source_id: &str, generation: i64) -> Result<CodexCounters> {
         let mut stmt = self.conn.prepare(
             r#"SELECT input_tokens, cached_input_tokens, cache_write_input_tokens,
