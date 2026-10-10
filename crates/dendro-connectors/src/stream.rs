@@ -671,6 +671,88 @@ mod tests {
     }
 
     #[test]
+    fn source_message_closure_and_mission_drop_credential_text() {
+        let dir = std::env::temp_dir().join(format!("dendro-source-msg-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let claude = dir.join("claude");
+        fs::create_dir_all(&claude).unwrap();
+        write(
+            &claude.join("s.jsonl"),
+            "{\"type\":\"assistant\",\"sessionId\":\"plain-session\",\"message\":{\"id\":\"sk-ant-ZZZMSG\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}\n",
+        );
+        let sqlite_path = dir.join("openrig.sqlite");
+        let conn = rusqlite::Connection::open(&sqlite_path).unwrap();
+        conn.execute(
+            "CREATE TABLE events (seq INTEGER, type TEXT, payload TEXT, created_at TEXT)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "CREATE TABLE queue_transitions (transition_id INTEGER, qitem_id TEXT, ts TEXT, state TEXT, actor_session TEXT, closure_reason TEXT, closure_target TEXT, transition_note TEXT)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO queue_transitions VALUES (1,'plain-item','2026-10-09T00:00:00Z','handed-off','plain-seat','handed_off_to','plain-seat',?)",
+            rusqlite::params!["[\"plain-mission\",\"sk-ant-ZZZMISSION\"]"],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO queue_transitions VALUES (2,'plain-item','2026-10-09T00:00:10Z','done','plain-seat','note sk-ant-ZZZREASON','plain-seat','[]')",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+        let db_path = dir.join("analytics.duckdb");
+        drop(AnalyticsStore::open_path(&db_path, "key").unwrap());
+        let roots = [
+            crate::SourceRoot {
+                name: "claude".into(),
+                path: claude,
+            },
+            crate::SourceRoot {
+                name: "openrig".into(),
+                path: sqlite_path,
+            },
+        ];
+        crate::ingest_staged(&db_path, &roots, false, b"source-column-test-key").unwrap();
+        let db = AnalyticsStore::open_path(&db_path, "key").unwrap();
+        let usage = db.load_usage().unwrap();
+        assert!(usage.iter().all(|row| !row
+            .message_id
+            .as_deref()
+            .unwrap_or("")
+            .contains("ZZZMSG")));
+        let queue = db.load_queue().unwrap();
+        assert!(queue
+            .iter()
+            .any(|row| row.closure_reason.as_deref() == Some("handed_off_to")));
+        assert!(queue.iter().all(|row| !row
+            .closure_reason
+            .as_deref()
+            .unwrap_or("")
+            .contains("ZZZREASON")));
+        assert!(queue.iter().any(|row| row
+            .missions
+            .iter()
+            .any(|mission| mission == "plain-mission")));
+        assert!(queue.iter().all(|row| row
+            .missions
+            .iter()
+            .all(|mission| !mission.contains("ZZZMISSION"))));
+        assert!(queue.iter().all(|row| row.chain_id.is_none()));
+        assert_eq!(db.skill_count().unwrap(), 0);
+        drop(db);
+        let bytes = fs::read(&db_path).unwrap();
+        let blob = String::from_utf8_lossy(&bytes);
+        for token in ["ZZZMSG", "ZZZREASON", "ZZZMISSION"] {
+            assert!(!blob.contains(token), "{token}");
+        }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn codex_uses_only_cumulative_token_count_and_reset() {
         let dir = std::env::temp_dir().join(format!("dendro-codex-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);

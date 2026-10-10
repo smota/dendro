@@ -715,6 +715,12 @@ impl AnalyticsStore {
             .map_err(Into::into)
     }
 
+    pub fn skill_count(&self) -> Result<i64> {
+        self.conn
+            .query_row("SELECT COUNT(*) FROM skill_facts", [], |row| row.get(0))
+            .map_err(Into::into)
+    }
+
     pub fn warning_count(&self) -> Result<i64> {
         self.conn
             .query_row("SELECT COUNT(*) FROM warnings", [], |row| row.get(0))
