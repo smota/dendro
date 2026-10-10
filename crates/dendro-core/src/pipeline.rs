@@ -215,7 +215,7 @@ pub fn report_json(
     let activity_rows: Vec<_> = seats
         .iter()
         .map(|seat| {
-            let bands = metrics::activity_bands(seat, &activity, &queue, window, None, None);
+            let bands = metrics::activity_bands(seat, &activity, &queue_all, window, None, None);
             json!({
                 "seat": seat,
                 "active_secs": bands.active_secs,
@@ -246,8 +246,8 @@ pub fn report_json(
             .find(|fact| fact.native_session == native)
             .map(|fact| fact.seat.clone())
     };
-    let intakes = metrics::handoff_intakes(&edges, &queue, &tools, &usage, seat_of);
-    let medians = metrics::pair_medians(&edges, &queue, &intakes);
+    let intakes = metrics::handoff_intakes(&edges, &queue_all, &tools, &usage, seat_of);
+    let medians = metrics::pair_medians(&edges, &queue_all, &intakes);
     let mut mission_tokens = std::collections::BTreeMap::<String, i64>::new();
     for row in &usage {
         let seat = identities
@@ -338,6 +338,25 @@ pub fn report_json(
             })).collect::<Vec<_>>(),
             "mission_tokens": mission_tokens,
             "tool_loops": loops.iter().map(|item| json!({"session": item.session, "tool": item.tool, "count": item.count})).collect::<Vec<_>>(),
+            "activity_events": activity.iter().map(|row| json!({
+                "source_key": row.source_key,
+                "seat": row.seat,
+                "state": row.state,
+                "ts": row.ts.to_rfc3339(),
+            })).collect::<Vec<_>>(),
+            "demand_events": queue_all.iter().map(|row| json!({
+                "source_key": row.source_key,
+                "qitem_id": row.qitem_id,
+                "state": row.state,
+                "dest": row.dest_seat,
+                "ts": row.ts.to_rfc3339(),
+            })).collect::<Vec<_>>(),
+            "nonreturn_handoffs": edges.iter().filter(|edge| !edge.is_return).map(|edge| json!({
+                "source_key": edge.source_key,
+                "from": edge.from_seat,
+                "to": edge.to_seat,
+                "qitem_id": edge.qitem_id,
+            })).collect::<Vec<_>>(),
             "trace_inputs": usage.iter().map(|row| json!({
                 "source_key": row.source_key,
                 "input_uncached": row.input_uncached,
@@ -412,6 +431,9 @@ pub fn trace_json(
             "intakes": payload["intakes"],
             "pair_medians": payload["pair_medians"],
             "activity": payload["activity"],
+            "activity_events": payload["activity_events"],
+            "demand_events": payload["demand_events"],
+            "nonreturn_handoffs": payload["nonreturn_handoffs"],
             "window": {"from": from, "to": to},
         },
         "from": from,

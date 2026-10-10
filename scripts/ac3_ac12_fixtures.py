@@ -76,9 +76,14 @@ def main():
     conn.execute("INSERT INTO events VALUES (6,'agent.session_identity',? ,?)", (json.dumps({"sessionId": "s-b", "runtime": "claude-code", "sessionName": "seat-b", "rigId": "r1"}), FROM))
     conn.execute("INSERT INTO events VALUES (4,'seat.activity_changed',? ,?)", (json.dumps({"sessionName": "seat-a", "state": "idle", "at": T[0]}), T[0]))
     conn.execute("INSERT INTO events VALUES (5,'seat.activity_changed',? ,?)", (json.dumps({"sessionName": "seat-old", "state": "running", "at": "2026-10-08T00:00:00Z"}), "2026-10-08T00:00:00Z"))
+    conn.execute("INSERT INTO events VALUES (7,'seat.activity_changed',? ,?)", (json.dumps({"sessionName": "seat-carry", "state": "idle", "at": T[0]}), T[0]))
+    conn.execute("INSERT INTO events VALUES (8,'seat.activity_changed',? ,?)", (json.dumps({"sessionName": "seat-cross", "state": "idle", "at": T[0]}), T[0]))
     conn.execute("""CREATE TABLE queue_transitions (transition_id INTEGER, qitem_id TEXT, ts TEXT, state TEXT, actor_session TEXT, closure_reason TEXT, closure_target TEXT, transition_note TEXT)""")
     conn.executemany("INSERT INTO queue_transitions VALUES (?,?,?,?,?,?,?,?)", [
         (1, "demand", T[10], "pending", "seat-a", None, "seat-a", "[]"),
+        (13, "carry", "2026-10-08T23:59:00Z", "pending", "seat-carry", None, "seat-carry", "[]"),
+        (14, "cross", "2026-10-08T23:59:00Z", "pending", "seat-cross", None, "seat-cross", "[]"),
+        (15, "cross", T[10], "done", "seat-cross", None, "seat-cross", "[]"),
         (2, "demand", T[20], "done", "seat-a", None, "seat-a", "[]"),
         (3, "alpha", T[0], "in-progress", "seat-a", None, "seat-a", '["alpha"]'),
         (8, "alpha", T[0], "done", "seat-a", None, "seat-a", "[]"),
@@ -115,6 +120,10 @@ def main():
     check("ac4_sum", seat.get("sum") == 60, 60, seat.get("sum"))
     old = next((row for row in act if row["seat"] == "seat-old"), {})
     check("ac4_unknown_window", old.get("unknown_secs") == 60 and old.get("active_secs") == 0, 60, old.get("unknown_secs"))
+    carry = next((row for row in act if row["seat"] == "seat-carry"), {})
+    check("qa_carry_in_demand", carry.get("idle_with_work_secs") == 60 and carry.get("idle_without_work_secs") == 0, 60, carry.get("idle_with_work_secs"))
+    cross = next((row for row in act if row["seat"] == "seat-cross"), {})
+    check("qa_cross_window_terminal", cross.get("idle_with_work_secs") == 10 and cross.get("idle_without_work_secs") == 50, 10, cross.get("idle_with_work_secs"))
     code, handoffs, _ = report(analytics, "handoffs")
     edges = json.loads(handoffs)["payload"]["handoff_edges"] if code == 0 else []
     check("ac5_one_return", sum(1 for edge in edges if edge.get("return")) == 1, 1, sum(1 for edge in edges if edge.get("return")))
@@ -159,7 +168,17 @@ def main():
     isolated_payload = json.loads(isolated)["payload"] if code == 0 else {}
     check("qa_nonexistent_rig", isolated_payload.get("activity") == [] and isolated_payload.get("tool_loops") == [], [], isolated_payload.get("activity"))
     tcode, ttext, _ = run(["trace", "--db", str(analytics), "--metric-id", "activity", "--rig", "nonexistent-rig", "--from", FROM, "--to", TO])
-    check("qa_trace_activity", tcode == 0 and json.loads(ttext).get("metric_id") == "activity", 0, tcode)
+    traced_activity = json.loads(ttext) if tcode == 0 else {}
+    check("qa_trace_activity", tcode == 0 and traced_activity.get("metric_id") == "activity" and "activity_events" in traced_activity.get("inputs", {}), 0, tcode)
+    mcode, mtext, _ = run(["trace", "--db", str(analytics), "--metric-id", "m1", "--from", FROM, "--to", TO])
+    minputs = json.loads(mtext).get("inputs", {}) if mcode == 0 else {}
+    check("qa_trace_m1_denominator", mcode == 0 and isinstance(minputs.get("nonreturn_handoffs"), list), True, isinstance(minputs.get("nonreturn_handoffs"), list))
+    rcode, rtext, _ = run(["trace", "--db", str(analytics), "--metric-id", "activity", "--from", FROM, "--to", TO])
+    replay_inputs = json.loads(rtext).get("inputs", {}) if rcode == 0 else {}
+    demand = replay_inputs.get("demand_events", [])
+    carry_open = [row for row in demand if row.get("dest") == "seat-carry" and row.get("state") == "pending"]
+    carry_closed = [row for row in demand if row.get("dest") == "seat-carry" and row.get("state") in {"done", "canceled"}]
+    check("qa_trace_replay_carry", rcode == 0 and len(carry_open) == 1 and len(carry_closed) == 0, 60, 60 if len(carry_open) == 1 and not carry_closed else 0)
     failed = [row for row in rows if not row["ok"]]
     Path("/tmp/ac3-ac12-results.json").write_text(json.dumps({"commit": subprocess.check_output(["git", "-C", "/home/sam/code/dendro/.worktrees/work/dendro-r1", "rev-parse", "HEAD"], text=True).strip(), "rows": rows}, indent=2))
     print("FAILED", len(failed), "OF", len(rows))
