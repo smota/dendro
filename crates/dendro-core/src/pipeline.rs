@@ -410,6 +410,36 @@ pub fn report_json(
             })
         })
         .collect::<Vec<_>>();
+    let trace_inputs: Vec<_> = usage
+        .iter()
+        .map(|row| {
+            let suffix = format!(":{}:{}", row.generation, row.seq);
+            let source_id = row.source_key.strip_suffix(&suffix);
+            let path = source_id.and_then(|id| {
+                sources
+                    .iter()
+                    .find(|source| source.0 == id)
+                    .map(|source| source.2.clone())
+            });
+            json!({
+                "source_key": row.source_key,
+                "generation": row.generation,
+                "line": row.seq,
+                "path": path,
+                "predecessor_reason": row.predecessor_reason,
+                "predecessor_source_key": row.predecessor_source_key,
+                "prior_input_tokens": row.prior_input_tokens,
+                "prior_cached_input_tokens": row.prior_cached_input_tokens,
+                "prior_cache_write_input_tokens": row.prior_cache_write_input_tokens,
+                "prior_output_tokens": row.prior_output_tokens,
+                "prior_reasoning_output_tokens": row.prior_reasoning_output_tokens,
+                "input_uncached": row.input_uncached,
+                "output": row.output,
+                "cache_read": row.cache_read,
+                "cache_write": row.cache_write,
+            })
+        })
+        .collect();
     Ok(metrics::report_value(
         kind,
         json!({
@@ -492,40 +522,7 @@ pub fn report_json(
                 "snapshot_cutoff": cutoff,
                 "historical": false,
             })).collect::<Vec<_>>(),
-            "trace_inputs": usage.iter().map(|row| {
-                let suffix = format!(":{}:{}", row.generation, row.seq);
-                let source_id = row.source_key.strip_suffix(&suffix);
-                let path = source_id.and_then(|id| {
-                    sources.iter().find(|source| source.0 == id).map(|source| source.2.clone())
-                });
-                let predecessor = if row.harness == "codex" && row.generation > 1 {
-                    source_id.and_then(|id| {
-                        store.codex_counters(id, row.generation - 1).ok().map(|prior| {
-                            json!({
-                                "generation": row.generation - 1,
-                                "input_tokens": prior.input_tokens,
-                                "cached_input_tokens": prior.cached_input_tokens,
-                                "cache_write_input_tokens": prior.cache_write_input_tokens,
-                                "output_tokens": prior.output_tokens,
-                                "reasoning_output_tokens": prior.reasoning_output_tokens,
-                            })
-                        })
-                    })
-                } else {
-                    None
-                };
-                json!({
-                    "source_key": row.source_key,
-                    "generation": row.generation,
-                    "line": row.seq,
-                    "path": path,
-                    "predecessor": predecessor,
-                    "input_uncached": row.input_uncached,
-                    "output": row.output,
-                    "cache_read": row.cache_read,
-                    "cache_write": row.cache_write,
-                })
-            }).collect::<Vec<_>>(),
+            "trace_inputs": trace_inputs,
         }),
     ))
 }

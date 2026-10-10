@@ -138,7 +138,14 @@ impl AnalyticsStore {
                 reasoning BIGINT NOT NULL,
                 currency_total DOUBLE,
                 generation BIGINT NOT NULL,
-                source_id VARCHAR NOT NULL
+                source_id VARCHAR NOT NULL,
+                predecessor_source_key VARCHAR,
+                predecessor_reason VARCHAR,
+                prior_input_tokens BIGINT,
+                prior_cached_input_tokens BIGINT,
+                prior_cache_write_input_tokens BIGINT,
+                prior_output_tokens BIGINT,
+                prior_reasoning_output_tokens BIGINT
             );
             CREATE TABLE tool_facts (
                 source_key VARCHAR PRIMARY KEY,
@@ -315,8 +322,12 @@ impl AnalyticsStore {
                 r#"INSERT INTO usage_facts (
                        source_key, harness, native_session, message_id, ts, seq,
                        input_uncached, output_tokens, cache_read, cache_write, reasoning,
-                       currency_total, generation, source_id
-                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                       currency_total, generation, source_id,
+                       predecessor_source_key, predecessor_reason,
+                       prior_input_tokens, prior_cached_input_tokens,
+                       prior_cache_write_input_tokens, prior_output_tokens,
+                       prior_reasoning_output_tokens
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT (source_key) DO NOTHING"#,
                 params![
                     redact(&u.source_key),
@@ -332,7 +343,14 @@ impl AnalyticsStore {
                     u.reasoning,
                     u.currency_total,
                     u.generation,
-                    redact(source_id)
+                    redact(source_id),
+                    u.predecessor_source_key.as_deref().map(redact),
+                    u.predecessor_reason.as_deref(),
+                    u.prior_input_tokens,
+                    u.prior_cached_input_tokens,
+                    u.prior_cache_write_input_tokens,
+                    u.prior_output_tokens,
+                    u.prior_reasoning_output_tokens
                 ],
             )?;
         }
@@ -487,7 +505,9 @@ impl AnalyticsStore {
         let mut stmt = self.conn.prepare(
             r#"SELECT source_key, harness, native_session, message_id, CAST(ts AS VARCHAR), seq,
                       input_uncached, output_tokens, cache_read, cache_write, reasoning,
-                      currency_total, generation
+                      currency_total, generation, predecessor_source_key, predecessor_reason,
+                      prior_input_tokens, prior_cached_input_tokens, prior_cache_write_input_tokens,
+                      prior_output_tokens, prior_reasoning_output_tokens
                FROM usage_facts ORDER BY ts NULLS LAST, seq"#,
         )?;
         let rows = stmt.query_map([], |row| {
@@ -506,6 +526,13 @@ impl AnalyticsStore {
                 reasoning: row.get(10)?,
                 currency_total: row.get(11)?,
                 generation: row.get(12)?,
+                predecessor_source_key: row.get(13)?,
+                predecessor_reason: row.get(14)?,
+                prior_input_tokens: row.get(15)?,
+                prior_cached_input_tokens: row.get(16)?,
+                prior_cache_write_input_tokens: row.get(17)?,
+                prior_output_tokens: row.get(18)?,
+                prior_reasoning_output_tokens: row.get(19)?,
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
@@ -802,6 +829,13 @@ mod tests {
                     reasoning: 0,
                     currency_total: None,
                     generation: 1,
+                    predecessor_source_key: None,
+                    predecessor_reason: None,
+                    prior_input_tokens: None,
+                    prior_cached_input_tokens: None,
+                    prior_cache_write_input_tokens: None,
+                    prior_output_tokens: None,
+                    prior_reasoning_output_tokens: None,
                 }],
                 &[ToolFact {
                     source_key: format!("tool-{canary}"),
@@ -987,6 +1021,13 @@ mod tests {
                         reasoning: 0,
                         currency_total: None,
                         generation: index as i64 + 1,
+                        predecessor_source_key: None,
+                        predecessor_reason: None,
+                        prior_input_tokens: None,
+                        prior_cached_input_tokens: None,
+                        prior_cache_write_input_tokens: None,
+                        prior_output_tokens: None,
+                        prior_reasoning_output_tokens: None,
                     }],
                     &[ToolFact {
                         source_key: format!("tool-{token}"),
@@ -1097,6 +1138,13 @@ mod tests {
                 reasoning: 0,
                 currency_total: None,
                 generation: 1,
+                predecessor_source_key: None,
+                predecessor_reason: None,
+                prior_input_tokens: None,
+                prior_cached_input_tokens: None,
+                prior_cache_write_input_tokens: None,
+                prior_output_tokens: None,
+                prior_reasoning_output_tokens: None,
             }],
             &[],
         );

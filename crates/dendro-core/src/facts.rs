@@ -18,6 +18,13 @@ pub struct UsageFact {
     pub reasoning: i64,
     pub currency_total: Option<f64>,
     pub generation: i64,
+    pub predecessor_source_key: Option<String>,
+    pub predecessor_reason: Option<String>,
+    pub prior_input_tokens: Option<i64>,
+    pub prior_cached_input_tokens: Option<i64>,
+    pub prior_cache_write_input_tokens: Option<i64>,
+    pub prior_output_tokens: Option<i64>,
+    pub prior_reasoning_output_tokens: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

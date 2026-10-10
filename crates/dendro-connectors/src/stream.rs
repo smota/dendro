@@ -21,6 +21,12 @@ struct Buckets {
     message_id: Option<String>,
     native_session: String,
     ts: Option<chrono::DateTime<chrono::Utc>>,
+    predecessor_reason: Option<String>,
+    prior_input_tokens: Option<i64>,
+    prior_cached_input_tokens: Option<i64>,
+    prior_cache_write_input_tokens: Option<i64>,
+    prior_output_tokens: Option<i64>,
+    prior_reasoning_output_tokens: Option<i64>,
 }
 
 pub fn ingest_jsonl(
@@ -134,7 +140,22 @@ pub fn ingest_jsonl_with_key(
                     reasoning: bucket.reasoning,
                     currency_total: bucket.currency_total,
                     generation,
+                    predecessor_source_key: None,
+                    predecessor_reason: bucket.predecessor_reason.clone(),
+                    prior_input_tokens: bucket.prior_input_tokens,
+                    prior_cached_input_tokens: bucket.prior_cached_input_tokens,
+                    prior_cache_write_input_tokens: bucket.prior_cache_write_input_tokens,
+                    prior_output_tokens: bucket.prior_output_tokens,
+                    prior_reasoning_output_tokens: bucket.prior_reasoning_output_tokens,
                 });
+                if bucket.predecessor_reason.as_deref() == Some("prior") {
+                    if let Some(prior) = usages.iter().rev().nth(1) {
+                        let key = prior.source_key.clone();
+                        if let Some(current) = usages.last_mut() {
+                            current.predecessor_source_key = Some(key);
+                        }
+                    }
+                }
             }
             Err(reason) => warnings.push(WarningNote {
                 path: path.display().to_string(),
@@ -268,6 +289,27 @@ fn parse_codex(value: &Value, counters: &mut CodexCounters) -> Result<Option<Buc
     } else {
         next.reasoning_output_tokens - counters.reasoning_output_tokens
     };
+    let (predecessor_reason, priors) = if reset {
+        ("reset".to_string(), None)
+    } else if counters.input_tokens == 0
+        && counters.cached_input_tokens == 0
+        && counters.cache_write_input_tokens == 0
+        && counters.output_tokens == 0
+        && counters.reasoning_output_tokens == 0
+    {
+        ("baseline".to_string(), None)
+    } else {
+        (
+            "prior".to_string(),
+            Some((
+                counters.input_tokens,
+                counters.cached_input_tokens,
+                counters.cache_write_input_tokens,
+                counters.output_tokens,
+                counters.reasoning_output_tokens,
+            )),
+        )
+    };
     *counters = next;
     let input_uncached = input_delta - cached_delta - write_delta;
     if input_uncached < 0 {
@@ -287,6 +329,12 @@ fn parse_codex(value: &Value, counters: &mut CodexCounters) -> Result<Option<Buc
             .unwrap_or("codex-session")
             .to_string(),
         ts: timestamp_of(value),
+        predecessor_reason: Some(predecessor_reason),
+        prior_input_tokens: priors.map(|p| p.0),
+        prior_cached_input_tokens: priors.map(|p| p.1),
+        prior_cache_write_input_tokens: priors.map(|p| p.2),
+        prior_output_tokens: priors.map(|p| p.3),
+        prior_reasoning_output_tokens: priors.map(|p| p.4),
     }))
 }
 
@@ -312,6 +360,12 @@ fn parse_claude(value: &Value) -> Result<Option<Buckets>, String> {
             .unwrap_or("claude-session")
             .to_string(),
         ts: timestamp_of(value),
+        predecessor_reason: None,
+        prior_input_tokens: None,
+        prior_cached_input_tokens: None,
+        prior_cache_write_input_tokens: None,
+        prior_output_tokens: None,
+        prior_reasoning_output_tokens: None,
     }))
 }
 
@@ -335,6 +389,12 @@ fn parse_pi(value: &Value) -> Result<Option<Buckets>, String> {
         message_id: value.get("id").and_then(|v| v.as_str()).map(str::to_string),
         native_session: "pi-session".into(),
         ts: timestamp_of(value),
+        predecessor_reason: None,
+        prior_input_tokens: None,
+        prior_cached_input_tokens: None,
+        prior_cache_write_input_tokens: None,
+        prior_output_tokens: None,
+        prior_reasoning_output_tokens: None,
     }))
 }
 

@@ -134,6 +134,8 @@ pub const TEXT_COLUMNS: &[&str] = &[
     "usage_facts.native_session",
     "usage_facts.message_id",
     "usage_facts.source_id",
+    "usage_facts.predecessor_source_key",
+    "usage_facts.predecessor_reason",
     "tool_facts.source_key",
     "tool_facts.harness",
     "tool_facts.native_session",

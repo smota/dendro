@@ -159,7 +159,10 @@ def main():
     replay = sum(r["input_uncached"] + r["output"] + r["cache_read"] + r["cache_write"] for r in traced.get("inputs", {}).get("rows", []))
     check("ac7_trace_replay", replay == traced.get("value"), traced.get("value"), replay)
     rows_in = traced.get("inputs", {}).get("rows", [])
-    check("qa_trace_provenance", rows_in and all("generation" in row and "line" in row and "path" in row and "predecessor" in row for row in rows_in), True, bool(rows_in))
+    check("qa_trace_provenance", rows_in and all("generation" in row and "line" in row and "path" in row and "predecessor_reason" in row for row in rows_in), True, bool(rows_in))
+    codex_rows = [row for row in rows_in if str(row.get("source_key", "")).startswith("codex:")]
+    reasons = [row.get("predecessor_reason") for row in codex_rows]
+    check("qa_codex_sample_predecessors", reasons[:3] == ["baseline", "prior", "reset"] and codex_rows[1].get("prior_input_tokens") == 10 and codex_rows[2].get("prior_input_tokens") is None, ["baseline", "prior", "reset"], reasons[:3])
     demand = traced.get("inputs", {}).get("demand_events", [])
     actor_only = [row for row in demand if row.get("qitem_id") == "actor-only"]
     check("qa_actor_is_not_destination", actor_only and all(row.get("dest") == "unknown" for row in actor_only), "unknown", actor_only[0].get("dest") if actor_only else None)
