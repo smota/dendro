@@ -208,7 +208,8 @@ impl AnalyticsStore {
                 source_key VARCHAR PRIMARY KEY,
                 qitem_id VARCHAR NOT NULL,
                 destination VARCHAR NOT NULL,
-                snapshot_cutoff VARCHAR NOT NULL
+                snapshot_cutoff VARCHAR NOT NULL,
+                reroute_marked BOOLEAN NOT NULL
             );
             "#,
         )?;
@@ -451,21 +452,24 @@ impl AnalyticsStore {
         Ok(())
     }
 
+    /// `reroute_marked`: the source shows a K5 reroute mark for this item.
     pub fn insert_destination_snapshot(
         &self,
         qitem_id: &str,
         destination: &str,
         cutoff: &str,
+        reroute_marked: bool,
     ) -> Result<()> {
         let qitem_id = redact(qitem_id);
         let destination = redact(destination);
         let cutoff = redact(cutoff);
         let source_key = format!("queue_items:{qitem_id}:{destination}:{cutoff}");
         self.conn.execute(
-            r#"INSERT INTO destination_snapshots (source_key, qitem_id, destination, snapshot_cutoff)
-               VALUES (?, ?, ?, ?)
-               ON CONFLICT (source_key) DO NOTHING"#,
-            params![source_key, qitem_id, destination, cutoff],
+            r#"INSERT INTO destination_snapshots (source_key, qitem_id, destination, snapshot_cutoff, reroute_marked)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT (source_key) DO UPDATE SET
+                 reroute_marked = destination_snapshots.reroute_marked OR excluded.reroute_marked"#,
+            params![source_key, qitem_id, destination, cutoff, reroute_marked],
         )?;
         Ok(())
     }
@@ -506,15 +510,19 @@ impl AnalyticsStore {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
-    pub fn load_destination_snapshots(&self) -> Result<Vec<(String, String, String)>> {
+    /// Every stored snapshot, oldest cutoff first, as (qitem, snapshot).
+    pub fn load_destination_snapshots(&self) -> Result<Vec<(String, DestinationSnapshot)>> {
         let mut stmt = self.conn.prepare(
-            "SELECT qitem_id, destination, snapshot_cutoff FROM destination_snapshots ORDER BY snapshot_cutoff, qitem_id",
+            "SELECT qitem_id, destination, snapshot_cutoff, reroute_marked FROM destination_snapshots ORDER BY snapshot_cutoff, qitem_id",
         )?;
         let rows = stmt.query_map([], |row| {
             Ok((
                 row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
+                DestinationSnapshot {
+                    destination: row.get(1)?,
+                    cutoff: row.get(2)?,
+                    reroute_marked: row.get(3)?,
+                },
             ))
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)

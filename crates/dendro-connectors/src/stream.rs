@@ -997,7 +997,9 @@ mod tests {
         assert!(state.2.chars().all(|ch| ch.is_ascii_hexdigit()));
         assert!(!state.2.contains("ZZZ"));
         let snapshots = db.load_destination_snapshots().unwrap();
-        assert!(snapshots.iter().all(|row| !row.1.contains("ZZZDEST")));
+        assert!(snapshots
+            .iter()
+            .all(|row| !row.1.destination.contains("ZZZDEST")));
         assert!(!snapshots.is_empty());
         let reasons = db.warning_reasons().unwrap();
         assert!(reasons.iter().any(|reason| reason == "malformed-json"));

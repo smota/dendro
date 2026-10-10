@@ -228,17 +228,35 @@ pub fn report_json(
         *seat_tokens.entry(seat).or_default() +=
             row.input_uncached + row.output + row.cache_read + row.cache_write;
     }
+    let mut snapshot_destinations =
+        std::collections::BTreeMap::<String, Vec<crate::DestinationSnapshot>>::new();
+    for (qitem, snapshot) in &destination_snapshots {
+        snapshot_destinations
+            .entry(qitem.clone())
+            .or_default()
+            .push(snapshot.clone());
+    }
+    let k2_all = metrics::k2_closures(&queue_all, &snapshot_destinations, window);
+    let k2_insufficient: Vec<_> = k2_all
+        .iter()
+        .filter(|(destination, _)| destination.is_none())
+        .map(|(_, item)| item.clone())
+        .collect();
     let mut m1_seat_names = std::collections::BTreeSet::new();
+    // A seat that closed items is listed even with no tokens or handoffs.
+    for (destination, _) in &k2_all {
+        if let Some(seat) = destination {
+            if rig_seats.as_ref().is_none_or(|seats| seats.contains(seat)) {
+                m1_seat_names.insert(seat.clone());
+            }
+        }
+    }
     for seat in seat_tokens.keys() {
         m1_seat_names.insert(seat.clone());
     }
     for edge in &edges {
         m1_seat_names.insert(edge.from_seat.clone());
     }
-    let snapshot_destinations: std::collections::BTreeMap<String, String> = destination_snapshots
-        .iter()
-        .map(|(qitem, destination, _)| (qitem.clone(), destination.clone()))
-        .collect();
     let m1_by_seat: Vec<_> = m1_seat_names
         .iter()
         .map(|seat| {
@@ -500,6 +518,9 @@ pub fn report_json(
             "m1_yield": metrics::m1_yield(tokens, nonreturn),
             "m1_by_seat": m1_by_seat,
             "k2_closed_item": metrics::K2_CLOSED_ITEM,
+            "k2_destination_rule": metrics::K2_DESTINATION_RULE,
+            "k2_closed_items_with_insufficient_history": k2_insufficient.len(),
+            "k2_insufficient_history_members": k2_insufficient,
             "m2_return_rate": metrics::m2_return_rate(returns, handoffs),
             "m2_pairs": m2_pairs,
             "m3_rework_chains": rework,
@@ -558,10 +579,11 @@ pub fn report_json(
                 "to": edge.to_seat,
                 "qitem_id": edge.qitem_id,
             })).collect::<Vec<_>>(),
-            "destination_snapshots": destination_snapshots.iter().map(|(qitem, destination, cutoff)| json!({
+            "destination_snapshots": destination_snapshots.iter().map(|(qitem, snapshot)| json!({
                 "qitem_id": qitem,
-                "destination": destination,
-                "snapshot_cutoff": cutoff,
+                "destination": snapshot.destination,
+                "snapshot_cutoff": snapshot.cutoff,
+                "reroute_marked": snapshot.reroute_marked,
                 "historical": false,
             })).collect::<Vec<_>>(),
             "trace_inputs": trace_inputs,
@@ -598,6 +620,9 @@ pub fn trace_json(
                 "yield": payload["m1_yield"],
                 "by_seat": payload["m1_by_seat"],
                 "closed_item": payload["k2_closed_item"],
+                "destination_rule": payload["k2_destination_rule"],
+                "closed_items_with_insufficient_history": payload["k2_closed_items_with_insufficient_history"],
+                "insufficient_history_members": payload["k2_insufficient_history_members"],
             }),
         ),
         "m2" => ("returns / handoffs", payload["m2_return_rate"].clone()),
@@ -634,6 +659,9 @@ pub fn trace_json(
             "m1_yield": payload["m1_yield"],
             "m1_by_seat": payload["m1_by_seat"],
             "k2_closed_item": payload["k2_closed_item"],
+            "k2_destination_rule": payload["k2_destination_rule"],
+            "k2_closed_items_with_insufficient_history": payload["k2_closed_items_with_insufficient_history"],
+            "k2_insufficient_history_members": payload["k2_insufficient_history_members"],
             "m2_pairs": payload["m2_pairs"],
             "m2_return_rate": payload["m2_return_rate"],
             "m3_rework_chains": payload["m3_rework_chains"],
@@ -881,13 +909,23 @@ mod tests {
                 "state": "done",
                 "closure_reason": "handed_off_to",
                 "destination_evidence": "events:queue.created:2",
+                "snapshot_cutoff": null,
             })
+        );
+        assert_eq!(
+            report["payload"]["k2_closed_items_with_insufficient_history"],
+            0
         );
         let c = seat("seat-c");
         assert_eq!(c["closed_items"], 0);
         assert_eq!(c["tokens_per_closed_item"], "no data");
         let trace = trace_json(&db, "m1", None, from, to).unwrap();
         assert_eq!(trace["value"]["closed_item"], k2);
+        assert_eq!(trace["value"]["closed_items_with_insufficient_history"], 0);
+        assert_eq!(
+            trace["value"]["destination_rule"],
+            report["payload"]["k2_destination_rule"]
+        );
         assert_eq!(trace["inputs"]["k2_closed_item"], k2);
         assert_eq!(trace["value"]["by_seat"], report["payload"]["m1_by_seat"]);
         let _ = fs::remove_dir_all(&dir);

@@ -97,6 +97,8 @@ fn ingest_openrig(
     }
     let mut count = 0i64;
     let mut lifecycle = Vec::new();
+    // K5 reroute marks, by raw qitem id.
+    let mut rerouted = std::collections::BTreeSet::<String>::new();
     let mut stmt = conn.prepare("SELECT seq, type, payload, created_at FROM events")?;
     let rows = stmt.query_map([], |row| {
         Ok((
@@ -166,6 +168,30 @@ fn ingest_openrig(
                 state,
                 seq,
             })?;
+        } else if kind == "qitem.fallback_routed" {
+            let text = |name: &str| parsed.get(name).and_then(|v| v.as_str());
+            let Some(qitem) = text("qitemId") else {
+                continue;
+            };
+            rerouted.insert(qitem.to_string());
+            let (Some(original), Some(reroute), Some(when)) =
+                (text("originalDestination"), text("rerouteDestination"), ts)
+            else {
+                continue;
+            };
+            store.insert_queue(&QueueFact {
+                source_key: format!("events:{kind}:{seq}"),
+                transition_id: seq,
+                qitem_id: dendro_core::seal_identifier(key, "qitem", qitem),
+                ts: when,
+                state: "pending".to_string(),
+                source_seat: dendro_core::seal_identifier(key, "seat", original),
+                dest_seat: dendro_core::seal_identifier(key, "seat", reroute),
+                closure_reason: None,
+                closure_target: None,
+                chain_id: None,
+                missions: Vec::new(),
+            })?;
         } else if kind == "queue.created" || kind == "queue.claimed" {
             let Some(qitem) = parsed.get("qitemId").and_then(|v| v.as_str()) else {
                 continue;
@@ -229,6 +255,13 @@ fn ingest_openrig(
             ))
         })?;
         for row in rows.flatten() {
+            if row
+                .7
+                .as_deref()
+                .is_some_and(|note| note.starts_with("fallback-routed:"))
+            {
+                rerouted.insert(row.1.clone());
+            }
             let ts = DateTime::parse_from_rfc3339(&row.2)
                 .ok()
                 .map(|value| value.with_timezone(&Utc));
@@ -260,6 +293,23 @@ fn ingest_openrig(
             })?;
         }
     }
+    if let Ok(mut chains) = conn.prepare("SELECT qitem_id, chain_of_record FROM queue_items") {
+        let rows = chains.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+        })?;
+        for (qitem, chain) in rows.flatten() {
+            let entries: Vec<String> = chain
+                .as_deref()
+                .and_then(|text| serde_json::from_str(text).ok())
+                .unwrap_or_default();
+            if entries
+                .iter()
+                .any(|entry| entry.starts_with("fallback-from:"))
+            {
+                rerouted.insert(qitem);
+            }
+        }
+    }
     let mut items =
         conn.prepare("SELECT qitem_id, destination_session, ts_updated FROM queue_items");
     if let Ok(ref mut stmt) = items {
@@ -277,6 +327,7 @@ fn ingest_openrig(
                 &dendro_core::seal_identifier(key, "qitem", &row.0),
                 &dendro_core::seal_identifier(key, "seat", &destination),
                 &cutoff,
+                rerouted.contains(&row.0),
             )?;
         }
     }
@@ -663,6 +714,165 @@ mod tests {
             .any(|note| note == "openrig lifecycle unchanged: a root is missing"));
         assert_eq!(stored_seats(&db), vec!["seat-a", "seat-b"]);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn k5_reroute_marks_and_unclaim_reach_the_k2_report() {
+        let dir = std::env::temp_dir().join(format!("dendro-k5-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("openrig.sqlite");
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE events (seq INTEGER, type TEXT, payload TEXT, created_at TEXT);
+             CREATE TABLE queue_transitions (transition_id INTEGER, qitem_id TEXT, ts TEXT, state TEXT,
+               actor_session TEXT, closure_reason TEXT, closure_target TEXT, transition_note TEXT);
+             CREATE TABLE queue_items (qitem_id TEXT, destination_session TEXT, ts_updated TEXT,
+               chain_of_record TEXT);",
+        )
+        .unwrap();
+        let mut seq = 0;
+        let mut event = |kind: &str, payload: serde_json::Value, at: &str| {
+            seq += 1;
+            conn.execute(
+                "INSERT INTO events VALUES (?,?,?,?)",
+                rusqlite::params![seq, kind, payload.to_string(), at],
+            )
+            .unwrap();
+        };
+        for item in ["q-note", "q-chain", "q-event", "q-clean"] {
+            event(
+                "queue.created",
+                serde_json::json!({"qitemId": item, "sourceSession": "orch", "destinationSession": "seat-a"}),
+                "2026-10-09 01:00:00",
+            );
+        }
+        event(
+            "qitem.fallback_routed",
+            serde_json::json!({"qitemId": "q-event", "originalDestination": "seat-a",
+                "rerouteDestination": "seat-b", "reason": "unreachable"}),
+            "2026-10-09 01:30:00",
+        );
+        event(
+            "queue.unclaimed",
+            serde_json::json!({"qitemId": "q-clean", "destinationSession": "seat-a"}),
+            "2026-10-09 01:40:00",
+        );
+        drop(event);
+        let mut transition = 0;
+        let mut step = |item: &str, state: &str, note: Option<&str>| {
+            transition += 1;
+            conn.execute(
+                "INSERT INTO queue_transitions VALUES (?,?,?,?,?,?,?,?)",
+                rusqlite::params![
+                    transition,
+                    item,
+                    format!("2026-10-09T02:00:{transition:02}.000Z"),
+                    state,
+                    "actor",
+                    Option::<String>::None,
+                    Option::<String>::None,
+                    note
+                ],
+            )
+            .unwrap();
+        };
+        step(
+            "q-note",
+            "pending",
+            Some("fallback-routed: seat-a → seat-b (gone)"),
+        );
+        for item in ["q-note", "q-chain", "q-event", "q-clean", "q-nocreate"] {
+            step(item, "done", None);
+        }
+        drop(step);
+        for (item, chain) in [
+            ("q-note", "[]"),
+            ("q-chain", "[\"fallback-from:seat-a\"]"),
+            ("q-event", "[]"),
+            ("q-clean", "[]"),
+            ("q-nocreate", "[]"),
+        ] {
+            let destination = if item == "q-event" {
+                "seat-b"
+            } else {
+                "seat-a"
+            };
+            conn.execute(
+                "INSERT INTO queue_items VALUES (?,?,'2026-10-09T02:00:09.000Z',?)",
+                rusqlite::params![item, destination, chain],
+            )
+            .unwrap();
+        }
+        drop(conn);
+        let db = dir.join("analytics.duckdb");
+        drop(AnalyticsStore::open_path(&db, "key").unwrap());
+        let roots = [SourceRoot {
+            name: "openrig".into(),
+            path,
+        }];
+        ingest_staged(&db, &roots, false, b"k5-test-key").unwrap();
+        let store = AnalyticsStore::open_path(&db, "key").unwrap();
+        let marked: std::collections::BTreeMap<String, bool> = store
+            .load_destination_snapshots()
+            .unwrap()
+            .into_iter()
+            .map(|(item, snapshot)| (item, snapshot.reroute_marked))
+            .collect();
+        assert_eq!(marked["q-note"], true, "transition note mark");
+        assert_eq!(marked["q-chain"], true, "chain_of_record mark");
+        assert_eq!(marked["q-event"], true, "reroute event mark");
+        assert_eq!(marked["q-clean"], false);
+        assert_eq!(marked["q-nocreate"], false);
+        drop(store);
+        let report = dendro_core::report_json(
+            &db,
+            "decisions",
+            None,
+            "2026-10-09T00:00:00Z",
+            "2026-10-10T00:00:00Z",
+        )
+        .unwrap();
+        let payload = &report["payload"];
+        let mut insufficient: Vec<&str> = payload["k2_insufficient_history_members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["qitem"].as_str().unwrap())
+            .collect();
+        insufficient.sort();
+        assert_eq!(insufficient, vec!["q-chain", "q-nocreate", "q-note"]);
+        assert_eq!(payload["k2_closed_items_with_insufficient_history"], 3);
+        let closed: Vec<(String, String)> = metrics_members(payload);
+        assert_eq!(
+            closed,
+            vec![
+                ("q-clean".to_string(), "events:queue.created:4".to_string()),
+                (
+                    "q-event".to_string(),
+                    "events:qitem.fallback_routed:5".to_string()
+                ),
+            ],
+            "unclaim neither closes nor moves q-clean; the reroute moves q-event to seat-b"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn metrics_members(payload: &serde_json::Value) -> Vec<(String, String)> {
+        let mut members: Vec<(String, String)> = payload["m1_by_seat"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|seat| seat["closed_item_members"].as_array().unwrap().clone())
+            .map(|item| {
+                (
+                    item["qitem"].as_str().unwrap().to_string(),
+                    item["destination_evidence"].as_str().unwrap().to_string(),
+                )
+            })
+            .collect();
+        members.sort();
+        members
     }
 
     #[test]

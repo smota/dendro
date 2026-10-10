@@ -83,6 +83,15 @@ pub struct SkillFact {
     pub invoked: bool,
 }
 
+/// An item's `queue_items.destination_session` at one ingest, with its cutoff
+/// (`queue_items.ts_updated`) and whether the source shows a K5 reroute mark.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DestinationSnapshot {
+    pub destination: String,
+    pub cutoff: String,
+    pub reroute_marked: bool,
+}
+
 /// One recorded life of a seat (K4). A seat may have several after relaunches.
 /// `None` means no event recorded that edge, never a time read from runtime status.
 #[derive(Debug, Clone, Serialize, Deserialize)]

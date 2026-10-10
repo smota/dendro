@@ -297,6 +297,8 @@ pub fn handoff_edges(queue: &[QueueFact]) -> Vec<HandoffEdge> {
 
 pub const K2_CLOSED_ITEM: &str = "Closed item: a queue item whose destination is this seat, counted once, with at least one successful terminal transition inside the half-open window [from, to): state done (closure reason no-follow-on, handed_off_to, escalation, or none) or state handed-off. Excluded: canceled, denied, failed, blocked, unknown or unlisted states, and done with closure reason denied or canceled. Tokens per closed item = seat tokens in the window / closed items; zero closed items = no data.";
 
+pub const K2_DESTINATION_RULE: &str = "K5: destination at the closing transition = the latest queue.created destinationSession or qitem.fallback_routed rerouteDestination at or before it. The current queue_items.destination_session (snapshot cutoff queue_items.ts_updated) is used only when the item's queue.created is in the event history and there is no reroute mark (fallback-routed: transition note, qitem.fallback_routed event, fallback-from: chain_of_record entry, or differing stored snapshots). A reroute mark without a reroute event, or a creation outside the history, is insufficient history: the item counts for no seat and is listed under closed items with insufficient history.";
+
 fn closed_item_transition(fact: &QueueFact) -> bool {
     match fact.state.as_str() {
         "handed-off" => true,
@@ -308,32 +310,70 @@ fn closed_item_transition(fact: &QueueFact) -> bool {
     }
 }
 
-/// A source record of an item's destination: `queue.created` or `queue.claimed`.
-/// Transition rows store the handoff target or actor instead, never the item's destination.
+/// K5 destination-bearing records: `queue.created` and `qitem.fallback_routed`.
+/// `queue.claimed` carries the same value and only confirms it.
 fn is_destination_record(fact: &QueueFact) -> bool {
     fact.source_key.starts_with("events:queue.created:")
-        || fact.source_key.starts_with("events:queue.claimed:")
+        || fact.source_key.starts_with("events:qitem.fallback_routed:")
 }
 
-/// The item's destination at `fact`, and the source evidence for it: the latest
-/// created or claimed event at or before the transition, else the item snapshot.
+/// Facts read from OpenRig events rather than `queue_transitions`. None is a closure.
+fn is_event_record(fact: &QueueFact) -> bool {
+    fact.source_key.starts_with("events:")
+}
+
+pub const INSUFFICIENT_HISTORY: &str = "insufficient history";
+
+/// K5: the item's destination at `fact`, with the source evidence for it.
+/// History first: the latest created or reroute event at or before `fact`.
+/// The current snapshot only with proof of no change: the item's creation is in
+/// the event history and the source shows no reroute mark. A reroute mark
+/// without a reroute event leaves no usable destination.
 pub fn destination_at(
     fact: &QueueFact,
     queue: &[QueueFact],
-    snapshots: &BTreeMap<String, String>,
-) -> Option<(String, String)> {
-    queue
+    snapshots: &BTreeMap<String, Vec<DestinationSnapshot>>,
+) -> Option<(String, String, Option<String>)> {
+    let item: Vec<&QueueFact> = queue
         .iter()
-        .filter(|row| {
-            row.qitem_id == fact.qitem_id && is_destination_record(row) && row.ts <= fact.ts
-        })
-        .max_by(|a, b| a.ts.cmp(&b.ts).then(a.transition_id.cmp(&b.transition_id)))
-        .map(|row| (row.dest_seat.clone(), row.source_key.clone()))
-        .or_else(|| {
-            snapshots
-                .get(&fact.qitem_id)
-                .map(|dest| (dest.clone(), "destination_snapshot".to_string()))
-        })
+        .filter(|row| row.qitem_id == fact.qitem_id)
+        .collect();
+    let rerouted_by_event = item
+        .iter()
+        .any(|row| row.source_key.starts_with("events:qitem.fallback_routed:"));
+    let created = item
+        .iter()
+        .any(|row| row.source_key.starts_with("events:queue.created:"));
+    let item_snapshots = snapshots
+        .get(&fact.qitem_id)
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
+    let marked = rerouted_by_event
+        || item_snapshots
+            .iter()
+            .any(|snapshot| snapshot.reroute_marked)
+        || item_snapshots
+            .windows(2)
+            .any(|pair| pair[0].destination != pair[1].destination);
+    if marked && !rerouted_by_event {
+        return None;
+    }
+    if let Some(row) = item
+        .iter()
+        .filter(|row| is_destination_record(row) && row.ts <= fact.ts)
+        .max_by_key(|row| (row.ts, row.transition_id))
+    {
+        return Some((row.dest_seat.clone(), row.source_key.clone(), None));
+    }
+    if !created || marked {
+        return None;
+    }
+    let latest = item_snapshots.last()?;
+    Some((
+        latest.destination.clone(),
+        "destination_snapshot".to_string(),
+        Some(latest.cutoff.clone()),
+    ))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -344,23 +384,21 @@ pub struct ClosedItem {
     pub state: String,
     pub closure_reason: Option<String>,
     pub destination_evidence: String,
+    pub snapshot_cutoff: Option<String>,
 }
 
-/// K2: each item counts once, for the seat that was its destination at its first
-/// qualifying transition inside the window. The actor does not matter.
-pub fn closed_items(
-    seat: &str,
+/// K2 membership for every seat: each item once, at its first qualifying
+/// transition inside the window, with its destination or `None` when unknown.
+/// For `None` (K5 insufficient history) the item counts for no seat.
+pub fn k2_closures(
     queue: &[QueueFact],
-    snapshots: &BTreeMap<String, String>,
+    snapshots: &BTreeMap<String, Vec<DestinationSnapshot>>,
     window: Window,
-) -> Vec<ClosedItem> {
-    let mut ordered: Vec<&QueueFact> = queue
-        .iter()
-        .filter(|fact| !is_destination_record(fact))
-        .collect();
+) -> Vec<(Option<String>, ClosedItem)> {
+    let mut ordered: Vec<&QueueFact> = queue.iter().filter(|fact| !is_event_record(fact)).collect();
     ordered.sort_by(|a, b| a.ts.cmp(&b.ts).then(a.transition_id.cmp(&b.transition_id)));
     let mut seen = std::collections::BTreeSet::new();
-    let mut items = Vec::new();
+    let mut closures = Vec::new();
     for fact in ordered {
         if fact.ts < window.from || fact.ts >= window.to || !closed_item_transition(fact) {
             continue;
@@ -368,21 +406,38 @@ pub fn closed_items(
         if !seen.insert(fact.qitem_id.as_str()) {
             continue;
         }
-        let Some((destination, evidence)) = destination_at(fact, queue, snapshots) else {
-            continue;
+        let (destination, evidence, cutoff) = match destination_at(fact, queue, snapshots) {
+            Some((destination, evidence, cutoff)) => (Some(destination), evidence, cutoff),
+            None => (None, INSUFFICIENT_HISTORY.to_string(), None),
         };
-        if destination == seat {
-            items.push(ClosedItem {
+        closures.push((
+            destination,
+            ClosedItem {
                 qitem: fact.qitem_id.clone(),
                 transition: fact.source_key.clone(),
                 at: fact.ts.to_rfc3339(),
                 state: fact.state.clone(),
                 closure_reason: fact.closure_reason.clone(),
                 destination_evidence: evidence,
-            });
-        }
+                snapshot_cutoff: cutoff,
+            },
+        ));
     }
-    items
+    closures
+}
+
+/// K2: the items whose destination was this seat. The actor does not matter.
+pub fn closed_items(
+    seat: &str,
+    queue: &[QueueFact],
+    snapshots: &BTreeMap<String, Vec<DestinationSnapshot>>,
+    window: Window,
+) -> Vec<ClosedItem> {
+    k2_closures(queue, snapshots, window)
+        .into_iter()
+        .filter(|(destination, _)| destination.as_deref() == Some(seat))
+        .map(|(_, item)| item)
+        .collect()
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1301,9 +1356,20 @@ mod tests {
         assert!(!edges[1].delivery_returned);
         assert!(!edges[2].delivery_returned);
         // The handoff target is not the item's destination (K2).
-        let snapshots = BTreeMap::from([("item".to_string(), "A".to_string())]);
-        assert!(closed_items("B", &queue, &snapshots, window).is_empty());
-        let closed = closed_items("A", &queue, &snapshots, window);
+        let snapshots = BTreeMap::from([(
+            "item".to_string(),
+            vec![DestinationSnapshot {
+                destination: "A".into(),
+                cutoff: "t".into(),
+                reroute_marked: false,
+            }],
+        )]);
+        // A snapshot without the creation in history proves nothing (K5).
+        assert!(closed_items("A", &queue, &snapshots, window).is_empty());
+        let mut with_history = queue.clone();
+        with_history.push(created("item", -100, "A"));
+        assert!(closed_items("B", &with_history, &snapshots, window).is_empty());
+        let closed = closed_items("A", &with_history, &snapshots, window);
         assert_eq!(closed.len(), 1);
         assert_eq!(closed[0].transition, "t1");
         assert!(K2_CLOSED_ITEM.contains("zero closed items = no data"));
@@ -1408,59 +1474,133 @@ mod tests {
         assert!(K2_CLOSED_ITEM.contains("zero closed items = no data"));
     }
 
+    fn snapshot(destination: &str, cutoff: &str, marked: bool) -> DestinationSnapshot {
+        DestinationSnapshot {
+            destination: destination.into(),
+            cutoff: cutoff.into(),
+            reroute_marked: marked,
+        }
+    }
+
+    fn rerouted(item: &str, at: i64, from: &str, to: &str) -> QueueFact {
+        let mut fact = q(
+            &format!("events:qitem.fallback_routed:{item}{at}"),
+            3_000 + at,
+            item,
+            at,
+            "pending",
+            from,
+            to,
+            None,
+        );
+        fact.transition_id = 3_000 + at;
+        fact
+    }
+
+    fn done(key: &str, id: i64, item: &str, at: i64) -> QueueFact {
+        q(key, id, item, at, "done", "actor", "unknown", None)
+    }
+
     #[test]
-    fn closed_item_destination_comes_from_history_then_snapshot() {
+    fn k5_destination_comes_from_created_and_reroute_history() {
         let window = Window {
             from: ts(0),
             to: ts(60),
         };
-        let mut claimed = q(
-            "events:queue.claimed:9",
-            2_000,
-            "a",
-            5,
-            "in-progress",
-            "seat-b",
-            "seat-b",
-            None,
-        );
-        claimed.source_key = "events:queue.claimed:9".into();
         let queue = vec![
+            // Reroute after the closure: the closure keeps the created destination.
             created("a", -10, "seat-a"),
-            claimed,
-            q("closed-a", 1, "a", 10, "done", "seat-b", "unknown", None),
-            q("closed-b", 2, "b", 10, "done", "actor", "unknown", None),
-            q("closed-c", 3, "c", 10, "done", "actor", "unknown", None),
-            // A claim after the closure does not move the closure.
-            created("d", -10, "seat-a"),
-            q("closed-d", 4, "d", 10, "done", "actor", "unknown", None),
+            done("closed-a", 1, "a", 10),
+            rerouted("a", 20, "seat-a", "seat-b"),
+            // Reroute before the closure: the closure follows the reroute.
+            created("b", -10, "seat-a"),
+            rerouted("b", 5, "seat-a", "seat-b"),
+            done("closed-b", 2, "b", 10),
+            // A claim only confirms; it never moves the destination.
+            created("c", -10, "seat-a"),
             q(
-                "events:queue.claimed:99",
-                2_001,
-                "d",
-                20,
+                "events:queue.claimed:c",
+                4_000,
+                "c",
+                5,
                 "in-progress",
                 "seat-b",
                 "seat-b",
                 None,
             ),
+            done("closed-c", 3, "c", 10),
+        ];
+        // Snapshots show the current value; history wins over them.
+        let snapshots = BTreeMap::from([
+            ("a".to_string(), vec![snapshot("seat-b", "t9", true)]),
+            ("b".to_string(), vec![snapshot("seat-b", "t9", true)]),
+            ("c".to_string(), vec![snapshot("seat-a", "t9", false)]),
+        ]);
+        let a = closed_items("seat-a", &queue, &snapshots, window);
+        assert_eq!(members(&a), vec!["closed-a", "closed-c"]);
+        assert_eq!(a[0].destination_evidence, "events:queue.created:a");
+        let b = closed_items("seat-b", &queue, &snapshots, window);
+        assert_eq!(members(&b), vec!["closed-b"]);
+        assert_eq!(b[0].destination_evidence, "events:qitem.fallback_routed:b5");
+        assert!(k2_closures(&queue, &snapshots, window)
+            .iter()
+            .all(|(destination, _)| destination.is_some()));
+    }
+
+    #[test]
+    fn k5_without_proof_of_no_change_is_insufficient_history() {
+        let window = Window {
+            from: ts(0),
+            to: ts(60),
+        };
+        let queue = vec![
+            // Creation outside the history: the snapshot alone is not proof.
+            done("no-created", 1, "n", 10),
+            // A reroute mark (note or chain) without a reroute event.
+            created("m", -10, "seat-a"),
+            done("marked", 2, "m", 10),
+            // Two stored snapshots that disagree prove a change.
+            created("d", -10, "seat-a"),
+            done("drifted", 3, "d", 10),
+            // Control: creation in history, no mark, the snapshot agrees.
+            created("k", -10, "seat-a"),
+            done("clean", 4, "k", 10),
         ];
         let snapshots = BTreeMap::from([
-            ("a".to_string(), "seat-a".to_string()),
-            ("b".to_string(), "seat-b".to_string()),
+            ("n".to_string(), vec![snapshot("seat-a", "t1", false)]),
+            ("m".to_string(), vec![snapshot("seat-a", "t1", true)]),
+            (
+                "d".to_string(),
+                vec![
+                    snapshot("seat-a", "t1", false),
+                    snapshot("seat-b", "t2", false),
+                ],
+            ),
+            ("k".to_string(), vec![snapshot("seat-a", "t1", false)]),
         ]);
-        let b = closed_items("seat-b", &queue, &snapshots, window);
-        assert_eq!(members(&b), vec!["closed-a", "closed-b"]);
-        assert_eq!(b[0].destination_evidence, "events:queue.claimed:9");
-        assert_eq!(b[1].destination_evidence, "destination_snapshot");
-        let a = closed_items("seat-a", &queue, &snapshots, window);
-        assert_eq!(members(&a), vec!["closed-d"]);
-        // No destination evidence at all: the item is not anyone's closed item.
-        assert!(["seat-a", "seat-b", "actor", "unknown"]
+        let closures = k2_closures(&queue, &snapshots, window);
+        let insufficient: Vec<&str> = closures
             .iter()
-            .all(
-                |seat| !members(&closed_items(seat, &queue, &snapshots, window))
-                    .contains(&"closed-c")
-            ));
+            .filter(|(destination, _)| destination.is_none())
+            .map(|(_, item)| item.transition.as_str())
+            .collect();
+        assert_eq!(insufficient, vec!["no-created", "marked", "drifted"]);
+        assert!(closures
+            .iter()
+            .filter(|(destination, _)| destination.is_none())
+            .all(|(_, item)| item.destination_evidence == INSUFFICIENT_HISTORY));
+        for seat in ["seat-a", "seat-b", "actor", "unknown"] {
+            let seat_members = members(&closed_items(seat, &queue, &snapshots, window))
+                .into_iter()
+                .map(str::to_string)
+                .collect::<Vec<_>>();
+            for key in &insufficient {
+                assert!(!seat_members.contains(&key.to_string()), "{seat} {key}");
+            }
+        }
+        assert_eq!(
+            members(&closed_items("seat-a", &queue, &snapshots, window)),
+            vec!["clean"]
+        );
     }
 }
