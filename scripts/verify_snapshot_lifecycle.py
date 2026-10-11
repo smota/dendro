@@ -363,7 +363,14 @@ def case_cleanup_failure(binary, root, big, small):
     check("cleanup-failure", "run fails nonzero, never ready", p.returncode != 0 and '"status":"ready"' not in out, p.returncode)
     check("cleanup-failure", "visible sanitized cleanup diagnostic",
           "cleanup failed" in err and no_canary(out, err), err[-300:])
+    # Marker-last cleanup: the failed stage must stay recoverable.
+    check("cleanup-failure", "stage still exists after the failed cleanup", bool(stage) and stage.exists())
     if stage and stage.exists():
+        marker = stage / ".dendro-stage"
+        check("cleanup-failure", "stage stays 0700", mode(stage) == 0o700, oct(mode(stage)))
+        check("cleanup-failure", "marker intact: fixed content and 0600",
+              marker.exists() and marker.read_bytes() == MARKER and mode(marker) == 0o600)
+        # Restore only the synthetic permission this case removed.
         (stage / "snapshot").chmod(0o700)
     code, out2, err2 = run(binary, c, ["run", "--db", str(db), "--root", f"openrig={small.path}", "--frozen"])
     staging = json.loads(out2).get("staging", []) if code == 0 else []

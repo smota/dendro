@@ -187,11 +187,46 @@ impl Drop for Stage {
 }
 
 fn remove_stage(path: &Path) -> Result<()> {
-    match fs::remove_dir_all(path) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(_) => Err(anyhow!("staging cleanup failed: {}", stage_name(path))),
+    remove_marker_last(path).map_err(|_| anyhow!("staging cleanup failed: {}", stage_name(path)))
+}
+
+/// Removes a stage's contents first and its marker last, then the empty
+/// directory. The marker is removed only after every other entry is gone, so a
+/// partial failure always leaves a marked stage that the next run can recover,
+/// whatever order the directory lists its entries in. Used by finish, the
+/// Drop fallback and stale recovery.
+fn remove_marker_last(path: &Path) -> std::io::Result<()> {
+    let entries = match fs::read_dir(path) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    let mut failure = None;
+    for entry in entries {
+        let entry = entry?;
+        if entry.file_name() == MARKER_NAME {
+            continue;
+        }
+        let child = entry.path();
+        // Never follows a symlink: a link is removed, not its target.
+        let removed = match fs::symlink_metadata(&child) {
+            Ok(meta) if meta.file_type().is_dir() => fs::remove_dir_all(&child),
+            Ok(_) => fs::remove_file(&child),
+            Err(error) => Err(error),
+        };
+        if let Err(error) = removed {
+            failure = Some(error);
+        }
     }
+    if let Some(error) = failure {
+        return Err(error);
+    }
+    match fs::remove_file(path.join(MARKER_NAME)) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
+    fs::remove_dir(path)
 }
 
 /// The stage's own name; Dendro-generated, so it carries no source text.
@@ -314,7 +349,7 @@ pub fn recover_stale(stage: &Stage) -> Result<Vec<String>> {
         }
         match keep_reason(&path, init, stage.uid) {
             Some(reason) => notes.push(format!("stale staging kept: {shown} ({reason})")),
-            None => match fs::remove_dir_all(&path) {
+            None => match remove_marker_last(&path) {
                 Ok(()) => notes.push(format!("stale staging removed: {shown}")),
                 Err(_) => notes.push(format!("stale staging could not be removed: {shown}")),
             },
@@ -453,6 +488,104 @@ mod tests {
             6
         );
         stage.finish().unwrap();
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    fn assert_intact_marker(stage: &Path) {
+        assert_eq!(mode(stage), 0o700, "stage stays private");
+        let marker = stage.join(MARKER_NAME);
+        assert_eq!(fs::read(&marker).unwrap(), MARKER, "marker content intact");
+        assert_eq!(mode(&marker), 0o600, "marker stays 0600");
+    }
+
+    /// A stage whose snapshot cannot be emptied: its directory has no write bit.
+    fn stage_with_stuck_snapshot(dir: &Path) -> Stage {
+        let stage = Stage::create(dir).unwrap();
+        // Entries named to sort and list on both sides of the marker.
+        for name in ["analytics.duckdb", "analytics.duckdb.wal"] {
+            create_private_file(&stage.path().join(name)).unwrap();
+        }
+        let snapshot = stage.path().join(SNAPSHOT_DIR);
+        create_private_dir(&snapshot).unwrap();
+        create_private_file(&snapshot.join("openrig.sqlite")).unwrap();
+        fs::set_permissions(&snapshot, fs::Permissions::from_mode(0o500)).unwrap();
+        stage
+    }
+
+    #[test]
+    fn a_failed_cleanup_keeps_the_marker_and_the_next_run_recovers_the_stage() {
+        let dir = scratch("partial");
+        // Explicit finish.
+        let stage = stage_with_stuck_snapshot(&dir);
+        let path = stage.path().to_path_buf();
+        let error = stage.finish().unwrap_err().to_string();
+        assert!(
+            error.starts_with("staging cleanup failed: .dendro-stage-"),
+            "{error}"
+        );
+        assert_intact_marker(&path);
+        assert!(
+            !path.join("analytics.duckdb").exists(),
+            "other contents may be removed"
+        );
+        // Drop fallback.
+        let dropped_path = {
+            let stage = stage_with_stuck_snapshot(&dir);
+            stage.path().to_path_buf()
+        };
+        assert_intact_marker(&dropped_path);
+        // Restore only the synthetic permission; the next run recovers both.
+        for stuck in [&path, &dropped_path] {
+            fs::set_permissions(stuck.join(SNAPSHOT_DIR), fs::Permissions::from_mode(0o700))
+                .unwrap();
+        }
+        let next = Stage::create(&dir).unwrap();
+        let notes = recover_stale(&next).unwrap();
+        assert!(!path.exists() && !dropped_path.exists(), "{notes:?}");
+        assert_eq!(
+            notes
+                .iter()
+                .filter(|n| n.starts_with("stale staging removed"))
+                .count(),
+            2
+        );
+        // A stage recovery cannot validate (here a 0500 snapshot directory) is
+        // kept with its marker intact. Recovery's removal uses the same
+        // marker-last helper as finish and Drop above; failing it after
+        // validation passes would need privileges this test does not use.
+        let stuck = stage_with_stuck_snapshot(&dir);
+        let stuck_path = stuck.path().to_path_buf();
+        std::mem::forget(stuck);
+        let notes = recover_stale(&next).unwrap();
+        assert!(
+            notes.iter().any(|n| n.starts_with("stale staging kept")),
+            "{notes:?}"
+        );
+        assert_intact_marker(&stuck_path);
+        fs::set_permissions(
+            stuck_path.join(SNAPSHOT_DIR),
+            fs::Permissions::from_mode(0o700),
+        )
+        .unwrap();
+        next.finish().unwrap();
+        let last = Stage::create(&dir).unwrap();
+        recover_stale(&last).unwrap();
+        assert!(!stuck_path.exists());
+        last.finish().unwrap();
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn ordinary_cleanup_still_removes_everything() {
+        let dir = scratch("ordinary");
+        let stage = Stage::create(&dir).unwrap();
+        create_private_file(&stage.path().join("analytics.duckdb")).unwrap();
+        create_private_dir(&stage.path().join(SNAPSHOT_DIR)).unwrap();
+        create_private_file(&stage.path().join(SNAPSHOT_DIR).join("openrig.sqlite")).unwrap();
+        let path = stage.path().to_path_buf();
+        stage.finish().unwrap();
+        assert!(!path.exists());
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 0);
         let _ = fs::remove_dir_all(&dir);
     }
 
