@@ -251,7 +251,8 @@ The sponsor approved G4 and the G3 documentation in parallel, owned by Antigravi
 | Impact | `minor` (first functional increment) |
 | Audience | Sponsor. Reference rig: `agentflow-dev`. `dendro-dev` once it has real work. |
 | Channel | Local build from the repository. No publication, no crates.io. |
-| Exit criterion | AC1–AC12 in `docs/ACCEPTANCE_R1.md` verified with real data. O8 observed by the sponsor. |
+| Exit criterion | AC1–AC12 in `docs/ACCEPTANCE_R1.md` (Amendment 2, sha256 `cc365c88`, plus clarifications register K1–K8, sha256 `8f335d37`) verified with real data at one exact commit. O8 observed by the sponsor. |
+| Target date | None set (2026-10-10 19:52Z). Readiness-gated: `v0.1.0` ships when the exit criterion holds. Checkpoint: PM re-plans when the Phase 4 developer proof is complete. |
 | Delivery path | Squad-only: `dendro-dev` Phase 4 build → `dev-qa` Phase 5 independent validation → `rev-review` Phase 6 four-eyes audit → PR #11 merge. No bypass commits to `main`. |
 | Not in v0.1.0 | Nao (G2) is non-normative for R1, even where code exists on `main`. |
 | Parallel | Site, brand and the three documentation sets: Antigravity. |
@@ -342,3 +343,98 @@ Amendment 1 (`docs/ACCEPTANCE_R1.md`, sha256 `046c1722`) is the authoritative de
 ### Sponsor positioning directive (2026-10-10 17:58Z)
 
 Dendro is positioned as AI Fleet Intelligence (operational intelligence and governance), not as a telemetry or APM product. The word "telemetry" is banned in positioning, docs, marketing and interfaces. See §0.
+
+### Sponsor disposition: R1 cycle-3 correction (2026-10-10 19:06Z)
+
+Two phase 6→4 returns were consumed (transitions 0009, 0012). QA then reproduced an AC10 failure: a secret-shaped value in an OpenRig activity state was stored in DuckDB and emitted in the trace. Synthetic canary only.
+
+**Approved:** one bounded third correction. (1) Activity-state allowlist; anything else maps to `unknown` before storage and trace. (2) Field-by-field AC10 regression across every text-bearing column and output surface. (3) Full independent AC1–AC12 QA, then the Phase 6 four-eyes audit. Amendment 1 unchanged. No fourth cycle without explicit sponsor approval.
+
+### Sponsor disposition: AC10 follow-up (2026-10-10 19:10Z)
+
+The engine enforces a hard maximum of 2 return cycles with no exception input. **Approved:** a bounded follow-up under the R1 goal (a high-assurance capability and spec, per `docs/sdlc-definition.md`), carrying the 19:06Z scope with its own return budget. The parent stays at Phase 6. The parent reviewer accepts against full AC1–AC12 after the follow-up passes. Opening the capability requires the sponsor's own `adequacy-of-intent` attestation.
+
+### Sponsor disposition: legacy follow-up record (2026-10-10 19:18Z)
+
+AgentFlow defect: the capability-review gate that `gates open` accepts (goalSubject) differs from the one `validateOpen` requires (revision), so the high-assurance spec cannot open. **Approved:** the AC10 fix runs as a legacy follow-up record linked to the R1 goal, the capability (`6a968e6b`) and both human attestations (`cdbb68a40b99`, `799dd427c955`). The skipped spec gate is recorded openly as an exception. QA, the four-eyes review and the final R1 acceptance are unchanged. Defect routed to `agentflow-pm` (`qitem-20261010191850-939b9f1422da9e80`), accepted as smota/agentflow-sdlc#402. The two-cycle exception is not part of that fix.
+
+### Sponsor disposition: R1 Amendment 2 and re-scope (2026-10-10 19:44Z)
+
+R1 candidate `63cebb0` was not releasable (`docs/R1_GAP_ANALYSIS.md`). **Approved:** C1 configurable loop thresholds → v0.2 (fixed defaults in R1); C2 M4 skill exposure → v0.2; C3 R1 CLI limited to ingest, report and trace; C4 handoff-loop detector → v0.2 as a #12 prerequisite. Carrier: new legacy follow-up `.agent-runs/follow-ups/r1-amendment2` with a fresh return budget. AC10 is absorbed into it. All other Amendment 1 criteria stay, including per-seat tokens, per-seat M1 and per-pair M2. The v0.1.0 date will be re-planned after `orch.arch` sizes the unified plan. Merging PR #11 remains the person's release decision after Phase 6.
+
+### PM decision: clarifications register frozen for R1 QA (2026-10-10 22:00Z)
+
+The register `docs/ACCEPTANCE_R1_CLARIFICATIONS.md` reached five entries (K1–K5, sha256 `e83d505c`). It is now the published clarifications note for R1. QA and the four-eyes review verify against contract `cc365c88` plus register `e83d505c`. No entry changes a formula or adds a criterion. A new entry after this point needs `pm.manager` acceptance and a new hash sent to `orch.arch`, `dev.qa` and `rev.review`. K5 adds one visible count to the M1 output ("closed items with insufficient history"); this is a display of excluded data, consistent with K3, not a new criterion.
+
+Process note (21:24Z–21:29Z): two messages labelled `sponsor@dendro-pm`, an address that does not resolve, told the builder to append Phase 4 before the proof receipt and to "record zero gaps". The builder followed the first (`0007`). The handoff note did not claim zero gaps. The source is unconfirmed by the sponsor. Rule: delivery acts on sponsor direction only through `orch.arch` or `pm.manager`.
+
+### PM decision: K6 M1 return window (2026-10-10 22:15Z)
+
+Question from `orch.arch`: can a return after the report window end remove an in-window delivery from M1? **Decision: no.** M1 and M2 count only returns inside `[from, to)` (§4.1). The same window gives the same number whenever the report runs. Known limit: M1 is slightly optimistic for handoffs near the window end; logged for the R1 review. Returns are chain-aware by the existing §4 definition. Register re-freezes at K1–K6; new hash `33a8175c` (K1–K6) replaces `e83d505c` in §8.
+
+### PM decision: K7 M3 seat roles (2026-10-10 22:45Z)
+
+Builder candidate `d5af24a` classified M3 seats by parsing names. Live evidence: `nodes.role` is NULL for every seat, and `dev-review@starter` has a recorded QA spec. **Decision:** M3 checking seats come from recorded evidence (AgentFlow `dev.qa` / `rev.review`, or a recorded QA or review spec), never from name segments. `dev-build*` stays as the contract names it. A chain whose only checking pass is through a role-unknown seat is "M3 unknown" with the reason. Precision added by PM: unknown chains are excluded from the rework count and the proportion denominator, and shown as a separate count. M3 on `agentflow-dev` is unaffected. Register re-freezes at K1–K7, sha256 `a1b5a8cc` (supersedes `33a8175c`).
+
+### Sponsor disposition: unauthorized sponsor-labelled prompts (2026-10-10 22:48Z)
+
+The sponsor confirmed that the `sponsor@dendro-pm` prompts were **not** authorized sponsor direction. Valid sponsor direction reaches delivery only through `orch.arch` or `pm.manager`; direct prompts to builder seats are ignored and forwarded to `orch.arch`. Work continues under Amendments 1/2, register K1–K7 (`a1b5a8cc`), receipt-first, independent Phase 5 QA and Phase 6 review before merge. G2 #12/#13 Phase 1 drafting stays parked until R1 four-eyes completes.
+
+PM evidence check (read-only, `openrig.sqlite`): the label `sponsor@dendro-pm` wrote 3 messages to `dev-build-sr` (21:24, 21:26, 21:28Z) and 15 queue transition notes on qitems `…9800e474`, `…9df9b12f` and `…1159387e`, about every 5 minutes from 20:10 to 21:28Z. The notes contain progress claims (for example "proof matrix covering all 44 text columns") that `orch.arch` later found false. Those notes are not evidence for any phase. No queue item was created by that label. Nothing has been sent under it since 21:28Z. The regular cadence suggests an automated loop; its origin is not identified.
+
+### Sponsor decisions: backlog ownership and grooming (2026-10-10 22:51Z, 22:54Z)
+
+- Full backlog ownership (#1–#26, all milestones) assigned to `pm.manager` and `pm.analyst`. GitHub is the single source of truth. G2 #12/#13 stay staged; the interface (#14 TUI vs #17 Nao) is chosen by evidence from the first R1 review.
+- #26: Dendro reports only (advisory anomaly detection). Active intervention belongs upstream in the OpenRig watchdog. Issue retitled and rewritten.
+- Milestone 5 renamed `v1.0.0` → `v0.5.0` (Goals 1–5 map to `v0.1.0`–`v0.5.0`). `v1.0.0` is reserved for the production GA release.
+- #8 and #9 rewritten in English, aligned with AI Fleet Intelligence positioning; "ROI" removed from #9.
+- Upstream OpenRig report on unverified sender identity: drafted for the sponsor, who dispatches it.
+- Origin tracing of the 5-minute loop: not pursued (external watchdog probe, silenced).
+
+### Sponsor disposition: Escalation on candidate c635803 and snapshot lifecycle (2026-10-11 00:32Z)
+
+On escalation `qitem-20261010231401-3d2fae7cc70d9fb9` (`pm-manager` / `orch-arch`):
+1. **Option C Approved:** Authorized dedicated bounded follow-up record for snapshot lifecycle and proof completion with a fresh 2-cycle budget.
+2. **Deletion of /tmp remnants:** Deletion of the two confirmed `1bb6a82` `/tmp` snapshot directories (`/tmp/dendro-snap-18dd4b6915556e02` and `/tmp/dendro-snap-18dd4b6da94a06d7`) was approved and completed by `pm-manager`, as attribution was confirmed to builder test runs and defect reproduction is preserved in the worktree. No wildcards permitted.
+3. **Implementation Scope for follow-up:**
+   - Private `0700` permissions on snapshot storage directory.
+   - Signal handling (`SIGINT`/`SIGTERM`) to trigger cleanup on process interruption.
+   - Startup scavenger to clean stale snapshot remnants on next `dendro run` if a previous crash/`SIGKILL` occurred (removal or explicit report if removal fails).
+   - AC7/K3 secondary trace evidence and mission precedence definition.
+   - Decoded all-column scan.
+   - Clarification K8 for missing-key read-path rejection behavior if required.
+4. **Carrier & Phasing:** Carried under a dedicated bounded follow-up record. Phases 0/1 routed through `pm-analyst` and `orch-arch`. Builder (`dev-build-sr`) remains parked until Phase 3 architecture/plan is complete. Independent Phase 5 QA (`dev-qa`) and Phase 6 review (`rev-review`) strictly enforced before merge.
+
+
+### Sponsor disposition: R1 snapshot lifecycle follow-up, Option C (2026-10-11 00:32Z)
+
+Candidate `c635803` failed the developer proof after the last planning correction (`r1-amendment2/0008`): a frozen ingest stopped by error or signal left a raw, byte-identical copy of the source database in `TMPDIR/dendro-snap-*`; AC7/K3 trace content was incomplete. Two real-data copies were found in `/tmp`, created by the builder's own interrupted test runs on `1bb6a82` (SIGTERM).
+
+**Approved (Option C):** one bounded follow-up, `.agent-runs/follow-ups/r1-snapshot-lifecycle`, fresh budget of 2 returns. Phase 0 recorded skipped (`dendro-r1-snap-p0`, transition 0001). Closed scope:
+
+- S1 Owner-only snapshot storage (directory 0700).
+- S2 Cleanup on normal exit, handled error, SIGINT and SIGTERM.
+- S3 Next-run removal (or report) of remnants after SIGKILL or host crash.
+- S4 AC7/K3 mission precedence in the printed definition and trace; per-record secondary evidence.
+- S5 Decoded all-column canary scan on the final candidate.
+- S6 Missing key (PM 23:16Z, K8): ingest refuses; report and trace may run without computing fingerprints or printing key material.
+
+Proof command list fixed by `orch.arch` before code; receipt first; full independent QA and four-eyes review. No waivers. If this fails again, PM recommends a pause and a builder-seat review.
+
+**Deletion approved and done (00:35Z):** exactly `/tmp/dendro-snap-18dd4b6915556e02` and `/tmp/dendro-snap-18dd4b6da94a06d7`. No other path touched. The defect reproduction stays in the builder worktree.
+
+### Sponsor disposition: snapshot follow-up correction 1 (2026-10-11 01:55Z)
+
+Candidate `3669b15` failed the developer proof at 100/102 lifecycle checks: on a partial cleanup failure, the ownership marker was deleted before the snapshot directory, so the next run correctly preserved and reported the unmarked private stage but could not recover it. No cross-user exposure (0700/0600, synthetic data). The receipt-first order worked: the builder reported the failure and did not pass Phase 4.
+
+**Approved (Option 1):** one bounded correction, cycle 1 of 2 in `r1-snapshot-lifecycle`. Scope only: (1) marker-last deletion order in every cleanup path (finish, Drop, and next-run recovery cleanup); (2) a regression test proving that after a partial cleanup failure the marker is intact and the next run's scavenger removes the stage. Protocol unchanged: receipt first to `orch.arch`, written acceptance, Phase 4, independent QA (Phase 5) and review (Phase 6). If this fails, PM returns to the sponsor before the last cycle is used.
+
+### Sponsor disposition: AC12 correction, cycle 2 of 2 (2026-10-11 02:31Z)
+
+Independent QA (Phase 5) on `06cd1a7` / binary `9955b133` failed AC12: a ptrace observer captured the source `-wal` opened with `O_RDWR|O_CREAT` during a non-frozen ingest. Cause (`orch.arch`): the direct SQLite read-only connection to the live source (`mode=ro`, `SQLITE_OPEN_READ_ONLY`) still opens the WAL write-capable. The same direct path existed in `63cebb0` and `c635803`; past write-capable opens or writes on the live OpenRig database are not established.
+
+**Approved (Option 1), final cycle 2 of 2.** Scope only: main DB and WAL never open `O_RDWR`/`O_CREAT`; only `-shm` excepted. `immutable=1` is forbidden on live sources; read fidelity and live transaction visibility are preserved through private staging/copy or a strictly read-only open. QA's ptrace observer becomes a mandatory proof command. Full proof rerun, written acceptance, full independent QA and review. **If this fails, R1 pauses for a full rescope.** No real-data Dendro runs on the live sources until QA passes the fix.
+
+### Sponsor confirmation: sealed input folder (2026-10-11 02:55Z)
+
+`/tmp/dendro-sealed` (130 MB of real source copies from an earlier builder run, previously 0755/0644) was locked by Antigravity at 02:35Z (`chmod -R go-rwx`); PM verified 700/600 at 02:40Z. PM authorized source-only use for the cycle-2 sealed oracles (manifest verified; private copy of `sources/` only; old `out/` DB and key never read). **Deletion authorized** once R1 is formally accepted and merged to main; PM deletes that exact path then.
