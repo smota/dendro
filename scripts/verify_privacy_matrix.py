@@ -11,7 +11,8 @@ canary, plus content canaries in fields Dendro must never store. Checks:
 - the raw snapshot holds canaries only while the run is active and is gone after;
 - all surfaces: every report kind and trace id (unscoped and linked rig), CLI
   error paths, TMPDIR, output directory bytes (db, WAL, key, lock);
-- ordinary identifiers stay visible and distinct secret identifiers stay apart.
+- ordinary identifiers stay visible and distinct secret identifiers stay apart;
+- a missing root is listed and its warning row is part of every scan.
 
 Usage:
   python3 scripts/verify_privacy_matrix.py --binary target/debug/dendro \\
@@ -187,6 +188,8 @@ def main():
         cmd = [binary, "run", "--db", str(db), "--frozen"]
         for r in roots:
             cmd += ["--root", r]
+        # AC1: a missing root is listed and warned; its warning row joins the scans below.
+        cmd += ["--root", f"claude={src / 'absent-claude-root'}"]
         p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
         wal, raw_seen = b"", False
         while p.poll() is None:
@@ -203,6 +206,9 @@ def main():
             time.sleep(0.01)
         stdout, stderr = p.communicate()
         check(f"{marker!r}: run exit 0", p.returncode == 0, stderr[-200:])
+        check(f"{marker!r}: missing root listed and other roots ingested",
+              p.returncode == 0 and "claude missing" in json.loads(stdout)["sources"]
+              and any(n.startswith("codex files=") for n in json.loads(stdout)["sources"]), stdout[-300:])
         check(f"{marker!r}: staged WAL captured non-empty before checkpoint", len(wal) > 0, len(wal))
         check(f"{marker!r}: pre-checkpoint WAL free of canaries", tag.encode() not in wal and CONTENT.encode() not in wal)
         check(f"{marker!r}: raw snapshot held the canary while active (non-vacuous)", raw_seen)
