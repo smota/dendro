@@ -37,7 +37,7 @@ results = []
 
 # Lineage class of every text column (see the ledger column map).
 LINEAGE = {
-    "source": ["source_files.display_path", "usage_facts.native_session", "usage_facts.message_id",
+    "source": ["source_files.display_path", "source_files.native_session", "usage_facts.native_session", "usage_facts.message_id",
                "tool_facts.native_session", "tool_facts.tool_name", "identity_facts.harness",
                "identity_facts.native_session", "identity_facts.rig", "identity_facts.seat",
                "activity_facts.seat", "queue_facts.qitem_id", "queue_facts.source_seat",
@@ -84,13 +84,13 @@ def sources(src, c, rows):
                                           line("plain-session", "m-plain-2")]) + "\n")
     d = src / "codex" / c("xdir")
     d.mkdir(parents=True)
-    (d / "s.jsonl").write_text(json.dumps({"type": "event_msg", "timestamp": "2026-10-09T01:00:00Z", "payload": {
+    (d / "s.jsonl").write_text(json.dumps({"type": "session_meta", "timestamp": "2026-10-09T00:00:00Z", "payload": {"id": c("xhdr")}}) + "\n" + json.dumps({"type": "event_msg", "timestamp": "2026-10-09T01:00:00Z", "payload": {
         "type": "token_count", "session_id": c("xsess"), "info": {"total_token_usage": {
             "input_tokens": 9, "cached_input_tokens": 1, "cache_write_input_tokens": 0, "output_tokens": 2,
             "reasoning_output_tokens": 0}}}}) + "\n")
     d = src / "pi" / c("pdir")
     d.mkdir(parents=True)
-    (d / "s.jsonl").write_text(json.dumps({"type": "message", "id": c("pmsg"), "timestamp": "2026-10-09T01:00:00Z",
+    (d / "s.jsonl").write_text(json.dumps({"type": "session", "version": 3, "id": c("phdr"), "timestamp": "2026-10-09T00:00:00Z"}) + "\n" + json.dumps({"type": "message", "id": c("pmsg"), "timestamp": "2026-10-09T01:00:00Z",
                                            "message": {"role": "assistant", "content": CONTENT,
                                                        "usage": {"input": 3, "output": 1, "cacheRead": 0, "cacheWrite": 0}}}) + "\n")
     db = src / "openrig.sqlite"
