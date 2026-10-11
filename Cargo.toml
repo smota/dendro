@@ -15,7 +15,7 @@ authors = ["smota"]
 license = "MIT"
 repository = "https://github.com/smota/dendro"
 readme = "README.md"
-keywords = ["agents", "observability", "telemetry", "duckdb", "openrig"]
+keywords = ["agents", "ai-fleet-intelligence", "operational-intelligence", "fleet-governance", "duckdb", "openrig"]
 
 [workspace.dependencies]
 dendro-core = { path = "crates/dendro-core" }
@@ -25,7 +25,13 @@ dendro-watcher = { path = "crates/dendro-watcher" }
 
 tokio = { version = "1.38", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde_json = { version = "1.0", features = ["raw_value"] }
+hmac = "0.12"
+sha2 = "0.10"
+rand = "0.8"
+fd-lock = "4"
+libc = "0.2"
+hex = "0.4"
 duckdb = { version = "1.1", features = ["bundled"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 anyhow = "1.0"

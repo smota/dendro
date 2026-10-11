@@ -1,7 +1,7 @@
-use std::path::{Path, PathBuf};
 use anyhow::Result;
 use async_trait::async_trait;
 use dendro_core::{CanonicalEvent, HarnessConnector, Watermark};
+use std::path::{Path, PathBuf};
 
 pub struct GrokConnector;
 

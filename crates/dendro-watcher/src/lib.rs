@@ -1,7 +1,7 @@
-use std::path::PathBuf;
-use std::time::Duration;
 use anyhow::Result;
 use notify_debouncer_mini::{new_debouncer, DebouncedEvent};
+use std::path::PathBuf;
+use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::info;
 

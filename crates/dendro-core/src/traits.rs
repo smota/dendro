@@ -1,7 +1,7 @@
-use std::path::{Path, PathBuf};
+use crate::models::{CanonicalEvent, CanonicalSession, OrchestrationContext, Watermark};
 use anyhow::Result;
 use async_trait::async_trait;
-use crate::models::{CanonicalEvent, CanonicalSession, OrchestrationContext, Watermark};
+use std::path::{Path, PathBuf};
 
 #[async_trait]
 pub trait HarnessConnector: Send + Sync {
