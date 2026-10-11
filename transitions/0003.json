@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "phase": 2,
+  "role": "architect",
+  "seat": "orch.arch",
+  "status": "skipped",
+  "reason": "return to phase 1: mission attribution is undefined for overlapping claimed items; AC10/AC11 source hash and mtime equality is invalid on live sources with concurrent writers",
+  "body": "Architecture agrees with analyst dispositions: attribute a usage event by in-progress queue ownership at its event timestamp. No active item means no mission; conflicting active missions mean ambiguous, never split or guessed. Multiple items sharing a single mission retain that mission. Per mission + no mission + ambiguous must conserve session and seat token totals for the same period. Define half-open claim-to-terminal intervals and missing timestamp evidence explicitly. AC10/AC11 hash and mtime equality runs on frozen copies without other writers. Live-source read-only proof must show Dendro performs no write-capable source opens, writes, truncations, renames, deletions or SQLite source writes, observed by an OS trace or equivalent independent instrument including subprocesses; writes to its own analytics database are allowed. Source growth by other agents is not a Dendro failure. Retain no-network proof. References: docs/ACCEPTANCE_R1.md; .agent-runs/scratch/dendro-r1/architecture-proposal.md. One combined defect return; no code authorized.",
+  "idempotencyKey": "dendro-r1-p2-return-1",
+  "uri": "transitions/0003.json"
+}

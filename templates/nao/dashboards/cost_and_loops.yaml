@@ -1,0 +1,35 @@
+# Nao Dashboard: Recursos, Custos & Retry Loops (Pergunta 3)
+dashboard:
+  id: cost_and_loops
+  title: "Resource & Cost Mastery with Loop Diagnostics"
+  description: "Queima de tokens por missão/assento e detecção antecipada de loops de ferramentas"
+
+queries:
+  - id: mission_token_burn
+    title: "Consumo de Tokens e Custo por Missão"
+    nl_prompt: "Qual missão consumiu mais tokens e quanto custou em dólares?"
+    sql: >
+      SELECT 
+        mission_id,
+        rig_id,
+        COUNT(DISTINCT seat_id) AS seats_involved,
+        SUM(input_tokens) AS total_input,
+        SUM(output_tokens) AS total_output,
+        SUM(cache_read_tokens) AS total_cache_read,
+        ROUND(SUM(cost_usd), 4) AS cost_usd
+      FROM fct_token_burn
+      GROUP BY mission_id, rig_id
+      ORDER BY cost_usd DESC;
+
+  - id: retry_loops_detected
+    title: "Comandos Repetidos em Loop de Erro"
+    nl_prompt: "Quais assentos entraram em loop repetindo comandos bash que falharam?"
+    sql: >
+      SELECT 
+        seat_id,
+        tool_name,
+        repeat_count,
+        has_error
+      FROM fct_tool_loops
+      WHERE has_error = true AND repeat_count >= 2
+      ORDER BY repeat_count DESC;

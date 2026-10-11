@@ -1,0 +1,35 @@
+# Nao Dashboard: Dinâmica e Rendimento de Assentos (Pergunta 1)
+dashboard:
+  id: seat_dynamics
+  title: "Seat Dynamics & Capacity Yield"
+  description: "Monitoramento de tempo ativo vs. ociosidade real e gargalos de assento"
+
+queries:
+  - id: idle_ranking
+    title: "Ranking de Ociosidade por Assento"
+    nl_prompt: "Quais assentos tiveram o maior tempo ocioso nos últimos 7 dias?"
+    sql: >
+      SELECT 
+        s.seat_id,
+        s.role,
+        s.runtime,
+        ROUND(SUM(a.active_seconds) / 3600.0, 2) AS active_hours,
+        ROUND(SUM(a.idle_with_work_seconds) / 3600.0, 2) AS idle_with_work_hours,
+        ROUND(SUM(a.idle_no_work_seconds) / 3600.0, 2) AS idle_no_work_hours,
+        ROUND(SUM(a.idle_with_work_seconds) * 100.0 / NULLIF(SUM(a.active_seconds + a.idle_with_work_seconds + a.idle_no_work_seconds), 0), 1) AS waste_pct
+      FROM dim_seats s
+      LEFT JOIN fct_seat_activity a ON s.seat_id = a.seat_id
+      GROUP BY s.seat_id, s.role, s.runtime
+      ORDER BY waste_pct DESC NULLS LAST;
+
+  - id: human_waiting
+    title: "Tempo Travado em Confirmação Humana"
+    nl_prompt: "Algum assento ficou parado esperando aprovação humana?"
+    sql: >
+      SELECT 
+        seat_id,
+        ROUND(SUM(waiting_human_seconds) / 60.0, 1) AS waiting_minutes
+      FROM fct_seat_activity
+      GROUP BY seat_id
+      HAVING SUM(waiting_human_seconds) > 0
+      ORDER BY waiting_minutes DESC;

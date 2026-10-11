@@ -1,0 +1,33 @@
+# Nao Dashboard: Eficiência de Handoff & Retrabalho (Pergunta 2)
+dashboard:
+  id: handoff_flow
+  title: "Handoff Flow & Rework Diagnostics"
+  description: "Mapeamento do fluxo de transições de tarefas e detecção de voltas de retrabalho"
+
+queries:
+  - id: rework_matrix
+    title: "Matriz de Retrabalho entre Assentos"
+    nl_prompt: "Quantas vezes tarefas voltaram de QA ou Review para o Builder?"
+    sql: >
+      SELECT 
+        from_seat,
+        to_seat,
+        COUNT(*) AS total_transfers,
+        COUNT(CASE WHEN is_rework THEN 1 END) AS rework_returns,
+        ROUND(COUNT(CASE WHEN is_rework THEN 1 END) * 100.0 / COUNT(*), 1) AS rework_pct
+      FROM fct_handoffs
+      GROUP BY from_seat, to_seat
+      ORDER BY rework_returns DESC;
+
+  - id: context_bloat
+    title: "Inchaço de Contexto por Assento Receptor"
+    nl_prompt: "Qual assento consome mais tokens para absorver tarefas na passagem de bastão?"
+    sql: >
+      SELECT 
+        to_seat AS receiver_seat,
+        COUNT(*) AS handoffs_received,
+        ROUND(AVG(intake_token_cost), 0) AS avg_intake_tokens,
+        ROUND(AVG(queue_wait_seconds), 1) AS avg_wait_seconds
+      FROM fct_handoffs
+      GROUP BY to_seat
+      ORDER BY avg_intake_tokens DESC;

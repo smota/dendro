@@ -1,0 +1,19 @@
+# Nao Dashboard: Governança Executiva (Indicadores M1 a M4)
+dashboard:
+  id: executive_governance
+  title: "Executive Squad Governance"
+  description: "Indicadores estratégicos consolidados para tomada de decisão sobre topologia e orçamento"
+
+queries:
+  - id: rig_executive_summary
+    title: "Resumo Estratégico por Rig"
+    nl_prompt: "Mostre os quatro indicadores de decisão para a minha frota de agentes"
+    sql: >
+      SELECT 
+        rig_id,
+        ROUND(seat_yield, 2) AS m1_seat_yield,
+        ROUND(handoff_efficiency * 100.0, 1) || '%' AS m2_handoff_efficiency,
+        ROUND(rework_rate * 100.0, 1) || '%' AS m3_rework_rate,
+        ROUND(skill_exposure * 100.0, 1) || '%' AS m4_skill_exposure
+      FROM fct_decision_metrics
+      ORDER BY rig_id;

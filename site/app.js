@@ -1,4 +1,4 @@
-// Dendro Interactive Experience Script
+// Dendro Interactive Calculator Experience Script
 document.addEventListener('DOMContentLoaded', () => {
   const seatsInput = document.getElementById('seatsInput');
   const missionsInput = document.getElementById('missionsInput');
@@ -17,23 +17,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const missions = parseInt(missionsInput.value, 10);
     const costPerMillion = parseInt(tokenCostInput.value, 10);
 
-    // Update labels
-    seatsVal.textContent = `${seats} assento${seats > 1 ? 's' : ''}`;
-    missionsVal.textContent = `${missions} missões`;
+    // Update labels in English
+    seatsVal.textContent = `${seats} seat${seats > 1 ? 's' : ''}`;
+    missionsVal.textContent = `${missions} missions`;
     tokenCostVal.textContent = `$${costPerMillion} / 1M`;
 
-    // Calculation formulas based on multi-agent empirical findings:
-    // Retrabalho: ~1.4h por assento por 10 missões quando não monitorado
+    // Empirical multi-agent formulas:
+    // Wasted rework: ~0.22 hours per seat per completed mission in unmonitored fleets
     const wastedHours = Math.round((seats * missions * 0.22));
     
-    // Tokens desperdiçados: overhead de handoff não otimizado ~350k tokens por missão
+    // Unoptimized handover token overhead: ~380k tokens per mission per seat
     const wastedTokensMillions = (missions * seats * 0.38);
     const dollarsSaved = Math.round(wastedTokensMillions * costPerMillion * 4.2);
 
-    // Speedup rate: de 25% a 55% dependendo do número de assentos
+    // Fleet velocity boost
     const speedup = Math.min(55, Math.round(20 + (seats * 2.8)));
 
-    reworkHours.textContent = `${wastedHours} horas`;
+    reworkHours.textContent = `${wastedHours} hours`;
     savingsAmount.textContent = `$${dollarsSaved.toLocaleString()} USD`;
     speedupRate.textContent = `+${speedup}%`;
   }
