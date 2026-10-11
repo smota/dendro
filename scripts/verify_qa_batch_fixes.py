@@ -236,7 +236,7 @@ def case_f6(binary, base, tag):
 S_MS = 100_000  # "S" = T0 + 100 s
 
 
-def f2_sources(b, claim_event_ms, claim_row, transitions, tools, usage, linked=True):
+def f2_sources(b, claim_event_ms, claim_row, transitions, tools, usage, linked=True, extra_claims=()):
     events = []
     if linked:
         events.append(("agent.session_identity", {"sessionId": "qa-session", "runtime": "claude-code", "sessionName": "qa-seat", "rigId": "rig-id"}, "2026-10-09 00:00:00"))
@@ -248,6 +248,8 @@ def f2_sources(b, claim_event_ms, claim_row, transitions, tools, usage, linked=T
     rows = [(1, "root", at(1_000), "done", "build-seat", "handed_off_to", "qa-seat", None)]
     if claim_row:
         ms, tid = claim_row
+        rows.append((tid, "next", at(S_MS + ms), "in-progress", "qa-seat", None, None, None))
+    for ms, tid in extra_claims:
         rows.append((tid, "next", at(S_MS + ms), "in-progress", "qa-seat", None, None, None))
     for ms, tid, actor in transitions:
         rows.append((tid, "next", at(S_MS + ms), "blocked", actor, None, None, None))
@@ -285,9 +287,20 @@ def case_f2(binary, base, tag):
         ("QA fixture: close at 10 s", -99_000, None, [(-90_000, 2, "qa-seat")], [], [(-98_000, 5), (-90_000, 9)], True, est(5), -99_000, -90_000),
         ("QA fixture + Write at 12 s", -99_000, None, [(-90_000, 2, "qa-seat")], [(-88_000, "Write")], [(-98_000, 5), (-90_000, 9)], True, est(5), -99_000, -90_000),
     ]
-    for name, cms, crow, trans, tools, usage, linked, want, want_claim, want_end in cases:
+    # Claim-row matching (orch.arch 20:21Z): exact time wins; two rows in the
+    # event's second without an exact match are ambiguous, never first-match;
+    # the row's own milliseconds start the window; a later-second row is an end.
+    claim_cases = [
+        ("claim exact row wins over same-second row", 200, (200, 2), [(500, 3, "qa-seat")], [(700, 4)], [(300, 7)], est(7), 200, 500),
+        ("claim two same-second rows, none exact", 100, (200, 2), [(500, 3, "qa-seat")], [(300, 4)], [(400, 7)], ("ambiguous", "ambiguous claim row", None), None, None),
+        ("claim row ms starts the window", 100, (205, 2), [(500, 3, "qa-seat")], [], [(150, 4), (300, 7)], est(7), 205, 500),
+        ("claim row in next second is an end", 0, (1_200, 2), [(1_500, 3, "qa-seat")], [], [(1_100, 4)], est(4), 0, 1_200),
+    ]
+    cases += [(n, cms, crow, tr, [], us, True, want, wc, we, extra) for n, cms, crow, tr, extra, us, want, wc, we in claim_cases]
+    cases = [c if len(c) == 11 else (*c, []) for c in cases]
+    for name, cms, crow, trans, tools, usage, linked, want, want_claim, want_end, extra in cases:
         b = base / name.replace(" ", "-").replace(",", "")
-        f2_sources(b, cms, crow, trans, tools, usage, linked)
+        f2_sources(b, cms, crow, trans, tools, usage, linked, extra)
         db, code, _, err = ingest(binary, b, [("claude", b / "claude"), ("openrig", b / "openrig.sqlite")])
         tr = trace(binary, db, "intake") if code == 0 else None
         rows = (tr or {}).get("value") or []

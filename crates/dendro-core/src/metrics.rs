@@ -768,19 +768,22 @@ fn is_transition_row(fact: &QueueFact) -> bool {
     fact.source_key.starts_with("queue_transitions:")
 }
 
-/// The receiver's own claim row in `queue_transitions` for this claim: an
-/// in-progress transition by the receiver on the claimed item in the same
-/// whole second as the `queue.claimed` event, which only identifies the claim
-/// (F2 table). None means an events-only claim.
-fn claim_row<'a>(
-    queue: &'a [QueueFact],
-    claim: &QueueFact,
-    receiver: &str,
-) -> Option<&'a QueueFact> {
+/// The receiver's own claim row in `queue_transitions` for this claim, which
+/// the `queue.claimed` event only identifies (F2 table): the receiver's
+/// in-progress transition on the claimed item at exactly the event's time,
+/// else the only one in the event's whole second. None means an events-only
+/// claim; two or more candidates without a unique exact match are ambiguous.
+enum ClaimRow<'a> {
+    Row(&'a QueueFact),
+    EventsOnly,
+    Ambiguous,
+}
+
+fn claim_row<'a>(queue: &'a [QueueFact], claim: &'a QueueFact, receiver: &str) -> ClaimRow<'a> {
     if is_transition_row(claim) {
-        return queue.iter().find(|row| row.source_key == claim.source_key);
+        return ClaimRow::Row(claim);
     }
-    queue
+    let same_second: Vec<&QueueFact> = queue
         .iter()
         .filter(|row| {
             is_transition_row(row)
@@ -789,7 +792,17 @@ fn claim_row<'a>(
                 && row.state == "in-progress"
                 && row.ts.timestamp() == claim.ts.timestamp()
         })
-        .min_by_key(|row| (row.ts, row.transition_id))
+        .collect();
+    let exact: Vec<&QueueFact> = same_second
+        .iter()
+        .copied()
+        .filter(|row| row.ts == claim.ts)
+        .collect();
+    match (exact.as_slice(), same_second.as_slice()) {
+        ([row], _) | ([], [row]) => ClaimRow::Row(row),
+        (_, []) => ClaimRow::EventsOnly,
+        _ => ClaimRow::Ambiguous,
+    }
 }
 
 /// Intake (§4, frozen F2 table 4acf5390): from the claim, inclusive, to the
@@ -809,7 +822,21 @@ fn intake_for_edge(
         return intake_row(edge, "no_data", Some("no claim"), None, None, None, vec![]);
     };
     let receiver = edge.to_seat.as_str();
-    let own_row = claim_row(queue, claim, receiver);
+    let own_row = match claim_row(queue, claim, receiver) {
+        ClaimRow::Row(row) => Some(row),
+        ClaimRow::EventsOnly => None,
+        ClaimRow::Ambiguous => {
+            return intake_row(
+                edge,
+                "ambiguous",
+                Some("ambiguous claim row"),
+                None,
+                Some(claim.ts.to_rfc3339()),
+                None,
+                vec![],
+            )
+        }
+    };
     let start = own_row.map_or(claim.ts, |row| row.ts);
     if !linked_seats.contains(receiver) {
         return intake_row(
@@ -2006,6 +2033,7 @@ mod tests {
         claim_event_ms: i64,
         claim_row: Option<(i64, i64)>,
         transitions: Vec<(i64, i64, &'static str)>,
+        extra_claim_rows: Vec<(i64, i64)>,
         tools: Vec<(Option<i64>, bool)>,
         usage: Vec<(i64, i64)>,
         linked: bool,
@@ -2017,6 +2045,7 @@ mod tests {
                 claim_event_ms: 200,
                 claim_row: Some((200, 2)),
                 transitions: vec![],
+                extra_claim_rows: vec![],
                 tools: vec![],
                 usage: vec![],
                 linked: true,
@@ -2051,6 +2080,7 @@ mod tests {
             let rows = self
                 .claim_row
                 .iter()
+                .chain(self.extra_claim_rows.iter())
                 .map(|(ms, id)| (*ms, *id, "qa", "in-progress"));
             let ends = self
                 .transitions
@@ -2210,6 +2240,42 @@ mod tests {
         i.transitions = vec![(0, 3, "qa")];
         i.usage = vec![(0, 7)];
         assert_eq!(outcome(&i.run()), est(0));
+        // Claim row matching: an exact-time row wins over another row in the
+        // same second; two rows in the second with none exact are ambiguous;
+        // a row in another second is not this claim's row (events only).
+        let mut m = IntakeCase::new();
+        m.claim_event_ms = 200;
+        m.claim_row = Some((200, 2));
+        m.transitions = vec![(500, 3, "qa")];
+        m.extra_claim_rows = vec![(700, 4)];
+        assert_eq!(outcome(&m.run()), est(0));
+        let mut m2 = IntakeCase::new();
+        m2.claim_event_ms = 100;
+        m2.claim_row = Some((200, 2));
+        m2.extra_claim_rows = vec![(300, 4)];
+        m2.transitions = vec![(500, 3, "qa")];
+        assert_eq!(
+            outcome(&m2.run()),
+            ("ambiguous", Some("ambiguous claim row"), None)
+        );
+        let mut m3 = IntakeCase::new();
+        m3.claim_event_ms = 100;
+        m3.claim_row = Some((205, 2));
+        m3.transitions = vec![(500, 3, "qa")];
+        m3.usage = vec![(150, 4), (300, 7)];
+        let row = m3.run();
+        assert_eq!(outcome(&row), est(7), "the row's own ms, not the event's");
+        assert_eq!(row.claim, Some(at_ms(100_205).to_rfc3339()));
+        let mut m4 = IntakeCase::new();
+        m4.claim_event_ms = 0;
+        m4.claim_row = Some((1_200, 2));
+        m4.transitions = vec![(1_500, 3, "qa")];
+        m4.usage = vec![(1_100, 4)];
+        assert_eq!(
+            outcome(&m4.run()),
+            est(4),
+            "a row in the next second is an end, not the claim"
+        );
         // Row 5: the only receiver write has no timestamp.
         let mut t = IntakeCase::new();
         t.tools = vec![(None, true)];
