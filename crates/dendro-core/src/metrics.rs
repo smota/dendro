@@ -146,7 +146,10 @@ pub fn activity_bands(
         marks.dedup();
         for pair in marks.windows(2) {
             let (a, b) = (pair[0], pair[1]);
-            let secs = (b - a).num_seconds();
+            // Whole seconds counted from the span start, so the segments sum
+            // to exactly the span's observed seconds (AC4 conservation);
+            // truncating each segment on its own loses the fractions.
+            let secs = (b - span.start).num_seconds() - (a - span.start).num_seconds();
             if secs <= 0 {
                 continue;
             }
@@ -745,70 +748,130 @@ pub struct IntakeRow {
     pub samples: Vec<String>,
 }
 
+/// `linked_seats`: seats with at least one session singly linked to them by
+/// the binding rule (F2 table row 3), whether or not it used tokens.
 pub fn handoff_intakes(
     edges: &[HandoffEdge],
     queue: &[QueueFact],
     tools: &[ToolFact],
     usages: &[UsageFact],
+    linked_seats: &BTreeSet<String>,
     seat_of: impl Fn(&str, &str) -> Option<String>,
 ) -> Vec<IntakeRow> {
     edges
         .iter()
-        .map(|edge| intake_for_edge(edge, queue, tools, usages, &seat_of))
+        .map(|edge| intake_for_edge(edge, queue, tools, usages, linked_seats, &seat_of))
         .collect()
 }
 
+fn is_transition_row(fact: &QueueFact) -> bool {
+    fact.source_key.starts_with("queue_transitions:")
+}
+
+/// The receiver's own claim row in `queue_transitions` for this claim: an
+/// in-progress transition by the receiver on the claimed item in the same
+/// whole second as the `queue.claimed` event, which only identifies the claim
+/// (F2 table). None means an events-only claim.
+fn claim_row<'a>(
+    queue: &'a [QueueFact],
+    claim: &QueueFact,
+    receiver: &str,
+) -> Option<&'a QueueFact> {
+    if is_transition_row(claim) {
+        return queue.iter().find(|row| row.source_key == claim.source_key);
+    }
+    queue
+        .iter()
+        .filter(|row| {
+            is_transition_row(row)
+                && row.qitem_id == claim.qitem_id
+                && row.source_seat == receiver
+                && row.state == "in-progress"
+                && row.ts.timestamp() == claim.ts.timestamp()
+        })
+        .min_by_key(|row| (row.ts, row.transition_id))
+}
+
+/// Intake (§4, frozen F2 table 4acf5390): from the claim, inclusive, to the
+/// receiver's first write action, exclusive. A write action is a receiver
+/// transition on the claimed item after the claim row (same table: time, then
+/// key), or a structured edit or write in the receiver's linked session at or
+/// after the start. Other actors, the claim itself and bash never end it.
 fn intake_for_edge(
     edge: &HandoffEdge,
     queue: &[QueueFact],
     tools: &[ToolFact],
     usages: &[UsageFact],
+    linked_seats: &BTreeSet<String>,
     seat_of: &impl Fn(&str, &str) -> Option<String>,
 ) -> IntakeRow {
     let Some(claim) = receiver_claim(queue, edge) else {
         return intake_row(edge, "no_data", Some("no claim"), None, None, None, vec![]);
     };
-    let linked = usages.iter().any(|usage| {
-        seat_of(&usage.harness, &usage.native_session).as_deref() == Some(edge.to_seat.as_str())
-    });
-    if !linked {
+    let receiver = edge.to_seat.as_str();
+    let own_row = claim_row(queue, claim, receiver);
+    let start = own_row.map_or(claim.ts, |row| row.ts);
+    if !linked_seats.contains(receiver) {
         return intake_row(
             edge,
             "no_data",
             Some("no linked session"),
             None,
-            Some(claim.ts.to_rfc3339()),
+            Some(start.to_rfc3339()),
             None,
             vec![],
         );
     }
-    let write = tools
+    let queue_end = queue
         .iter()
-        .filter(|tool| {
-            tool.structured_write
-                && tool.ts.is_some_and(|ts| ts >= claim.ts)
-                && seat_of(&tool.harness, &tool.native_session).as_deref()
-                    == Some(edge.to_seat.as_str())
+        .filter(|row| {
+            is_transition_row(row)
+                && row.qitem_id == claim.qitem_id
+                && row.source_seat == receiver
+                && match own_row {
+                    Some(own) => (row.ts, row.transition_id) > (own.ts, own.transition_id),
+                    None => row.ts >= start,
+                }
         })
-        .min_by_key(|tool| (tool.ts, tool.seq));
-    let Some(write) = write else {
+        .map(|row| row.ts)
+        .min();
+    let receiver_writes = || {
+        tools.iter().filter(|tool| {
+            tool.structured_write
+                && seat_of(&tool.harness, &tool.native_session).as_deref() == Some(receiver)
+        })
+    };
+    let tool_end = receiver_writes()
+        .filter_map(|tool| tool.ts)
+        .filter(|ts| *ts >= start)
+        .min();
+    let end = match (queue_end, tool_end) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
+    };
+    let Some(end) = end else {
+        // A receiver write without a time cannot be placed in the window.
+        let reason = if receiver_writes().any(|tool| tool.ts.is_none()) {
+            "no timestamp"
+        } else {
+            "no classifiable end"
+        };
         return intake_row(
             edge,
             "no_data",
-            Some("no structured write"),
+            Some(reason),
             None,
-            Some(claim.ts.to_rfc3339()),
+            Some(start.to_rfc3339()),
             None,
             vec![],
         );
     };
-    let write_at = write.ts.unwrap();
     let overlap = queue.iter().any(|row| {
         row.qitem_id != claim.qitem_id
             && row.qitem_id != edge.qitem_id
             && row.dest_seat == edge.to_seat
             && row.state == "in-progress"
-            && row.ts < write_at
+            && row.ts < end
             && !closed_before(queue, row, claim.ts)
     });
     if overlap {
@@ -817,45 +880,32 @@ fn intake_for_edge(
             "ambiguous",
             Some("overlapping claim"),
             None,
-            Some(claim.ts.to_rfc3339()),
-            Some(write_at.to_rfc3339()),
+            Some(start.to_rfc3339()),
+            Some(end.to_rfc3339()),
             vec![],
         );
     }
+    // A linked receiver with a classifiable end and no usage in the window
+    // is a zero estimate, not missing data.
     let mut tokens = 0i64;
     let mut samples = Vec::new();
-    let mut any = false;
     for usage in usages {
         let Some(ts) = usage.ts else { continue };
-        if seat_of(&usage.harness, &usage.native_session).as_deref() != Some(edge.to_seat.as_str())
-        {
+        if seat_of(&usage.harness, &usage.native_session).as_deref() != Some(receiver) {
             continue;
         }
-        if ts >= claim.ts && ts < write_at {
-            any = true;
-            let part = usage.input_uncached + usage.cache_read + usage.cache_write;
-            tokens += part;
+        if ts >= start && ts < end {
+            tokens += usage.input_uncached + usage.cache_read + usage.cache_write;
             samples.push(usage.source_key.clone());
         }
-    }
-    if !any {
-        return intake_row(
-            edge,
-            "no_data",
-            Some("no timestamped usage"),
-            None,
-            Some(claim.ts.to_rfc3339()),
-            Some(write_at.to_rfc3339()),
-            samples,
-        );
     }
     intake_row(
         edge,
         "estimate",
         None,
         Some(tokens),
-        Some(claim.ts.to_rfc3339()),
-        Some(write_at.to_rfc3339()),
+        Some(start.to_rfc3339()),
+        Some(end.to_rfc3339()),
         samples,
     )
 }
@@ -976,31 +1026,42 @@ pub struct ToolLoop {
     pub count: usize,
 }
 
+/// Tool loops (§4 rules 1–6, K11). A run is consecutive failures of one tool
+/// with the same trimmed input in one session (harness, session). It is a
+/// loop when any 3 consecutive failures in it span at most `window_secs`
+/// exactly, from their 1st to their 3rd; the whole run is one episode with
+/// its full count. A three whose 1st or 3rd failure has no timestamp cannot
+/// qualify, though the failure stays in the run.
 pub fn tool_loops(tools: &[ToolFact], failures: usize, window_secs: i64) -> Vec<ToolLoop> {
-    let mut by_session: BTreeMap<String, Vec<&ToolFact>> = BTreeMap::new();
+    let mut by_session: BTreeMap<(String, String), Vec<&ToolFact>> = BTreeMap::new();
     for tool in tools {
         by_session
-            .entry(tool.native_session.clone())
+            .entry((tool.harness.clone(), tool.native_session.clone()))
             .or_default()
             .push(tool);
     }
+    let window = chrono::Duration::seconds(window_secs);
     let mut loops = Vec::new();
-    for (session, mut events) in by_session {
+    for ((_, session), mut events) in by_session {
         events.sort_by_key(|event| event.seq);
         let mut run: Vec<&ToolFact> = Vec::new();
         let flush = |run: &mut Vec<&ToolFact>, loops: &mut Vec<ToolLoop>, session: &str| {
-            if run.len() >= failures {
-                if let (Some(first), Some(last)) = (run.first(), run.last()) {
-                    if let (Some(start), Some(end)) = (first.ts, last.ts) {
-                        if (end - start).num_seconds() <= window_secs {
-                            loops.push(ToolLoop {
-                                session: session.to_string(),
-                                tool: first.name.clone(),
-                                count: run.len(),
-                            });
-                        }
+            let qualifies = failures > 0
+                && run.windows(failures).any(|three| {
+                    match (
+                        three.first().and_then(|t| t.ts),
+                        three.last().and_then(|t| t.ts),
+                    ) {
+                        (Some(start), Some(end)) => end - start <= window,
+                        _ => false,
                     }
-                }
+                });
+            if qualifies {
+                loops.push(ToolLoop {
+                    session: session.to_string(),
+                    tool: run[0].name.clone(),
+                    count: run.len(),
+                });
             }
             run.clear();
         };
@@ -1330,6 +1391,55 @@ mod tests {
         assert_eq!(observed_secs(&spans), 50);
         let bands = activity_bands("dev.build", &[running_at(10, 1)], &[], window(), &lives);
         assert_eq!(bands.sum(), 50);
+    }
+
+    fn at_ms(ms: i64) -> DateTime<Utc> {
+        ts(0) + chrono::Duration::milliseconds(ms)
+    }
+
+    fn state_at_ms(ms: i64, state: &str, seq: i64) -> ActivityFact {
+        ActivityFact {
+            source_key: format!("f{seq}"),
+            seat: "dev.build".into(),
+            ts: at_ms(ms),
+            state: state.into(),
+            seq,
+        }
+    }
+
+    #[test]
+    fn fractional_marks_conserve_every_observed_second_across_lives() {
+        // Two lives, [0.4, 30.9) and [40.25, 60): 30 + 19 observed seconds.
+        let lives = [
+            SeatBound {
+                seat: "dev.build".into(),
+                created_at: Some(at_ms(400)),
+                stopped_at: Some(at_ms(30_900)),
+            },
+            SeatBound {
+                seat: "dev.build".into(),
+                created_at: Some(at_ms(40_250)),
+                stopped_at: None,
+            },
+        ];
+        let events = [
+            state_at_ms(700, "running", 1),
+            state_at_ms(5_600, "idle", 2),
+            state_at_ms(12_300, "needs_input", 3),
+            state_at_ms(41_100, "running", 4),
+            state_at_ms(50_750, "idle", 5),
+        ];
+        let spans = observation_spans(window(), &lives);
+        assert_eq!(observed_secs(&spans), 30 + 19);
+        let bands = activity_bands("dev.build", &events, &[], window(), &lives);
+        // Seconds are whole offsets from each span start: 0.4 + {0, 5, 11, 30}
+        // and 40.25 + {0, 10, 19}. Truncating each segment alone gave 4, 6,
+        // 18, 9 and 9: three seconds short.
+        assert_eq!(bands.active_secs, 5 + 10);
+        assert_eq!(bands.idle_without_work_secs, 6 + 9);
+        assert_eq!(bands.waiting_human_secs, 19);
+        assert_eq!(bands.unknown_secs, 0);
+        assert_eq!(bands.sum(), observed_secs(&spans));
     }
 
     #[test]
@@ -1820,6 +1930,304 @@ mod tests {
             tool(3, Some(true), "Read"),
         ];
         assert!(tool_loops(&broken, 3, 600).is_empty());
+    }
+
+    /// One failing run at these offsets in milliseconds; None has no timestamp.
+    fn failing_run(harness: &str, session: &str, offsets_ms: &[Option<i64>]) -> Vec<ToolFact> {
+        offsets_ms
+            .iter()
+            .enumerate()
+            .map(|(seq, offset)| ToolFact {
+                source_key: format!("{harness}{session}{seq}"),
+                harness: harness.into(),
+                native_session: session.into(),
+                ts: offset.map(at_ms),
+                seq: seq as i64,
+                name: "Read".into(),
+                fingerprint: Some("fp".into()),
+                failed: Some(true),
+                structured_write: false,
+                generation: 1,
+            })
+            .collect()
+    }
+
+    fn loop_counts(offsets_ms: &[Option<i64>]) -> Vec<usize> {
+        tool_loops(&failing_run("claude", "s", offsets_ms), 3, 600)
+            .iter()
+            .map(|found| found.count)
+            .collect()
+    }
+
+    #[test]
+    fn a_loop_needs_some_three_within_exactly_ten_minutes_k11() {
+        let s = |secs: i64| Some(secs * 1000);
+        // QA: a fractional excess over 600 s is not truncated away.
+        assert_eq!(
+            loop_counts(&[s(0), s(300), Some(600_001)]),
+            Vec::<usize>::new()
+        );
+        assert_eq!(
+            loop_counts(&[s(0), s(300), s(600)]),
+            vec![3],
+            "exactly 600 s counts"
+        );
+        // QA: first to last is not the window; the first three qualify.
+        assert_eq!(loop_counts(&[s(0), s(300), s(600), s(1200)]), vec![4]);
+        // K11: the window slides; earlier, slower failures stay in the count.
+        assert_eq!(loop_counts(&[s(0), s(400), s(700), s(800)]), vec![4]);
+        assert_eq!(
+            loop_counts(&[s(0), s(400), s(700), s(1101)]),
+            Vec::<usize>::new()
+        );
+        // A three whose 1st or 3rd failure has no timestamp cannot qualify.
+        assert_eq!(loop_counts(&[None, s(1), s(2)]), Vec::<usize>::new());
+        assert_eq!(loop_counts(&[s(0), s(1), None]), Vec::<usize>::new());
+        // A missing middle time does not matter, and it stays in the count.
+        assert_eq!(loop_counts(&[s(0), None, s(2)]), vec![3]);
+        assert_eq!(loop_counts(&[None, s(0), s(1), s(2)]), vec![4]);
+    }
+
+    #[test]
+    fn the_same_session_id_in_two_harnesses_is_two_sessions() {
+        let s = |secs: i64| Some(secs * 1000);
+        let mut tools = failing_run("claude", "same", &[s(0), s(1)]);
+        tools.extend(failing_run("pi", "same", &[s(2)]));
+        assert!(tool_loops(&tools, 3, 600).is_empty());
+        tools.extend(failing_run("pi", "same", &[s(3), s(4)]));
+        let loops = tool_loops(&tools, 3, 600);
+        assert_eq!(loops.len(), 1);
+        assert_eq!(loops[0].count, 3);
+    }
+
+    /// F2 table fixtures: build hands `root` to qa on successor `next`; times
+    /// are milliseconds after t0 + 100 s ("S").
+    struct IntakeCase {
+        claim_event_ms: i64,
+        claim_row: Option<(i64, i64)>,
+        transitions: Vec<(i64, i64, &'static str)>,
+        tools: Vec<(Option<i64>, bool)>,
+        usage: Vec<(i64, i64)>,
+        linked: bool,
+    }
+
+    impl IntakeCase {
+        fn new() -> Self {
+            IntakeCase {
+                claim_event_ms: 200,
+                claim_row: Some((200, 2)),
+                transitions: vec![],
+                tools: vec![],
+                usage: vec![],
+                linked: true,
+            }
+        }
+
+        fn run(&self) -> IntakeRow {
+            let s = |ms: i64| at_ms(100_000 + ms);
+            let mut queue = vec![q(
+                "queue_transitions:1",
+                1,
+                "root",
+                0,
+                "handed-off",
+                "build",
+                "unknown",
+                None,
+            )];
+            let mut claim = q(
+                "events:queue.claimed:9",
+                9,
+                "next",
+                0,
+                "in-progress",
+                "build",
+                "qa",
+                None,
+            );
+            claim.ts = s(self.claim_event_ms);
+            claim.chain_id = Some("root".into());
+            queue.push(claim);
+            let rows = self
+                .claim_row
+                .iter()
+                .map(|(ms, id)| (*ms, *id, "qa", "in-progress"));
+            let ends = self
+                .transitions
+                .iter()
+                .map(|(ms, id, actor)| (*ms, *id, *actor, "blocked"));
+            for (ms, id, actor, state) in rows.chain(ends) {
+                let mut row = q(
+                    &format!("queue_transitions:{id}"),
+                    id,
+                    "next",
+                    0,
+                    state,
+                    actor,
+                    "unknown",
+                    None,
+                );
+                row.ts = s(ms);
+                row.chain_id = Some("root".into());
+                queue.push(row);
+            }
+            let edge = HandoffEdge {
+                from_seat: "build".into(),
+                to_seat: "qa".into(),
+                qitem_id: "root".into(),
+                chain_id: Some("root".into()),
+                is_return: false,
+                returned_by: None,
+                ts: ts(0),
+                source_key: "queue_transitions:1".into(),
+            };
+            let tools: Vec<ToolFact> = self
+                .tools
+                .iter()
+                .enumerate()
+                .map(|(seq, (ms, structured))| ToolFact {
+                    source_key: format!("tool{seq}"),
+                    harness: "claude".into(),
+                    native_session: "qa-session".into(),
+                    ts: ms.map(s),
+                    seq: seq as i64,
+                    name: if *structured { "Write" } else { "Bash" }.into(),
+                    fingerprint: None,
+                    failed: Some(false),
+                    structured_write: *structured,
+                    generation: 1,
+                })
+                .collect();
+            let usages: Vec<UsageFact> = self
+                .usage
+                .iter()
+                .enumerate()
+                .map(|(seq, (ms, input))| UsageFact {
+                    source_key: format!("u{seq}"),
+                    harness: "claude".into(),
+                    native_session: "qa-session".into(),
+                    message_id: None,
+                    ts: Some(s(*ms)),
+                    seq: seq as i64,
+                    input_uncached: *input,
+                    output: 0,
+                    cache_read: 0,
+                    cache_write: 0,
+                    reasoning: 0,
+                    currency_total: None,
+                    generation: 1,
+                    predecessor_source_key: None,
+                    predecessor_reason: None,
+                    prior_input_tokens: None,
+                    prior_cached_input_tokens: None,
+                    prior_cache_write_input_tokens: None,
+                    prior_output_tokens: None,
+                    prior_reasoning_output_tokens: None,
+                })
+                .collect();
+            let linked = self.linked;
+            let seats: BTreeSet<String> = linked.then(|| "qa".to_string()).into_iter().collect();
+            let seat_of = move |_: &str, _: &str| linked.then(|| "qa".to_string());
+            let mut rows = handoff_intakes(&[edge], &queue, &tools, &usages, &seats, seat_of);
+            rows.remove(0)
+        }
+    }
+
+    fn outcome(row: &IntakeRow) -> (&str, Option<&str>, Option<i64>) {
+        (row.status.as_str(), row.reason.as_deref(), row.tokens)
+    }
+
+    #[test]
+    fn intake_follows_every_row_of_the_frozen_f2_table() {
+        let est = |n| ("estimate", None, Some(n));
+        // A, row 1: claim row S.200, receiver update S.500; usage at the end is out.
+        let mut a = IntakeCase::new();
+        a.transitions = vec![(500, 3, "qa")];
+        a.usage = vec![(300, 7), (500, 100)];
+        let row = a.run();
+        assert_eq!(outcome(&row), est(7));
+        assert_eq!(row.claim, Some(at_ms(100_200).to_rfc3339()));
+        assert_eq!(row.write, Some(at_ms(100_500).to_rfc3339()));
+        // B, row 2: the same with no usage in a non-empty window is zero.
+        let mut b = IntakeCase::new();
+        b.transitions = vec![(500, 3, "qa")];
+        assert_eq!(outcome(&b.run()), est(0));
+        // C, row 3: unlinked receiver (or a collision) has no data.
+        b.linked = false;
+        assert_eq!(
+            outcome(&b.run()),
+            ("no_data", Some("no linked session"), None)
+        );
+        // D, row 7: a receiver row before the claim row is not an end.
+        let mut d = IntakeCase::new();
+        d.transitions = vec![(100, 3, "qa")];
+        assert_eq!(
+            outcome(&d.run()),
+            ("no_data", Some("no classifiable end"), None)
+        );
+        // E, row 4: the sender's update, or bash alone, is not an end.
+        let mut e = IntakeCase::new();
+        e.transitions = vec![(600, 3, "build")];
+        e.tools = vec![(Some(300), false)];
+        e.usage = vec![(300, 7)];
+        assert_eq!(
+            outcome(&e.run()),
+            ("no_data", Some("no classifiable end"), None)
+        );
+        // F, row 6: same time as the claim row, later key: empty window, zero.
+        let mut f = IntakeCase::new();
+        f.transitions = vec![(200, 3, "qa")];
+        f.usage = vec![(200, 7)];
+        assert_eq!(outcome(&f.run()), est(0));
+        // Row 7: same time, earlier key: not an end.
+        let mut f2 = IntakeCase::new();
+        f2.claim_row = Some((200, 5));
+        f2.transitions = vec![(200, 4, "qa")];
+        assert_eq!(
+            outcome(&f2.run()),
+            ("no_data", Some("no classifiable end"), None)
+        );
+        // G, row 8: a structured write exactly at the start: empty, zero.
+        let mut g = IntakeCase::new();
+        g.tools = vec![(Some(200), true)];
+        g.usage = vec![(200, 7)];
+        assert_eq!(outcome(&g.run()), est(0));
+        // H, row 9: events-only claim at S (whole second), receiver row at S.500.
+        let mut h = IntakeCase::new();
+        h.claim_event_ms = 0;
+        h.claim_row = None;
+        h.transitions = vec![(500, 3, "qa")];
+        h.usage = vec![(300, 7)];
+        let row = h.run();
+        assert_eq!(outcome(&row), est(7));
+        assert_eq!(row.claim, Some(at_ms(100_000).to_rfc3339()));
+        h.usage = vec![];
+        assert_eq!(outcome(&h.run()), est(0));
+        // I, row 10: events-only claim at S, receiver row at exactly S.
+        let mut i = IntakeCase::new();
+        i.claim_event_ms = 0;
+        i.claim_row = None;
+        i.transitions = vec![(0, 3, "qa")];
+        i.usage = vec![(0, 7)];
+        assert_eq!(outcome(&i.run()), est(0));
+        // Row 5: the only receiver write has no timestamp.
+        let mut t = IntakeCase::new();
+        t.tools = vec![(None, true)];
+        assert_eq!(outcome(&t.run()), ("no_data", Some("no timestamp"), None));
+    }
+
+    #[test]
+    fn a_receiver_queue_close_ends_intake_before_a_later_write_qa_fixture() {
+        // QA: claim at 1 s (events only), receiver closes at 10 s; usage 5 at
+        // 2 s and 9 at 10 s. A Write at 12 s cannot extend the window.
+        let mut case = IntakeCase::new();
+        case.claim_event_ms = -99_000;
+        case.claim_row = None;
+        case.transitions = vec![(-90_000, 2, "qa")];
+        case.usage = vec![(-98_000, 5), (-90_000, 9)];
+        assert_eq!(outcome(&case.run()), ("estimate", None, Some(5)));
+        case.tools = vec![(Some(-88_000), true)];
+        assert_eq!(outcome(&case.run()), ("estimate", None, Some(5)));
     }
 
     #[test]

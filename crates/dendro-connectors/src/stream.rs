@@ -123,6 +123,7 @@ pub fn ingest_jsonl_with_key(
     let mut usages = Vec::new();
     let mut tools = Vec::new();
     let mut seen_messages = HashSet::new();
+    let mut unknown_types = HashSet::new();
     let records_read = pending
         .iter()
         .filter(|(_, bytes)| !bytes.iter().all(|b| b.is_ascii_whitespace()))
@@ -222,11 +223,20 @@ pub fn ingest_jsonl_with_key(
                     first_codex_in_this_call = false;
                 }
             }
-            Err(reason) => warnings.push(WarningNote {
-                path: path.display().to_string(),
-                line: Some(line_no),
-                reason,
-            }),
+            Err(reason) => {
+                // One warning per (file, unknown type), at its first occurrence
+                // in this or any earlier run, so a repeated type cannot flood.
+                let repeat = reason.starts_with(UNKNOWN_RECORD_TYPE)
+                    && (!unknown_types.insert(reason.clone())
+                        || store.has_warning(&path.display().to_string(), &reason)?);
+                if !repeat {
+                    warnings.push(WarningNote {
+                        path: path.display().to_string(),
+                        line: Some(line_no),
+                        reason,
+                    });
+                }
+            }
         }
         if harness == "claude" {
             tools.extend(claude_tools(
@@ -359,12 +369,82 @@ fn hash_prefix(file: &mut File, len: u64) -> Result<String> {
     Ok(hex::encode(hasher.finalize()))
 }
 
+/// Top-level record types each parser knows (AC2, F4). Derived from the sealed
+/// corpus of the harness versions in use on 2026-10-11 (Claude 15, Codex 7,
+/// Pi 6), not from a published schema. Any other type, or none, is unknown.
+const CLAUDE_RECORD_TYPES: &[&str] = &[
+    "agent-name",
+    "assistant",
+    "atis-latch",
+    "attachment",
+    "cost-state",
+    "custom-title",
+    "file-history-delta",
+    "file-history-snapshot",
+    "last-prompt",
+    "mode",
+    "permission-mode",
+    "pr-link",
+    "queue-operation",
+    "system",
+    "user",
+];
+const CODEX_RECORD_TYPES: &[&str] = &[
+    "compacted",
+    "event_msg",
+    "response_item",
+    "session_meta",
+    "token_usage_record",
+    "turn_context",
+    "world_state",
+];
+const PI_RECORD_TYPES: &[&str] = &[
+    "custom",
+    "message",
+    "model_change",
+    "session",
+    "session_info",
+    "thinking_level_change",
+];
+
+pub(crate) const UNKNOWN_RECORD_TYPE: &str = "unknown-record-type";
+
+/// The warning reason for a record of a type the parser does not know, or
+/// None. The type is shown only when it is a plain identifier of at most 64
+/// characters; storage still applies the AC10 redaction to it.
+fn unknown_record_type(harness: &str, value: &Value) -> Option<String> {
+    let known = match harness {
+        "claude" => CLAUDE_RECORD_TYPES,
+        "codex" => CODEX_RECORD_TYPES,
+        "pi" => PI_RECORD_TYPES,
+        _ => return None,
+    };
+    let kind = value.get("type").and_then(|v| v.as_str());
+    if kind.is_some_and(|kind| known.contains(&kind)) {
+        return None;
+    }
+    let plain = kind.filter(|kind| {
+        !kind.is_empty()
+            && kind.len() <= 64
+            && kind
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'-'))
+    });
+    Some(match plain {
+        Some(kind) => format!("{UNKNOWN_RECORD_TYPE}: {kind}"),
+        None => UNKNOWN_RECORD_TYPE.to_string(),
+    })
+}
+
 fn parse_line(
     harness: &str,
     line: &str,
     counters: &mut CodexCounters,
 ) -> Result<Option<Buckets>, String> {
     let value: Value = serde_json::from_str(line).map_err(|_| "malformed-json".to_string())?;
+    if let Some(reason) = unknown_record_type(harness, &value) {
+        return Err(reason);
+    }
     match harness {
         "codex" => parse_codex(&value, counters),
         "claude" => parse_claude(&value),
@@ -707,6 +787,137 @@ mod tests {
             fn drop(&mut self) {
                 let _ = fs::remove_dir_all(&self.dir);
             }
+        }
+
+        fn claude_usage(msg: &str, input: i64, at: Option<&str>) -> String {
+            let ts = at
+                .map(|t| format!(",\"timestamp\":\"{t}\""))
+                .unwrap_or_default();
+            format!("{{\"type\":\"assistant\",\"sessionId\":\"s\"{ts},\"message\":{{\"id\":\"{msg}\",\"usage\":{{\"input_tokens\":{input},\"output_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}}}}")
+        }
+
+        fn unknown_warnings(f: &Fixture) -> Vec<String> {
+            f.warnings()
+                .into_iter()
+                .filter(|w| w.starts_with(UNKNOWN_RECORD_TYPE))
+                .collect()
+        }
+
+        #[test]
+        fn an_unknown_claude_record_warns_beside_malformed_lines_qa_fixture() {
+            // QA's six lines: valid 10, malformed JSON, invalid UTF-8, an
+            // invented type, valid 20, no timestamp 5.
+            let f = Fixture::new("unknown-qa");
+            let path = f.dir.join("c.jsonl");
+            let mut bytes = Vec::new();
+            for line in [
+                claude_usage("m1", 10, Some("2026-10-09T00:00:01Z")).into_bytes(),
+                b"{not json".to_vec(),
+                vec![0xff, 0xfe, b'{', b'}'],
+                b"{\"type\":\"qa_unknown_record_version_999\",\"timestamp\":\"2026-10-09T00:00:02Z\"}".to_vec(),
+                claude_usage("m2", 20, Some("2026-10-09T00:00:03Z")).into_bytes(),
+                claude_usage("m3", 5, None).into_bytes(),
+            ] {
+                bytes.extend(line);
+                bytes.push(b'\n');
+            }
+            fs::write(&path, bytes).unwrap();
+            f.ingest("claude", &path);
+            let mut reasons = f.warnings();
+            reasons.sort();
+            assert_eq!(
+                reasons,
+                [
+                    "invalid-utf8",
+                    "malformed-json",
+                    "unknown-record-type: qa_unknown_record_version_999"
+                ]
+            );
+            let usage = f.db.load_usage().unwrap();
+            let timed: i64 = usage
+                .iter()
+                .filter(|u| u.ts.is_some())
+                .map(|u| u.input_uncached)
+                .sum();
+            let untimed: i64 = usage
+                .iter()
+                .filter(|u| u.ts.is_none())
+                .map(|u| u.input_uncached)
+                .sum();
+            assert_eq!((timed, untimed), (30, 5));
+        }
+
+        #[test]
+        fn each_harness_warns_once_per_file_and_unknown_type() {
+            let f = Fixture::new("unknown-parity");
+            let unknown = |kind: &str| {
+                format!("{{\"type\":\"{kind}\",\"timestamp\":\"2026-10-09T00:00:02Z\"}}")
+            };
+            let c = f.file(
+                "c.jsonl",
+                &[
+                    claude_usage("m1", 1, Some("2026-10-09T00:00:01Z")),
+                    unknown("future_kind"),
+                    unknown("future_kind"),
+                    "{\"timestamp\":\"2026-10-09T00:00:03Z\"}".to_string(),
+                ],
+            );
+            let x = f.file(
+                "x.jsonl",
+                &[
+                    codex_header("cx"),
+                    unknown("future_kind"),
+                    codex_count(4, None),
+                ],
+            );
+            let p = f.file(
+                "p.jsonl",
+                &[pi_header("pi"), unknown("future_kind"), pi_usage("a", 2)],
+            );
+            f.ingest("claude", &c);
+            f.ingest("codex", &x);
+            f.ingest("pi", &p);
+            let mut found = unknown_warnings(&f);
+            found.sort();
+            // Claude: the type once (not per line) and one missing-type record.
+            assert_eq!(
+                found,
+                [
+                    "unknown-record-type",
+                    "unknown-record-type: future_kind",
+                    "unknown-record-type: future_kind",
+                    "unknown-record-type: future_kind",
+                ]
+            );
+            // Known records still count beside unknown ones.
+            assert_eq!(f.sessions("codex").values().sum::<i64>(), 4);
+            assert_eq!(f.sessions("pi").values().sum::<i64>(), 2);
+            // Appending the same unknown type later adds no warning.
+            f.append(&c, &[unknown("future_kind"), unknown("other_kind")]);
+            f.ingest("claude", &c);
+            let after = unknown_warnings(&f);
+            assert_eq!(after.len(), found.len() + 1);
+            assert!(after.contains(&"unknown-record-type: other_kind".to_string()));
+        }
+
+        #[test]
+        fn an_unknown_type_name_never_shows_secret_or_odd_text() {
+            let f = Fixture::new("unknown-secret");
+            let c = f.file(
+                "c.jsonl",
+                &[
+                    "{\"type\":\"sk-ant-api03-ZZTYPEsecretvalue\"}".to_string(),
+                    "{\"type\":\"has space\"}".to_string(),
+                    format!("{{\"type\":\"{}\"}}", "a".repeat(65)),
+                    "{\"type\":7}".to_string(),
+                ],
+            );
+            f.ingest("claude", &c);
+            let found = unknown_warnings(&f);
+            assert_eq!(found.len(), 2, "{found:?}");
+            assert!(found.iter().all(|w| !w.contains("ZZTYPEsecretvalue")));
+            assert!(found.contains(&"unknown-record-type: [redacted]".to_string()));
+            assert!(found.contains(&"unknown-record-type".to_string()));
         }
 
         #[test]

@@ -501,21 +501,38 @@ pub fn report_json(
             })
         })
         .collect();
-    let tools: Vec<_> = store
+    let scoped_tools: Vec<_> = store
         .load_tools()?
         .into_iter()
-        .filter(|tool| match tool.ts {
-            Some(ts) => ts >= window.from && ts < window.to,
-            None => false,
-        })
         .filter(|tool| match &allowed {
             Some(set) => set.contains(&(tool.harness.clone(), tool.native_session.clone())),
             None => rig_seats.is_none(),
         })
         .collect();
-    let loops = metrics::tool_loops(&tools, 3, 600);
+    let tools: Vec<_> = scoped_tools
+        .iter()
+        .filter(|tool| {
+            tool.ts
+                .is_some_and(|ts| ts >= window.from && ts < window.to)
+        })
+        .cloned()
+        .collect();
+    // K11: a failure without a timestamp stays in its run and in the count,
+    // though it can never be the 1st or 3rd of a qualifying three.
+    let loop_tools: Vec<_> = scoped_tools
+        .iter()
+        .filter(|tool| tool.ts.is_none_or(|ts| ts >= window.from && ts < window.to))
+        .cloned()
+        .collect();
+    let loops = metrics::tool_loops(&loop_tools, 3, 600);
     let seat_of = |harness: &str, native: &str| binding(harness, native).seat().map(String::from);
-    let intakes = metrics::handoff_intakes(&edges, &queue_all, &tools, &usage, seat_of);
+    let linked_seats: std::collections::BTreeSet<String> = bindings
+        .iter()
+        .filter(|((harness, native), _)| in_scope(harness, native))
+        .filter_map(|(_, bound)| bound.seat().map(String::from))
+        .collect();
+    let intakes =
+        metrics::handoff_intakes(&edges, &queue_all, &tools, &usage, &linked_seats, seat_of);
     let medians = metrics::pair_medians(&edges, &queue_all, &intakes);
     // AC6 / K3: each in-window usage record lands in exactly one band. Per seat,
     // missions + no_mission + ambiguous = the seat total. Unlinked usage stays
@@ -911,7 +928,7 @@ pub fn trace_json(
             payload["tokens"].clone(),
         ),
         "intake" => (
-            "claim-inclusive to first structured write, exclusive",
+            "claim-inclusive to the receiver's first structured write or same-item queue transition, exclusive",
             payload["intakes"].clone(),
         ),
         "medians" => (

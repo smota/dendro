@@ -241,6 +241,15 @@ impl AnalyticsStore {
         Ok(())
     }
 
+    /// Whether this warning was already stored for this path, compared as stored.
+    pub fn has_warning(&self, path: &str, reason: &str) -> Result<bool> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT 1 FROM warnings WHERE path = ? AND reason = ? LIMIT 1")?;
+        let mut rows = stmt.query(params![redact(path), redact(reason)])?;
+        Ok(rows.next()?.is_some())
+    }
+
     pub fn source_state(&self, source_id: &str) -> Result<Option<(i64, i64, String)>> {
         let mut stmt = self.conn.prepare(
             "SELECT generation, byte_offset, prefix_sha256 FROM source_files WHERE source_id = ?",
