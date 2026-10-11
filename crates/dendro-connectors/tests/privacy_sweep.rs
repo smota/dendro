@@ -272,6 +272,7 @@ fn leaks(text: &str, family: usize) -> Vec<&'static str> {
 #[test]
 fn every_family_through_every_source_field_stays_out_of_storage_and_output() {
     let mut assertions = 0usize;
+    let mut decoded_columns = 0usize;
     for (family, marker) in FAMILIES.iter().enumerate() {
         let c = |field: &str| format!("{marker}ZZ{family}x{field}");
         let dir =
@@ -387,6 +388,26 @@ fn every_family_through_every_source_field_stays_out_of_storage_and_output() {
         assertions += 4;
         drop(store);
 
+        // Decoded values of every VARCHAR column the database actually has,
+        // enumerated from its own schema, not from a list of loaders.
+        let (columns, hits, redacted) = decoded_scan(&db, &format!("ZZ{family}x"));
+        let mut expected: Vec<String> = dendro_core::TEXT_COLUMNS
+            .iter()
+            .map(|c| c.to_string())
+            .collect();
+        expected.sort();
+        assert_eq!(
+            columns, expected,
+            "{marker}: schema VARCHAR columns = TEXT_COLUMNS"
+        );
+        assert_eq!(hits, 0, "{marker}: decoded canary hits");
+        assert!(
+            redacted > 0,
+            "{marker}: decoded control sees redacted values"
+        );
+        assertions += 3;
+        decoded_columns = columns.len();
+
         // Database bytes and any WAL.
         for entry in fs::read_dir(&dir).unwrap().flatten() {
             let name = entry.file_name().to_string_lossy().to_string();
@@ -403,7 +424,7 @@ fn every_family_through_every_source_field_stays_out_of_storage_and_output() {
         let _ = fs::remove_dir_all(&dir);
     }
     println!(
-        "privacy sweep: {} families x {} fields, {assertions} assertions",
+        "privacy sweep: {} families x {} fields, {assertions} assertions, {decoded_columns} decoded VARCHAR columns",
         FAMILIES.len(),
         FIELDS.len()
     );
@@ -455,4 +476,40 @@ fn the_sweep_sees_ordinary_values_that_reach_output() {
     println!("fields reaching storage: {stored:?}");
     assert!(stored.len() >= reached.len());
     let _ = fs::remove_dir_all(&dir);
+}
+
+/// Read-only decoded scan: (sorted table.column list, values containing
+/// `needle`, values containing "[redacted]").
+fn decoded_scan(db: &Path, needle: &str) -> (Vec<String>, i64, i64) {
+    let config = duckdb::Config::default()
+        .access_mode(duckdb::AccessMode::ReadOnly)
+        .unwrap();
+    let conn = duckdb::Connection::open_with_flags(db, config).unwrap();
+    let mut stmt = conn
+        .prepare("SELECT table_name, column_name FROM information_schema.columns WHERE data_type = 'VARCHAR'")
+        .unwrap();
+    let mut columns: Vec<String> = stmt
+        .query_map([], |row| {
+            Ok(format!(
+                "{}.{}",
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?
+            ))
+        })
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    columns.sort();
+    let count = |column: &str, text: &str| -> i64 {
+        let (table, name) = column.split_once('.').unwrap();
+        conn.query_row(
+            &format!("SELECT COUNT(*) FROM {table} WHERE {name} LIKE '%' || ? || '%'"),
+            [text],
+            |row| row.get(0),
+        )
+        .unwrap()
+    };
+    let hits = columns.iter().map(|c| count(c, needle)).sum();
+    let redacted = columns.iter().map(|c| count(c, "[redacted]")).sum();
+    (columns, hits, redacted)
 }

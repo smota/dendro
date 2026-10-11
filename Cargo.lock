@@ -555,6 +555,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "dendro-core",
+ "duckdb",
  "hex",
  "rusqlite",
  "serde",
