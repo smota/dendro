@@ -435,6 +435,7 @@ pub fn report_json(
     // missions + no_mission + ambiguous = the seat total. Unlinked usage stays
     // apart from "no mission"; untimestamped usage is counted all-time only.
     let mut mission_tokens = std::collections::BTreeMap::<String, i64>::new();
+    let mut mission_records = Vec::new();
     let mut ambiguous_by_reason = std::collections::BTreeMap::<String, i64>::new();
     let mut seat_bands =
         std::collections::BTreeMap::<String, std::collections::BTreeMap<String, i64>>::new();
@@ -458,7 +459,26 @@ pub fn report_json(
             *mission_tokens.entry("unlinked".into()).or_insert(0) += amount;
             continue;
         };
-        let label = match metrics::mission_at(&seat, &queue_all, &snapshot_destinations, ts) {
+        let evidence = metrics::mission_evidence(&seat, &queue_all, &snapshot_destinations, ts);
+        mission_records.push(json!({
+            "source_key": row.source_key,
+            "ts": ts.to_rfc3339(),
+            "seat": seat,
+            "input_uncached": row.input_uncached,
+            "output": row.output,
+            "cache_read": row.cache_read,
+            "cache_write": row.cache_write,
+            "tokens": amount,
+            "bucket": match &evidence.bucket {
+                metrics::MissionBucket::Mission(name) => format!("mission:{name}"),
+                metrics::MissionBucket::None => "no_mission".to_string(),
+                metrics::MissionBucket::Ambiguous(_) => "ambiguous".to_string(),
+            },
+            "primary_reason": evidence.reasons.first(),
+            "secondary_reasons": evidence.reasons.iter().skip(1).collect::<Vec<_>>(),
+            "items": evidence.items,
+        }));
+        let label = match evidence.bucket {
             metrics::MissionBucket::Mission(name) => format!("mission:{name}"),
             metrics::MissionBucket::None => "no_mission".into(),
             metrics::MissionBucket::Ambiguous(reason) => {
@@ -662,7 +682,9 @@ pub fn report_json(
                 "intake_invalid": row.intake_invalid,
                 "intake_median": row.intake_median,
             })).collect::<Vec<_>>(),
+            "mission_definition": metrics::MISSION_DEFINITION,
             "mission_tokens": mission_tokens,
+            "mission_records": mission_records,
             "mission_ambiguous_by_reason": ambiguous_by_reason,
             "mission_by_seat": mission_by_seat,
             "untimestamped_tokens_all_time": untimestamped_tokens,
@@ -778,6 +800,11 @@ pub fn trace_json(
             "pair_medians": payload["pair_medians"],
             "activity": payload["activity"],
             "seat_lives": payload["seat_lives"],
+            "mission_definition": payload["mission_definition"],
+            "mission_tokens": payload["mission_tokens"],
+            "mission_ambiguous_by_reason": payload["mission_ambiguous_by_reason"],
+            "mission_by_seat": payload["mission_by_seat"],
+            "mission_records": payload["mission_records"],
             "activity_events": payload["activity_events"],
             "demand_events": payload["demand_events"],
             "destination_snapshots": payload["destination_snapshots"],
@@ -1276,6 +1303,49 @@ mod tests {
             "untimed usage is outside every window"
         );
         assert_eq!(p["untimestamped_count"], 1);
+        // The trace keeps one evidence record per linked in-window usage
+        // record (unlinked usage is counted apart), and the bands and primary
+        // shares recompute exactly from those records.
+        let trace = trace_json(
+            &db,
+            "tokens",
+            None,
+            "2026-10-09T01:00:00Z",
+            "2026-10-09T02:00:00Z",
+        )
+        .unwrap();
+        let inputs = &trace["inputs"];
+        assert_eq!(inputs["mission_definition"], p["mission_definition"]);
+        assert!(p["mission_definition"]
+            .as_str()
+            .unwrap()
+            .contains("insufficient history > detectable tag change > conflicting missions"));
+        let records = inputs["mission_records"].as_array().unwrap();
+        assert_eq!(records.len(), 4);
+        let mut bands = std::collections::BTreeMap::<String, i64>::new();
+        let mut shares = std::collections::BTreeMap::<String, i64>::new();
+        for record in records {
+            let tokens = record["tokens"].as_i64().unwrap();
+            let parts: i64 = ["input_uncached", "output", "cache_read", "cache_write"]
+                .iter()
+                .map(|k| record[*k].as_i64().unwrap())
+                .sum();
+            assert_eq!(parts, tokens, "categories sum to the record total");
+            *bands
+                .entry(record["bucket"].as_str().unwrap().to_string())
+                .or_default() += tokens;
+            if let Some(primary) = record["primary_reason"].as_str() {
+                *shares.entry(primary.to_string()).or_default() += tokens;
+            }
+        }
+        let mut expected = p["mission_tokens"].as_object().unwrap().clone();
+        expected.remove("unlinked");
+        assert_eq!(json!(bands), json!(expected));
+        assert_eq!(json!(shares), p["mission_ambiguous_by_reason"]);
+        assert_eq!(
+            shares.values().sum::<i64>(),
+            p["mission_tokens"]["ambiguous"].as_i64().unwrap()
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 

@@ -205,27 +205,56 @@ fn item_state_at<'a>(item: &[&'a QueueFact], ts: DateTime<Utc>) -> Option<&'a Qu
         .max_by_key(|row| (row.ts, row.transition_id))
 }
 
-/// K3 mission attribution of a usage record of `seat` at `ts`. An item is the
-/// seat's when it is in-progress at `ts` and its K5 destination then is the
-/// seat; the actor is never the destination and the current destination is
-/// never painted backward. An in-progress item whose destination cannot be
-/// proven, but whose claim or snapshot names this seat, makes the usage
-/// ambiguous with "insufficient history". Missions are the item's `mission:`
-/// tags as set at creation; stored readings that disagree are a detectable
-/// tag change. Reason order: insufficient history, tag change, conflicting.
-pub fn mission_at(
+/// The precedence of ambiguity reasons, printed verbatim in the report and
+/// the trace (K3/K5, AC7).
+pub const MISSION_DEFINITION: &str = "Mission attribution (K3/K5): a usage record gets the mission of the items its seat has in progress at that instant. An item is the seat's when its K5 destination then is the seat; the actor is never the destination. Missions are the item's mission: tags as set at creation. Every applicable ambiguity reason is recorded; the primary reason is the first that applies in this fixed order: insufficient history > detectable tag change > conflicting missions. Only the primary reason is counted in the ambiguous shares, so the shares sum exactly to the ambiguous band; secondary reasons are evidence only and overlap.";
+
+/// One in-progress item behind a usage record's attribution.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MissionItem {
+    pub qitem: String,
+    /// The seat's own item (`owned`) or an unprovable item naming the seat.
+    pub relation: &'static str,
+    /// K5 destination evidence, or the reason it cannot be proven.
+    pub destination_evidence: String,
+    /// Mission tags of each stored reading, oldest first.
+    pub tag_readings: Vec<Vec<String>>,
+}
+
+/// The full attribution of one usage record: bucket, every applicable reason
+/// in precedence order (the first is primary), and the items behind it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MissionEvidence {
+    pub bucket: MissionBucket,
+    pub reasons: Vec<&'static str>,
+    pub items: Vec<MissionItem>,
+}
+
+/// K3 mission attribution of a usage record of `seat` at `ts`, with every
+/// applicable reason computed before the primary is chosen.
+pub fn mission_evidence(
     seat: &str,
     queue: &[QueueFact],
     snapshots: &BTreeMap<String, Vec<DestinationSnapshot>>,
     ts: DateTime<Utc>,
-) -> MissionBucket {
-    let mut items: BTreeMap<&str, Vec<&QueueFact>> = BTreeMap::new();
+) -> MissionEvidence {
+    let mut by_item: BTreeMap<&str, Vec<&QueueFact>> = BTreeMap::new();
     for fact in queue {
-        items.entry(fact.qitem_id.as_str()).or_default().push(fact);
+        by_item
+            .entry(fact.qitem_id.as_str())
+            .or_default()
+            .push(fact);
     }
-    let mut owned = Vec::new();
-    let mut insufficient = false;
-    for (qitem, facts) in &items {
+    let readings_of = |qitem: &str| -> Vec<Vec<String>> {
+        snapshots
+            .get(qitem)
+            .map(|rows| rows.iter().map(|row| row.missions.clone()).collect())
+            .unwrap_or_default()
+    };
+    let (mut insufficient, mut tag_change, mut conflicting) = (false, false, false);
+    let mut items = Vec::new();
+    let mut missions = Vec::new();
+    for (qitem, facts) in &by_item {
         let Some(state) = item_state_at(facts, ts) else {
             continue;
         };
@@ -235,9 +264,25 @@ pub fn mission_at(
         let mut probe = state.clone();
         probe.ts = ts;
         match destination_at(&probe, queue, snapshots) {
-            Ok((destination, _, _)) if destination == seat => owned.push(*qitem),
+            Ok((destination, evidence, _)) if destination == seat => {
+                let tag_readings = readings_of(qitem);
+                match tag_readings.last() {
+                    None => insufficient = true,
+                    Some(latest) => {
+                        tag_change |= tag_readings.windows(2).any(|pair| pair[0] != pair[1]);
+                        conflicting |= latest.len() > 1;
+                        missions.extend(latest.iter().cloned());
+                    }
+                }
+                items.push(MissionItem {
+                    qitem: qitem.to_string(),
+                    relation: "owned",
+                    destination_evidence: evidence,
+                    tag_readings,
+                });
+            }
             Ok(_) => {}
-            Err(_) => {
+            Err(reason) => {
                 let named = facts.iter().any(|row| {
                     row.source_key.starts_with("events:queue.claimed:")
                         && row.dest_seat == seat
@@ -246,40 +291,49 @@ pub fn mission_at(
                     .get(*qitem)
                     .and_then(|rows| rows.last())
                     .is_some_and(|snapshot| snapshot.destination == seat);
-                insufficient |= named;
+                if named {
+                    insufficient = true;
+                    items.push(MissionItem {
+                        qitem: qitem.to_string(),
+                        relation: "unprovable item naming this seat",
+                        destination_evidence: reason.to_string(),
+                        tag_readings: readings_of(qitem),
+                    });
+                }
             }
         }
     }
-    if insufficient {
-        return MissionBucket::Ambiguous(AMBIGUOUS_INSUFFICIENT_HISTORY);
-    }
-    if owned.is_empty() {
-        return MissionBucket::None;
-    }
-    let mut missions = Vec::new();
-    let mut conflicting = false;
-    for qitem in owned {
-        let Some(readings) = snapshots.get(qitem).filter(|rows| !rows.is_empty()) else {
-            return MissionBucket::Ambiguous(AMBIGUOUS_INSUFFICIENT_HISTORY);
-        };
-        if readings
-            .windows(2)
-            .any(|pair| pair[0].missions != pair[1].missions)
-        {
-            return MissionBucket::Ambiguous(AMBIGUOUS_TAG_CHANGE);
-        }
-        let tags = &readings[readings.len() - 1].missions;
-        conflicting |= tags.len() > 1;
-        missions.extend(tags.iter().cloned());
-    }
     missions.sort();
     missions.dedup();
-    match missions.len() {
-        _ if conflicting => MissionBucket::Ambiguous(AMBIGUOUS_CONFLICTING_MISSIONS),
-        0 => MissionBucket::None,
-        1 => MissionBucket::Mission(missions.remove(0)),
-        _ => MissionBucket::Ambiguous(AMBIGUOUS_CONFLICTING_MISSIONS),
+    conflicting |= missions.len() > 1;
+    let reasons: Vec<&'static str> = [
+        (insufficient, AMBIGUOUS_INSUFFICIENT_HISTORY),
+        (tag_change, AMBIGUOUS_TAG_CHANGE),
+        (conflicting, AMBIGUOUS_CONFLICTING_MISSIONS),
+    ]
+    .into_iter()
+    .filter_map(|(applies, reason)| applies.then_some(reason))
+    .collect();
+    let bucket = match (reasons.first(), missions.len()) {
+        (Some(primary), _) => MissionBucket::Ambiguous(primary),
+        (None, 1) => MissionBucket::Mission(missions.remove(0)),
+        (None, _) => MissionBucket::None,
+    };
+    MissionEvidence {
+        bucket,
+        reasons,
+        items,
     }
+}
+
+/// The bucket of [`mission_evidence`].
+pub fn mission_at(
+    seat: &str,
+    queue: &[QueueFact],
+    snapshots: &BTreeMap<String, Vec<DestinationSnapshot>>,
+    ts: DateTime<Utc>,
+) -> MissionBucket {
+    mission_evidence(seat, queue, snapshots, ts).bucket
 }
 
 pub fn token_totals(usages: &[UsageFact]) -> (i64, i64, i64, i64) {
@@ -1398,6 +1452,81 @@ mod tests {
             MissionBucket::None,
             "an untagged item is no mission"
         );
+    }
+
+    #[test]
+    fn every_reason_is_recorded_and_the_primary_follows_the_fixed_order() {
+        // One instant with all three reasons: an unprovable claimed item
+        // (insufficient history), an owned item whose tag readings changed
+        // (tag change) and an owned item with two mission tags (conflicting).
+        let mut queue = vec![
+            claimed("old", 1, "dev.build"),
+            created("drift", 0, "dev.build"),
+            claimed("drift", 1, "dev.build"),
+            created("two", 0, "dev.build"),
+            claimed("two", 1, "dev.build"),
+        ];
+        let snapshots = BTreeMap::from([
+            ("old".to_string(), vec![tagged("dev.build", &["a"])]),
+            (
+                "drift".to_string(),
+                vec![tagged("dev.build", &["a"]), tagged("dev.build", &["b"])],
+            ),
+            ("two".to_string(), vec![tagged("dev.build", &["a", "c"])]),
+        ]);
+        let all = mission_evidence("dev.build", &queue, &snapshots, ts(5));
+        assert_eq!(
+            all.reasons,
+            vec![
+                AMBIGUOUS_INSUFFICIENT_HISTORY,
+                AMBIGUOUS_TAG_CHANGE,
+                AMBIGUOUS_CONFLICTING_MISSIONS
+            ]
+        );
+        assert_eq!(
+            all.bucket,
+            MissionBucket::Ambiguous(AMBIGUOUS_INSUFFICIENT_HISTORY)
+        );
+        assert_eq!(all.items.len(), 3);
+        let item = |id: &str| all.items.iter().find(|item| item.qitem == id).unwrap();
+        assert_eq!(item("old").relation, "unprovable item naming this seat");
+        assert_eq!(item("drift").relation, "owned");
+        assert_eq!(
+            item("drift").tag_readings,
+            vec![vec!["a".to_string()], vec!["b".to_string()]]
+        );
+        // Evidence order does not change the result.
+        queue.reverse();
+        assert_eq!(
+            mission_evidence("dev.build", &queue, &snapshots, ts(5)),
+            all
+        );
+        // Without the unprovable item, tag change is primary and conflict secondary.
+        let rest: Vec<QueueFact> = queue
+            .iter()
+            .filter(|f| f.qitem_id != "old")
+            .cloned()
+            .collect();
+        let two = mission_evidence("dev.build", &rest, &snapshots, ts(5));
+        assert_eq!(
+            two.reasons,
+            vec![AMBIGUOUS_TAG_CHANGE, AMBIGUOUS_CONFLICTING_MISSIONS]
+        );
+        assert_eq!(two.bucket, MissionBucket::Ambiguous(AMBIGUOUS_TAG_CHANGE));
+        // Each reason alone.
+        let alone = |items: &[&str]| {
+            let only: Vec<QueueFact> = queue
+                .iter()
+                .filter(|f| items.contains(&f.qitem_id.as_str()))
+                .cloned()
+                .collect();
+            mission_evidence("dev.build", &only, &snapshots, ts(5)).reasons
+        };
+        assert_eq!(alone(&["old"]), vec![AMBIGUOUS_INSUFFICIENT_HISTORY]);
+        assert_eq!(alone(&["drift"]), vec![AMBIGUOUS_TAG_CHANGE]);
+        assert_eq!(alone(&["two"]), vec![AMBIGUOUS_CONFLICTING_MISSIONS]);
+        assert!(MISSION_DEFINITION
+            .contains("insufficient history > detectable tag change > conflicting missions"));
     }
 
     #[test]
