@@ -541,6 +541,7 @@ dependencies = [
  "dendro-core",
  "dendro-resolver",
  "dendro-watcher",
+ "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber",

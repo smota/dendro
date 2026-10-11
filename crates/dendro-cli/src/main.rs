@@ -1,6 +1,12 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
+use std::time::Duration;
+use tokio::signal::unix::{signal, Signal, SignalKind};
+use tokio::task::JoinHandle;
+
+/// How long a signalled run may take to stop its worker and remove its stage.
+const SHUTDOWN_LIMIT: Duration = Duration::from_secs(30);
 
 #[derive(Parser)]
 #[command(name = "dendro")]
@@ -77,13 +83,23 @@ async fn main() -> Result<()> {
                 parse_roots(&root)?
             };
             let paths: Vec<PathBuf> = roots.iter().map(|root| root.path.clone()).collect();
-            let summary = tokio::task::spawn_blocking(move || {
+            // Listeners exist before the worker, so no signal can kill it mid-copy.
+            let mut interrupt = signal(SignalKind::interrupt())?;
+            let mut terminate = signal(SignalKind::terminate())?;
+            let mut worker = tokio::task::spawn_blocking(move || {
                 dendro_core::run_locked(&db, &paths, |staged, key| {
                     dendro_connectors::ingest_staged(staged, &roots, frozen, key)
                 })
-            })
-            .await??;
-            println!("{summary}");
+            });
+            let code = tokio::select! {
+                joined = &mut worker => {
+                    println!("{}", joined??);
+                    return Ok(());
+                }
+                _ = interrupt.recv() => 130,
+                _ = terminate.recv() => 143,
+            };
+            std::process::exit(stop_cooperatively(worker, interrupt, terminate, code).await);
         }
         Commands::Report {
             kind,
@@ -108,6 +124,56 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Asks the worker to stop, waits for it (its SQLite and DuckDB handles close
+/// and its stage is removed inside the worker), and returns the exit code. A
+/// second signal or the time limit stops waiting without deleting anything the
+/// worker may still write; that is reported as a failed cleanup, and the next
+/// run's recovery removes the stage.
+async fn stop_cooperatively(
+    mut worker: JoinHandle<Result<serde_json::Value>>,
+    mut interrupt: Signal,
+    mut terminate: Signal,
+    code: i32,
+) -> i32 {
+    dendro_core::RUN_CANCEL.request();
+    eprintln!("dendro: stopping; removing private staging");
+    let waited = tokio::time::timeout(SHUTDOWN_LIMIT, async {
+        tokio::select! {
+            joined = &mut worker => Some(joined),
+            _ = interrupt.recv() => None,
+            _ = terminate.recv() => None,
+        }
+    })
+    .await;
+    match waited {
+        Ok(Some(Ok(Ok(summary)))) => {
+            // The run finished before the request took effect.
+            println!("{summary}");
+            eprintln!("dendro: the run had already completed");
+            0
+        }
+        Ok(Some(Ok(Err(error)))) if error.downcast_ref::<dendro_core::Interrupted>().is_some() => {
+            eprintln!("dendro: interrupted; private staging removed");
+            code
+        }
+        Ok(Some(Ok(Err(error)))) => {
+            eprintln!(
+                "dendro: interrupted with error: {}",
+                dendro_core::redact(&format!("{error:#}"))
+            );
+            code
+        }
+        Ok(Some(Err(_))) => {
+            eprintln!("dendro: interrupted; the worker failed; staging cleanup not confirmed");
+            code
+        }
+        Ok(None) | Err(_) => {
+            eprintln!("dendro: interrupted before shutdown finished; staging cleanup FAILED and is left for the next run's recovery");
+            code
+        }
+    }
 }
 
 fn default_roots() -> Vec<dendro_connectors::SourceRoot> {

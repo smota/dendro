@@ -15,6 +15,11 @@ pub fn with_output_lock<T>(lock_path: &Path, body: impl FnOnce() -> Result<T>) -
     if let Some(parent) = lock_path.parent() {
         fs::create_dir_all(parent)?;
     }
+    if fs::symlink_metadata(lock_path).is_ok_and(|meta| !meta.file_type().is_file()) {
+        return Err(anyhow!(
+            "refusing an output lock that is not a regular file"
+        ));
+    }
     let file = OpenOptions::new()
         .read(true)
         .write(true)
@@ -23,9 +28,20 @@ pub fn with_output_lock<T>(lock_path: &Path, body: impl FnOnce() -> Result<T>) -
         .mode(0o600)
         .open(lock_path)?;
     let mut lock = RwLock::new(file);
-    let _guard = lock
+    let guard = lock
         .try_write()
         .map_err(|_| anyhow!("analytics output lock is busy"))?;
+    // The locked inode must be the one named by the lock path (not reached
+    // through a symlink) and have one link, so every creator and recovery
+    // uses the same lock.
+    {
+        use std::os::unix::fs::MetadataExt;
+        let held = guard.metadata()?;
+        let named = fs::symlink_metadata(lock_path)?;
+        if held.ino() != named.ino() || held.dev() != named.dev() || held.nlink() != 1 {
+            return Err(anyhow!("output lock identity is unsafe"));
+        }
+    }
     body()
 }
 

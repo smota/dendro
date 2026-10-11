@@ -5,6 +5,7 @@ use anyhow::{anyhow, Result};
 use serde_json::{json, Value};
 
 use crate::facts::SeatBound;
+use crate::lifecycle;
 use crate::metrics::{self, Window};
 use crate::output::{self, load_or_create_key, refuse_aliased_output, with_output_lock};
 use crate::privacy::{contains_secret, opaque_id, redact};
@@ -54,21 +55,29 @@ where
         }
     }
     let parent = db.parent().unwrap_or_else(|| Path::new("."));
-    let stage = parent.join(format!(".dendro-stage-{}", random_id()));
-    fs::create_dir(&stage)?;
-    let staged = stage.join("analytics.duckdb");
+    // Private stage first (marker before any copy), then stale recovery under
+    // the same lock, then work. The stage is removed explicitly; Drop is only
+    // a fallback.
+    let stage = lifecycle::Stage::create(parent)?;
+    let recovery = lifecycle::recover_stale(&stage);
+    let staged = stage.path().join("analytics.duckdb");
     let published = (|| {
+        let recovered = recovery?;
+        let cancel = &lifecycle::RUN_CANCEL;
         if db.exists() {
-            fs::copy(db, &staged)?;
+            lifecycle::private_copy(db, &staged, cancel)?;
         } else {
             let created = AnalyticsStore::open_path(&staged, &key.id)?;
             created.checkpoint()?;
         }
         let notes = ingest(&staged, &key.bytes)?;
+        cancel.check()?;
         let staged_store = AnalyticsStore::open_staged(&staged)?;
         staged_store.checkpoint()?;
         drop(staged_store);
         File::open(&staged)?.sync_all()?;
+        cancel.check()?;
+        stage.check_anchor()?;
         let after = fs::symlink_metadata(db).ok();
         if after
             .as_ref()
@@ -85,26 +94,27 @@ where
         if before.is_none() && after.is_some() {
             return Err(anyhow!("analytics output appeared during ingest"));
         }
+        // Publication: after this rename the output is the new complete db.
         fs::rename(&staged, db)?;
         if let Some(parent) = db.parent() {
             output::sync_dir(parent)?;
         }
-        Ok(notes)
+        Ok((notes, recovered))
     })();
-    let _ = fs::remove_dir_all(&stage);
+    let cleanup = stage.finish();
+    let (notes, recovered) = match (published, cleanup) {
+        (Ok(done), Ok(())) => done,
+        (Err(error), Ok(())) => return Err(error),
+        (Ok(_), Err(cleanup)) => return Err(cleanup),
+        (Err(error), Err(cleanup)) => return Err(error.context(cleanup.to_string())),
+    };
     Ok(json!({
         "status": "ready",
         "product": "AI Fleet Intelligence",
         "key_id": key.id,
-        "sources": published?,
+        "sources": notes,
+        "staging": recovered,
     }))
-}
-
-fn random_id() -> String {
-    use rand::RngCore;
-    let mut bytes = [0u8; 8];
-    rand::thread_rng().fill_bytes(&mut bytes);
-    hex::encode(bytes)
 }
 
 pub fn trace_tokens(store: &AnalyticsStore, window: Window) -> Result<Value> {

@@ -3,6 +3,7 @@
 #![deny(unsafe_code)]
 
 pub mod facts;
+pub mod lifecycle;
 pub mod metrics;
 pub mod models;
 pub mod output;
@@ -12,6 +13,7 @@ pub mod storage;
 pub mod traits;
 
 pub use facts::*;
+pub use lifecycle::{Cancel, Interrupted, RUN_CANCEL};
 pub use metrics::*;
 pub use models::*;
 pub use output::*;

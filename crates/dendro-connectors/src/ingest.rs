@@ -21,6 +21,7 @@ pub fn ingest_staged(
     key: &[u8],
 ) -> Result<Vec<String>> {
     let store = AnalyticsStore::open_staged(staged_db)?;
+    let stage_dir = staged_db.parent().unwrap_or_else(|| Path::new("."));
     let mut notes = Vec::new();
     let mut lives = Vec::new();
     let mut lifecycle_complete = true;
@@ -48,7 +49,7 @@ pub fn ingest_staged(
                 notes.push(format!("{shown} files={}", files.len()));
             }
             "openrig" => {
-                let count = ingest_openrig(&store, &root.path, frozen, key, &mut lives)?;
+                let count = ingest_openrig(&store, &root.path, frozen, key, &mut lives, stage_dir)?;
                 notes.push(format!("openrig events={count}"));
             }
             "agy" | "grok" => notes.push(format!("{shown} present-not-parsed")),
@@ -73,14 +74,33 @@ fn ingest_openrig(
     frozen: bool,
     key: &[u8],
     lives: &mut Vec<dendro_core::SeatBound>,
+    stage_dir: &Path,
 ) -> Result<i64> {
-    let snap_dir = std::env::temp_dir().join(format!("dendro-snap-{}", uuid_suffix()));
+    // A frozen snapshot lives in the run's private stage, next to the staged
+    // database, never in TMPDIR. It is removed as soon as it has been read;
+    // the stage removes it on any other exit.
+    let snap_dir = stage_dir.join(dendro_core::lifecycle::SNAPSHOT_DIR);
     let open_path = if frozen {
-        std::fs::create_dir_all(&snap_dir)?;
-        stream::copy_sqlite_trio(sqlite_path, &snap_dir)?
+        stream::copy_sqlite_trio(sqlite_path, &snap_dir, &dendro_core::RUN_CANCEL)?
     } else {
         sqlite_path.to_path_buf()
     };
+    let result = read_openrig(store, &open_path, key, lives);
+    if frozen {
+        let removed = std::fs::remove_dir_all(&snap_dir);
+        let count = result?;
+        removed.map_err(|_| anyhow::anyhow!("snapshot cleanup failed"))?;
+        return Ok(count);
+    }
+    result
+}
+
+fn read_openrig(
+    store: &AnalyticsStore,
+    open_path: &Path,
+    key: &[u8],
+    lives: &mut Vec<dendro_core::SeatBound>,
+) -> Result<i64> {
     let uri = format!("file:{}?mode=ro", open_path.display());
     let conn = rusqlite::Connection::open_with_flags(
         uri,
@@ -92,6 +112,7 @@ fn ingest_openrig(
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?;
         for row in rows.flatten() {
+            dendro_core::RUN_CANCEL.check()?;
             rig_names.insert(row.0, row.1);
         }
     }
@@ -136,6 +157,7 @@ fn ingest_openrig(
         ))
     })?;
     for row in rows {
+        dendro_core::RUN_CANCEL.check()?;
         let (seq, kind, payload, created_at) = row?;
         count += 1;
         let Ok(parsed) = serde_json::from_str::<Value>(&payload) else {
@@ -303,6 +325,7 @@ fn ingest_openrig(
             ))
         })?;
         for row in rows.flatten() {
+            dendro_core::RUN_CANCEL.check()?;
             if row
                 .7
                 .as_deref()
@@ -346,6 +369,7 @@ fn ingest_openrig(
             Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
         })?;
         for (qitem, tags) in rows.flatten() {
+            dendro_core::RUN_CANCEL.check()?;
             let tags: Vec<String> = tags
                 .as_deref()
                 .and_then(|text| serde_json::from_str(text).ok())
@@ -361,6 +385,7 @@ fn ingest_openrig(
     if let Ok(mut stmt) = conn.prepare("SELECT data FROM snapshots") {
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
         for data in rows.flatten() {
+            dendro_core::RUN_CANCEL.check()?;
             for (seat, role, evidence) in snapshot_roles(&data) {
                 store.insert_seat_role(
                     &dendro_core::seal_identifier(key, "seat", &seat),
@@ -381,6 +406,7 @@ fn ingest_openrig(
             ))
         })?;
         for row in rows.flatten() {
+            dendro_core::RUN_CANCEL.check()?;
             let Some(destination) = row.1 else { continue };
             let cutoff = row.2.unwrap_or_else(|| "unknown".to_string());
             store.insert_destination_snapshot(
@@ -391,9 +417,6 @@ fn ingest_openrig(
                 item_missions.get(&row.0).map(Vec::as_slice).unwrap_or(&[]),
             )?;
         }
-    }
-    if frozen {
-        let _ = std::fs::remove_dir_all(&snap_dir);
     }
     Ok(count)
 }
@@ -648,15 +671,6 @@ fn normalize_harness(key: &[u8], runtime: &str) -> String {
         runtime
     };
     dendro_core::seal_identifier(key, "harness", name)
-}
-
-fn uuid_suffix() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    format!("{nanos:x}")
 }
 
 #[cfg(test)]

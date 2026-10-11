@@ -3,7 +3,7 @@ use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use dendro_core::{
     tool_fingerprint, AnalyticsStore, CodexCounters, ToolFact, UsageFact, WarningNote,
 };
@@ -98,6 +98,7 @@ pub fn ingest_jsonl_with_key(
     let mut warnings = Vec::new();
     let mut seen_messages = HashSet::new();
     for (line_no, bytes) in pending {
+        dendro_core::RUN_CANCEL.check()?;
         let text = match String::from_utf8(bytes) {
             Ok(text) => text,
             Err(_) => {
@@ -488,19 +489,26 @@ fn json_i64(value: &Value, key: &str) -> Result<i64, String> {
         .ok_or_else(|| format!("non-integer-{key}"))
 }
 
-pub fn copy_sqlite_trio(src: &Path, dest_dir: &Path) -> Result<PathBuf> {
-    fs::create_dir_all(dest_dir)?;
-    let name = src
-        .file_name()
-        .ok_or_else(|| anyhow!("sqlite path has no file name"))?;
-    let dest = dest_dir.join(name);
-    fs::copy(src, &dest)?;
+/// Copies a SQLite database with its -wal and -shm into a new private
+/// directory (0700), as 0600 files with fixed names, checking `cancel` per
+/// chunk. SQLite pairs the WAL by name, so the copy opens consistently.
+pub fn copy_sqlite_trio(
+    src: &Path,
+    dest_dir: &Path,
+    cancel: &dendro_core::Cancel,
+) -> Result<PathBuf> {
+    dendro_core::lifecycle::create_private_dir(dest_dir)?;
+    let dest = dest_dir.join("openrig.sqlite");
+    dendro_core::lifecycle::private_copy(src, &dest, cancel)?;
     let src_text = src.display().to_string();
     for suffix in ["-wal", "-shm"] {
         let extra = PathBuf::from(format!("{src_text}{suffix}"));
         if extra.exists() {
-            let extra_name = extra.file_name().unwrap();
-            fs::copy(&extra, dest_dir.join(extra_name))?;
+            dendro_core::lifecycle::private_copy(
+                &extra,
+                &dest_dir.join(format!("openrig.sqlite{suffix}")),
+                cancel,
+            )?;
         }
     }
     Ok(dest)
@@ -1148,7 +1156,7 @@ mod tests {
             .unwrap();
         conn.execute("INSERT INTO t VALUES (2)", []).unwrap();
         let snap = dir.join("snap");
-        let copied = copy_sqlite_trio(&db_path, &snap).unwrap();
+        let copied = copy_sqlite_trio(&db_path, &snap, &dendro_core::Cancel::new()).unwrap();
         let before = ["", "-wal", "-shm"].map(|suffix| {
             let path = PathBuf::from(format!("{}{suffix}", db_path.display()));
             (
@@ -1205,7 +1213,7 @@ mod tests {
         let sqlite = PathBuf::from(&home).join(".openrig/openrig.sqlite");
         if sqlite.exists() {
             let snap = std::env::temp_dir().join(format!("dendro-ac1-snap-{}", std::process::id()));
-            let copied = copy_sqlite_trio(&sqlite, &snap).unwrap();
+            let copied = copy_sqlite_trio(&sqlite, &snap, &dendro_core::Cancel::new()).unwrap();
             let uri = format!("file:{}?mode=ro", copied.display());
             let flags = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI;
             let conn = rusqlite::Connection::open_with_flags(uri, flags).unwrap();
