@@ -7,6 +7,7 @@ pub mod grok;
 pub mod ingest;
 pub mod openrig;
 pub mod pi;
+pub mod snapshot;
 pub mod stream;
 
 pub use ingest::{ingest_staged, SourceRoot};

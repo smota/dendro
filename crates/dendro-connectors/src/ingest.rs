@@ -14,10 +14,12 @@ pub struct SourceRoot {
     pub path: PathBuf,
 }
 
+/// `_frozen` is kept for compatibility with `dendro run --frozen`: every run
+/// now reads OpenRig through a coherent private copy, frozen or not (AC12).
 pub fn ingest_staged(
     staged_db: &Path,
     roots: &[SourceRoot],
-    frozen: bool,
+    _frozen: bool,
     key: &[u8],
 ) -> Result<Vec<String>> {
     let store = AnalyticsStore::open_staged(staged_db)?;
@@ -49,8 +51,16 @@ pub fn ingest_staged(
                 notes.push(format!("{shown} files={}", files.len()));
             }
             "openrig" => {
-                let count = ingest_openrig(&store, &root.path, frozen, key, &mut lives, stage_dir)?;
-                notes.push(format!("openrig events={count}"));
+                let (count, snapshot) = ingest_openrig(&store, root, key, &mut lives, stage_dir)?;
+                notes.push(format!(
+                    "openrig events={count} revision={} attempts={} main_bytes={} wal_bytes={} copy_ms={} check_ms={}",
+                    &snapshot.revision[..16],
+                    snapshot.attempts,
+                    snapshot.main_bytes,
+                    snapshot.wal_bytes.unwrap_or(0),
+                    snapshot.copy_ms,
+                    snapshot.check_ms
+                ));
             }
             "agy" | "grok" => notes.push(format!("{shown} present-not-parsed")),
             _ => notes.push(format!("{shown} unsupported")),
@@ -70,29 +80,36 @@ pub fn ingest_staged(
 
 fn ingest_openrig(
     store: &AnalyticsStore,
-    sqlite_path: &Path,
-    frozen: bool,
+    root: &SourceRoot,
     key: &[u8],
     lives: &mut Vec<dendro_core::SeatBound>,
     stage_dir: &Path,
-) -> Result<i64> {
-    // A frozen snapshot lives in the run's private stage, next to the staged
-    // database, never in TMPDIR. It is removed as soon as it has been read;
-    // the stage removes it on any other exit.
+) -> Result<(i64, crate::snapshot::Snapshot)> {
+    // Every run reads a coherent private copy in the run's stage (AC12): no
+    // SQLite connection is ever opened on the original source. The copy is
+    // removed as soon as it has been read; the stage removes it on any other
+    // exit.
     let snap_dir = stage_dir.join(dendro_core::lifecycle::SNAPSHOT_DIR);
-    let open_path = if frozen {
-        stream::copy_sqlite_trio(sqlite_path, &snap_dir, &dendro_core::RUN_CANCEL)?
-    } else {
-        sqlite_path.to_path_buf()
-    };
-    let result = read_openrig(store, &open_path, key, lives);
-    if frozen {
-        let removed = std::fs::remove_dir_all(&snap_dir);
-        let count = result?;
-        removed.map_err(|_| anyhow::anyhow!("snapshot cleanup failed"))?;
-        return Ok(count);
-    }
-    result
+    let snapshot =
+        crate::snapshot::snapshot_sqlite(&root.path, &snap_dir, &dendro_core::RUN_CANCEL)?;
+    // Provenance: the original source (never the temporary copy) and the
+    // accepted revision, as this source's file row.
+    store.commit_file_batch(
+        &stable_source_id(&root.name, &root.path, &root.path, key),
+        "openrig",
+        &root.path.display().to_string(),
+        0,
+        snapshot.main_bytes as i64 + snapshot.wal_bytes.unwrap_or(0) as i64,
+        &snapshot.revision,
+        None,
+        &[],
+        &[],
+    )?;
+    let result = read_openrig(store, &snapshot.path, key, lives);
+    let removed = std::fs::remove_dir_all(&snap_dir);
+    let count = result?;
+    removed.map_err(|_| anyhow::anyhow!("snapshot cleanup failed"))?;
+    Ok((count, snapshot))
 }
 
 fn read_openrig(
@@ -101,11 +118,9 @@ fn read_openrig(
     key: &[u8],
     lives: &mut Vec<dendro_core::SeatBound>,
 ) -> Result<i64> {
-    let uri = format!("file:{}?mode=ro", open_path.display());
-    let conn = rusqlite::Connection::open_with_flags(
-        uri,
-        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI,
-    )?;
+    // `open_path` is always the private copy, so SQLite may keep its own
+    // index next to it inside the private stage.
+    let conn = rusqlite::Connection::open_with_flags(open_path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
     let mut rig_names = std::collections::HashMap::<String, String>::new();
     if let Ok(mut rigs) = conn.prepare("SELECT id, name FROM rigs") {
         let rows = rigs.query_map([], |row| {

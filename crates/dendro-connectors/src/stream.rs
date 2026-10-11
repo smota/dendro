@@ -489,31 +489,6 @@ fn json_i64(value: &Value, key: &str) -> Result<i64, String> {
         .ok_or_else(|| format!("non-integer-{key}"))
 }
 
-/// Copies a SQLite database with its -wal and -shm into a new private
-/// directory (0700), as 0600 files with fixed names, checking `cancel` per
-/// chunk. SQLite pairs the WAL by name, so the copy opens consistently.
-pub fn copy_sqlite_trio(
-    src: &Path,
-    dest_dir: &Path,
-    cancel: &dendro_core::Cancel,
-) -> Result<PathBuf> {
-    dendro_core::lifecycle::create_private_dir(dest_dir)?;
-    let dest = dest_dir.join("openrig.sqlite");
-    dendro_core::lifecycle::private_copy(src, &dest, cancel)?;
-    let src_text = src.display().to_string();
-    for suffix in ["-wal", "-shm"] {
-        let extra = PathBuf::from(format!("{src_text}{suffix}"));
-        if extra.exists() {
-            dendro_core::lifecycle::private_copy(
-                &extra,
-                &dest_dir.join(format!("openrig.sqlite{suffix}")),
-                cancel,
-            )?;
-        }
-    }
-    Ok(dest)
-}
-
 pub fn file_sha256(path: &Path) -> Result<String> {
     let bytes = fs::read(path)?;
     Ok(hex::encode(Sha256::digest(bytes)))
@@ -1156,7 +1131,9 @@ mod tests {
             .unwrap();
         conn.execute("INSERT INTO t VALUES (2)", []).unwrap();
         let snap = dir.join("snap");
-        let copied = copy_sqlite_trio(&db_path, &snap, &dendro_core::Cancel::new()).unwrap();
+        let copied = crate::snapshot::snapshot_sqlite(&db_path, &snap, &dendro_core::Cancel::new())
+            .unwrap()
+            .path;
         let before = ["", "-wal", "-shm"].map(|suffix| {
             let path = PathBuf::from(format!("{}{suffix}", db_path.display()));
             (
@@ -1213,7 +1190,10 @@ mod tests {
         let sqlite = PathBuf::from(&home).join(".openrig/openrig.sqlite");
         if sqlite.exists() {
             let snap = std::env::temp_dir().join(format!("dendro-ac1-snap-{}", std::process::id()));
-            let copied = copy_sqlite_trio(&sqlite, &snap, &dendro_core::Cancel::new()).unwrap();
+            let copied =
+                crate::snapshot::snapshot_sqlite(&sqlite, &snap, &dendro_core::Cancel::new())
+                    .unwrap()
+                    .path;
             let uri = format!("file:{}?mode=ro", copied.display());
             let flags = OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI;
             let conn = rusqlite::Connection::open_with_flags(uri, flags).unwrap();

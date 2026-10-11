@@ -188,6 +188,21 @@ pub fn report_json(
     });
     let sources = store.load_sources()?;
     let destination_snapshots = store.load_destination_snapshots()?;
+    // AC12 provenance: the original OpenRig path and the source revision the
+    // run's coherent private copy was accepted at.
+    let mut openrig_sources = Vec::new();
+    for (source_id, harness, path, _) in &sources {
+        if harness == "openrig" {
+            if let Some((_, bytes, revision)) = store.source_state(source_id)? {
+                openrig_sources.push(json!({
+                    "source_id": source_id,
+                    "path": path,
+                    "revision": revision,
+                    "bytes": bytes,
+                }));
+            }
+        }
+    }
     let usage_all = store.load_usage()?;
     let untimestamped_count = usage_all.iter().filter(|row| row.ts.is_none()).count();
     let usage: Vec<_> = usage_all
@@ -540,6 +555,10 @@ pub fn report_json(
         discovered.insert((fact.harness.clone(), fact.native_session.clone()));
     }
     for (source_id, harness, _path, _generation) in &sources {
+        // An OpenRig database is a provenance row, not a harness session.
+        if harness == "openrig" {
+            continue;
+        }
         let prefix = format!("{source_id}:");
         let has_usage = usage_all
             .iter()
@@ -682,6 +701,7 @@ pub fn report_json(
                 "intake_invalid": row.intake_invalid,
                 "intake_median": row.intake_median,
             })).collect::<Vec<_>>(),
+            "openrig_sources": openrig_sources,
             "mission_definition": metrics::MISSION_DEFINITION,
             "mission_tokens": mission_tokens,
             "mission_records": mission_records,
@@ -800,6 +820,7 @@ pub fn trace_json(
             "pair_medians": payload["pair_medians"],
             "activity": payload["activity"],
             "seat_lives": payload["seat_lives"],
+            "openrig_sources": payload["openrig_sources"],
             "mission_definition": payload["mission_definition"],
             "mission_tokens": payload["mission_tokens"],
             "mission_ambiguous_by_reason": payload["mission_ambiguous_by_reason"],
