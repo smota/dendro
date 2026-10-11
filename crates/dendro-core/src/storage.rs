@@ -307,6 +307,36 @@ impl AnalyticsStore {
         usages: &[UsageFact],
         tools: &[ToolFact],
     ) -> Result<()> {
+        self.commit_file_batch_settling(
+            source_id,
+            harness,
+            display_path,
+            generation,
+            byte_offset,
+            prefix_sha256,
+            counters,
+            usages,
+            tools,
+            &[],
+        )
+    }
+
+    /// As `commit_file_batch`, and in the same transaction re-settles the
+    /// outcome of tool calls stored by an earlier run (#37).
+    #[allow(clippy::too_many_arguments)]
+    pub fn commit_file_batch_settling(
+        &self,
+        source_id: &str,
+        harness: &str,
+        display_path: &str,
+        generation: i64,
+        byte_offset: i64,
+        prefix_sha256: &str,
+        counters: Option<&CodexCounters>,
+        usages: &[UsageFact],
+        tools: &[ToolFact],
+        settled: &[(String, Option<bool>)],
+    ) -> Result<()> {
         let tx = self.conn.unchecked_transaction()?;
         tx.execute(
             r#"INSERT INTO source_files (source_id, harness, display_path, generation, byte_offset, prefix_sha256)
@@ -404,6 +434,14 @@ impl AnalyticsStore {
                     t.generation,
                     redact(source_id)
                 ],
+            )?;
+        }
+        // A tool result appended after its call was stored settles the call's
+        // outcome again from every result seen so far (#37).
+        for (source_key, failed) in settled {
+            tx.execute(
+                "UPDATE tool_facts SET failed = ? WHERE source_key = ?",
+                params![failed, redact(source_key)],
             )?;
         }
         tx.commit()?;

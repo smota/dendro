@@ -128,6 +128,20 @@ pub fn ingest_jsonl_with_key(
         .iter()
         .filter(|(_, bytes)| !bytes.iter().all(|b| b.is_ascii_whitespace()))
         .count() as u64;
+    // Claude tool calls are read in their own pass over every complete line
+    // of this generation, so usage dedupe never drops a call (#35).
+    let new_from = prefix.iter().filter(|b| **b == b'\n').count() as i64;
+    let mut tool_lines: Vec<(i64, Vec<u8>)> = Vec::new();
+    if harness == "claude" {
+        let mut no = 0;
+        for line in prefix.split(|b| *b == b'\n') {
+            no += 1;
+            if no <= new_from {
+                tool_lines.push((no, line.to_vec()));
+            }
+        }
+        tool_lines.extend(pending.iter().cloned());
+    }
     for (line_no, bytes) in pending {
         dendro_core::RUN_CANCEL.check()?;
         let text = match String::from_utf8(bytes) {
@@ -238,13 +252,14 @@ pub fn ingest_jsonl_with_key(
                 }
             }
         }
-        if harness == "claude" {
-            tools.extend(claude_tools(
-                &text, tool_key, source_id, generation, line_no,
-            ));
-        }
     }
-    store.commit_file_batch(
+    let mut settled = Vec::new();
+    if harness == "claude" {
+        let pass = claude_tool_calls(&tool_lines, new_from, tool_key, source_id, generation);
+        tools = pass.new_calls;
+        settled = pass.settled;
+    }
+    store.commit_file_batch_settling(
         source_id,
         harness,
         &path.display().to_string(),
@@ -258,6 +273,7 @@ pub fn ingest_jsonl_with_key(
         },
         &usages,
         &tools,
+        &settled,
     )?;
     if let Some(session) = &file_session {
         store.set_source_session(source_id, &seal_session(tool_key, harness, &session.raw))?;
@@ -614,54 +630,175 @@ fn parse_pi(value: &Value) -> Result<Option<Buckets>, String> {
     }))
 }
 
-fn claude_tools(
-    text: &str,
+/// The Claude tool calls of one file generation (#35, #36, #37, Phase 1
+/// 0002). A call is the first `tool_use` of its (session, tool_use id), at that
+/// position and time; a streamed repeat of the id is the same call. Its outcome
+/// comes only from the `tool_result` blocks with that id in the same file and
+/// session: all `is_error: true` is a failure, all `false` a success, anything
+/// else (none, absent, not a boolean, disagreeing) unknown. A result with no
+/// call creates nothing. Rejected records (unknown type, malformed) give
+/// nothing. Lines up to `new_from` were stored by an earlier run: their calls
+/// are not inserted again, and their outcome is re-settled only when a result
+/// for them arrives in the new lines.
+struct ToolPass {
+    new_calls: Vec<ToolFact>,
+    settled: Vec<(String, Option<bool>)>,
+}
+
+fn claude_tool_calls(
+    lines: &[(i64, Vec<u8>)],
+    new_from: i64,
     key: Option<&[u8]>,
     source_id: &str,
     generation: i64,
-    line_no: i64,
-) -> Vec<ToolFact> {
-    let Ok(value) = serde_json::from_str::<Value>(text) else {
-        return Vec::new();
-    };
-    let Some(content) = value
-        .pointer("/message/content")
-        .and_then(|item| item.as_array())
-    else {
-        return Vec::new();
-    };
-    let session = value
-        .get("sessionId")
-        .and_then(|item| item.as_str())
-        .unwrap_or("claude-session");
-    let ts = timestamp_of(&value);
-    let mut tools = Vec::new();
-    for (index, block) in content.iter().enumerate() {
-        if block.get("type").and_then(|item| item.as_str()) != Some("tool_use") {
-            continue;
-        }
-        let Some(name) = block.get("name").and_then(|item| item.as_str()) else {
+) -> ToolPass {
+    struct Call {
+        fact: ToolFact,
+        line: i64,
+        results: Vec<Option<bool>>,
+        result_in_new_lines: bool,
+    }
+    let mut calls: Vec<Call> = Vec::new();
+    let mut by_id: std::collections::HashMap<(String, String), usize> =
+        std::collections::HashMap::new();
+    let mut results: Vec<((String, String), Option<bool>, i64)> = Vec::new();
+    for (line_no, bytes) in lines {
+        let Ok(text) = std::str::from_utf8(bytes) else {
             continue;
         };
-        let lexical = block.get("input").and_then(|item| item.as_str());
-        let fingerprint = key.and_then(|key| tool_fingerprint(key, name, lexical));
-        let failed = block.get("is_error").and_then(|item| item.as_bool());
-        tools.push(ToolFact {
-            source_key: format!("{source_id}:{generation}:{line_no}:{index}"),
-            harness: "claude".into(),
-            // Sealed like the usage session, so tools join the same session and seat
-            // and two different secret-shaped sessions stay distinct.
-            native_session: seal_session(key, "claude", session),
-            ts,
-            seq: line_no * 100 + index as i64,
-            name: name.to_string(),
-            fingerprint,
-            failed,
-            structured_write: matches!(name, "Write" | "Edit" | "MultiEdit" | "NotebookEdit"),
-            generation,
-        });
+        let Ok(value) = serde_json::from_str::<Value>(text) else {
+            continue;
+        };
+        if unknown_record_type("claude", &value).is_some() {
+            continue;
+        }
+        let Some(content) = value
+            .pointer("/message/content")
+            .and_then(|item| item.as_array())
+        else {
+            continue;
+        };
+        let session = value
+            .get("sessionId")
+            .and_then(|item| item.as_str())
+            .unwrap_or("claude-session")
+            .to_string();
+        let ts = timestamp_of(&value);
+        let raw_blocks = raw_content_blocks(text);
+        for (index, block) in content.iter().enumerate() {
+            match block.get("type").and_then(|item| item.as_str()) {
+                Some("tool_use") => {
+                    let Some(name) = block.get("name").and_then(|item| item.as_str()) else {
+                        continue;
+                    };
+                    let id = block.get("id").and_then(|item| item.as_str());
+                    if let Some(id) = id {
+                        if by_id.contains_key(&(session.clone(), id.to_string())) {
+                            continue;
+                        }
+                        by_id.insert((session.clone(), id.to_string()), calls.len());
+                    }
+                    let lexical = tool_input_lexical(block, raw_blocks.get(index));
+                    let fingerprint =
+                        key.and_then(|key| tool_fingerprint(key, name, lexical.as_deref()));
+                    calls.push(Call {
+                        fact: ToolFact {
+                            source_key: format!("{source_id}:{generation}:{line_no}:{index}"),
+                            harness: "claude".into(),
+                            // Sealed like the usage session, so tools join the same
+                            // session and seat and two secret-shaped sessions stay distinct.
+                            native_session: seal_session(key, "claude", &session),
+                            ts,
+                            seq: line_no * 100 + index as i64,
+                            name: name.to_string(),
+                            fingerprint,
+                            failed: None,
+                            structured_write: matches!(
+                                name,
+                                "Write" | "Edit" | "MultiEdit" | "NotebookEdit"
+                            ),
+                            generation,
+                        },
+                        line: *line_no,
+                        results: Vec::new(),
+                        result_in_new_lines: false,
+                    });
+                }
+                Some("tool_result") => {
+                    if let Some(id) = block.get("tool_use_id").and_then(|item| item.as_str()) {
+                        let outcome = block.get("is_error").and_then(|item| item.as_bool());
+                        results.push(((session.clone(), id.to_string()), outcome, *line_no));
+                    }
+                }
+                _ => {}
+            }
+        }
     }
-    tools
+    for (id, outcome, line_no) in results {
+        if let Some(&at) = by_id.get(&id) {
+            calls[at].results.push(outcome);
+            calls[at].result_in_new_lines |= line_no > new_from;
+        }
+    }
+    let mut pass = ToolPass {
+        new_calls: Vec::new(),
+        settled: Vec::new(),
+    };
+    for mut call in calls {
+        let first = call.results.first().copied().flatten();
+        call.fact.failed = match first {
+            Some(outcome) if call.results.iter().all(|r| *r == Some(outcome)) => Some(outcome),
+            _ => None,
+        };
+        if call.line > new_from {
+            pass.new_calls.push(call.fact);
+        } else if call.result_in_new_lines {
+            pass.settled.push((call.fact.source_key, call.fact.failed));
+        }
+    }
+    pass
+}
+
+/// The exact source text of each `message.content` block, in order, so a
+/// tool input is compared as written (§4 rule 2, Q4).
+fn raw_content_blocks(text: &str) -> Vec<&serde_json::value::RawValue> {
+    use serde_json::value::RawValue;
+    #[derive(serde::Deserialize)]
+    struct Line<'a> {
+        #[serde(borrow)]
+        message: Option<&'a RawValue>,
+    }
+    #[derive(serde::Deserialize)]
+    struct Message<'a> {
+        #[serde(borrow)]
+        content: Option<&'a RawValue>,
+    }
+    let blocks = || -> Option<Vec<&RawValue>> {
+        let line: Line = serde_json::from_str(text).ok()?;
+        let message: Message = serde_json::from_str(line.message?.get()).ok()?;
+        serde_json::from_str(message.content?.get()).ok()
+    };
+    blocks().unwrap_or_default()
+}
+
+/// A tool call's input for its fingerprint: a string input is its body, as
+/// before; any other input is its exact JSON text with only the ends trimmed.
+/// No reordering or other normalization, and the text is never stored.
+fn tool_input_lexical(
+    block: &Value,
+    raw_block: Option<&&serde_json::value::RawValue>,
+) -> Option<String> {
+    let input = block.get("input")?;
+    if let Some(body) = input.as_str() {
+        return Some(body.to_string());
+    }
+    #[derive(serde::Deserialize)]
+    struct Block<'a> {
+        #[serde(borrow)]
+        input: Option<&'a serde_json::value::RawValue>,
+    }
+    let raw: Block = serde_json::from_str(raw_block?.get()).ok()?;
+    Some(raw.input?.get().trim().to_string())
 }
 
 fn timestamp_of(value: &Value) -> Option<chrono::DateTime<chrono::Utc>> {
@@ -898,6 +1035,288 @@ mod tests {
             let after = unknown_warnings(&f);
             assert_eq!(after.len(), found.len() + 1);
             assert!(after.contains(&"unknown-record-type: other_kind".to_string()));
+        }
+
+        /// One Claude assistant line: message id, session, time offset in
+        /// seconds, content blocks as raw JSON text, usage input tokens.
+        fn chunk(msg: &str, session: &str, at: u32, blocks: &[String], input: i64) -> String {
+            format!(
+                "{{\"type\":\"assistant\",\"sessionId\":\"{session}\",\"timestamp\":\"2026-10-09T00:00:{at:02}Z\",\"message\":{{\"id\":\"{msg}\",\"content\":[{}],\"usage\":{{\"input_tokens\":{input},\"output_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}}}}",
+                blocks.join(",")
+            )
+        }
+
+        fn tool_use(id: &str, name: &str, input: &str) -> String {
+            format!(
+                "{{\"type\":\"tool_use\",\"id\":\"{id}\",\"name\":\"{name}\",\"input\":{input}}}"
+            )
+        }
+
+        /// A user line carrying tool results, as real Claude logs record them.
+        fn results(session: &str, at: u32, outcomes: &[(&str, &str)]) -> String {
+            let blocks: Vec<String> = outcomes
+                .iter()
+                .map(|(id, is_error)| {
+                    let flag = if is_error.is_empty() {
+                        String::new()
+                    } else {
+                        format!(",\"is_error\":{is_error}")
+                    };
+                    format!("{{\"type\":\"tool_result\",\"tool_use_id\":\"{id}\",\"content\":\"x\"{flag}}}")
+                })
+                .collect();
+            format!(
+                "{{\"type\":\"user\",\"sessionId\":\"{session}\",\"timestamp\":\"2026-10-09T00:00:{at:02}Z\",\"message\":{{\"role\":\"user\",\"content\":[{}]}}}}",
+                blocks.join(",")
+            )
+        }
+
+        /// (seq, failed) of every stored tool call, in order.
+        fn calls(f: &Fixture) -> Vec<(i64, Option<bool>)> {
+            let mut out: Vec<_> =
+                f.db.load_tools()
+                    .unwrap()
+                    .into_iter()
+                    .map(|t| (t.seq, t.failed))
+                    .collect();
+            out.sort();
+            out
+        }
+
+        #[test]
+        fn streamed_copies_keep_each_distinct_tool_once_and_usage_once_35() {
+            let f = Fixture::new("stream-tools");
+            let read = tool_use("t1", "Read", "{\"p\":1}");
+            let c = f.file(
+                "c.jsonl",
+                &[
+                    chunk("m1", "s", 1, &[read.clone()], 5),
+                    chunk("m1", "s", 2, &[tool_use("t2", "Write", "{\"p\":2}")], 5),
+                    chunk("m1", "s", 3, &[tool_use("t3", "Read", "{\"p\":3}")], 5),
+                    chunk("m1", "s", 4, &[read], 5),
+                ],
+            );
+            f.ingest("claude", &c);
+            assert_eq!(
+                f.db.load_usage().unwrap().len(),
+                1,
+                "usage dedupe unchanged"
+            );
+            let tools = f.db.load_tools().unwrap();
+            assert_eq!(tools.len(), 3, "a streamed repeat of t1 is the same call");
+            assert_eq!(tools.iter().filter(|t| t.structured_write).count(), 1);
+            f.ingest("claude", &c);
+            assert_eq!(
+                f.db.load_tools().unwrap().len(),
+                3,
+                "identical rerun adds nothing"
+            );
+        }
+
+        #[test]
+        fn tool_outcomes_come_only_from_matching_results_37() {
+            let f = Fixture::new("results");
+            let uses: Vec<String> = ["a", "b", "c", "d", "e", "f", "g"]
+                .iter()
+                .map(|id| tool_use(id, "Read", "{\"p\":1}"))
+                .collect();
+            let mut old_shape = tool_use("g", "Read", "{\"p\":1}");
+            old_shape.insert_str(old_shape.len() - 1, ",\"is_error\":true");
+            let c = f.file(
+                "c.jsonl",
+                &[
+                    chunk("m1", "s", 1, &uses[..6], 1),
+                    chunk("m2", "s", 2, &[old_shape], 1),
+                    results(
+                        "s",
+                        3,
+                        &[
+                            ("a", "true"),
+                            ("b", "false"),
+                            ("c", ""),
+                            ("d", "\"yes\""),
+                            ("f", "true"),
+                            ("f", "false"),
+                            ("z", "true"),
+                        ],
+                    ),
+                    // The same id in another session never settles this call.
+                    results("other", 4, &[("e", "true")]),
+                ],
+            );
+            f.ingest("claude", &c);
+            let got: Vec<Option<bool>> = calls(&f).into_iter().map(|(_, failed)| failed).collect();
+            assert_eq!(
+                got,
+                [
+                    Some(true),  // a: true
+                    Some(false), // b: false
+                    None,        // c: absent
+                    None,        // d: not a boolean
+                    None,        // e: only another session's result
+                    None,        // f: disagreeing results
+                    None,        // g: is_error on tool_use is not an outcome; no result
+                ],
+                "the orphan result z creates no call"
+            );
+        }
+
+        #[test]
+        fn rejected_records_yield_no_tool_facts_36() {
+            let f = Fixture::new("rejected-tools");
+            let mut lines = vec![chunk(
+                "m1",
+                "s",
+                1,
+                &[tool_use("ok", "Read", "{\"p\":1}")],
+                1,
+            )];
+            for n in 0..3 {
+                lines.push(format!(
+                    "{{\"type\":\"future_kind\",\"sessionId\":\"s\",\"timestamp\":\"2026-10-09T00:00:0{}Z\",\"message\":{{\"id\":\"x{n}\",\"content\":[{}]}}}}",
+                    n + 2,
+                    tool_use(&format!("u{n}"), "Read", "{\"p\":1}")
+                ));
+            }
+            lines.push(format!(
+                "{{\"type\":\"assistant\",\"message\":{{\"content\":[{}]",
+                tool_use("broken", "Read", "1")
+            ));
+            let c = f.file("c.jsonl", &lines);
+            f.ingest("claude", &c);
+            assert_eq!(
+                f.db.load_tools().unwrap().len(),
+                1,
+                "only the known record's call"
+            );
+        }
+
+        /// The same bytes ingested at once and in parts give the same calls.
+        fn split_equals_fresh(name: &str, parts: &[&[String]]) -> Vec<(i64, Option<bool>)> {
+            let all: Vec<String> = parts.iter().flat_map(|p| p.iter().cloned()).collect();
+            let fresh = Fixture::new(&format!("{name}-fresh"));
+            let whole = fresh.file("c.jsonl", &all);
+            fresh.ingest("claude", &whole);
+            let split = Fixture::new(&format!("{name}-split"));
+            let file = split.file("c.jsonl", parts[0]);
+            split.ingest("claude", &file);
+            for part in &parts[1..] {
+                split.append(&file, part);
+                split.ingest("claude", &file);
+            }
+            split.ingest("claude", &file);
+            assert_eq!(
+                calls(&fresh),
+                calls(&split),
+                "{name}: fresh and resumed agree"
+            );
+            calls(&split)
+        }
+
+        #[test]
+        fn appended_results_settle_and_unsettle_like_a_fresh_ingest_37() {
+            let uses: Vec<String> = ["a", "b", "c"]
+                .iter()
+                .map(|id| tool_use(id, "Read", "{\"p\":1}"))
+                .collect();
+            let part1 = vec![chunk("m1", "s", 1, &uses, 1)];
+            let part2 = vec![results(
+                "s",
+                2,
+                &[("a", "true"), ("b", "true"), ("c", "true")],
+            )];
+            let part3 = vec![results("s", 3, &[("b", "false")])];
+            let settled = split_equals_fresh("append", &[&part1, &part2]);
+            assert!(settled.iter().all(|(_, failed)| *failed == Some(true)));
+            // A later disagreeing result turns a failure back to unknown.
+            let conflicted = split_equals_fresh("conflict", &[&part1, &part2, &part3]);
+            let got: Vec<_> = conflicted.iter().map(|(_, failed)| *failed).collect();
+            assert_eq!(got, [Some(true), None, Some(true)]);
+            // A result arriving before its call's line is appended is kept.
+            let early = split_equals_fresh("result-first", &[&part2, &part1]);
+            assert!(early.iter().all(|(_, failed)| *failed == Some(true)));
+        }
+
+        #[test]
+        fn a_replaced_file_reads_its_new_generation_whole_37() {
+            let f = Fixture::new("replace-tools");
+            let c = f.file(
+                "c.jsonl",
+                &[chunk(
+                    "m1",
+                    "s",
+                    1,
+                    &[tool_use("a", "Read", "{\"p\":1}")],
+                    1,
+                )],
+            );
+            f.ingest("claude", &c);
+            fs::write(
+                &c,
+                format!(
+                    "{}\n{}\n",
+                    chunk("m9", "s", 5, &[tool_use("a", "Read", "{\"p\":1}")], 1),
+                    results("s", 6, &[("a", "true")])
+                ),
+            )
+            .unwrap();
+            f.ingest("claude", &c);
+            let tools = f.db.load_tools().unwrap();
+            let gens: Vec<(i64, Option<bool>)> =
+                tools.iter().map(|t| (t.generation, t.failed)).collect();
+            assert!(gens.contains(&(1, None)), "generation 1 is kept as it was");
+            assert!(
+                gens.contains(&(2, Some(true))),
+                "generation 2 is settled on its own"
+            );
+        }
+
+        #[test]
+        fn object_inputs_match_only_when_written_the_same_q4() {
+            let f = Fixture::new("fingerprints");
+            let raw = |id: &str, input: &str| {
+                format!(
+                    "{{\"type\":\"tool_use\",\"id\":\"{id}\",\"name\":\"Read\",\"input\":{input}}}"
+                )
+            };
+            let c = f.file(
+                "c.jsonl",
+                &[chunk(
+                    "m1",
+                    "s",
+                    1,
+                    &[
+                        raw("same1", "{\"path\":\"/a\",\"n\":1}"),
+                        raw("same2", "  {\"path\":\"/a\",\"n\":1}  "),
+                        raw("other", "{\"path\":\"/b\",\"n\":1}"),
+                        raw("inner", "{\"path\": \"/a\",\"n\":1}"),
+                        raw("order", "{\"n\":1,\"path\":\"/a\"}"),
+                        raw("text", "\"  body  \""),
+                    ],
+                    1,
+                )],
+            );
+            f.ingest("claude", &c);
+            let tools = f.db.load_tools().unwrap();
+            let fp = |seq_index: i64| {
+                tools
+                    .iter()
+                    .find(|t| t.seq % 100 == seq_index)
+                    .and_then(|t| t.fingerprint.clone())
+            };
+            assert!(
+                tools.iter().all(|t| t.fingerprint.is_some()),
+                "every object input is fingerprinted"
+            );
+            assert_eq!(fp(0), fp(1), "outer whitespace only");
+            assert_ne!(fp(0), fp(2), "different input");
+            assert_ne!(fp(0), fp(3), "interior whitespace is not normalized");
+            assert_ne!(fp(0), fp(4), "key order is not normalized");
+            assert_eq!(
+                fp(5),
+                Some(tool_fingerprint(KEY, "Read", Some("  body  ")).unwrap()),
+                "a string input keeps its body fingerprint"
+            );
         }
 
         #[test]
