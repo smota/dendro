@@ -112,7 +112,8 @@ impl AnalyticsStore {
                 display_path VARCHAR NOT NULL,
                 generation BIGINT NOT NULL,
                 byte_offset BIGINT NOT NULL,
-                prefix_sha256 VARCHAR NOT NULL
+                prefix_sha256 VARCHAR NOT NULL,
+                native_session VARCHAR
             );
             CREATE TABLE codex_counters (
                 source_id VARCHAR NOT NULL,
@@ -573,16 +574,28 @@ impl AnalyticsStore {
         Ok(())
     }
 
-    pub fn load_sources(&self) -> Result<Vec<(String, String, String, i64)>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT source_id, harness, display_path, generation FROM source_files")?;
+    /// Records a session file's native session (K10), sealed by the caller.
+    pub fn set_source_session(&self, source_id: &str, native_session: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE source_files SET native_session = ? WHERE source_id = ?",
+            params![redact(native_session), redact(source_id)],
+        )?;
+        Ok(())
+    }
+
+    /// (source_id, harness, display_path, generation, native_session).
+    #[allow(clippy::type_complexity)]
+    pub fn load_sources(&self) -> Result<Vec<(String, String, String, i64, Option<String>)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT source_id, harness, display_path, generation, native_session FROM source_files",
+        )?;
         let rows = stmt.query_map([], |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
                 row.get::<_, String>(2)?,
                 row.get::<_, i64>(3)?,
+                row.get::<_, Option<String>>(4)?,
             ))
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
@@ -1005,6 +1018,7 @@ mod tests {
             .insert_destination_snapshot(canary, canary, canary, true, &[canary.to_string()])
             .unwrap();
         store.insert_seat_role(canary, canary, canary).unwrap();
+        store.set_source_session(canary, canary).unwrap();
         store
             .replace_seat_bounds(&[SeatBound {
                 seat: canary.into(),

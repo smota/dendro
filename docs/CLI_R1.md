@@ -25,3 +25,9 @@ A first-ingest timing result does not by itself prove AC1. AC1 also requires the
 ## Missing key
 
 An existing analytics database without its `.key` sidecar refuses ingest and stays unchanged. `report` and `trace` still read it. They create no key, compute no new fingerprint and print no key material. A first run with no database creates the key, as before (K8).
+
+## Pi and Codex session ids
+
+A Pi or Codex session file is one native session, named by the id on its first line: the Pi `session` header id or the Codex `session_meta` id (K10). Every usage line in the file counts under that id, so two sessions that reuse a local message id never merge. A later header, or a Codex line `session_id`, that names a different session does not move tokens; the run records the warning "conflicting session header". A file without a valid first-line header counts under its own id `pi-file:<source>` or `codex-file:<source>`, stays unlinked, and records "missing session header". A later id never rescues it.
+
+Analytics databases written before this change counted every Pi or Codex file under one shared session. Dendro refuses them as an older schema version. Ingest again into a new analytics database; source files are never changed.

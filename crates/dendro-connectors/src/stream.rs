@@ -92,10 +92,25 @@ pub fn ingest_jsonl_with_key(
     } else {
         store.codex_counters(source_id, generation)?
     };
+    let start_offset = prefix.len();
+    let mut warnings = Vec::new();
+    // K10: Pi and Codex sessions are named by the id on line 1 of the file.
+    let file_session = match harness {
+        "pi" | "codex" => Some(file_session(harness, path, source_id)?),
+        _ => None,
+    };
+    if let Some(session) = &file_session {
+        if !session.from_header && start_offset == 0 {
+            warnings.push(WarningNote {
+                path: path.display().to_string(),
+                line: Some(1),
+                reason: "missing session header".into(),
+            });
+        }
+    }
     let mut first_codex_in_this_call = true;
     let mut usages = Vec::new();
     let mut tools = Vec::new();
-    let mut warnings = Vec::new();
     let mut seen_messages = HashSet::new();
     for (line_no, bytes) in pending {
         dendro_core::RUN_CANCEL.check()?;
@@ -113,9 +128,25 @@ pub fn ingest_jsonl_with_key(
         if text.trim().is_empty() {
             continue;
         }
+        if let Some(session) = &file_session {
+            if session.from_header
+                && line_no > 1
+                && conflicting_session(harness, &text, &session.raw)
+            {
+                warnings.push(WarningNote {
+                    path: path.display().to_string(),
+                    line: Some(line_no),
+                    reason: "conflicting session header".into(),
+                });
+            }
+        }
         match parse_line(harness, &text, &mut counters) {
             Ok(None) => {}
-            Ok(Some(bucket)) => {
+            Ok(Some(mut bucket)) => {
+                if let Some(session) = &file_session {
+                    // The file's line-1 session wins over any per-line id.
+                    bucket.native_session = session.raw.clone();
+                }
                 if let Some(id) = &bucket.message_id {
                     let sealed_session = seal_session(tool_key, harness, &bucket.native_session);
                     let sealed_id = seal_message(tool_key, id);
@@ -203,10 +234,78 @@ pub fn ingest_jsonl_with_key(
         &usages,
         &tools,
     )?;
+    if let Some(session) = &file_session {
+        store.set_source_session(source_id, &seal_session(tool_key, harness, &session.raw))?;
+    }
     for note in &warnings {
         store.record_warning(note)?;
     }
     Ok(())
+}
+
+/// A session file's native session: the line-1 header id, or a per-file
+/// fallback that never links by guess.
+struct FileSession {
+    raw: String,
+    from_header: bool,
+}
+
+/// Longest line 1 read for the header; a longer first line is malformed.
+const HEADER_LIMIT: u64 = 1 << 20;
+
+/// Reads only line 1, buffered and bounded, independent of the watermark.
+fn file_session(harness: &str, path: &Path, source_id: &str) -> Result<FileSession> {
+    let mut line = Vec::new();
+    BufReader::new(File::open(path)?.take(HEADER_LIMIT)).read_until(b'\n', &mut line)?;
+    let id = serde_json::from_slice::<Value>(line.strip_suffix(b"\n").unwrap_or(&line))
+        .ok()
+        .and_then(|value| header_id(harness, &value));
+    Ok(match id {
+        Some(raw) => FileSession {
+            raw,
+            from_header: true,
+        },
+        None => FileSession {
+            raw: format!("{harness}-file:{source_id}"),
+            from_header: false,
+        },
+    })
+}
+
+/// The native id a header line declares: Pi `{"type":"session","id"}`, Codex
+/// `{"type":"session_meta","payload":{"id"}}`.
+fn header_id(harness: &str, value: &Value) -> Option<String> {
+    let kind = value.get("type").and_then(|v| v.as_str());
+    let id = match (harness, kind) {
+        ("pi", Some("session")) => value.get("id"),
+        ("codex", Some("session_meta")) => value.pointer("/payload/id"),
+        _ => None,
+    };
+    id.and_then(|v| v.as_str())
+        .filter(|id| !id.trim().is_empty())
+        .map(str::to_string)
+}
+
+/// A later line that names a different session: a repeated header, or a
+/// Codex line whose payload.session_id differs. Same-id repeats are fine.
+fn conflicting_session(harness: &str, text: &str, first: &str) -> bool {
+    if !text.contains("session") {
+        return false;
+    }
+    let Ok(value) = serde_json::from_str::<Value>(text) else {
+        return false;
+    };
+    let named = header_id(harness, &value).or_else(|| {
+        (harness == "codex")
+            .then(|| {
+                value
+                    .pointer("/payload/session_id")
+                    .and_then(|v| v.as_str())
+            })
+            .flatten()
+            .map(str::to_string)
+    });
+    named.is_some_and(|id| id != first)
 }
 
 fn seal_session(key: Option<&[u8]>, harness: &str, raw: &str) -> String {
@@ -499,6 +598,326 @@ mod tests {
     use super::*;
     use rusqlite::OpenFlags;
     use std::io::Write;
+
+    mod header_identity {
+        use super::*;
+
+        const KEY: &[u8] = b"header-key-32-bytes-pad-pad-pad!";
+
+        fn pi_header(id: &str) -> String {
+            format!("{{\"type\":\"session\",\"version\":3,\"id\":\"{id}\",\"timestamp\":\"2026-10-09T00:00:00Z\"}}")
+        }
+
+        fn pi_usage(msg: &str, input: i64) -> String {
+            format!("{{\"type\":\"message\",\"id\":\"{msg}\",\"timestamp\":\"2026-10-09T00:00:01Z\",\"message\":{{\"role\":\"assistant\",\"usage\":{{\"input\":{input},\"output\":0,\"cacheRead\":0,\"cacheWrite\":0}}}}}}")
+        }
+
+        fn codex_header(id: &str) -> String {
+            format!("{{\"type\":\"session_meta\",\"timestamp\":\"2026-10-09T00:00:00Z\",\"payload\":{{\"id\":\"{id}\"}}}}")
+        }
+
+        fn codex_count(total: i64, session: Option<&str>) -> String {
+            let sid = session
+                .map(|s| format!(",\"session_id\":\"{s}\""))
+                .unwrap_or_default();
+            format!("{{\"type\":\"event_msg\",\"timestamp\":\"2026-10-09T00:00:01Z\",\"payload\":{{\"type\":\"token_count\"{sid},\"info\":{{\"total_token_usage\":{{\"input_tokens\":{total},\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":0,\"reasoning_output_tokens\":0}}}}}}}}")
+        }
+
+        struct Fixture {
+            dir: PathBuf,
+            db: AnalyticsStore,
+        }
+
+        impl Fixture {
+            fn new(name: &str) -> Self {
+                let dir = std::env::temp_dir()
+                    .join(format!("dendro-header-{name}-{}", std::process::id()));
+                let _ = fs::remove_dir_all(&dir);
+                fs::create_dir_all(&dir).unwrap();
+                let db = AnalyticsStore::open_path(&dir.join("a.duckdb"), "key").unwrap();
+                Fixture { dir, db }
+            }
+
+            fn file(&self, name: &str, lines: &[String]) -> PathBuf {
+                let path = self.dir.join(name);
+                fs::write(
+                    &path,
+                    lines.iter().map(|l| format!("{l}\n")).collect::<String>(),
+                )
+                .unwrap();
+                path
+            }
+
+            fn append(&self, path: &Path, lines: &[String]) {
+                let mut f = fs::OpenOptions::new().append(true).open(path).unwrap();
+                for l in lines {
+                    writeln!(f, "{l}").unwrap();
+                }
+            }
+
+            fn ingest(&self, harness: &str, path: &Path) {
+                let id = format!("src-{}", path.file_name().unwrap().to_string_lossy());
+                ingest_jsonl_with_key(&self.db, &id, harness, path, Some(KEY)).unwrap();
+            }
+
+            /// (sealed session, total tokens) per session.
+            fn sessions(&self, harness: &str) -> std::collections::BTreeMap<String, i64> {
+                let mut out = std::collections::BTreeMap::new();
+                for u in self
+                    .db
+                    .load_usage()
+                    .unwrap()
+                    .into_iter()
+                    .filter(|u| u.harness == harness)
+                {
+                    *out.entry(u.native_session).or_insert(0) +=
+                        u.input_uncached + u.cache_read + u.cache_write + u.output;
+                }
+                out
+            }
+
+            fn sealed(&self, harness: &str, raw: &str) -> String {
+                seal_session(Some(KEY), harness, raw)
+            }
+
+            fn warnings(&self) -> Vec<String> {
+                self.db.warning_reasons().unwrap()
+            }
+        }
+
+        impl Drop for Fixture {
+            fn drop(&mut self) {
+                let _ = fs::remove_dir_all(&self.dir);
+            }
+        }
+
+        #[test]
+        fn pi_sessions_come_from_line_one_and_never_collapse() {
+            let f = Fixture::new("pi");
+            let a = f.file(
+                "a.jsonl",
+                &[
+                    pi_header("native-pi-1"),
+                    pi_usage("same", 10),
+                    pi_usage("same", 10),
+                ],
+            );
+            let b = f.file("b.jsonl", &[pi_header("native-pi-2"), pi_usage("same", 20)]);
+            f.ingest("pi", &a);
+            f.ingest("pi", &b);
+            let sessions = f.sessions("pi");
+            assert_eq!(
+                sessions.get(&f.sealed("pi", "native-pi-1")),
+                Some(&10),
+                "in-session duplicate counted once"
+            );
+            assert_eq!(
+                sessions.get(&f.sealed("pi", "native-pi-2")),
+                Some(&20),
+                "same local id, other session"
+            );
+            assert_eq!(sessions.values().sum::<i64>(), 30);
+            assert!(!sessions.contains_key(&f.sealed("pi", "pi-session")));
+        }
+
+        #[test]
+        fn codex_sessions_come_from_session_meta_with_reset_arithmetic_unchanged() {
+            let f = Fixture::new("codex");
+            let a = f.file(
+                "a.jsonl",
+                &[
+                    codex_header("native-codex-1"),
+                    codex_count(10, None),
+                    codex_count(5, None),
+                ],
+            );
+            let b = f.file(
+                "b.jsonl",
+                &[codex_header("native-codex-2"), codex_count(20, None)],
+            );
+            f.ingest("codex", &a);
+            f.ingest("codex", &b);
+            let sessions = f.sessions("codex");
+            assert_eq!(
+                sessions.get(&f.sealed("codex", "native-codex-1")),
+                Some(&15),
+                "10, then reset 5"
+            );
+            assert_eq!(
+                sessions.get(&f.sealed("codex", "native-codex-2")),
+                Some(&20)
+            );
+            assert_eq!(sessions.values().sum::<i64>(), 35);
+            let reasons: Vec<_> =
+                f.db.load_usage()
+                    .unwrap()
+                    .into_iter()
+                    .filter_map(|u| u.predecessor_reason)
+                    .collect();
+            assert!(
+                reasons.contains(&"reset".to_string()) && reasons.contains(&"baseline".to_string()),
+                "{reasons:?}"
+            );
+        }
+
+        #[test]
+        fn a_missing_or_malformed_header_uses_a_per_file_fallback_and_is_never_rescued() {
+            for (harness, later) in [
+                ("pi", pi_header("late-id")),
+                ("codex", codex_header("late-id")),
+            ] {
+                let f = Fixture::new(&format!("missing-{harness}"));
+                let usage = |t| {
+                    if harness == "pi" {
+                        pi_usage("m", t)
+                    } else {
+                        codex_count(t, Some("late-id"))
+                    }
+                };
+                let a = f.file("a.jsonl", &[usage(4), later.clone(), usage(6)]);
+                let b = f.file("b.jsonl", &["not json".to_string(), usage(9)]);
+                f.ingest(harness, &a);
+                f.ingest(harness, &b);
+                let sessions = f.sessions(harness);
+                let fa = f.sealed(harness, &format!("{harness}-file:src-a.jsonl"));
+                let fb = f.sealed(harness, &format!("{harness}-file:src-b.jsonl"));
+                assert!(
+                    sessions.contains_key(&fa) && sessions.contains_key(&fb),
+                    "{harness}: {sessions:?}"
+                );
+                assert_eq!(
+                    sessions.len(),
+                    2,
+                    "{harness}: files never merge, the late id never rescues"
+                );
+                assert!(!sessions.contains_key(&f.sealed(harness, "late-id")));
+                assert_eq!(
+                    f.warnings()
+                        .iter()
+                        .filter(|w| *w == "missing session header")
+                        .count(),
+                    2,
+                    "{harness}"
+                );
+            }
+        }
+
+        #[test]
+        fn a_later_conflicting_header_or_codex_id_warns_and_keeps_the_first() {
+            let f = Fixture::new("conflict");
+            let p = f.file(
+                "p.jsonl",
+                &[
+                    pi_header("first"),
+                    pi_usage("a", 3),
+                    pi_header("first"),
+                    pi_header("second"),
+                    pi_usage("b", 4),
+                ],
+            );
+            let c = f.file(
+                "c.jsonl",
+                &[
+                    codex_header("first"),
+                    codex_count(3, Some("other")),
+                    codex_count(7, Some("first")),
+                ],
+            );
+            f.ingest("pi", &p);
+            f.ingest("codex", &c);
+            assert_eq!(
+                f.sessions("pi"),
+                [(f.sealed("pi", "first"), 7)].into_iter().collect()
+            );
+            assert_eq!(
+                f.sessions("codex"),
+                [(f.sealed("codex", "first"), 7)].into_iter().collect()
+            );
+            let conflicts = f
+                .warnings()
+                .iter()
+                .filter(|w| *w == "conflicting session header")
+                .count();
+            assert_eq!(
+                conflicts, 2,
+                "one per real conflict; a same-id repeat is not one"
+            );
+        }
+
+        #[test]
+        fn a_conflict_appended_after_ingest_keeps_earlier_facts_and_adds_only_new_tokens() {
+            let f = Fixture::new("append");
+            let p = f.file("p.jsonl", &[pi_header("first"), pi_usage("a", 10)]);
+            f.ingest("pi", &p);
+            let before = f.db.load_usage().unwrap();
+            f.append(&p, &[pi_header("second"), pi_usage("b", 5)]);
+            f.ingest("pi", &p);
+            let after = f.db.load_usage().unwrap();
+            assert_eq!(after.len(), 2);
+            assert_eq!(
+                after[0].source_key, before[0].source_key,
+                "earlier fact untouched"
+            );
+            assert_eq!(
+                f.sessions("pi"),
+                [(f.sealed("pi", "first"), 15)].into_iter().collect(),
+                "exactly +5, same session"
+            );
+            assert!(f
+                .warnings()
+                .contains(&"conflicting session header".to_string()));
+            // Replacement with a new header: new generation, new session.
+            fs::write(
+                &p,
+                format!("{}\n{}\n", pi_header("replaced"), pi_usage("c", 7)),
+            )
+            .unwrap();
+            f.ingest("pi", &p);
+            let sessions = f.sessions("pi");
+            assert_eq!(sessions.get(&f.sealed("pi", "replaced")), Some(&7));
+            let generations: std::collections::BTreeSet<_> =
+                f.db.load_usage()
+                    .unwrap()
+                    .iter()
+                    .map(|u| u.generation)
+                    .collect();
+            assert_eq!(generations.len(), 2, "replacement is a new generation");
+        }
+
+        #[test]
+        fn a_zero_usage_file_records_its_header_session_for_discovery() {
+            let f = Fixture::new("zero");
+            let p = f.file("p.jsonl", &[pi_header("idle-session")]);
+            f.ingest("pi", &p);
+            let sources = f.db.load_sources().unwrap();
+            let row = sources.iter().find(|s| s.0 == "src-p.jsonl").unwrap();
+            assert_eq!(
+                row.4.as_deref(),
+                Some(f.sealed("pi", "idle-session").as_str())
+            );
+            assert!(f.db.load_usage().unwrap().is_empty());
+        }
+
+        #[test]
+        fn a_secret_shaped_header_id_is_sealed_and_distinct() {
+            let f = Fixture::new("secret");
+            let a = f.file(
+                "a.jsonl",
+                &[pi_header("sk-ant-ZZHDRaaaa"), pi_usage("m", 1)],
+            );
+            let b = f.file(
+                "b.jsonl",
+                &[pi_header("sk-ant-ZZHDRbbbb"), pi_usage("m", 2)],
+            );
+            f.ingest("pi", &a);
+            f.ingest("pi", &b);
+            let sessions = f.sessions("pi");
+            assert_eq!(sessions.len(), 2);
+            assert!(sessions
+                .keys()
+                .all(|k| k.contains("[redacted]") && !k.contains("ZZHDR")));
+        }
+    }
 
     fn store() -> AnalyticsStore {
         AnalyticsStore::open_in_memory("kid").unwrap()

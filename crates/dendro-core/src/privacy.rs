@@ -128,6 +128,7 @@ pub const TEXT_COLUMNS: &[&str] = &[
     "source_files.harness",
     "source_files.display_path",
     "source_files.prefix_sha256",
+    "source_files.native_session",
     "codex_counters.source_id",
     "usage_facts.source_key",
     "usage_facts.harness",

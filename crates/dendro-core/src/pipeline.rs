@@ -191,7 +191,7 @@ pub fn report_json(
     // AC12 provenance: the original OpenRig path and the source revision the
     // run's coherent private copy was accepted at.
     let mut openrig_sources = Vec::new();
-    for (source_id, harness, path, _) in &sources {
+    for (source_id, harness, path, _, _) in &sources {
         if harness == "openrig" {
             if let Some((_, bytes, revision)) = store.source_state(source_id)? {
                 openrig_sources.push(json!({
@@ -554,7 +554,7 @@ pub fn report_json(
     for fact in &identities {
         discovered.insert((fact.harness.clone(), fact.native_session.clone()));
     }
-    for (source_id, harness, _path, _generation) in &sources {
+    for (source_id, harness, _path, _generation, native) in &sources {
         // An OpenRig database is a provenance row, not a harness session.
         if harness == "openrig" {
             continue;
@@ -564,7 +564,12 @@ pub fn report_json(
             .iter()
             .any(|row| row.source_key.starts_with(&prefix));
         if !has_usage {
-            discovered.insert((harness.clone(), format!("file:{source_id}")));
+            // A Pi or Codex file is discovered under its line-1 native session
+            // (K10), so a zero-usage session can still link to its seat.
+            let session = native
+                .clone()
+                .unwrap_or_else(|| format!("file:{source_id}"));
+            discovered.insert((harness.clone(), session));
         }
     }
     let mut link_rates = std::collections::BTreeMap::<String, (i64, i64)>::new();

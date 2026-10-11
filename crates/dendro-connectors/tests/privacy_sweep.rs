@@ -32,10 +32,10 @@ const RIG: &str = "rig-plain";
 
 /// Every source text field the sweep injects, by tag.
 const FIELDS: &[&str] = &[
-    "dir", "csess", "csess2", "cmsg", "tname", "tinput", "xdir", "xsess", "pdir", "pmsg", "rigid",
-    "rigname", "isess", "runtime", "iseat", "seat1", "seat2", "state", "node", "node2", "q1", "q2",
-    "q3", "reroute", "note", "reason", "target", "tstate", "cutoff", "mission", "logical",
-    "agentref", "spec",
+    "dir", "csess", "csess2", "cmsg", "tname", "tinput", "xdir", "xsess", "xhdr", "pdir", "pmsg",
+    "phdr", "rigid", "rigname", "isess", "runtime", "iseat", "seat1", "seat2", "state", "node",
+    "node2", "q1", "q2", "q3", "reroute", "note", "reason", "target", "tstate", "cutoff",
+    "mission", "logical", "agentref", "spec",
 ];
 
 fn write(path: &Path, text: &str) {
@@ -67,7 +67,8 @@ fn sources(dir: &Path, c: &dyn Fn(&str) -> String) -> Vec<SourceRoot> {
     write(
         &codex.join(c("xdir")).join("s.jsonl"),
         &format!(
-            "{}\n",
+            "{}\n{}\n",
+            json!({"type": "session_meta", "timestamp": "2026-10-09T00:00:00Z", "payload": {"id": c("xhdr")}}),
             json!({"type": "event_msg", "timestamp": "2026-10-09T01:00:00Z",
                 "payload": {"type": "token_count", "session_id": c("xsess"),
                     "info": {"total_token_usage": {"input_tokens": 9, "cached_input_tokens": 1,
@@ -78,7 +79,8 @@ fn sources(dir: &Path, c: &dyn Fn(&str) -> String) -> Vec<SourceRoot> {
     write(
         &pi.join(c("pdir")).join("s.jsonl"),
         &format!(
-            "{}\n",
+            "{}\n{}\n",
+            json!({"type": "session", "version": 3, "id": c("phdr"), "timestamp": "2026-10-09T00:00:00Z"}),
             json!({"type": "message", "id": c("pmsg"), "timestamp": "2026-10-09T01:00:00Z",
                 "message": {"role": "assistant", "usage": {"input": 3, "output": 1, "cacheRead": 0, "cacheWrite": 0}}})
         ),
