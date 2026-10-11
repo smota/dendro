@@ -236,7 +236,7 @@ def case_f6(binary, base, tag):
 S_MS = 100_000  # "S" = T0 + 100 s
 
 
-def f2_sources(b, claim_event_ms, claim_row, transitions, tools, usage, linked=True, extra_claims=()):
+def f2_sources(b, claim_event_ms, claim_row, transitions, tools, usage, linked=True, extra_claims=(), other=None):
     events = []
     if linked:
         events.append(("agent.session_identity", {"sessionId": "qa-session", "runtime": "claude-code", "sessionName": "qa-seat", "rigId": "rig-id"}, "2026-10-09 00:00:00"))
@@ -245,6 +245,10 @@ def f2_sources(b, claim_event_ms, claim_row, transitions, tools, usage, linked=T
         ("queue.created", {"qitemId": "next", "sourceSession": "build-seat", "destinationSession": "qa-seat"}, "2026-10-09 00:00:01"),
         ("queue.claimed", {"qitemId": "next", "destinationSession": "qa-seat", "claimedAt": at(S_MS + claim_event_ms)}, at(S_MS + claim_event_ms)[:19].replace("T", " ")),
     ]
+    if other:
+        # Another item of the receiver, claimed through an event (a large
+        # event seq) and closed through a transition (a small id): F7.
+        events = events + [("queue.claimed", {"qitemId": "other", "destinationSession": "qa-seat", "claimedAt": at(S_MS + other[0])}, "2026-10-09 00:00:02")]
     rows = [(1, "root", at(1_000), "done", "build-seat", "handed_off_to", "qa-seat", None)]
     if claim_row:
         ms, tid = claim_row
@@ -253,6 +257,9 @@ def f2_sources(b, claim_event_ms, claim_row, transitions, tools, usage, linked=T
         rows.append((tid, "next", at(S_MS + ms), "in-progress", "qa-seat", None, None, None))
     for ms, tid, actor in transitions:
         rows.append((tid, "next", at(S_MS + ms), "blocked", actor, None, None, None))
+    if other and other[1]:
+        ms, tid = other[1]
+        rows.append((tid, "other", at(S_MS + ms), "done", "qa-seat", "no-follow-on", None, None))
     openrig_db(b / "openrig.sqlite", events, rows)
     lines = []
     for n, (ms, inp) in enumerate(usage):
@@ -298,9 +305,23 @@ def case_f2(binary, base, tag):
     ]
     cases += [(n, cms, crow, tr, [], us, True, want, wc, we, extra) for n, cms, crow, tr, extra, us, want, wc, we in claim_cases]
     cases = [c if len(c) == 11 else (*c, []) for c in cases]
-    for name, cms, crow, trans, tools, usage, linked, want, want_claim, want_end, extra in cases:
+    # F7 (PM item 10): another item of the receiver closed before the claim
+    # is not an overlap; still open, or closed inside the window, it is; a
+    # same-time closure in the same table is ordered by key.
+    amb = ("ambiguous", "overlapping claim", None)
+    f7_cases = [
+        # (name, other item (claim ms, close (ms, transition id)), want); the claim row is key 5.
+        ("F7 other item closed before claim", (-50_000, (-10_000, 4)), est(7)),
+        ("F7 other item still open", (-50_000, None), amb),
+        ("F7 other item closed inside window", (-50_000, (300, 9)), amb),
+        ("F7 same-time closure earlier key", (-50_000, (200, 4)), est(7)),
+        ("F7 same-time closure later key", (-50_000, (200, 9)), amb),
+    ]
+    cases = [(*c, None) for c in cases] + [(n, 200, (200, 5), [(500, 6, "qa-seat")], [], [(300, 7)], True, want, 200, 500, [], oth)
+                                           for n, oth, want in f7_cases]
+    for name, cms, crow, trans, tools, usage, linked, want, want_claim, want_end, extra, other in cases:
         b = base / name.replace(" ", "-").replace(",", "")
-        f2_sources(b, cms, crow, trans, tools, usage, linked, extra)
+        f2_sources(b, cms, crow, trans, tools, usage, linked, extra, other)
         db, code, _, err = ingest(binary, b, [("claude", b / "claude"), ("openrig", b / "openrig.sqlite")])
         tr = trace(binary, db, "intake") if code == 0 else None
         rows = (tr or {}).get("value") or []
@@ -378,8 +399,49 @@ def sealed_run(binary, base):
     tr_act = trace(binary, db, "activity", frm, to, rig)
     tr_int = trace(binary, db, "intake", frm, to, rig)
     hits, _ = decoded(db, ["unknown-record-type"])
-    return {"copy_bad": bad, "copy_total": total, "exit": code, "err": err[-300:], "payload": pay,
+    unscoped = json.loads(run([binary, "report", "decisions", "--db", db, "--from", frm, "--to", to])[1])["payload"]
+    return {"unscoped_intake": intake_summary(unscoped), "independent_overlap": independent_overlap(src / "openrig.sqlite"),"copy_bad": bad, "copy_total": total, "exit": code, "err": err[-300:], "payload": pay,
             "activity_trace": tr_act, "intake_trace": tr_int, "unknown_warnings": hits["unknown-record-type"]}
+
+
+def independent_overlap(sqlite_path):
+    """Approximate independent count, from queue history alone: for each
+    queue.claimed event, the receiver's end is its first later transition on
+    the item; an overlap is another item destined to the receiver that is in
+    progress at the claim or claimed inside [claim, end). Reported, never
+    gated, and never used to tune the product (PM item 10)."""
+    conn = sqlite3.connect(f"file:{sqlite_path}?mode=ro", uri=True)
+    rows = conn.execute("SELECT transition_id, qitem_id, ts, state, actor_session FROM queue_transitions").fetchall()
+    dest = dict(conn.execute("SELECT qitem_id, destination_session FROM queue_items").fetchall())
+    claims = [json.loads(p) for (p,) in conn.execute("SELECT payload FROM events WHERE type = 'queue.claimed'")]
+    conn.close()
+    by = collections.defaultdict(list)
+    for tid, q, ts, st, actor in rows:
+        by[q].append((parse(ts), tid, st, actor))
+    for q in by:
+        by[q].sort()
+
+    def state_at(q, t):
+        state = None
+        for ts, _, st, _ in by[q]:
+            if ts > t:
+                break
+            state = st
+        return state
+
+    overlap = clean = no_end = 0
+    for c in claims:
+        q, r, start = c["qitemId"], c["destinationSession"], parse(c["claimedAt"])
+        own = [x for x in by[q] if x[3] == r and x[2] == "in-progress" and int(x[0].timestamp()) == int(start.timestamp())]
+        ends = [x for x in by[q] if x[3] == r and ((x[0], x[1]) > (own[0][0], own[0][1]) if own else x[0] >= start)]
+        if not ends:
+            no_end += 1
+            continue
+        end = ends[0][0]
+        others = [o for o in by if o != q and dest.get(o) == r and (state_at(o, start) == "in-progress" or any(x[2] == "in-progress" and start <= x[0] < end for x in by[o]))]
+        overlap += bool(others)
+        clean += not others
+    return {"claims": len(claims), "no_end": no_end, "overlap": overlap, "no_overlap": clean}
 
 
 def intake_summary(pay):
@@ -408,7 +470,8 @@ def case_sealed(binary, old, base):
     check(case, f"intake provenance: every estimate has claim <= end ({len(estimates)} estimates)", prov_ok)
     deltas = {"new": {"activity": {r["seat"]: bands_of(r) | {"observed": r["observed_secs"]} for r in act},
                       "activity_replay_mismatched_seats": len(mism), "activity_replay_mismatches": mism,
-                      "intake": intake_summary(new["payload"]), "tool_loops": new["payload"]["tool_loops"],
+                      "intake": intake_summary(new["payload"]), "intake_unscoped": new["unscoped_intake"],
+                      "independent_overlap_all_claims": new["independent_overlap"], "tool_loops": new["payload"]["tool_loops"],
                       "unknown_warnings": new["unknown_warnings"]}}
     if old:
         o = sealed_run(old, base / "old")
@@ -417,7 +480,7 @@ def case_sealed(binary, old, base):
         deltas["old"] = {"activity": {r["seat"]: bands_of(r) | {"observed": r["observed_secs"]} for r in oact},
                          "activity_gaps": {r["seat"]: r["observed_secs"] - r["sum"] for r in oact},
                          "activity_replay_mismatched_seats": sum(1 for r in oact if orep.get(r["seat"]) != bands_of(r)),
-                         "intake": intake_summary(o["payload"]), "tool_loops": o["payload"]["tool_loops"],
+                         "intake": intake_summary(o["payload"]), "intake_unscoped": o["unscoped_intake"], "tool_loops": o["payload"]["tool_loops"],
                          "unknown_warnings": o["unknown_warnings"], "exit": o["exit"]}
     after_bad, _ = verify_sealed_copy(SEALED / "sources")
     check(case, "sealed input verified after", not after_bad, after_bad)
@@ -430,6 +493,13 @@ def case_sealed(binary, old, base):
         print("INFO tool loops old:", len(deltas["old"]["tool_loops"]), "unknown warnings old:", deltas["old"]["unknown_warnings"])
     print("INFO intake new:", json.dumps(deltas["new"]["intake"]["statuses"]), "tokens", deltas["new"]["intake"]["estimate_tokens"])
     print("INFO tool loops new:", len(deltas["new"]["tool_loops"]))
+    print("INFO intake new unscoped:", json.dumps(deltas["new"]["intake_unscoped"]["statuses"]))
+    if old:
+        print("INFO intake old unscoped:", json.dumps(deltas["old"]["intake_unscoped"]["statuses"]))
+    print("INFO independent approximate overlap over all claims (reported, not gated):", json.dumps(deltas["new"]["independent_overlap_all_claims"]))
+    print("INFO intake medians new:", json.dumps(deltas["new"]["intake"]["intake_medians"]))
+    if old:
+        print("INFO intake medians old:", json.dumps(deltas["old"]["intake"]["intake_medians"]))
 
 
 def main():

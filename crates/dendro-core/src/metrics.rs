@@ -899,7 +899,7 @@ fn intake_for_edge(
             && row.dest_seat == edge.to_seat
             && row.state == "in-progress"
             && row.ts < end
-            && !closed_before(queue, row, claim.ts)
+            && !closed_before(queue, row, start, own_row)
     });
     if overlap {
         return intake_row(
@@ -945,12 +945,33 @@ fn edge_time(queue: &[QueueFact], edge: &HandoffEdge) -> DateTime<Utc> {
         .unwrap_or(DateTime::<Utc>::UNIX_EPOCH)
 }
 
-fn closed_before(queue: &[QueueFact], open: &QueueFact, at: DateTime<Utc>) -> bool {
+/// Whether `a` comes strictly after `b`: later time, or the same time and a
+/// later key within one table. A tie across tables has no order (F7).
+fn strictly_after(a: &QueueFact, b: &QueueFact) -> bool {
+    a.ts > b.ts
+        || (a.ts == b.ts
+            && is_transition_row(a) == is_transition_row(b)
+            && a.transition_id > b.transition_id)
+}
+
+/// Whether the other item `open` was closed after it opened and before this
+/// claim (F7, PM item 10): closing transition time against the claim row's
+/// time, key order only within one table for ties. An item still open at the
+/// claim is not closed, so the intake stays ambiguous.
+fn closed_before(
+    queue: &[QueueFact],
+    open: &QueueFact,
+    claim_at: DateTime<Utc>,
+    claim_row: Option<&QueueFact>,
+) -> bool {
     queue.iter().any(|row| {
         row.qitem_id == open.qitem_id
-            && row.ts <= at
-            && row.transition_id >= open.transition_id
             && matches!(row.state.as_str(), "done" | "handed-off" | "canceled")
+            && strictly_after(row, open)
+            && match claim_row {
+                Some(claim) => strictly_after(claim, row),
+                None => row.ts < claim_at,
+            }
     })
 }
 
@@ -2034,6 +2055,8 @@ mod tests {
         claim_row: Option<(i64, i64)>,
         transitions: Vec<(i64, i64, &'static str)>,
         extra_claim_rows: Vec<(i64, i64)>,
+        /// Another item for qa: its claim event time, and its closing row.
+        other: Option<(i64, Option<(i64, i64)>)>,
         tools: Vec<(Option<i64>, bool)>,
         usage: Vec<(i64, i64)>,
         linked: bool,
@@ -2046,6 +2069,7 @@ mod tests {
                 claim_row: Some((200, 2)),
                 transitions: vec![],
                 extra_claim_rows: vec![],
+                other: None,
                 tools: vec![],
                 usage: vec![],
                 linked: true,
@@ -2100,6 +2124,34 @@ mod tests {
                 row.ts = s(ms);
                 row.chain_id = Some("root".into());
                 queue.push(row);
+            }
+            if let Some((claimed, closed)) = self.other {
+                let mut other = q(
+                    "events:queue.claimed:8",
+                    8_000,
+                    "other",
+                    0,
+                    "in-progress",
+                    "pm",
+                    "qa",
+                    None,
+                );
+                other.ts = s(claimed);
+                queue.push(other);
+                if let Some((ms, id)) = closed {
+                    let mut close = q(
+                        &format!("queue_transitions:{id}"),
+                        id,
+                        "other",
+                        0,
+                        "done",
+                        "qa",
+                        "unknown",
+                        None,
+                    );
+                    close.ts = s(ms);
+                    queue.push(close);
+                }
             }
             let edge = HandoffEdge {
                 from_seat: "build".into(),
@@ -2275,6 +2327,29 @@ mod tests {
             outcome(&m4.run()),
             est(4),
             "a row in the next second is an end, not the claim"
+        );
+        // F7: another item of the receiver closed before the claim is not an
+        // overlap, whatever its event and transition ids; still open, it is.
+        // The claim row is key 5; the root handoff already uses key 1.
+        let mut o = IntakeCase::new();
+        o.claim_row = Some((200, 5));
+        o.transitions = vec![(500, 6, "qa")];
+        o.usage = vec![(300, 7)];
+        let ambiguous = ("ambiguous", Some("overlapping claim"), None);
+        o.other = Some((-50_000, Some((-10_000, 4))));
+        assert_eq!(outcome(&o.run()), est(7), "closed before the claim");
+        o.other = Some((-50_000, None));
+        assert_eq!(outcome(&o.run()), ambiguous, "still open");
+        o.other = Some((-50_000, Some((300, 9))));
+        assert_eq!(outcome(&o.run()), ambiguous, "closed inside the window");
+        // Same time as the claim row, same table: key order decides.
+        o.other = Some((-50_000, Some((200, 4))));
+        assert_eq!(outcome(&o.run()), est(7), "earlier key closes first");
+        o.other = Some((-50_000, Some((200, 9))));
+        assert_eq!(
+            outcome(&o.run()),
+            ambiguous,
+            "later key closes after the claim"
         );
         // Row 5: the only receiver write has no timestamp.
         let mut t = IntakeCase::new();
