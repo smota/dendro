@@ -141,6 +141,63 @@ pub fn trace_tokens(store: &AnalyticsStore, window: Window) -> Result<Value> {
     ))
 }
 
+/// AC6 / §4.1: reasoning is a subset of output. It is shown apart and never
+/// added to the four categories again; Claude does not record it.
+pub const REASONING_RULE: &str =
+    "reasoning is part of output, shown separately and never added again; claude does not record it";
+
+/// The four token categories of a set of usage records, plus reasoning.
+#[derive(Debug, Clone, Default)]
+struct Categories {
+    input_uncached: i64,
+    output: i64,
+    cache_read: i64,
+    cache_write: i64,
+    reasoning: i64,
+    reasoning_recorded: bool,
+}
+
+impl Categories {
+    fn tokens_of(row: &crate::UsageFact) -> i64 {
+        row.input_uncached + row.output + row.cache_read + row.cache_write
+    }
+
+    fn add(&mut self, row: &crate::UsageFact) {
+        self.input_uncached += row.input_uncached;
+        self.output += row.output;
+        self.cache_read += row.cache_read;
+        self.cache_write += row.cache_write;
+        if row.harness != "claude" {
+            self.reasoning += row.reasoning;
+            self.reasoning_recorded = true;
+        }
+    }
+
+    fn tokens(&self) -> i64 {
+        self.input_uncached + self.output + self.cache_read + self.cache_write
+    }
+
+    fn sum_tokens(parts: &[&Categories]) -> i64 {
+        parts.iter().map(|part| part.tokens()).sum()
+    }
+
+    /// `harness` names a single session's harness; Claude shows "not recorded".
+    fn json(&self, harness: Option<&str>) -> Value {
+        let recorded = match harness {
+            Some(name) => name != "claude",
+            None => self.reasoning_recorded,
+        };
+        json!({
+            "input_uncached": self.input_uncached,
+            "output": self.output,
+            "cache_read": self.cache_read,
+            "cache_write": self.cache_write,
+            "tokens": self.tokens(),
+            "reasoning": if recorded { json!(self.reasoning) } else { json!("not recorded") },
+        })
+    }
+}
+
 pub fn opaque_session(key: &[u8], harness: &str, native: &str) -> String {
     opaque_id(key, "session", &format!("{harness}\n{native}"))
 }
@@ -172,13 +229,22 @@ pub fn report_json(
     }
     let store = AnalyticsStore::open_read_only(db)?;
     let identities = store.load_identity()?;
+    // One binding rule for links, tokens, missions, intakes and rig scope.
+    let bindings = metrics::session_bindings(&identities);
+    let binding = |harness: &str, native: &str| metrics::binding_of(&bindings, harness, native);
+    // Rig scope admits only sessions singly linked to that rig; a collision
+    // never enters through one of its candidate identities.
     let allowed: Option<std::collections::HashSet<(String, String)>> = rig.map(|name| {
-        identities
+        bindings
             .iter()
-            .filter(|fact| fact.rig == name)
-            .map(|fact| (fact.harness.clone(), fact.native_session.clone()))
+            .filter(|(_, bound)| bound.rig() == Some(name))
+            .map(|(session, _)| session.clone())
             .collect()
     });
+    let in_scope = |harness: &str, native: &str| match &allowed {
+        Some(set) => set.contains(&(harness.to_string(), native.to_string())),
+        None => true,
+    };
     let rig_seats: Option<std::collections::HashSet<String>> = rig.map(|name| {
         identities
             .iter()
@@ -204,17 +270,18 @@ pub fn report_json(
         }
     }
     let usage_all = store.load_usage()?;
-    let untimestamped_count = usage_all.iter().filter(|row| row.ts.is_none()).count();
+    let untimestamped: Vec<_> = usage_all
+        .iter()
+        .filter(|row| row.ts.is_none() && in_scope(&row.harness, &row.native_session))
+        .collect();
+    let untimestamped_count = untimestamped.len();
     let usage: Vec<_> = usage_all
         .iter()
         .filter(|row| match row.ts {
             Some(ts) => ts >= window.from && ts < window.to,
             None => false,
         })
-        .filter(|row| match &allowed {
-            Some(set) => set.contains(&(row.harness.clone(), row.native_session.clone())),
-            None => true,
-        })
+        .filter(|row| in_scope(&row.harness, &row.native_session))
         .cloned()
         .collect();
     let queue_all: Vec<_> = store
@@ -256,16 +323,25 @@ pub fn report_json(
         .filter(|edge| !edge.returned_within(window))
         .count() as i64;
     let mut seat_tokens = std::collections::BTreeMap::<String, i64>::new();
+    // Per seat and overall four-category period totals; reasoning is part of
+    // output and is shown apart, never added again.
+    let mut seat_categories = std::collections::BTreeMap::<(String, String), Categories>::new();
+    let mut overall = Categories::default();
+    let mut unlinked = Categories::default();
+    let mut collision = Categories::default();
     for row in &usage {
-        let Some(seat) = identities
-            .iter()
-            .find(|fact| fact.harness == row.harness && fact.native_session == row.native_session)
-            .map(|fact| fact.seat.clone())
-        else {
-            continue;
-        };
-        *seat_tokens.entry(seat).or_default() +=
-            row.input_uncached + row.output + row.cache_read + row.cache_write;
+        overall.add(row);
+        match binding(&row.harness, &row.native_session) {
+            metrics::SessionBinding::Linked { rig, seat } => {
+                *seat_tokens.entry(seat.clone()).or_default() += Categories::tokens_of(row);
+                seat_categories
+                    .entry((seat.clone(), rig.clone()))
+                    .or_default()
+                    .add(row);
+            }
+            metrics::SessionBinding::Unlinked => unlinked.add(row),
+            metrics::SessionBinding::Collision => collision.add(row),
+        }
     }
     let mut snapshot_destinations =
         std::collections::BTreeMap::<String, Vec<crate::DestinationSnapshot>>::new();
@@ -438,12 +514,7 @@ pub fn report_json(
         })
         .collect();
     let loops = metrics::tool_loops(&tools, 3, 600);
-    let seat_of = |native: &str| {
-        identities
-            .iter()
-            .find(|fact| fact.native_session == native)
-            .map(|fact| fact.seat.clone())
-    };
+    let seat_of = |harness: &str, native: &str| binding(harness, native).seat().map(String::from);
     let intakes = metrics::handoff_intakes(&edges, &queue_all, &tools, &usage, seat_of);
     let medians = metrics::pair_medians(&edges, &queue_all, &intakes);
     // AC6 / K3: each in-window usage record lands in exactly one band. Per seat,
@@ -457,18 +528,9 @@ pub fn report_json(
     let mut seat_reasons =
         std::collections::BTreeMap::<String, std::collections::BTreeMap<String, i64>>::new();
     for row in &usage {
-        let mut bound_seats: Vec<String> = identities
-            .iter()
-            .filter(|fact| fact.harness == row.harness && fact.native_session == row.native_session)
-            .map(|fact| fact.seat.clone())
-            .collect();
-        bound_seats.sort();
-        bound_seats.dedup();
-        let seat = if bound_seats.len() == 1 {
-            bound_seats.pop()
-        } else {
-            None
-        };
+        let seat = binding(&row.harness, &row.native_session)
+            .seat()
+            .map(String::from);
         let amount = row.input_uncached + row.output + row.cache_read + row.cache_write;
         let (Some(seat), Some(ts)) = (seat, row.ts) else {
             *mission_tokens.entry("unlinked".into()).or_insert(0) += amount;
@@ -542,17 +604,27 @@ pub fn report_json(
             })
         })
         .collect();
-    let untimestamped_tokens: i64 = usage_all
+    let untimestamped_tokens: i64 = untimestamped
         .iter()
-        .filter(|row| row.ts.is_none())
-        .map(|row| row.input_uncached + row.output + row.cache_read + row.cache_write)
+        .map(|row| Categories::tokens_of(row))
         .sum();
+    // Each discovered session with how it was found: usage records, a
+    // zero-usage session file, or only an OpenRig identity event.
     let mut discovered = std::collections::BTreeSet::<(String, String)>::new();
+    let mut found_by =
+        std::collections::BTreeMap::<(String, String), std::collections::BTreeSet<&str>>::new();
     for row in &usage_all {
-        discovered.insert((row.harness.clone(), row.native_session.clone()));
+        let session = (row.harness.clone(), row.native_session.clone());
+        found_by.entry(session.clone()).or_default().insert("usage");
+        discovered.insert(session);
     }
     for fact in &identities {
-        discovered.insert((fact.harness.clone(), fact.native_session.clone()));
+        let session = (fact.harness.clone(), fact.native_session.clone());
+        found_by
+            .entry(session.clone())
+            .or_default()
+            .insert("identity");
+        discovered.insert(session);
     }
     for (source_id, harness, _path, _generation, native) in &sources {
         // An OpenRig database is a provenance row, not a harness session.
@@ -569,22 +641,75 @@ pub fn report_json(
             let session = native
                 .clone()
                 .unwrap_or_else(|| format!("file:{source_id}"));
+            found_by
+                .entry((harness.clone(), session.clone()))
+                .or_default()
+                .insert("zero-usage file");
             discovered.insert((harness.clone(), session));
         }
     }
     let mut link_rates = std::collections::BTreeMap::<String, (i64, i64)>::new();
     for (harness, native) in &discovered {
-        let seats: std::collections::BTreeSet<_> = identities
-            .iter()
-            .filter(|fact| fact.harness == *harness && fact.native_session == *native)
-            .map(|fact| fact.seat.clone())
-            .collect();
         let entry = link_rates.entry(harness.clone()).or_insert((0, 0));
         entry.1 += 1;
-        if seats.len() == 1 {
+        if binding(harness, native).seat().is_some() {
             entry.0 += 1;
         }
     }
+    // AC6: one row per discovered session in scope, with its period categories
+    // and its untimestamped records, which stay outside every period figure.
+    let mut session_period =
+        std::collections::BTreeMap::<(String, String), (Categories, usize)>::new();
+    for row in &usage {
+        let slot = session_period
+            .entry((row.harness.clone(), row.native_session.clone()))
+            .or_default();
+        slot.0.add(row);
+        slot.1 += 1;
+    }
+    let mut session_untimestamped =
+        std::collections::BTreeMap::<(String, String), (usize, i64)>::new();
+    for row in &untimestamped {
+        let slot = session_untimestamped
+            .entry((row.harness.clone(), row.native_session.clone()))
+            .or_default();
+        slot.0 += 1;
+        slot.1 += Categories::tokens_of(row);
+    }
+    let session_rows: Vec<_> = discovered
+        .iter()
+        .filter(|(harness, native)| in_scope(harness, native))
+        .map(|(harness, native)| {
+            let key = (harness.clone(), native.clone());
+            let bound = binding(harness, native);
+            let (categories, records) = session_period.get(&key).cloned().unwrap_or_default();
+            let (untimestamped_records, untimestamped_session_tokens) =
+                session_untimestamped.get(&key).copied().unwrap_or_default();
+            let mut row = categories.json(Some(harness));
+            row["harness"] = json!(harness);
+            row["session"] = json!(native);
+            row["status"] = json!(bound.status());
+            row["rig"] = json!(bound.rig());
+            row["seat"] = json!(bound.seat());
+            row["period_records"] = json!(records);
+            row["discovered_by"] = json!(found_by.get(&key).cloned().unwrap_or_default());
+            row["untimestamped"] = json!({
+                "records": untimestamped_records,
+                "tokens": untimestamped_session_tokens,
+                "scope": "session only, outside every period figure",
+            });
+            row
+        })
+        .collect();
+    let seat_category_rows: Vec<_> = seat_categories
+        .iter()
+        .map(|((seat, seat_rig), categories)| {
+            let mut row = categories.json(None);
+            row["seat"] = json!(seat);
+            row["rig"] = json!(seat_rig);
+            row
+        })
+        .collect();
     let links: Vec<_> = discovered
         .into_iter()
         .map(|(harness, native)| {
@@ -592,22 +717,13 @@ pub fn report_json(
                 .iter()
                 .filter(|fact| fact.harness == harness && fact.native_session == native)
                 .collect();
-            let mut bound: Vec<&str> = matches.iter().map(|fact| fact.seat.as_str()).collect();
-            bound.sort();
-            bound.dedup();
-            let status = if matches.is_empty() {
-                "unlinked"
-            } else if bound.len() == 1 {
-                "linked"
-            } else {
-                "collision"
-            };
+            let bound = binding(&harness, &native);
             json!({
                 "harness": harness,
                 "native_session": native,
-                "status": status,
-                "rig": if bound.len() == 1 { matches.first().map(|fact| fact.rig.clone()) } else { None },
-                "seat": if bound.len() == 1 { matches.first().map(|fact| fact.seat.clone()) } else { None },
+                "status": bound.status(),
+                "rig": bound.rig(),
+                "seat": bound.seat(),
                 "evidence": matches.iter().map(|fact| fact.source_key.clone()).collect::<Vec<_>>(),
             })
         })
@@ -651,6 +767,15 @@ pub fn report_json(
             "to": redact(to),
             "usage_rows": usage.len(),
             "untimestamped_count": untimestamped_count,
+            "token_categories": overall.json(None),
+            "seat_token_categories": seat_category_rows,
+            "unlinked_tokens": Categories::sum_tokens(&[&unlinked, &collision]),
+            "unlinked_token_categories": {
+                "unlinked": unlinked.json(None),
+                "collision": collision.json(None),
+            },
+            "sessions": session_rows,
+            "reasoning_rule": REASONING_RULE,
             "link_rates": link_rates.iter().map(|(harness, (linked, discovered_count))| json!({
                 "harness": harness,
                 "linked": linked,
@@ -806,6 +931,14 @@ pub fn trace_json(
         "value": value,
         "inputs": {
             "tokens": payload["tokens"],
+            "token_categories": payload["token_categories"],
+            "seat_token_categories": payload["seat_token_categories"],
+            "unlinked_tokens": payload["unlinked_tokens"],
+            "unlinked_token_categories": payload["unlinked_token_categories"],
+            "sessions": payload["sessions"],
+            "reasoning_rule": payload["reasoning_rule"],
+            "untimestamped_count": payload["untimestamped_count"],
+            "untimestamped_tokens_all_time": payload["untimestamped_tokens_all_time"],
             "m1_yield": payload["m1_yield"],
             "m1_by_seat": payload["m1_by_seat"],
             "k2_closed_item": payload["k2_closed_item"],
@@ -1180,6 +1313,265 @@ mod tests {
             trace["inputs"]["nonreturn_handoffs"],
             p["nonreturn_handoffs"]
         );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn session_rows_conserve_categories_seats_unlinked_and_rig_scope() {
+        use chrono::TimeZone;
+        let at = |m: u32| chrono::Utc.with_ymd_and_hms(2026, 10, 9, 1, m, 0).unwrap();
+        let dir = std::env::temp_dir().join(format!("dendro-sessions-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("analytics.duckdb");
+        let store = AnalyticsStore::open_path(&db, "kid").unwrap();
+        #[allow(clippy::too_many_arguments)]
+        let usage = |source: &str,
+                     seq: i64,
+                     harness: &str,
+                     session: &str,
+                     ts: Option<chrono::DateTime<chrono::Utc>>,
+                     buckets: [i64; 5]| crate::UsageFact {
+            source_key: format!("{source}:1:{seq}"),
+            harness: harness.into(),
+            native_session: session.into(),
+            message_id: Some(format!("m{seq}")),
+            ts,
+            seq,
+            input_uncached: buckets[0],
+            output: buckets[1],
+            cache_read: buckets[2],
+            cache_write: buckets[3],
+            reasoning: buckets[4],
+            currency_total: None,
+            generation: 1,
+            predecessor_source_key: None,
+            predecessor_reason: None,
+            prior_input_tokens: None,
+            prior_cached_input_tokens: None,
+            prior_cache_write_input_tokens: None,
+            prior_output_tokens: None,
+            prior_reasoning_output_tokens: None,
+        };
+        let batches: Vec<(&str, &str, Vec<crate::UsageFact>)> = vec![
+            (
+                "sc",
+                "claude",
+                vec![
+                    usage("sc", 1, "claude", "c1", Some(at(0)), [1, 2, 3, 4, 0]), // at `from`: in
+                    usage("sc", 2, "claude", "c1", Some(at(30)), [10, 20, 30, 40, 0]),
+                    usage(
+                        "sc",
+                        3,
+                        "claude",
+                        "c1",
+                        Some(chrono::Utc.with_ymd_and_hms(2026, 10, 9, 2, 0, 0).unwrap()),
+                        [500, 0, 0, 0, 0],
+                    ), // at `to`: out
+                    usage("sc", 4, "claude", "c1", None, [6, 0, 4, 0, 0]),
+                ],
+            ),
+            (
+                "sx",
+                "codex",
+                vec![usage("sx", 1, "codex", "x1", Some(at(5)), [3, 7, 11, 0, 5])],
+            ),
+            (
+                "sp",
+                "pi",
+                vec![
+                    usage("sp", 1, "pi", "p1", Some(at(5)), [100, 1, 0, 0, 1]),
+                    usage("sp", 2, "pi", "p1", Some(at(6)), [0, 4, 0, 0, 2]),
+                    usage("sp", 3, "pi", "p2", Some(at(7)), [1000, 0, 0, 0, 0]),
+                    usage("sp", 4, "pi", "p3", Some(at(8)), [9, 0, 0, 0, 0]),
+                    usage("sp", 5, "pi", "p3", None, [70, 0, 0, 0, 0]),
+                ],
+            ),
+        ];
+        for (source, harness, rows) in &batches {
+            store
+                .commit_file_batch(source, harness, "p", 1, 0, "h", None, rows, &[])
+                .unwrap();
+        }
+        // A zero-usage Pi file discovered under its header session.
+        store
+            .commit_file_batch("zf", "pi", "p", 1, 0, "h", None, &[], &[])
+            .unwrap();
+        store.set_source_session("zf", "pz").unwrap();
+        for (key, harness, session, rig, seat) in [
+            ("i1", "claude", "c1", "r", "a"),
+            ("i2", "claude", "c1", "r", "a"), // agrees: one binding
+            ("i3", "codex", "x1", "r", "b"),
+            ("i4", "pi", "p1", "r", "a"), // disagrees: collision
+            ("i5", "pi", "p1", "r", "b"),
+            ("i6", "pi", "p3", "other", "c"),
+            ("i7", "claude", "c9", "r", "a"), // identity only
+            ("i8", "pi", "pz", "r", "b"),
+        ] {
+            store
+                .insert_identity(&crate::IdentityFact {
+                    source_key: key.into(),
+                    harness: harness.into(),
+                    native_session: session.into(),
+                    rig: rig.into(),
+                    seat: seat.into(),
+                    ts: Some(at(0)),
+                })
+                .unwrap();
+        }
+        store.checkpoint().unwrap();
+        drop(store);
+        let (from, to) = ("2026-10-09T01:00:00Z", "2026-10-09T02:00:00Z");
+        let session_sum = |rows: &[Value], field: &str, keep: &dyn Fn(&Value) -> bool| -> i64 {
+            rows.iter()
+                .filter(|row| keep(row))
+                .map(|row| row[field].as_i64().unwrap())
+                .sum()
+        };
+
+        let report = report_json(&db, "tokens", None, from, to).unwrap();
+        let p = &report["payload"];
+        let rows = p["sessions"].as_array().unwrap().clone();
+        let find = |session: &str| {
+            rows.iter()
+                .find(|row| row["session"] == session)
+                .unwrap()
+                .clone()
+        };
+        // Every discovered session has one row, including zero usage.
+        let mut names: Vec<_> = rows
+            .iter()
+            .map(|row| row["session"].as_str().unwrap().to_string())
+            .collect();
+        names.sort();
+        assert_eq!(names, ["c1", "c9", "p1", "p2", "p3", "pz", "x1"]);
+        assert_eq!(find("c1")["status"], "linked");
+        assert_eq!(find("c1")["seat"], "a");
+        assert_eq!(find("p1")["status"], "collision");
+        assert_eq!(find("p1")["seat"], Value::Null);
+        assert_eq!(find("p2")["status"], "unlinked");
+        assert_eq!(find("c9")["discovered_by"], json!(["identity"]));
+        assert_eq!(
+            find("pz")["discovered_by"],
+            json!(["identity", "zero-usage file"])
+        );
+        assert_eq!(find("pz")["tokens"], 0);
+        // Half-open window: the row at `from` counts, the row at `to` does not.
+        assert_eq!(find("c1")["input_uncached"], 11);
+        assert_eq!(find("c1")["tokens"], 110);
+        assert_eq!(find("c1")["period_records"], 2);
+        // Untimestamped records stay session-only, outside every period figure.
+        assert_eq!(find("c1")["untimestamped"]["records"], 1);
+        assert_eq!(find("c1")["untimestamped"]["tokens"], 10);
+        assert_eq!(p["untimestamped_count"], 2);
+        assert_eq!(p["untimestamped_tokens_all_time"], 80);
+        // Reasoning is shown apart and never added; Claude does not record it.
+        assert_eq!(find("c1")["reasoning"], "not recorded");
+        assert_eq!(find("x1")["reasoning"], 5);
+        assert_eq!(find("x1")["tokens"], 21);
+        assert_eq!(find("p1")["reasoning"], 3);
+        assert_eq!(find("p1")["tokens"], 105);
+        // Conservation: sessions = total; non-linked sessions = unlinked total.
+        let all = |_: &Value| true;
+        assert_eq!(
+            session_sum(&rows, "tokens", &all),
+            p["tokens"].as_i64().unwrap()
+        );
+        assert_eq!(p["tokens"], 110 + 21 + 105 + 1000 + 9);
+        for field in ["input_uncached", "output", "cache_read", "cache_write"] {
+            assert_eq!(
+                session_sum(&rows, field, &all),
+                p["token_categories"][field].as_i64().unwrap(),
+                "{field}"
+            );
+        }
+        assert_eq!(p["token_categories"]["reasoning"], 8);
+        let not_linked = |row: &Value| row["status"] != "linked";
+        assert_eq!(
+            session_sum(&rows, "tokens", &not_linked),
+            p["unlinked_tokens"].as_i64().unwrap()
+        );
+        assert_eq!(p["unlinked_tokens"], 1105);
+        assert_eq!(p["unlinked_token_categories"]["collision"]["tokens"], 105);
+        // Linked sessions per seat = seat categories = M1 seat tokens = mission total.
+        for seat in ["a", "b", "c"] {
+            let mine = |row: &Value| row["status"] == "linked" && row["seat"] == seat;
+            let sessions = session_sum(&rows, "tokens", &mine);
+            let categories = p["seat_token_categories"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|row| row["seat"] == seat)
+                .unwrap();
+            assert_eq!(categories["tokens"].as_i64().unwrap(), sessions, "{seat}");
+            for field in ["input_uncached", "output", "cache_read", "cache_write"] {
+                assert_eq!(
+                    session_sum(&rows, field, &mine),
+                    categories[field].as_i64().unwrap(),
+                    "{seat} {field}"
+                );
+            }
+            let m1 = p["m1_by_seat"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|row| row["seat"] == seat)
+                .unwrap();
+            assert_eq!(m1["tokens"].as_i64().unwrap(), sessions, "{seat}");
+            let mission = p["mission_by_seat"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|row| row["seat"] == seat)
+                .unwrap();
+            assert_eq!(mission["total"].as_i64().unwrap(), sessions, "{seat}");
+        }
+        // The collision never reaches a seat through one candidate identity.
+        let seat_a = p["m1_by_seat"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["seat"] == "a")
+            .unwrap();
+        assert_eq!(seat_a["tokens"], 110);
+        // Report and trace agree.
+        let trace = trace_json(&db, "tokens", None, from, to).unwrap();
+        for field in [
+            "sessions",
+            "token_categories",
+            "seat_token_categories",
+            "unlinked_tokens",
+            "untimestamped_count",
+        ] {
+            assert_eq!(trace["inputs"][field], p[field], "{field}");
+        }
+
+        // Rig scope: only sessions singly linked to the rig, with their untimestamped rows.
+        let scoped = report_json(&db, "tokens", Some("r"), from, to).unwrap();
+        let q = &scoped["payload"];
+        let rows = q["sessions"].as_array().unwrap().clone();
+        let mut names: Vec<_> = rows
+            .iter()
+            .map(|row| row["session"].as_str().unwrap().to_string())
+            .collect();
+        names.sort();
+        assert_eq!(names, ["c1", "c9", "pz", "x1"]);
+        assert_eq!(q["tokens"], 131);
+        assert_eq!(session_sum(&rows, "tokens", &all), 131);
+        let seats: i64 = q["seat_token_categories"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["tokens"].as_i64().unwrap())
+            .sum();
+        assert_eq!(seats, 131);
+        assert_eq!(q["unlinked_tokens"], 0);
+        assert_eq!(q["untimestamped_count"], 1);
+        assert_eq!(q["untimestamped_tokens_all_time"], 10);
+        let other = report_json(&db, "tokens", Some("other"), from, to).unwrap();
+        assert_eq!(other["payload"]["tokens"], 9);
+        assert_eq!(other["payload"]["untimestamped_count"], 1);
+        assert_eq!(other["payload"]["untimestamped_tokens_all_time"], 70);
         let _ = fs::remove_dir_all(&dir);
     }
 

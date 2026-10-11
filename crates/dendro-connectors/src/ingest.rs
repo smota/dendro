@@ -33,22 +33,36 @@ pub fn ingest_staged(
             if root.name == "openrig" {
                 lifecycle_complete = false;
             }
+            // AC1: a missing source is listed, warned, and the run goes on.
             notes.push(format!("{shown} missing"));
+            store.record_warning(&dendro_core::WarningNote {
+                path: root.path.display().to_string(),
+                line: None,
+                reason: format!("source {} missing", root.name),
+            })?;
             continue;
         }
         match root.name.as_str() {
             "claude" | "codex" | "pi" => {
                 let files = walk_jsonl(&root.path);
+                let mut read = stream::FileStats::default();
                 for file in &files {
-                    stream::ingest_jsonl_with_key(
+                    let stats = stream::ingest_jsonl_with_key(
                         &store,
                         &stable_source_id(&root.name, &root.path, file, key),
                         &root.name,
                         file,
                         Some(key),
                     )?;
+                    read.records_read += stats.records_read;
+                    read.usage_records += stats.usage_records;
                 }
-                notes.push(format!("{shown} files={}", files.len()));
+                notes.push(format!(
+                    "{shown} files={} records_read={} usage_records={}",
+                    files.len(),
+                    read.records_read,
+                    read.usage_records
+                ));
             }
             "openrig" => {
                 let (count, snapshot) = ingest_openrig(&store, root, key, &mut lives, stage_dir)?;
@@ -880,6 +894,77 @@ mod tests {
             .collect();
         seats.sort();
         seats
+    }
+
+    #[test]
+    fn ac1_counts_records_read_per_harness_and_a_missing_root_warns_and_continues() {
+        let dir = std::env::temp_dir().join(format!("dendro-ac1-count-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("claude")).unwrap();
+        let db = dir.join("analytics.duckdb");
+        drop(AnalyticsStore::open_path(&db, "key").unwrap());
+        let line = |id: &str, input: i64| {
+            format!("{{\"type\":\"assistant\",\"sessionId\":\"s\",\"timestamp\":\"2026-10-09T01:00:00Z\",\"message\":{{\"id\":\"{id}\",\"usage\":{{\"input_tokens\":{input},\"output_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}}}}")
+        };
+        let file = dir.join("claude").join("s.jsonl");
+        // Records: a usage line, a blank line (not a record), a malformed line,
+        // a duplicate of the first message, and a trailing partial line.
+        std::fs::write(
+            &file,
+            format!(
+                "{}\n\nnot-json\n{}\n{}",
+                line("m1", 5),
+                line("m1", 5),
+                line("m2", 7)
+            ),
+        )
+        .unwrap();
+        let roots = [
+            SourceRoot {
+                name: "claude".into(),
+                path: dir.join("claude"),
+            },
+            SourceRoot {
+                name: "codex".into(),
+                path: dir.join("absent-codex"),
+            },
+        ];
+        let key = b"ac1-count-key";
+        let notes = ingest_staged(&db, &roots, false, key).unwrap();
+        assert!(
+            notes.contains(&"claude files=1 records_read=3 usage_records=1".to_string()),
+            "{notes:?}"
+        );
+        assert!(notes.contains(&"codex missing".to_string()), "{notes:?}");
+        let store = AnalyticsStore::open_path(&db, "key").unwrap();
+        assert!(store
+            .warning_reasons()
+            .unwrap()
+            .contains(&"source codex missing".to_string()));
+        // The other source still ran.
+        assert_eq!(store.load_usage().unwrap().len(), 1);
+        drop(store);
+        // Unchanged file: nothing is read again.
+        let notes = ingest_staged(&db, &roots, false, key).unwrap();
+        assert!(
+            notes.contains(&"claude files=1 records_read=0 usage_records=0".to_string()),
+            "{notes:?}"
+        );
+        // Completing the partial line makes it exactly one new record.
+        std::io::Write::write_all(
+            &mut std::fs::OpenOptions::new()
+                .append(true)
+                .open(&file)
+                .unwrap(),
+            b"\n",
+        )
+        .unwrap();
+        let notes = ingest_staged(&db, &roots, false, key).unwrap();
+        assert!(
+            notes.contains(&"claude files=1 records_read=1 usage_records=1".to_string()),
+            "{notes:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

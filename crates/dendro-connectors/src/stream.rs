@@ -35,7 +35,18 @@ pub fn ingest_jsonl(
     harness: &str,
     path: &Path,
 ) -> Result<()> {
-    ingest_jsonl_with_key(store, source_id, harness, path, None)
+    ingest_jsonl_with_key(store, source_id, harness, path, None).map(|_| ())
+}
+
+/// What one ingest call read from a session file (AC1).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FileStats {
+    /// Records read: complete, non-blank JSONL lines read by this call. Lines
+    /// before the stored watermark were read by an earlier run and are not
+    /// counted again; a trailing partial line is not a record yet.
+    pub records_read: u64,
+    /// Usage records stored by this call, after dedupe.
+    pub usage_records: u64,
 }
 
 pub fn ingest_jsonl_with_key(
@@ -44,7 +55,7 @@ pub fn ingest_jsonl_with_key(
     harness: &str,
     path: &Path,
     tool_key: Option<&[u8]>,
-) -> Result<()> {
+) -> Result<FileStats> {
     let mut file = File::open(path)?;
     let file_len = file.metadata()?.len() as i64;
     let prior = store.source_state(source_id)?;
@@ -112,6 +123,10 @@ pub fn ingest_jsonl_with_key(
     let mut usages = Vec::new();
     let mut tools = Vec::new();
     let mut seen_messages = HashSet::new();
+    let records_read = pending
+        .iter()
+        .filter(|(_, bytes)| !bytes.iter().all(|b| b.is_ascii_whitespace()))
+        .count() as u64;
     for (line_no, bytes) in pending {
         dendro_core::RUN_CANCEL.check()?;
         let text = match String::from_utf8(bytes) {
@@ -240,7 +255,10 @@ pub fn ingest_jsonl_with_key(
     for note in &warnings {
         store.record_warning(note)?;
     }
-    Ok(())
+    Ok(FileStats {
+        records_read,
+        usage_records: usages.len() as u64,
+    })
 }
 
 /// A session file's native session: the line-1 header id, or a per-file

@@ -31,3 +31,21 @@ An existing analytics database without its `.key` sidecar refuses ingest and sta
 A Pi or Codex session file is one native session, named by the id on its first line: the Pi `session` header id or the Codex `session_meta` id (K10). Every usage line in the file counts under that id, so two sessions that reuse a local message id never merge. A later header, or a Codex line `session_id`, that names a different session does not move tokens; the run records the warning "conflicting session header". A file without a valid first-line header counts under its own id `pi-file:<source>` or `codex-file:<source>`, stays unlinked, and records "missing session header". A later id never rescues it.
 
 Analytics databases written before this change counted every Pi or Codex file under one shared session. Dendro refuses them as an older schema version. Ingest again into a new analytics database; source files are never changed.
+
+## Source summary (AC1)
+
+The `sources` field of `dendro run` lists each configured root. A Claude, Codex or Pi root reads `<harness> files=<n> records_read=<r> usage_records=<u>`. A record is one complete, non-blank JSONL line read by this run. Lines below the stored watermark were read by an earlier run and are not counted again, and a trailing line without its newline is not a record yet. `usage_records` counts the usage facts stored by this run after duplicate messages are skipped, so it can be lower than `records_read`. The OpenRig root reads `openrig events=<n> ...`, where `events` counts the rows of the `events` table read from the private copy. The queue tables are read too, for chain and destination evidence, and are not counted. A root that does not exist is listed as `<harness> missing`, records the warning `source <harness> missing`, and the other roots still run.
+
+## Token totals per session and seat (AC6)
+
+`report tokens` and `trace --metric-id tokens` carry the same token fields. Every figure uses the half-open window `[from, to)`.
+
+- `token_categories`: the four categories (`input_uncached`, `output`, `cache_read`, `cache_write`) and their sum `tokens`, for all usage in scope.
+- `seat_token_categories`: the same per linked seat. A seat's `tokens` equals its `m1_by_seat` tokens and its `mission_by_seat` total.
+- `unlinked_tokens`: usage from sessions with no seat. `unlinked_token_categories` splits it into `unlinked` (no identity event) and `collision` (identity events name different seats).
+- `sessions`: one row per discovered session, with `harness`, the sealed `session` id, `status` (`linked`, `unlinked` or `collision`), `rig` and `seat` when linked, the four categories, `tokens`, `period_records`, `discovered_by` (`usage`, `zero-usage file`, `identity`) and `untimestamped`.
+- `untimestamped`: the session's records with no time. They are counted per session only and never enter a period figure. `untimestamped_count` and `untimestamped_tokens_all_time` give the in-scope totals.
+
+A session is linked only when every identity event for its exact harness and native id names the same rig and seat. Links, token totals, missions, intake and `--rig` all use this one rule. With `--rig`, the report keeps only sessions linked to that rig, with their untimestamped records, so a collision never enters through one of its candidate seats.
+
+Reasoning is part of output. It is shown as `reasoning` and never added to the four categories again. Claude does not record it, so Claude sessions show `not recorded`.

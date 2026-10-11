@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{DateTime, Utc};
 use serde::Serialize;
@@ -334,6 +334,73 @@ pub fn mission_at(
     ts: DateTime<Utc>,
 ) -> MissionBucket {
     mission_evidence(seat, queue, snapshots, ts).bucket
+}
+
+/// How one harness session is bound to a seat. One rule everywhere (links,
+/// tokens, missions, intakes, rig scope): only identity events with the exact
+/// harness and native session count. Events that agree on (rig, seat) are one
+/// binding; events that disagree are a collision and never link.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SessionBinding {
+    Linked { rig: String, seat: String },
+    Unlinked,
+    Collision,
+}
+
+impl SessionBinding {
+    pub fn status(&self) -> &'static str {
+        match self {
+            SessionBinding::Linked { .. } => "linked",
+            SessionBinding::Unlinked => "unlinked",
+            SessionBinding::Collision => "collision",
+        }
+    }
+
+    pub fn seat(&self) -> Option<&str> {
+        match self {
+            SessionBinding::Linked { seat, .. } => Some(seat),
+            _ => None,
+        }
+    }
+
+    pub fn rig(&self) -> Option<&str> {
+        match self {
+            SessionBinding::Linked { rig, .. } => Some(rig),
+            _ => None,
+        }
+    }
+}
+
+/// Every (harness, native session) named by an identity event, with its binding.
+/// A session absent from the map is unlinked.
+pub fn session_bindings(identities: &[IdentityFact]) -> BTreeMap<(String, String), SessionBinding> {
+    let mut seen = BTreeMap::<(String, String), BTreeSet<(String, String)>>::new();
+    for fact in identities {
+        seen.entry((fact.harness.clone(), fact.native_session.clone()))
+            .or_default()
+            .insert((fact.rig.clone(), fact.seat.clone()));
+    }
+    seen.into_iter()
+        .map(|(session, bound)| {
+            let binding = if bound.len() == 1 {
+                let (rig, seat) = bound.into_iter().next().unwrap();
+                SessionBinding::Linked { rig, seat }
+            } else {
+                SessionBinding::Collision
+            };
+            (session, binding)
+        })
+        .collect()
+}
+
+pub fn binding_of<'a>(
+    bindings: &'a BTreeMap<(String, String), SessionBinding>,
+    harness: &str,
+    native: &str,
+) -> &'a SessionBinding {
+    bindings
+        .get(&(harness.to_string(), native.to_string()))
+        .unwrap_or(&SessionBinding::Unlinked)
 }
 
 pub fn token_totals(usages: &[UsageFact]) -> (i64, i64, i64, i64) {
@@ -683,7 +750,7 @@ pub fn handoff_intakes(
     queue: &[QueueFact],
     tools: &[ToolFact],
     usages: &[UsageFact],
-    seat_of: impl Fn(&str) -> Option<String>,
+    seat_of: impl Fn(&str, &str) -> Option<String>,
 ) -> Vec<IntakeRow> {
     edges
         .iter()
@@ -696,14 +763,14 @@ fn intake_for_edge(
     queue: &[QueueFact],
     tools: &[ToolFact],
     usages: &[UsageFact],
-    seat_of: &impl Fn(&str) -> Option<String>,
+    seat_of: &impl Fn(&str, &str) -> Option<String>,
 ) -> IntakeRow {
     let Some(claim) = receiver_claim(queue, edge) else {
         return intake_row(edge, "no_data", Some("no claim"), None, None, None, vec![]);
     };
-    let linked = usages
-        .iter()
-        .any(|usage| seat_of(&usage.native_session).as_deref() == Some(edge.to_seat.as_str()));
+    let linked = usages.iter().any(|usage| {
+        seat_of(&usage.harness, &usage.native_session).as_deref() == Some(edge.to_seat.as_str())
+    });
     if !linked {
         return intake_row(
             edge,
@@ -720,7 +787,8 @@ fn intake_for_edge(
         .filter(|tool| {
             tool.structured_write
                 && tool.ts.is_some_and(|ts| ts >= claim.ts)
-                && seat_of(&tool.native_session).as_deref() == Some(edge.to_seat.as_str())
+                && seat_of(&tool.harness, &tool.native_session).as_deref()
+                    == Some(edge.to_seat.as_str())
         })
         .min_by_key(|tool| (tool.ts, tool.seq));
     let Some(write) = write else {
@@ -759,7 +827,8 @@ fn intake_for_edge(
     let mut any = false;
     for usage in usages {
         let Some(ts) = usage.ts else { continue };
-        if seat_of(&usage.native_session).as_deref() != Some(edge.to_seat.as_str()) {
+        if seat_of(&usage.harness, &usage.native_session).as_deref() != Some(edge.to_seat.as_str())
+        {
             continue;
         }
         if ts >= claim.ts && ts < write_at {
