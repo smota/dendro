@@ -8,7 +8,7 @@ Every agent operating in this repository (Claude, Codex, Grok, Pi, AGY) must adh
 
 ## 1. Project Context & Mission
 
-Dendro is a local-first telemetry, observability, and correlation engine for multi-agent fleets written in **Rust**.
+Dendro is a local-first AI Fleet Intelligence engine for multi-agent fleets, written in **Rust**. Operational Intelligence is the evidence layer. Fleet Governance stays with the operator.
 * **Storage:** DuckDB (`dendro.duckdb`) colunar engine.
 * **Orchestrator Integration:** OpenRig (`~/.openrig`) correlating Rigs, Seats, and Missions with low-level execution logs.
 * **Harnesses:** Claude Code, Codex, AGY, Grok, Pi.
