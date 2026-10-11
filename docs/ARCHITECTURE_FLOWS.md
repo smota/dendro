@@ -48,7 +48,7 @@ If any flow fails QA verification, the correction cycle is immediate and isolate
 ## 2. Goals Hierarchy & Slices
 
 ### Level 1: Core Goal (The Epic)
-* **Goal 1 (Issue #1):** Local-First Telemetry & Analytics Engine for AI Agent Fleets.
+* **Goal 1 (Issue #1):** Local AI Fleet Intelligence & Decision Engine for Autonomous Agent Squads.
   * *Operator Job:* Obtain empirical visibility into time, tokens, and rework to make informed squad topology and budget decisions using real host data.
 
 ---

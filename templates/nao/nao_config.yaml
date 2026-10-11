@@ -11,42 +11,42 @@ data_source:
 
 models:
   # ==========================================================
-  # DIMENSION: SEATS (Assentos da Frota)
+  # DIMENSION: SEATS (Fleet Seats)
   # ==========================================================
   - name: dim_seats
     table: dim_seats
-    description: "Dimensão de assentos de agentes em rigs da frota autônoma"
+    description: "Dimension of agent seats across autonomous fleet rigs"
     dimensions:
       - name: seat_id
         type: string
         primary_key: true
-        description: "Identificador único do assento (ex: dev-build@dendro-dev)"
+        description: "Unique seat identifier (e.g., dev-build@dendro-dev)"
       - name: rig_id
         type: string
-        description: "Nome do rig / equipe (ex: dendro-dev, agentflow-dev)"
+        description: "Rig / squad name (e.g., dendro-dev, agentflow-dev)"
       - name: logical_id
         type: string
-        description: "ID lógico do papel (ex: build, arch, qa, review)"
+        description: "Logical role identifier (e.g., build, arch, qa, review)"
       - name: role
         type: string
-        description: "Papel funcional (builder, architect, reviewer, qa, pm)"
+        description: "Functional role (builder, architect, reviewer, qa, pm)"
       - name: runtime
         type: string
-        description: "Harness/Runtime de execução (claude-code, codex, pi)"
+        description: "Execution harness / runtime (claude-code, codex, pi)"
       - name: model
         type: string
-        description: "Modelo de LLM utilizado no assento (ex: grok-cli/grok-4.7, gpt-6.1)"
+        description: "Model used by the seat (e.g., grok-cli/grok-4.7, gpt-6.1)"
     metrics:
       - name: total_seats
         sql: "COUNT(DISTINCT seat_id)"
-        description: "Total de assentos ativos na frota"
+        description: "Total active seats in the fleet"
 
   # ==========================================================
-  # FACT: SEAT ACTIVITY & IDLE TIMES (Pergunta 1 - Camada 1)
+  # FACT: SEAT ACTIVITY & IDLE TIMES (Question 1 - Layer 1)
   # ==========================================================
   - name: fct_seat_activity
     table: fct_seat_activity
-    description: "Telemetria de intervalos de atividade, ociosidade e espera de assentos"
+    description: "Seat activity intervals, idle time, and waiting duration"
     dimensions:
       - name: id
         type: string
@@ -61,26 +61,26 @@ models:
     metrics:
       - name: total_active_hours
         sql: "SUM(active_seconds) / 3600.0"
-        description: "Tempo total em que o assento esteve executando turnos ativos"
+        description: "Total time spent actively executing tool turns"
       - name: total_idle_with_work_hours
         sql: "SUM(idle_with_work_seconds) / 3600.0"
-        description: "Tempo ocioso enquanto havia itens de fila aguardando o assento (desperdício operacional)"
+        description: "Idle time while queue items were pending for the seat (operational waste)"
       - name: total_idle_no_work_hours
         sql: "SUM(idle_no_work_seconds) / 3600.0"
-        description: "Tempo ocioso por ausência de demanda na fila (capacidade livre)"
+        description: "Idle time due to empty queue (available capacity)"
       - name: waiting_human_hours
         sql: "SUM(waiting_human_seconds) / 3600.0"
-        description: "Tempo travado em espera de confirmação humana (needs_input)"
+        description: "Time blocked waiting on human input or external gates (needs_input)"
       - name: waste_ratio_pct
         sql: "ROUND(SUM(idle_with_work_seconds) * 100.0 / NULLIF(SUM(active_seconds + idle_with_work_seconds + idle_no_work_seconds), 0), 2)"
-        description: "Percentual de desperdício: tempo ocioso tendo trabalho na fila"
+        description: "Waste percentage: idle time with pending work divided by total active and idle time"
 
   # ==========================================================
-  # FACT: HANDOFF FLOW & REWORK (Pergunta 2 - Camada 2)
+  # FACT: HANDOFF FLOW & REWORK (Question 2 - Layer 2)
   # ==========================================================
   - name: fct_handoffs
     table: fct_handoffs
-    description: "Transições de fila entre assentos, medição de retrabalho e inchaço de contexto"
+    description: "Queue item transitions between seats, measuring rework and context bloat"
     dimensions:
       - name: handoff_id
         type: string
@@ -93,30 +93,30 @@ models:
         type: string
       - name: is_rework
         type: boolean
-        description: "Verdadeiro se o item voltou para um builder anterior na cadeia (ex: QA/Review -> Dev)"
+        description: "True if item returned to an upstream builder in the chain (e.g., QA/Review -> Dev)"
     metrics:
       - name: total_handoffs
         sql: "COUNT(*)"
-        description: "Volume total de passagens de bastão registradas"
+        description: "Total volume of recorded handoffs"
       - name: rework_count
         sql: "COUNT(CASE WHEN is_rework THEN 1 END)"
-        description: "Quantidade de voltas de retrabalho"
+        description: "Count of return rework transitions"
       - name: rework_rate_pct
         sql: "ROUND(COUNT(CASE WHEN is_rework THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2)"
-        description: "Taxa de retrabalho na equipe (percentual de tarefas devolvidas)"
+        description: "Squad rework rate (percentage of handoffs returned)"
       - name: avg_queue_wait_seconds
         sql: "ROUND(AVG(queue_wait_seconds), 1)"
-        description: "Latência média de espera na fila até o assento de destino reivindicar o item"
+        description: "Average queue wait latency until destination seat claims the item"
       - name: avg_intake_tokens
         sql: "ROUND(AVG(intake_token_cost), 0)"
-        description: "Custo médio de tokens consumidos pelo assento de destino para absorver o contexto antes da 1ª ação"
+        description: "Average tokens consumed by destination seat to absorb context before first action"
 
   # ==========================================================
-  # FACT: TOKEN BURN & COSTS (Pergunta 3 - Camada 3)
+  # FACT: TOKEN BURN & COSTS (Question 3 - Layer 3)
   # ==========================================================
   - name: fct_token_burn
     table: fct_token_burn
-    description: "Consumo de tokens e custos financeiros atribuídos por missão, rig e assento"
+    description: "Token consumption and model costs attributed by mission, rig, and seat"
     dimensions:
       - name: burn_id
         type: string
@@ -138,16 +138,16 @@ models:
         sql: "SUM(cache_read_tokens)"
       - name: total_cost_usd
         sql: "ROUND(SUM(cost_usd), 4)"
-        description: "Investimento financeiro total acumulado em USD"
+        description: "Total accumulated model investment in USD"
       - name: avg_cost_per_mission
         sql: "ROUND(SUM(cost_usd) / NULLIF(COUNT(DISTINCT mission_id), 0), 4)"
 
   # ==========================================================
-  # FACT: TOOL RETRY LOOPS (Pergunta 3 - Detecção de Loops)
+  # FACT: TOOL RETRY LOOPS (Question 3 - Loop Detection)
   # ==========================================================
   - name: fct_tool_loops
     table: fct_tool_loops
-    description: "Detecção de padrões de repetição estéril em chamadas de ferramentas com falha"
+    description: "Detection of repetitive failing tool calls and sterile retry loops"
     dimensions:
       - name: loop_id
         type: string
@@ -161,17 +161,17 @@ models:
     metrics:
       - name: loop_events_count
         sql: "COUNT(*)"
-        description: "Ocorrências de sequências de comandos em loop"
+        description: "Occurrences of looped command sequences"
       - name: failed_loops_count
         sql: "COUNT(CASE WHEN has_error THEN 1 END)"
-        description: "Loops que falharam repetidamente"
+        description: "Loops that repeatedly failed"
 
   # ==========================================================
-  # FACT: GOVERNANCE DECISION INDICES (Índices M1 a M4)
+  # FACT: GOVERNANCE DECISION INDICES (Indices M1 to M4)
   # ==========================================================
   - name: fct_decision_metrics
     table: fct_decision_metrics
-    description: "Indicadores executivos consolidados de governança da equipe"
+    description: "Consolidated executive governance indicators for the squad"
     dimensions:
       - name: rig_id
         type: string
@@ -179,13 +179,13 @@ models:
     metrics:
       - name: seat_yield_ratio
         sql: "AVG(seat_yield)"
-        description: "M1: Rendimento médio dos assentos (produção vs tempo ativo)"
+        description: "M1: Average seat yield (production vs active time)"
       - name: handoff_efficiency_pct
         sql: "ROUND(AVG(handoff_efficiency) * 100.0, 1)"
-        description: "M2: Eficiência média de handoffs (transferências sem atrito)"
+        description: "M2: Average handoff efficiency (frictionless transfers)"
       - name: build_rework_pct
         sql: "ROUND(AVG(rework_rate) * 100.0, 1)"
-        description: "M3: Índice de retrabalho na esteira de desenvolvimento"
+        description: "M3: Build rework rate across development pipeline"
       - name: skill_exposure_pct
         sql: "ROUND(AVG(skill_exposure) * 100.0, 1)"
-        description: "M4: Percentual de turnos expostos a skills especializadas"
+        description: "M4: Percentage of turns exposed to specialized skills"

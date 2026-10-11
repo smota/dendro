@@ -1,47 +1,48 @@
-// Dendro Interactive Calculator Experience Script
+// Dendro Interactive Rework Scenario Modeler Script
 document.addEventListener('DOMContentLoaded', () => {
-  const seatsInput = document.getElementById('seatsInput');
   const missionsInput = document.getElementById('missionsInput');
+  const tokensPerMissionInput = document.getElementById('tokensPerMissionInput');
+  const reworkRateInput = document.getElementById('reworkRateInput');
   const tokenCostInput = document.getElementById('tokenCostInput');
 
-  const seatsVal = document.getElementById('seatsVal');
   const missionsVal = document.getElementById('missionsVal');
+  const tokensPerMissionVal = document.getElementById('tokensPerMissionVal');
+  const reworkRateVal = document.getElementById('reworkRateVal');
   const tokenCostVal = document.getElementById('tokenCostVal');
 
-  const reworkHours = document.getElementById('reworkHours');
-  const savingsAmount = document.getElementById('savingsAmount');
-  const speedupRate = document.getElementById('speedupRate');
+  const reworkChainsVal = document.getElementById('reworkChainsVal');
+  const reworkTokensVal = document.getElementById('reworkTokensVal');
+  const reworkCostVal = document.getElementById('reworkCostVal');
 
-  function calculateWaste() {
-    const seats = parseInt(seatsInput.value, 10);
+  function calculateRework() {
     const missions = parseInt(missionsInput.value, 10);
+    const tokensK = parseInt(tokensPerMissionInput.value, 10);
+    const reworkPercent = parseInt(reworkRateInput.value, 10);
     const costPerMillion = parseInt(tokenCostInput.value, 10);
 
-    // Update labels in English
-    seatsVal.textContent = `${seats} seat${seats > 1 ? 's' : ''}`;
+    // Update slider label displays
     missionsVal.textContent = `${missions} missions`;
+    tokensPerMissionVal.textContent = `${tokensK}k tokens`;
+    reworkRateVal.textContent = `${reworkPercent}%`;
     tokenCostVal.textContent = `$${costPerMillion} / 1M`;
 
-    // Empirical multi-agent formulas:
-    // Wasted rework: ~0.22 hours per seat per completed mission in unmonitored fleets
-    const wastedHours = Math.round((seats * missions * 0.22));
-    
-    // Unoptimized handover token overhead: ~380k tokens per mission per seat
-    const wastedTokensMillions = (missions * seats * 0.38);
-    const dollarsSaved = Math.round(wastedTokensMillions * costPerMillion * 4.2);
+    // Transparent calculation derived directly from operator inputs:
+    const reworkRate = reworkPercent / 100;
+    const reworkChains = Math.round(missions * reworkRate);
+    const tokensPerMissionMillions = tokensK / 1000;
+    const reworkTokensMillions = (missions * reworkRate * tokensPerMissionMillions);
+    const reworkCost = Math.round(reworkTokensMillions * costPerMillion);
 
-    // Fleet velocity boost
-    const speedup = Math.min(55, Math.round(20 + (seats * 2.8)));
-
-    reworkHours.textContent = `${wastedHours} hours`;
-    savingsAmount.textContent = `$${dollarsSaved.toLocaleString()} USD`;
-    speedupRate.textContent = `+${speedup}%`;
+    reworkChainsVal.textContent = `${reworkChains} chain${reworkChains === 1 ? '' : 's'}`;
+    reworkTokensVal.textContent = `${reworkTokensMillions.toFixed(1)}M tokens`;
+    reworkCostVal.textContent = `$${reworkCost.toLocaleString()} USD`;
   }
 
-  if (seatsInput && missionsInput && tokenCostInput) {
-    seatsInput.addEventListener('input', calculateWaste);
-    missionsInput.addEventListener('input', calculateWaste);
-    tokenCostInput.addEventListener('input', calculateWaste);
-    calculateWaste();
+  if (missionsInput && tokensPerMissionInput && reworkRateInput && tokenCostInput) {
+    missionsInput.addEventListener('input', calculateRework);
+    tokensPerMissionInput.addEventListener('input', calculateRework);
+    reworkRateInput.addEventListener('input', calculateRework);
+    tokenCostInput.addEventListener('input', calculateRework);
+    calculateRework();
   }
 });

@@ -251,7 +251,7 @@ The sponsor approved G4 and the G3 documentation in parallel, owned by Antigravi
 | Impact | `minor` (first functional increment) |
 | Audience | Sponsor. Reference rig: `agentflow-dev`. `dendro-dev` once it has real work. |
 | Channel | Local build from the repository. No publication, no crates.io. |
-| Exit criterion | AC1–AC12 in `docs/ACCEPTANCE_R1.md` (Amendment 2, sha256 `cc365c88`, plus clarifications register K1–K8, sha256 `8f335d37`) verified with real data at one exact commit. O8 observed by the sponsor. |
+| Exit criterion | AC1–AC12 in `docs/ACCEPTANCE_R1.md` (Amendment 2, sha256 `cc365c88`, plus clarifications register K1–K11, sha256 `44a3032e` (K11 added 2026-10-11 20:05Z; K1–K10 were `1c510aeb`)) verified with real data at one exact commit. O8 observed by the sponsor. |
 | Target date | None set (2026-10-10 19:52Z). Readiness-gated: `v0.1.0` ships when the exit criterion holds. Checkpoint: PM re-plans when the Phase 4 developer proof is complete. |
 | Delivery path | Squad-only: `dendro-dev` Phase 4 build → `dev-qa` Phase 5 independent validation → `rev-review` Phase 6 four-eyes audit → PR #11 merge. No bypass commits to `main`. |
 | Not in v0.1.0 | Nao (G2) is non-normative for R1, even where code exists on `main`. |
@@ -438,3 +438,127 @@ Independent QA (Phase 5) on `06cd1a7` / binary `9955b133` failed AC12: a ptrace 
 ### Sponsor confirmation: sealed input folder (2026-10-11 02:55Z)
 
 `/tmp/dendro-sealed` (130 MB of real source copies from an earlier builder run, previously 0755/0644) was locked by Antigravity at 02:35Z (`chmod -R go-rwx`); PM verified 700/600 at 02:40Z. PM authorized source-only use for the cycle-2 sealed oracles (manifest verified; private copy of `sources/` only; old `out/` DB and key never read). **Deletion authorized** once R1 is formally accepted and merged to main; PM deletes that exact path then.
+
+### Sponsor disposition: K9 scope decision and resumption of R1 (2026-10-11 05:50Z)
+
+After the final cycle-2 package failed on AC7/AC8 (W3: OpenRig facts keyed by `seq`/`id`, inserted once, no per-record generation), the sponsor chose to **narrow the v0.1.0 scope instead of pausing**. K9: OpenRig event sources are treated as append-only in v0.1.0; AC8 verifies re-execution on identical sources and the addition of new events; retroactive in-place mutation, source replacement with reused keys, mutable queue-item reconciliation and multi-generation replay are deferred to G2 #13 (F5). This is a criterion-scope change recorded in the register as a labelled sponsor exception, not a clarification.
+
+Analyst evidence (read-only, OpenRig 0.6.6 source and sealed input): `events` and `queue_transitions` are never updated in place; `queue_items` are re-read every run, so W3 does not apply to them. The gap existed unchanged in `63cebb0`, `c635803` and `8276f7d`. **Known limits shipped with v0.1.0:** (a) after an OpenRig reset or reinstall, a re-run over an existing analytics DB silently drops new OpenRig rows whose keys were already used; use a fresh analytics DB; (b) transitions or snapshots deleted by OpenRig retention keep their facts with no "gone" marker.
+
+Route: `orch.arch` re-evaluates the `8276f7d` package against contract `cc365c88` + register K1–K9 and signs only if complete under that baseline; then Phase 4 (carrier `r1-snapshot-lifecycle`, after routing record 0007), full independent QA and review. No correction cycle consumed.
+
+### Sponsor disposition: K9 completion (2026-10-11 05:55Z)
+
+The sponsor confirmed the three items K9 did not name: per-record OpenRig generation in the trace, OpenRig reset/replacement with reused keys, and retention-deletion notices are **deferred to G2 #13** as known limits. A fourth exposure found read-only by `orch.arch` (the v0.1.0 CLI accepts two OpenRig roots and silently drops the second root's overlapping facts) is **deferred** with the limit: *v0.1.0 supports exactly one OpenRig root per analytics database; multi-root fleet is deferred to Goal 3 #27.* The sponsor offered a 1-hour guard cycle; PM chose deferral so QA starts now, and filed the refusal guard as #31 (first post-v0.1.0 fix). The v0.1.0 release notes must list all K9 known limits, including "use a fresh analytics DB after an OpenRig reset or reinstall" and "one OpenRig root per analytics DB".
+
+### Sponsor disposition: Pi session identity correction (2026-10-11 06:10Z)
+
+Independent QA (Phase 5 FAIL, `r1-snapshot-lifecycle/0009`) on `8276f7d` found that the Pi reader hard-codes the native session id `pi-session`. Sealed-input impact (QA, read-only): all 27 real Pi sessions (393.5 M tokens) collapse into one unlinked session, so Pi seat attribution (AC3, AC6, M1) is wrong; totals are correct on this snapshot because no message ids collide across sessions, but a synthetic two-file case drops 30 → 10 tokens. The set-equal oracles covered OpenRig only and never validated harness tokens.
+
+**Approved (Option 1):** one bounded correction beyond the original budget. Scope: read the Pi native session id from the line-1 header; missing header → fallback `pi-file:<source_id>`, unlinked, sanitized warning; conflicting later header → keep the first, sanitized warning (sponsor rule, recorded as K10); dedupe stays (harness, session, message_id); privacy sweep and matrix include the Pi header; regressions for the two-file collision (30 tokens), missing header, conflicting header and zero-usage; full proof on a clean commit; `orch.arch` acceptance → Phase 4 → full independent QA → review. Release notes state that the fix needs a fresh analytics DB. A separate bounded check of Claude Code and Codex session identity runs on `8276f7d`; any finding there comes to the sponsor before it joins this cycle.
+
+### Sponsor confirmation: unified file-header session identity, Pi and Codex (2026-10-11 06:22Z)
+
+`dev.qa` reproduced the same defect class in Codex on `8276f7d` (constant `codex-session`; the file's `session_meta` id ignored; synthetic Codex tokens unlinked; counter arithmetic correct; Claude Code correct). **Approved:** the 06:10Z correction now covers both Pi (line-1 `session` header) and Codex (line-1 `session_meta`). Missing or malformed header → `<harness>-file:<source_id>`, unlinked, sanitized warning; conflicting later header → keep the first, sanitized warning; dedupe stays (harness, session, message_id); ids sealed via `seal_session` (AC10); privacy sweep, matrix and regressions (distinct multi-session headers, missing header, conflicting header) cover both; Codex counters stay per file; full proof suite. Same single cycle.
+
+### Sponsor disposition: consolidated last R1 correction (2026-10-11 10:52Z)
+
+Given by Antigravity as sponsor-delegated Product Owner, on the established sponsor channel. **Approved:** the consolidated scope in `.agent-runs/scratch/dendro-r1/consolidated-report-proof-plan.md` (sha256 `456b916b`), base candidate `1623cbe`, baseline contract `cc365c88` + register K1–K10 `1c510aeb`. Items: AC6(c) per-session and per-category token totals in the tokens report; AC1 records read per source and the missing-root test; one deterministic resolver in the report (collisions stay unlinked; reasoning shown as part of output, never added; analyst settlement 06:58Z); AC8 same-DB re-run and append-delta proofs; 92 vs 98 session reconciliation; repaired AC1 timer. These are existing obligations or broken proof controls; no new feature, command, schema or formula.
+
+Steering constraints: (1) this is the **last** correction for R1; any further non-deferred failure in proof, QA or review stops and goes to Sam directly; (2) no scope growth during build: new gaps are reported, not fixed; (3) AC1 measured on the final SHA with the repaired timer; over 300 s stops; (4) the busy-producer 63/64 row stays open until QA runs the rate probe and never passes by omission; (5) v0.1.0 release notes list the K9 limits, the K10 header rules and the fresh-analytics-DB note. The PM's proposed convergence rule was not adopted; existing criteria stay binding.
+
+### Sponsor disposition: AC1 threshold classification, option B (2026-10-11 18:01Z)
+
+Escalation `qitem-20261011112441-bcedce2cebc2589e` (`orch.arch`, 11:24Z) under steering constraints 1 and 3 of 10:52Z. Candidate `6292fffbfd3847338e6e4e1b013bb6208318449b`, binary sha256 `66efe15a…5db2ddc`. Run A: 314.138 s (ingest 312.351 + report 1.787), with the builder's privacy proof matrix running alongside until 11:16:16Z; start time inferred, PID not available. Run B: same SHA and binary, alone, 249.851 s, load average 2.46/2.49. Stop record `scratch/ac1-6292fff-stop-record.md` (sha256 `0d3d602e`). PM brief: `.agent-runs/scratch/dendro-r1/ac1-threshold-escalation-sponsor-brief.md`. The message was sent to `orch-arch@dendro-dev` on the established sponsor channel and confirmed by `pm.manager` at 18:10Z. Verbatim text, read from the `orch.arch` session log:
+
+> SPONSOR DISPOSITION (2026-10-11 18:01Z): OPTION B APPROVED by Sam.
+>
+> Classification & Rules:
+> 1. Run A (314.138s) is classified as an invalid measurement due to concurrent artificial load from the privacy test suite.
+> 2. The authoritative AC1 measurement will be performed by dev-qa independently on a clean, isolated machine environment (no other test suites running), fresh analytics DB, sealed sources, and repaired monotonic timer, with a strict hard stop at <= 300s (no retries).
+> 3. The builder (dev-build-sr) is authorized ONLY to fix proof-script bugs in scripts/ to complete receipt steps 7 onward. Zero product code changes in crates/ are permitted under this authorization.
+> 4. Preserved evidence: both Run A and Run B are preserved in the permanent record. Release notes for v0.1.0 must disclose the solo measured first-run time (~250s) and machine conditions.
+> 5. Path forward: dev-build-sr finishes receipt -> orch-arch written package acceptance -> Phase 4 -> PM pre-QA checkpoint -> dev-qa Phase 5 -> rev-review Phase 6.
+>
+> Unblock queue items and proceed immediately.
+
+PM notes: (a) the five 10:52Z constraints still bind. Any further failure in proof, QA or review, including the QA AC1 run, stops R1 and goes to Sam. (b) Builder edits are limited to `scripts/`. The release notes are not part of the receipt. `pm.manager` drafts their product content (K9 limits, K10 header rules, the fresh-analytics-DB note, the ~250 s solo first-run time and machine conditions) before the merge, and `orch.arch` places it.
+
+### PM classification: busy-producer 63/64 row, accepted busy-source limit (2026-10-11 18:55Z)
+
+`pm.manager` applied the rule set at 06:03Z, before the probe ran: "if ingest succeeds reliably at and above ~26/s (the real sealed 1-second peak), the row is the accepted busy-source limit". Constraint 4 of 10:52Z was met because QA ran the probe; the row did not pass by omission. Evidence from independent QA on `6292fff` with binary `66efe15a` (`QA/6292fff/busy-rate-analysis.json`, reported by `orch.arch` at 18:50Z):
+- 15/15 runs succeeded, 3 trials each at 5, 10, 25, 26 and 50 commits/s.
+- The rates were confirmed against monotonic commit timestamps at the first and last commit: 49.99–50.00/s at the top.
+- Every run succeeded within its 1–3 attempts, with zero source, network or staging violations.
+
+**Classification:** the original `8276f7d` 63/64 failure stays recorded as a failed fixture, and the row is an **accepted known limit, not a criterion failure**. Ingest succeeds at at least 50 commits/s, about twice the real 1-second peak and about 19 times the real 1-minute peak. A faster writer can get the clean refusal and a request to retry; the sources are not changed. This is a finite sample. It guarantees no throughput figure and no live commit rate. The v0.1.0 release notes state this limit. The sponsor's R1 review agenda keeps it as item 6 (`PRODUCT_SPECIFICATION_G2.md` §10).
+
+### Sponsor disposition: AC4 conservation failure, option B plus finishing QA first (2026-10-11 19:34Z)
+
+Escalation `qitem-20261011185816-773f813aeb318a71` (`orch.arch`, 18:58Z). QA Phase 5 FAIL on `6292fff` with binary `66efe15a`, recorded as `r1-snapshot-lifecycle/0012` (shown as "skipped"). For all 6 `agentflow-dev` seats, the AC4 bands add up to less than the observation window, short by 35–618 s (0.03–0.46%). QA's kept trace is sha256 `ea27e9d1`, extracted to `ac4-conservation-failure.json`. The cause: `metrics.rs` cuts the fractions off each band segment separately but off the whole window only once. The code dates from `10a0bd0` (the first implementation) and is not a regression. PM brief: `.agent-runs/scratch/dendro-r1/ac4-conservation-stop-sponsor-brief.md`. The sponsor answered on the established channel, my terminal. Verbatim:
+
+> SPONSOR DISPOSITION (2026-10-11 19:34Z): OPTION B, YES APPROVED by Sam.
+>
+> Decisions:
+> 1. Option B AUTHORIZED: One tightly bounded fix to AC4 fractional-second rounding in crates/dendro-core/src/metrics.rs so the 5 activity bands and the observation window are computed with exact conservation and add up identically. Add fractional-timestamp regression test.
+> 2. Pre-fix QA: YES. dev-qa is authorized and directed to finish the remainder of its Phase 5 read-only checks on candidate 6292fff FIRST. Any additional findings will be reported together in one batch before the builder writes fix code.
+> 3. Path forward: dev-qa completes Phase 5 read-only scope on 6292fff -> orch-arch/PM issue bounded builder dispatch -> dev-build-sr implements rounding fix & runs proof suite on new commit -> Phase 4 -> dev-qa Phase 5 (including isolated AC1 benchmark <= 300s) -> rev-review Phase 6.
+>
+> Unblock queue items and proceed immediately.
+
+PM notes:
+- (a) The fix authorization covers only the AC4 rounding. Any further finding from the finished QA run on `6292fff` goes to the sponsor in one batch **before** the builder is dispatched. The finding is not added to this fix.
+- (b) The other 10:52Z constraints still bind: no scope growth; AC1 measured on the final SHA, ≤ 300 s, one isolated QA run with no retry (18:01Z); and the release-notes items.
+- (c) After the fix, QA runs a full Phase 5 on the new SHA, including the new AC1 run and the kept busy-source classification. Any further failure there or in review stops R1 and goes to the sponsor.
+
+### Sponsor mandate: Product Owner autonomy through v0.1.0 (2026-10-11 19:36Z)
+
+This came on the established sponsor channel (my terminal), from Antigravity as Product Owner, quoting Sam. Verbatim:
+
+> SPONSOR MANDATE (2026-10-11 19:36Z): FULL PO AUTONOMY CONFIRMED by Sam.
+>
+> Mandate:
+> 'I trust your judgments to drive decisions focusing on taking us to a reasonable release 1, not necessarily perfect. Be open-mind, flexible, creative. I will not be monitoring here until completion. Decide and proceed. I will review the decisions later. Balance value and effort.'
+>
+> Operating Principles for Dendro Squads:
+> 1. Product Owner Antigravity has full decision authority to classify, scope, accept, or fix issues to reach a pragmatic, high-value, robust v0.1.0 release without halting on minor non-critical technicalities.
+> 2. Pragmatic Quality & Mathematical Conservation:
+>    - AC4: The fractional-second rounding in metrics.rs is a straightforward, low-risk fix (~5 lines). The builder will implement it cleanly so duration is mathematically conserved without accumulating lost minutes.
+>    - Any edge cases that are non-critical synthetic oddities (such as multi-root fleet ingestion, busy-writer refusal edge thresholds, or minute cosmetic rounding variances that do not impair operator utility) shall be documented cleanly as known limits for v0.2.0/v0.3.0 rather than causing cycle resets.
+> 3. Flow: dev-qa completes remaining read-only validation -> dev-build-sr implements the AC4 rounding fix -> proof suite -> Phase 4 -> Phase 5 QA verification -> Phase 6 four-eyes review -> PO Gate 7 Acceptance and PR #11 merge.
+>
+> Proceed aggressively and smoothly toward release 1 completion.
+
+**What changes.** 10:52Z constraint 1 ("any further failure stops and goes to Sam") is replaced by triage, with the product squad deciding. Each decision is logged here for Sam's later review.
+
+**PM triage rule** (`pm.manager`, applying the mandate):
+
+| Class | Test | Action |
+| --- | --- | --- |
+| **Must fix** | The operator would see a wrong number with no warning (beyond trivial), content or a secret leaks (AC10), a source changes or data leaves the machine (AC11/AC12), or a core command fails on real data | Fix in a bounded cycle, then re-prove. Never a known limit. |
+| **Small fix** | A real defect, low risk, about an hour or less, localized, with a regression test | Join the current bounded builder dispatch. PM authorizes it. |
+| **Known limit** | Synthetic-only, an edge case not seen on real data, a cosmetic issue or a tiny rounding difference that does not change a decision | Document it in the release notes, file a v0.2.0/v0.3.0 issue, and do not reset the cycle. |
+
+**What stays.**
+- The anti-goal (observe, never mutate), privacy, and read-only sources.
+- The AC1 limit of 300 s on the final SHA, with one isolated QA run.
+- Full QA and four-eyes review after the fix.
+- The release notes cover the K9 limits, the K10 header rules, the fresh-DB note and the first-run time and conditions, plus every new known limit.
+- The PM squad still does not push, merge or publish.
+
+### PM triage: pre-fix QA batch on 6292fff (2026-10-11 20:08Z, under the 19:36Z mandate)
+
+QA batch `qa/6292fff/continuation/qa-continuation-batch.md` (sha256 `7effea11`). Builder sizing: `builder-sizing-qa-batch-6292fff.md` (sha256 `85bcb6cb`). Full triage: `.agent-runs/scratch/dendro-r1/pm-triage-qa-batch-6292fff.md`.
+
+**Fix in one bounded cycle** (about 4–4.5 h; no schema, command or format change; each fix gets a regression on QA's fixture values):
+- F1: AC4 band conservation.
+- F2: the M2 intake endpoint includes the receiver's first queue transition on the item.
+- F6: a loop is any three consecutive equal failures within ≤ 600 s on exact time (sliding triple, `pm.analyst` 20:02Z, register K11). The episode is the whole run with its full count, and loops are grouped by (harness, session).
+- F4: unknown valid-JSON record types warn, with parity across Claude, Codex and Pi. The sealed input must give zero such warnings.
+
+**Known limits in v0.1.0** (release notes; v0.2.0 issues):
+- F3: after a file source is deleted or replaced, the trace gives no gone or superseded notice. The facts are kept.
+- F5: the loop count is not traceable to source records.
+- O1: wait times are shown in whole seconds, rounded down.
+
+**After the fix:** QA rechecks O2, the trace-only replay of unknown duration, once F1 is in.

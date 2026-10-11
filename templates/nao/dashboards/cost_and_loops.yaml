@@ -1,13 +1,13 @@
-# Nao Dashboard: Recursos, Custos & Retry Loops (Pergunta 3)
+# Nao Dashboard: Resources, Costs & Retry Loops (Question 3)
 dashboard:
   id: cost_and_loops
   title: "Resource & Cost Mastery with Loop Diagnostics"
-  description: "Queima de tokens por missão/assento e detecção antecipada de loops de ferramentas"
+  description: "Token burn by mission/seat and early detection of sterile tool loops"
 
 queries:
   - id: mission_token_burn
-    title: "Consumo de Tokens e Custo por Missão"
-    nl_prompt: "Qual missão consumiu mais tokens e quanto custou em dólares?"
+    title: "Token Consumption & Spend per Mission"
+    nl_prompt: "Which mission consumed the most tokens and what was its dollar spend?"
     sql: >
       SELECT 
         mission_id,
@@ -22,8 +22,8 @@ queries:
       ORDER BY cost_usd DESC;
 
   - id: retry_loops_detected
-    title: "Comandos Repetidos em Loop de Erro"
-    nl_prompt: "Quais assentos entraram em loop repetindo comandos bash que falharam?"
+    title: "Repetitive Commands in Failing Retry Loops"
+    nl_prompt: "Which seats entered loops repeating failing bash commands?"
     sql: >
       SELECT 
         seat_id,

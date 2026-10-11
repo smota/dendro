@@ -2,7 +2,7 @@
   <img src="docs/assets/logo.jpg" alt="Dendro Logo" width="180" style="border-radius: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);" />
   <h1>🌲 Dendro</h1>
   <p><strong>Decipher the growth layers of your AI agent fleets.</strong></p>
-  <p><em>Local-first telemetry, observability, and analytics engine for autonomous multi-agent squads.</em></p>
+  <p><em>Local AI fleet intelligence and decision engine for autonomous multi-agent squads.</em></p>
   <p>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
     <img src="https://img.shields.io/badge/rust-2021-orange.svg" alt="Rust 2021" />
@@ -22,7 +22,7 @@
     <img src="docs/assets/dendro-preview.gif" alt="Dendro Product Walkthrough Preview" width="800" style="border-radius: 12px; border: 1px solid #1f2937;" />
   </a>
   <p>
-    <em>▶️ <strong><a href="docs/assets/dendro-demo.mp4">Assistir Vídeo Demonstrativo Completo Narrado (1080p Full HD MP4)</a></strong> — 1m 55s com visão geral, arquitetura e benchmark.</em>
+    <em>▶️ <strong><a href="docs/assets/dendro-demo.mp4">Watch Full Narrated Video Demo (1080p Full HD MP4)</a></strong> — 1m 55s overview, architecture, and benchmark.</em>
   </p>
 </div>
 
@@ -37,7 +37,7 @@ As engineering organizations deploy autonomous multi-agent squads across worktre
 - **Where are handovers stalling or generating expensive review-to-build rework cycles?**
 - **How many tokens and dollars are burned on unproductive retry loops?**
 
-**Dendro** is a high-performance, local-first telemetry and analytics engine written in Rust. It streams execution traces from coding agents (Claude Code, OpenAI Codex, OpenRig, Pi, Grok, AGY), normalizes them into an embedded [DuckDB](https://duckdb.org) analytical database, and exposes high-speed semantic models for conversational fleet intelligence via [Nao](https://github.com/getnao/nao).
+**Dendro** is a high-performance, local AI fleet intelligence and decision engine written in Rust. It streams execution traces from coding agents (Claude Code, OpenAI Codex, OpenRig, Pi, Grok, AGY), normalizes them into an embedded [DuckDB](https://duckdb.org) analytical database, and exposes high-speed semantic models for conversational fleet intelligence via [Nao](https://github.com/getnao/nao).
 
 ---
 
@@ -99,7 +99,7 @@ cd dendro
 cargo build --release
 ```
 
-### 2. Run Telemetry Discovery & Ingestion
+### 2. Run Discovery & Ingestion
 ```bash
 # Ingest local harness traces into embedded DuckDB
 cargo run -p dendro-cli -- run --db ./dendro.duckdb
@@ -119,7 +119,7 @@ cargo test -p dendro-core --test benchmark_nao -- --nocapture
 
 - **[Maintainers Guide](docs/maintainers/README.md):** Safe Rust `#![deny(unsafe_code)]` policies, streaming design, and CI gates.
 - **[Harness Extension Guide](docs/extensions/README.md):** Guide to authoring custom connectors for Cursor, Windsurf, Devin, and Goose.
-- **[Adopter & Operator Guide](docs/adoption/README.md):** 5-minute production rollout, privacy proofs, and Prometheus/OpenTelemetry bridge.
+- **[Adopter & Operator Guide](docs/adoption/README.md):** 5-minute production rollout, privacy proofs, and Prometheus bridge.
 - **[Product Specification](docs/PRODUCT_SPECIFICATION.md):** Full Phase 0 discovery, JTBD, and user personas.
 - **[Frozen Acceptance Contracts](docs/ACCEPTANCE_R1.md):** Normative Phase 1 acceptance contracts (AC1 to AC11).
 
@@ -128,7 +128,7 @@ cargo test -p dendro-core --test benchmark_nao -- --nocapture
 ## 🌐 Official Website & Landing Page
 
 Explore the interactive product site in [`site/index.html`](site/index.html):
-- **Agent Waste & ROI Calculator:** Calculate how much spend can be recovered from idle loops.
+- **Agent Waste & Cost-of-Inaction Calculator:** Calculate how much spend can be recovered from idle loops.
 - **Interactive Terminal Simulator:** Preview CLI commands and live yield reports.
 - **Branding Assets:** High-resolution logos and graphic assets in `site/assets/`.
 

@@ -1,13 +1,13 @@
-# Nao Dashboard: Dinâmica e Rendimento de Assentos (Pergunta 1)
+# Nao Dashboard: Seat Dynamics & Yield (Question 1)
 dashboard:
   id: seat_dynamics
   title: "Seat Dynamics & Capacity Yield"
-  description: "Monitoramento de tempo ativo vs. ociosidade real e gargalos de assento"
+  description: "Active time tracking vs. genuine idle waste and seat bottlenecks"
 
 queries:
   - id: idle_ranking
-    title: "Ranking de Ociosidade por Assento"
-    nl_prompt: "Quais assentos tiveram o maior tempo ocioso nos últimos 7 dias?"
+    title: "Seat Idle Waste Ranking"
+    nl_prompt: "Which seats had the highest idle-with-work time over the last 7 days?"
     sql: >
       SELECT 
         s.seat_id,
@@ -23,8 +23,8 @@ queries:
       ORDER BY waste_pct DESC NULLS LAST;
 
   - id: human_waiting
-    title: "Tempo Travado em Confirmação Humana"
-    nl_prompt: "Algum assento ficou parado esperando aprovação humana?"
+    title: "Time Blocked on Human Approval"
+    nl_prompt: "Did any seat stall waiting for human confirmation or input?"
     sql: >
       SELECT 
         seat_id,

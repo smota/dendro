@@ -1,13 +1,13 @@
-# Nao Dashboard: Governança Executiva (Indicadores M1 a M4)
+# Nao Dashboard: Executive Governance (Indices M1 to M4)
 dashboard:
   id: executive_governance
   title: "Executive Squad Governance"
-  description: "Indicadores estratégicos consolidados para tomada de decisão sobre topologia e orçamento"
+  description: "Consolidated strategic indicators for fleet topology and budget decision making"
 
 queries:
   - id: rig_executive_summary
-    title: "Resumo Estratégico por Rig"
-    nl_prompt: "Mostre os quatro indicadores de decisão para a minha frota de agentes"
+    title: "Strategic Executive Summary by Rig"
+    nl_prompt: "Show the four governance decision metrics across my agent fleet"
     sql: >
       SELECT 
         rig_id,

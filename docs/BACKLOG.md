@@ -17,13 +17,13 @@ This document serves as the authoritative, human-readable index of **Dendro's Mu
  ┌───────────────┐          ┌───────────────┐          ┌───────────────┐
  │ GOAL 2 (v0.2) │          │ GOAL 3 (v0.3) │          │ GOAL 4 (v0.4) │
  │ Conversational│          │ Ecosystem     │          │ Public Presence│
- │ Analytics Nao │          │ Connectors    │          │ & ROI Calc    │
+ │ Analytics Nao │          │ Connectors    │          │ & Waste Calc  │
  └───────┬───────┘          └───────┬───────┘          └───────┬───────┘
          │                          │                          │
          └──────────────────────────┼──────────────────────────┘
                                     ▼
        ┌─────────────────────────────────────────────────────────┐
-       │ GOAL 5 (v1.0): Optimization & Autonomous Fleet Tuning   │
+       │ GOAL 5 (v0.5): Optimization & Autonomous Fleet Tuning   │
        └─────────────────────────────────────────────────────────┘
 ```
 
@@ -57,6 +57,11 @@ This document serves as the authoritative, human-readable index of **Dendro's Mu
 | **[#16](https://github.com/smota/dendro/issues/16)** | `feat(nao): 4 Semantic Materialized Views` | `v_seat_idle`, `v_handoff_rework`, `v_token_burn`, `v_governance` | Backlog (Benchmarked <20ms prototype) |
 | **[#17](https://github.com/smota/dendro/issues/17)** | `feat(nao): 6 Interrogation Patterns` | Compare, Rank, Explain, Verify, Trace, Limit patterns | Backlog |
 | **[#18](https://github.com/smota/dendro/issues/18)** | `test(nao): Sub-Millisecond Benchmark Suite`| Automated regression assertion gate for query latency | Backlog (Prototype suite ready) |
+| **[#30](https://github.com/smota/dendro/issues/30)** | `feat(ux): Busy-source retry hint` | Busy-source refusal suggests a retry | Backlog |
+| **[#31](https://github.com/smota/dendro/issues/31)** | `fix(ingest): One OpenRig root per DB guard` | Refuse a second OpenRig root on an existing analytics DB (K9 limit d) | Backlog (first post-v0.1.0 fix) |
+| **[#32](https://github.com/smota/dendro/issues/32)** | `feat(trace): File source gone/superseded` | Trace marks deleted or replaced file sources (v0.1.0 known limit F3) | Backlog |
+| **[#33](https://github.com/smota/dendro/issues/33)** | `feat(trace): Tool-loop provenance` | Loop counts traceable to source records under K11 (known limit F5) | Backlog |
+| **[#34](https://github.com/smota/dendro/issues/34)** | `fix(report): Sub-second wait precision` | Exact wait samples and medians (known limit O1) | Backlog |
 
 ---
 
@@ -70,10 +75,11 @@ This document serves as the authoritative, human-readable index of **Dendro's Mu
 | **[#19](https://github.com/smota/dendro/issues/19)** | `feat(connectors): Cursor & Windsurf` | SQLite and cascade session log connectors | Backlog |
 | **[#20](https://github.com/smota/dendro/issues/20)** | `feat(connectors): Devin & Goose` | Autonomous agent runtime stream readers | Backlog |
 | **[#21](https://github.com/smota/dendro/issues/21)** | `docs(connectors): Custom Harness SDK` | Tutorial & runnable example for in-house harness integration | Backlog |
+| **[#27](https://github.com/smota/dendro/issues/27)** | `feat(analytics): Cross-Project Fleet Portfolio View` | Several OpenRig homes in one view; per-project burn, throughput, rework | Needs discovery |
 
 ---
 
-## 🌐 Goal 4 (Epic #9): Public Presence, Branding & ROI Waste Calculator
+## 🌐 Goal 4 (Epic #9): Public Presence, Branding & Waste Calculator
 * **Status:** Active Parallel Stream (Lead: Antigravity PO)
 * **Objective:** Deliver market positioning, high-conversion landing page, and economic waste calculator.
 
@@ -87,7 +93,7 @@ This document serves as the authoritative, human-readable index of **Dendro's Mu
 
 ## ⚡ Goal 5 (Epic #10): Optimization Scenarios & Autonomous Fleet Tuning
 * **Status:** Strategic Roadmap
-* **Objective:** Transition Dendro from diagnostic observability into a closed-loop tuning and self-healing engine.
+* **Objective:** Turn Dendro diagnoses into evidence-based optimization advice. Dendro observes and advises; it never mutates agent execution (anti-goal, sponsor 2026-10-10 18:56Z).
 
 | Issue | Title | Capabilities | Status |
 | :--- | :--- | :--- | :--- |
@@ -95,4 +101,6 @@ This document serves as the authoritative, human-readable index of **Dendro's Mu
 | **[#15](https://github.com/smota/dendro/issues/15)** | `feat(governance): Closed-Loop Backlog Feeder`| `dendro issue-draft` with quantified dollar cost-of-inaction | Backlog |
 | **[#24](https://github.com/smota/dendro/issues/24)** | `feat(tuning): Topology What-If Simulator` | Analytical modeling of seat addition/removal impact | Backlog |
 | **[#25](https://github.com/smota/dendro/issues/25)** | `feat(governance): Automated CI Quality Gate`| `dendro assert` breaking builds on rework spikes (>15%) | Backlog |
-| **[#26](https://github.com/smota/dendro/issues/26)** | `feat(self-healing): Watchdog Nudge Reclaim` | Autonomous unclaim and recovery for stalled queue items | Backlog |
+| **[#26](https://github.com/smota/dendro/issues/26)** | `feat(advisory): Idle-with-Claimed-Work Detection` | Report-only anomaly finding; intervention belongs to the OpenRig watchdog (sponsor 22:54Z) | Backlog |
+| **[#28](https://github.com/smota/dendro/issues/28)** | `feat(viz): Fleet Flamegraphs & Token Flux Sankey` | Offline HTML/SVG and terminal charts; waits for the G2 interface decision | Needs discovery |
+| **[#29](https://github.com/smota/dendro/issues/29)** | `feat(ux): Hypothesis Engine & Anomaly Spotlight` | Advisory anomaly umbrella; reuses #12, #17, #26 definitions; badges removed | Needs discovery |

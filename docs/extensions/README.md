@@ -1,12 +1,12 @@
-# Dendro — Guia de Extensão de Conectores (Extension Guide)
+# Dendro — Connector Extension Guide
 
-O Dendro foi arquitetado para ser desacoplado e extensível. Se a sua equipe utiliza um harness de desenvolvimento agêntico novo (como Cursor, Windsurf, Devin, Goose, Aider ou frameworks proprietários), este guia detalha como criar um conector e registrá-lo no motor analítico.
+Dendro is architected to be modular, decoupled, and extensible. If your engineering organization introduces a new agent development harness (such as Cursor, Windsurf, Devin, Goose, Aider, or proprietary internal frameworks), this guide explains how to implement a connector and register it within the analytical engine.
 
 ---
 
-## 1. O Contrato Canônico: `HarnessConnector`
+## 1. The Canonical Contract: `HarnessConnector`
 
-Todo novo conector deve implementar a trait `HarnessConnector` definida em `crates/dendro-core/src/traits.rs`:
+Every new connector implements the `HarnessConnector` trait defined in `crates/dendro-core/src/traits.rs`:
 
 ```rust
 use async_trait::async_trait;
@@ -16,16 +16,16 @@ use std::path::Path;
 
 #[async_trait]
 pub trait HarnessConnector: Send + Sync {
-    /// Identificador canônico do conector (ex: "cursor", "windsurf", "devin")
+    /// Canonical identifier for the connector (e.g., "cursor", "windsurf", "devin")
     fn name(&self) -> &'static str;
 
-    /// Verifica se o ambiente local possui dados deste conector
+    /// Checks if the local host environment has data for this connector
     async fn is_available(&self) -> bool;
 
-    /// Descobre caminhos de sessões locais para ingestão
+    /// Discovers local session file paths for ingestion
     async fn discover_sessions(&self) -> DendroResult<Vec<std::path::PathBuf>>;
 
-    /// Faz a extração e conversão de uma sessão a partir do watermark fornecido
+    /// Extracts and normalizes a session beginning from the provided watermark
     async fn extract_session(
         &self,
         session_path: &Path,
@@ -36,31 +36,31 @@ pub trait HarnessConnector: Send + Sync {
 
 ---
 
-## 2. O Modelo Canônico: `CanonicalSession`
+## 2. Canonical Data Model: `CanonicalSession`
 
-O objetivo do seu conector é converter os logs heterogêneos do seu harness no schema canônico universal:
+The connector normalizes heterogeneous harness logs into the universal canonical schema:
 
-| Campo | Tipo | Descrição |
+| Field | Type | Description |
 | :--- | :--- | :--- |
-| `id` | `String` | Identificador único estável da sessão (UUID ou hash do path) |
-| `harness` | `String` | Nome do harness (ex: `"cursor"`) |
-| `agent_name` | `Option<String>` | Assento ou identificador declarado do agente |
-| `rig_id` | `Option<String>` | ID do rig (se resolvido pelo conector) |
-| `cwd` | `Option<String>` | Diretório de trabalho da sessão |
-| `started_at` | `DateTime<Utc>` | Timestamp de início |
-| `ended_at` | `Option<DateTime<Utc>>`| Timestamp de encerramento |
-| `input_tokens` | `u64` | Total de tokens de prompt consumidos |
-| `output_tokens`| `u64` | Total de tokens gerados |
-| `cache_read_tokens` | `u64` | Tokens lidos de cache (quando suportado pelo LLM) |
-| `tool_calls` | `Vec<CanonicalToolCall>`| Chamadas de ferramentas executadas durante a sessão |
-| `skills_invoked`| `Vec<String>` | Nomes de skills/comandos especializados acionados |
+| `id` | `String` | Stable unique session identifier (UUID or path hash) |
+| `harness` | `String` | Harness name (e.g., `"cursor"`) |
+| `agent_name` | `Option<String>` | Declared agent seat or identifier |
+| `rig_id` | `Option<String>` | Rig / squad identifier (if resolved) |
+| `cwd` | `Option<String>` | Working directory of the session |
+| `started_at` | `DateTime<Utc>` | Session start timestamp |
+| `ended_at` | `Option<DateTime<Utc>>`| Session termination timestamp |
+| `input_tokens` | `u64` | Total prompt tokens consumed |
+| `output_tokens`| `u64` | Total generated tokens |
+| `cache_read_tokens` | `u64` | Cached tokens read (when supported by LLM) |
+| `tool_calls` | `Vec<CanonicalToolCall>`| Tool calls executed during the session |
+| `skills_invoked`| `Vec<String>` | Specialized skills or slash commands invoked |
 
 ---
 
-## 3. Passo a Passo de Implementação
+## 3. Step-by-Step Implementation Guide
 
-### Passo 1: Crie o arquivo do conector em `crates/dendro-connectors/src/`
-Crie, por exemplo, `crates/dendro-connectors/src/cursor.rs`:
+### Step 1: Create the Connector Module in `crates/dendro-connectors/src/`
+For example, create `crates/dendro-connectors/src/cursor.rs`:
 
 ```rust
 pub struct CursorConnector {
@@ -79,23 +79,24 @@ impl CursorConnector {
 #[async_trait::async_trait]
 impl HarnessConnector for CursorConnector {
     fn name(&self) -> &'static str { "cursor" }
-    // Implemente is_available, discover_sessions e extract_session...
+    // Implement is_available, discover_sessions, and extract_session...
 }
 ```
 
-### Passo 2: Exporte no `crates/dendro-connectors/src/lib.rs`
+### Step 2: Export in `crates/dendro-connectors/src/lib.rs`
 ```rust
 pub mod cursor;
 pub use cursor::CursorConnector;
 ```
 
-### Passo 3: Registre na lista de conectores do CLI (`crates/dendro-cli/src/main.rs`)
-Adicione uma instância do seu conector no vetor padrão de ingestão executado por `dendro run` e `dendro watch`.
+### Step 3: Register in CLI Pipeline (`crates/dendro-cli/src/main.rs`)
+Instantiate the connector in the default ingestion registry executed by `dendro run` and `dendro watch`.
 
 ---
 
-## 4. Testes de Conformidade do Conector
-Crie um teste unitário com um arquivo de amostra mockado:
+## 4. Connector Conformance Testing
+Write unit tests against mocked fixture files:
+
 ```rust
 #[tokio::test]
 async fn test_cursor_extraction() {

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dendro — Decipher the Growth Layers of Your AI Agent Fleets</title>
-  <meta name="description" content="Local-first telemetry, observability and correlation engine for multi-agent fleets. Powered by Rust, DuckDB, and OpenRig.">
+  <meta name="description" content="Local-first AI fleet intelligence, observability and correlation engine for multi-agent squads. Powered by Rust, DuckDB, and OpenRig.">
   <link rel="stylesheet" href="styles.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -23,7 +23,7 @@
         <a href="#demo">Video Walkthrough</a>
         <a href="#metaphor">Dendrochronology</a>
         <a href="#layers">Core Layers</a>
-        <a href="#calculator">ROI Calculator</a>
+        <a href="#calculator">Waste Calculator</a>
         <a href="#nao">Nao Analytics</a>
         <a href="#docs">Documentation</a>
       </nav>
@@ -44,7 +44,7 @@
     <div class="container hero-content">
       <div class="hero-badge">
         <span class="badge-dot"></span>
-        <span>Local-First Telemetry & Analytics for Autonomous AI Fleets</span>
+        <span>Local-First AI Fleet Intelligence for Autonomous Agent Squads</span>
         <span class="badge-tag">v0.1.0</span>
       </div>
       <h1 class="hero-title">
@@ -87,26 +87,30 @@
             <span class="dot dot-yellow"></span>
             <span class="dot dot-green"></span>
           </div>
-          <span class="terminal-title">dendro status --db dendro.duckdb</span>
-          <span class="terminal-badge">RUST v0.1.0 • LOCAL-FIRST</span>
+          <span class="terminal-title">dendro report --db analytics.duckdb</span>
+          <span class="terminal-badge">CLI PREVIEW (RUST v0.1.0)</span>
         </div>
         <div class="terminal-body">
-          <div class="term-line"><span class="term-prompt">$</span> dendro run --db dendro.duckdb</div>
-          <div class="term-line term-muted">▶ Scanning local agent harnesses...</div>
-          <div class="term-line term-success">✓ OpenRig Core SQLite: ~/.openrig/openrig.sqlite (152 queue items, 8 nodes)</div>
-          <div class="term-line term-success">✓ Claude Code Harness: ~/.claude/projects (35/35 sessions discovered)</div>
-          <div class="term-line term-success">✓ OpenAI Codex Harness: ~/.codex/sessions (23/23 sessions discovered)</div>
-          <div class="term-line term-success">✓ Pi / Grok Harness: ~/.openrig/state/pi (29/29 sessions discovered)</div>
-          <div class="term-line term-info">ℹ Ingested into embedded DuckDB with idempotent watermarks in 0.18s.</div>
-          <div class="term-line"><span class="term-prompt">$</span> dendro status</div>
+          <div class="term-line"><span class="term-prompt">$</span> dendro run --db analytics.duckdb</div>
+          <div class="term-line term-muted">▶ Ingesting local agent event streams...</div>
+          <div class="term-line term-success">✓ OpenRig Core SQLite: private staging and atomic snapshot copy completed</div>
+          <div class="term-line term-success">✓ Claude Code & Codex Harnesses: sessions sanitized and indexed</div>
+          <div class="term-line term-info">ℹ Ingested into analytics.duckdb with zero credential leaks.</div>
+          <div class="term-line"><span class="term-prompt">$</span> dendro report --db analytics.duckdb --from 2026-10-10T00:00:00Z --to 2026-10-11T00:00:00Z</div>
           <div class="term-output">
-┌────────────────────┬─────────┬──────────────┬─────────────┬──────────────┬───────────────┐
-│ Rig                │ Seats   │ Handover Eff │ Rework Rate │ Token Burn   │ Seat Yield    │
-├────────────────────┼─────────┼──────────────┼─────────────┼──────────────┼───────────────┤
-│ dendro-dev         │ 6 seats │ 94.2%        │ 4.8% (low)  │ 312k tokens  │ 77.4% yield   │
-│ agentflow-dev      │ 6 seats │ 76.5%        │ 22.1% (warn)│ 1.4M tokens  │ 54.2% yield   │
-│ dendro-pm          │ 2 seats │ 98.1%        │ 0.0%        │ 88k tokens   │ Converged P0  │
-└────────────────────┴─────────┴──────────────┴─────────────┴──────────────┴───────────────┘
+## AI Fleet Intelligence Report [2026-10-10T00:00:00Z .. 2026-10-11T00:00:00Z)
+
+### Seat Yield (M1)
+| Seat | Closed Items | Tokens / Closed Item | Returned Handoffs |
+| :--- | :--- | :--- | :--- |
+| dev-build-sr@squad-a | 18 | 42.1k tokens | 4 |
+| dev-build-jr@squad-a | 12 | 28.4k tokens | 2 |
+| dev-qa@squad-a       | 15 | 8.2k tokens  | 0 |
+
+### Handover Continuity (M2) & Rework (M3)
+- Delivered Handoffs: 34 (returned: 6, return rate: 17.6%)
+- Build Chains Evaluated: 49 (rework returns after QA/review: 14, rework proportion: 28.6%)
+- Unknown Chains: 0 | Closed Items with Insufficient History: 0
           </div>
         </div>
       </div>
@@ -206,51 +210,59 @@
     </div>
   </section>
 
-  <!-- ROI Calculator -->
+  <!-- Fleet Rework Modeler -->
   <section id="calculator" class="section calc-section">
     <div class="container">
-      <div class="section-badge">Interactive Simulation</div>
-      <h2 class="section-title">Agent Waste & ROI Calculator</h2>
+      <div class="section-badge">Scenario Modeling</div>
+      <h2 class="section-title">Fleet Rework & Cost-of-Inaction Modeler</h2>
       <p class="section-subtitle">
-        Calculate how much time and compute spend your team recovers by eliminating idle bottlenecks and review rework loops.
+        Model the compute expenditure consumed by verification rework loops across your agent squad. Configure your squad assumptions below.
       </p>
 
       <div class="calc-box">
         <div class="calc-inputs">
           <div class="form-group">
-            <label for="seatsInput">Autonomous Fleet Size (Seats):</label>
-            <input type="range" id="seatsInput" min="2" max="20" value="6" step="1">
-            <span class="range-val" id="seatsVal">6 seats</span>
-          </div>
-          <div class="form-group">
-            <label for="missionsInput">Completed Missions per Week:</label>
+            <label for="missionsInput">Completed Missions per Month:</label>
             <input type="range" id="missionsInput" min="5" max="100" value="25" step="5">
             <span class="range-val" id="missionsVal">25 missions</span>
           </div>
           <div class="form-group">
+            <label for="tokensPerMissionInput">Average Tokens per Mission:</label>
+            <input type="range" id="tokensPerMissionInput" min="100" max="1500" value="400" step="50">
+            <span class="range-val" id="tokensPerMissionVal">400k tokens</span>
+          </div>
+          <div class="form-group">
+            <label for="reworkRateInput">Assumed Rework Proportion (M3):</label>
+            <input type="range" id="reworkRateInput" min="5" max="60" value="25" step="5">
+            <span class="range-val" id="reworkRateVal">25%</span>
+          </div>
+          <div class="form-group">
             <label for="tokenCostInput">Blended Model Cost per 1M Tokens (USD):</label>
-            <input type="range" id="tokenCostInput" min="1" max="15" value="5" step="1">
+            <input type="range" id="tokenCostInput" min="1" max="20" value="5" step="1">
             <span class="range-val" id="tokenCostVal">$5 / 1M</span>
           </div>
         </div>
 
         <div class="calc-results">
           <div class="res-card">
-            <span class="res-label">Avoidable Rework / Month</span>
-            <span class="res-num" id="reworkHours">34 hours</span>
-            <span class="res-sub">in wasted test & repair loops</span>
-          </div>
-          <div class="res-card highlight-res">
-            <span class="res-label">Estimated Monthly Savings</span>
-            <span class="res-num" id="savingsAmount">$480 USD</span>
-            <span class="res-sub">in recovered compute tokens</span>
+            <span class="res-label">Hypothetical Rework Chains</span>
+            <span class="res-num" id="reworkChainsVal">6 chains</span>
+            <span class="res-sub">missions returned after QA/review</span>
           </div>
           <div class="res-card">
-            <span class="res-label">Fleet Velocity Boost</span>
-            <span class="res-num" id="speedupRate">+38%</span>
-            <span class="res-sub">with calibrated seat topology</span>
+            <span class="res-label">Estimated Tokens in Rework</span>
+            <span class="res-num" id="reworkTokensVal">2.5M tokens</span>
+            <span class="res-sub">rework loop compute volume</span>
+          </div>
+          <div class="res-card highlight-res">
+            <span class="res-label">Illustrative Cost of Rework</span>
+            <span class="res-num" id="reworkCostVal">$13 USD</span>
+            <span class="res-sub">monthly compute spend in rework</span>
           </div>
         </div>
+        <p class="calc-disclaimer" style="text-align: center; margin-top: 1.5rem; font-size: 0.85rem; color: var(--text-muted);">
+          <em>Methodology Note: Purely illustrative scenario model based on operator inputs. Dendro diagnoses and attributes actual fleet rework from event logs; it does not claim automated savings. Measured benchmarks will be published once v0.1.0 passes independent QA.</em>
+        </p>
       </div>
     </div>
   </section>
@@ -259,7 +271,7 @@
   <section id="nao" class="section nao-section">
     <div class="container">
       <div class="section-badge">Natural Language OLAP</div>
-      <h2 class="section-title">Query Fleet Telemetry in Plain English</h2>
+      <h2 class="section-title">Query Fleet Intelligence in Plain English</h2>
       <p class="section-subtitle">
         Native conversational integration with <strong>Nao</strong>. Powered by DuckDB semantic models without rigid dashboards.
       </p>

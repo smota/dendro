@@ -1,15 +1,15 @@
-# Dendro — Guia do Mantenedor (Maintainer Guide)
+# Dendro — Maintainer Guide
 
-Bem-vindo à documentação interna de mantenedores do **Dendro**. Este guia documenta a arquitetura de engenharia, convenções de código em Rust, modelo de concorrência, governança de ciclo de vida e padrões de qualidade do projeto.
+Welcome to the internal maintainer guide for **Dendro**. This guide details the engineering architecture, Rust code conventions, concurrency model, lifecycle governance, and quality standards for the project.
 
 ---
 
-## 1. Visão Arquitetural do Core
+## 1. Core Architectural Overview
 
-O Dendro é um motor analítico *local-first* construído em Rust modular sobre o **DuckDB**:
+Dendro is a local-first AI fleet intelligence and decision engine built in modular Rust on embedded **DuckDB**:
 
 ```
-[Fontes Locais de Sessões]
+[Local Session Sources]
  ├── OpenRig (~/.openrig/openrig.sqlite, state/)
  ├── Claude Code (~/.claude/projects/*/*.jsonl)
  ├── Codex (~/.codex/sessions/**/rollout-*.jsonl)
@@ -18,69 +18,69 @@ O Dendro é um motor analítico *local-first* construído em Rust modular sobre 
  └── Pi (~/.pi/agent/sessions/**/*.jsonl)
        │
        ▼
- [dendro-connectors] ───► Implementa `HarnessConnector` (streaming zero-copy via BufReader)
+ [dendro-connectors] ───► Implements `HarnessConnector` (zero-copy streaming via BufReader)
        │
        ▼
- [dendro-resolver]   ───► Implementa `CorrelationResolver` (amarra sessão a Rig, Assento e Missão)
+ [dendro-resolver]   ───► Implements `CorrelationResolver` (binds sessions to Rig, Seat, and Mission)
        │
        ▼
- [dendro-core]       ───► DuckDbStorage (migração idempotente, inserção transacional em lote)
+ [dendro-core]       ───► DuckDbStorage (idempotent migrations, transactional batch insertion)
        │
        ▼
- [dendro.duckdb]     ───► Tabelas dimensionais e analíticas colunares
+ [dendro.duckdb]     ───► Dimensional and columnar analytical tables
 ```
 
 ---
 
-## 2. Padrões de Engenharia em Rust
+## 2. Rust Engineering Standards
 
-### 2.1. Desempenho & Eficiência de Memória (Zero-Copy)
-* **Streaming de logs grandes:** Logs de harnesses (Claude Code, Codex, AGY) podem somar centenas de megabytes. **Nunca** leia arquivos completos para a memória com `fs::read_to_string`. Utilize `BufReader::new(file).lines()` para consumo linha a linha.
-* **Watermarks Incrementais:** Cada ingestão armazena em `_dendro_watermarks` o byte offset e o timestamp da última leitura. Na execução seguinte, o conector busca diretamente o offset (`seek(SeekFrom::Start(offset))`).
-* **DuckDB Transactions:** Operações de escrita em lote devem ser envelopadas em uma única transação (`BEGIN TRANSACTION` ... `COMMIT`). Evite inserts individuais linha a linha.
+### 2.1 Performance & Memory Efficiency (Zero-Copy)
+* **Streaming Large Log Files:** Harness logs (Claude Code, Codex, AGY) can reach hundreds of megabytes. **Never** load entire files into memory with `fs::read_to_string`. Consume streams line-by-line using `BufReader::new(file).lines()`.
+* **Incremental Watermarks:** Every ingestion writes byte offsets and last-read timestamps to `_dendro_watermarks`. On subsequent runs, connectors seek directly to the offset (`seek(SeekFrom::Start(offset))`).
+* **DuckDB Transactions:** Batch write operations must be wrapped within a single transaction (`BEGIN TRANSACTION` ... `COMMIT`). Avoid individual single-row inserts.
 
-### 2.2. Segurança e Defesa em Profundidade
-* **Safe Rust Estrito:** Proibido o uso de `unsafe` blocks em todos os crates do workspace (`#![deny(unsafe_code)]`).
-* **Prevenção de SQL Injection:** Parâmetros de consulta devem obrigatoriamente utilizar `duckdb::params![...]` ou prepared statements. Concatenação de strings em SQL (`format!("SELECT ... WHERE id = '{}'")`) é reprovada nos gates de CI.
-* **Sanitização de Segredos:** Prompts e comandos contendo credenciais conhecidas (`sk-`, `ghp_`, `gho_`, `Bearer `, `xai-`) devem ter seus tokens ofuscados antes da persistência analítica.
+### 2.2 Security & Defense in Depth
+* **Strict Safe Rust:** The use of `unsafe` blocks is strictly forbidden across all workspace crates (`#![deny(unsafe_code)]`).
+* **SQL Injection Prevention:** Query parameters must use `duckdb::params![...]` or prepared statements. SQL string concatenation (`format!("SELECT ... WHERE id = '{}'")`) fails CI quality gates.
+* **Secret Redaction:** Prompts and commands matching known credential patterns across 10 families (`sk-`, `ghp_`, `gho_`, `Bearer `, `xai-`) must be redacted before analytical persistence.
 
 ---
 
-## 3. Estrutura do Workspace Cargo
+## 3. Cargo Workspace Structure
 
 ```
 crates/
-├── dendro-core/         # Schemas canônicos (CanonicalSession, CanonicalToolCall), traits fundamentais, DuckDbStorage
-├── dendro-connectors/   # Adaptadores de parsing especializados por harness
-├── dendro-resolver/     # Algoritmos de correlação e amarração (OpenRigResolver, StandaloneResolver)
-├── dendro-watcher/      # Monitoramento em tempo real via notify-debouncer-mini
-└── dendro-cli/          # Ponto de entrada binário com comandos CLI (run, watch, status, init-nao)
+├── dendro-core/         # Canonical schemas (CanonicalSession, CanonicalToolCall), core traits, DuckDbStorage
+├── dendro-connectors/   # Specialized parsing adapters per agent harness
+├── dendro-resolver/     # Correlation and binding algorithms (OpenRigResolver, StandaloneResolver)
+├── dendro-watcher/      # Real-time monitoring via notify-debouncer-mini
+└── dendro-cli/          # Binary entry point and CLI commands (run, watch, status, init-nao)
 ```
 
 ---
 
-## 4. Quality Gates & Comandos de Validação
+## 4. Quality Gates & Validation Commands
 
-Antes de enviar qualquer pull request ou submeter ao reviewer:
+Before submitting any candidate receipt or handing off to the reviewer:
 
 ```bash
-# 1. Compilação estrita
+# 1. Strict compilation check
 cargo check --workspace
 
-# 2. Execução da suíte de testes
+# 2. Test suite execution
 cargo test --workspace
 
-# 3. Linter com zero warnings tolerados
+# 3. Linter with zero warnings tolerated
 cargo clippy --workspace -- -D warnings
 
-# 4. Formatação canônica
+# 4. Canonical formatting
 cargo fmt --check
 ```
 
 ---
 
-## 5. Governança e Operação Agêntica
+## 5. Autonomous Governance & SDLC Protocols
 
-Este repositório é governado pelo **AgentFlow SDLC** em postura **autônoma**:
-* **Branch Protection:** Nunca commite diretamente na branch `main`. Todo trabalho move-se por worktrees dedicadas em `.worktrees/<feature-name>`.
-* **Four-Eyes Estrito:** O builder nunca aprova seu próprio pull request (`allowsSelfReview: false`). O revisor independente em `rev.review` audita o commit SHA final antes do merge.
+This repository is governed under the **AgentFlow SDLC** in **autonomous** posture:
+* **Branch Protection:** Never commit directly to `main`. All implementation occurs in dedicated worktrees under `.worktrees/<feature-name>`.
+* **Strict Four-Eyes Gate:** Builders never approve their own pull requests (`allowsSelfReview: false`). Independent review seats in `rev.review` audit the final candidate commit SHA before merge.

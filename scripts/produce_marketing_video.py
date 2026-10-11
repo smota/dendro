@@ -43,8 +43,8 @@ font_badge = ImageFont.truetype(FONT_BOLD_PATH, 18)
 SCENES = [
     {
         "id": "scene1_hero",
-        "narration": "Meet Dendro. The local-first telemetry, observability, and analytics engine built to decipher the cumulative growth layers of your autonomous AI agent fleets.",
-        "title": "DENDRO TELEMETRY ENGINE",
+        "narration": "Meet Dendro. The local-first AI fleet intelligence, observability, and analytics engine built to decipher the cumulative growth layers of your autonomous AI agent fleets.",
+        "title": "DENDRO FLEET INTELLIGENCE ENGINE",
         "subtitle": "Decipher the Growth Layers of Your Autonomous AI Agent Fleets",
         "type": "hero"
     },
@@ -57,7 +57,7 @@ SCENES = [
     },
     {
         "id": "scene3_architecture",
-        "narration": "Dendro eliminates this friction with a pure local-first architecture. Zero telemetry egress to third-party clouds, strict secret redaction, and sub-millisecond analytics powered by embedded DuckDB with idempotent watermarks.",
+        "narration": "Dendro eliminates this friction with a pure local-first architecture. Zero intelligence egress to third-party clouds, strict secret redaction, and sub-millisecond analytics powered by embedded DuckDB with idempotent watermarks.",
         "title": "100% LOCAL-FIRST ARCHITECTURE & EMBEDDED DUCKDB",
         "subtitle": "Zero Cloud Egress • Embedded DuckDB OLAP • Safe Rust & Strict Privacy",
         "type": "architecture"
@@ -92,7 +92,7 @@ def draw_header(draw, title, subtitle):
     
     # Logo Text
     draw.text((80, 35), "🌲 DENDRO", font=ImageFont.truetype(FONT_BOLD_PATH, 32), fill=ACCENT_GREEN)
-    draw.text((310, 42), "|  TELEMETRY & ANALYTICS ENGINE", font=font_mono_small, fill=TEXT_MUTED)
+    draw.text((310, 42), "|  AI FLEET INTELLIGENCE & ANALYTICS ENGINE", font=font_mono_small, fill=TEXT_MUTED)
     
     # Title & Subtitle
     draw.text((80, 170), title, font=font_heading, fill=TEXT_WHITE)
@@ -119,7 +119,7 @@ def render_scene(scene, output_path):
             
         draw.text((960, 540), "DENDRO", font=ImageFont.truetype(FONT_BOLD_PATH, 72), fill=TEXT_WHITE, anchor="mm")
         draw.text((960, 615), "Decipher the growth layers of your AI agent fleets", font=ImageFont.truetype(FONT_PATH, 32), fill=ACCENT_GREEN, anchor="mm")
-        draw.text((960, 670), "Local-first telemetry, observability, and analytics engine for autonomous squads", font=font_subtitle, fill=TEXT_MUTED, anchor="mm")
+        draw.text((960, 670), "Local-first AI fleet intelligence, observability, and analytics engine for autonomous squads", font=font_subtitle, fill=TEXT_MUTED, anchor="mm")
         
         tags = ["100% LOCAL-FIRST", "EMBEDDED DUCKDB", "ZERO HEURISTICS", "NAO SEMANTIC LAYER", "SAFE RUST"]
         start_x = 320
@@ -224,7 +224,7 @@ def render_scene(scene, output_path):
         
         term_lines = [
             ("$ dendro run --db ./dendro.duckdb", ACCENT_GREEN),
-            ("🌲 Dendro Telemetry Engine v0.1.0 — Scanning host agent workspaces...", TEXT_WHITE),
+            ("🌲 Dendro Fleet Intelligence Engine v0.1.0 — Scanning host agent workspaces...", TEXT_WHITE),
             ("  [✓] OpenRig Core SQLite: ~/.openrig/openrig.sqlite (152 queue items, 8 nodes)", ACCENT_CYAN),
             ("  [✓] Claude Code Harness: ~/.claude/projects (35/35 sessions discovered)", TEXT_MUTED),
             ("  [✓] OpenAI Codex Harness: ~/.codex/sessions (23/23 sessions discovered)", TEXT_MUTED),

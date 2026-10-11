@@ -1,13 +1,13 @@
-# Nao Dashboard: Eficiência de Handoff & Retrabalho (Pergunta 2)
+# Nao Dashboard: Handoff Efficiency & Rework (Question 2)
 dashboard:
   id: handoff_flow
   title: "Handoff Flow & Rework Diagnostics"
-  description: "Mapeamento do fluxo de transições de tarefas e detecção de voltas de retrabalho"
+  description: "Task handoff topology mapping and rework return cycle detection"
 
 queries:
   - id: rework_matrix
-    title: "Matriz de Retrabalho entre Assentos"
-    nl_prompt: "Quantas vezes tarefas voltaram de QA ou Review para o Builder?"
+    title: "Inter-Seat Rework Matrix"
+    nl_prompt: "How many times did tasks return from QA or Review to Builder seats?"
     sql: >
       SELECT 
         from_seat,
@@ -20,8 +20,8 @@ queries:
       ORDER BY rework_returns DESC;
 
   - id: context_bloat
-    title: "Inchaço de Contexto por Assento Receptor"
-    nl_prompt: "Qual assento consome mais tokens para absorver tarefas na passagem de bastão?"
+    title: "Context Bloat by Receiving Seat"
+    nl_prompt: "Which seat consumes the most tokens absorbing context on handoff intake?"
     sql: >
       SELECT 
         to_seat AS receiver_seat,
