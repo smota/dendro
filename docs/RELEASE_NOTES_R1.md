@@ -17,7 +17,7 @@ Commands: `dendro run` (ingest), `dendro report`, and `dendro trace`.
 
 ### What v0.1.1 fixes
 
-v0.1.1 fixes how Dendro reads Claude Code tool calls. Token totals do not change.
+v0.1.1 fixes how Dendro reads Claude Code and Pi tool calls. Token totals do not change.
 
 - **Streamed tool calls are no longer lost (#35).** Claude Code writes one reply over several log lines that share a message id. Dendro counted the reply's tokens once, correctly, but also dropped the tool calls on the later lines. It now keeps each tool call once, by its tool-call id. A repeated copy of the same call is not a new call.
 - **Rejected records give no facts (#36).** A record of an unknown type, or a malformed one, is skipped with its warning and contributes nothing: no tokens, tool calls or links.
@@ -26,20 +26,36 @@ v0.1.1 fixes how Dendro reads Claude Code tool calls. Token totals do not change
   - A missing result, a missing or non-true/false flag, or results that disagree mean the outcome is unknown.
   - A result that matches no call is ignored.
   - A result that arrives in a later ingest settles the call then. Ingesting a file in parts gives the same answer as ingesting it whole.
-- **Tool inputs are compared as written.** Two calls have the same input only if the input's JSON text is identical, apart from whitespace at the ends. This is needed for loops to be found on real Claude Code logs, whose tool inputs are JSON objects.
+- **Pi tool calls are read.** Each Pi `toolCall` is matched to its `toolResult` by the call id, in the session named by line 1 of the file, under the same outcome rules as Claude Code. Pi `write` and `edit` calls end an intake window; `bash` and `read` never do.
+- **Tool inputs are compared as written.** Two calls have the same input only if the input's JSON text is identical, apart from whitespace at the ends. This is needed for loops to be found on real Claude Code and Pi logs, whose tool inputs are JSON objects.
 
-Developer measurement on code commit `c8f5f7a`, sealed real-fleet input (manifest `40c65db7`), window 2026-10-08 to 2026-10-11. To be confirmed by independent QA:
+Developer measurements on the sealed real-fleet input (manifest `40c65db7`), window 2026-10-08 to 2026-10-11. To be confirmed by independent QA.
 
-| | v0.1.0 candidate `2abeb8f` | v0.1.1 code |
+Claude Code (code commit `c8f5f7a`, compared with the v0.1.0 candidate `2abeb8f`):
+
+| | `2abeb8f` | v0.1.1 code |
 | --- | --- | --- |
 | Claude tool calls kept | 524 | 1,989 (equal to an independent count of distinct tool-call ids) |
 | Claude file writes among them | 5 | 105 |
-| Tool calls with a known outcome | 0 | 1,838 (27 failed, 1,811 succeeded; 151 unknown) |
-| Tool loops found | 0 | 0 (an independent count also finds 0) |
+| Claude calls with a known outcome | 0 | 1,838 (27 failed, 1,811 succeeded; 151 unknown) |
 | Total intake estimate, `agentflow-dev` handoffs | 140,750,841 tokens | 102,119,087 tokens |
-| Total tokens | 859,950,405 | 859,950,405 (unchanged) |
 
-The intake estimate falls by 38,631,754 tokens because the earlier candidate missed four real file writes that end the intake window. Each of the four now matches QA's independent computation.
+Pi (code commit `8c80907`, compared with a rebuild of `d5ebb07`):
+
+| | `d5ebb07` | v0.1.1 code |
+| --- | --- | --- |
+| Pi tool calls kept | 0 | 3,652 (equal to an independent count of distinct call ids) |
+| Pi file writes and edits among them | 0 | 439 |
+| Pi calls with a known outcome | 0 | 3,651 (86 failed, 3,565 succeeded; 1 unknown) |
+| Intake estimates whose end moves earlier to a Pi write or edit | — | 42 of 62 (all 62 match an independent count) |
+| Total intake estimate, `agentflow-dev` handoffs | 102,119,087 tokens | 79,759,804 tokens |
+
+In both comparisons:
+- Tool loops found: 0, and an independent count also finds 0.
+- Total tokens: 859,950,405, unchanged.
+- Codex tool calls: not read (see known limit 12).
+
+The Claude change lowers the intake estimate by 38,631,754 tokens: the earlier candidate missed four real file writes that end the intake window, and each of the four now matches QA's independent computation. The Pi change lowers it by a further 22,359,283 tokens.
 
 ### First run
 
@@ -84,7 +100,7 @@ The intake estimate falls by 38,631,754 tokens because the earlier candidate mis
     - Each seat's activity bands add up exactly. They cannot yet all be recomputed from the trace alone, because the queue actions of the sending seat are used but not shown in the trace.
     - Mismatch count: **PENDING independent QA**.
     - Planned for v0.2.0 (#33).
-12. **Tool calls come from Claude Code only.** Dendro reads tool calls, and so tool loops and file writes that end an intake window, from Claude Code logs. Codex and Pi tool calls are not read in this release.
+12. **Codex tool calls are not read yet.** Codex loop counts are not available. `dendro run` shows `tool_calls=not read` for Codex, and each Codex file records the warning "tool calls not read for codex". A Codex intake window ends only at a queue action, because Codex records no structured file write. Planned for v0.2.0 (#40).
 
 ### Unknown record types
 
