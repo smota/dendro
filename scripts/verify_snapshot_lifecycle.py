@@ -233,15 +233,44 @@ def case_error(binary, root, big, small):
     check("error", "never reports ready", '"status":"ready"' not in out)
 
 
-def signal_case(binary, root, big, small, name, sig, code_expected):
-    for phase, barrier in (("copy", lambda c: in_copy(c, big.path.stat().st_size)),
-                           ("ingest", in_ingest)):
+def copy_progress(case, source_size):
+    """Evidence for the copy barrier: (snapshot bytes, source bytes) while the
+    raw snapshot is still being copied, else None."""
+    for s in case.stages():
+        snap = s / "snapshot" / "openrig.sqlite"
+        try:
+            size = snap.stat().st_size if snap.exists() else 0
+        except OSError:
+            continue
+        if 0 < size < source_size:
+            return (size, source_size)
+    return None
+
+
+def signal_case(binary, root, big, small, name, sig, code_expected, huge):
+    # The copy phase uses a much larger source, so the copy itself is observed
+    # in progress (QA d5ebb07: with the 20 MB source the copy finished before
+    # the barrier was seen and the signal reached a run that had already
+    # exited, 101/105). No sleep stands in for observed work.
+    for phase, source, barrier in (("copy", huge, lambda c: in_copy(c, huge.path.stat().st_size)),
+                                   ("ingest", big, in_ingest)):
         c = Case(root, f"{name}-{phase}")
         db, old = baseline_db(binary, c, small)
-        before = big.manifest()
-        p = start(binary, c, db, big.path)
-        stage = wait_for(lambda: barrier(c))
-        check(name, f"{phase}: barrier reached with real work active", stage is not None)
+        before = source.manifest()
+        p = start(binary, c, db, source.path)
+        stage = wait_for(lambda: barrier(c) if p.poll() is None else "exited", 120)
+        evidence = copy_progress(c, huge.path.stat().st_size) if phase == "copy" else None
+        alive = p.poll() is None
+        reached = stage not in (None, "exited") and alive
+        check(name, f"{phase}: barrier reached with real work active, child {p.pid} still running",
+              reached, f"stage={stage} alive={alive}")
+        if phase == "copy":
+            print(f"INFO {name}: copy barrier evidence pid={p.pid} snapshot_bytes/source_bytes={evidence}")
+        if not reached:
+            # A child that already exited, or a missed barrier, never passes.
+            out, err = finish(p, name, phase, 300)
+            check(name, f"{phase}: signal not sent (no active work observed)", False, f"exit {p.returncode}")
+            continue
         p.send_signal(sig)
         out, err = finish(p, name, phase, 120)
         check(name, f"{phase}: exit {code_expected}", p.returncode == code_expected, f"{p.returncode} {err[-200:]}")
@@ -250,7 +279,7 @@ def signal_case(binary, root, big, small, name, sig, code_expected):
         check(name, f"{phase}: no stage or TMPDIR file, none recreated", leftovers(c) == [], leftovers(c))
         new = hashlib.sha256(db.read_bytes()).hexdigest()
         check(name, f"{phase}: db is the old complete db", new == old)
-        check(name, f"{phase}: source unchanged", big.manifest() == before)
+        check(name, f"{phase}: source unchanged", source.manifest() == before)
         check(name, f"{phase}: no canary in output", no_canary(out, err))
     # Early signal: before any stage exists.
     c = Case(root, f"{name}-early")
@@ -415,6 +444,8 @@ def main():
     # Large in bytes (the copy phase is observable), small in rows (runs finish).
     big = Source(root / "big.sqlite", 2_000, pad=10_000)
     small = Source(root / "small.sqlite", 50)
+    # About 100 MB, only for the signal cases' copy phase.
+    huge = Source(root / "huge.sqlite", 2_000, pad=50_000) if {"sigint", "sigterm"} & set(args.cases.split(",")) else None
     cases = args.cases.split(",")
     unknown = [c for c in cases if c not in ALL_CASES]
     if unknown:
@@ -424,9 +455,9 @@ def main():
         if case == "permissions":
             seen = case_permissions(binary, root, big, small)
         elif case == "sigint":
-            signal_case(binary, root, big, small, "sigint", signal.SIGINT, 130)
+            signal_case(binary, root, big, small, "sigint", signal.SIGINT, 130, huge)
         elif case == "sigterm":
-            signal_case(binary, root, big, small, "sigterm", signal.SIGTERM, 143)
+            signal_case(binary, root, big, small, "sigterm", signal.SIGTERM, 143, huge)
         else:
             {"success": case_success, "error": case_error, "sigkill-restart": case_sigkill,
              "active-owner": case_active, "unrelated": case_unrelated,

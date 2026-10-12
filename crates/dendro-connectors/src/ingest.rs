@@ -57,8 +57,15 @@ pub fn ingest_staged(
                     read.records_read += stats.records_read;
                     read.usage_records += stats.usage_records;
                 }
+                // Q6 (#40): Codex tool calls are not read in this version, so
+                // its loop and intake coverage is not available, never zero.
+                let coverage = if root.name == "codex" {
+                    " tool_calls=not read"
+                } else {
+                    ""
+                };
                 notes.push(format!(
-                    "{shown} files={} records_read={} usage_records={}",
+                    "{shown} files={} records_read={} usage_records={}{coverage}",
                     files.len(),
                     read.records_read,
                     read.usage_records

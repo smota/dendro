@@ -192,13 +192,25 @@ def case_f1(binary, base, tag):
 
 
 # ---------------------------------------------------------------- F6 loops
-def tool_line(ms, failed=True, name="Read", inp="same input", session="loop-session"):
+def tool_line(ms, failed=True, name="Read", inp="same input", session="loop-session", shape="result", tid=None):
+    """One Claude tool call. shape "result" (hotfix v0.1.1, Phase 1): the outcome
+    is a separate tool_result line, returned as a second line. shape
+    "superseded": the pre-v0.1.1 fixture shape with is_error on the tool_use and
+    no tool_result, kept as a negative control (its outcome is unknown)."""
+    tid = tid or f"t{ms}-{name}"
+    block = {"type": "tool_use", "id": tid, "name": name, "input": inp}
+    if shape == "superseded":
+        block["is_error"] = failed
     line = {"type": "assistant", "sessionId": session,
-            "message": {"id": f"m{ms}-{name}", "content": [{"type": "tool_use", "name": name, "input": inp, "is_error": failed}],
+            "message": {"id": f"m{ms}-{name}", "content": [block],
                         "usage": {"input_tokens": 1, "output_tokens": 0, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}}}
     if ms is not None:
         line["timestamp"] = at(ms)
-    return line
+    if shape == "superseded":
+        return [line]
+    result = {"type": "user", "sessionId": session, "timestamp": at((ms or 0) + 1),
+              "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": tid, "content": "x", "is_error": failed}]}}
+    return [line, result]
 
 
 def case_f6(binary, base, tag):
@@ -217,16 +229,23 @@ def case_f6(binary, base, tag):
         "two-failures": ([s(0), s(1)], []),
     }
     for name, (offsets, want) in runs.items():
-        b = base / name
-        lines = [tool_line(ms + 1_000 if ms is not None else None, session=f"loop-{name}") for ms in offsets]
-        write_jsonl(b / "claude" / "s.jsonl", lines)
-        db, code, _, err = ingest(binary, b, [("claude", b / "claude")])
-        got = sorted(l["count"] for l in (report(binary, db) or {}).get("tool_loops", [])) if code == 0 else None
-        check(case, f"{name}: loop counts {want}", got == want, {"got": got, "exit": code, "err": err[-200:]})
+        # tool_result shape (Phase 1), with the original expected counts; then
+        # the superseded is_error-on-tool_use shape, whose outcome is unknown,
+        # so it never forms a loop (negative control).
+        for shape, expected in (("result", want), ("superseded", [])):
+            b = base / f"{name}-{shape}"
+            lines = [l for n, ms in enumerate(offsets)
+                     for l in tool_line(ms + 1_000 if ms is not None else None, session=f"loop-{name}", shape=shape, tid=f"t{n}")]
+            write_jsonl(b / "claude" / "s.jsonl", lines)
+            db, code, _, err = ingest(binary, b, [("claude", b / "claude")])
+            got = sorted(l["count"] for l in (report(binary, db) or {}).get("tool_loops", [])) if code == 0 else None
+            label = f"{name}: loop counts {expected}" if shape == "result" else f"{name} [superseded is_error-on-tool_use shape]: no loop"
+            check(case, label, got == expected, {"got": got, "exit": code, "err": err[-200:]})
     # A break (success, other tool) splits a run; duplicates of the same record count once.
     b = base / "breaks"
-    lines = [tool_line(1_000), tool_line(2_000), tool_line(3_000, failed=False), tool_line(4_000), tool_line(5_000, name="Grep"), tool_line(6_000)]
-    write_jsonl(b / "claude" / "s.jsonl", lines)
+    calls = [tool_line(1_000, tid="b1"), tool_line(2_000, tid="b2"), tool_line(3_000, failed=False, tid="b3"),
+             tool_line(4_000, tid="b4"), tool_line(5_000, name="Grep", tid="b5"), tool_line(6_000, tid="b6")]
+    write_jsonl(b / "claude" / "s.jsonl", [l for pair in calls for l in pair])
     db, code, _, _ = ingest(binary, b, [("claude", b / "claude")])
     got = (report(binary, db) or {}).get("tool_loops") if code == 0 else None
     check(case, "success and another tool break the run: no loop", got == [], got)

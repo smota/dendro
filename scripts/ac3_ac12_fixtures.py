@@ -3,7 +3,10 @@
 import hashlib, json, os, sqlite3, subprocess
 from pathlib import Path
 
-BIN = "/home/sam/code/dendro/.worktrees/work/dendro-r1/target/debug/dendro"
+# The binary of the repository this script belongs to (it was hardcoded to the
+# work/dendro-r1 worktree, which silently tested that tree's binary elsewhere).
+REPO = Path(__file__).resolve().parent.parent
+BIN = str(REPO / "target/debug/dendro")
 ROOT = Path("/tmp/dendro-ac-pack")
 FROM = "2026-10-09T00:00:00Z"
 TO = "2026-10-09T00:01:00Z"
@@ -33,6 +36,7 @@ def report(db, kind, **extra):
     return run(args)
 
 def main():
+    print("binary", BIN, "sha256", hashlib.sha256(Path(BIN).read_bytes()).hexdigest())
     import shutil
     if ROOT.exists():
         shutil.rmtree(ROOT)
@@ -46,9 +50,14 @@ def main():
         json.dumps({"type": "assistant", "timestamp": T[0], "sessionId": "s-linked", "message": {"id": "m1", "usage": {"input_tokens": 2, "output_tokens": 3, "cache_read_input_tokens": 4, "cache_creation_input_tokens": 5, "cache_creation": {"ephemeral_5m_input_tokens": 5}}}}),
         json.dumps({"type": "assistant", "timestamp": T[5], "sessionId": "s-linked", "message": {"id": "m1", "usage": {"input_tokens": 9, "output_tokens": 9, "cache_read_input_tokens": 9, "cache_creation_input_tokens": 9}}}),
         json.dumps({"type": "assistant", "timestamp": T[6], "sessionId": "s-unlinked", "message": {"id": "u1", "content": canary, "usage": {"input_tokens": 1, "output_tokens": 0, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}}}),
-        json.dumps({"type": "assistant", "timestamp": T[10], "sessionId": f"sess-{secret_a}", "message": {"id": "a", "content": canary, "usage": {"input_tokens": 1, "output_tokens": 0, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}, "content": [{"type": "tool_use", "name": "Read", "input": " same ", "is_error": True}]}}),
-        json.dumps({"type": "assistant", "timestamp": "2026-10-09T00:00:11Z", "sessionId": f"sess-{secret_a}", "message": {"id": "b", "content": [{"type": "tool_use", "name": "Read", "input": " same ", "is_error": True}]}}),
-        json.dumps({"type": "assistant", "timestamp": "2026-10-09T00:00:12Z", "sessionId": f"sess-{secret_a}", "message": {"id": "c", "content": [{"type": "tool_use", "name": "Read", "input": " same ", "is_error": True}]}}),
+        json.dumps({"type": "assistant", "timestamp": T[10], "sessionId": f"sess-{secret_a}", "message": {"id": "a", "content": canary, "usage": {"input_tokens": 1, "output_tokens": 0, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}, "content": [{"type": "tool_use", "id": "t-a", "name": "Read", "input": " same "}]}}),
+        json.dumps({"type": "assistant", "timestamp": "2026-10-09T00:00:11Z", "sessionId": f"sess-{secret_a}", "message": {"id": "b", "content": [{"type": "tool_use", "id": "t-b", "name": "Read", "input": " same "}]}}),
+        json.dumps({"type": "assistant", "timestamp": "2026-10-09T00:00:12Z", "sessionId": f"sess-{secret_a}", "message": {"id": "c", "content": [{"type": "tool_use", "id": "t-c", "name": "Read", "input": " same "}]}}),
+        # Hotfix v0.1.1 (#37, Phase 1): a failure is the matching tool_result's is_error: true.
+        json.dumps({"type": "user", "timestamp": "2026-10-09T00:00:13Z", "sessionId": f"sess-{secret_a}", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": t, "content": "x", "is_error": True} for t in ("t-a", "t-b", "t-c")]}}),
+        # Superseded status shape, kept as a negative control: is_error on tool_use
+        # with no tool_result is not a failure, so these three form no loop.
+        json.dumps({"type": "assistant", "timestamp": "2026-10-09T00:00:14Z", "sessionId": "s-old-shape", "message": {"id": "o", "content": [{"type": "tool_use", "id": f"o-{n}", "name": "Read", "input": " same ", "is_error": True} for n in range(3)]}}),
         json.dumps({"type": "assistant", "timestamp": T[20], "sessionId": f"sess-{secret_b}", "message": {"id": "d", "usage": {"input_tokens": 4, "output_tokens": 0, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}}}),
         json.dumps({"type": "assistant", "timestamp": T[10], "sessionId": "s-b", "message": {"id": "early", "usage": {"input_tokens": 1, "output_tokens": 0, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}}}),
         json.dumps({"type": "assistant", "timestamp": "2026-10-09T00:00:15Z", "sessionId": "s-b", "message": {"id": "early-write", "content": [{"type": "tool_use", "name": "Write", "input": "early", "is_error": False}]}}),
@@ -158,6 +167,7 @@ def main():
     pair = next((row for row in medians or [] if row.get("from") == "seat-a" and row.get("to") == "seat-b"), {})
     check("ac5_even_median", pair.get("wait_median") == 5, 5, pair.get("wait_median"))
     loops = json.loads(handoffs)["payload"].get("tool_loops", [])
+    # One loop: the tool_result failures. The superseded is_error-on-tool_use shape adds none.
     check("ac6_loop", len(loops) == 1 and loops[0].get("count") == 3, 3, loops[0].get("count") if loops else 0)
     code, traced, _ = run(["trace", "--db", str(analytics), "--metric-id", "tokens", "--from", FROM, "--to", TO])
     traced = json.loads(traced) if code == 0 else {}
@@ -317,7 +327,7 @@ def main():
     key_path.write_bytes(original_key)
     check("qa_wrong_key", code != 0 and secret_a not in text + err, 1, code)
     failed = [row for row in rows if not row["ok"]]
-    Path("/tmp/ac3-ac12-results.json").write_text(json.dumps({"commit": subprocess.check_output(["git", "-C", "/home/sam/code/dendro/.worktrees/work/dendro-r1", "rev-parse", "HEAD"], text=True).strip(), "rows": rows}, indent=2))
+    Path("/tmp/ac3-ac12-results.json").write_text(json.dumps({"commit": subprocess.check_output(["git", "-C", str(REPO), "rev-parse", "HEAD"], text=True).strip(), "rows": rows}, indent=2))
     print("FAILED", len(failed), "OF", len(rows))
     for row in failed:
         print(row)

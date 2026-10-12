@@ -173,15 +173,30 @@ fn test_nao_analytical_performance_benchmark() -> Result<()> {
 
     // 4. Execução e medição das consultas do Nao
     let benchmarks = [
-        ("Dashboard 1 (Seat Dynamics & Waste)", "SELECT * FROM v_seat_idle_ranking ORDER BY waste_pct DESC;"),
-        ("Dashboard 2 (Handoffs & Rework)", "SELECT * FROM v_handoff_rework_analysis ORDER BY rework_returns DESC;"),
-        ("Dashboard 3 (Mission Cost Burn)", "SELECT * FROM v_mission_token_burn ORDER BY total_cost_usd DESC LIMIT 10;"),
-        ("Dashboard 4 (Executive Governance)", "SELECT * FROM v_executive_governance;"),
+        (
+            "Dashboard 1 (Seat Dynamics & Waste)",
+            "SELECT * FROM v_seat_idle_ranking ORDER BY waste_pct DESC;",
+        ),
+        (
+            "Dashboard 2 (Handoffs & Rework)",
+            "SELECT * FROM v_handoff_rework_analysis ORDER BY rework_returns DESC;",
+        ),
+        (
+            "Dashboard 3 (Mission Cost Burn)",
+            "SELECT * FROM v_mission_token_burn ORDER BY total_cost_usd DESC LIMIT 10;",
+        ),
+        (
+            "Dashboard 4 (Executive Governance)",
+            "SELECT * FROM v_executive_governance;",
+        ),
     ];
 
     println!("\n⏱️  BENCHMARK NATIVO DO NAO & DUCKDB (5.000 Fatos / In-Memory):");
     println!("==========================================================================");
-    println!("{:<40} | {:<15}", "Dashboard / Consulta Nao", "Latência Média");
+    println!(
+        "{:<40} | {:<15}",
+        "Dashboard / Consulta Nao", "Latência Média"
+    );
     println!("--------------------------------------------------------------------------");
 
     for (name, query) in benchmarks {
@@ -201,7 +216,11 @@ fn test_nao_analytical_performance_benchmark() -> Result<()> {
         let avg_ms = (elapsed.as_secs_f64() * 1000.0) / (iterations as f64);
 
         println!("{:<40} | {:6.3} ms (✓ SUB-MILLISECOND)", name, avg_ms);
-        assert!(avg_ms < 20.0, "Consulta excedeu o limiar de 20ms: {} ms", avg_ms);
+        assert!(
+            avg_ms < 20.0,
+            "Consulta excedeu o limiar de 20ms: {} ms",
+            avg_ms
+        );
     }
 
     println!("==========================================================================");
