@@ -35,6 +35,9 @@ enum Commands {
         db: PathBuf,
         #[arg(long)]
         rig: Option<String>,
+        /// Optional G2 friction configuration (versioned JSON).
+        #[arg(long)]
+        config: Option<PathBuf>,
         #[arg(long, default_value = "2026-10-08T00:00:00Z")]
         from: String,
         #[arg(long, default_value = "2026-10-11T00:00:00Z")]
@@ -48,6 +51,9 @@ enum Commands {
         metric_id: String,
         #[arg(long)]
         rig: Option<String>,
+        /// Optional G2 friction configuration (versioned JSON).
+        #[arg(long)]
+        config: Option<PathBuf>,
         #[arg(long, default_value = "2026-10-08T00:00:00Z")]
         from: String,
         #[arg(long, default_value = "2026-10-11T00:00:00Z")]
@@ -105,20 +111,36 @@ async fn main() -> Result<()> {
             kind,
             db,
             rig,
+            config,
             from,
             to,
         } => {
-            let report = dendro_core::report_json(&db, &kind, rig.as_deref(), &from, &to)?;
+            let report = dendro_core::report_json_configured(
+                &db,
+                &kind,
+                rig.as_deref(),
+                &from,
+                &to,
+                config.as_deref(),
+            )?;
             println!("{report}");
         }
         Commands::Trace {
             db,
             metric_id,
             rig,
+            config,
             from,
             to,
         } => {
-            let report = dendro_core::trace_json(&db, &metric_id, rig.as_deref(), &from, &to)?;
+            let report = dendro_core::trace_json_configured(
+                &db,
+                &metric_id,
+                rig.as_deref(),
+                &from,
+                &to,
+                config.as_deref(),
+            )?;
             println!("{report}");
         }
     }

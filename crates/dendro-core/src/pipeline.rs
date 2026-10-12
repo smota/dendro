@@ -219,11 +219,26 @@ pub fn report_json(
     from: &str,
     to: &str,
 ) -> Result<Value> {
+    report_json_configured(db, kind, rig, from, to, None)
+}
+
+/// As [`report_json`], with an optional G2 friction configuration file. The
+/// file is validated before anything is read or printed, for every kind; only
+/// the `friction` kind uses it, so R1 kinds print the same bytes either way.
+pub fn report_json_configured(
+    db: &Path,
+    kind: &str,
+    rig: Option<&str>,
+    from: &str,
+    to: &str,
+    config: Option<&Path>,
+) -> Result<Value> {
+    let config = crate::friction::FrictionConfig::load(config)?;
     refuse_secret_path(db)?;
     let window = parse_window(from, to)?;
     if !matches!(
         kind,
-        "links" | "activity" | "handoffs" | "tokens" | "decisions"
+        "links" | "activity" | "handoffs" | "tokens" | "decisions" | "friction"
     ) {
         return Err(anyhow!("unknown report kind {}", redact(kind)));
     }
@@ -537,6 +552,7 @@ pub fn report_json(
     // AC6 / K3: each in-window usage record lands in exactly one band. Per seat,
     // missions + no_mission + ambiguous = the seat total. Unlinked usage stays
     // apart from "no mission"; untimestamped usage is counted all-time only.
+    let mut band_events = Vec::new();
     let mut mission_tokens = std::collections::BTreeMap::<String, i64>::new();
     let mut mission_records = Vec::new();
     let mut ambiguous_by_reason = std::collections::BTreeMap::<String, i64>::new();
@@ -554,6 +570,29 @@ pub fn report_json(
             continue;
         };
         let evidence = metrics::mission_evidence(&seat, &queue_all, &snapshot_destinations, ts);
+        if kind == "friction" {
+            // The same per-event K3/K5 evidence, read once for both views.
+            band_events.push(crate::friction::BandEvent {
+                source_key: row.source_key.clone(),
+                seat: seat.clone(),
+                ts: ts.to_rfc3339(),
+                tokens: crate::friction::Tokens {
+                    input_uncached: row.input_uncached,
+                    output: row.output,
+                    cache_read: row.cache_read,
+                    cache_write: row.cache_write,
+                },
+                owned_items: evidence
+                    .items
+                    .iter()
+                    .filter(|item| item.relation == "owned")
+                    .map(|item| item.qitem.clone())
+                    .collect(),
+                unknown_history: evidence
+                    .reasons
+                    .contains(&metrics::AMBIGUOUS_INSUFFICIENT_HISTORY),
+            });
+        }
         mission_records.push(json!({
             "source_key": row.source_key,
             "ts": ts.to_rfc3339(),
@@ -775,6 +814,37 @@ pub fn report_json(
             })
         })
         .collect();
+    if kind == "friction" {
+        let mut chain_of_item = std::collections::BTreeMap::<String, String>::new();
+        for row in &queue_all {
+            let chain = row.chain_id.clone().unwrap_or_else(|| row.qitem_id.clone());
+            chain_of_item.entry(row.qitem_id.clone()).or_insert(chain);
+        }
+        let to_tokens = |c: &Categories| crate::friction::Tokens {
+            input_uncached: c.input_uncached,
+            output: c.output,
+            cache_read: c.cache_read,
+            cache_write: c.cache_write,
+        };
+        let mut friction = crate::friction::payload(&crate::friction::FrictionInputs {
+            edges: &edges,
+            pair_counts: &pair_counts,
+            m3: &m3,
+            events: &band_events,
+            chain_of_item: &chain_of_item,
+            seat_totals: &seat_tokens,
+            unlinked: to_tokens(&unlinked),
+            collision: to_tokens(&collision),
+            untimestamped_count,
+            untimestamped_tokens,
+            config: &config,
+        });
+        friction["product"] = json!("AI Fleet Intelligence");
+        friction["rig"] = json!(rig.map(redact));
+        friction["from"] = json!(redact(from));
+        friction["to"] = json!(redact(to));
+        return Ok(metrics::report_value(kind, friction));
+    }
     Ok(metrics::report_value(
         kind,
         json!({
@@ -894,6 +964,39 @@ fn parse_window(from: &str, to: &str) -> Result<Window> {
         return Err(anyhow!("report window must be non-empty and half-open"));
     }
     Ok(Window { from, to })
+}
+
+/// As [`trace_json`], with an optional G2 friction configuration file,
+/// validated first for every metric id. `friction` traces every value of the
+/// friction report with all of its derivation inputs; the R1 metric ids print
+/// the same bytes with or without a configuration.
+pub fn trace_json_configured(
+    db: &Path,
+    metric_id: &str,
+    rig: Option<&str>,
+    from: &str,
+    to: &str,
+    config: Option<&Path>,
+) -> Result<Value> {
+    crate::friction::FrictionConfig::load(config)?;
+    if metric_id != "friction" {
+        return trace_json(db, metric_id, rig, from, to);
+    }
+    let report = report_json_configured(db, "friction", rig, from, to, config)?;
+    let mut value = report["payload"].clone();
+    let inputs = value
+        .as_object_mut()
+        .and_then(|object| object.remove("evidence"))
+        .unwrap_or(Value::Null);
+    Ok(json!({
+        "metric_id": "friction",
+        "formula_version": crate::friction::FRICTION_DEFINITION_VERSION,
+        "formula": value["definitions"].clone(),
+        "tie_order": report["tie_order"].clone(),
+        "config": value["config"].clone(),
+        "value": value,
+        "inputs": inputs,
+    }))
 }
 
 pub fn trace_json(

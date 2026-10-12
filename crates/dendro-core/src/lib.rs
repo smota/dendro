@@ -3,6 +3,7 @@
 #![deny(unsafe_code)]
 
 pub mod facts;
+pub mod friction;
 pub mod lifecycle;
 pub mod metrics;
 pub mod models;

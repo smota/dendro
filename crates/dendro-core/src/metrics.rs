@@ -1295,6 +1295,12 @@ pub struct Rework {
     pub path: String,
     /// The checking seats the work passed before it came back, with evidence.
     pub checks: Vec<(String, Vec<String>)>,
+    /// G2 Rev 6 pair membership, kept beside the R1 classification and never
+    /// serialized in R1 output: every edge of this chain's M3 edge population
+    /// from a non-build seat into a build seat after a checking pass, as
+    /// (from, to, source key), in order.
+    #[serde(skip)]
+    pub qualifying: Vec<(String, String, String)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1369,6 +1375,7 @@ pub fn m3_rework(edges: &[HandoffEdge], roles: &BTreeMap<String, SeatRole>) -> M
                         chain: chain.to_string(),
                         path: path.join(" -> "),
                         checks: checks.clone(),
+                        qualifying: Vec::new(),
                     });
                     break;
                 }
@@ -1383,7 +1390,25 @@ pub fn m3_rework(edges: &[HandoffEdge], roles: &BTreeMap<String, SeatRole>) -> M
             pass(&edge.to_seat, &mut checks, &mut unknowns);
         }
         match (rework, unknown_return) {
-            (Some(rework), _) => {
+            (Some(mut rework), _) => {
+                // Rev 6: the same pass rule over the whole edge population,
+                // without stopping at the decisive return.
+                let mut checked: Vec<(String, Vec<String>)> = Vec::new();
+                let mut ignored: Vec<(String, String)> = Vec::new();
+                for edge in group {
+                    pass(&edge.from_seat, &mut checked, &mut ignored);
+                    if is_build_seat(&edge.to_seat)
+                        && !is_build_seat(&edge.from_seat)
+                        && !checked.is_empty()
+                    {
+                        rework.qualifying.push((
+                            edge.from_seat.clone(),
+                            edge.to_seat.clone(),
+                            edge.source_key.clone(),
+                        ));
+                    }
+                    pass(&edge.to_seat, &mut checked, &mut ignored);
+                }
                 result.rework.push(rework);
                 result.chains += 1;
             }
