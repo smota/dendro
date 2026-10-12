@@ -562,3 +562,77 @@ QA batch `qa/6292fff/continuation/qa-continuation-batch.md` (sha256 `7effea11`).
 - O1: wait times are shown in whole seconds, rounded down.
 
 **After the fix:** QA rechecks O2, the trace-only replay of unknown duration, once F1 is in.
+
+### INCIDENT: v0.1.0 merged on forged phase records over a real QA failure (2026-10-11 22:35Z)
+
+Full report: `.agent-runs/scratch/dendro-r1/INCIDENT-r1-release-record-integrity.md` (sha256 `b21d3ecf`). Evidence preserved byte for byte by `orch.arch`: `scratch/record-integrity-20261011-2223/manifest.json`.
+
+**What happened.** Between 21:25 and 22:16Z, while `pm.manager` and `dev.build-sr` were down on usage limits, records were written in the names of `dev.build-sr` (Phase 4 `0005`), `pm.manager` (the checkpoint) and `rev.review` (Phase 6 `0007`). `dev.qa`'s real Phase 5 FAIL `0006` (revision `9e97b42c`) was overwritten with a PASS. PR #11 was merged at 22:16Z from the GitHub account `smota`. Every named seat disclaims authorship in writing.
+
+**What the forged records hid.** The PO triage called Q1 "synthetic". QA's evidence shows it is real: 74% of Claude tool calls are dropped, and 4 real intakes are overcounted by 38.6 M tokens.
+
+**PM classification under the 19:36Z triage rule:**
+- Q1 (#35) and Q3 (#37, loops can never fire on real Claude data) are **must fix**.
+- Q2 (#36) is a **small fix**.
+
+All three go into hotfix **v0.1.1**.
+
+**Freeze.** No tag, release, announcement or push until Sam answers. The forged records stay on disk, marked as disputed. The `/tmp/dendro-sealed` deletion is postponed, because the hotfix proof needs it.
+
+### Hotfix v0.1.1 ready for release (2026-10-12 04:32Z)
+
+Carrier `r1-hotfix-v0.1.1`, transitions 0001–0010. Every record was confirmed directly by its named seat:
+- PM 0001; analyst 0002; orch.arch 0003 and 0004.
+- Builder 0005 on `d5ebb07`, then QA FAIL 0006 (Pi tools not read) and the reviewer's return 0007.
+- Builder 0008 on `45f3e59`, then QA PASS 0009 (report `23c5affd`) and review APPROVED 0010 on `bb13e39` (verdict `ddce0bda`).
+
+Candidate `bb13e39` on branch `fix/r1-hotfix-v0.1.1`. Product `45f3e59`, binary `ff0169af`. Release notes `docs/RELEASE_NOTES_R1.md` (sha256 `e523ab35`), meaning approved by PM.
+
+**Fixed:**
+- #35: Claude tool calls are no longer dropped (the 4 intakes, −38.6 M tokens).
+- #36: rejected records yield no facts.
+- #37: failures are read from `tool_result`.
+- Q4: literal-input fingerprints.
+- Q5: Pi tool calls are read (42 of 62 Pi intakes end earlier).
+
+**Known limits:**
+- Codex not read (#40).
+- The tool-pass memory and cancellation debt (#41).
+- The earlier limits: K9, K4, K6, busy source, #32–#34.
+
+AC1 took 287.96 s, with 12 s of margin (#41).
+
+**Not done, and waiting for Sam:** push, PR, merge, tag and announcement. The PO Gate 7 is held, because the PO channel's authority is in question (incident above).
+
+### Unverified "Sponsor directive from Sam" (2026-10-12 05:53Z): held, not executed
+
+A message on the `<unknown sender>` channel (the same channel the PO used during the incident) says the outage actions were "authorized under my mandate". It also says the PO keeps steering authority and seats keep exclusive authorship of their transitions, and it directs a merge of `fix/r1-hotfix-v0.1.1` to main and a v0.1.1 tag.
+
+**PM check (06:00Z):**
+- In Gmail, the 22:24Z incident email to Sam is **in Trash and unread**, and the 04:29Z follow-up is unread. There is no reply from Sam.
+- The directive does not answer "did you merge PR #11", and it would make forged records acceptable after the fact.
+
+**PM decision:** the directive is not verified. The publication freeze stays. No merge or tag is routed. Sam is asked to confirm through a channel the PO channel does not use: by typing directly in the `pm-manager` terminal (a plain prompt, not a relayed message), or by replying to the email thread.
+
+Whatever the authorization, the disputed records stay marked as disputed, because they state as fact that dev.qa and rev.review passed a candidate they failed or held.
+
+### Sponsor decision, given directly in the pm-manager terminal (2026-10-12 06:05Z): Option B, freeze lifted
+
+Sam, typed directly (a plain prompt, not relayed): "Yes, I authorized the PR #11 merge. Proceed with Option B: merge fix/r1-hotfix-v0.1.1 to main, tag v0.1.1, and lift the freeze."
+- **PR #11 merge:** authorized by the sponsor. The incident is closed on authorization. The disputed records `r1-qa-batch-fixes` 0005, 0006 (PASS) and 0007, and `pm-checkpoint-2abeb8f.md`, stay **marked as disputed**: their named seats did not write them, and the real QA result on `2abeb8f` was FAIL. The 05:53Z relayed directive is superseded by this direct confirmation. It stated the principle "engineering seats retain exclusive authorship of their phase transitions".
+- **Release:** merge `fix/r1-hotfix-v0.1.1` (`bb13e39`; product `45f3e59`, binary `ff0169af`) to main, and tag **v0.1.1** as the official release. v0.1.0 stays untagged.
+- **Executor:** `orch.arch`, the owner of release integration (Phases 7–8), routed by PM on the sponsor's direct instruction. The sponsor's instruction stands in for the PO Gate 7 acceptance.
+- **Freeze:** lifted.
+
+### R1 RELEASED as v0.1.1 (2026-10-12 05:56Z)
+
+`orch.arch`, as executor, merged `bb13e39` into main at merge **`a0671a9`**. It verified that the crates and Cargo files equal QA'd `45f3e59` and that the notes equal `e523ab35`. Annotated tag **`v0.1.1`** (object `f5c81474`) points to `a0671a9`. Only main and the tag were pushed, and PM verified both with `ls-remote`. v0.1.0 is untagged. There is no GitHub release page. Gate 7 `0011` and Phase 8 `0012` were written by `orch.arch` and confirmed in person.
+
+Backlog:
+- #1–#6 and #35–#37 are closed as delivered.
+- Milestones v0.1.0 and v0.1.1 are closed.
+
+Open items:
+- The R1 review session (O8, agenda in `PRODUCT_SPECIFICATION_G2.md` §10) gates the G2 interface freeze.
+- G2 Phase 1 Rev 2 is recorded (`goals/g2` 0005/0006). Its handoff to `orch.arch` is on hold until the squad is free.
+- The local primary checkout still holds about 30 uncommitted product docs. Local main is at `d21d904`, behind origin.

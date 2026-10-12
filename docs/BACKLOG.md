@@ -9,7 +9,7 @@ This document serves as the authoritative, human-readable index of **Dendro's Mu
 ```
  ┌────────────────────────────────────────────────────────────────────────┐
  │ GOAL 1 (v0.1.0): Local AI Fleet Intelligence & Decision Engine (Rust)  │
- │ Status: Phase 4 Implementation in Progress (PR #11)                    │
+ │ Status: RELEASED as v0.1.1 (2026-10-12, tag v0.1.1)                    │
  └──────────────────────────────────┬─────────────────────────────────────┘
                                     │
        ┌────────────────────────────┼────────────────────────────┐
@@ -30,17 +30,17 @@ This document serves as the authoritative, human-readable index of **Dendro's Mu
 ---
 
 ## 🌲 Goal 1 (Epic #1): Local AI Fleet Intelligence & Decision Engine (Rust + DuckDB)
-* **Status:** In Delivery — [Pull Request #11](https://github.com/smota/dendro/pull/11) (Branch `work/dendro-r1`)
-* **Contract:** `docs/ACCEPTANCE_R1.md` (Amendment 1, SHA256 `046c1722`)
+* **Status:** Released as **v0.1.1** (tag `v0.1.1`, merge `a0671a9`, 2026-10-12). v0.1.0 (PR #11) is untagged.
+* **Contract:** `docs/ACCEPTANCE_R1.md` (sha256 `cc365c88`), register K1–K11 (`44a3032e`). Release notes: `docs/RELEASE_NOTES_R1.md`.
 
 | Issue | Title | Capabilities | Status |
 | :--- | :--- | :--- | :--- |
-| **[#1](https://github.com/smota/dendro/issues/1)** | **Goal 1 (Epic)** | Core Engine Specification & Multi-Crate Architecture | In Delivery ([PR #11](https://github.com/smota/dendro/pull/11)) |
-| **[#2](https://github.com/smota/dendro/issues/2)** | `feat(core): Source Discovery and Linking` | OpenRig, Claude, Codex, Pi zero-copy stream readers | In Delivery ([PR #11](https://github.com/smota/dendro/pull/11)) |
-| **[#3](https://github.com/smota/dendro/issues/3)** | `feat(analytics): Question 1 — Seat Dynamics` | 5 disjoint activity bands (active, idle-with-work, unknown) | In Delivery ([PR #11](https://github.com/smota/dendro/pull/11)) |
-| **[#4](https://github.com/smota/dendro/issues/4)** | `feat(analytics): Question 2 — Handover Flow` | Handoff counting, returns, intake cost window | In Delivery ([PR #11](https://github.com/smota/dendro/pull/11)) |
-| **[#5](https://github.com/smota/dendro/issues/5)** | `feat(analytics): Question 3 — Token Burn` | Token attribution by mission/seat, tool loop detection | In Delivery ([PR #11](https://github.com/smota/dendro/pull/11)) |
-| **[#6](https://github.com/smota/dendro/issues/6)** | `feat(storage): DuckDB Engine & Privacy` | Local storage, key-salt hashing, symlink guards | In Delivery ([PR #11](https://github.com/smota/dendro/pull/11)) |
+| **[#1](https://github.com/smota/dendro/issues/1)** | **Goal 1 (Epic)** | Core Engine Specification & Multi-Crate Architecture | Delivered (v0.1.1) |
+| **[#2](https://github.com/smota/dendro/issues/2)** | `feat(core): Source Discovery and Linking` | OpenRig, Claude, Codex, Pi zero-copy stream readers | Delivered (v0.1.1) |
+| **[#3](https://github.com/smota/dendro/issues/3)** | `feat(analytics): Question 1 — Seat Dynamics` | 5 disjoint activity bands (active, idle-with-work, unknown) | Delivered (v0.1.1) |
+| **[#4](https://github.com/smota/dendro/issues/4)** | `feat(analytics): Question 2 — Handover Flow` | Handoff counting, returns, intake cost window | Delivered (v0.1.1) |
+| **[#5](https://github.com/smota/dendro/issues/5)** | `feat(analytics): Question 3 — Token Burn` | Token attribution by mission/seat, tool loop detection | Delivered (v0.1.1) |
+| **[#6](https://github.com/smota/dendro/issues/6)** | `feat(storage): DuckDB Engine & Privacy` | Local storage, key-salt hashing, symlink guards | Delivered (v0.1.1) |
 | **[#13](https://github.com/smota/dendro/issues/13)** | `feat(engine): Live-Producer Snapshotting` | Atomic byte-cutoff manifests for live producer runs | Milestone v0.2.0 / Sealed Replay |
 
 ---
