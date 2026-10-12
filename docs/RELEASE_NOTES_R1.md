@@ -1,6 +1,6 @@
 # Dendro v0.1.1 release notes
 
-Product content from the `pm.manager` draft (sha256 `ad1346d1`), placed for hotfix v0.1.1. Values that independent QA owns are marked **PENDING independent QA**. The final QA report names the candidate they come from and supplies them. Developer measurements are labelled with the code commit and inputs they come from; QA confirms them. Nothing here is published until the release freeze is lifted.
+Product content from the `pm.manager` draft, with independent QA results for candidate `45f3e59` (report SHA256 `23c5affd`). Historical comparison measurements retain their code and input provenance. Nothing here is published until the release freeze is lifted.
 
 ---
 
@@ -11,7 +11,7 @@ Dendro reads the local records of an OpenRig agent fleet (OpenRig, Claude Code, 
 - How does work move between seats?
 - Where do the tokens go?
 
-Every number traces back to its source records. Dendro runs locally and opens its sources read-only. It never changes how agents run.
+Every number traces back to its source records, except the tool-loop count (known limit 9). Dendro runs locally and opens its sources read-only. It never changes how agents run.
 
 Commands: `dendro run` (ingest), `dendro report`, and `dendro trace`.
 
@@ -29,7 +29,7 @@ v0.1.1 fixes how Dendro reads Claude Code and Pi tool calls. Token totals do not
 - **Pi tool calls are read.** Each Pi `toolCall` is matched to its `toolResult` by the call id, in the session named by line 1 of the file, under the same outcome rules as Claude Code. Pi `write` and `edit` calls end an intake window; `bash` and `read` never do.
 - **Tool inputs are compared as written.** Two calls have the same input only if the input's JSON text is identical, apart from whitespace at the ends. This is needed for loops to be found on real Claude Code and Pi logs, whose tool inputs are JSON objects.
 
-Developer measurements on the sealed real-fleet input (manifest `40c65db7`), window 2026-10-08 to 2026-10-11. To be confirmed by independent QA.
+Measurements on the sealed real-fleet input (manifest `40c65db7`), window 2026-10-08 to 2026-10-11. Independent QA confirmed the final tool counts, outcomes, literal-input fingerprints and intake endpoints on `45f3e59`; historical developer comparisons are labelled below.
 
 Claude Code (code commit `c8f5f7a`, compared with the v0.1.0 candidate `2abeb8f`):
 
@@ -47,20 +47,21 @@ Pi (code commit `8c80907`, compared with a rebuild of `d5ebb07`):
 | Pi tool calls kept | 0 | 3,652 (equal to an independent count of distinct call ids) |
 | Pi file writes and edits among them | 0 | 439 |
 | Pi calls with a known outcome | 0 | 3,651 (86 failed, 3,565 succeeded; 1 unknown) |
-| Intake estimates whose end moves earlier to a Pi write or edit | — | 42 of 62 (all 62 match an independent count) |
+| Intake estimates whose end moves earlier to a Pi write or edit | — | 42 of 62 across the full fleet; 39 of 56 in `agentflow-dev` (all 62 match independent endpoints) |
 | Total intake estimate, `agentflow-dev` handoffs | 102,119,087 tokens | 79,759,804 tokens |
 
 In both comparisons:
-- Tool loops found: 0, and an independent count also finds 0.
+- Claude and Pi tool loops found: 0. Independent source replay also finds 0: the longest consecutive same-input failure run is 1 in each harness. Codex coverage is unavailable, not measured as zero.
 - Total tokens: 859,950,405, unchanged.
-- Codex tool calls: not read (see known limit 12).
+- Codex tool calls: not read (see known limit 11).
 
-The Claude change lowers the intake estimate by 38,631,754 tokens: the earlier candidate missed four real file writes that end the intake window, and each of the four now matches QA's independent computation. The Pi change lowers it by a further 22,359,283 tokens.
+The Claude change lowers the intake estimate by 38,631,754 tokens: the earlier candidate missed four real file writes that end the intake window, and each of the four now matches QA's independent computation. The Pi change lowers the `agentflow-dev` estimate by a further 22,359,283 tokens. Across the full fleet, the Pi reduction is 28,058,110 tokens. No no-data rows convert: those rows lack a claim or a linked session.
 
 ### First run
 
-- First-run time, from the start of ingest to the first report, with the build excluded: **PENDING independent QA** (one isolated run on a new analytics database, at most 300 s, no retry).
-- Measurement conditions: **PENDING independent QA**.
+- First-run time: **288 s** (287.961 s measured: ingest 286.090 s plus first report 1.870 s). One isolated attempt on a fresh analytics database, with a shared monotonic 300 s deadline and no retry. Build and input preparation are excluded.
+- Measurement conditions: sealed real-fleet sources (97 files), candidate `45f3e59`, Linux x86_64 under WSL2 (kernel 6.18.33.2), AMD Ryzen AI 9 HX 470, 18 logical CPUs, 64 GB RAM, Rust/Cargo 1.98.0, Python 3.14.7. No concurrent QA suites; one-minute load rose from 0.66 to 2.63. Measured 2026-10-12 03:24:53–03:29:42 UTC.
+- **Only 12 s of margin remained below the 300 s limit.** This is a measurement on these inputs and this machine, not a guarantee for other loads or larger fleets. Performance headroom is tracked in #41.
 - For earlier candidates, independent QA measured 244.7 s (`6292fff`) and 247.1 s (`2abeb8f`). During development a heavy concurrent process once pushed it to 314 s. Expect a longer first run on a busy machine or with more source data.
 
 ### Before you upgrade: use a new analytics database
@@ -90,17 +91,15 @@ The Claude change lowers the intake estimate by 38,631,754 tokens: the earlier c
 5. **Seat presence without stop events.** OpenRig 0.6.6 emits no stop or removal event for a single seat. A seat removed without a rig stop counts as present until the next event or the end of the window, so idle time can be overstated.
 6. **Late handoffs.** A handoff counts as returned only if it comes back inside the same report window. Handoffs near the end of the window have had less time to come back, so the return rate can look better than it is.
 7. **Sources that are written very fast.**
-   - Dendro copies a live source before reading it. If a source changes too fast to copy consistently, ingest stops cleanly and asks you to retry. Your sources are not changed.
+   - Dendro copies a live source before reading it. If a source changes too fast to copy consistently, ingest stops cleanly and reports that the source changed and nothing was ingested. Retry when the source is quieter. Your sources are not changed.
    - In QA tests, ingest succeeded every time with sources written at up to 50 commits per second (15 of 15 runs). The busiest real source seen was 26 events in 1 s.
    - This is a tested range, not a guaranteed rate.
 8. **Deleted or replaced session files.** If a session file is deleted (Claude Code prunes old sessions, for example) or replaced, Dendro keeps the facts it already ingested. The trace does not yet mark the file as gone or superseded. Planned for v0.2.0 (#32).
 9. **Tool-loop trace.** The tool-loop count cannot yet be traced back to its source records the way every other number can. Planned for v0.2.0 (#33).
 10. **Whole-second durations.** Wait times and their medians are shown in whole seconds, rounded down (for example, 24.7 s shows as 24 s). Planned for v0.2.0 (#34).
-11. **Activity trace detail.**
-    - Each seat's activity bands add up exactly. They cannot yet all be recomputed from the trace alone, because the queue actions of the sending seat are used but not shown in the trace.
-    - Mismatch count: **PENDING independent QA**.
-    - Planned for v0.2.0 (#33).
-12. **Codex tool calls are not read yet.** Codex loop counts are not available. `dendro run` shows `tool_calls=not read` for Codex, and each Codex file records the warning "tool calls not read for codex". A Codex intake window ends only at a queue action, because Codex records no structured file write. Planned for v0.2.0 (#40).
+11. **Codex tool calls are not read yet.** Codex loop counts are not available. `dendro run` shows `tool_calls=not read` for Codex, and each Codex file records the warning "tool calls not read for codex". A Codex intake window ends only at a queue action, because Codex records no structured file write. Planned for v0.2.0 (#40).
+
+Activity trace replay passed all 365 independent comparisons, including all 28 seats; the earlier activity-trace limitation is removed.
 
 ### Unknown record types
 
