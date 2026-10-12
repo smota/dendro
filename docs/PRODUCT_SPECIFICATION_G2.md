@@ -158,9 +158,16 @@ Evidence that the follow-up matters: #12 reports that review-to-build rework cha
 - V4 finding: rework is the largest *attributed* token sink (6 of 44 chains hold 46% of chain-attributed tokens). But 60% of linked tokens sit outside any in-progress item. That is larger than all rework.
 - Delivery handoff for #12/#13 waits for R1 to merge.
 
+### Sponsor Review Decisions (2026-10-12 06:25Z)
+
+Sponsor decisions directly provided by Sam:
+1. **Interface Direction (Option B Confirmed):** Conversational Natural Language Assistant ("Nao", #7, #16, #17, #18) is selected as the primary G2 interface to explain causes and follow up on R1 numbers. Visual TUI ribbons (#14) are deferred to a subsequent milestone.
+2. **Attribution & Overhead (G-U3 Resolved):** Introduce the **task-intake overhead** concept. Tokens burned outside an active in-progress item (orientation, operator interactions, startup) are formally modeled as task-intake / seat overhead rather than an unassigned leak or error. This keeps item-attributed work clean and isolates operational overhead for optimization.
+3. **Engine Handoff (#12 & #13):** Authorized to dispatch Phase 2 implementation to `orch-arch@dendro-dev`.
+
 ### R1 review session agenda (draft)
 
-1. **G-U3:** why are 60% of linked tokens outside any queue item? Real work outside the queue (orientation, operator chat, startup) or an attribution gap?
+1. **G-U3:** Resolved (2026-10-12): Task-intake overhead concept adopted for unlinked seat tokens.
 2. Walk M1–M4 on `agentflow-dev`. Log every follow-up question the CLI cannot answer (V1).
 3. Record one decision or an explicit "no change" (O8).
 4. **K4 limit:** OpenRig emits no per-seat stop or removal events (only `node.launched` and rig-wide `rig.stopped`). A seat removed without a rig stop looks present until the next event or the window end, so AC4 idle time can be overstated. Is that acceptable, or does it need an upstream OpenRig event?
