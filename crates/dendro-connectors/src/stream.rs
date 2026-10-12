@@ -128,11 +128,23 @@ pub fn ingest_jsonl_with_key(
         .iter()
         .filter(|(_, bytes)| !bytes.iter().all(|b| b.is_ascii_whitespace()))
         .count() as u64;
-    // Claude tool calls are read in their own pass over every complete line
-    // of this generation, so usage dedupe never drops a call (#35).
+    // Claude and Pi tool calls are read in their own pass over every complete
+    // line of this generation, so usage dedupe never drops a call (#35, Q5).
+    // Codex tool calls are not read in this version (Q6, #40): each Codex file
+    // carries one warning saying so, kept once across reruns.
+    if harness == "codex" {
+        let shown = path.display().to_string();
+        if !store.has_warning(&shown, CODEX_TOOLS_NOT_READ)? {
+            warnings.push(WarningNote {
+                path: shown,
+                line: None,
+                reason: CODEX_TOOLS_NOT_READ.into(),
+            });
+        }
+    }
     let new_from = prefix.iter().filter(|b| **b == b'\n').count() as i64;
     let mut tool_lines: Vec<(i64, Vec<u8>)> = Vec::new();
-    if harness == "claude" {
+    if harness == "claude" || harness == "pi" {
         let mut no = 0;
         for line in prefix.split(|b| *b == b'\n') {
             no += 1;
@@ -254,8 +266,17 @@ pub fn ingest_jsonl_with_key(
         }
     }
     let mut settled = Vec::new();
-    if harness == "claude" {
-        let pass = claude_tool_calls(&tool_lines, new_from, tool_key, source_id, generation);
+    if harness == "claude" || harness == "pi" {
+        let session = file_session.as_ref().map(|session| session.raw.as_str());
+        let pass = tool_calls(
+            harness,
+            session,
+            &tool_lines,
+            new_from,
+            tool_key,
+            source_id,
+            generation,
+        );
         tools = pass.new_calls;
         settled = pass.settled;
     }
@@ -424,6 +445,7 @@ const PI_RECORD_TYPES: &[&str] = &[
 ];
 
 pub(crate) const UNKNOWN_RECORD_TYPE: &str = "unknown-record-type";
+pub(crate) const CODEX_TOOLS_NOT_READ: &str = "tool calls not read for codex";
 
 /// The warning reason for a record of a type the parser does not know, or
 /// None. The type is shown only when it is a plain identifier of at most 64
@@ -630,12 +652,15 @@ fn parse_pi(value: &Value) -> Result<Option<Buckets>, String> {
     }))
 }
 
-/// The Claude tool calls of one file generation (#35, #36, #37, Phase 1
-/// 0002). A call is the first `tool_use` of its (session, tool_use id), at that
-/// position and time; a streamed repeat of the id is the same call. Its outcome
-/// comes only from the `tool_result` blocks with that id in the same file and
-/// session: all `is_error: true` is a failure, all `false` a success, anything
-/// else (none, absent, not a boolean, disagreeing) unknown. A result with no
+/// The tool calls of one Claude or Pi file generation (#35, #36, #37, Q5,
+/// Phase 1 0002). A call is the first call block of its (session, call id), at
+/// that position and time; a repeat of the id is the same call. Claude: a
+/// `tool_use` block, settled by `tool_result` blocks (`tool_use_id`,
+/// `is_error`). Pi: a `toolCall` block, settled by `toolResult` messages
+/// (`toolCallId`, `isError`), in the file's K10 session. Its outcome comes only
+/// from the matching results in the same file and session: all true is a
+/// failure, all false a success, anything else (none, absent, not a boolean,
+/// disagreeing) unknown. A result with no
 /// call creates nothing. Rejected records (unknown type, malformed) give
 /// nothing. Lines up to `new_from` were stored by an earlier run: their calls
 /// are not inserted again, and their outcome is re-settled only when a result
@@ -645,7 +670,9 @@ struct ToolPass {
     settled: Vec<(String, Option<bool>)>,
 }
 
-fn claude_tool_calls(
+fn tool_calls(
+    harness: &str,
+    file_session: Option<&str>,
     lines: &[(i64, Vec<u8>)],
     new_from: i64,
     key: Option<&[u8]>,
@@ -669,7 +696,32 @@ fn claude_tool_calls(
         let Ok(value) = serde_json::from_str::<Value>(text) else {
             continue;
         };
-        if unknown_record_type("claude", &value).is_some() {
+        if unknown_record_type(harness, &value).is_some() {
+            continue;
+        }
+        let session = match file_session {
+            Some(session) => session.to_string(),
+            None => value
+                .get("sessionId")
+                .and_then(|item| item.as_str())
+                .unwrap_or("claude-session")
+                .to_string(),
+        };
+        if harness == "pi"
+            && value
+                .pointer("/message/role")
+                .and_then(|item| item.as_str())
+                == Some("toolResult")
+        {
+            if let Some(id) = value
+                .pointer("/message/toolCallId")
+                .and_then(|item| item.as_str())
+            {
+                let outcome = value
+                    .pointer("/message/isError")
+                    .and_then(|item| item.as_bool());
+                results.push(((session.clone(), id.to_string()), outcome, *line_no));
+            }
             continue;
         }
         let Some(content) = value
@@ -678,16 +730,16 @@ fn claude_tool_calls(
         else {
             continue;
         };
-        let session = value
-            .get("sessionId")
-            .and_then(|item| item.as_str())
-            .unwrap_or("claude-session")
-            .to_string();
+        let (call_type, input_field) = if harness == "pi" {
+            ("toolCall", "arguments")
+        } else {
+            ("tool_use", "input")
+        };
         let ts = timestamp_of(&value);
         let raw_blocks = raw_content_blocks(text);
         for (index, block) in content.iter().enumerate() {
             match block.get("type").and_then(|item| item.as_str()) {
-                Some("tool_use") => {
+                Some(kind) if kind == call_type => {
                     let Some(name) = block.get("name").and_then(|item| item.as_str()) else {
                         continue;
                     };
@@ -698,25 +750,26 @@ fn claude_tool_calls(
                         }
                         by_id.insert((session.clone(), id.to_string()), calls.len());
                     }
-                    let lexical = tool_input_lexical(block, raw_blocks.get(index));
+                    let lexical = tool_input_lexical(block, raw_blocks.get(index), input_field);
                     let fingerprint =
                         key.and_then(|key| tool_fingerprint(key, name, lexical.as_deref()));
                     calls.push(Call {
                         fact: ToolFact {
                             source_key: format!("{source_id}:{generation}:{line_no}:{index}"),
-                            harness: "claude".into(),
+                            harness: harness.into(),
                             // Sealed like the usage session, so tools join the same
                             // session and seat and two secret-shaped sessions stay distinct.
-                            native_session: seal_session(key, "claude", &session),
+                            native_session: seal_session(key, harness, &session),
                             ts,
                             seq: line_no * 100 + index as i64,
                             name: name.to_string(),
                             fingerprint,
                             failed: None,
-                            structured_write: matches!(
-                                name,
-                                "Write" | "Edit" | "MultiEdit" | "NotebookEdit"
-                            ),
+                            structured_write: if harness == "pi" {
+                                matches!(name, "write" | "edit")
+                            } else {
+                                matches!(name, "Write" | "Edit" | "MultiEdit" | "NotebookEdit")
+                            },
                             generation,
                         },
                         line: *line_no,
@@ -724,7 +777,7 @@ fn claude_tool_calls(
                         result_in_new_lines: false,
                     });
                 }
-                Some("tool_result") => {
+                Some("tool_result") if harness == "claude" => {
                     if let Some(id) = block.get("tool_use_id").and_then(|item| item.as_str()) {
                         let outcome = block.get("is_error").and_then(|item| item.as_bool());
                         results.push(((session.clone(), id.to_string()), outcome, *line_no));
@@ -787,18 +840,15 @@ fn raw_content_blocks(text: &str) -> Vec<&serde_json::value::RawValue> {
 fn tool_input_lexical(
     block: &Value,
     raw_block: Option<&&serde_json::value::RawValue>,
+    field: &str,
 ) -> Option<String> {
-    let input = block.get("input")?;
+    let input = block.get(field)?;
     if let Some(body) = input.as_str() {
         return Some(body.to_string());
     }
-    #[derive(serde::Deserialize)]
-    struct Block<'a> {
-        #[serde(borrow)]
-        input: Option<&'a serde_json::value::RawValue>,
-    }
-    let raw: Block = serde_json::from_str(raw_block?.get()).ok()?;
-    Some(raw.input?.get().trim().to_string())
+    let raw: std::collections::HashMap<&str, &serde_json::value::RawValue> =
+        serde_json::from_str(raw_block?.get()).ok()?;
+    Some(raw.get(field)?.get().trim().to_string())
 }
 
 fn timestamp_of(value: &Value) -> Option<chrono::DateTime<chrono::Utc>> {
@@ -1530,6 +1580,160 @@ mod tests {
                     .map(|u| u.generation)
                     .collect();
             assert_eq!(generations.len(), 2, "replacement is a new generation");
+        }
+
+        /// A Pi assistant message with tool calls: (id, name, raw JSON arguments).
+        fn pi_calls(msg: &str, at: u32, calls: &[(&str, &str, &str)]) -> String {
+            let blocks: Vec<String> = calls
+                .iter()
+                .map(|(id, name, args)| {
+                    format!("{{\"type\":\"toolCall\",\"id\":\"{id}\",\"name\":\"{name}\",\"arguments\":{args}}}")
+                })
+                .collect();
+            format!(
+                "{{\"type\":\"message\",\"id\":\"{msg}\",\"timestamp\":\"2026-10-09T00:00:{at:02}Z\",\"message\":{{\"role\":\"assistant\",\"content\":[{}],\"usage\":{{\"input\":1,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0}}}}}}",
+                blocks.join(",")
+            )
+        }
+
+        /// A Pi toolResult message; `is_error` is raw JSON, or empty to omit it.
+        fn pi_result(at: u32, id: &str, is_error: &str) -> String {
+            let flag = if is_error.is_empty() {
+                String::new()
+            } else {
+                format!(",\"isError\":{is_error}")
+            };
+            format!(
+                "{{\"type\":\"message\",\"id\":\"r-{id}-{at}\",\"timestamp\":\"2026-10-09T00:00:{at:02}Z\",\"message\":{{\"role\":\"toolResult\",\"toolCallId\":\"{id}\",\"toolName\":\"read\",\"content\":[{{\"type\":\"text\",\"text\":\"x\"}}]{flag}}}}}"
+            )
+        }
+
+        #[test]
+        fn pi_tool_calls_are_settled_by_their_tool_results_q5() {
+            let f = Fixture::new("pi-tools");
+            let read = |id: &'static str| (id, "read", "{\"path\":\"/a\"}");
+            let p = f.file(
+                "p.jsonl",
+                &[
+                    pi_header("pi-s"),
+                    pi_calls("m1", 1, &[read("a"), read("b"), read("c"), read("d")]),
+                    pi_calls("m2", 2, &[read("e"), read("a")]),
+                    pi_result(3, "a", "true"),
+                    pi_result(3, "b", "false"),
+                    pi_result(3, "c", ""),
+                    pi_result(3, "e", "true"),
+                    pi_result(3, "e", "false"),
+                    pi_result(3, "orphan", "true"),
+                ],
+            );
+            f.ingest("pi", &p);
+            let got: Vec<Option<bool>> = calls(&f).into_iter().map(|(_, failed)| failed).collect();
+            // a true; b false; c isError absent; d no result; e disagreeing.
+            // The repeated id a is the same call; the orphan creates none.
+            assert_eq!(got, [Some(true), Some(false), None, None, None]);
+            let tools = f.db.load_tools().unwrap();
+            assert!(tools
+                .iter()
+                .all(|t| t.harness == "pi" && t.fingerprint.is_some()));
+            assert_eq!(
+                tools[0].native_session,
+                f.sealed("pi", "pi-s"),
+                "the call joins the file's K10 session"
+            );
+            assert_eq!(f.db.load_usage().unwrap().len(), 2, "usage unchanged");
+        }
+
+        #[test]
+        fn pi_write_and_edit_are_structured_writes_bash_and_read_are_not_q5() {
+            let f = Fixture::new("pi-writes");
+            let p = f.file(
+                "p.jsonl",
+                &[
+                    pi_header("pi-w"),
+                    pi_calls(
+                        "m1",
+                        1,
+                        &[
+                            ("w", "write", "{\"path\":\"/a\"}"),
+                            ("e", "edit", "{\"path\":\"/a\"}"),
+                            ("b", "bash", "{\"command\":\"ls\"}"),
+                            ("r", "read", "{\"path\":\"/a\"}"),
+                        ],
+                    ),
+                ],
+            );
+            f.ingest("pi", &p);
+            let writes: Vec<String> =
+                f.db.load_tools()
+                    .unwrap()
+                    .into_iter()
+                    .filter(|t| t.structured_write)
+                    .map(|t| t.name)
+                    .collect();
+            assert_eq!(writes, ["write", "edit"]);
+        }
+
+        #[test]
+        fn pi_results_appended_later_match_a_fresh_ingest_q5() {
+            let read = |id: &'static str| (id, "read", "{\"path\":\"/a\"}");
+            let header = vec![
+                pi_header("pi-x"),
+                pi_calls("m1", 1, &[read("a"), read("b"), read("c")]),
+            ];
+            let results = vec![
+                pi_result(2, "a", "true"),
+                pi_result(2, "b", "true"),
+                pi_result(2, "c", "true"),
+            ];
+            let conflict = vec![pi_result(3, "b", "false")];
+            let all: Vec<String> = header
+                .iter()
+                .chain(&results)
+                .chain(&conflict)
+                .cloned()
+                .collect();
+            let fresh = Fixture::new("pi-fresh");
+            let whole = fresh.file("p.jsonl", &all);
+            fresh.ingest("pi", &whole);
+            let split = Fixture::new("pi-split");
+            let file = split.file("p.jsonl", &header);
+            split.ingest("pi", &file);
+            split.append(&file, &results);
+            split.ingest("pi", &file);
+            assert!(calls(&split)
+                .iter()
+                .all(|(_, failed)| *failed == Some(true)));
+            split.append(&file, &conflict);
+            split.ingest("pi", &file);
+            assert_eq!(calls(&fresh), calls(&split));
+            let got: Vec<_> = calls(&split)
+                .into_iter()
+                .map(|(_, failed)| failed)
+                .collect();
+            assert_eq!(
+                got,
+                [Some(true), None, Some(true)],
+                "a late conflict is unknown"
+            );
+        }
+
+        #[test]
+        fn each_codex_file_says_once_that_its_tool_calls_are_not_read_q6() {
+            let f = Fixture::new("codex-not-read");
+            let x = f.file("x.jsonl", &[codex_header("cx"), codex_count(4, None)]);
+            let y = f.file("y.jsonl", &[codex_header("cy"), codex_count(2, None)]);
+            f.ingest("codex", &x);
+            f.ingest("codex", &y);
+            f.append(&x, &[codex_count(6, None)]);
+            f.ingest("codex", &x);
+            f.ingest("codex", &x);
+            let notes = f
+                .warnings()
+                .into_iter()
+                .filter(|w| w == CODEX_TOOLS_NOT_READ)
+                .count();
+            assert_eq!(notes, 2, "one per Codex file, kept once across reruns");
+            assert!(f.db.load_tools().unwrap().is_empty(), "no Codex tool facts");
         }
 
         #[test]
