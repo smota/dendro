@@ -1133,6 +1133,88 @@ pub fn tool_loops(tools: &[ToolFact], failures: usize, window_secs: i64) -> Vec<
     loops
 }
 
+/// One handoff of a handoff loop: the queue transition that carried it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HandoffPass {
+    pub source_key: String,
+    pub at: String,
+    pub from: String,
+    pub to: String,
+    pub qitem: String,
+}
+
+/// A handoff loop (R1 §4, G2 F12-0): passes of one chain (or item, without a
+/// chain) between one unordered pair of seats, in either direction, inside
+/// the period, more than 2 times. One episode per (chain, pair), counted once.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct HandoffLoop {
+    pub chain: String,
+    /// The pair, sorted so A→B and B→A are the same pair.
+    pub seats: (String, String),
+    /// The counted passes: this pair's transitions, in order.
+    pub passes: Vec<HandoffPass>,
+    /// Every in-period handoff of the chain in order, self-handoffs included.
+    pub chain_path: Vec<HandoffPass>,
+}
+
+/// The fixed R1 rule: a loop is more than 2 passes. Configuration never
+/// changes it; it only changes when an advisory alert is printed.
+pub const HANDOFF_LOOP_MIN_PASSES: usize = 3;
+
+pub const HANDOFF_LOOP_DEFINITION: &str = "Handoff loop (R1 §4, G2 F12-0, Rev 5): the same chain (or the item, when it has no chain) passes between the same unordered pair of two distinct seats, in either direction, more than 2 times inside the half-open period. One episode per (chain, pair); passes of different items of one chain add up; passes between different pairs never add up. A self-handoff (A to A) neither forms, counts toward nor breaks a loop; it stays in the chain path. Each pass is one queue transition, counted once.";
+
+/// F12-0 over the period's canonical handoff edges (the same edges as M2 and
+/// M3). A transition seen twice counts once; passes are ordered by time, then
+/// source key.
+pub fn handoff_loops(edges: &[HandoffEdge]) -> Vec<HandoffLoop> {
+    let mut seen = BTreeSet::new();
+    let mut groups: BTreeMap<(String, String, String), Vec<&HandoffEdge>> = BTreeMap::new();
+    let mut paths: BTreeMap<String, Vec<&HandoffEdge>> = BTreeMap::new();
+    for edge in edges {
+        if !seen.insert(edge.source_key.as_str()) {
+            continue;
+        }
+        paths
+            .entry(edge.chain_key().to_string())
+            .or_default()
+            .push(edge);
+        if edge.from_seat == edge.to_seat {
+            continue;
+        }
+        let (a, b) = if edge.from_seat <= edge.to_seat {
+            (edge.from_seat.clone(), edge.to_seat.clone())
+        } else {
+            (edge.to_seat.clone(), edge.from_seat.clone())
+        };
+        groups
+            .entry((edge.chain_key().to_string(), a, b))
+            .or_default()
+            .push(edge);
+    }
+    let ordered = |mut list: Vec<&HandoffEdge>| -> Vec<HandoffPass> {
+        list.sort_by(|x, y| x.ts.cmp(&y.ts).then(x.source_key.cmp(&y.source_key)));
+        list.into_iter()
+            .map(|edge| HandoffPass {
+                source_key: edge.source_key.clone(),
+                at: edge.ts.to_rfc3339(),
+                from: edge.from_seat.clone(),
+                to: edge.to_seat.clone(),
+                qitem: edge.qitem_id.clone(),
+            })
+            .collect()
+    };
+    groups
+        .into_iter()
+        .filter(|(_, passes)| passes.len() >= HANDOFF_LOOP_MIN_PASSES)
+        .map(|((chain, a, b), passes)| HandoffLoop {
+            chain_path: ordered(paths.get(&chain).cloned().unwrap_or_default()),
+            chain,
+            seats: (a, b),
+            passes: ordered(passes),
+        })
+        .collect()
+}
+
 pub fn m1_yield(tokens: i64, nonreturn_handoffs: i64) -> Option<f64> {
     if nonreturn_handoffs == 0 {
         None
@@ -2369,6 +2451,118 @@ mod tests {
         assert_eq!(outcome(&case.run()), ("estimate", None, Some(5)));
         case.tools = vec![(Some(-88_000), true)];
         assert_eq!(outcome(&case.run()), ("estimate", None, Some(5)));
+    }
+
+    fn pass_edge(
+        key: &str,
+        at: i64,
+        from: &str,
+        to: &str,
+        item: &str,
+        chain: Option<&str>,
+    ) -> HandoffEdge {
+        HandoffEdge {
+            from_seat: from.into(),
+            to_seat: to.into(),
+            qitem_id: item.into(),
+            chain_id: chain.map(str::to_string),
+            is_return: false,
+            returned_by: None,
+            ts: ts(at),
+            source_key: key.into(),
+        }
+    }
+
+    #[test]
+    fn three_passes_on_one_pair_are_one_loop_two_are_not_f12_0() {
+        let three = vec![
+            pass_edge("t1", 1, "A", "B", "i", None),
+            pass_edge("t2", 2, "B", "A", "i", None),
+            pass_edge("t3", 3, "A", "B", "i", None),
+        ];
+        let loops = handoff_loops(&three);
+        assert_eq!(loops.len(), 1, "A→B, B→A, A→B: one episode");
+        assert_eq!(loops[0].seats, ("A".to_string(), "B".to_string()));
+        let keys: Vec<_> = loops[0]
+            .passes
+            .iter()
+            .map(|p| p.source_key.as_str())
+            .collect();
+        assert_eq!(keys, ["t1", "t2", "t3"], "the counted path, in order");
+        assert!(
+            handoff_loops(&three[..2]).is_empty(),
+            "two passes are not a loop"
+        );
+        // A transition seen twice counts once.
+        let mut repeated = three[..2].to_vec();
+        repeated.push(three[1].clone());
+        assert!(handoff_loops(&repeated).is_empty());
+    }
+
+    #[test]
+    fn passes_add_up_within_a_chain_never_across_pairs_or_chains_f12_0() {
+        // Different items of one chain add up.
+        let chain = vec![
+            pass_edge("t1", 1, "A", "B", "i1", Some("c")),
+            pass_edge("t2", 2, "B", "A", "i2", Some("c")),
+            pass_edge("t3", 3, "A", "B", "i3", Some("c")),
+        ];
+        assert_eq!(handoff_loops(&chain).len(), 1);
+        // Different pairs on one chain do not.
+        let pairs = vec![
+            pass_edge("t1", 1, "A", "B", "i", None),
+            pass_edge("t2", 2, "B", "C", "i", None),
+            pass_edge("t3", 3, "C", "A", "i", None),
+        ];
+        assert!(handoff_loops(&pairs).is_empty());
+        // Different chains do not.
+        let chains = vec![
+            pass_edge("t1", 1, "A", "B", "i1", Some("c1")),
+            pass_edge("t2", 2, "B", "A", "i2", Some("c2")),
+            pass_edge("t3", 3, "A", "B", "i3", Some("c1")),
+        ];
+        assert!(handoff_loops(&chains).is_empty());
+        // Rev 5: A→A three times is no loop.
+        let selfs = vec![
+            pass_edge("t1", 1, "A", "A", "i", None),
+            pass_edge("t2", 2, "A", "A", "i", None),
+            pass_edge("t3", 3, "A", "A", "i", None),
+        ];
+        assert!(handoff_loops(&selfs).is_empty());
+        // Rev 5: A→B, B→B, B→A, A→B is one {A,B} loop of 3; the self-pass is
+        // not counted and does not break it, but stays in the chain path.
+        let mixed = vec![
+            pass_edge("t1", 1, "A", "B", "i", None),
+            pass_edge("t2", 2, "B", "B", "i", None),
+            pass_edge("t3", 3, "B", "A", "i", None),
+            pass_edge("t4", 4, "A", "B", "i", None),
+        ];
+        let found = handoff_loops(&mixed);
+        assert_eq!(found.len(), 1);
+        let counted: Vec<_> = found[0]
+            .passes
+            .iter()
+            .map(|p| p.source_key.as_str())
+            .collect();
+        assert_eq!(counted, ["t1", "t3", "t4"]);
+        let path: Vec<_> = found[0]
+            .chain_path
+            .iter()
+            .map(|p| p.source_key.as_str())
+            .collect();
+        assert_eq!(path, ["t1", "t2", "t3", "t4"]);
+        // Equal times are ordered by source key.
+        let tied = vec![
+            pass_edge("t3", 1, "A", "B", "i", None),
+            pass_edge("t1", 1, "B", "A", "i", None),
+            pass_edge("t2", 1, "A", "B", "i", None),
+        ];
+        let keys: Vec<_> = handoff_loops(&tied)[0]
+            .passes
+            .iter()
+            .map(|p| p.source_key.clone())
+            .collect();
+        assert_eq!(keys, ["t1", "t2", "t3"]);
     }
 
     #[test]
