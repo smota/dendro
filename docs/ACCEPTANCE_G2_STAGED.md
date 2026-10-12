@@ -4,9 +4,9 @@
 | --- | --- |
 | Owner | `pm.analyst` (`pm-analyst@dendro-pm`) |
 | Input | G2 Phase 0 `dendro-g2-p0` (root `goals/g2`), `docs/PRODUCT_SPECIFICATION_G2.md` |
-| Date | 2026-10-10; Revision 2 2026-10-11 22:21Z, rebased on v0.1.1 2026-10-12 06:10Z |
-| State | **Frozen** 2026-10-10. `pm.manager` decision 19:00Z: proceed, with one refine (rework-token alert basis, §3). **Revision 1** (19:45Z): R1 Emenda 2 knock-on, C4. #12 builds the handoff-loop detector (F12-0); G-A1 updated. **Revision 2**: R1 released (PR #11 merged 2026-10-11 22:16Z, merge commit `f37e6ad`, candidate `2abeb8f`; merge authorized by the sponsor, 2026-10-12 06:05Z, via `pm.manager`). The official release is **v0.1.1** (hotfix). Rebased on v0.1.1: the K1–K11 terms in #12; the K9 OpenRig deferrals and the source-state notices in #13 (F13-9); the measured v0.1.1 AC1 margin in F13-8 and #41 (G-A7); #40 out of scope. Changes are marked "(Rev 2)". |
-| Scope | #12 rework friction, #13 sealed replay. Interface acceptance (#7, #14, #16, #17, #18) is not here (sponsor E1). The other v0.2.0 items (#30, #31, #33, #34, #40, #41) are separate; §6 lists how they touch this scope. |
+| Date | 2026-10-10; Revision 2 2026-10-11 22:21Z, rebased on v0.1.1 2026-10-12 06:10Z; Revision 3 2026-10-12 06:45Z; Revision 4 2026-10-12 06:40Z; Revision 5 2026-10-12 06:50Z |
+| State | **Frozen** 2026-10-10. `pm.manager` decision 19:00Z: proceed, with one refine (rework-token alert basis, §3). **Revision 1** (19:45Z): R1 Emenda 2 knock-on, C4. #12 builds the handoff-loop detector (F12-0); G-A1 updated. **Revision 2**: R1 released (PR #11 merged 2026-10-11 22:16Z, merge commit `f37e6ad`, candidate `2abeb8f`; merge authorized by the sponsor, 2026-10-12 06:05Z, via `pm.manager`). The official release is **v0.1.1** (hotfix). Rebased on v0.1.1: the K1–K11 terms in #12; the K9 OpenRig deferrals and the source-state notices in #13 (F13-9); the measured v0.1.1 AC1 margin in F13-8 and #41 (G-A7); #40 out of scope. Changes are marked "(Rev 2)". **Revision 3** (readings confirmed by `pm.manager` 06:30Z): prerequisite slices S31 (#31) and S41 (#41) in §4A, asked by `pm.manager` 06:27Z; F12-0 corrected to the R1 text (unordered seat pair; analyst error in Rev 1/2); pair rework tokens and the handoff-loop episode and window stated (answers `orch.arch` 06:28Z). Marked "(Rev 3)". **Revision 4** (bound by `pm.manager` 06:33Z, answering `orch.arch` 06:31Z/06:32Z): pair returns taken verbatim from R1 M2; bands follow the period's M3 population; events with candidates in more than one chain are ambiguous. §4A unchanged. Marked "(Rev 4)". **Revision 5** (bound by `pm.manager` 06:43Z, answering `orch.arch` 06:43Z): self-handoffs stay in the matrix, labelled, and never form a loop. §4A unchanged. Marked "(Rev 5)". |
+| Scope | #12 rework friction, #13 sealed replay, and their prerequisite slices #31 and #41 (§4A, Rev 3). Interface acceptance (#7, #14, #16, #17, #18) is not here (sponsor E1). The other v0.2.0 items (#30, #31, #33, #34, #40, #41) are separate; §6 lists how they touch this scope. |
 | Base contract | R1 as released in **v0.1.1** (hotfix branch `fix/r1-hotfix-v0.1.1` at `bb13e39`, product code `45f3e59`, binary `ff0169af`; merged to main and tagged v0.1.1 by the sponsor's 06:05Z decision). Contract: Emenda 2, `docs/ACCEPTANCE_R1.md`, sha256 `cc365c88…`, plus the clarifications register `docs/ACCEPTANCE_R1_CLARIFICATIONS.md` K1–K11, sha256 `44a3032e…`. v0.1.1 changes neither. Nothing here changes either. |
 | Next owner | `orch-arch@dendro-dev` |
 
@@ -64,11 +64,15 @@ All R1 terms keep their released meaning (contract `cc365c88` plus register K1�
 | Term | Definition |
 | --- | --- |
 | Pair | An ordered pair of seats `(from → to)` with at least one handoff in the period. |
+| Pair handoffs and returns (Rev 4) | Taken verbatim from R1 M2 for the period, with no re-derivation. A return counts on the returning handoff's own ordered pair, which is itself a handoff in the period, so a pair with a return always has a handoff. K6 `returned_within` (M1's mark on the original delivery) never adds to M2 and never moves a return onto another pair. Pairs absent from M2 are omitted, never shown as 0 or 0%. (Rev 5) A self-handoff `A → A` stays as its own ordered row, exactly as R1 M2 counts it, labelled "self-handoff". |
 | Pair return rate | Returns on the pair ÷ handoffs on the pair. With 0 handoffs: "no data", never 0%. |
 | Pair rework chains | Rework chains (M3) in which this pair carries the return into a `dev-build*` seat. |
 | Rework tokens | Tokens attributed (per event, Amendment 1 rule) to items that belong to a rework chain. Shown per category. |
+| Pair rework tokens (Rev 3) | All rework tokens of each of the pair's rework chains. A chain whose returns into `dev-build*` run on several pairs counts in full on each of them. The column is not additive across pairs. |
+| Distinct rework total (Rev 3) | Rework tokens over distinct rework chains, each chain once. |
 | Attribution bands | For each seat: tokens on rework chains + tokens on other chains + tokens on M3 unknown chains (Rev 2, K7) + ambiguous + no item = seat total. |
-| Friction matrix | All pairs with their handoffs, returns, return rate, rework chains and rework tokens. Pairs without handoffs are not shown as zero. |
+| Band rule (Rev 4) | Each usage event takes the band of its attributed item's chain, as the period's M3 population classifies it: rework, M3 unknown, or else **other chains (not rework or unknown in this period)**, which also covers a chain with no handoff in the period and a lone item. That label is shown as written. If the event's candidate items lie in more than one distinct chain, it goes to **ambiguous**, even when the chains share a class: never split, duplicated or guessed. Candidates all in one chain give that chain's band once. Known limit: in-period work on a chain whose handoffs all fall outside the period shows as "other chains"; the operator widens the period. |
+| Friction matrix | All pairs with their handoffs, returns, return rate, rework chains and rework tokens. Pairs without handoffs are not shown as zero. (Rev 3) It never sums pair rework tokens. The column is labelled visibly "full chain, not additive across pairs" (`pm.manager` 06:30Z), and the matrix shows the single distinct rework total. Handoff loops are shown once per unordered seat pair (F12-0). |
 | Advisory alert | A line in the report when a pair crosses a threshold. It is text only. It sends nothing and changes nothing. |
 
 Default thresholds, all configurable by the operator:
@@ -87,6 +91,7 @@ The issue's "> 10 minutes" condition is dropped. In R1, 10 minutes belongs to th
 - **Given** `agentflow-dev` and a period,
 - **when** the operator asks for the friction matrix,
 - **then** the sum of pair handoffs equals R1 total handoffs, the sum of pair returns equals R1 returns (M2), and the count of distinct rework chains equals R1 M3,
+- **and** (Rev 4) every pair's handoffs and returns equal R1 M2's for that ordered pair, byte for byte. Fixture: a delivery `A → B` before `from` and `B → A` inside the period gives `(B → A)` 1 handoff with R1's return count, and no `(A → B)` row,
 - **and** M3 unknown chains appear as their own count with the reason, as in R1 (K7), and never inside a pair's rework chains (Rev 2),
 - **and** no pair count disagrees with the R1 handoff report for the same period and the same build.
 
@@ -94,7 +99,10 @@ The issue's "> 10 minutes" condition is dropped. In R1, 10 minutes belongs to th
 - **Given** the same rig and period,
 - **when** the operator asks for rework tokens,
 - **then** for every seat the five attribution bands sum exactly to the R1 seat total,
+- **and** (Rev 3) the distinct rework total equals the sum of all seats' rework-chain bands, and a fixture chain with returns on two pairs (`qa → build`, `review → build`) gives both pairs that chain's full tokens while the distinct total counts it once,
+- **and** (Rev 3) the text and JSON matrix carry the label "full chain, not additive across pairs" on the pair rework-token column, and no output sums that column,
 - **and** each usage event counts in exactly one band,
+- **and** (Rev 4) fixtures: an event on a rework chain with no handoff in the period lands in "other chains (not rework or unknown in this period)"; an event whose candidates lie in two rework chains lands in ambiguous and in neither chain's pair tokens; an event with two candidate items in one chain lands in that chain's band once,
 - **and** unlinked and collision sessions count in no seat, and their total equals the R1 unlinked total (Rev 2),
 - **and** the report shows the "no item" share next to the rework share.
 
@@ -108,9 +116,16 @@ The issue's "> 10 minutes" condition is dropped. In R1, 10 minutes belongs to th
 - **and** a pair with 0 handoffs shows "no data", never 0%.
 
 **F12-0 — Handoff-loop detector (prerequisite, built first).**
-- R1 Emenda 2 (C4) moved the detector out of R1. #12 builds it to the R1 §4 definition, with no change: the same item or chain passes between the same ordered seat pair more than 2 times.
+- R1 Emenda 2 (C4) moved the detector out of R1. #12 builds it to the R1 §4 definition, with no change: the same item or chain passes between the same pair of seats more than 2 times ("mesmo par de assentos"; A8 "mais de 2 voltas no mesmo par").
+- (Rev 3) The pair is **unordered**: a pass in either direction counts. Rev 1 and 2 said "ordered seat pair". That was an analyst error, not the R1 text.
+- (Rev 5) The pair has two distinct seats ("passa entre o mesmo par de assentos"; a handoff goes "de um assento para outro"). A self-handoff `A → A` never forms a loop, never counts toward another pair's passes and never breaks them. It stays in the matrix (Rev 4 pair rule).
+- (Rev 3) Episode: one per (chain, unordered seat pair). An item with no chain is its own chain. Passes of different items in the same chain add up. Count = passes between the pair in either direction. Loop when count > 2.
+- (Rev 3) Window: only passes whose handoff event lies inside the report period `[from, to)` count, the same basis as handoffs, returns and M2 (K6, R1 §4.1). A period's loops do not change when the report runs later. Known limit: a loop that straddles a window edge can fall below 3 passes in each window; the operator widens the window.
 - **Given** a fixture where one item passes between the same pair 3 times,
 - **then** it is one handoff loop, with the pass count and the chain path,
+- **and** (Rev 3) `A → B`, `B → A`, `A → B` on one chain is one loop of 3 passes,
+- **and** (Rev 3) a chain with 2 passes before `from` and 1 inside the period is not a loop in that period,
+- **and** (Rev 5) `A → A` three times on one chain is no loop, and the matrix shows `A → A` ("self-handoff") with 3 handoffs; `A → B`, `B → B`, `B → A`, `A → B` is one loop of 3 passes on `{A, B}`,
 - **and** a fixture with exactly 2 passes is not a loop,
 - **and** passes between different pairs on the same chain do not add up into one loop,
 - **and** every loop traces to its queue transitions (R1 AC7).
@@ -206,6 +221,93 @@ Closes what register K9 deferred from R1, and #32, with one source-state model f
 - **then** a sealed run reports a mismatch (F13-4), and an unsealed run says the source changed (K9 item 1). The delivery squad re-checks OpenRig's write paths for the installed version.
 - Privacy: identifiers, keys, generations and digests only; paths follow the AC10 rule (F13-7).
 
+## 4A. Prerequisite slices for #13 (Rev 3)
+
+Two small slices that land before or with #13 (G-A6, G-A7). Each is its own delivery and can ship on its own. Neither changes a definition, a number on correct input, the schema, a command or an output format, except the new refusal message in S31. Baseline: v0.1.1 (`a0671a91`, tag `v0.1.1`).
+
+### S31 — One OpenRig root per analytics database (#31)
+
+Turns register K9 known limit (d) from a user rule into a refusal. It adds no multi-root support (#27, v0.3.0).
+
+| Term | Definition |
+| --- | --- |
+| OpenRig root | The `openrig.sqlite` file named by `--root openrig=<path>`, identified by its path after resolution (relative parts and symlinks resolved). Two spellings that resolve to the same file are one root. |
+| Bound root | The OpenRig root whose facts the analytics database already holds. A database with no OpenRig facts has no bound root. The first successful run with an OpenRig root binds it. |
+| Refusal | The run stops before it reads any source and writes nothing: exit status non-zero, one message, no fact, no source state, no run record, and no analytics database file is created if none existed. |
+
+**S31-1 — Two OpenRig roots in one run.**
+- **Given** any analytics database, new or existing, and a run with two `--root openrig=` values that resolve to different files, in any order and in any position among the other roots,
+- **then** the run is refused,
+- **and** the message says that one analytics database holds exactly one OpenRig root, names both roots, and suggests a separate analytics database per OpenRig root.
+
+**S31-2 — A different OpenRig root on a bound database.**
+- **Given** an analytics database bound to OpenRig root A,
+- **when** the operator runs with OpenRig root B (a different file),
+- **then** the run is refused, the message names A as the bound root and B as the one refused, and suggests a fresh analytics database for B,
+- **and** a later run with A succeeds and gives totals identical to a run that never saw B.
+
+**S31-3 — Same root, different spelling.**
+- **Given** a database bound to A, and a run that names A by another spelling (relative path, `./` or `..` parts, a symlink),
+- **then** the run is not refused,
+- **and** totals, AC1 record counts and AC7 source keys equal those of a run with the original spelling (R1 AC8).
+
+**S31-4 — What is not refused.**
+- A first OpenRig root on a database that has none binds it and runs normally.
+- A run with no OpenRig root on a bound database runs normally.
+- More than one Claude, Codex or Pi root keeps its R1 behaviour.
+
+**S31-5 — A database that already holds two OpenRig roots.**
+- **Given** a database built by v0.1.x with facts from two OpenRig roots,
+- **when** the operator runs ingest with any OpenRig root,
+- **then** the run is refused with a message that the database already mixes two OpenRig roots and its OpenRig numbers are not reliable, and suggests a fresh database,
+- **and** report commands on that database keep their R1 behaviour (reading is not refused).
+
+**S31-6 — Scope boundary and privacy.**
+- An `openrig.sqlite` reset or replaced **at the same path** (K9 limit (a)) is the same root for S31. It is closed by #13 F13-9, not here. S31 claims nothing about it, and its documentation says so.
+- Paths in the message follow R1 AC10: identifiers appear, and secret-shaped parts are redacted. The message holds no content.
+- Release notes replace known limit (d) with the refusal. Limit (a) stays until #13.
+
+### S41 — First-run headroom and bounded tool pass (#41)
+
+Restores the AC1 margin lost in v0.1.1, and pays the review debt recorded at hotfix review (PM 04:30Z, `rev.review` 04:24Z; builder sizing `7abfc21b`): the tool pass copies each Claude or Pi file's current generation, parses it again, and has no cancellation check.
+
+| Term | Definition |
+| --- | --- |
+| Reference corpus | The sealed agentflow-dev input, manifest `40c65db7`, 97 sources. |
+| Reference machine | The 18-CPU machine used for every R1 and v0.1.1 AC1 run. |
+| AC1 run | One isolated QA run, the same protocol as v0.1.1: fresh analytics database, `dendro run` over the four roots, then the first `dendro report tokens --rig agentflow-dev`. No retry, nothing heavy running on the host. |
+| v0.1.1 oracle set | The outputs of binary `ff0169af` on the reference corpus: every R1 report in text and JSON, the AC7 trace output, and the per-harness tool census (calls, failed calls, loops; Codex "not read"). |
+
+**S41-1 — Headroom.**
+- **Given** the reference corpus and machine,
+- **then** one AC1 run finishes in 225 s or less (25% under the 300 s budget), with ingest and report times stated,
+- **and** the receipt also states the v0.1.1 time (287.961 s) and the change.
+- 225 s is a release target on this machine and corpus, not a performance guarantee. The release notes say so.
+
+**S41-2 — No number changes.**
+- **Given** the reference corpus,
+- **then** every output in the v0.1.1 oracle set is byte-identical to v0.1.1's, apart from fields that identify the run itself (run id, run time), which the receipt lists by name,
+- **and** R1 AC8 still holds: a fresh run, an identical re-run, and a run split into appended parts (including a late disagreeing tool result) give identical totals, statuses and loops.
+
+**S41-3 — One bounded pass.**
+- Usage and tool extraction share one streaming pass over a file's bytes. No full copy of a file's current generation is held for the tool pass, and each line is parsed once.
+- **Given** two synthetic Claude files of 256 MiB and 1 GiB (lines up to 1 MiB each), ingested first fresh and then with a 64 MiB append,
+- **then** peak resident memory for the 1 GiB file exceeds that for the 256 MiB file by no more than 64 MiB,
+- **and** the receipt states peak resident memory for the reference AC1 run next to v0.1.1's, with no increase.
+- The same holds for Pi files.
+
+**S41-4 — Cancellation inside the tool pass.**
+- **Given** an ingest of the largest Claude or Pi file in the corpus (or a larger synthetic one),
+- **when** SIGINT or SIGTERM arrives while that file's tool extraction is running,
+- **then** the process exits non-zero within 2 s of the signal,
+- **and** nothing from that file is committed (earlier files keep their R1 per-file commits),
+- **and** the next run gives totals, statuses and loops identical to an uninterrupted fresh run.
+- The proof is non-vacuous: the receipt shows the signal landed during the tool extraction of that file, not before or after it. A signal that lands elsewhere does not count as a pass.
+
+**S41-5 — Boundaries.**
+- No schema, command or output-format change. No threshold, definition or oracle is tuned to reach S41-1.
+- QA re-runs the full R1 proof set and the privacy group on the final binary, then one isolated AC1 run.
+
 ---
 
 ## 5. Assumptions (ASSUMPTIONS I'M MAKING)
@@ -213,8 +315,8 @@ Closes what register K9 deferred from R1, and #32, with one source-state model f
 | # | Assumption | If wrong |
 | --- | --- | --- |
 | G-A1 | (Rev 2: confirmed) R1 merged under Emenda 2 (`cc365c88`) plus register K1–K11 (`44a3032e`): Amendment 1 semantics, minus C1–C4, with K9 deferring OpenRig items to #13 (F13-9). No register entry changes a definition #12 or #13 uses; K6, K7, K3/K5 and the session resolver are carried into §3. R1 shipped no handoff-loop detector (C4), so #12 builds it (F12-0). Loop thresholds become configurable in v0.2 (C1), and #12's advisory thresholds may share that mechanism. (Rev 2, v0.1.1) The hotfix changes values, not definitions: Claude and Pi tool calls are read under R1 §4 (a call's status comes only from its own results; usage dedupe never removes calls), Pi `write` and `edit` end intake windows, and Codex tool calls are not read (#40). Usage and token totals are unchanged from `2abeb8f`; M2 intake values and tool-loop counts changed. #12 uses handoffs, returns, M3 and token attribution, not intake windows or tool loops. | If a later R1 change alters a definition, this document returns to Phase 1. |
-| G-A6 (Rev 2) | One OpenRig root per analytics database (K9 (d)). #13 seals and replays one root. #31 makes ingest refuse a second root; multi-root is #27 (v0.3.0). | If #31 slips, a sealed run over a database that has silently dropped a second root's facts reproduces an undercount. F13-1 still holds, but the numbers are wrong. Land #31 before or with #13. |
-| G-A7 (Rev 2) | #41 restores first-run headroom (target ≥ 25% on the reference corpus) with no number changing. #13 is measured after #41. | If #41 slips, a sealed or unsealed run on the reference data may exceed 300 s, and F13-8 fails. Land #41 before or with #13. |
+| G-A6 (Rev 2) | One OpenRig root per analytics database (K9 (d)). #13 seals and replays one root. #31 makes ingest refuse a second root; multi-root is #27 (v0.3.0). | If #31 slips, a sealed run over a database that has silently dropped a second root's facts reproduces an undercount. F13-1 still holds, but the numbers are wrong. Land #31 before or with #13. (Rev 3) Acceptance: S31 (§4A). |
+| G-A7 (Rev 2) | #41 restores first-run headroom (target ≥ 25% on the reference corpus) with no number changing. #13 is measured after #41. | If #41 slips, a sealed or unsealed run on the reference data may exceed 300 s, and F13-8 fails. Land #41 before or with #13. (Rev 3) Acceptance: S41 (§4A). |
 | G-A2 | The V4 numbers come from an analyst script and will move slightly under the R1 engine. The conclusions (direction, unattributed share, cache share) are robust; the exact numbers are not acceptance values. | If the R1 engine shows rework is not the largest attributed sink, #12 still stands as a breakdown of M3, but its motivation weakens. |
 | G-A3 | The 5-handoff guard and the 1M-token default are reasonable starting points. They are configurable. | Noisy or silent alerts. The operator tunes them. |
 | G-A4 | Append-only OpenRig tables have a stable increasing key. | Sealing SQLite needs another mechanism. `orch.arch` confirms. |
@@ -238,7 +340,7 @@ Closes what register K9 deferred from R1, and #32, with one source-state model f
 - Alert delivery (notifications, continuous mode).
 - Predictions and what-if (Goal 5).
 - Explaining **why** the 60% "no item" tokens exist. It is a candidate question for the first R1 review, not part of #12.
-- (Rev 2) Other v0.2.0 items, each with its own acceptance: #30 (busy-source retry hint), #31 (refuse a second OpenRig root; G-A6), #33 (tool-loop trace, register K11), #34 (sub-second waits), #40 (Codex command outcomes for tool loops; taking the CommandExecution item as the call unit is a definition change and needs a new register entry, analyst reading 2026-10-12 00:33Z), #41 (ingest headroom; G-A7). #34 changes M2 medians, so F12-1 compares #12 with R1 on the same build. #32 is absorbed into F13-9 (`pm.manager` agreed, 2026-10-11).
+- (Rev 2) Other v0.2.0 items, each with its own acceptance: #30 (busy-source retry hint), #33 (tool-loop trace, register K11), #34 (sub-second waits), #40 (Codex command outcomes for tool loops; taking the CommandExecution item as the call unit is a definition change and needs a new register entry, analyst reading 2026-10-12 00:33Z), #38/#39 (deferred C1/C2; F12-5 may share C1). #31 and #41 have their acceptance here (§4A, Rev 3). #34 changes M2 medians, so F12-1 compares #12 with R1 on the same build. #32 is absorbed into F13-9 (`pm.manager` agreed, 2026-10-11).
 - Multi-root fleet (#27, v0.3.0).
 
 ---
