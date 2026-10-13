@@ -83,11 +83,24 @@ async fn main() -> Result<()> {
                 parse_roots(&root)?
             };
             let paths: Vec<PathBuf> = roots.iter().map(|root| root.path.clone()).collect();
+            let openrig_roots: Vec<PathBuf> = roots
+                .iter()
+                .filter(|root| root.name == "openrig")
+                .map(|root| root.path.clone())
+                .collect();
+            let db_for_align = db.clone();
             // Listeners exist before the worker, so no signal can kill it mid-copy.
             let mut interrupt = signal(SignalKind::interrupt())?;
             let mut terminate = signal(SignalKind::terminate())?;
             let mut worker = tokio::task::spawn_blocking(move || {
-                dendro_core::run_locked(&db, &paths, |staged, key| {
+                dendro_core::run_locked_with_openrig(&db, &paths, &openrig_roots, |staged, key| {
+                    let mut roots = roots;
+                    for root in &mut roots {
+                        if root.name == "openrig" {
+                            root.path =
+                                dendro_core::align_openrig_spelling(&db_for_align, &root.path)?;
+                        }
+                    }
                     dendro_connectors::ingest_staged(staged, &roots, frozen, key)
                 })
             });
@@ -218,5 +231,87 @@ fn parse_roots(values: &[String]) -> Result<Vec<dendro_connectors::SourceRoot>> 
             path: PathBuf::from(path),
         });
     }
+    let openrig: Vec<PathBuf> = roots
+        .iter()
+        .filter(|root| root.name == "openrig")
+        .map(|root| root.path.clone())
+        .collect();
+    // Before the database is opened or any source is read.
+    dendro_core::refuse_multiple_openrig_roots(&openrig)?;
+    let mut seen = Vec::new();
+    roots.retain(|root| {
+        if root.name != "openrig" {
+            return true;
+        }
+        let canonical = dendro_core::canonical_root(&root.path);
+        if seen.contains(&canonical) {
+            return false;
+        }
+        seen.push(canonical);
+        true
+    });
     Ok(roots)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "dendro-cli-{name}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn two_openrig_roots_in_any_position_are_refused() {
+        let dir = scratch("two");
+        let first = dir.join("a.sqlite");
+        let second = dir.join("nested").join("b.sqlite");
+        std::fs::create_dir_all(second.parent().unwrap()).unwrap();
+        std::fs::write(&first, []).unwrap();
+        std::fs::write(&second, []).unwrap();
+        let err = parse_roots(&[
+            format!("claude={}", dir.display()),
+            format!("openrig={}", first.display()),
+            format!("codex={}", dir.display()),
+            format!("openrig={}", second.display()),
+        ])
+        .unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("v0.1.0 supports exactly one OpenRig root per analytics database"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn one_openrig_file_under_two_spellings_is_kept_once() {
+        let dir = scratch("spell");
+        let file = dir.join("sub").join("openrig.sqlite");
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, []).unwrap();
+        let via_parent = dir
+            .join("sub")
+            .join("extra")
+            .join("..")
+            .join("openrig.sqlite");
+        let roots = parse_roots(&[
+            format!("openrig={}", file.display()),
+            format!("pi={}", dir.display()),
+            format!("openrig={}", via_parent.display()),
+        ])
+        .unwrap();
+        let openrig: Vec<_> = roots.iter().filter(|root| root.name == "openrig").collect();
+        assert_eq!(openrig.len(), 1);
+        assert_eq!(openrig[0].path, file);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

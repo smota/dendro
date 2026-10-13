@@ -79,9 +79,10 @@ The Claude change lowers the intake estimate by 38,631,754 tokens: the earlier c
 ### Known limits in v0.1.1
 
 1. **One OpenRig root per analytics database.**
-   - If you add a second OpenRig root to the same database, its records whose sequence numbers or ids were already used are dropped silently, so totals come out low.
-   - Use a separate analytics database for each OpenRig root.
-   - A refusal guard is planned (#31). Several roots in one view is Goal 3 (#27).
+   - Dendro refuses a second OpenRig root instead of dropping its records. Two different OpenRig files in one run stop before anything is read or written, with "v0.1.0 supports exactly one OpenRig root per analytics database".
+   - A database already bound to one root refuses a different root before anything is written. The message names the bound root and the refused one. The same file under another spelling (a relative path, `..`, or a symlink) is accepted.
+   - A database that already holds two OpenRig roots is refused for ingest. Reports against that database still run.
+   - Use a separate analytics database for each OpenRig root. Several roots in one view is Goal 3 (#27).
 2. **After an OpenRig reset or reinstall, start a new analytics database.** If you re-run over an existing database, new OpenRig records that reuse old sequence numbers or ids are dropped silently, so totals come out low.
 3. **OpenRig records are treated as append-only.**
    - Records that OpenRig deletes under its retention policy keep their facts in Dendro, and nothing marks them as gone.

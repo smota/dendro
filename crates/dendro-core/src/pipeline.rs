@@ -20,23 +20,52 @@ pub fn run_locked<F>(db: &Path, source_roots: &[PathBuf], ingest: F) -> Result<V
 where
     F: FnOnce(&Path, &[u8]) -> Result<Vec<String>>,
 {
+    run_locked_with_openrig(db, source_roots, &[], ingest)
+}
+
+/// Ingest, refusing a second distinct OpenRig root before any source read or
+/// analytics write. `openrig_roots` are the OpenRig paths only; `source_roots`
+/// remains every harness path used for alias and privacy checks.
+pub fn run_locked_with_openrig<F>(
+    db: &Path,
+    source_roots: &[PathBuf],
+    openrig_roots: &[PathBuf],
+    ingest: F,
+) -> Result<Value>
+where
+    F: FnOnce(&Path, &[u8]) -> Result<Vec<String>>,
+{
     if source_roots.is_empty() {
         return Err(anyhow!("at least one source root is required"));
     }
+    // S31-1: two different OpenRig files in one run never create a database.
+    refuse_multiple_openrig_roots(openrig_roots)?;
     refuse_secret_path(db)?;
-    for root in source_roots {
+    for root in source_roots.iter().chain(openrig_roots.iter()) {
         refuse_secret_path(root)?;
     }
     let parent = db.parent().unwrap_or_else(|| Path::new("."));
     fs::create_dir_all(parent)?;
     let lock_path = parent.join(".dendro-output.lock");
-    with_output_lock(&lock_path, || run_inner(db, source_roots, ingest))
+    with_output_lock(&lock_path, || {
+        run_inner(db, source_roots, openrig_roots, ingest)
+    })
 }
 
-fn run_inner<F>(db: &Path, source_roots: &[PathBuf], ingest: F) -> Result<Value>
+fn run_inner<F>(
+    db: &Path,
+    source_roots: &[PathBuf],
+    openrig_roots: &[PathBuf],
+    ingest: F,
+) -> Result<Value>
 where
     F: FnOnce(&Path, &[u8]) -> Result<Vec<String>>,
 {
+    // S31-2 / S31-5: an existing database is judged before the key sidecar,
+    // the private stage, or any source read.
+    if db.exists() {
+        refuse_bound_openrig_root(db, openrig_roots)?;
+    }
     refuse_aliased_output(db, source_roots)?;
     let before = fs::symlink_metadata(db).ok();
     if before
@@ -200,6 +229,116 @@ impl Categories {
 
 pub fn opaque_session(key: &[u8], harness: &str, native: &str) -> String {
     opaque_id(key, "session", &format!("{harness}\n{native}"))
+}
+
+/// Filesystem identity when the path exists (symlinks included); otherwise
+/// a lexical absolute path with `.` and `..` removed.
+pub fn canonical_root(path: &Path) -> PathBuf {
+    if let Ok(canonical) = fs::canonicalize(path) {
+        return canonical;
+    }
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join(path)
+    };
+    let mut out = PathBuf::new();
+    for component in absolute.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
+/// S31-1. Distinct files only; two spellings of one file are not a conflict.
+pub fn refuse_multiple_openrig_roots(paths: &[PathBuf]) -> Result<()> {
+    if distinct_canonical_roots(paths).len() > 1 {
+        return Err(anyhow!(
+            "v0.1.0 supports exactly one OpenRig root per analytics database"
+        ));
+    }
+    Ok(())
+}
+
+fn distinct_canonical_roots(paths: &[PathBuf]) -> Vec<PathBuf> {
+    let mut distinct = Vec::new();
+    for path in paths {
+        let canonical = canonical_root(path);
+        if !distinct.iter().any(|seen| seen == &canonical) {
+            distinct.push(canonical);
+        }
+    }
+    distinct
+}
+
+struct BoundOpenRig {
+    display: String,
+    canonical: PathBuf,
+}
+
+fn bound_openrig_roots(db: &Path) -> Result<Vec<BoundOpenRig>> {
+    if !db.exists() {
+        return Ok(Vec::new());
+    }
+    let store = AnalyticsStore::open_read_only(db)?;
+    let mut bound = Vec::new();
+    for (_id, harness, display_path, _generation, _session) in store.load_sources()? {
+        if harness != "openrig" {
+            continue;
+        }
+        let canonical = canonical_root(Path::new(&display_path));
+        if bound
+            .iter()
+            .any(|row: &BoundOpenRig| row.canonical == canonical)
+        {
+            continue;
+        }
+        bound.push(BoundOpenRig {
+            display: display_path,
+            canonical,
+        });
+    }
+    Ok(bound)
+}
+
+/// When `incoming` is the bound file under another spelling, return the
+/// display path already stored so source keys stay stable (S31-3).
+pub fn align_openrig_spelling(db: &Path, incoming: &Path) -> Result<PathBuf> {
+    let bound = bound_openrig_roots(db)?;
+    if bound.len() == 1 && bound[0].canonical == canonical_root(incoming) {
+        return Ok(PathBuf::from(&bound[0].display));
+    }
+    Ok(incoming.to_path_buf())
+}
+
+fn refuse_bound_openrig_root(db: &Path, incoming: &[PathBuf]) -> Result<()> {
+    let bound = bound_openrig_roots(db)?;
+    if bound.len() > 1 {
+        return Err(anyhow!(
+            "refusing second OpenRig root: analytics database is bound to OpenRig root {} and {}",
+            redact(&bound[0].display),
+            redact(&bound[1].display)
+        ));
+    }
+    if let Some(bound) = bound.first() {
+        for path in incoming {
+            if canonical_root(path) != bound.canonical {
+                return Err(anyhow!(
+                    "refusing second OpenRig root: analytics database is bound to OpenRig root {}; refused {}",
+                    redact(&bound.display),
+                    redact(&path.display().to_string())
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn refuse_secret_path(path: &Path) -> Result<()> {
@@ -1793,6 +1932,192 @@ mod tests {
         let err = run_locked(&db, &[], |_, _| Ok(vec![])).unwrap_err();
         assert!(err.to_string().contains("source root"));
         assert!(!db.exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "dendro-s31-{name}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn touch(path: &Path) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(path, b"openrig").unwrap();
+    }
+
+    fn bind_openrig(db: &Path, paths: &[&Path]) {
+        let store = AnalyticsStore::open_path(db, "kid").unwrap();
+        for (index, path) in paths.iter().enumerate() {
+            store
+                .commit_file_batch(
+                    &format!("src-{index}"),
+                    "openrig",
+                    &path.display().to_string(),
+                    0,
+                    1,
+                    "rev",
+                    None,
+                    &[],
+                    &[],
+                )
+                .unwrap();
+        }
+        store.checkpoint().unwrap();
+    }
+
+    fn publish_openrig(db: &Path, source: &Path) {
+        let source = source.to_path_buf();
+        run_locked_with_openrig(db, &[source.clone()], &[source.clone()], |staged, _key| {
+            let store = AnalyticsStore::open_staged(staged)?;
+            store.commit_file_batch(
+                "src-openrig",
+                "openrig",
+                &source.display().to_string(),
+                0,
+                1,
+                "rev",
+                None,
+                &[],
+                &[],
+            )?;
+            Ok(vec!["bound".into()])
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn two_distinct_openrig_roots_do_not_create_a_database() {
+        let dir = scratch("two");
+        let first = dir.join("a.sqlite");
+        let second = dir.join("b.sqlite");
+        touch(&first);
+        touch(&second);
+        let db = dir.join("analytics.duckdb");
+        let mut called = false;
+        let err = run_locked_with_openrig(
+            &db,
+            &[first.clone(), second.clone()],
+            &[first, second],
+            |_, _| {
+                called = true;
+                Ok(vec![])
+            },
+        )
+        .unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("v0.1.0 supports exactly one OpenRig root per analytics database"));
+        assert!(!called);
+        assert!(!db.exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_different_bound_root_is_refused_and_the_same_file_is_not() {
+        let dir = scratch("bound");
+        let bound = dir.join("bound.sqlite");
+        let other = dir.join("other.sqlite");
+        touch(&bound);
+        touch(&other);
+        let db = dir.join("analytics.duckdb");
+        publish_openrig(&db, &bound);
+        let before = fs::read(&db).unwrap();
+        let mut called = false;
+        let err = run_locked_with_openrig(&db, &[other.clone()], &[other.clone()], |_, _| {
+            called = true;
+            Ok(vec![])
+        })
+        .unwrap_err();
+        let message = err.to_string();
+        assert!(message
+            .contains("refusing second OpenRig root: analytics database is bound to OpenRig root"));
+        assert!(message.contains(&bound.display().to_string()));
+        assert!(message.contains("refused"));
+        assert!(message.contains(&other.display().to_string()));
+        assert!(!called);
+        assert_eq!(fs::read(&db).unwrap(), before);
+
+        let link = dir.join("bound-link.sqlite");
+        std::os::unix::fs::symlink(&bound, &link).unwrap();
+        let spelled = dir.join("extra").join("..").join("bound.sqlite");
+        for alias in [link, spelled] {
+            let mut saw = false;
+            run_locked_with_openrig(&db, &[alias.clone()], &[alias.clone()], |_, _| {
+                saw = true;
+                Ok(vec!["same".into()])
+            })
+            .unwrap();
+            assert!(saw, "same file must not be refused");
+        }
+        let aligned =
+            align_openrig_spelling(&db, &dir.join("extra").join("..").join("bound.sqlite"))
+                .unwrap();
+        assert_eq!(aligned, bound);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_run_without_openrig_still_runs_and_a_mixed_database_is_refused() {
+        let dir = scratch("mixed");
+        let claude = dir.join("claude");
+        fs::create_dir_all(&claude).unwrap();
+        let db = dir.join("analytics.duckdb");
+        run_locked_with_openrig(&db, &[claude.clone()], &[], |staged, _key| {
+            let store = AnalyticsStore::open_staged(staged)?;
+            store.commit_file_batch(
+                "claude-1",
+                "claude",
+                &claude.display().to_string(),
+                0,
+                1,
+                "rev",
+                None,
+                &[],
+                &[],
+            )?;
+            Ok(vec!["claude".into()])
+        })
+        .unwrap();
+        run_locked_with_openrig(&db, &[claude.clone()], &[], |_, _| Ok(vec!["again".into()]))
+            .unwrap();
+
+        let first = dir.join("one.sqlite");
+        let second = dir.join("two.sqlite");
+        touch(&first);
+        touch(&second);
+        let mixed = dir.join("mixed.duckdb");
+        bind_openrig(&mixed, &[&first, &second]);
+        let before = fs::read(&mixed).unwrap();
+        let mut called = false;
+        let err = run_locked_with_openrig(&mixed, &[first.clone()], &[first.clone()], |_, _| {
+            called = true;
+            Ok(vec![])
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains("refusing second OpenRig root"));
+        assert!(err.to_string().contains(&first.display().to_string()));
+        assert!(err.to_string().contains(&second.display().to_string()));
+        assert!(!called);
+        assert_eq!(fs::read(&mixed).unwrap(), before);
+        assert!(report_json(
+            &mixed,
+            "decisions",
+            None,
+            "2026-10-08T00:00:00Z",
+            "2026-10-11T00:00:00Z",
+        )
+        .is_ok());
         let _ = fs::remove_dir_all(&dir);
     }
 }
