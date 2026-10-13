@@ -1978,21 +1978,26 @@ mod tests {
 
     fn publish_openrig(db: &Path, source: &Path) {
         let source = source.to_path_buf();
-        run_locked_with_openrig(db, &[source.clone()], &[source.clone()], |staged, _key| {
-            let store = AnalyticsStore::open_staged(staged)?;
-            store.commit_file_batch(
-                "src-openrig",
-                "openrig",
-                &source.display().to_string(),
-                0,
-                1,
-                "rev",
-                None,
-                &[],
-                &[],
-            )?;
-            Ok(vec!["bound".into()])
-        })
+        run_locked_with_openrig(
+            db,
+            std::slice::from_ref(&source),
+            std::slice::from_ref(&source),
+            |staged, _key| {
+                let store = AnalyticsStore::open_staged(staged)?;
+                store.commit_file_batch(
+                    "src-openrig",
+                    "openrig",
+                    &source.display().to_string(),
+                    0,
+                    1,
+                    "rev",
+                    None,
+                    &[],
+                    &[],
+                )?;
+                Ok(vec!["bound".into()])
+            },
+        )
         .unwrap();
     }
 
@@ -2034,10 +2039,15 @@ mod tests {
         publish_openrig(&db, &bound);
         let before = fs::read(&db).unwrap();
         let mut called = false;
-        let err = run_locked_with_openrig(&db, &[other.clone()], &[other.clone()], |_, _| {
-            called = true;
-            Ok(vec![])
-        })
+        let err = run_locked_with_openrig(
+            &db,
+            std::slice::from_ref(&other),
+            std::slice::from_ref(&other),
+            |_, _| {
+                called = true;
+                Ok(vec![])
+            },
+        )
         .unwrap_err();
         let message = err.to_string();
         assert!(message
@@ -2053,10 +2063,15 @@ mod tests {
         let spelled = dir.join("extra").join("..").join("bound.sqlite");
         for alias in [link, spelled] {
             let mut saw = false;
-            run_locked_with_openrig(&db, &[alias.clone()], &[alias.clone()], |_, _| {
-                saw = true;
-                Ok(vec!["same".into()])
-            })
+            run_locked_with_openrig(
+                &db,
+                std::slice::from_ref(&alias),
+                std::slice::from_ref(&alias),
+                |_, _| {
+                    saw = true;
+                    Ok(vec!["same".into()])
+                },
+            )
             .unwrap();
             assert!(saw, "same file must not be refused");
         }
@@ -2073,7 +2088,7 @@ mod tests {
         let claude = dir.join("claude");
         fs::create_dir_all(&claude).unwrap();
         let db = dir.join("analytics.duckdb");
-        run_locked_with_openrig(&db, &[claude.clone()], &[], |staged, _key| {
+        run_locked_with_openrig(&db, std::slice::from_ref(&claude), &[], |staged, _key| {
             let store = AnalyticsStore::open_staged(staged)?;
             store.commit_file_batch(
                 "claude-1",
@@ -2089,8 +2104,10 @@ mod tests {
             Ok(vec!["claude".into()])
         })
         .unwrap();
-        run_locked_with_openrig(&db, &[claude.clone()], &[], |_, _| Ok(vec!["again".into()]))
-            .unwrap();
+        run_locked_with_openrig(&db, std::slice::from_ref(&claude), &[], |_, _| {
+            Ok(vec!["again".into()])
+        })
+        .unwrap();
 
         let first = dir.join("one.sqlite");
         let second = dir.join("two.sqlite");
@@ -2100,10 +2117,15 @@ mod tests {
         bind_openrig(&mixed, &[&first, &second]);
         let before = fs::read(&mixed).unwrap();
         let mut called = false;
-        let err = run_locked_with_openrig(&mixed, &[first.clone()], &[first.clone()], |_, _| {
-            called = true;
-            Ok(vec![])
-        })
+        let err = run_locked_with_openrig(
+            &mixed,
+            std::slice::from_ref(&first),
+            std::slice::from_ref(&first),
+            |_, _| {
+                called = true;
+                Ok(vec![])
+            },
+        )
         .unwrap_err();
         assert!(err.to_string().contains("refusing second OpenRig root"));
         assert!(err.to_string().contains(&first.display().to_string()));
