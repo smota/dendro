@@ -69,7 +69,8 @@ def census(db):
     code, out, err = q.run(["cargo", "run", "-q", "-p", "dendro-connectors", "--example", "tool_census", "--", db])
     if code != 0:
         raise SystemExit(f"tool_census failed: {err[-300:]}")
-    return {row["harness"]: row for row in json.loads(out)["tool_facts"]}
+    return {row["harness"]: row for row in json.loads(out)["tool_facts"]
+            if row.get("unit", "tool_call") == "tool_call"}
 
 
 def loops_of(binary, db, frm=q.FROM, to=q.TO):
@@ -350,7 +351,7 @@ def case_codex(binary, base, tag):
     q.ingest(binary, b, [("codex", b / "codex")])
     hits, _ = q.decoded(db, ["tool calls not read for codex"])
     check(case, "one stored warning per Codex file across reruns (2)", hits["tool calls not read for codex"] == 2, hits)
-    check(case, "no Codex tool facts and no Codex loop row", "codex" not in census(db) and loops_of(binary, db) == [], census(db))
+    check(case, "no covered Codex seat-tool calls and no Codex loop row", "codex" not in census(db) and loops_of(binary, db) == [], census(db))
 
 
 def case_wal_privacy(binary, base, tag):
@@ -618,7 +619,7 @@ def case_sealed(binary, old, base):
     codex_files = len(list((new["src"] / "codex").rglob("*.jsonl")))
     print("INFO census per harness: claude", c.get("calls"), "| pi", pc.get("calls"), "| codex NOT READ (", new["codex_warnings"], "file warnings )")
     check(case, f"Codex: one 'tool calls not read for codex' warning per file ({codex_files})", new["codex_warnings"] == codex_files, new["codex_warnings"])
-    check(case, "Codex: no tool facts stored", "codex" not in new["census"], new["census"])
+    check(case, "Codex: no covered seat-tool calls", "codex" not in new["census"], new["census"])
     check(case, "Codex run note says tool_calls=not read", any(n.startswith("codex ") and n.endswith(" tool_calls=not read") for n in new["notes"]), new["notes"])
     new_loops = sorted(l["count"] for l in new["unscoped"]["tool_loops"])
     want_loops = sorted(orc["loops"] + pio["loops"])

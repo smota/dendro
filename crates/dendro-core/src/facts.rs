@@ -118,3 +118,31 @@ pub struct WarningNote {
     pub line: Option<i64>,
     pub reason: String,
 }
+
+/// Private reader metadata uses a disjoint source-key namespace, never a native tool name.
+pub const READER_NAMESPACE: &str = "dendro-internal:reader:";
+pub const READER_VERSION: &str = "v1";
+pub const READER_COMPLETE: &str = "DendroReaderComplete";
+pub const READER_UNSUPPORTED: &str = "DendroReaderUnsupported";
+pub const CODEX_COMMAND: &str = "CommandExecution";
+pub const CODEX_CALL: &str = "CodexSeatCall";
+
+#[derive(Debug, Clone)]
+pub struct ReaderState {
+    pub complete: bool,
+    pub native_session: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SourceCoverage {
+    pub source_id: String,
+    pub harness: String,
+    pub native_session: Option<String>,
+    pub complete: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct CodexObservation {
+    pub source_id: String,
+    pub fact: ToolFact,
+}

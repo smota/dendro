@@ -35,7 +35,7 @@ const FIELDS: &[&str] = &[
     "dir", "csess", "csess2", "cmsg", "tname", "tinput", "xdir", "xsess", "xhdr", "pdir", "pmsg",
     "phdr", "rigid", "rigname", "isess", "runtime", "iseat", "seat1", "seat2", "state", "node",
     "node2", "q1", "q2", "q3", "reroute", "note", "reason", "target", "tstate", "cutoff",
-    "mission", "logical", "agentref", "spec",
+    "mission", "logical", "agentref", "spec", "xcmd", "xout", "xextra", "xprompt",
 ];
 
 fn write(path: &Path, text: &str) {
@@ -67,12 +67,16 @@ fn sources(dir: &Path, c: &dyn Fn(&str) -> String) -> Vec<SourceRoot> {
     write(
         &codex.join(c("xdir")).join("s.jsonl"),
         &format!(
-            "{}\n{}\n",
+            "{}\n{}\n{}\n",
             json!({"type": "session_meta", "timestamp": "2026-10-09T00:00:00Z", "payload": {"id": c("xhdr")}}),
             json!({"type": "event_msg", "timestamp": "2026-10-09T01:00:00Z",
                 "payload": {"type": "token_count", "session_id": c("xsess"),
                     "info": {"total_token_usage": {"input_tokens": 9, "cached_input_tokens": 1,
-                        "cache_write_input_tokens": 0, "output_tokens": 2, "reasoning_output_tokens": 0}}}})
+                        "cache_write_input_tokens": 0, "output_tokens": 2, "reasoning_output_tokens": 0}}}}),
+            json!({"type": "event_msg", "timestamp": "2026-10-09T01:00:00Z",
+                "payload": {"type": "item_completed", "item": {"type": "CommandExecution",
+                    "command": [c("xcmd")], "exit_code": 1, "stdout": c("xout"),
+                    "unexpected": c("xextra"), "prompt": c("xprompt")}}})
         ),
     );
     let pi = dir.join("pi");
@@ -365,6 +369,7 @@ fn every_family_through_every_source_field_stays_out_of_storage_and_output() {
             .load_tools()
             .unwrap()
             .into_iter()
+            .filter(|row| row.harness == "claude")
             .map(|row| row.native_session)
             .collect();
         tool_sessions.sort();

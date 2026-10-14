@@ -107,6 +107,13 @@ pub fn ingest_jsonl_with_key(
     let mut seen_messages = HashSet::new();
     let mut unknown_types = HashSet::new();
     let mut records_read = 0u64;
+    let mut reader_complete = true;
+    let mut source_session = file_session
+        .as_ref()
+        .map(|session| seal_session(tool_key, harness, &session.raw));
+    let mut codex_ordinal = 0i64;
+    let mut claude_sessions = HashSet::new();
+
     // Claude and Pi tool calls are read in their own pass over every complete
     // line of this generation, so usage dedupe never drops a call (#35, Q5).
     // Codex tool calls are not read in this version (Q6, #40): each Codex file
@@ -159,6 +166,7 @@ pub fn ingest_jsonl_with_key(
         let text = match std::str::from_utf8(bytes) {
             Ok(text) => text,
             Err(_) => {
+                reader_complete = false;
                 if is_new {
                     warnings.push(WarningNote {
                         path: path.display().to_string(),
@@ -172,12 +180,46 @@ pub fn ingest_jsonl_with_key(
         if text.trim().is_empty() {
             continue;
         }
+        // Reader completion describes every complete line, including a legacy prefix.
+        let value = match serde_json::from_str::<Value>(text) {
+            Ok(value) => value,
+            Err(_) => {
+                reader_complete = false;
+                if is_new {
+                    warnings.push(WarningNote {
+                        path: path.display().to_string(),
+                        line: Some(line_no),
+                        reason: "malformed-json".into(),
+                    });
+                }
+                continue;
+            }
+        };
+        if unknown_record_type(harness, &value).is_some() {
+            reader_complete = false;
+        }
+        if harness == "claude" {
+            if let Some(id) = value.get("sessionId").and_then(Value::as_str) {
+                claude_sessions.insert(seal_session(tool_key, harness, id));
+            }
+        }
+        if harness == "codex" && unknown_record_type(harness, &value).is_none() {
+            reader_complete &= observe_codex(
+                &value,
+                text,
+                source_session.as_deref().unwrap_or(""),
+                source_id,
+                generation,
+                line_no,
+                &mut codex_ordinal,
+                tool_key,
+                &mut tools,
+            )?;
+        }
         if !is_new {
             if let Some(scan) = tool_scan.as_mut() {
-                if let Ok(value) = serde_json::from_str::<Value>(text) {
-                    if unknown_record_type(harness, &value).is_none() {
-                        scan.observe(line_no, text, &value);
-                    }
+                if unknown_record_type(harness, &value).is_none() {
+                    scan.observe(line_no, text, &value);
                 }
             }
             continue;
@@ -194,17 +236,6 @@ pub fn ingest_jsonl_with_key(
                 });
             }
         }
-        let value = match serde_json::from_str::<Value>(text) {
-            Ok(value) => value,
-            Err(_) => {
-                warnings.push(WarningNote {
-                    path: path.display().to_string(),
-                    line: Some(line_no),
-                    reason: "malformed-json".into(),
-                });
-                continue;
-            }
-        };
         if let Some(reason) = unknown_record_type(harness, &value) {
             let repeat = !unknown_types.insert(reason.clone())
                 || store.has_warning(&path.display().to_string(), &reason)?;
@@ -296,6 +327,14 @@ pub fn ingest_jsonl_with_key(
             }
         }
     }
+    if harness == "claude" {
+        // A file with several session identities has no unique source linkage.
+        source_session = if claude_sessions.len() == 1 {
+            claude_sessions.into_iter().next()
+        } else {
+            None
+        };
+    }
     let prefix_sha = hex::encode(hasher.finalize());
     offset = consumed;
     let mut settled = Vec::new();
@@ -305,7 +344,7 @@ pub fn ingest_jsonl_with_key(
         tools = pass.new_calls;
         settled = pass.settled;
     }
-    store.commit_file_batch_settling(
+    store.commit_file_batch_reading(
         source_id,
         harness,
         &path.display().to_string(),
@@ -320,10 +359,11 @@ pub fn ingest_jsonl_with_key(
         &usages,
         &tools,
         &settled,
+        &dendro_core::ReaderState {
+            complete: reader_complete,
+            native_session: source_session,
+        },
     )?;
-    if let Some(session) = &file_session {
-        store.set_source_session(source_id, &seal_session(tool_key, harness, &session.raw))?;
-    }
     for note in &warnings {
         store.record_warning(note)?;
     }
@@ -671,6 +711,121 @@ fn parse_pi(value: &Value) -> Result<Option<Buckets>, String> {
         prior_output_tokens: None,
         prior_reasoning_output_tokens: None,
     }))
+}
+
+/// Reads only native execution outcomes and real call boundaries. No result joins.
+#[allow(clippy::too_many_arguments)]
+fn observe_codex(
+    value: &Value,
+    text: &str,
+    session: &str,
+    source_id: &str,
+    generation: i64,
+    line: i64,
+    ordinal: &mut i64,
+    key: Option<&[u8]>,
+    tools: &mut Vec<ToolFact>,
+) -> Result<bool> {
+    let envelope = value.get("type").and_then(Value::as_str);
+    let kind = value.pointer("/payload/type").and_then(Value::as_str);
+    let (name, failed, fingerprint) = match (envelope, kind) {
+        (Some("event_msg"), Some("item_completed")) => {
+            let Some(item) = value.pointer("/payload/item") else {
+                return Ok(false);
+            };
+            match item.get("type").and_then(Value::as_str) {
+                Some("CommandExecution") => {
+                    let failed = item
+                        .get("exit_code")
+                        .and_then(Value::as_i64)
+                        .map(|code| code != 0)
+                        .or_else(|| {
+                            item.get("exit_code")
+                                .and_then(Value::as_u64)
+                                .map(|code| code != 0)
+                        });
+                    let valid =
+                        item.get("command")
+                            .and_then(Value::as_array)
+                            .is_some_and(|parts| {
+                                !parts.is_empty() && parts.iter().all(Value::is_string)
+                            });
+                    let lexical = raw_codex_command(text);
+                    let fingerprint = if valid {
+                        key.zip(lexical).map(|(key, raw)| {
+                            dendro_core::codex_command_fingerprint(key, raw.get())
+                        })
+                    } else {
+                        None
+                    };
+                    (dendro_core::CODEX_COMMAND, failed, fingerprint)
+                }
+                // Known non-command native items are not extra calls.
+                Some(
+                    "AgentMessage" | "Reasoning" | "Plan" | "FileChange" | "McpToolCall"
+                    | "WebSearch" | "ImageView" | "UserMessage" | "Extension" | "ContextCompaction",
+                ) => return Ok(true),
+                _ => return Ok(false),
+            }
+        }
+        (Some("response_item"), Some("custom_tool_call" | "function_call")) => {
+            (dendro_core::CODEX_CALL, None, None)
+        }
+        (
+            Some("response_item"),
+            Some("custom_tool_call_output" | "function_call_output" | "message" | "reasoning"),
+        ) => return Ok(true),
+        (Some("response_item"), _) => return Ok(false),
+        (
+            Some("event_msg"),
+            Some(
+                "token_count"
+                | "user_message"
+                | "agent_message"
+                | "agent_reasoning"
+                | "task_started"
+                | "task_complete"
+                | "task_completed"
+                | "turn_started"
+                | "turn_complete"
+                | "turn_aborted"
+                | "item_started"
+                | "item_updated"
+                | "context_compacted"
+                | "thread_settings_applied"
+                | "warning",
+            ),
+        ) => return Ok(true),
+        (Some("event_msg"), _) => return Ok(false),
+        // Non-observation envelopes recognized by the existing harness reader.
+        _ => return Ok(true),
+    };
+    *ordinal = ordinal
+        .checked_add(1)
+        .ok_or_else(|| anyhow::anyhow!("Codex observation order overflow"))?;
+    tools.push(ToolFact {
+        source_key: format!("{source_id}:{generation}:{line}:codex:0"),
+        harness: "codex".into(),
+        native_session: session.into(),
+        ts: timestamp_of(value),
+        seq: *ordinal,
+        name: name.into(),
+        fingerprint,
+        failed,
+        structured_write: false,
+        generation,
+    });
+    Ok(true)
+}
+
+fn raw_codex_command(text: &str) -> Option<&serde_json::value::RawValue> {
+    use serde_json::value::RawValue;
+    let line: std::collections::HashMap<&str, &RawValue> = serde_json::from_str(text).ok()?;
+    let payload: std::collections::HashMap<&str, &RawValue> =
+        serde_json::from_str(line.get("payload")?.get()).ok()?;
+    let item: std::collections::HashMap<&str, &RawValue> =
+        serde_json::from_str(payload.get("item")?.get()).ok()?;
+    item.get("command").copied()
 }
 
 /// The tool calls of one Claude or Pi file generation (#35, #36, #37, Q5,
@@ -1769,6 +1924,73 @@ mod tests {
         }
 
         #[test]
+        fn codex_partial_replay_and_unsupported_append_track_committed_prefix() {
+            let f = Fixture::new("codex-prefix");
+            let command = r#"{"type":"event_msg","timestamp":"2026-10-09T00:00:02Z","payload":{"type":"item_completed","item":{"type":"CommandExecution","command":["probe"],"exit_code":1}}}"#.to_string();
+            let p = f.file(
+                "x.jsonl",
+                &[codex_header("cx"), codex_count(9, None), command.clone()],
+            );
+            f.ingest("codex", &p);
+            assert_eq!(f.db.load_codex_observations().unwrap().len(), 1);
+            assert!(f.db.load_source_coverage().unwrap()[0].complete);
+            let before = f.db.source_state("src-x.jsonl").unwrap();
+            let mut tail = fs::OpenOptions::new().append(true).open(&p).unwrap();
+            write!(tail, "{command}").unwrap();
+            drop(tail);
+            f.ingest("codex", &p);
+            assert_eq!(f.db.source_state("src-x.jsonl").unwrap(), before);
+            assert_eq!(f.db.load_codex_observations().unwrap().len(), 1);
+            let mut tail = fs::OpenOptions::new().append(true).open(&p).unwrap();
+            writeln!(tail).unwrap();
+            drop(tail);
+            f.ingest("codex", &p);
+            f.ingest("codex", &p);
+            assert_eq!(f.db.load_codex_observations().unwrap().len(), 2);
+            assert_eq!(
+                f.db.load_usage().unwrap().len(),
+                1,
+                "prefix usage not recounted"
+            );
+            f.append(&p, &["malformed".into()]);
+            f.ingest("codex", &p);
+            assert!(!f.db.load_source_coverage().unwrap()[0].complete);
+            assert_eq!(
+                f.db.load_codex_observations().unwrap().len(),
+                2,
+                "valid prefix remains visible"
+            );
+            fs::write(&p, format!("{}\n{command}\n", codex_header("cx"))).unwrap();
+            f.ingest("codex", &p);
+            let facts = f.db.load_codex_observations().unwrap();
+            assert_eq!(facts.len(), 1, "obsolete generation excluded");
+            assert_eq!(facts[0].fact.generation, 2);
+            assert!(f.db.load_source_coverage().unwrap()[0].complete);
+        }
+
+        #[test]
+        fn reader_coverage_never_assigns_a_multisession_claude_source_to_the_first_session() {
+            let f = Fixture::new("claude-reader-identity");
+            let p = f.file(
+                "x.jsonl",
+                &[
+                    r#"{"type":"user","sessionId":"first","message":{"content":"one"}}"#.into(),
+                    r#"{"type":"user","sessionId":"second","message":{"content":"two"}}"#.into(),
+                ],
+            );
+            f.ingest("claude", &p);
+            let source = &f.db.load_source_coverage().unwrap()[0];
+            assert!(
+                source.complete,
+                "prefix processing is independent of linkage"
+            );
+            assert!(
+                source.native_session.is_none(),
+                "no guessed source attribution"
+            );
+        }
+
+        #[test]
         fn each_codex_file_says_once_that_its_tool_calls_are_not_read_q6() {
             let f = Fixture::new("codex-not-read");
             let x = f.file("x.jsonl", &[codex_header("cx"), codex_count(4, None)]);
@@ -1829,6 +2051,53 @@ mod tests {
     fn write(path: &Path, body: &str) {
         let mut file = File::create(path).unwrap();
         file.write_all(body.as_bytes()).unwrap();
+    }
+
+    #[test]
+    fn native_command_inputs_outputs_and_metadata_leave_no_canary_in_wal() {
+        let dir = std::env::temp_dir().join(format!("dendro-command-wal-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("codex.jsonl");
+        let raw = r#"{"type":"session_meta","payload":{"id":"session"}}
+{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"CommandExecution","command":["sk-FAKE40A","CONTENT40_ARGS"],"exit_code":1,"stdout":"CONTENT40_STDOUT","stderr":"CONTENT40_STDERR","prompt":"CONTENT40_PROMPT","other":"CONTENT40_EXTRA"}}}
+"#;
+        fs::write(&path, raw).unwrap();
+        let db = dir.join("analytics.duckdb");
+        let store = AnalyticsStore::open_path(&db, "synthetic-key-id").unwrap();
+        ingest_jsonl_with_key(
+            &store,
+            "source",
+            "codex",
+            &path,
+            Some(b"QA40_SYNTHETIC_KEY_A_NOT_A_CREDENTIAL"),
+        )
+        .unwrap();
+        assert_eq!(store.load_codex_observations().unwrap().len(), 1);
+        assert!(store.load_source_coverage().unwrap()[0].complete);
+        let wal = dir.join("analytics.duckdb.wal");
+        let bytes = fs::read(&wal).unwrap();
+        assert!(!bytes.is_empty(), "nonvacuous pre-checkpoint WAL");
+        for needle in [
+            "sk-FAKE40A",
+            "CONTENT40_ARGS",
+            "CONTENT40_STDOUT",
+            "CONTENT40_STDERR",
+            "CONTENT40_PROMPT",
+            "CONTENT40_EXTRA",
+        ] {
+            assert!(
+                !store.contains_text(needle).unwrap(),
+                "decoded physical text scan"
+            );
+            assert!(
+                !String::from_utf8_lossy(&bytes).contains(needle),
+                "WAL canary"
+            );
+        }
+        assert_eq!(fs::read_to_string(&path).unwrap(), raw, "source custody");
+        drop(store);
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
