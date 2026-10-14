@@ -22,6 +22,14 @@ impl DuckDbStorage {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FileBatchStage {
+    BeforeReaderReplacement,
+    AfterReaderReplacement,
+    BeforeSourceSessionUpdate,
+    BeforeCommit,
+}
+
 pub struct AnalyticsStore {
     conn: Connection,
     pub key_id: String,
@@ -337,6 +345,71 @@ impl AnalyticsStore {
         tools: &[ToolFact],
         settled: &[(String, Option<bool>)],
     ) -> Result<()> {
+        self.commit_file_batch_internal(
+            source_id,
+            harness,
+            display_path,
+            generation,
+            byte_offset,
+            prefix_sha256,
+            counters,
+            usages,
+            tools,
+            settled,
+            None,
+            |_| Ok(()),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn commit_file_batch_reading(
+        &self,
+        source_id: &str,
+        harness: &str,
+        display_path: &str,
+        generation: i64,
+        byte_offset: i64,
+        prefix_sha256: &str,
+        counters: Option<&CodexCounters>,
+        usages: &[UsageFact],
+        tools: &[ToolFact],
+        settled: &[(String, Option<bool>)],
+        reader: &ReaderState,
+    ) -> Result<()> {
+        self.commit_file_batch_internal(
+            source_id,
+            harness,
+            display_path,
+            generation,
+            byte_offset,
+            prefix_sha256,
+            counters,
+            usages,
+            tools,
+            settled,
+            Some(reader),
+            |_| Ok(()),
+        )
+    }
+
+    // The callback is private: tests inject faults into this actual transaction.
+    // Production callers always use the infallible closure above.
+    #[allow(clippy::too_many_arguments)]
+    fn commit_file_batch_internal(
+        &self,
+        source_id: &str,
+        harness: &str,
+        display_path: &str,
+        generation: i64,
+        byte_offset: i64,
+        prefix_sha256: &str,
+        counters: Option<&CodexCounters>,
+        usages: &[UsageFact],
+        tools: &[ToolFact],
+        settled: &[(String, Option<bool>)],
+        reader: Option<&ReaderState>,
+        mut checkpoint: impl FnMut(FileBatchStage) -> Result<()>,
+    ) -> Result<()> {
         let tx = self.conn.unchecked_transaction()?;
         tx.execute(
             r#"INSERT INTO source_files (source_id, harness, display_path, generation, byte_offset, prefix_sha256)
@@ -481,6 +554,34 @@ impl AnalyticsStore {
                 settle_stmt.execute(params![failed, redact(source_key)])?;
             }
         }
+        if let Some(reader) = reader {
+            checkpoint(FileBatchStage::BeforeReaderReplacement)?;
+            let marker = format!(
+                "{READER_NAMESPACE}{READER_VERSION}:{}:{generation}",
+                redact(source_id)
+            );
+            tx.execute(
+                "DELETE FROM tool_facts WHERE source_key = ?",
+                params![marker],
+            )?;
+            tx.execute(
+                "INSERT INTO tool_facts (source_key, harness, native_session, ts, seq, tool_name, fingerprint, failed, structured_write, generation, source_id)
+                 VALUES (?, ?, ?, NULL, ?, ?, ?, NULL, FALSE, ?, ?)",
+                params![marker, redact(harness), reader.native_session.as_deref().map(redact).unwrap_or_default(),
+                    byte_offset, if reader.complete { READER_COMPLETE } else { READER_UNSUPPORTED },
+                    redact(prefix_sha256), generation, redact(source_id)],
+            )?;
+            checkpoint(FileBatchStage::AfterReaderReplacement)?;
+            checkpoint(FileBatchStage::BeforeSourceSessionUpdate)?;
+            tx.execute(
+                "UPDATE source_files SET native_session = ? WHERE source_id = ?",
+                params![
+                    reader.native_session.as_deref().map(redact),
+                    redact(source_id)
+                ],
+            )?;
+        }
+        checkpoint(FileBatchStage::BeforeCommit)?;
         tx.commit()?;
         Ok(())
     }
@@ -787,7 +888,7 @@ impl AnalyticsStore {
         let mut stmt = self.conn.prepare(
             r#"SELECT source_key, harness, native_session, CAST(ts AS VARCHAR), seq, tool_name, fingerprint,
                       failed, structured_write, generation
-               FROM tool_facts ORDER BY native_session, ts NULLS LAST, seq"#,
+               FROM tool_facts WHERE NOT starts_with(source_key, 'dendro-internal:reader:') AND (harness <> 'codex' OR EXISTS (SELECT 1 FROM source_files s WHERE s.source_id = tool_facts.source_id AND s.generation = tool_facts.generation)) ORDER BY native_session, ts NULLS LAST, seq"#,
         )?;
         let rows = stmt.query_map([], |row| {
             let ts: Option<String> = row.get(3)?;
@@ -802,6 +903,65 @@ impl AnalyticsStore {
                 failed: row.get(7)?,
                 structured_write: row.get(8)?,
                 generation: row.get(9)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    /// Applied reader state for the committed prefix, never a filesystem probe.
+    pub fn load_source_coverage(&self) -> Result<Vec<SourceCoverage>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT s.source_id, s.harness, s.native_session,
+                EXISTS (SELECT 1 FROM tool_facts t WHERE t.source_key = ? || s.source_id || ':' || CAST(s.generation AS VARCHAR)
+                    AND t.source_id = s.source_id AND t.harness = s.harness AND t.generation = s.generation
+                    AND t.seq = s.byte_offset AND t.seq >= 0 AND t.generation > 0 AND t.fingerprint = s.prefix_sha256
+                    AND regexp_full_match(t.fingerprint, '[0-9a-f]{64}')
+                    AND t.tool_name = ? AND t.ts IS NULL AND t.failed IS NULL AND NOT t.structured_write
+                    AND t.native_session = COALESCE(s.native_session, ''))
+             FROM source_files s WHERE s.harness IN ('claude', 'pi', 'codex') ORDER BY s.source_id",
+        )?;
+        let rows = stmt.query_map(
+            params![
+                format!("{READER_NAMESPACE}{READER_VERSION}:"),
+                READER_COMPLETE
+            ],
+            |r| {
+                Ok(SourceCoverage {
+                    source_id: r.get(0)?,
+                    harness: r.get(1)?,
+                    native_session: r.get(2)?,
+                    complete: r.get(3)?,
+                })
+            },
+        )?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    pub fn load_codex_observations(&self) -> Result<Vec<CodexObservation>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT t.source_id, t.source_key, t.native_session, CAST(t.ts AS VARCHAR), t.seq,
+                    t.tool_name, t.fingerprint, t.failed, t.generation
+             FROM tool_facts t JOIN source_files s ON t.source_id = s.source_id AND t.generation = s.generation
+             WHERE t.harness = 'codex' AND s.harness = 'codex'
+                AND NOT starts_with(t.source_key, ?) AND t.tool_name IN (?, ?) AND NOT t.structured_write
+             ORDER BY t.source_id, t.generation, t.seq",
+        )?;
+        let rows = stmt.query_map(params![READER_NAMESPACE, CODEX_COMMAND, CODEX_CALL], |r| {
+            let ts: Option<String> = r.get(3)?;
+            Ok(CodexObservation {
+                source_id: r.get(0)?,
+                fact: ToolFact {
+                    source_key: r.get(1)?,
+                    harness: "codex".into(),
+                    native_session: r.get(2)?,
+                    ts: ts.as_deref().and_then(parse_utc_time),
+                    seq: r.get(4)?,
+                    name: r.get(5)?,
+                    fingerprint: r.get(6)?,
+                    failed: r.get(7)?,
+                    structured_write: false,
+                    generation: r.get(8)?,
+                },
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
@@ -1598,6 +1758,239 @@ mod tests {
             );
             assert_eq!(snapshot(&store), after);
         }
+    }
+
+    #[test]
+    fn reader_batch_faults_roll_back_facts_state_and_session_then_retry() {
+        fn snapshot(store: &AnalyticsStore) -> Vec<Vec<String>> {
+            [
+                "source_files",
+                "usage_facts",
+                "tool_facts",
+                "codex_counters",
+            ]
+            .iter()
+            .map(|table| {
+                // Fixed test-owned table names, no external SQL input.
+                let sql = format!("SELECT CAST(to_json(t) AS VARCHAR) FROM {table} t ORDER BY 1");
+                let mut stmt = store.conn.prepare(&sql).unwrap();
+                stmt.query_map([], |row| row.get(0))
+                    .unwrap()
+                    .collect::<Result<Vec<String>, _>>()
+                    .unwrap()
+            })
+            .collect()
+        }
+        fn seed(store: &AnalyticsStore) {
+            store
+                .commit_file_batch_reading(
+                    "src",
+                    "codex",
+                    "p",
+                    1,
+                    10,
+                    &"a".repeat(64),
+                    Some(&CodexCounters {
+                        input_tokens: 9,
+                        ..Default::default()
+                    }),
+                    &[],
+                    &[],
+                    &[],
+                    &ReaderState {
+                        complete: true,
+                        native_session: Some("old-session".into()),
+                    },
+                )
+                .unwrap();
+        }
+        let fact = ToolFact {
+            source_key: "src:2:1:codex:0".into(),
+            harness: "codex".into(),
+            native_session: "new-session".into(),
+            ts: None,
+            seq: 1,
+            name: CODEX_COMMAND.into(),
+            fingerprint: Some("opaque".into()),
+            failed: Some(true),
+            structured_write: false,
+            generation: 2,
+        };
+        let usage = UsageFact {
+            source_key: "src:2:1".into(),
+            harness: "codex".into(),
+            native_session: "new-session".into(),
+            message_id: None,
+            ts: None,
+            seq: 1,
+            input_uncached: 2,
+            output: 3,
+            cache_read: 4,
+            cache_write: 0,
+            reasoning: 0,
+            currency_total: None,
+            generation: 2,
+            predecessor_source_key: None,
+            predecessor_reason: None,
+            prior_input_tokens: None,
+            prior_cached_input_tokens: None,
+            prior_cache_write_input_tokens: None,
+            prior_output_tokens: None,
+            prior_reasoning_output_tokens: None,
+        };
+        let reader = ReaderState {
+            complete: true,
+            native_session: Some("new-session".into()),
+        };
+        let counters = CodexCounters {
+            input_tokens: 20,
+            ..Default::default()
+        };
+        let uninterrupted = AnalyticsStore::open_in_memory("kid").unwrap();
+        seed(&uninterrupted);
+        uninterrupted
+            .commit_file_batch_reading(
+                "src",
+                "codex",
+                "p",
+                2,
+                30,
+                &"b".repeat(64),
+                Some(&counters),
+                std::slice::from_ref(&usage),
+                std::slice::from_ref(&fact),
+                &[],
+                &reader,
+            )
+            .unwrap();
+        for stage in [
+            FileBatchStage::BeforeReaderReplacement,
+            FileBatchStage::AfterReaderReplacement,
+            FileBatchStage::BeforeSourceSessionUpdate,
+            FileBatchStage::BeforeCommit,
+        ] {
+            let store = AnalyticsStore::open_in_memory("kid").unwrap();
+            seed(&store);
+            let before = snapshot(&store);
+            let mut reached = false;
+            let failed = store.commit_file_batch_internal(
+                "src",
+                "codex",
+                "p",
+                2,
+                30,
+                &"b".repeat(64),
+                Some(&counters),
+                std::slice::from_ref(&usage),
+                std::slice::from_ref(&fact),
+                &[],
+                Some(&reader),
+                |at| {
+                    if at == stage {
+                        reached = true;
+                        Err(anyhow!("synthetic reader batch fault"))
+                    } else {
+                        Ok(())
+                    }
+                },
+            );
+            assert!(reached, "the real transaction must reach {stage:?}");
+            assert!(failed
+                .unwrap_err()
+                .to_string()
+                .contains("synthetic reader batch fault"));
+            assert_eq!(snapshot(&store), before, "rollback at {stage:?}");
+            assert!(store.load_source_coverage().unwrap()[0].complete);
+            let stages: i64 = store.conn.query_row("SELECT COUNT(*) FROM information_schema.tables WHERE table_name IN ('usage_stage','tool_stage')", [], |r| r.get(0)).unwrap();
+            assert_eq!(stages, 0);
+            store
+                .commit_file_batch_reading(
+                    "src",
+                    "codex",
+                    "p",
+                    2,
+                    30,
+                    &"b".repeat(64),
+                    Some(&counters),
+                    std::slice::from_ref(&usage),
+                    std::slice::from_ref(&fact),
+                    &[],
+                    &reader,
+                )
+                .unwrap();
+            assert_eq!(snapshot(&store), snapshot(&uninterrupted));
+            assert_eq!(
+                store.load_tools().unwrap().len(),
+                1,
+                "metadata is not a tool"
+            );
+            assert_eq!(store.load_codex_observations().unwrap().len(), 1);
+            assert_eq!(
+                store.load_sources().unwrap()[0].4.as_deref(),
+                Some("new-session")
+            );
+            let after = snapshot(&store);
+            store
+                .commit_file_batch_reading(
+                    "src",
+                    "codex",
+                    "p",
+                    2,
+                    30,
+                    &"b".repeat(64),
+                    Some(&counters),
+                    std::slice::from_ref(&usage),
+                    std::slice::from_ref(&fact),
+                    &[],
+                    &reader,
+                )
+                .unwrap();
+            assert_eq!(snapshot(&store), after, "same prefix retry is idempotent");
+        }
+    }
+
+    #[test]
+    fn reader_state_fails_closed_for_snapshot_mismatch_and_never_becomes_a_tool() {
+        let store = AnalyticsStore::open_in_memory("kid").unwrap();
+        store
+            .commit_file_batch_reading(
+                "src",
+                "codex",
+                "p",
+                1,
+                0,
+                &"a".repeat(64),
+                None,
+                &[],
+                &[],
+                &[],
+                &ReaderState {
+                    complete: true,
+                    native_session: None,
+                },
+            )
+            .unwrap();
+        assert!(store.load_source_coverage().unwrap()[0].complete);
+        assert!(store.load_tools().unwrap().is_empty());
+        assert!(store.load_codex_observations().unwrap().is_empty());
+        for sql in [
+            "UPDATE tool_facts SET seq = 1",
+            "UPDATE tool_facts SET seq = 0, fingerprint = 'wrong'",
+            "UPDATE tool_facts SET fingerprint = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', generation = 2",
+            "UPDATE tool_facts SET generation = 1, tool_name = 'FutureReader'",
+            "UPDATE tool_facts SET tool_name = 'DendroReaderComplete', structured_write = TRUE",
+        ] {
+            store.conn.execute_batch(sql).unwrap();
+            assert!(!store.load_source_coverage().unwrap()[0].complete);
+            assert!(
+                store.load_tools().unwrap().is_empty(),
+                "even malformed metadata stays private"
+            );
+        }
+        // A native Claude tool name never selects the metadata namespace.
+        store.conn.execute("INSERT INTO tool_facts VALUES (?, 'claude', 'c', NULL, 1, ?, NULL, NULL, FALSE, 1, 'src')",
+            params!["actual-call", READER_COMPLETE]).unwrap();
+        assert_eq!(store.load_tools().unwrap().len(), 1);
     }
 
     #[test]

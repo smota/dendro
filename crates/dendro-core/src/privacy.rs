@@ -75,6 +75,16 @@ pub fn tool_fingerprint(key: &[u8], tool: &str, lexical: Option<&str>) -> Option
     ))
 }
 
+/// Native nonempty string-array command input. The caller validates its shape;
+/// lexical bytes are borrowed from the original line before any redaction.
+pub fn codex_command_fingerprint(key: &[u8], lexical: &str) -> String {
+    hmac_domain(
+        key,
+        "codex-command-input-v1",
+        &format!("command_execution\narray\n{}", lexical.trim()),
+    )
+}
+
 pub fn opaque_id(key: &[u8], domain: &str, native: &str) -> String {
     hmac_domain(key, domain, native)
 }
@@ -179,6 +189,26 @@ pub const TEXT_COLUMNS: &[&str] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_command_fingerprint_matches_independent_synthetic_reference() {
+        let key = b"QA40_SYNTHETIC_KEY_A_NOT_A_CREDENTIAL";
+        let fp = codex_command_fingerprint(key, r#"["x"]"#);
+        assert_eq!(
+            fp,
+            "933fb5f2b04494030672501633419294338de8b59780c1f0b41825e7e376676c"
+        );
+        assert_eq!(fp, codex_command_fingerprint(key, r#"  ["x"]  "#));
+        assert_ne!(fp, codex_command_fingerprint(key, r#"[ "x" ]"#));
+        assert_ne!(
+            fp,
+            codex_command_fingerprint(b"QA40_SYNTHETIC_KEY_B_NOT_A_CREDENTIAL", r#"["x"]"#)
+        );
+        assert_ne!(
+            fp,
+            hmac_domain(key, "tool-input", "CommandExecution\n[\"x\"]")
+        );
+    }
 
     #[test]
     fn redacts_secret_shapes_and_keeps_ordinary_ids() {

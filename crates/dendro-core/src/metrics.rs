@@ -1069,6 +1069,7 @@ pub fn pair_medians(
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ToolLoop {
+    pub harness: String,
     pub session: String,
     pub tool: String,
     pub count: usize,
@@ -1090,7 +1091,7 @@ pub fn tool_loops(tools: &[ToolFact], failures: usize, window_secs: i64) -> Vec<
     }
     let window = chrono::Duration::seconds(window_secs);
     let mut loops = Vec::new();
-    for ((_, session), mut events) in by_session {
+    for ((harness, session), mut events) in by_session {
         events.sort_by_key(|event| event.seq);
         let mut run: Vec<&ToolFact> = Vec::new();
         let flush = |run: &mut Vec<&ToolFact>, loops: &mut Vec<ToolLoop>, session: &str| {
@@ -1106,6 +1107,7 @@ pub fn tool_loops(tools: &[ToolFact], failures: usize, window_secs: i64) -> Vec<
                 });
             if qualifies {
                 loops.push(ToolLoop {
+                    harness: harness.clone(),
                     session: session.to_string(),
                     tool: run[0].name.clone(),
                     count: run.len(),
@@ -1131,6 +1133,78 @@ pub fn tool_loops(tools: &[ToolFact], failures: usize, window_secs: i64) -> Vec<
         flush(&mut run, &mut loops, &session);
     }
     loops
+}
+
+/// Codex source order has untimed anchors. Timed segments sort independently.
+pub fn codex_command_loops(observations: &[CodexObservation]) -> Vec<ToolLoop> {
+    let mut sessions: BTreeMap<&str, Vec<&CodexObservation>> = BTreeMap::new();
+    for row in observations {
+        sessions
+            .entry(&row.fact.native_session)
+            .or_default()
+            .push(row);
+    }
+    let mut result = Vec::new();
+    for (session, mut rows) in sessions {
+        rows.sort_by(|a, b| {
+            (&a.source_id, a.fact.generation, a.fact.seq).cmp(&(
+                &b.source_id,
+                b.fact.generation,
+                b.fact.seq,
+            ))
+        });
+        let mut start = 0;
+        for end in 0..=rows.len() {
+            if end == rows.len() || rows[end].fact.ts.is_none() {
+                rows[start..end].sort_by(|a, b| {
+                    a.fact.ts.cmp(&b.fact.ts).then_with(|| {
+                        (&a.source_id, a.fact.generation, a.fact.seq).cmp(&(
+                            &b.source_id,
+                            b.fact.generation,
+                            b.fact.seq,
+                        ))
+                    })
+                });
+                start = end + 1;
+            }
+        }
+        let mut run: Vec<&ToolFact> = Vec::new();
+        let flush = |run: &mut Vec<&ToolFact>, result: &mut Vec<ToolLoop>| {
+            if run
+                .windows(3)
+                .any(|triple| match (triple[0].ts, triple[2].ts) {
+                    (Some(a), Some(b)) => b >= a && b - a <= chrono::Duration::seconds(600),
+                    _ => false,
+                })
+            {
+                result.push(ToolLoop {
+                    harness: "codex".into(),
+                    session: session.into(),
+                    tool: CODEX_COMMAND.into(),
+                    count: run.len(),
+                });
+            }
+            run.clear();
+        };
+        for row in rows {
+            let fact = &row.fact;
+            let eligible = fact.name == CODEX_COMMAND
+                && fact.failed == Some(true)
+                && fact.fingerprint.is_some();
+            if !eligible
+                || run
+                    .last()
+                    .is_some_and(|last| last.fingerprint != fact.fingerprint)
+            {
+                flush(&mut run, &mut result);
+            }
+            if eligible {
+                run.push(fact);
+            }
+        }
+        flush(&mut run, &mut result);
+    }
+    result
 }
 
 pub fn m1_yield(tokens: i64, nonreturn_handoffs: i64) -> Option<f64> {

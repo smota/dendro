@@ -24,14 +24,18 @@ fn main() {
                     COUNT(*) FILTER (WHERE failed = FALSE), \
                     COUNT(*) FILTER (WHERE failed IS NULL), \
                     COUNT(fingerprint), \
-                    COUNT(*) FILTER (WHERE structured_write) \
-             FROM tool_facts GROUP BY harness ORDER BY harness",
+                    COUNT(*) FILTER (WHERE structured_write), \
+             CASE WHEN harness = 'codex' AND tool_name = 'CommandExecution' THEN 'command_execution'
+                         WHEN harness = 'codex' THEN 'call_boundary' ELSE 'tool_call' END AS unit \
+             FROM tool_facts WHERE NOT starts_with(source_key, 'dendro-internal:reader:') AND (harness <> 'codex' OR EXISTS (SELECT 1 FROM source_files s WHERE s.source_id = tool_facts.source_id AND s.generation = tool_facts.generation))
+             GROUP BY harness, unit ORDER BY harness, unit",
         )
         .expect("census query");
     let rows: Vec<serde_json::Value> = stmt
         .query_map([], |row| {
             Ok(json!({
                 "harness": row.get::<_, String>(0)?,
+                "unit": row.get::<_, String>(7)?,
                 "calls": row.get::<_, i64>(1)?,
                 "failed": row.get::<_, i64>(2)?,
                 "succeeded": row.get::<_, i64>(3)?,

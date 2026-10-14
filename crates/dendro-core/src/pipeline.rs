@@ -655,6 +655,7 @@ pub fn report_json(
     let scoped_tools: Vec<_> = store
         .load_tools()?
         .into_iter()
+        .filter(|tool| tool.harness != "codex")
         .filter(|tool| match &allowed {
             Some(set) => set.contains(&(tool.harness.clone(), tool.native_session.clone())),
             None => rig_seats.is_none(),
@@ -675,7 +676,62 @@ pub fn report_json(
         .filter(|tool| tool.ts.is_none_or(|ts| ts >= window.from && ts < window.to))
         .cloned()
         .collect();
-    let loops = metrics::tool_loops(&loop_tools, 3, 600);
+    let mut loops = metrics::tool_loops(&loop_tools, 3, 600);
+    let source_coverage = store.load_source_coverage()?;
+    let source_in_scope = |source: &&crate::SourceCoverage| {
+        rig.is_none()
+            || source
+                .native_session
+                .as_deref()
+                .is_some_and(|native| in_scope(&source.harness, native))
+    };
+    let excluded_sources = if rig.is_some() {
+        source_coverage
+            .iter()
+            .filter(|source| {
+                source
+                    .native_session
+                    .as_deref()
+                    .is_none_or(|native| binding(&source.harness, native).seat().is_none())
+            })
+            .count()
+    } else {
+        0
+    };
+    let codex_observations: Vec<_> = store
+        .load_codex_observations()?
+        .into_iter()
+        .filter(|row| in_scope("codex", &row.fact.native_session))
+        .filter(|row| {
+            row.fact
+                .ts
+                .is_none_or(|ts| ts >= window.from && ts < window.to)
+        })
+        .collect();
+    let trusted_codex: Vec<_> = codex_observations
+        .iter()
+        .filter(|row| binding("codex", &row.fact.native_session).seat().is_some())
+        .cloned()
+        .collect();
+    loops.extend(metrics::codex_command_loops(&trusted_codex));
+    let outcome_coverage: Vec<_> = [("claude", "tool_call"), ("pi", "tool_call"),
+        ("codex", "tool_call"), ("codex", "command_execution")].into_iter().map(|(harness, unit)| {
+        let relevant: Vec<_> = source_coverage.iter().filter(|source| source.harness == harness)
+            .filter(source_in_scope).collect();
+        let covered = unit != "tool_call" || harness != "codex";
+        let read = if covered { relevant.iter().filter(|source| source.complete).count() } else { 0 };
+        let facts: Vec<_> = if harness == "codex" {
+            codex_observations.iter().filter(|row| row.fact.name == crate::CODEX_COMMAND).map(|row| &row.fact).collect()
+        } else { loop_tools.iter().filter(|row| row.harness == harness).collect() };
+        let unknowns = if covered { json!({
+            "input": facts.iter().filter(|row| row.fingerprint.is_none()).count(),
+            "outcome": facts.iter().filter(|row| row.failed.is_none()).count(),
+            "timestamp": facts.iter().filter(|row| row.ts.is_none()).count(),
+            "linkage": facts.iter().filter(|row| binding(harness, &row.native_session).seat().is_none()).count(),
+        }) } else { json!({"input": null, "outcome": null, "timestamp": null, "linkage": null}) };
+        json!({"harness": harness, "unit": unit, "status": if read > 0 && read == relevant.len() { "read" } else { "not read" },
+            "sources_total": relevant.len(), "sources_read": read, "unknowns": unknowns})
+    }).collect();
     let seat_of = |harness: &str, native: &str| binding(harness, native).seat().map(String::from);
     let linked_seats: std::collections::BTreeSet<String> = bindings
         .iter()
@@ -1006,7 +1062,11 @@ pub fn report_json(
             "mission_ambiguous_by_reason": ambiguous_by_reason,
             "mission_by_seat": mission_by_seat,
             "untimestamped_tokens_all_time": untimestamped_tokens,
-            "tool_loops": loops.iter().map(|item| json!({"session": item.session, "tool": item.tool, "count": item.count})).collect::<Vec<_>>(),
+            "tool_loops": loops.iter().map(|item| json!({"session": item.session, "tool": item.tool, "count": item.count,
+                "harness": item.harness, "unit": if item.harness == "codex" { "command_execution" } else { "tool_call" },
+                "seat": seat_of(&item.harness, &item.session)})).collect::<Vec<_>>(),
+            "outcome_coverage": outcome_coverage,
+            "outcome_coverage_exclusions": { "unresolved_sources": excluded_sources },
             "activity_events": activity.iter().map(|row| json!({
                 "source_key": row.source_key,
                 "seat": row.seat,
