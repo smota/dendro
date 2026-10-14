@@ -191,7 +191,7 @@ pub(crate) fn snapshot_with(
     }
     clear(dir)?;
     Err(anyhow!(
-        "the OpenRig source changed during each of {max_attempts} snapshot attempts; nothing was ingested"
+        "the OpenRig source changed during each of {max_attempts} snapshot attempts; nothing was ingested. Retry in a moment, or retry when the rig is quieter."
     ))
 }
 
@@ -346,9 +346,9 @@ mod tests {
         })
         .unwrap_err()
         .to_string();
-        assert!(
-            error.contains("changed during each of 3 snapshot attempts"),
-            "{error}"
+        assert_eq!(
+            error,
+            "the OpenRig source changed during each of 3 snapshot attempts; nothing was ingested. Retry in a moment, or retry when the rig is quieter."
         );
         assert!(
             !error.contains(&dir.display().to_string()),
