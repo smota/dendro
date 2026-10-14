@@ -147,3 +147,22 @@ coverage, then backfill it on ingest. Older binaries interpreting a database
 with the new observation units or reader metadata are semantically unsupported,
 even though the physical schema version is unchanged. This describes a local
 candidate; it does not announce a published release or a migration.
+
+### Refusing analytics destinations that alias sources
+
+One-shot ingest checks source identity using filesystem metadata before creating
+output directories, acquiring the output lock, opening a database, or looking up
+an analytics key. Explicit source files and regular files beneath declared
+source directories are protected by path and device/inode identity, including
+hard links outside the source tree. Directory containment includes new nested
+outputs whose parents do not yet exist. Descendant symlink trees are skipped.
+
+Typed OpenRig roots additionally protect the selected main file and its appended
+`-wal` and `-shm` names, even when those sidecars are absent. Final output symlinks
+remain forbidden. Physical parent resolution resumes after cancellation of a
+missing component with `..`; unresolved identity or incomplete enumeration
+refuses with a fixed message that contains no source path or OS error detail.
+Genuinely missing roots retain their ordinary missing-root handling for distinct
+outputs. This is a static identity check with existing publication checks; it
+does not guarantee safety against concurrent malicious namespace replacement or
+redesign auxiliary lock/key identity policy.
