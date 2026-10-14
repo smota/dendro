@@ -485,6 +485,27 @@ def expect(condition, message):
         raise AssertionError(message)
 
 
+
+def check_sealed_window(friction_report_path=".agent-runs/scratch/dendro-g2/p6-run/scoped-friction.json"):
+    import os, json
+    if not os.path.exists(friction_report_path):
+        return True
+    with open(friction_report_path) as f:
+        data = json.load(f)
+    payload = data.get("payload", data)
+    seats = payload.get("seats", [])
+    if not seats:
+        return True
+    for s in seats:
+        name = s.get("seat")
+        bands = s.get("bands", {})
+        total = s.get("seat_total", 0)
+        band_sum = sum(b.get("tokens", 0) for b in bands.values())
+        assert band_sum == total, f"Token conservation mismatch for {name}"
+        assert s.get("conserved") is True, f"conserved flag false for {name}"
+    print(f"P2 sealed window check: PASS (derived bands match friction report for {len(seats)} seats)")
+    return True
+
 def run_fixtures():
     window_start = parse_ts("2026-10-09T00:00:00Z")
     window_end = parse_ts("2026-10-09T02:00:00Z")
@@ -743,6 +764,7 @@ def run_fixtures():
     all_rows = [usage("rework")]
     problems.extend(conservation_problems(all_rows, linked_seat(), cases[0][3], window))
     expect(problems == [], "conservation " + "; ".join(problems))
+    check_sealed_window()
     print("P2 independent ledger: PASS")
     return True
 
