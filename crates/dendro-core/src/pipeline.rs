@@ -308,14 +308,26 @@ fn bound_openrig_roots(db: &Path) -> Result<Vec<BoundOpenRig>> {
     Ok(bound)
 }
 
+/// Path stored for an OpenRig root. Always absolute, so a later run from
+/// another working directory still names the same file (S31-2 / S31-3).
+pub fn absolute_openrig_root(path: &Path) -> PathBuf {
+    canonical_root(path)
+}
+
 /// When `incoming` is the bound file under another spelling, return the
-/// display path already stored so source keys stay stable (S31-3).
+/// absolute path used for source keys (S31-3). A relative stored spelling is
+/// replaced by that absolute path so the binding does not follow cwd.
 pub fn align_openrig_spelling(db: &Path, incoming: &Path) -> Result<PathBuf> {
+    let incoming_abs = absolute_openrig_root(incoming);
     let bound = bound_openrig_roots(db)?;
-    if bound.len() == 1 && bound[0].canonical == canonical_root(incoming) {
-        return Ok(PathBuf::from(&bound[0].display));
+    if bound.len() == 1 && bound[0].canonical == incoming_abs {
+        let stored = PathBuf::from(&bound[0].display);
+        if stored.is_absolute() && absolute_openrig_root(&stored) == incoming_abs {
+            return Ok(stored);
+        }
+        return Ok(incoming_abs);
     }
-    Ok(incoming.to_path_buf())
+    Ok(incoming_abs)
 }
 
 fn refuse_bound_openrig_root(db: &Path, incoming: &[PathBuf]) -> Result<()> {
@@ -2078,7 +2090,8 @@ mod tests {
         let aligned =
             align_openrig_spelling(&db, &dir.join("extra").join("..").join("bound.sqlite"))
                 .unwrap();
-        assert_eq!(aligned, bound);
+        assert!(aligned.is_absolute());
+        assert_eq!(aligned, absolute_openrig_root(&bound));
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -2140,6 +2153,62 @@ mod tests {
             "2026-10-11T00:00:00Z",
         )
         .is_ok());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_relative_binding_stays_the_same_file_after_the_working_directory_changes() {
+        let dir = scratch("cwd");
+        let nested = dir.join("nested");
+        fs::create_dir_all(&nested).unwrap();
+        let file = nested.join("openrig.sqlite");
+        touch(&file);
+        let previous = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&dir).unwrap();
+        let relative = PathBuf::from("nested/openrig.sqlite");
+        let absolute = absolute_openrig_root(&relative);
+        assert!(absolute.is_absolute());
+        assert_eq!(absolute, fs::canonicalize(&file).unwrap());
+        let db = dir.join("analytics.duckdb");
+        publish_openrig(&db, &absolute);
+        std::env::set_current_dir(std::env::temp_dir()).unwrap();
+        // The same relative spelling from another directory is a different path.
+        assert_ne!(absolute_openrig_root(&relative), absolute);
+        let mut saw = false;
+        run_locked_with_openrig(
+            &db,
+            std::slice::from_ref(&file),
+            std::slice::from_ref(&file),
+            |_, _| {
+                saw = true;
+                Ok(vec!["again".into()])
+            },
+        )
+        .unwrap();
+        assert!(saw, "the absolute file is still the bound root");
+        let other = dir.join("other.sqlite");
+        touch(&other);
+        let err = run_locked_with_openrig(
+            &db,
+            std::slice::from_ref(&other),
+            std::slice::from_ref(&other),
+            |_, _| Ok(vec![]),
+        )
+        .unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains(&absolute.display().to_string()));
+        assert!(message.contains("refused"));
+        assert!(message.contains(&other.display().to_string()));
+        let store = AnalyticsStore::open_read_only(&db).unwrap();
+        let stored = store
+            .load_sources()
+            .unwrap()
+            .into_iter()
+            .find(|row| row.1 == "openrig")
+            .unwrap();
+        assert!(Path::new(&stored.2).is_absolute());
+        assert_eq!(absolute_openrig_root(Path::new(&stored.2)), absolute);
+        std::env::set_current_dir(&previous).unwrap();
         let _ = fs::remove_dir_all(&dir);
     }
 }

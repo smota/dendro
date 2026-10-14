@@ -77,11 +77,18 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Commands::Run { db, root, frozen } => {
-            let roots = if root.is_empty() {
+            let mut roots = if root.is_empty() {
                 default_roots()
             } else {
                 parse_roots(&root)?
             };
+            // Bind and store an absolute OpenRig path. A relative path would
+            // mean a different file after the working directory changes.
+            for root in &mut roots {
+                if root.name == "openrig" {
+                    root.path = dendro_core::absolute_openrig_root(&root.path);
+                }
+            }
             let paths: Vec<PathBuf> = roots.iter().map(|root| root.path.clone()).collect();
             let openrig_roots: Vec<PathBuf> = roots
                 .iter()
@@ -231,6 +238,11 @@ fn parse_roots(values: &[String]) -> Result<Vec<dendro_connectors::SourceRoot>> 
             path: PathBuf::from(path),
         });
     }
+    for root in &mut roots {
+        if root.name == "openrig" {
+            root.path = dendro_core::absolute_openrig_root(&root.path);
+        }
+    }
     let openrig: Vec<PathBuf> = roots
         .iter()
         .filter(|root| root.name == "openrig")
@@ -243,11 +255,10 @@ fn parse_roots(values: &[String]) -> Result<Vec<dendro_connectors::SourceRoot>> 
         if root.name != "openrig" {
             return true;
         }
-        let canonical = dendro_core::canonical_root(&root.path);
-        if seen.contains(&canonical) {
+        if seen.contains(&root.path) {
             return false;
         }
-        seen.push(canonical);
+        seen.push(root.path.clone());
         true
     });
     Ok(roots)
@@ -311,7 +322,24 @@ mod tests {
         .unwrap();
         let openrig: Vec<_> = roots.iter().filter(|root| root.name == "openrig").collect();
         assert_eq!(openrig.len(), 1);
-        assert_eq!(openrig[0].path, file);
+        assert!(openrig[0].path.is_absolute());
+        assert_eq!(openrig[0].path, dendro_core::absolute_openrig_root(&file));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_relative_openrig_root_is_stored_as_an_absolute_path() {
+        let dir = scratch("rel");
+        let file = dir.join("nested").join("openrig.sqlite");
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, []).unwrap();
+        let previous = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&dir).unwrap();
+        let roots = parse_roots(&["openrig=nested/openrig.sqlite".into()]).unwrap();
+        std::env::set_current_dir(&previous).unwrap();
+        assert_eq!(roots.len(), 1);
+        assert!(roots[0].path.is_absolute());
+        assert_eq!(roots[0].path, std::fs::canonicalize(&file).unwrap());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
