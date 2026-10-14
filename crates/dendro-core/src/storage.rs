@@ -1328,6 +1328,279 @@ mod tests {
     }
 
     #[test]
+    fn failed_file_batch_rolls_back_and_retries_on_same_connection() {
+        fn snapshot(store: &AnalyticsStore) -> serde_json::Value {
+            let counters: i64 = store
+                .conn
+                .query_row("SELECT COUNT(*) FROM codex_counters", [], |row| row.get(0))
+                .unwrap();
+            serde_json::json!({
+                "source": store.source_state("src").unwrap(),
+                "usage": store.load_usage().unwrap(),
+                "tools": store.load_tools().unwrap(),
+                "counters": store.codex_counters("src", 1).unwrap(),
+                "counter_rows": counters,
+            })
+        }
+
+        for fail_during_settlement in [false, true] {
+            let store = AnalyticsStore::open_in_memory("kid").unwrap();
+            // Test-owned constraints fail after usage staging, or after one
+            // settlement update. Production schema and code remain unchanged.
+            store
+                .conn
+                .execute_batch(
+                    "DROP TABLE tool_facts;
+                 CREATE TABLE tool_facts (
+                    source_key VARCHAR PRIMARY KEY,
+                    harness VARCHAR NOT NULL,
+                    native_session VARCHAR NOT NULL,
+                    ts TIMESTAMP,
+                    seq BIGINT NOT NULL,
+                    tool_name VARCHAR NOT NULL CHECK (tool_name <> 'reject'),
+                    fingerprint VARCHAR,
+                    failed BOOLEAN CHECK (source_key <> 'old-b' OR failed IS NOT TRUE),
+                    structured_write BOOLEAN NOT NULL,
+                    generation BIGINT NOT NULL,
+                    source_id VARCHAR NOT NULL
+                 )",
+                )
+                .unwrap();
+            let ts = parse_utc_time("2026-10-08T12:34:56.123456Z").unwrap();
+            let usage = UsageFact {
+                source_key: "old-usage".into(),
+                harness: "codex".into(),
+                native_session: "s".into(),
+                message_id: None,
+                ts: None,
+                seq: 1,
+                input_uncached: 1,
+                output: 2,
+                cache_read: 3,
+                cache_write: 4,
+                reasoning: 5,
+                currency_total: None,
+                generation: 1,
+                predecessor_source_key: None,
+                predecessor_reason: None,
+                prior_input_tokens: None,
+                prior_cached_input_tokens: None,
+                prior_cache_write_input_tokens: None,
+                prior_output_tokens: None,
+                prior_reasoning_output_tokens: None,
+            };
+            let tool = ToolFact {
+                source_key: "old-a".into(),
+                harness: "codex".into(),
+                native_session: "s".into(),
+                ts: None,
+                seq: 1,
+                name: "read".into(),
+                fingerprint: None,
+                failed: None,
+                structured_write: false,
+                generation: 1,
+            };
+            let old_tools = [
+                tool.clone(),
+                ToolFact {
+                    source_key: "old-b".into(),
+                    seq: 2,
+                    ..tool.clone()
+                },
+            ];
+            let old_counters = CodexCounters {
+                input_tokens: 10,
+                cached_input_tokens: 2,
+                cache_write_input_tokens: 3,
+                output_tokens: 4,
+                reasoning_output_tokens: 5,
+            };
+            store
+                .commit_file_batch_settling(
+                    "src",
+                    "codex",
+                    "p",
+                    1,
+                    10,
+                    "old-sha",
+                    Some(&old_counters),
+                    &[usage.clone()],
+                    &old_tools,
+                    &[],
+                )
+                .unwrap();
+            let before = snapshot(&store);
+            let new_counters = CodexCounters {
+                input_tokens: 20,
+                ..old_counters.clone()
+            };
+            let new_usage = [
+                UsageFact {
+                    source_key: "new-null".into(),
+                    generation: 2,
+                    seq: 3,
+                    ..usage.clone()
+                },
+                UsageFact {
+                    source_key: "new-time".into(),
+                    generation: 2,
+                    seq: 4,
+                    ts: Some(ts),
+                    message_id: Some("m".into()),
+                    currency_total: Some(0.5),
+                    predecessor_source_key: Some("old-usage".into()),
+                    predecessor_reason: Some("counter-reset".into()),
+                    prior_input_tokens: Some(10),
+                    prior_cached_input_tokens: Some(2),
+                    prior_cache_write_input_tokens: Some(3),
+                    prior_output_tokens: Some(4),
+                    prior_reasoning_output_tokens: Some(5),
+                    ..usage.clone()
+                },
+            ];
+            let mut new_tools = [
+                ToolFact {
+                    source_key: "new-null".into(),
+                    generation: 2,
+                    seq: 3,
+                    ..tool.clone()
+                },
+                ToolFact {
+                    source_key: "new-time".into(),
+                    generation: 2,
+                    seq: 4,
+                    ts: Some(ts),
+                    fingerprint: Some("fingerprint".into()),
+                    failed: Some(false),
+                    structured_write: true,
+                    ..tool.clone()
+                },
+            ];
+            let mut settled = [("old-a".into(), Some(false)), ("old-b".into(), Some(false))];
+            if fail_during_settlement {
+                settled[1].1 = Some(true);
+            } else {
+                new_tools[1].name = "reject".into();
+            }
+            let err = store
+                .commit_file_batch_settling(
+                    "src",
+                    "codex",
+                    "p",
+                    2,
+                    20,
+                    "new-sha",
+                    Some(&new_counters),
+                    &new_usage,
+                    &new_tools,
+                    &settled,
+                )
+                .unwrap_err();
+            assert!(err.to_string().contains("CHECK constraint failed"), "{err}");
+            assert_eq!(
+                snapshot(&store),
+                before,
+                "failure must roll back every file fact"
+            );
+            let stages: i64 = store.conn.query_row(
+                "SELECT COUNT(*) FROM information_schema.tables WHERE table_name IN ('usage_stage', 'tool_stage')",
+                [], |row| row.get(0),
+            ).unwrap();
+            assert_eq!(stages, 0, "failed staging must not obstruct the retry");
+
+            new_tools[1].name = "read".into();
+            settled[1].1 = Some(false);
+            store
+                .commit_file_batch_settling(
+                    "src",
+                    "codex",
+                    "p",
+                    2,
+                    20,
+                    "new-sha",
+                    Some(&new_counters),
+                    &new_usage,
+                    &new_tools,
+                    &settled,
+                )
+                .unwrap();
+            assert_eq!(
+                store.source_state("src").unwrap(),
+                Some((2, 20, "new-sha".into()))
+            );
+            assert_eq!(
+                serde_json::to_value(store.codex_counters("src", 2).unwrap()).unwrap(),
+                serde_json::to_value(&new_counters).unwrap()
+            );
+            let usages = store.load_usage().unwrap();
+            let tools = store.load_tools().unwrap();
+            assert_eq!(usages.len(), 3);
+            assert_eq!(tools.len(), 4);
+            for expected in &new_usage {
+                let actual = usages
+                    .iter()
+                    .find(|row| row.source_key == expected.source_key)
+                    .unwrap();
+                assert_eq!(
+                    serde_json::to_value(actual).unwrap(),
+                    serde_json::to_value(expected).unwrap()
+                );
+            }
+            for expected in &new_tools {
+                let actual = tools
+                    .iter()
+                    .find(|row| row.source_key == expected.source_key)
+                    .unwrap();
+                assert_eq!(
+                    serde_json::to_value(actual).unwrap(),
+                    serde_json::to_value(expected).unwrap()
+                );
+            }
+            assert!(tools
+                .iter()
+                .filter(|row| row.generation == 1)
+                .all(|row| row.failed == Some(false)));
+            let after = snapshot(&store);
+            store
+                .commit_file_batch_settling(
+                    "src",
+                    "codex",
+                    "p",
+                    2,
+                    20,
+                    "new-sha",
+                    Some(&new_counters),
+                    &new_usage,
+                    &new_tools,
+                    &settled,
+                )
+                .unwrap();
+            assert_eq!(snapshot(&store), after, "duplicate retry must not add rows");
+            // Empty usage/tool/settlement slices still commit the watermark.
+            store
+                .commit_file_batch_settling(
+                    "empty",
+                    "claude",
+                    "empty-p",
+                    1,
+                    0,
+                    "empty-sha",
+                    None,
+                    &[],
+                    &[],
+                    &[],
+                )
+                .unwrap();
+            assert_eq!(
+                store.source_state("empty").unwrap(),
+                Some((1, 0, "empty-sha".into()))
+            );
+            assert_eq!(snapshot(&store), after);
+        }
+    }
+
+    #[test]
     fn batch_rollback_leaves_watermark() {
         let store = AnalyticsStore::open_in_memory("kid").unwrap();
         let err = store.commit_file_batch(
