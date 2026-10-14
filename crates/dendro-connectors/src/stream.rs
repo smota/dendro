@@ -112,6 +112,7 @@ pub fn ingest_jsonl_with_key(
         .as_ref()
         .map(|session| seal_session(tool_key, harness, &session.raw));
     let mut codex_ordinal = 0i64;
+    let mut claude_sessions = HashSet::new();
 
     // Claude and Pi tool calls are read in their own pass over every complete
     // line of this generation, so usage dedupe never drops a call (#35, Q5).
@@ -197,11 +198,10 @@ pub fn ingest_jsonl_with_key(
         if unknown_record_type(harness, &value).is_some() {
             reader_complete = false;
         }
-        if harness == "claude" && source_session.is_none() {
-            source_session = value
-                .get("sessionId")
-                .and_then(Value::as_str)
-                .map(|id| seal_session(tool_key, harness, id));
+        if harness == "claude" {
+            if let Some(id) = value.get("sessionId").and_then(Value::as_str) {
+                claude_sessions.insert(seal_session(tool_key, harness, id));
+            }
         }
         if harness == "codex" && unknown_record_type(harness, &value).is_none() {
             reader_complete &= observe_codex(
@@ -326,6 +326,14 @@ pub fn ingest_jsonl_with_key(
                 });
             }
         }
+    }
+    if harness == "claude" {
+        // A file with several session identities has no unique source linkage.
+        source_session = if claude_sessions.len() == 1 {
+            claude_sessions.into_iter().next()
+        } else {
+            None
+        };
     }
     let prefix_sha = hex::encode(hasher.finalize());
     offset = consumed;
@@ -1958,6 +1966,28 @@ mod tests {
             assert_eq!(facts.len(), 1, "obsolete generation excluded");
             assert_eq!(facts[0].fact.generation, 2);
             assert!(f.db.load_source_coverage().unwrap()[0].complete);
+        }
+
+        #[test]
+        fn reader_coverage_never_assigns_a_multisession_claude_source_to_the_first_session() {
+            let f = Fixture::new("claude-reader-identity");
+            let p = f.file(
+                "x.jsonl",
+                &[
+                    r#"{"type":"user","sessionId":"first","message":{"content":"one"}}"#.into(),
+                    r#"{"type":"user","sessionId":"second","message":{"content":"two"}}"#.into(),
+                ],
+            );
+            f.ingest("claude", &p);
+            let source = &f.db.load_source_coverage().unwrap()[0];
+            assert!(
+                source.complete,
+                "prefix processing is independent of linkage"
+            );
+            assert!(
+                source.native_session.is_none(),
+                "no guessed source attribution"
+            );
         }
 
         #[test]
