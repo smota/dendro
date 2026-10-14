@@ -888,7 +888,7 @@ impl AnalyticsStore {
         let mut stmt = self.conn.prepare(
             r#"SELECT source_key, harness, native_session, CAST(ts AS VARCHAR), seq, tool_name, fingerprint,
                       failed, structured_write, generation
-               FROM tool_facts WHERE NOT starts_with(source_key, 'dendro-internal:reader:') AND (harness <> 'codex' OR EXISTS (SELECT 1 FROM source_files s WHERE s.source_id = tool_facts.source_id AND s.generation = tool_facts.generation)) ORDER BY native_session, ts NULLS LAST, seq"#,
+               FROM tool_facts WHERE NOT starts_with(source_key, 'dendro-internal:reader:') AND (harness <> 'codex' OR tool_name NOT IN ('CommandExecution', 'CodexSeatCall') OR EXISTS (SELECT 1 FROM source_files s WHERE s.source_id = tool_facts.source_id AND s.generation = tool_facts.generation)) ORDER BY native_session, ts NULLS LAST, seq"#,
         )?;
         let rows = stmt.query_map([], |row| {
             let ts: Option<String> = row.get(3)?;
