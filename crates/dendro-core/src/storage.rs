@@ -1950,6 +1950,79 @@ mod tests {
     }
 
     #[test]
+    fn codex_same_line_item_positions_remain_distinct_and_ordered() {
+        let store = AnalyticsStore::open_in_memory("synthetic-key-id").unwrap();
+        // The frozen structural vector requires 105 positions on one line.
+        // Storage carries their full keys and independent ordinals, never line*100+index.
+        let observations: Vec<_> = (0..105)
+            .map(|position| ToolFact {
+                source_key: format!("source:1:1:codex:{position}"),
+                harness: "codex".into(),
+                native_session: "session".into(),
+                ts: parse_utc_time("2026-10-14T00:00:00Z"),
+                seq: position + 1,
+                name: CODEX_COMMAND.into(),
+                fingerprint: Some("b".repeat(64)),
+                failed: Some(true),
+                structured_write: false,
+                generation: 1,
+            })
+            .collect();
+        store
+            .commit_file_batch_reading(
+                "source",
+                "codex",
+                "p",
+                1,
+                1000,
+                &"a".repeat(64),
+                None,
+                &[],
+                &observations,
+                &[],
+                &ReaderState {
+                    complete: true,
+                    native_session: Some("session".into()),
+                },
+            )
+            .unwrap();
+        let rows = store.load_codex_observations().unwrap();
+        assert_eq!(rows.len(), 105);
+        assert_eq!(
+            rows.iter().map(|row| row.fact.seq).collect::<Vec<_>>(),
+            (1..=105).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            rows.iter()
+                .map(|row| &row.fact.source_key)
+                .collect::<std::collections::BTreeSet<_>>()
+                .len(),
+            105
+        );
+        assert_eq!(crate::metrics::codex_command_loops(&rows)[0].count, 105);
+        store
+            .commit_file_batch_reading(
+                "source",
+                "codex",
+                "p",
+                1,
+                1000,
+                &"a".repeat(64),
+                None,
+                &[],
+                &observations,
+                &[],
+                &ReaderState {
+                    complete: true,
+                    native_session: Some("session".into()),
+                },
+            )
+            .unwrap();
+        assert_eq!(store.load_codex_observations().unwrap().len(), 105);
+        assert_eq!(store.load_tools().unwrap().len(), 105, "marker excluded");
+    }
+
+    #[test]
     fn reader_state_fails_closed_for_snapshot_mismatch_and_never_becomes_a_tool() {
         let store = AnalyticsStore::open_in_memory("kid").unwrap();
         store
