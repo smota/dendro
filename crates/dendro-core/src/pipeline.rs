@@ -1143,7 +1143,7 @@ pub fn trace_json(
             payload["intakes"].clone(),
         ),
         "medians" => (
-            "even-sample median of wait seconds and intake tokens",
+            "wait seconds = claim timestamp minus handoff timestamp before presentation rounding; odd median = sorted central sample; even median = arithmetic mean of the two central samples; intake samples and medians are in tokens",
             payload["pair_medians"].clone(),
         ),
         "activity" => (
@@ -1154,7 +1154,11 @@ pub fn trace_json(
     };
     Ok(json!({
         "metric_id": metric_id,
-        "formula_version": "acceptance-r1-a1",
+        "formula_version": if metric_id == "medians" {
+            "acceptance-r1-a1-wait-fractional-v1"
+        } else {
+            "acceptance-r1-a1"
+        },
         "formula": formula,
         "value": value,
         "inputs": {
@@ -1540,6 +1544,83 @@ mod tests {
         assert_eq!(
             trace["inputs"]["nonreturn_handoffs"],
             p["nonreturn_handoffs"]
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn fractional_waits_agree_across_public_reports_and_traces() {
+        let dir =
+            std::env::temp_dir().join(format!("dendro-fractional-waits-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("analytics.duckdb");
+        let store = AnalyticsStore::open_path(&db, "kid").unwrap();
+        // Literal persisted endpoints independently imply [0, 1us], median 0.5us.
+        for (index, at, state) in [
+            (0, "2026-10-14T00:00:00Z", "done"),
+            (0, "2026-10-14T00:00:00Z", "in-progress"),
+            (1, "2026-10-14T00:00:01Z", "done"),
+            (1, "2026-10-14T00:00:01.000001Z", "in-progress"),
+        ] {
+            let handoff = state == "done";
+            store
+                .insert_queue(&crate::QueueFact {
+                    source_key: format!("{state}-{index}"),
+                    transition_id: index * 2 + i64::from(!handoff),
+                    qitem_id: format!("item-{index}"),
+                    ts: chrono::DateTime::parse_from_rfc3339(at)
+                        .unwrap()
+                        .with_timezone(&chrono::Utc),
+                    state: state.into(),
+                    source_seat: if handoff { "A" } else { "B" }.into(),
+                    dest_seat: "B".into(),
+                    closure_reason: handoff.then(|| "handed_off_to".into()),
+                    closure_target: handoff.then(|| "B".into()),
+                    chain_id: None,
+                    missions: vec![],
+                })
+                .unwrap();
+        }
+        store.checkpoint().unwrap();
+        drop(store);
+        let before = fs::read(&db).unwrap();
+        let (from, to) = ("2026-10-14T00:00:00Z", "2026-10-14T00:01:00Z");
+        let report = report_json(&db, "handoffs", None, from, to).unwrap();
+        let pairs = &report["payload"]["pair_medians"];
+        assert_eq!(pairs.as_array().unwrap().len(), 1);
+        assert_eq!(pairs[0]["wait_samples"], json!([0.0, 0.000001]));
+        assert_eq!(pairs[0]["wait_median"], json!(0.0000005));
+        assert_eq!(
+            pairs[0]["wait_sample_keys"],
+            json!([["done-0", "in-progress-0"], ["done-1", "in-progress-1"]])
+        );
+        assert_eq!(pairs[0]["wait_invalid"], 0);
+        for kind in ["links", "activity", "handoffs", "tokens", "decisions"] {
+            assert_eq!(
+                report_json(&db, kind, None, from, to).unwrap()["payload"]["pair_medians"],
+                *pairs
+            );
+        }
+        for metric in [
+            "m1", "m2", "m3", "m4", "tokens", "intake", "medians", "activity",
+        ] {
+            let trace = trace_json(&db, metric, None, from, to).unwrap();
+            assert_eq!(trace["inputs"]["pair_medians"], *pairs);
+            if metric == "medians" {
+                assert_eq!(trace["value"], *pairs);
+                assert_eq!(
+                    trace["formula_version"],
+                    "acceptance-r1-a1-wait-fractional-v1"
+                );
+            } else {
+                assert_eq!(trace["formula_version"], "acceptance-r1-a1");
+            }
+        }
+        assert_eq!(
+            fs::read(&db).unwrap(),
+            before,
+            "report-only reads preserve database bytes"
         );
         let _ = fs::remove_dir_all(&dir);
     }
