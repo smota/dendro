@@ -79,10 +79,10 @@ The Claude change lowers the intake estimate by 38,631,754 tokens: the earlier c
 ### Known limits in v0.1.1
 
 1. **One OpenRig root per analytics database.**
-   - Dendro refuses a second OpenRig root instead of dropping its records. Two different OpenRig files in one run stop before anything is read or written, with "v0.1.0 supports exactly one OpenRig root per analytics database".
-   - A database already bound to one root refuses a different root before anything is written. The message names the bound root and the refused one. The same file under another spelling (a relative path, `..`, or a symlink) is accepted.
-   - A database that already holds two OpenRig roots is refused for ingest. Reports against that database still run.
-   - Use a separate analytics database for each OpenRig root. Several roots in one view is Goal 3 (#27).
+   - The released v0.1.1 tag does not enforce this limit. Use a separate analytics database for each OpenRig root to avoid silent undercounts when records from different roots share sequence numbers or ids.
+   - The reviewed local v0.2.0 candidate for #31 adds the refusal; it was not shipped in v0.1.1 and has not been published. Two different OpenRig files in one run are refused with "v0.1.0 supports exactly one OpenRig root per analytics database", leaving the analytics database absent or byte-unchanged.
+   - In that candidate, a database already bound to one root refuses a different root without changing the database bytes. The message names the bound root and the refused one and tells the operator to use a fresh analytics database. The same file under another spelling (a relative path, `..`, or a symlink) is accepted.
+   - In that candidate, a database that already holds two OpenRig roots is refused for ingest. Reports against that database still run. Several roots in one view is Goal 3 (#27).
 2. **After an OpenRig reset or reinstall, start a new analytics database.** If you re-run over an existing database, new OpenRig records that reuse old sequence numbers or ids are dropped silently, so totals come out low.
 3. **OpenRig records are treated as append-only.**
    - Records that OpenRig deletes under its retention policy keep their facts in Dendro, and nothing marks them as gone.

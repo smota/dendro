@@ -343,7 +343,7 @@ fn refuse_bound_openrig_root(db: &Path, incoming: &[PathBuf]) -> Result<()> {
         for path in incoming {
             if canonical_root(path) != bound.canonical {
                 return Err(anyhow!(
-                    "refusing second OpenRig root: analytics database is bound to OpenRig root {}; refused {}",
+                    "refusing second OpenRig root: analytics database is bound to OpenRig root {}; refused {}; use a fresh analytics database for this root",
                     redact(&bound.display),
                     redact(&path.display().to_string())
                 ));
@@ -2067,6 +2067,7 @@ mod tests {
         assert!(message.contains(&bound.display().to_string()));
         assert!(message.contains("refused"));
         assert!(message.contains(&other.display().to_string()));
+        assert!(message.contains("fresh analytics database"));
         assert!(!called);
         assert_eq!(fs::read(&db).unwrap(), before);
 
