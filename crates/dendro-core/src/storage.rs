@@ -377,72 +377,109 @@ impl AnalyticsStore {
                 ],
             )?;
         }
-        for u in usages {
-            tx.execute(
-                r#"INSERT INTO usage_facts (
-                       source_key, harness, native_session, message_id, ts, seq,
-                       input_uncached, output_tokens, cache_read, cache_write, reasoning,
-                       currency_total, generation, source_id,
-                       predecessor_source_key, predecessor_reason,
-                       prior_input_tokens, prior_cached_input_tokens,
-                       prior_cache_write_input_tokens, prior_output_tokens,
-                       prior_reasoning_output_tokens
-                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                   ON CONFLICT (source_key) DO NOTHING"#,
-                params![
-                    redact(&u.source_key),
-                    redact(&u.harness),
-                    redact(&u.native_session),
-                    u.message_id.as_deref().map(redact),
-                    u.ts.map(|t| t.to_rfc3339()),
-                    u.seq,
-                    u.input_uncached,
-                    u.output,
-                    u.cache_read,
-                    u.cache_write,
-                    u.reasoning,
-                    u.currency_total,
-                    u.generation,
-                    redact(source_id),
-                    u.predecessor_source_key.as_deref().map(redact),
-                    u.predecessor_reason.as_deref(),
-                    u.prior_input_tokens,
-                    u.prior_cached_input_tokens,
-                    u.prior_cache_write_input_tokens,
-                    u.prior_output_tokens,
-                    u.prior_reasoning_output_tokens
-                ],
+        // Bulk-append into a temp table, then one conflict-tolerant insert.
+        // A prepared INSERT per row keeps DuckDB result memory growing with the file.
+        if !usages.is_empty() {
+            tx.execute_batch(
+                "CREATE TEMP TABLE usage_stage (
+                    source_key VARCHAR, harness VARCHAR, native_session VARCHAR,
+                    message_id VARCHAR, ts VARCHAR, seq BIGINT,
+                    input_uncached BIGINT, output_tokens BIGINT, cache_read BIGINT,
+                    cache_write BIGINT, reasoning BIGINT, currency_total DOUBLE,
+                    generation BIGINT, source_id VARCHAR, predecessor_source_key VARCHAR,
+                    predecessor_reason VARCHAR, prior_input_tokens BIGINT,
+                    prior_cached_input_tokens BIGINT, prior_cache_write_input_tokens BIGINT,
+                    prior_output_tokens BIGINT, prior_reasoning_output_tokens BIGINT
+                )",
+            )?;
+            {
+                let mut appender = tx.appender("usage_stage")?;
+                for u in usages {
+                    appender.append_row(params![
+                        redact(&u.source_key),
+                        redact(&u.harness),
+                        redact(&u.native_session),
+                        u.message_id.as_deref().map(redact),
+                        u.ts.map(|t| t.to_rfc3339()),
+                        u.seq,
+                        u.input_uncached,
+                        u.output,
+                        u.cache_read,
+                        u.cache_write,
+                        u.reasoning,
+                        u.currency_total,
+                        u.generation,
+                        redact(source_id),
+                        u.predecessor_source_key.as_deref().map(redact),
+                        u.predecessor_reason.as_deref(),
+                        u.prior_input_tokens,
+                        u.prior_cached_input_tokens,
+                        u.prior_cache_write_input_tokens,
+                        u.prior_output_tokens,
+                        u.prior_reasoning_output_tokens
+                    ])?;
+                }
+                appender.flush()?;
+            }
+            tx.execute_batch(
+                "INSERT INTO usage_facts
+                 SELECT source_key, harness, native_session, message_id,
+                        CAST(ts AS TIMESTAMP), seq, input_uncached, output_tokens,
+                        cache_read, cache_write, reasoning, currency_total, generation,
+                        source_id, predecessor_source_key, predecessor_reason,
+                        prior_input_tokens, prior_cached_input_tokens,
+                        prior_cache_write_input_tokens, prior_output_tokens,
+                        prior_reasoning_output_tokens
+                 FROM usage_stage
+                 ON CONFLICT (source_key) DO NOTHING;
+                 DROP TABLE usage_stage",
             )?;
         }
-        for t in tools {
-            tx.execute(
-                r#"INSERT INTO tool_facts (
-                       source_key, harness, native_session, ts, seq, tool_name, fingerprint,
-                       failed, structured_write, generation, source_id
-                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                   ON CONFLICT (source_key) DO NOTHING"#,
-                params![
-                    redact(&t.source_key),
-                    redact(&t.harness),
-                    redact(&t.native_session),
-                    t.ts.map(|v| v.to_rfc3339()),
-                    t.seq,
-                    redact(&t.name),
-                    t.fingerprint.as_deref().map(redact),
-                    t.failed,
-                    t.structured_write,
-                    t.generation,
-                    redact(source_id)
-                ],
+        if !tools.is_empty() {
+            tx.execute_batch(
+                "CREATE TEMP TABLE tool_stage (
+                    source_key VARCHAR, harness VARCHAR, native_session VARCHAR,
+                    ts VARCHAR, seq BIGINT, tool_name VARCHAR, fingerprint VARCHAR,
+                    failed BOOLEAN, structured_write BOOLEAN, generation BIGINT,
+                    source_id VARCHAR
+                )",
+            )?;
+            {
+                let mut appender = tx.appender("tool_stage")?;
+                for t in tools {
+                    appender.append_row(params![
+                        redact(&t.source_key),
+                        redact(&t.harness),
+                        redact(&t.native_session),
+                        t.ts.map(|v| v.to_rfc3339()),
+                        t.seq,
+                        redact(&t.name),
+                        t.fingerprint.as_deref().map(redact),
+                        t.failed,
+                        t.structured_write,
+                        t.generation,
+                        redact(source_id)
+                    ])?;
+                }
+                appender.flush()?;
+            }
+            tx.execute_batch(
+                "INSERT INTO tool_facts
+                 SELECT source_key, harness, native_session, CAST(ts AS TIMESTAMP), seq,
+                        tool_name, fingerprint, failed, structured_write, generation, source_id
+                 FROM tool_stage
+                 ON CONFLICT (source_key) DO NOTHING;
+                 DROP TABLE tool_stage",
             )?;
         }
         // A tool result appended after its call was stored settles the call's
         // outcome again from every result seen so far (#37).
-        for (source_key, failed) in settled {
-            tx.execute(
-                "UPDATE tool_facts SET failed = ? WHERE source_key = ?",
-                params![failed, redact(source_key)],
-            )?;
+        if !settled.is_empty() {
+            let mut settle_stmt =
+                tx.prepare("UPDATE tool_facts SET failed = ? WHERE source_key = ?")?;
+            for (source_key, failed) in settled {
+                settle_stmt.execute(params![failed, redact(source_key)])?;
+            }
         }
         tx.commit()?;
         Ok(())
