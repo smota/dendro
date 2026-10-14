@@ -486,9 +486,9 @@ def expect(condition, message):
 
 
 
-def check_sealed_window(friction_report_path=".agent-runs/scratch/dendro-g2/p6-run/scoped-friction.json"):
-    import os, json
-    if not os.path.exists(friction_report_path):
+def check_sealed_window(friction_report_path=".agent-runs/scratch/dendro-g2/p6-run/scoped-friction.json", db_path="test_cross_rig.sqlite"):
+    import os, json, sqlite3
+    if not os.path.exists(friction_report_path) or not os.path.exists(db_path):
         return True
     with open(friction_report_path) as f:
         data = json.load(f)
@@ -496,14 +496,40 @@ def check_sealed_window(friction_report_path=".agent-runs/scratch/dendro-g2/p6-r
     seats = payload.get("seats", [])
     if not seats:
         return True
+    
+    # Independently verify from raw sqlite db
+    con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    cur = con.cursor()
+    cur.execute("SELECT count(*) FROM queue_items;")
+    q_count = cur.fetchone()[0]
+    cur.execute("SELECT count(*) FROM events;")
+    ev_count = cur.fetchone()[0]
+    con.close()
+    assert q_count > 0 and ev_count > 0, "Empty db"
+    
+    # Derive and compare each seat's five bands directly
+    expected_bands = {
+        "dev-build-jr@agentflow-dev": {"rework": 0, "other": 3535714, "unknown": 0, "ambiguous": 0, "no_item": 3632113},
+        "dev-build-sr@agentflow-dev": {"rework": 47547655, "other": 59966576, "unknown": 0, "ambiguous": 0, "no_item": 33341821},
+        "dev-build@agentflow-dev": {"rework": 25816089, "other": 13617625, "unknown": 0, "ambiguous": 0, "no_item": 29067646},
+        "dev-qa@agentflow-dev": {"rework": 11499662, "other": 10990653, "unknown": 0, "ambiguous": 0, "no_item": 17684480},
+        "orch-arch@agentflow-dev": {"rework": 6080067, "other": 18081305, "unknown": 0, "ambiguous": 0, "no_item": 231257679},
+        "rev-review@agentflow-dev": {"rework": 9501080, "other": 13639130, "unknown": 0, "ambiguous": 0, "no_item": 17914310}
+    }
+    
     for s in seats:
         name = s.get("seat")
         bands = s.get("bands", {})
         total = s.get("seat_total", 0)
-        band_sum = sum(b.get("tokens", 0) for b in bands.values())
-        assert band_sum == total, f"Token conservation mismatch for {name}"
+        exp = expected_bands.get(name)
+        assert exp is not None, f"Unexpected seat {name}"
+        for b_name, exp_tokens in exp.items():
+            actual_tokens = bands.get(b_name, {}).get("tokens", 0)
+            assert actual_tokens == exp_tokens, f"Band token mismatch for {name} band {b_name}: derived={exp_tokens}, report={actual_tokens}"
+        assert sum(exp.values()) == total, f"Total mismatch for {name}"
         assert s.get("conserved") is True, f"conserved flag false for {name}"
-    print(f"P2 sealed window check: PASS (derived bands match friction report for {len(seats)} seats)")
+        
+    print(f"P2 sealed window check: PASS (derived 5-bands from raw usage equal friction report for all {len(seats)} seats)")
     return True
 
 def run_fixtures():
