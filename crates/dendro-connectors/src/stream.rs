@@ -72,38 +72,20 @@ pub fn ingest_jsonl_with_key(
         }
     }
     file.seek(SeekFrom::Start(0))?;
+    let prefix_end = offset;
     let mut hasher = Sha256::new();
-    let mut reader = BufReader::new(file);
-    let mut prefix = vec![0u8; offset as usize];
-    if offset > 0 {
-        reader.read_exact(&mut prefix)?;
-        hasher.update(&prefix);
-    }
-    let mut line_no = prefix.iter().filter(|b| **b == b'\n').count() as i64;
-    let mut pending = Vec::new();
+    // One reusable line buffer. The generation is never copied.
+    let mut reader = BufReader::with_capacity(64 * 1024, file);
     let mut buf = Vec::new();
-    loop {
-        buf.clear();
-        let n = reader.read_until(b'\n', &mut buf)?;
-        if n == 0 {
-            break;
-        }
-        if !buf.ends_with(b"\n") {
-            break;
-        }
-        hasher.update(&buf);
-        offset += buf.len() as i64;
-        line_no += 1;
-        pending.push((line_no, buf[..buf.len() - 1].to_vec()));
-    }
-    let prefix_sha = hex::encode(hasher.finalize());
+    let mut line_no = 0i64;
+    let mut consumed = 0i64;
     let reset_generation = generation_was_reset(prior, generation);
     let mut counters = if reset_generation {
         CodexCounters::default()
     } else {
         store.codex_counters(source_id, generation)?
     };
-    let start_offset = prefix.len();
+    let start_offset = prefix_end;
     let mut warnings = Vec::new();
     // K10: Pi and Codex sessions are named by the id on line 1 of the file.
     let file_session = match harness {
@@ -124,10 +106,7 @@ pub fn ingest_jsonl_with_key(
     let mut tools = Vec::new();
     let mut seen_messages = HashSet::new();
     let mut unknown_types = HashSet::new();
-    let records_read = pending
-        .iter()
-        .filter(|(_, bytes)| !bytes.iter().all(|b| b.is_ascii_whitespace()))
-        .count() as u64;
+    let mut records_read = 0u64;
     // Claude and Pi tool calls are read in their own pass over every complete
     // line of this generation, so usage dedupe never drops a call (#35, Q5).
     // Codex tool calls are not read in this version (Q6, #40): each Codex file
@@ -142,38 +121,71 @@ pub fn ingest_jsonl_with_key(
             });
         }
     }
-    let new_from = prefix.iter().filter(|b| **b == b'\n').count() as i64;
-    let mut tool_lines: Vec<(i64, Vec<u8>)> = Vec::new();
-    if harness == "claude" || harness == "pi" {
-        let mut no = 0;
-        for line in prefix.split(|b| *b == b'\n') {
-            no += 1;
-            if no <= new_from {
-                tool_lines.push((no, line.to_vec()));
+    let mut tool_scan = if harness == "claude" || harness == "pi" {
+        Some(ToolScan::new(
+            harness,
+            file_session.as_ref().map(|session| session.raw.as_str()),
+            0,
+            tool_key,
+            source_id,
+            generation,
+        ))
+    } else {
+        None
+    };
+    loop {
+        dendro_core::RUN_CANCEL.check()?;
+        buf.clear();
+        let n = reader.read_until(b'\n', &mut buf)?;
+        if n == 0 {
+            break;
+        }
+        if !buf.ends_with(b"\n") {
+            break;
+        }
+        hasher.update(&buf);
+        consumed += buf.len() as i64;
+        line_no += 1;
+        let is_new = consumed > prefix_end;
+        if !is_new {
+            if let Some(scan) = tool_scan.as_mut() {
+                scan.prefix_lines = line_no;
             }
         }
-        tool_lines.extend(pending.iter().cloned());
-    }
-    for (line_no, bytes) in pending {
-        dendro_core::RUN_CANCEL.check()?;
-        let text = match String::from_utf8(bytes) {
+        let bytes = &buf[..buf.len() - 1];
+        if is_new && !bytes.iter().all(|byte| byte.is_ascii_whitespace()) {
+            records_read += 1;
+        }
+        let text = match std::str::from_utf8(bytes) {
             Ok(text) => text,
             Err(_) => {
-                warnings.push(WarningNote {
-                    path: path.display().to_string(),
-                    line: Some(line_no),
-                    reason: "invalid-utf8".into(),
-                });
+                if is_new {
+                    warnings.push(WarningNote {
+                        path: path.display().to_string(),
+                        line: Some(line_no),
+                        reason: "invalid-utf8".into(),
+                    });
+                }
                 continue;
             }
         };
         if text.trim().is_empty() {
             continue;
         }
+        if !is_new {
+            if let Some(scan) = tool_scan.as_mut() {
+                if let Ok(value) = serde_json::from_str::<Value>(text) {
+                    if unknown_record_type(harness, &value).is_none() {
+                        scan.observe(line_no, text, &value);
+                    }
+                }
+            }
+            continue;
+        }
         if let Some(session) = &file_session {
             if session.from_header
                 && line_no > 1
-                && conflicting_session(harness, &text, &session.raw)
+                && conflicting_session(harness, text, &session.raw)
             {
                 warnings.push(WarningNote {
                     path: path.display().to_string(),
@@ -182,7 +194,33 @@ pub fn ingest_jsonl_with_key(
                 });
             }
         }
-        match parse_line(harness, &text, &mut counters) {
+        let value = match serde_json::from_str::<Value>(text) {
+            Ok(value) => value,
+            Err(_) => {
+                warnings.push(WarningNote {
+                    path: path.display().to_string(),
+                    line: Some(line_no),
+                    reason: "malformed-json".into(),
+                });
+                continue;
+            }
+        };
+        if let Some(reason) = unknown_record_type(harness, &value) {
+            let repeat = !unknown_types.insert(reason.clone())
+                || store.has_warning(&path.display().to_string(), &reason)?;
+            if !repeat {
+                warnings.push(WarningNote {
+                    path: path.display().to_string(),
+                    line: Some(line_no),
+                    reason,
+                });
+            }
+            continue;
+        }
+        if let Some(scan) = tool_scan.as_mut() {
+            scan.observe(line_no, text, &value);
+        }
+        match parse_value(harness, &value, &mut counters) {
             Ok(None) => {}
             Ok(Some(mut bucket)) => {
                 if let Some(session) = &file_session {
@@ -250,33 +288,20 @@ pub fn ingest_jsonl_with_key(
                 }
             }
             Err(reason) => {
-                // One warning per (file, unknown type), at its first occurrence
-                // in this or any earlier run, so a repeated type cannot flood.
-                let repeat = reason.starts_with(UNKNOWN_RECORD_TYPE)
-                    && (!unknown_types.insert(reason.clone())
-                        || store.has_warning(&path.display().to_string(), &reason)?);
-                if !repeat {
-                    warnings.push(WarningNote {
-                        path: path.display().to_string(),
-                        line: Some(line_no),
-                        reason,
-                    });
-                }
+                warnings.push(WarningNote {
+                    path: path.display().to_string(),
+                    line: Some(line_no),
+                    reason,
+                });
             }
         }
     }
+    let prefix_sha = hex::encode(hasher.finalize());
+    offset = consumed;
     let mut settled = Vec::new();
-    if harness == "claude" || harness == "pi" {
-        let session = file_session.as_ref().map(|session| session.raw.as_str());
-        let pass = tool_calls(
-            harness,
-            session,
-            &tool_lines,
-            new_from,
-            tool_key,
-            source_id,
-            generation,
-        );
+    if let Some(mut scan) = tool_scan {
+        scan.new_from = scan.prefix_lines;
+        let pass = scan.finish();
         tools = pass.new_calls;
         settled = pass.settled;
     }
@@ -474,19 +499,15 @@ fn unknown_record_type(harness: &str, value: &Value) -> Option<String> {
     })
 }
 
-fn parse_line(
+fn parse_value(
     harness: &str,
-    line: &str,
+    value: &Value,
     counters: &mut CodexCounters,
 ) -> Result<Option<Buckets>, String> {
-    let value: Value = serde_json::from_str(line).map_err(|_| "malformed-json".to_string())?;
-    if let Some(reason) = unknown_record_type(harness, &value) {
-        return Err(reason);
-    }
     match harness {
-        "codex" => parse_codex(&value, counters),
-        "claude" => parse_claude(&value),
-        "pi" => parse_pi(&value),
+        "codex" => parse_codex(value, counters),
+        "claude" => parse_claude(value),
+        "pi" => parse_pi(value),
         _ => Err("unknown-harness".into()),
     }
 }
@@ -670,35 +691,55 @@ struct ToolPass {
     settled: Vec<(String, Option<bool>)>,
 }
 
-fn tool_calls(
-    harness: &str,
-    file_session: Option<&str>,
-    lines: &[(i64, Vec<u8>)],
+struct ToolCall {
+    fact: ToolFact,
+    line: i64,
+    results: Vec<Option<bool>>,
+    result_in_new_lines: bool,
+}
+
+struct ToolScan<'a> {
+    harness: &'a str,
+    file_session: Option<&'a str>,
     new_from: i64,
-    key: Option<&[u8]>,
-    source_id: &str,
+    prefix_lines: i64,
+    key: Option<&'a [u8]>,
+    source_id: &'a str,
     generation: i64,
-) -> ToolPass {
-    struct Call {
-        fact: ToolFact,
-        line: i64,
-        results: Vec<Option<bool>>,
-        result_in_new_lines: bool,
-    }
-    let mut calls: Vec<Call> = Vec::new();
-    let mut by_id: std::collections::HashMap<(String, String), usize> =
-        std::collections::HashMap::new();
-    let mut results: Vec<((String, String), Option<bool>, i64)> = Vec::new();
-    for (line_no, bytes) in lines {
-        let Ok(text) = std::str::from_utf8(bytes) else {
-            continue;
-        };
-        let Ok(value) = serde_json::from_str::<Value>(text) else {
-            continue;
-        };
-        if unknown_record_type(harness, &value).is_some() {
-            continue;
+    calls: Vec<ToolCall>,
+    by_id: std::collections::HashMap<(String, String), usize>,
+    results: Vec<((String, String), Option<bool>, i64)>,
+}
+
+impl<'a> ToolScan<'a> {
+    fn new(
+        harness: &'a str,
+        file_session: Option<&'a str>,
+        new_from: i64,
+        key: Option<&'a [u8]>,
+        source_id: &'a str,
+        generation: i64,
+    ) -> Self {
+        Self {
+            harness,
+            file_session,
+            new_from,
+            prefix_lines: 0,
+            key,
+            source_id,
+            generation,
+            calls: Vec::new(),
+            by_id: std::collections::HashMap::new(),
+            results: Vec::new(),
         }
+    }
+
+    fn observe(&mut self, line_no: i64, text: &str, value: &Value) {
+        let harness = self.harness;
+        let file_session = self.file_session;
+        let key = self.key;
+        let source_id = self.source_id;
+        let generation = self.generation;
         let session = match file_session {
             Some(session) => session.to_string(),
             None => value
@@ -720,22 +761,23 @@ fn tool_calls(
                 let outcome = value
                     .pointer("/message/isError")
                     .and_then(|item| item.as_bool());
-                results.push(((session.clone(), id.to_string()), outcome, *line_no));
+                self.results
+                    .push(((session.clone(), id.to_string()), outcome, line_no));
             }
-            continue;
+            return;
         }
         let Some(content) = value
             .pointer("/message/content")
             .and_then(|item| item.as_array())
         else {
-            continue;
+            return;
         };
         let (call_type, input_field) = if harness == "pi" {
             ("toolCall", "arguments")
         } else {
             ("tool_use", "input")
         };
-        let ts = timestamp_of(&value);
+        let ts = timestamp_of(value);
         let raw_blocks = raw_content_blocks(text);
         for (index, block) in content.iter().enumerate() {
             match block.get("type").and_then(|item| item.as_str()) {
@@ -745,15 +787,16 @@ fn tool_calls(
                     };
                     let id = block.get("id").and_then(|item| item.as_str());
                     if let Some(id) = id {
-                        if by_id.contains_key(&(session.clone(), id.to_string())) {
+                        if self.by_id.contains_key(&(session.clone(), id.to_string())) {
                             continue;
                         }
-                        by_id.insert((session.clone(), id.to_string()), calls.len());
+                        self.by_id
+                            .insert((session.clone(), id.to_string()), self.calls.len());
                     }
                     let lexical = tool_input_lexical(block, raw_blocks.get(index), input_field);
                     let fingerprint =
                         key.and_then(|key| tool_fingerprint(key, name, lexical.as_deref()));
-                    calls.push(Call {
+                    self.calls.push(ToolCall {
                         fact: ToolFact {
                             source_key: format!("{source_id}:{generation}:{line_no}:{index}"),
                             harness: harness.into(),
@@ -772,7 +815,7 @@ fn tool_calls(
                             },
                             generation,
                         },
-                        line: *line_no,
+                        line: line_no,
                         results: Vec::new(),
                         result_in_new_lines: false,
                     });
@@ -780,36 +823,44 @@ fn tool_calls(
                 Some("tool_result") if harness == "claude" => {
                     if let Some(id) = block.get("tool_use_id").and_then(|item| item.as_str()) {
                         let outcome = block.get("is_error").and_then(|item| item.as_bool());
-                        results.push(((session.clone(), id.to_string()), outcome, *line_no));
+                        self.results
+                            .push(((session.clone(), id.to_string()), outcome, line_no));
                     }
                 }
                 _ => {}
             }
         }
     }
-    for (id, outcome, line_no) in results {
-        if let Some(&at) = by_id.get(&id) {
-            calls[at].results.push(outcome);
-            calls[at].result_in_new_lines |= line_no > new_from;
+
+    fn finish(mut self) -> ToolPass {
+        let new_from = self.new_from;
+        let results = std::mem::take(&mut self.results);
+        for (id, outcome, line_no) in results {
+            if let Some(&at) = self.by_id.get(&id) {
+                self.calls[at].results.push(outcome);
+                self.calls[at].result_in_new_lines |= line_no > new_from;
+            }
         }
-    }
-    let mut pass = ToolPass {
-        new_calls: Vec::new(),
-        settled: Vec::new(),
-    };
-    for mut call in calls {
-        let first = call.results.first().copied().flatten();
-        call.fact.failed = match first {
-            Some(outcome) if call.results.iter().all(|r| *r == Some(outcome)) => Some(outcome),
-            _ => None,
+        let mut pass = ToolPass {
+            new_calls: Vec::new(),
+            settled: Vec::new(),
         };
-        if call.line > new_from {
-            pass.new_calls.push(call.fact);
-        } else if call.result_in_new_lines {
-            pass.settled.push((call.fact.source_key, call.fact.failed));
+        for mut call in self.calls {
+            let first = call.results.first().copied().flatten();
+            call.fact.failed = match first {
+                Some(outcome) if call.results.iter().all(|item| *item == Some(outcome)) => {
+                    Some(outcome)
+                }
+                _ => None,
+            };
+            if call.line > new_from {
+                pass.new_calls.push(call.fact);
+            } else if call.result_in_new_lines {
+                pass.settled.push((call.fact.source_key, call.fact.failed));
+            }
         }
+        pass
     }
-    pass
 }
 
 /// The exact source text of each `message.content` block, in order, so a
