@@ -85,6 +85,38 @@ This repository is governed under the **AgentFlow SDLC** in **autonomous** postu
 * **Branch Protection:** Never commit directly to `main`. All implementation occurs in dedicated worktrees under `.worktrees/<feature-name>`.
 * **Strict Four-Eyes Gate:** Builders never approve their own pull requests (`allowsSelfReview: false`). Independent review seats in `rev.review` audit the final candidate commit SHA before merge.
 
+## Handoff wait precision (local v0.2.0 candidate, #34)
+
+The existing `report handoffs` and `trace --metric-id medians` JSON journeys
+compute each wait as the selected receiver claim timestamp minus the handoff
+timestamp, in seconds. Timestamp subtraction precedes conversion to binary64;
+neither endpoint nor the elapsed sample is deliberately truncated or rounded.
+`wait_samples` retains its source order, duplicates and aligned source keys.
+The median uses the sorted central sample for odd counts and the arithmetic
+mean of the two central samples for even counts. Intake samples and medians
+remain in tokens. Empty valid sample sets have a null median; equal timestamps
+produce zero. Claim eligibility, attribution and window selection retain their
+existing rules, including eligible claims after the handoff window ends.
+
+JSON exposes finite computational numbers with normal round-trip representation
+and no fixed-decimal presentation rounding. For the specified small vectors,
+persisted microsecond endpoints and half-microsecond even medians survive within
+1e-12 seconds. This improves numerical precision, not source clock accuracy.
+Fractions beyond six decimal places remain outside the exact-preservation
+guarantee: precision lost during persistence cannot be recovered by reporting.
+Binary64 resolution depends on magnitude: an even half-microsecond increment
+can disappear around 2^32 seconds, and a one-microsecond increment can disappear
+around 2^34 seconds. Exact microsecond resolution is therefore not promised for
+every large duration. These limits do not introduce a new date eligibility cutoff.
+
+Only the medians trace uses formula version
+`acceptance-r1-a1-wait-fractional-v1`; other trace versions retain
+`acceptance-r1-a1`. Shared pair-median payloads expose the same corrected waits.
+A report-only read of a supported existing database computes fractions from
+retained timestamps without reingest or database writes. AC4 activity allocation
+continues to use observation-span whole-second prefixes for conservation;
+fractional wait conversion does not replace that quantizer.
+
 ## Codex command outcomes (local v0.2.0 candidate, #40)
 
 The `report decisions` JSON payload keeps `tool_loops` and adds its sibling

@@ -1034,7 +1034,7 @@ pub fn pair_medians(
         if let Some(claim) = receiver_claim(queue, edge) {
             entry
                 .wait_samples
-                .push((claim.ts - handoff_at).num_seconds() as f64);
+                .push((claim.ts - handoff_at).as_seconds_f64());
             entry
                 .wait_sample_keys
                 .push((edge.source_key.clone(), claim.source_key.clone()));
@@ -3029,6 +3029,92 @@ mod tests {
         assert_eq!(
             receiver_claim(&queue, &edges[0]).map(|row| row.source_key.as_str()),
             Some(claim.source_key.as_str())
+        );
+    }
+
+    #[test]
+    fn fractional_wait_samples_preserve_order_keys_and_medians() {
+        let cases: &[(&[i64], f64)] = &[
+            (&[24_734_000], 24.734),
+            (&[154_000, 49_000, 51_000], 0.051),
+            (&[49_000, 149_000], 0.099),
+            (&[100_000, 100_000, 900_000], 0.1),
+            (&[1_000_000, 3_000_000, 5_000_000, 7_000_000], 4.0),
+            (&[0], 0.0),
+            (&[1], 0.000001),
+            (&[0, 1], 0.0000005),
+        ];
+        for &(micros, expected_median) in cases {
+            let mut queue = Vec::new();
+            for (i, &wait) in micros.iter().enumerate() {
+                let item = format!("item-{i}");
+                let mut handoff = hand(&format!("handoff-{i}"), i as i64, &item, None, "A", "B");
+                // Fractional endpoints cross second boundaries for short waits.
+                handoff.ts += chrono::Duration::microseconds(900_000);
+                let mut claim = q(
+                    &format!("claim-{i}"),
+                    100 + i as i64,
+                    &item,
+                    0,
+                    "in-progress",
+                    "B",
+                    "B",
+                    None,
+                );
+                claim.ts = handoff.ts + chrono::Duration::microseconds(wait);
+                queue.extend([handoff, claim]);
+            }
+            let edges = handoff_edges(&queue);
+            let rows = pair_medians(&edges, &queue, &[]);
+            assert_eq!(rows.len(), 1);
+            let row = &rows[0];
+            assert_eq!(row.wait_invalid, 0);
+            assert_eq!(row.wait_samples.len(), micros.len());
+            for (i, (&sample, &wait)) in row.wait_samples.iter().zip(micros).enumerate() {
+                assert!((sample - wait as f64 / 1_000_000.0).abs() <= 1e-12);
+                assert_eq!(
+                    row.wait_sample_keys[i],
+                    (format!("handoff-{i}"), format!("claim-{i}"))
+                );
+            }
+            assert!((row.wait_median.unwrap() - expected_median).abs() <= 1e-12);
+            assert!(row.intake_samples.is_empty());
+            assert_eq!(row.intake_median, None);
+        }
+    }
+
+    #[test]
+    fn fractional_waits_do_not_drop_datetime_extrema() {
+        // Computational range proof, not a claim that source parsers accept
+        // these extended dates. Total microseconds overflow i64, seconds do not.
+        let duration = DateTime::<Utc>::MAX_UTC - DateTime::<Utc>::MIN_UTC;
+        assert!(duration.num_microseconds().is_none());
+        let mut handoff = hand("full-span", 0, "wide", None, "A", "B");
+        handoff.ts = DateTime::<Utc>::MIN_UTC;
+        let mut claim = q("wide-claim", 1, "wide", 0, "in-progress", "B", "B", None);
+        claim.ts = DateTime::<Utc>::MAX_UTC;
+        let queue = vec![handoff, claim];
+        let rows = pair_medians(&handoff_edges(&queue), &queue, &[]);
+        assert_eq!(rows[0].wait_invalid, 0);
+        assert_eq!(rows[0].wait_samples.len(), 1);
+        assert_eq!(rows[0].wait_median, Some(duration.as_seconds_f64()));
+        assert!(rows[0].wait_median.unwrap().is_finite());
+    }
+
+    #[test]
+    fn fractional_wait_binary64_resolution_is_magnitude_dependent() {
+        let large = chrono::Duration::seconds(1_i64 << 32);
+        assert_eq!(
+            even_median(vec![
+                large.as_seconds_f64(),
+                (large + chrono::Duration::microseconds(1)).as_seconds_f64()
+            ]),
+            Some(large.as_seconds_f64())
+        );
+        let larger = chrono::Duration::seconds(1_i64 << 34);
+        assert_eq!(
+            larger.as_seconds_f64(),
+            (larger + chrono::Duration::microseconds(1)).as_seconds_f64()
         );
     }
 
