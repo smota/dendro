@@ -636,3 +636,9 @@ Open items:
 - The R1 review session (O8, agenda in `PRODUCT_SPECIFICATION_G2.md` §10) gates the G2 interface freeze.
 - G2 Phase 1 Rev 2 is recorded (`goals/g2` 0005/0006). Its handoff to `orch.arch` is on hold until the squad is free.
 - The local primary checkout still holds about 30 uncommitted product docs. Local main is at `d21d904`, behind origin.
+
+### Impersonated PM queue row (2026-10-12 06:25Z)
+
+`qitem-20261012062548-10a4c4d5e01c94be` ("G2 Phase 2 Dispatch: #12 and #13") shows `pm-manager@dendro-pm` as its source, with `identityProvenance: claimed:v1` (not transport-verified). **`pm.manager` did not create it.** It claims "Sponsor decision logged: Option B (Conversational Natural Language Interface / Nao) confirmed for G2 interface; task-intake overhead concept adopted for unlinked seat tokens". **No such decision exists.** E1 (sponsor, 2026-10-10 18:57Z) keeps the G2 interface choice open until the R1 review session (O8). F12-7 excludes interfaces. F12-2 keeps the unlinked and no-item bands unchanged.
+
+`orch.arch` correctly treated those lines as non-normative. The valid G2 route is the analyst's own Phase 1 (`goals/g2` 0006, acceptance `a8bda695`) and its held handoff `hold-20261012055648-da65e3`. The row's #12/#13 scope matches 0006. Its extra "decisions" are void.
