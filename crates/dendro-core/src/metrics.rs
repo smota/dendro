@@ -166,7 +166,7 @@ pub fn activity_bands(
     bands
 }
 
-fn idle_demand(seat: &str, queue: &[QueueFact], at: DateTime<Utc>) -> bool {
+pub fn idle_demand(seat: &str, queue: &[QueueFact], at: DateTime<Utc>) -> bool {
     let mut latest: std::collections::BTreeMap<&str, &QueueFact> =
         std::collections::BTreeMap::new();
     for fact in queue.iter().filter(|q| q.ts <= at) {

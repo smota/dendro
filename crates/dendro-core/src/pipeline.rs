@@ -826,6 +826,10 @@ fn evaluate_report_snapshot(
             .record(cat, &tool.source_key);
     }
 
+    let queue_meta = store.load_queue_item_meta()?;
+    let fleet_concurrency =
+        crate::concurrency::fleet_concurrency(window, &seats, &activity, &bounds);
+
     let activity_rows: Vec<_> = seats
         .iter()
         .map(|seat| {
@@ -842,6 +846,15 @@ fn evaluate_report_snapshot(
                 .get(seat)
                 .cloned()
                 .unwrap_or_else(crate::tool_category::ToolCategoryBreakdown::empty);
+            let disambiguation = crate::concurrency::disambiguate_container_claims_with_bands(
+                seat,
+                &activity,
+                &queue_all,
+                window,
+                &lives,
+                &queue_meta,
+                &bands,
+            );
             json!({
                 "seat": seat,
                 "observed_secs": metrics::observed_secs(&spans),
@@ -857,6 +870,9 @@ fn evaluate_report_snapshot(
                 "waiting_human_secs": bands.waiting_human_secs,
                 "unknown_secs": bands.unknown_secs,
                 "sum": bands.sum(),
+                "unparked_container_secs": disambiguation.unparked_container_secs,
+                "leaf_stall_secs": disambiguation.leaf_stall_secs,
+                "container_hold_evidence": disambiguation.container_hold_evidence,
                 "ceremony_calls": seat_bd.ceremony_calls,
                 "engineering_calls": seat_bd.engineering_calls,
                 "ceremony_ratio": seat_bd.ceremony_ratio,
@@ -1228,6 +1244,7 @@ fn evaluate_report_snapshot(
         "m4_impact": metrics::m4_impact(),
         "kind": redact(kind),
         "activity": activity_rows,
+        "fleet_concurrency": fleet_concurrency,
         "seat_lives": seat_lives,
         "links": links,
         "handoff_edges": edges.iter().map(|edge| json!({
@@ -1305,7 +1322,7 @@ fn evaluate_report_snapshot(
     let wave1 = crate::turnaround::evaluate(crate::turnaround::Input {
         queue: &queue_all,
         history_queue: &queue_context,
-        meta: &store.load_queue_item_meta()?,
+        meta: &queue_meta,
         edges: &edges,
         closures: &k2_all,
         identities: &identities,
@@ -1654,6 +1671,10 @@ pub fn trace_json_with_thresholds(
             "five disjoint seat bands clipped to the half-open window",
             payload["activity"].clone(),
         ),
+        "fleet_concurrency" => (
+            "fleet concurrency distribution across integer active-seat counts k=0..=N with effective parallelism and fleet duty cycle",
+            payload["fleet_concurrency"].clone(),
+        ),
         "tool_categories" => (
             "ceremony_calls / total_calls across ceremony vs engineering categories",
             payload["tool_categories"].clone(),
@@ -1698,6 +1719,7 @@ pub fn trace_json_with_thresholds(
         "intakes": payload["intakes"],
         "pair_medians": payload["pair_medians"],
         "activity": payload["activity"],
+        "fleet_concurrency": payload["fleet_concurrency"],
         "tool_categories": payload["tool_categories"],
         "seat_lives": payload["seat_lives"],
         "openrig_sources": payload["openrig_sources"],
@@ -3647,6 +3669,245 @@ mod tests {
             .as_array()
             .unwrap();
         assert_eq!(trace_keys[0], "src1:1:2:0");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_fleet_concurrency_and_container_disambiguation_end_to_end() {
+        use crate::{ActivityFact, QueueFact, QueueItemMeta};
+        use chrono::TimeZone;
+        let at = |s: i64| chrono::Utc.timestamp_opt(1_760_000_000 + s, 0).unwrap();
+        let from_str = at(0).to_rfc3339();
+        let to_str = at(6000).to_rfc3339();
+
+        let dir = std::env::temp_dir().join(format!("dendro-concurrency-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("analytics.duckdb");
+        let store = AnalyticsStore::open_path(&db, "test-kid").unwrap();
+
+        // 1. Seat bounds: orch.lead has no stop; dev.build stopped at 5400s
+        store
+            .replace_seat_bounds(&[
+                SeatBound {
+                    seat: "orch.lead".into(),
+                    created_at: Some(at(0)),
+                    stopped_at: Some(at(6000)),
+                },
+                SeatBound {
+                    seat: "dev.build".into(),
+                    created_at: Some(at(0)),
+                    stopped_at: Some(at(5400)),
+                },
+            ])
+            .unwrap();
+
+        // 2. Activity facts
+        // orch.lead:
+        // 0..600: idle
+        // 600..1800: running (1200s)
+        // 1800..4200: idle
+        // 4200..4800: running (600s)
+        // 4800..6000: idle
+        // Total active: 1800s
+        for (i, (state, s)) in [
+            ("idle", 0),
+            ("running", 600),
+            ("idle", 1800),
+            ("running", 4200),
+            ("idle", 4800),
+        ]
+        .iter()
+        .enumerate()
+        {
+            store
+                .insert_activity(&ActivityFact {
+                    source_key: format!("act:orch:{s}"),
+                    seat: "orch.lead".into(),
+                    ts: at(*s),
+                    state: (*state).into(),
+                    seq: i as i64 + 1,
+                })
+                .unwrap();
+        }
+
+        // dev.build:
+        // 0..1200: idle
+        // 1200..2400: running (1200s)
+        // 2400..3600: idle
+        // 3600..5400: running (1800s until stop at 5400)
+        // Total active: 3000s
+        for (i, (state, s)) in [
+            ("idle", 0),
+            ("running", 1200),
+            ("idle", 2400),
+            ("running", 3600),
+        ]
+        .iter()
+        .enumerate()
+        {
+            store
+                .insert_activity(&ActivityFact {
+                    source_key: format!("act:dev:{s}"),
+                    seat: "dev.build".into(),
+                    ts: at(*s),
+                    state: (*state).into(),
+                    seq: i as i64 + 1,
+                })
+                .unwrap();
+        }
+
+        // 3. Queue facts for container disambiguation
+        // orch.lead claims Q-PARENT at 2400s, closed at 4200s
+        store
+            .insert_queue(&QueueFact {
+                source_key: "q:parent:2400".into(),
+                transition_id: 1,
+                qitem_id: "Q-PARENT".into(),
+                ts: at(2400),
+                state: "in-progress".into(),
+                source_seat: "orch.lead".into(),
+                dest_seat: "orch.lead".into(),
+                closure_reason: None,
+                closure_target: None,
+                chain_id: None,
+                missions: vec!["mission-alpha".into()],
+            })
+            .unwrap();
+        store
+            .insert_queue(&QueueFact {
+                source_key: "q:parent:4200".into(),
+                transition_id: 4,
+                qitem_id: "Q-PARENT".into(),
+                ts: at(4200),
+                state: "closed".into(),
+                source_seat: "orch.lead".into(),
+                dest_seat: "orch.lead".into(),
+                closure_reason: Some("completed".into()),
+                closure_target: None,
+                chain_id: None,
+                missions: vec!["mission-alpha".into()],
+            })
+            .unwrap();
+
+        // dev.build claims Q-CHILD at 3000s, closed at 3600s
+        store
+            .insert_queue(&QueueFact {
+                source_key: "q:child:3000".into(),
+                transition_id: 2,
+                qitem_id: "Q-CHILD".into(),
+                ts: at(3000),
+                state: "in-progress".into(),
+                source_seat: "orch.lead".into(),
+                dest_seat: "dev.build".into(),
+                closure_reason: None,
+                closure_target: None,
+                chain_id: None,
+                missions: vec!["mission-alpha".into()],
+            })
+            .unwrap();
+        store
+            .insert_queue(&QueueFact {
+                source_key: "q:child:3600".into(),
+                transition_id: 3,
+                qitem_id: "Q-CHILD".into(),
+                ts: at(3600),
+                state: "closed".into(),
+                source_seat: "dev.build".into(),
+                dest_seat: "dev.build".into(),
+                closure_reason: Some("completed".into()),
+                closure_target: None,
+                chain_id: None,
+                missions: vec!["mission-alpha".into()],
+            })
+            .unwrap();
+
+        // Queue item metadata linking Q-CHILD to Q-PARENT
+        store
+            .record_queue_item_meta(&QueueItemMeta {
+                qitem_id: "Q-CHILD".into(),
+                is_recovery: false,
+                recovery_reason: None,
+                last_nudge_result: None,
+                issue_tags: vec!["issue-53".into()],
+                phase_tags: vec![],
+                parent_qitem_id: Some("Q-PARENT".into()),
+            })
+            .unwrap();
+
+        store.checkpoint().unwrap();
+
+        // 4. Test report activity
+        let rep_act = report_json(&db, "activity", None, &from_str, &to_str).unwrap();
+        let payload_act = &rep_act["payload"];
+
+        // Check fleet_concurrency
+        let fc = &payload_act["fleet_concurrency"];
+        assert_eq!(fc["window_secs"], 6000);
+        assert_eq!(fc["seat_count"], 2);
+        assert_eq!(fc["conserved"], true);
+        assert_eq!(fc["total_active_seat_secs"], 4800);
+
+        let ep = fc["effective_parallelism"].as_f64().unwrap();
+        assert!((ep - 0.80).abs() < 1e-6);
+        assert_eq!(fc["effective_parallelism_milli"], 800);
+
+        let dc = fc["fleet_duty_cycle"].as_f64().unwrap();
+        assert!((dc - 0.40).abs() < 1e-6);
+        assert_eq!(fc["fleet_duty_cycle_bps"], 4000);
+
+        let hist = fc["histogram"].as_array().unwrap();
+        assert_eq!(hist.len(), 3);
+        assert_eq!(hist[0]["secs"], 2400);
+        assert_eq!(hist[1]["secs"], 2400);
+        assert_eq!(hist[2]["secs"], 1200);
+        assert_eq!(hist[0]["conserved"], true);
+        assert_eq!(hist[1]["conserved"], true);
+        assert_eq!(hist[2]["conserved"], true);
+
+        // Check activity rows
+        let act_rows = payload_act["activity"].as_array().unwrap();
+        let orch_row = act_rows.iter().find(|r| r["seat"] == "orch.lead").unwrap();
+        assert_eq!(orch_row["active_secs"], 1800);
+        assert_eq!(orch_row["idle_with_work_secs"], 1800);
+        assert_eq!(orch_row["unparked_container_secs"], 600);
+        assert_eq!(orch_row["leaf_stall_secs"], 1200);
+        assert_eq!(
+            orch_row["unparked_container_secs"].as_i64().unwrap()
+                + orch_row["leaf_stall_secs"].as_i64().unwrap(),
+            orch_row["idle_with_work_secs"].as_i64().unwrap()
+        );
+        assert_eq!(orch_row["sum"], 6000);
+
+        // Check container_hold_evidence AC7 provenance
+        let evidence = orch_row["container_hold_evidence"].as_array().unwrap();
+        assert_eq!(evidence.len(), 1);
+        assert_eq!(evidence[0]["parent_qitem_id"], "Q-PARENT");
+        assert_eq!(evidence[0]["parent_source_key"], "q:parent:2400");
+        assert_eq!(evidence[0]["child_qitem_id"], "Q-CHILD");
+        assert_eq!(evidence[0]["child_seat"], "dev.build");
+        assert_eq!(evidence[0]["child_source_key"], "q:child:3000");
+        assert_eq!(evidence[0]["secs"], 600);
+
+        // dev.build activity
+        let dev_row = act_rows.iter().find(|r| r["seat"] == "dev.build").unwrap();
+        assert_eq!(dev_row["active_secs"], 3000);
+        assert_eq!(dev_row["sum"], 5400); // 5400s observed due to stop_at 5400
+
+        // 5. Test report decisions
+        let rep_dec = report_json(&db, "decisions", None, &from_str, &to_str).unwrap();
+        assert_eq!(
+            rep_dec["payload"]["fleet_concurrency"]["total_active_seat_secs"],
+            4800
+        );
+
+        // 6. Test trace fleet_concurrency
+        let trace = trace_json(&db, "fleet_concurrency", None, &from_str, &to_str).unwrap();
+        assert_eq!(trace["metric_id"], "fleet_concurrency");
+        assert_eq!(trace["formula_version"], "acceptance-r1-a1");
+        assert_eq!(trace["value"], *fc);
+        assert_eq!(trace["inputs"]["fleet_concurrency"], *fc);
 
         let _ = fs::remove_dir_all(&dir);
     }

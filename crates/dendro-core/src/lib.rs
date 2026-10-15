@@ -2,6 +2,7 @@
 #![recursion_limit = "256"]
 #![deny(unsafe_code)]
 
+pub mod concurrency;
 pub mod facts;
 pub mod file_metadata;
 mod file_state;
@@ -19,6 +20,7 @@ pub mod tool_category;
 pub mod traits;
 pub mod turnaround;
 
+pub use concurrency::*;
 pub use facts::*;
 pub use lifecycle::{Cancel, Interrupted, RUN_CANCEL};
 pub use manifest::*;
