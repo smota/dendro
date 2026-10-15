@@ -207,7 +207,9 @@ impl AnalyticsStore {
                 prior_cached_input_tokens BIGINT,
                 prior_cache_write_input_tokens BIGINT,
                 prior_output_tokens BIGINT,
-                prior_reasoning_output_tokens BIGINT
+                prior_reasoning_output_tokens BIGINT,
+                model VARCHAR,
+                effort VARCHAR
             );
             CREATE TABLE tool_facts (
                 source_key VARCHAR PRIMARY KEY,
@@ -220,7 +222,8 @@ impl AnalyticsStore {
                 failed BOOLEAN,
                 structured_write BOOLEAN NOT NULL,
                 generation BIGINT NOT NULL,
-                source_id VARCHAR NOT NULL
+                source_id VARCHAR NOT NULL,
+                category VARCHAR NOT NULL DEFAULT 'other'
             );
             CREATE TABLE identity_facts (
                 source_key VARCHAR PRIMARY KEY,
@@ -248,7 +251,13 @@ impl AnalyticsStore {
                 closure_reason VARCHAR,
                 closure_target VARCHAR,
                 chain_id VARCHAR,
-                missions VARCHAR NOT NULL
+                missions VARCHAR NOT NULL,
+                is_recovery BOOLEAN NOT NULL DEFAULT FALSE,
+                recovery_reason VARCHAR,
+                last_nudge_result VARCHAR,
+                issue_tags VARCHAR NOT NULL DEFAULT '[]',
+                phase_tags VARCHAR NOT NULL DEFAULT '[]',
+                parent_qitem_id VARCHAR
             );
             CREATE TABLE skill_facts (
                 source_key VARCHAR PRIMARY KEY,
@@ -585,7 +594,8 @@ impl AnalyticsStore {
                     generation BIGINT, source_id VARCHAR, predecessor_source_key VARCHAR,
                     predecessor_reason VARCHAR, prior_input_tokens BIGINT,
                     prior_cached_input_tokens BIGINT, prior_cache_write_input_tokens BIGINT,
-                    prior_output_tokens BIGINT, prior_reasoning_output_tokens BIGINT
+                    prior_output_tokens BIGINT, prior_reasoning_output_tokens BIGINT,
+                    model VARCHAR, effort VARCHAR
                 )",
             )?;
             {
@@ -612,7 +622,9 @@ impl AnalyticsStore {
                         u.prior_cached_input_tokens,
                         u.prior_cache_write_input_tokens,
                         u.prior_output_tokens,
-                        u.prior_reasoning_output_tokens
+                        u.prior_reasoning_output_tokens,
+                        Option::<String>::None,
+                        Option::<String>::None
                     ])?;
                 }
                 appender.flush()?;
@@ -625,7 +637,7 @@ impl AnalyticsStore {
                         source_id, predecessor_source_key, predecessor_reason,
                         prior_input_tokens, prior_cached_input_tokens,
                         prior_cache_write_input_tokens, prior_output_tokens,
-                        prior_reasoning_output_tokens
+                        prior_reasoning_output_tokens, model, effort
                  FROM usage_stage
                  ON CONFLICT (source_key) DO NOTHING;
                  DROP TABLE usage_stage",
@@ -637,7 +649,7 @@ impl AnalyticsStore {
                     source_key VARCHAR, harness VARCHAR, native_session VARCHAR,
                     ts VARCHAR, seq BIGINT, tool_name VARCHAR, fingerprint VARCHAR,
                     failed BOOLEAN, structured_write BOOLEAN, generation BIGINT,
-                    source_id VARCHAR
+                    source_id VARCHAR, category VARCHAR
                 )",
             )?;
             {
@@ -654,7 +666,8 @@ impl AnalyticsStore {
                         t.failed,
                         t.structured_write,
                         t.generation,
-                        redact(source_id)
+                        redact(source_id),
+                        ToolCategory::classify_tool_name(&t.name).as_str()
                     ])?;
                 }
                 appender.flush()?;
@@ -662,7 +675,7 @@ impl AnalyticsStore {
             tx.execute_batch(
                 "INSERT INTO tool_facts
                  SELECT source_key, harness, native_session, CAST(ts AS TIMESTAMP), seq,
-                        tool_name, fingerprint, failed, structured_write, generation, source_id
+                        tool_name, fingerprint, failed, structured_write, generation, source_id, category
                  FROM tool_stage
                  ON CONFLICT (source_key) DO NOTHING;
                  DROP TABLE tool_stage",
@@ -688,8 +701,8 @@ impl AnalyticsStore {
                 params![marker],
             )?;
             tx.execute(
-                "INSERT INTO tool_facts (source_key, harness, native_session, ts, seq, tool_name, fingerprint, failed, structured_write, generation, source_id)
-                 VALUES (?, ?, ?, NULL, ?, ?, ?, NULL, FALSE, ?, ?)",
+                "INSERT INTO tool_facts (source_key, harness, native_session, ts, seq, tool_name, fingerprint, failed, structured_write, generation, source_id, category)
+                 VALUES (?, ?, ?, NULL, ?, ?, ?, NULL, FALSE, ?, ?, 'other')",
                 params![marker, redact(harness), reader.native_session.as_deref().map(redact).unwrap_or_default(),
                     byte_offset, if reader.complete { READER_COMPLETE } else { READER_UNSUPPORTED },
                     redact(prefix_sha256), generation, redact(source_id)],
@@ -707,6 +720,160 @@ impl AnalyticsStore {
         checkpoint(FileBatchStage::BeforeCommit)?;
         tx.commit()?;
         Ok(())
+    }
+
+    pub fn record_tool_categories(&self, categories: &[(String, ToolCategory)]) -> Result<()> {
+        if categories.is_empty() {
+            return Ok(());
+        }
+        let tx = self.conn.unchecked_transaction()?;
+        {
+            let mut stmt = tx.prepare("UPDATE tool_facts SET category = ? WHERE source_key = ?")?;
+            for (source_key, category) in categories {
+                stmt.execute(params![category.as_str(), redact(source_key)])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn load_tool_categories(&self) -> Result<std::collections::BTreeMap<String, ToolCategory>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT source_key, category FROM tool_facts WHERE NOT starts_with(source_key, 'dendro-internal:reader:')",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let key: String = row.get(0)?;
+            let label: String = row.get(1)?;
+            Ok((key, ToolCategory::from_label(&label)))
+        })?;
+        rows.collect::<Result<_, _>>().map_err(Into::into)
+    }
+
+    pub fn record_usage_models(
+        &self,
+        models: &[(String, Option<String>, Option<String>)],
+    ) -> Result<()> {
+        if models.is_empty() {
+            return Ok(());
+        }
+        let tx = self.conn.unchecked_transaction()?;
+        {
+            let mut stmt =
+                tx.prepare("UPDATE usage_facts SET model = ?, effort = ? WHERE source_key = ?")?;
+            for (source_key, model, effort) in models {
+                stmt.execute(params![
+                    model.as_deref().map(redact),
+                    effort.as_deref().map(redact),
+                    redact(source_key)
+                ])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    #[allow(clippy::type_complexity)]
+    pub fn load_usage_models(
+        &self,
+    ) -> Result<std::collections::BTreeMap<String, (Option<String>, Option<String>)>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT source_key, model, effort FROM usage_facts WHERE model IS NOT NULL OR effort IS NOT NULL")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                (
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ),
+            ))
+        })?;
+        rows.collect::<Result<_, _>>().map_err(Into::into)
+    }
+
+    pub fn record_queue_item_meta(&self, meta: &QueueItemMeta) -> Result<()> {
+        let qitem_id = redact(&meta.qitem_id);
+        let recovery_reason = meta.recovery_reason.as_deref().map(redact);
+        let last_nudge_result = meta.last_nudge_result.as_deref().map(redact);
+        let issue_tags = serde_json::to_string(
+            &meta
+                .issue_tags
+                .iter()
+                .map(|t| redact(t))
+                .collect::<Vec<_>>(),
+        )?;
+        let phase_tags = serde_json::to_string(
+            &meta
+                .phase_tags
+                .iter()
+                .map(|t| redact(t))
+                .collect::<Vec<_>>(),
+        )?;
+        let parent_qitem_id = meta.parent_qitem_id.as_deref().map(redact);
+        self.conn.execute(
+            r#"UPDATE queue_facts SET
+                 is_recovery = ?,
+                 recovery_reason = COALESCE(?, queue_facts.recovery_reason),
+                 last_nudge_result = COALESCE(?, queue_facts.last_nudge_result),
+                 issue_tags = ?,
+                 phase_tags = ?,
+                 parent_qitem_id = COALESCE(?, queue_facts.parent_qitem_id)
+               WHERE qitem_id = ?"#,
+            params![
+                meta.is_recovery,
+                recovery_reason,
+                last_nudge_result,
+                issue_tags,
+                phase_tags,
+                parent_qitem_id,
+                qitem_id
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn load_queue_item_meta(
+        &self,
+    ) -> Result<std::collections::BTreeMap<String, QueueItemMeta>> {
+        let mut stmt = self.conn.prepare(
+            r#"SELECT qitem_id,
+                      BOOL_OR(is_recovery),
+                      MAX(recovery_reason),
+                      MAX(last_nudge_result),
+                      MAX(issue_tags),
+                      MAX(phase_tags),
+                      MAX(parent_qitem_id)
+               FROM queue_facts
+               GROUP BY qitem_id"#,
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let qitem_id: String = row.get(0)?;
+            let is_recovery: bool = row.get::<_, Option<bool>>(1)?.unwrap_or(false);
+            let recovery_reason: Option<String> = row.get(2)?;
+            let last_nudge_result: Option<String> = row.get(3)?;
+            let issue_tags_raw: Option<String> = row.get(4)?;
+            let phase_tags_raw: Option<String> = row.get(5)?;
+            let parent_qitem_id: Option<String> = row.get(6)?;
+            Ok((
+                qitem_id.clone(),
+                QueueItemMeta {
+                    qitem_id,
+                    is_recovery,
+                    recovery_reason,
+                    last_nudge_result,
+                    issue_tags: issue_tags_raw
+                        .as_deref()
+                        .and_then(|s| serde_json::from_str(s).ok())
+                        .unwrap_or_default(),
+                    phase_tags: phase_tags_raw
+                        .as_deref()
+                        .and_then(|s| serde_json::from_str(s).ok())
+                        .unwrap_or_default(),
+                    parent_qitem_id,
+                },
+            ))
+        })?;
+        rows.collect::<Result<_, _>>().map_err(Into::into)
     }
 
     pub fn insert_identity(&self, fact: &IdentityFact) -> Result<()> {
@@ -745,19 +912,21 @@ impl AnalyticsStore {
     }
 
     pub fn insert_queue(&self, fact: &QueueFact) -> Result<()> {
+        let qitem_redacted = redact(&fact.qitem_id);
+        let auto_recovery = qitem_redacted.starts_with("qitem-recovery-");
         self.conn
             .prepare_cached(
                 r#"INSERT INTO queue_facts (
                    source_key, transition_id, qitem_id, ts, state, source_seat, dest_seat,
-                   closure_reason, closure_target, chain_id, missions
-               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   closure_reason, closure_target, chain_id, missions, is_recovery, recovery_reason
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT (source_key) DO UPDATE SET
                  chain_id = COALESCE(queue_facts.chain_id, excluded.chain_id)"#,
             )?
             .execute(params![
                 redact(&fact.source_key),
                 fact.transition_id,
-                redact(&fact.qitem_id),
+                qitem_redacted,
                 fact.ts.to_rfc3339(),
                 queue_state(&fact.state),
                 redact(&fact.source_seat),
@@ -767,7 +936,9 @@ impl AnalyticsStore {
                 fact.chain_id.as_deref().map(redact),
                 serde_json::to_string(
                     &fact.missions.iter().map(|m| redact(m)).collect::<Vec<_>>()
-                )?
+                )?,
+                auto_recovery,
+                auto_recovery.then(|| "recovery".to_string())
             ])?;
         Ok(())
     }
@@ -1653,6 +1824,23 @@ mod tests {
         store
             .record_mutable_source_disclosure(canary, canary, canary)
             .unwrap();
+        store
+            .record_usage_models(&[(canary.into(), Some(canary.into()), Some(canary.into()))])
+            .unwrap();
+        store
+            .record_tool_categories(&[(format!("tool-{canary}"), ToolCategory::from_label(canary))])
+            .unwrap();
+        store
+            .record_queue_item_meta(&QueueItemMeta {
+                qitem_id: canary.into(),
+                is_recovery: true,
+                recovery_reason: Some(canary.into()),
+                last_nudge_result: Some(canary.into()),
+                issue_tags: vec![canary.into()],
+                phase_tags: vec![canary.into()],
+                parent_qitem_id: Some(canary.into()),
+            })
+            .unwrap();
         let mut checked = 0usize;
         for qualified in crate::privacy::TEXT_COLUMNS {
             let (table, column) = qualified.split_once('.').unwrap();
@@ -1905,7 +2093,8 @@ mod tests {
                     failed BOOLEAN CHECK (source_key <> 'old-b' OR failed IS NOT TRUE),
                     structured_write BOOLEAN NOT NULL,
                     generation BIGINT NOT NULL,
-                    source_id VARCHAR NOT NULL
+                    source_id VARCHAR NOT NULL,
+                    category VARCHAR NOT NULL DEFAULT 'other'
                  )",
                 )
                 .unwrap();
@@ -2445,7 +2634,7 @@ mod tests {
             );
         }
         // A native Claude tool name never selects the metadata namespace.
-        store.conn.execute("INSERT INTO tool_facts VALUES (?, 'claude', 'c', NULL, 1, ?, NULL, NULL, FALSE, 1, 'src')",
+        store.conn.execute("INSERT INTO tool_facts VALUES (?, 'claude', 'c', NULL, 1, ?, NULL, NULL, FALSE, 1, 'src', 'other')",
             params!["actual-call", READER_COMPLETE]).unwrap();
         assert_eq!(store.load_tools().unwrap().len(), 1);
     }
@@ -2535,7 +2724,7 @@ mod tests {
             (1, "2026-10-15T00:00:01Z"),
             (2, "2026-10-15T00:00:02Z"),
         ] {
-            store.conn.execute("INSERT INTO tool_facts VALUES (?, ?, ?, CAST(? AS TIMESTAMP), ?, ?, ?, ?, ?, ?, ?)",params![format!("unparsed~row{seq}"),"claude","s",ts,seq,"Read","a".repeat(64),true,false,42,"actual-source"]).unwrap();
+            store.conn.execute("INSERT INTO tool_facts VALUES (?, ?, ?, CAST(? AS TIMESTAMP), ?, ?, ?, ?, ?, ?, ?, 'inspect_read')",params![format!("unparsed~row{seq}"),"claude","s",ts,seq,"Read","a".repeat(64),true,false,42,"actual-source"]).unwrap();
         }
         store.checkpoint().unwrap();
         drop(store);

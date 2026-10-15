@@ -146,3 +146,111 @@ pub struct CodexObservation {
     pub source_id: String,
     pub fact: ToolFact,
 }
+
+/// Closed operational category for tool and command invocations (#52).
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolCategory {
+    CoordQueue,
+    CoordStatus,
+    GovernancePhase,
+    EngBuildTest,
+    EngCodeEdit,
+    EngVcs,
+    InspectRead,
+    #[default]
+    Other,
+}
+
+impl ToolCategory {
+    pub const ALL: [ToolCategory; 8] = [
+        ToolCategory::CoordQueue,
+        ToolCategory::CoordStatus,
+        ToolCategory::GovernancePhase,
+        ToolCategory::EngBuildTest,
+        ToolCategory::EngCodeEdit,
+        ToolCategory::EngVcs,
+        ToolCategory::InspectRead,
+        ToolCategory::Other,
+    ];
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ToolCategory::CoordQueue => "coord_queue",
+            ToolCategory::CoordStatus => "coord_status",
+            ToolCategory::GovernancePhase => "governance_phase",
+            ToolCategory::EngBuildTest => "eng_build_test",
+            ToolCategory::EngCodeEdit => "eng_code_edit",
+            ToolCategory::EngVcs => "eng_vcs",
+            ToolCategory::InspectRead => "inspect_read",
+            ToolCategory::Other => "other",
+        }
+    }
+
+    pub fn from_label(label: &str) -> Self {
+        match label.trim() {
+            "coord_queue" => ToolCategory::CoordQueue,
+            "coord_status" => ToolCategory::CoordStatus,
+            "governance_phase" => ToolCategory::GovernancePhase,
+            "eng_build_test" => ToolCategory::EngBuildTest,
+            "eng_code_edit" => ToolCategory::EngCodeEdit,
+            "eng_vcs" => ToolCategory::EngVcs,
+            "inspect_read" => ToolCategory::InspectRead,
+            _ => ToolCategory::Other,
+        }
+    }
+
+    pub fn is_ceremony(&self) -> bool {
+        matches!(
+            self,
+            ToolCategory::CoordQueue | ToolCategory::CoordStatus | ToolCategory::GovernancePhase
+        )
+    }
+
+    pub fn is_engineering(&self) -> bool {
+        matches!(
+            self,
+            ToolCategory::EngBuildTest
+                | ToolCategory::EngCodeEdit
+                | ToolCategory::EngVcs
+                | ToolCategory::InspectRead
+        )
+    }
+
+    /// Classify a tool call from its tool name alone when no raw command/input is available.
+    pub fn classify_tool_name(tool_name: &str) -> Self {
+        match tool_name {
+            "Write"
+            | "Edit"
+            | "MultiEdit"
+            | "NotebookEdit"
+            | "write"
+            | "edit"
+            | "apply_patch"
+            | "patch_apply"
+            | "replace_file_content"
+            | "multi_replace_file_content"
+            | "write_to_file" => ToolCategory::EngCodeEdit,
+            "Read" | "read" | "view_file" | "view_file_outline" | "view_code_item" | "Glob"
+            | "Grep" | "LS" | "grep_search" | "find_by_name" | "list_dir" => {
+                ToolCategory::InspectRead
+            }
+            _ => ToolCategory::Other,
+        }
+    }
+}
+
+/// Enriched queue-item metadata for recovery classification, boundary wake status,
+/// and issue/phase/parent lineage (#53, #55).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QueueItemMeta {
+    pub qitem_id: String,
+    pub is_recovery: bool,
+    pub recovery_reason: Option<String>,
+    pub last_nudge_result: Option<String>,
+    pub issue_tags: Vec<String>,
+    pub phase_tags: Vec<String>,
+    pub parent_qitem_id: Option<String>,
+}
