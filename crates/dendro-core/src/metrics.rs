@@ -1082,124 +1082,167 @@ pub struct ToolLoop {
 /// its full count. A three whose 1st or 3rd failure has no timestamp cannot
 /// qualify, though the failure stays in the run.
 pub fn tool_loops(tools: &[ToolFact], failures: usize, window_secs: i64) -> Vec<ToolLoop> {
-    let mut by_session: BTreeMap<(String, String), Vec<&ToolFact>> = BTreeMap::new();
-    for tool in tools {
+    evaluate_tool_loops(tools, failures, window_secs)
+        .episodes
+        .into_iter()
+        .map(|e| e.projection)
+        .collect()
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct LoopEpisode {
+    pub projection: ToolLoop,
+    pub members: Vec<usize>,
+    pub witness: Vec<usize>,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct LoopEvaluation {
+    pub order: Vec<usize>,
+    pub episodes: Vec<LoopEpisode>,
+}
+
+pub(crate) fn evaluate_tool_loops(
+    tools: &[ToolFact],
+    failures: usize,
+    window_secs: i64,
+) -> LoopEvaluation {
+    let mut by_session: BTreeMap<(String, String), Vec<usize>> = BTreeMap::new();
+    for (i, tool) in tools.iter().enumerate() {
         by_session
             .entry((tool.harness.clone(), tool.native_session.clone()))
             .or_default()
-            .push(tool);
+            .push(i);
     }
     let window = chrono::Duration::seconds(window_secs);
-    let mut loops = Vec::new();
+    let mut result = LoopEvaluation::default();
     for ((harness, session), mut events) in by_session {
-        events.sort_by_key(|event| event.seq);
-        let mut run: Vec<&ToolFact> = Vec::new();
-        let flush = |run: &mut Vec<&ToolFact>, loops: &mut Vec<ToolLoop>, session: &str| {
-            let qualifies = failures > 0
-                && run.windows(failures).any(|three| {
-                    match (
-                        three.first().and_then(|t| t.ts),
-                        three.last().and_then(|t| t.ts),
-                    ) {
+        events.sort_by_key(|&i| tools[i].seq);
+        result.order.extend_from_slice(&events);
+        let mut run: Vec<usize> = Vec::new();
+        let flush = |run: &mut Vec<usize>, result: &mut LoopEvaluation| {
+            let witness = if failures > 0 {
+                run.windows(failures).find(|three| {
+                    match (tools[three[0]].ts, tools[*three.last().unwrap()].ts) {
                         (Some(start), Some(end)) => end - start <= window,
                         _ => false,
                     }
-                });
-            if qualifies {
-                loops.push(ToolLoop {
-                    harness: harness.clone(),
-                    session: session.to_string(),
-                    tool: run[0].name.clone(),
-                    count: run.len(),
+                })
+            } else {
+                None
+            };
+            if let Some(witness) = witness {
+                result.episodes.push(LoopEpisode {
+                    projection: ToolLoop {
+                        harness: harness.clone(),
+                        session: session.clone(),
+                        tool: tools[run[0]].name.clone(),
+                        count: run.len(),
+                    },
+                    members: run.clone(),
+                    witness: witness.to_vec(),
                 });
             }
             run.clear();
         };
-        for event in events {
+        for i in events {
+            let event = &tools[i];
             let continues = event.failed == Some(true)
                 && event.fingerprint.is_some()
-                && run.last().is_some_and(|prev| {
-                    prev.name == event.name && prev.fingerprint == event.fingerprint
+                && run.last().is_some_and(|&prev| {
+                    tools[prev].name == event.name && tools[prev].fingerprint == event.fingerprint
                 });
             if continues {
-                run.push(event);
+                run.push(i);
             } else {
-                flush(&mut run, &mut loops, &session);
+                flush(&mut run, &mut result);
                 if event.failed == Some(true) {
-                    run.push(event);
+                    run.push(i);
                 }
             }
         }
-        flush(&mut run, &mut loops, &session);
+        flush(&mut run, &mut result);
     }
-    loops
+    result
 }
 
 /// Codex source order has untimed anchors. Timed segments sort independently.
 pub fn codex_command_loops(observations: &[CodexObservation]) -> Vec<ToolLoop> {
-    let mut sessions: BTreeMap<&str, Vec<&CodexObservation>> = BTreeMap::new();
-    for row in observations {
+    evaluate_codex_loops(observations)
+        .episodes
+        .into_iter()
+        .map(|e| e.projection)
+        .collect()
+}
+
+pub(crate) fn evaluate_codex_loops(observations: &[CodexObservation]) -> LoopEvaluation {
+    let mut sessions: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
+    for (i, row) in observations.iter().enumerate() {
         sessions
             .entry(&row.fact.native_session)
             .or_default()
-            .push(row);
+            .push(i);
     }
-    let mut result = Vec::new();
+    let mut result = LoopEvaluation::default();
     for (session, mut rows) in sessions {
-        rows.sort_by(|a, b| {
-            (&a.source_id, a.fact.generation, a.fact.seq).cmp(&(
-                &b.source_id,
-                b.fact.generation,
-                b.fact.seq,
-            ))
-        });
+        let native = |i: usize| {
+            let row = &observations[i];
+            (&row.source_id, row.fact.generation, row.fact.seq)
+        };
+        rows.sort_by(|&a, &b| native(a).cmp(&native(b)));
         let mut start = 0;
         for end in 0..=rows.len() {
-            if end == rows.len() || rows[end].fact.ts.is_none() {
-                rows[start..end].sort_by(|a, b| {
-                    a.fact.ts.cmp(&b.fact.ts).then_with(|| {
-                        (&a.source_id, a.fact.generation, a.fact.seq).cmp(&(
-                            &b.source_id,
-                            b.fact.generation,
-                            b.fact.seq,
-                        ))
-                    })
+            if end == rows.len() || observations[rows[end]].fact.ts.is_none() {
+                rows[start..end].sort_by(|&a, &b| {
+                    observations[a]
+                        .fact
+                        .ts
+                        .cmp(&observations[b].fact.ts)
+                        .then_with(|| native(a).cmp(&native(b)))
                 });
                 start = end + 1;
             }
         }
-        let mut run: Vec<&ToolFact> = Vec::new();
-        let flush = |run: &mut Vec<&ToolFact>, result: &mut Vec<ToolLoop>| {
-            if run
-                .windows(3)
-                .any(|triple| match (triple[0].ts, triple[2].ts) {
+        result.order.extend_from_slice(&rows);
+        let mut run: Vec<usize> = Vec::new();
+        let flush = |run: &mut Vec<usize>, result: &mut LoopEvaluation| {
+            let witness = run.windows(3).find(|triple| {
+                match (
+                    observations[triple[0]].fact.ts,
+                    observations[triple[2]].fact.ts,
+                ) {
                     (Some(a), Some(b)) => b >= a && b - a <= chrono::Duration::seconds(600),
                     _ => false,
-                })
-            {
-                result.push(ToolLoop {
-                    harness: "codex".into(),
-                    session: session.into(),
-                    tool: CODEX_COMMAND.into(),
-                    count: run.len(),
+                }
+            });
+            if let Some(witness) = witness {
+                result.episodes.push(LoopEpisode {
+                    projection: ToolLoop {
+                        harness: "codex".into(),
+                        session: session.into(),
+                        tool: CODEX_COMMAND.into(),
+                        count: run.len(),
+                    },
+                    members: run.clone(),
+                    witness: witness.to_vec(),
                 });
             }
             run.clear();
         };
-        for row in rows {
-            let fact = &row.fact;
+        for i in rows {
+            let fact = &observations[i].fact;
             let eligible = fact.name == CODEX_COMMAND
                 && fact.failed == Some(true)
                 && fact.fingerprint.is_some();
             if !eligible
                 || run
                     .last()
-                    .is_some_and(|last| last.fingerprint != fact.fingerprint)
+                    .is_some_and(|&last| observations[last].fact.fingerprint != fact.fingerprint)
             {
                 flush(&mut run, &mut result);
             }
             if eligible {
-                run.push(fact);
+                run.push(i);
             }
         }
         flush(&mut run, &mut result);
@@ -3220,5 +3263,72 @@ mod tests {
             members(&closed_items("seat-a", &queue, &snapshots, window)),
             vec!["clean"]
         );
+    }
+}
+
+#[cfg(test)]
+mod loop_evidence_tests {
+    use super::*;
+    use chrono::TimeZone;
+    fn facts(offsets: &[Option<i64>]) -> Vec<ToolFact> {
+        offsets
+            .iter()
+            .enumerate()
+            .map(|(i, t)| ToolFact {
+                source_key: format!("row{i}"),
+                harness: "claude".into(),
+                native_session: "s".into(),
+                ts: t.map(|s| chrono::Utc.timestamp_opt(s, 0).unwrap()),
+                seq: i as i64,
+                name: "Read".into(),
+                fingerprint: Some("opaque".into()),
+                failed: Some(true),
+                structured_write: false,
+                generation: 7,
+            })
+            .collect()
+    }
+    #[test]
+    fn full_run_and_first_sliding_witness_are_retained() {
+        let rows = facts(&[Some(0), Some(400), Some(700), Some(800), Some(900)]);
+        let e = evaluate_tool_loops(&rows, 3, 600);
+        assert_eq!(e.order, vec![0, 1, 2, 3, 4]);
+        assert_eq!(e.episodes.len(), 1);
+        assert_eq!(e.episodes[0].members, vec![0, 1, 2, 3, 4]);
+        assert_eq!(e.episodes[0].witness, vec![1, 2, 3]);
+        assert_eq!(e.episodes[0].projection.count, 5);
+        assert!(evaluate_tool_loops(&rows, 0, 600).episodes.is_empty());
+    }
+    #[test]
+    fn captured_native_ties_can_have_different_valid_results() {
+        let mut rows = facts(&[Some(0); 4]);
+        for row in &mut rows {
+            row.seq = 100;
+        }
+        rows[3].failed = Some(false);
+        let e = evaluate_tool_loops(&rows, 3, 600);
+        assert_eq!(e.episodes[0].members, vec![0, 1, 2]);
+        rows.swap(2, 3);
+        let e = evaluate_tool_loops(&rows, 3, 600);
+        assert_eq!(e.order, vec![0, 1, 2, 3]);
+        assert!(e.episodes.is_empty());
+    }
+    #[test]
+    fn signed_native_and_anchored_codex_predicates_remain_distinct() {
+        let rows = facts(&[Some(500), None, Some(0)]);
+        let native = evaluate_tool_loops(&rows, 3, 600);
+        assert_eq!(native.episodes[0].witness, vec![0, 1, 2]);
+        let codex: Vec<_> = rows
+            .into_iter()
+            .map(|mut fact| {
+                fact.harness = "codex".into();
+                fact.name = CODEX_COMMAND.into();
+                CodexObservation {
+                    source_id: "source".into(),
+                    fact,
+                }
+            })
+            .collect();
+        assert!(evaluate_codex_loops(&codex).episodes.is_empty());
     }
 }

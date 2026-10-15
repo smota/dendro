@@ -884,6 +884,35 @@ impl AnalyticsStore {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
+    /// A single committed read snapshot for every input to a report evaluation.
+    pub(crate) fn read_snapshot<T>(&self, evaluate: impl FnOnce(&Self) -> Result<T>) -> Result<T> {
+        let tx = self.conn.unchecked_transaction()?;
+        let result = evaluate(self)?;
+        tx.commit()?;
+        Ok(result)
+    }
+
+    /// Supplemental provenance: never drives or changes load_tools enumeration.
+    pub(crate) fn tool_source_ids(
+        &self,
+    ) -> Result<std::collections::HashMap<String, Option<String>>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT source_key, source_id FROM tool_facts")?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        rows.collect::<Result<_, _>>().map_err(Into::into)
+    }
+
+    pub(crate) fn source_prefixes(
+        &self,
+    ) -> Result<std::collections::HashMap<String, (i64, i64, String)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT source_id, generation, byte_offset, prefix_sha256 FROM source_files",
+        )?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, (r.get(1)?, r.get(2)?, r.get(3)?))))?;
+        rows.collect::<Result<_, _>>().map_err(Into::into)
+    }
+
     pub fn load_tools(&self) -> Result<Vec<ToolFact>> {
         let mut stmt = self.conn.prepare(
             r#"SELECT source_key, harness, native_session, CAST(ts AS VARCHAR), seq, tool_name, fingerprint,
@@ -2111,5 +2140,158 @@ mod tests {
         drop(tx);
         assert_eq!(store.warning_count().unwrap(), 0);
         assert!(store.source_state("src").unwrap().is_some());
+    }
+    #[test]
+    fn read_snapshot_rolls_back_error_and_allows_the_next_transaction() {
+        let store = AnalyticsStore::open_in_memory("synthetic-id").unwrap();
+        let err = store
+            .read_snapshot(|s| -> Result<()> {
+                s.conn.execute(
+                    "INSERT INTO source_files VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    params!["source", "claude", "synthetic", 1, 0, "a".repeat(64), "s"],
+                )?;
+                Err(anyhow!("synthetic evaluation error"))
+            })
+            .unwrap_err();
+        assert_eq!(err.to_string(), "synthetic evaluation error");
+        let count = store
+            .read_snapshot(|s| {
+                Ok(s.conn
+                    .query_row("SELECT COUNT(*) FROM source_files", [], |r| {
+                        r.get::<_, i64>(0)
+                    })?)
+            })
+            .unwrap();
+        assert_eq!(
+            count, 0,
+            "failed evaluation must roll back and release transaction"
+        );
+    }
+
+    #[test]
+    fn orphan_trace_preserves_actual_row_generation_and_latest_coverage_owner() {
+        let dir = std::env::temp_dir().join(format!("dendro-trace-orphan-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("analytics.duckdb");
+        let store = AnalyticsStore::open_path(&db, "synthetic-id").unwrap();
+        for (seq, ts) in [
+            (0, "2026-10-15T00:00:00Z"),
+            (1, "2026-10-15T00:00:01Z"),
+            (2, "2026-10-15T00:00:02Z"),
+        ] {
+            store.conn.execute("INSERT INTO tool_facts VALUES (?, ?, ?, CAST(? AS TIMESTAMP), ?, ?, ?, ?, ?, ?, ?)",params![format!("unparsed~row{seq}"),"claude","s",ts,seq,"Read","a".repeat(64),true,false,42,"actual-source"]).unwrap();
+        }
+        store.checkpoint().unwrap();
+        drop(store);
+        let trace = crate::pipeline::trace_json(
+            &db,
+            "tokens",
+            None,
+            "2026-10-15T00:00:00Z",
+            "2026-10-16T00:00:00Z",
+        )
+        .unwrap();
+        let e = &trace["inputs"]["tool_loop_trace"];
+        assert_eq!(e["status"], "complete");
+        assert_eq!(e["observations"][0]["source_id"], "actual-source");
+        assert_eq!(e["observations"][0]["source_key"], "unparsed~row0");
+        assert_eq!(e["observations"][0]["generation"], 42);
+        assert_eq!(e["sources"][0]["metadata_status"], "unavailable");
+        assert_eq!(e["episodes"][0]["span_seconds"], "2");
+        let store = AnalyticsStore::open_existing(&db, "synthetic-id").unwrap();
+        store
+            .conn
+            .execute(
+                "INSERT INTO source_files VALUES (?, ?, ?, ?, ?, ?, ?)",
+                params![
+                    "actual-source",
+                    "claude",
+                    "unavailable-synthetic-source",
+                    43,
+                    100,
+                    "b".repeat(64),
+                    "s"
+                ],
+            )
+            .unwrap();
+        store.checkpoint().unwrap();
+        drop(store);
+        let trace = crate::pipeline::trace_json(
+            &db,
+            "tokens",
+            None,
+            "2026-10-15T00:00:00Z",
+            "2026-10-16T00:00:00Z",
+        )
+        .unwrap();
+        let e = &trace["inputs"]["tool_loop_trace"];
+        assert_eq!(e["status"], "complete");
+        assert_eq!(e["sources"].as_array().unwrap().len(), 2);
+        assert_eq!(e["sources"][0]["generation"], 42);
+        assert!(e["sources"][0]["coverage"].is_null());
+        assert_eq!(e["sources"][0]["latest_committed_prefix"]["generation"], 43);
+        assert!(e["sources"][0]["producing_revision"].is_null());
+        assert_eq!(e["sources"][1]["generation"], 43);
+        assert!(!e["sources"][1]["coverage"].is_null());
+        assert!(!std::path::PathBuf::from(format!("{}.key", db.display())).exists());
+        // Losing one essential source identity invalidates the whole partition,
+        // without changing the original count or bridging the missing member.
+        let store = AnalyticsStore::open_existing(&db, "synthetic-id").unwrap();
+        store
+            .conn
+            .execute(
+                "UPDATE tool_facts SET source_id = '' WHERE source_key = ?",
+                params!["unparsed~row1"],
+            )
+            .unwrap();
+        store.checkpoint().unwrap();
+        drop(store);
+        let trace = crate::pipeline::trace_json(
+            &db,
+            "tokens",
+            None,
+            "2026-10-15T00:00:00Z",
+            "2026-10-16T00:00:00Z",
+        )
+        .unwrap();
+        let inputs = &trace["inputs"];
+        let e = &inputs["tool_loop_trace"];
+        assert_eq!(inputs["tool_loops"][0]["count"], 3);
+        assert_eq!(e["status"], "insufficient_evidence");
+        assert!(e["episodes"].as_array().unwrap().is_empty());
+        assert!(e["observations"][1]["source_ref"].is_null());
+        assert!(e["limitations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|l| l["code"] == "essential_evidence_unavailable" && l["report_index"] == 0));
+        // A zero result with lost evidence is also insufficient.
+        let store = AnalyticsStore::open_existing(&db, "synthetic-id").unwrap();
+        store
+            .conn
+            .execute("UPDATE tool_facts SET failed = ?", params![false])
+            .unwrap();
+        store.checkpoint().unwrap();
+        drop(store);
+        let trace = crate::pipeline::trace_json(
+            &db,
+            "tokens",
+            None,
+            "2026-10-15T00:00:00Z",
+            "2026-10-16T00:00:00Z",
+        )
+        .unwrap();
+        let e = &trace["inputs"]["tool_loop_trace"];
+        assert_eq!(e["status"], "insufficient_evidence");
+        assert!(trace["inputs"]["tool_loops"].as_array().unwrap().is_empty());
+        assert!(e["limitations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|l| l["code"] == "essential_evidence_unavailable"
+                && l["observation_id"] == "o1"
+                && l["report_index"].is_null()));
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

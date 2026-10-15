@@ -49,3 +49,32 @@ The `sources` field of `dendro run` lists each configured root. A Claude, Codex 
 A session is linked only when every identity event for its exact harness and native id names the same rig and seat. Links, token totals, missions, intake and `--rig` all use this one rule. With `--rig`, the report keeps only sessions linked to that rig, with their untimestamped records, so a collision never enters through one of its candidate seats.
 
 Reasoning is part of output. It is shown as `reasoning` and never added to the four categories again. Claude does not record it, so Claude sessions show `not recorded`.
+
+## Tool-loop source evidence (#33, local candidate)
+
+Every metric trace adds `tool_loops`, `outcome_coverage`,
+`outcome_coverage_exclusions` and `tool_loop_trace` under `inputs`. The report
+payload and existing trace fields retain their definitions. `tool_loop_trace`
+uses formula version `k11-tool-loop-trace-v1`: observations carry actual stored
+source keys, source ids, generations, keyed input fingerprints and captured
+input/detector ranks. Each episode lists its entire maximal failure run and the
+first consecutive qualifying triple. Its `span_seconds` is an exact signed
+decimal string. Native Claude/Pi spans may be negative; Codex spans must also be
+nonnegative. The fixed rule remains three failures within 600 seconds.
+
+Report and trace inputs come from one read transaction. A trace replays its
+captured evaluation; separate queries with fully tied native rows can enumerate
+those ties differently. This does not establish a new persistent tie order.
+The half-open time filter runs before detector ordering and retains untimed
+observations, including breakers and middle members.
+
+Source entries distinguish each retained row generation from the latest
+committed prefix's own generation. Latest prefix metadata does not establish a
+row's producing revision: that revision remains `null` / `not_recorded`.
+Current source state is `not_checked`. Trace opens neither source files nor
+keys and performs no backfill. Missing latest metadata alone does not prevent
+replaying surviving stored evidence. Missing essential evidence produces
+`insufficient_evidence` and explicit limitations; unsupported episodes are
+omitted with their original report indices while report counts remain visible.
+Coverage counts sources once using their persisted file-session linkage;
+Codex tool-call coverage remains `not read`.

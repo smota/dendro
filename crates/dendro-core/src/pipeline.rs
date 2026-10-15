@@ -361,6 +361,11 @@ fn refuse_secret_path(path: &Path) -> Result<()> {
     Ok(())
 }
 
+struct ReportEvaluation {
+    report: Value,
+    loop_trace: Value,
+}
+
 pub fn report_json(
     db: &Path,
     kind: &str,
@@ -368,6 +373,17 @@ pub fn report_json(
     from: &str,
     to: &str,
 ) -> Result<Value> {
+    Ok(evaluate_report(db, kind, rig, from, to, false)?.report)
+}
+
+fn evaluate_report(
+    db: &Path,
+    kind: &str,
+    rig: Option<&str>,
+    from: &str,
+    to: &str,
+    evidence: bool,
+) -> Result<ReportEvaluation> {
     refuse_secret_path(db)?;
     let window = parse_window(from, to)?;
     if !matches!(
@@ -377,6 +393,20 @@ pub fn report_json(
         return Err(anyhow!("unknown report kind {}", redact(kind)));
     }
     let store = AnalyticsStore::open_read_only(db)?;
+    store.read_snapshot(|store| {
+        evaluate_report_snapshot(store, kind, rig, from, to, window, evidence)
+    })
+}
+
+fn evaluate_report_snapshot(
+    store: &AnalyticsStore,
+    kind: &str,
+    rig: Option<&str>,
+    from: &str,
+    to: &str,
+    window: Window,
+    evidence: bool,
+) -> Result<ReportEvaluation> {
     let identities = store.load_identity()?;
     // One binding rule for links, tokens, missions, intakes and rig scope.
     let bindings = metrics::session_bindings(&identities);
@@ -674,7 +704,12 @@ pub fn report_json(
         .filter(|tool| tool.ts.is_none_or(|ts| ts >= window.from && ts < window.to))
         .cloned()
         .collect();
-    let mut loops = metrics::tool_loops(&loop_tools, 3, 600);
+    let native_evaluation = metrics::evaluate_tool_loops(&loop_tools, 3, 600);
+    let mut loops: Vec<_> = native_evaluation
+        .episodes
+        .iter()
+        .map(|e| e.projection.clone())
+        .collect();
     let source_coverage = store.load_source_coverage()?;
     let source_in_scope = |source: &&crate::SourceCoverage| {
         rig.is_none()
@@ -711,7 +746,39 @@ pub fn report_json(
         .filter(|row| binding("codex", &row.fact.native_session).seat().is_some())
         .cloned()
         .collect();
-    loops.extend(metrics::codex_command_loops(&trusted_codex));
+    let trusted_indices: Vec<_> = codex_observations
+        .iter()
+        .enumerate()
+        .filter(|(_, row)| binding("codex", &row.fact.native_session).seat().is_some())
+        .map(|(i, _)| i)
+        .collect();
+    let codex_evaluation = metrics::evaluate_codex_loops(&trusted_codex);
+    loops.extend(
+        codex_evaluation
+            .episodes
+            .iter()
+            .map(|e| e.projection.clone()),
+    );
+    let loop_trace = if evidence {
+        let source_ids = store.tool_source_ids()?;
+        let prefixes = store.source_prefixes()?;
+        crate::loop_trace::build(crate::loop_trace::EvidenceInput {
+            native: &loop_tools,
+            codex: &codex_observations,
+            trusted_indices: &trusted_indices,
+            native_evaluation: &native_evaluation,
+            codex_evaluation: &codex_evaluation,
+            source_ids: &source_ids,
+            prefixes: &prefixes,
+            coverage: &source_coverage,
+            bindings: &bindings,
+            rig,
+            from,
+            to,
+        })
+    } else {
+        Value::Null
+    };
     let outcome_coverage: Vec<_> = [("claude", "tool_call"), ("pi", "tool_call"),
         ("codex", "tool_call"), ("codex", "command_execution")].into_iter().map(|(harness, unit)| {
         let relevant: Vec<_> = source_coverage.iter().filter(|source| source.harness == harness)
@@ -980,7 +1047,7 @@ pub fn report_json(
             })
         })
         .collect();
-    Ok(metrics::report_value(
+    let report = metrics::report_value(
         kind,
         json!({
             "product": "AI Fleet Intelligence",
@@ -1089,7 +1156,8 @@ pub fn report_json(
             "destination_snapshots": snapshot_rows,
             "trace_inputs": trace_inputs,
         }),
-    ))
+    );
+    Ok(ReportEvaluation { report, loop_trace })
 }
 
 fn parse_window(from: &str, to: &str) -> Result<Window> {
@@ -1112,7 +1180,8 @@ pub fn trace_json(
     from: &str,
     to: &str,
 ) -> Result<Value> {
-    let report = report_json(db, "decisions", rig, from, to)?;
+    let evaluation = evaluate_report(db, "decisions", rig, from, to, true)?;
+    let report = evaluation.report;
     let payload = &report["payload"];
     let (formula, value) = match metric_id {
         "m1" => (
@@ -1160,6 +1229,10 @@ pub fn trace_json(
         "formula": formula,
         "value": value,
         "inputs": {
+            "tool_loops": payload["tool_loops"],
+            "outcome_coverage": payload["outcome_coverage"],
+            "outcome_coverage_exclusions": payload["outcome_coverage_exclusions"],
+            "tool_loop_trace": evaluation.loop_trace,
             "tokens": payload["tokens"],
             "token_categories": payload["token_categories"],
             "seat_token_categories": payload["seat_token_categories"],
