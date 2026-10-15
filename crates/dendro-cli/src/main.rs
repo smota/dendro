@@ -1,3 +1,5 @@
+#![deny(unsafe_code)]
+
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
@@ -39,6 +41,12 @@ enum Commands {
         from: String,
         #[arg(long, default_value = "2026-10-11T00:00:00Z")]
         to: String,
+        #[arg(long, default_value_t = 3)]
+        tool_loop_failures: usize,
+        #[arg(long, default_value_t = 600, allow_hyphen_values = true)]
+        tool_loop_window_secs: i64,
+        #[arg(long, default_value_t = 2)]
+        handoff_loop_returns: usize,
     },
     /// Print the trace inputs for one metric id.
     Trace {
@@ -52,6 +60,12 @@ enum Commands {
         from: String,
         #[arg(long, default_value = "2026-10-11T00:00:00Z")]
         to: String,
+        #[arg(long, default_value_t = 3)]
+        tool_loop_failures: usize,
+        #[arg(long, default_value_t = 600, allow_hyphen_values = true)]
+        tool_loop_window_secs: i64,
+        #[arg(long, default_value_t = 2)]
+        handoff_loop_returns: usize,
     },
 }
 
@@ -127,8 +141,23 @@ async fn main() -> Result<()> {
             rig,
             from,
             to,
+            tool_loop_failures,
+            tool_loop_window_secs,
+            handoff_loop_returns,
         } => {
-            let report = dendro_core::report_json(&db, &kind, rig.as_deref(), &from, &to)?;
+            let thresholds = dendro_core::LoopThresholds {
+                tool_loop_failures,
+                tool_loop_window_secs,
+                handoff_loop_returns,
+            };
+            let report = dendro_core::report_json_with_thresholds(
+                &db,
+                &kind,
+                rig.as_deref(),
+                &from,
+                &to,
+                thresholds,
+            )?;
             println!("{report}");
         }
         Commands::Trace {
@@ -137,8 +166,23 @@ async fn main() -> Result<()> {
             rig,
             from,
             to,
+            tool_loop_failures,
+            tool_loop_window_secs,
+            handoff_loop_returns,
         } => {
-            let report = dendro_core::trace_json(&db, &metric_id, rig.as_deref(), &from, &to)?;
+            let thresholds = dendro_core::LoopThresholds {
+                tool_loop_failures,
+                tool_loop_window_secs,
+                handoff_loop_returns,
+            };
+            let report = dendro_core::trace_json_with_thresholds(
+                &db,
+                &metric_id,
+                rig.as_deref(),
+                &from,
+                &to,
+                thresholds,
+            )?;
             println!("{report}");
         }
     }
@@ -341,5 +385,96 @@ mod tests {
         assert!(roots[0].path.is_absolute());
         assert_eq!(roots[0].path, std::fs::canonicalize(&file).unwrap());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn cli_report_and_trace_threshold_flags() {
+        let cli_default = Cli::try_parse_from(["dendro", "report", "decisions"]).unwrap();
+        match cli_default.command {
+            Commands::Report {
+                tool_loop_failures,
+                tool_loop_window_secs,
+                handoff_loop_returns,
+                ..
+            } => {
+                assert_eq!(tool_loop_failures, 3);
+                assert_eq!(tool_loop_window_secs, 600);
+                assert_eq!(handoff_loop_returns, 2);
+            }
+            _ => panic!("expected Report command"),
+        }
+
+        let cli_custom = Cli::try_parse_from([
+            "dendro",
+            "report",
+            "decisions",
+            "--tool-loop-failures",
+            "4",
+            "--tool-loop-window-secs",
+            "1200",
+            "--handoff-loop-returns",
+            "1",
+        ])
+        .unwrap();
+        match cli_custom.command {
+            Commands::Report {
+                tool_loop_failures,
+                tool_loop_window_secs,
+                handoff_loop_returns,
+                ..
+            } => {
+                assert_eq!(tool_loop_failures, 4);
+                assert_eq!(tool_loop_window_secs, 1200);
+                assert_eq!(handoff_loop_returns, 1);
+            }
+            _ => panic!("expected Report command"),
+        }
+
+        let cli_trace = Cli::try_parse_from([
+            "dendro",
+            "trace",
+            "--metric-id",
+            "m1",
+            "--tool-loop-failures",
+            "2",
+            "--tool-loop-window-secs",
+            "60",
+            "--handoff-loop-returns",
+            "0",
+        ])
+        .unwrap();
+        match cli_trace.command {
+            Commands::Trace {
+                metric_id,
+                tool_loop_failures,
+                tool_loop_window_secs,
+                handoff_loop_returns,
+                ..
+            } => {
+                assert_eq!(metric_id, "m1");
+                assert_eq!(tool_loop_failures, 2);
+                assert_eq!(tool_loop_window_secs, 60);
+                assert_eq!(handoff_loop_returns, 0);
+            }
+            _ => panic!("expected Trace command"),
+        }
+
+        let cli_neg = Cli::try_parse_from([
+            "dendro",
+            "report",
+            "decisions",
+            "--tool-loop-window-secs",
+            "-1",
+        ])
+        .unwrap();
+        match cli_neg.command {
+            Commands::Report {
+                tool_loop_window_secs,
+                ..
+            } => {
+                assert_eq!(tool_loop_window_secs, -1);
+            }
+            _ => panic!("expected Report command"),
+        }
     }
 }

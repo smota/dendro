@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 
 use crate::facts::SeatBound;
 use crate::lifecycle;
-use crate::metrics::{self, Window};
+use crate::metrics::{self, LoopThresholds, Window};
 use crate::output::{
     self, load_or_create_key, refuse_aliased_output_with_openrig, with_output_lock,
 };
@@ -374,7 +374,18 @@ pub fn report_json(
     from: &str,
     to: &str,
 ) -> Result<Value> {
-    Ok(evaluate_report(db, kind, rig, from, to, false)?.report)
+    report_json_with_thresholds(db, kind, rig, from, to, LoopThresholds::default())
+}
+
+pub fn report_json_with_thresholds(
+    db: &Path,
+    kind: &str,
+    rig: Option<&str>,
+    from: &str,
+    to: &str,
+    thresholds: LoopThresholds,
+) -> Result<Value> {
+    Ok(evaluate_report(db, kind, rig, from, to, false, thresholds)?.report)
 }
 
 fn evaluate_report(
@@ -384,9 +395,19 @@ fn evaluate_report(
     from: &str,
     to: &str,
     evidence: bool,
+    thresholds: LoopThresholds,
 ) -> Result<ReportEvaluation> {
     refuse_secret_path(db)?;
     let window = parse_window(from, to)?;
+    if thresholds.tool_loop_failures == 0 {
+        return Err(anyhow!("tool-loop-failures must be at least 1"));
+    }
+    if thresholds.tool_loop_window_secs < 0 {
+        return Err(anyhow!("tool-loop-window-secs must be non-negative"));
+    }
+    if chrono::Duration::try_seconds(thresholds.tool_loop_window_secs).is_none() {
+        return Err(anyhow!("tool-loop-window-secs is out of bounds"));
+    }
     if !matches!(
         kind,
         "links" | "activity" | "handoffs" | "tokens" | "decisions"
@@ -395,13 +416,14 @@ fn evaluate_report(
     }
     let store = AnalyticsStore::open_read_only(db)?;
     let evaluation = store.read_snapshot(|store| {
-        evaluate_report_snapshot(store, kind, rig, from, to, window, evidence)
+        evaluate_report_snapshot(store, kind, rig, from, to, window, evidence, thresholds)
     })?;
     // No analytics connection survives into the trace filesystem phase.
     drop(store);
     Ok(evaluation)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn evaluate_report_snapshot(
     store: &AnalyticsStore,
     kind: &str,
@@ -410,6 +432,7 @@ fn evaluate_report_snapshot(
     to: &str,
     window: Window,
     evidence: bool,
+    thresholds: LoopThresholds,
 ) -> Result<ReportEvaluation> {
     let identities = store.load_identity()?;
     // One binding rule for links, tokens, missions, intakes and rig scope.
@@ -708,7 +731,11 @@ fn evaluate_report_snapshot(
         .filter(|tool| tool.ts.is_none_or(|ts| ts >= window.from && ts < window.to))
         .cloned()
         .collect();
-    let native_evaluation = metrics::evaluate_tool_loops(&loop_tools, 3, 600);
+    let native_evaluation = metrics::evaluate_tool_loops(
+        &loop_tools,
+        thresholds.tool_loop_failures,
+        thresholds.tool_loop_window_secs,
+    );
     let mut loops: Vec<_> = native_evaluation
         .episodes
         .iter()
@@ -756,7 +783,11 @@ fn evaluate_report_snapshot(
         .filter(|(_, row)| binding("codex", &row.fact.native_session).seat().is_some())
         .map(|(i, _)| i)
         .collect();
-    let codex_evaluation = metrics::evaluate_codex_loops(&trusted_codex);
+    let codex_evaluation = metrics::evaluate_codex_loops_with(
+        &trusted_codex,
+        thresholds.tool_loop_failures,
+        thresholds.tool_loop_window_secs,
+    );
     loops.extend(
         codex_evaluation
             .episodes
@@ -779,6 +810,8 @@ fn evaluate_report_snapshot(
             rig,
             from,
             to,
+            failures: thresholds.tool_loop_failures,
+            window_secs: thresholds.tool_loop_window_secs,
         })
     } else {
         Value::Null
@@ -1051,116 +1084,119 @@ fn evaluate_report_snapshot(
             })
         })
         .collect();
-    let report = metrics::report_value(
-        kind,
-        json!({
-            "product": "AI Fleet Intelligence",
-            "rig": rig.map(redact),
-            "from": redact(from),
-            "to": redact(to),
-            "usage_rows": usage.len(),
-            "untimestamped_count": untimestamped_count,
-            "token_categories": overall.json(None),
-            "seat_token_categories": seat_category_rows,
-            "unlinked_tokens": Categories::sum_tokens(&[&unlinked, &collision]),
-            "unlinked_token_categories": {
-                "unlinked": unlinked.json(None),
-                "collision": collision.json(None),
-            },
-            "sessions": session_rows,
-            "reasoning_rule": REASONING_RULE,
-            "link_rates": link_rates.iter().map(|(harness, (linked, discovered_count))| json!({
-                "harness": harness,
-                "linked": linked,
-                "discovered": discovered_count,
-                "status": if *discovered_count == 0 { "no data" } else { "ok" },
-            })).collect::<Vec<_>>(),
-            "tokens": tokens,
-            "m1_yield": metrics::m1_yield(tokens, nonreturn),
-            "m1_by_seat": m1_by_seat,
-            "k2_closed_item": metrics::K2_CLOSED_ITEM,
-            "k2_destination_rule": metrics::K2_DESTINATION_RULE,
-            "k2_closed_items_with_insufficient_history": k2_insufficient.len(),
-            "k2_insufficient_history_members": k2_insufficient,
-            "m2_return_rate": metrics::m2_return_rate(returns, handoffs),
-            "m2_pairs": m2_pairs,
-            "m3_rework_chains": rework,
-            "m3_chains": chains,
-            "m3_paths": paths,
-            "m3_rework_members": rework_members,
-            "m3_unknown_chains": m3_unknown.len(),
-            "m3_unknown_members": m3_unknown,
-            "m3_rework_proportion": m3_proportion,
-            "m4_impact": metrics::m4_impact(),
-            "kind": redact(kind),
-            "activity": activity_rows,
-            "seat_lives": seat_lives,
-            "links": links,
-            "handoff_edges": edges.iter().map(|edge| json!({
-                "from": edge.from_seat,
-                "to": edge.to_seat,
-                "return": edge.is_return,
-                "qitem_id": edge.qitem_id,
-                "source_key": edge.source_key,
-            })).collect::<Vec<_>>(),
-            "intakes": intakes.iter().map(|row| json!({
-                "qitem_id": row.qitem_id,
-                "to": row.to_seat,
-                "status": row.status,
-                "reason": row.reason,
-                "tokens": row.tokens,
-                "claim": row.claim,
-                "write": row.write,
-                "samples": row.samples,
-            })).collect::<Vec<_>>(),
-            "pair_medians": medians.iter().map(|row| json!({
-                "from": row.from_seat,
-                "to": row.to_seat,
-                "wait_samples": row.wait_samples,
-                "wait_sample_keys": row.wait_sample_keys,
-                "wait_invalid": row.wait_invalid,
-                "wait_median": row.wait_median,
-                "intake_samples": row.intake_samples,
-                "intake_invalid": row.intake_invalid,
-                "intake_median": row.intake_median,
-            })).collect::<Vec<_>>(),
-            "openrig_sources": openrig_sources,
-            "mission_definition": metrics::MISSION_DEFINITION,
-            "mission_tokens": mission_tokens,
-            "mission_records": mission_records,
-            "mission_ambiguous_by_reason": ambiguous_by_reason,
-            "mission_by_seat": mission_by_seat,
-            "untimestamped_tokens_all_time": untimestamped_tokens,
-            "tool_loops": loops.iter().map(|item| json!({"session": item.session, "tool": item.tool, "count": item.count,
-                "harness": item.harness, "unit": if item.harness == "codex" { "command_execution" } else { "tool_call" },
-                "seat": seat_of(&item.harness, &item.session)})).collect::<Vec<_>>(),
-            "outcome_coverage": outcome_coverage,
-            "outcome_coverage_exclusions": { "unresolved_sources": excluded_sources },
-            "activity_events": activity.iter().map(|row| json!({
-                "source_key": row.source_key,
-                "seat": row.seat,
-                "state": row.state,
-                "ts": row.ts.to_rfc3339(),
-            })).collect::<Vec<_>>(),
-            "demand_events": queue_all.iter().map(|row| json!({
-                "source_key": row.source_key,
-                "qitem_id": row.qitem_id,
-                "state": row.state,
-                "dest": row.dest_seat,
-                "ts": row.ts.to_rfc3339(),
-            })).collect::<Vec<_>>(),
-            // M1 denominator membership: deliveries not returned inside the window (K6).
-            "nonreturn_handoffs": edges.iter().filter(|edge| !edge.returned_within(window)).map(|edge| json!({
-                "source_key": edge.source_key,
-                "from": edge.from_seat,
-                "to": edge.to_seat,
-                "qitem_id": edge.qitem_id,
-            })).collect::<Vec<_>>(),
-            "handoff_members": handoff_members,
-            "destination_snapshots": snapshot_rows,
-            "trace_inputs": trace_inputs,
-        }),
-    );
+    let handoff_loops = metrics::handoff_loops(&edges, thresholds.handoff_loop_returns);
+    let mut payload = json!({
+        "product": "AI Fleet Intelligence",
+        "rig": rig.map(redact),
+        "from": redact(from),
+        "to": redact(to),
+        "usage_rows": usage.len(),
+        "untimestamped_count": untimestamped_count,
+        "token_categories": overall.json(None),
+        "seat_token_categories": seat_category_rows,
+        "unlinked_tokens": Categories::sum_tokens(&[&unlinked, &collision]),
+        "unlinked_token_categories": {
+            "unlinked": unlinked.json(None),
+            "collision": collision.json(None),
+        },
+        "sessions": session_rows,
+        "reasoning_rule": REASONING_RULE,
+        "link_rates": link_rates.iter().map(|(harness, (linked, discovered_count))| json!({
+            "harness": harness,
+            "linked": linked,
+            "discovered": discovered_count,
+            "status": if *discovered_count == 0 { "no data" } else { "ok" },
+        })).collect::<Vec<_>>(),
+        "tokens": tokens,
+        "m1_yield": metrics::m1_yield(tokens, nonreturn),
+        "m1_by_seat": m1_by_seat,
+        "k2_closed_item": metrics::K2_CLOSED_ITEM,
+        "k2_destination_rule": metrics::K2_DESTINATION_RULE,
+        "k2_closed_items_with_insufficient_history": k2_insufficient.len(),
+        "k2_insufficient_history_members": k2_insufficient,
+        "m2_return_rate": metrics::m2_return_rate(returns, handoffs),
+        "m2_pairs": m2_pairs,
+        "m3_rework_chains": rework,
+        "m3_chains": chains,
+        "m3_paths": paths,
+        "m3_rework_members": rework_members,
+        "m3_unknown_chains": m3_unknown.len(),
+        "m3_unknown_members": m3_unknown,
+        "m3_rework_proportion": m3_proportion,
+        "m4_impact": metrics::m4_impact(),
+        "kind": redact(kind),
+        "activity": activity_rows,
+        "seat_lives": seat_lives,
+        "links": links,
+        "handoff_edges": edges.iter().map(|edge| json!({
+            "from": edge.from_seat,
+            "to": edge.to_seat,
+            "return": edge.is_return,
+            "qitem_id": edge.qitem_id,
+            "source_key": edge.source_key,
+        })).collect::<Vec<_>>(),
+        "intakes": intakes.iter().map(|row| json!({
+            "qitem_id": row.qitem_id,
+            "to": row.to_seat,
+            "status": row.status,
+            "reason": row.reason,
+            "tokens": row.tokens,
+            "claim": row.claim,
+            "write": row.write,
+            "samples": row.samples,
+        })).collect::<Vec<_>>(),
+        "pair_medians": medians.iter().map(|row| json!({
+            "from": row.from_seat,
+            "to": row.to_seat,
+            "wait_samples": row.wait_samples,
+            "wait_sample_keys": row.wait_sample_keys,
+            "wait_invalid": row.wait_invalid,
+            "wait_median": row.wait_median,
+            "intake_samples": row.intake_samples,
+            "intake_invalid": row.intake_invalid,
+            "intake_median": row.intake_median,
+        })).collect::<Vec<_>>(),
+        "openrig_sources": openrig_sources,
+        "mission_definition": metrics::MISSION_DEFINITION,
+        "mission_tokens": mission_tokens,
+        "mission_records": mission_records,
+        "mission_ambiguous_by_reason": ambiguous_by_reason,
+        "mission_by_seat": mission_by_seat,
+        "untimestamped_tokens_all_time": untimestamped_tokens,
+        "tool_loops": loops.iter().map(|item| json!({"session": item.session, "tool": item.tool, "count": item.count,
+            "harness": item.harness, "unit": if item.harness == "codex" { "command_execution" } else { "tool_call" },
+            "seat": seat_of(&item.harness, &item.session)})).collect::<Vec<_>>(),
+        "outcome_coverage": outcome_coverage,
+        "outcome_coverage_exclusions": { "unresolved_sources": excluded_sources },
+        "activity_events": activity.iter().map(|row| json!({
+            "source_key": row.source_key,
+            "seat": row.seat,
+            "state": row.state,
+            "ts": row.ts.to_rfc3339(),
+        })).collect::<Vec<_>>(),
+        "demand_events": queue_all.iter().map(|row| json!({
+            "source_key": row.source_key,
+            "qitem_id": row.qitem_id,
+            "state": row.state,
+            "dest": row.dest_seat,
+            "ts": row.ts.to_rfc3339(),
+        })).collect::<Vec<_>>(),
+        // M1 denominator membership: deliveries not returned inside the window (K6).
+        "nonreturn_handoffs": edges.iter().filter(|edge| !edge.returned_within(window)).map(|edge| json!({
+            "source_key": edge.source_key,
+            "from": edge.from_seat,
+            "to": edge.to_seat,
+            "qitem_id": edge.qitem_id,
+        })).collect::<Vec<_>>(),
+        "handoff_members": handoff_members,
+        "destination_snapshots": snapshot_rows,
+        "trace_inputs": trace_inputs,
+    });
+    if !thresholds.is_default() {
+        payload["loop_thresholds"] = json!(thresholds);
+        payload["handoff_loops"] = json!(handoff_loops);
+    }
+    let report = metrics::report_value(kind, payload);
     let file_states = if evidence {
         Some(crate::file_state::Captured::capture(
             store,
@@ -1202,7 +1238,18 @@ pub fn trace_json(
     from: &str,
     to: &str,
 ) -> Result<Value> {
-    let mut evaluation = evaluate_report(db, "decisions", rig, from, to, true)?;
+    trace_json_with_thresholds(db, metric_id, rig, from, to, LoopThresholds::default())
+}
+
+pub fn trace_json_with_thresholds(
+    db: &Path,
+    metric_id: &str,
+    rig: Option<&str>,
+    from: &str,
+    to: &str,
+    thresholds: LoopThresholds,
+) -> Result<Value> {
+    let mut evaluation = evaluate_report(db, "decisions", rig, from, to, true, thresholds)?;
     let mut report = evaluation.report;
     let file_source_states = evaluation
         .file_states
@@ -1249,6 +1296,57 @@ pub fn trace_json(
         ),
         other => return Err(anyhow!("unknown metric id {}", redact(other))),
     };
+    let mut inputs = json!({
+        "file_source_states": file_source_states,
+        "tool_loops": payload["tool_loops"],
+        "outcome_coverage": payload["outcome_coverage"],
+        "outcome_coverage_exclusions": payload["outcome_coverage_exclusions"],
+        "tool_loop_trace": evaluation.loop_trace,
+        "tokens": payload["tokens"],
+        "token_categories": payload["token_categories"],
+        "seat_token_categories": payload["seat_token_categories"],
+        "unlinked_tokens": payload["unlinked_tokens"],
+        "unlinked_token_categories": payload["unlinked_token_categories"],
+        "sessions": payload["sessions"],
+        "reasoning_rule": payload["reasoning_rule"],
+        "untimestamped_count": payload["untimestamped_count"],
+        "untimestamped_tokens_all_time": payload["untimestamped_tokens_all_time"],
+        "m1_yield": payload["m1_yield"],
+        "m1_by_seat": payload["m1_by_seat"],
+        "k2_closed_item": payload["k2_closed_item"],
+        "k2_destination_rule": payload["k2_destination_rule"],
+        "k2_closed_items_with_insufficient_history": payload["k2_closed_items_with_insufficient_history"],
+        "k2_insufficient_history_members": payload["k2_insufficient_history_members"],
+        "m2_pairs": payload["m2_pairs"],
+        "m2_return_rate": payload["m2_return_rate"],
+        "m3_rework_chains": payload["m3_rework_chains"],
+        "m3_chains": payload["m3_chains"],
+        "m3_rework_members": payload["m3_rework_members"],
+        "m3_unknown_chains": payload["m3_unknown_chains"],
+        "m3_unknown_members": payload["m3_unknown_members"],
+        "m3_rework_proportion": payload["m3_rework_proportion"],
+        "rows": payload["trace_inputs"],
+        "intakes": payload["intakes"],
+        "pair_medians": payload["pair_medians"],
+        "activity": payload["activity"],
+        "seat_lives": payload["seat_lives"],
+        "openrig_sources": payload["openrig_sources"],
+        "mission_definition": payload["mission_definition"],
+        "mission_tokens": payload["mission_tokens"],
+        "mission_ambiguous_by_reason": payload["mission_ambiguous_by_reason"],
+        "mission_by_seat": payload["mission_by_seat"],
+        "mission_records": payload["mission_records"],
+        "activity_events": payload["activity_events"],
+        "demand_events": payload["demand_events"],
+        "destination_snapshots": payload["destination_snapshots"],
+        "nonreturn_handoffs": payload["nonreturn_handoffs"],
+        "handoff_members": payload["handoff_members"],
+        "window": {"from": from, "to": to},
+    });
+    if !thresholds.is_default() {
+        inputs["loop_thresholds"] = json!(thresholds);
+        inputs["handoff_loops"] = payload["handoff_loops"].clone();
+    }
     Ok(json!({
         "metric_id": metric_id,
         "formula_version": if metric_id == "medians" {
@@ -1258,53 +1356,7 @@ pub fn trace_json(
         },
         "formula": formula,
         "value": value,
-        "inputs": {
-            "file_source_states": file_source_states,
-            "tool_loops": payload["tool_loops"],
-            "outcome_coverage": payload["outcome_coverage"],
-            "outcome_coverage_exclusions": payload["outcome_coverage_exclusions"],
-            "tool_loop_trace": evaluation.loop_trace,
-            "tokens": payload["tokens"],
-            "token_categories": payload["token_categories"],
-            "seat_token_categories": payload["seat_token_categories"],
-            "unlinked_tokens": payload["unlinked_tokens"],
-            "unlinked_token_categories": payload["unlinked_token_categories"],
-            "sessions": payload["sessions"],
-            "reasoning_rule": payload["reasoning_rule"],
-            "untimestamped_count": payload["untimestamped_count"],
-            "untimestamped_tokens_all_time": payload["untimestamped_tokens_all_time"],
-            "m1_yield": payload["m1_yield"],
-            "m1_by_seat": payload["m1_by_seat"],
-            "k2_closed_item": payload["k2_closed_item"],
-            "k2_destination_rule": payload["k2_destination_rule"],
-            "k2_closed_items_with_insufficient_history": payload["k2_closed_items_with_insufficient_history"],
-            "k2_insufficient_history_members": payload["k2_insufficient_history_members"],
-            "m2_pairs": payload["m2_pairs"],
-            "m2_return_rate": payload["m2_return_rate"],
-            "m3_rework_chains": payload["m3_rework_chains"],
-            "m3_chains": payload["m3_chains"],
-            "m3_rework_members": payload["m3_rework_members"],
-            "m3_unknown_chains": payload["m3_unknown_chains"],
-            "m3_unknown_members": payload["m3_unknown_members"],
-            "m3_rework_proportion": payload["m3_rework_proportion"],
-            "rows": payload["trace_inputs"],
-            "intakes": payload["intakes"],
-            "pair_medians": payload["pair_medians"],
-            "activity": payload["activity"],
-            "seat_lives": payload["seat_lives"],
-            "openrig_sources": payload["openrig_sources"],
-            "mission_definition": payload["mission_definition"],
-            "mission_tokens": payload["mission_tokens"],
-            "mission_ambiguous_by_reason": payload["mission_ambiguous_by_reason"],
-            "mission_by_seat": payload["mission_by_seat"],
-            "mission_records": payload["mission_records"],
-            "activity_events": payload["activity_events"],
-            "demand_events": payload["demand_events"],
-            "destination_snapshots": payload["destination_snapshots"],
-            "nonreturn_handoffs": payload["nonreturn_handoffs"],
-            "handoff_members": payload["handoff_members"],
-            "window": {"from": from, "to": to},
-        },
+        "inputs": inputs,
         "from": redact(from),
         "to": redact(to),
         "rig": rig.map(redact),
@@ -2486,5 +2538,299 @@ mod tests {
             assert_eq!(fs::read_dir(&source_dir).unwrap().count(), 1);
         }
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn pipeline_threshold_validation_rejects_invalid_values() {
+        let dir = std::env::temp_dir().join(format!("dendro-val-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("analytics.duckdb");
+        let store = AnalyticsStore::open_path(&db, "kid").unwrap();
+        store.checkpoint().unwrap();
+        drop(store);
+
+        let from = "2026-10-08T00:00:00Z";
+        let to = "2026-10-11T00:00:00Z";
+
+        // Zero failures
+        let zero_failures = LoopThresholds {
+            tool_loop_failures: 0,
+            tool_loop_window_secs: 600,
+            handoff_loop_returns: 2,
+        };
+        let err = report_json_with_thresholds(&db, "decisions", None, from, to, zero_failures)
+            .unwrap_err();
+        assert_eq!(err.to_string(), "tool-loop-failures must be at least 1");
+
+        let err_trace =
+            trace_json_with_thresholds(&db, "m1", None, from, to, zero_failures).unwrap_err();
+        assert_eq!(
+            err_trace.to_string(),
+            "tool-loop-failures must be at least 1"
+        );
+
+        // Negative window seconds
+        let neg_window = LoopThresholds {
+            tool_loop_failures: 3,
+            tool_loop_window_secs: -1,
+            handoff_loop_returns: 2,
+        };
+        let err2 =
+            report_json_with_thresholds(&db, "decisions", None, from, to, neg_window).unwrap_err();
+        assert_eq!(
+            err2.to_string(),
+            "tool-loop-window-secs must be non-negative"
+        );
+
+        let err2_trace =
+            trace_json_with_thresholds(&db, "m1", None, from, to, neg_window).unwrap_err();
+        assert_eq!(
+            err2_trace.to_string(),
+            "tool-loop-window-secs must be non-negative"
+        );
+
+        let oob_window = LoopThresholds {
+            tool_loop_failures: 3,
+            tool_loop_window_secs: i64::MAX,
+            handoff_loop_returns: 2,
+        };
+        let err3 =
+            report_json_with_thresholds(&db, "decisions", None, from, to, oob_window).unwrap_err();
+        assert_eq!(err3.to_string(), "tool-loop-window-secs is out of bounds");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn pipeline_default_thresholds_produce_byte_identical_json() {
+        let dir = std::env::temp_dir().join(format!("dendro-byte-id-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("analytics.duckdb");
+        let store = AnalyticsStore::open_path(&db, "kid").unwrap();
+        store.checkpoint().unwrap();
+        drop(store);
+
+        let from = "2026-10-08T00:00:00Z";
+        let to = "2026-10-11T00:00:00Z";
+
+        let r_default = report_json(&db, "decisions", None, from, to).unwrap();
+        let r_with = report_json_with_thresholds(
+            &db,
+            "decisions",
+            None,
+            from,
+            to,
+            LoopThresholds::default(),
+        )
+        .unwrap();
+        assert_eq!(r_default, r_with);
+        assert_eq!(r_default.to_string(), r_with.to_string());
+        assert!(r_with["payload"].get("loop_thresholds").is_none());
+        assert!(r_with["payload"].get("handoff_loops").is_none());
+
+        let t_default = trace_json(&db, "m1", None, from, to).unwrap();
+        let t_with =
+            trace_json_with_thresholds(&db, "m1", None, from, to, LoopThresholds::default())
+                .unwrap();
+        assert_eq!(t_default, t_with);
+        assert_eq!(t_default.to_string(), t_with.to_string());
+        assert!(t_with["inputs"].get("loop_thresholds").is_none());
+        assert!(t_with["inputs"].get("handoff_loops").is_none());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn pipeline_custom_thresholds_applied_to_tool_and_handoff_loops() {
+        use chrono::TimeZone;
+        let at = |s: u32| chrono::Utc.with_ymd_and_hms(2026, 10, 9, 0, 0, s).unwrap();
+        let dir = std::env::temp_dir().join(format!("dendro-custom-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("analytics.duckdb");
+        let store = AnalyticsStore::open_path(&db, "kid").unwrap();
+
+        // Register identity for dev.build
+        store
+            .insert_identity(&crate::IdentityFact {
+                source_key: "id-build".into(),
+                harness: "claude".into(),
+                native_session: "sess-1".into(),
+                rig: "rig-1".into(),
+                seat: "dev.build".into(),
+                ts: Some(at(0)),
+            })
+            .unwrap();
+
+        // 2 tool failures for "Bash" within 30 seconds
+        let tool1 = crate::ToolFact {
+            source_key: "t1".into(),
+            harness: "claude".into(),
+            native_session: "sess-1".into(),
+            ts: Some(at(5)),
+            seq: 1,
+            name: "Bash".into(),
+            fingerprint: Some("fp-cmd".into()),
+            failed: Some(true),
+            structured_write: false,
+            generation: 1,
+        };
+        let tool2 = crate::ToolFact {
+            source_key: "t2".into(),
+            harness: "claude".into(),
+            native_session: "sess-1".into(),
+            ts: Some(at(35)),
+            seq: 2,
+            name: "Bash".into(),
+            fingerprint: Some("fp-cmd".into()),
+            failed: Some(true),
+            structured_write: false,
+            generation: 1,
+        };
+        store
+            .commit_file_batch(
+                "src-1",
+                "claude",
+                "session.json",
+                1,
+                100,
+                "prefix",
+                None,
+                &[],
+                &[tool1, tool2],
+            )
+            .unwrap();
+
+        // Add handoff edges: dev.build -> dev.qa -> dev.build -> dev.qa -> dev.build
+        let q_fact = |key: &str,
+                      s: u32,
+                      item: &str,
+                      state: &str,
+                      src: &str,
+                      dst: &str,
+                      closure_reason: Option<&str>| crate::QueueFact {
+            source_key: key.into(),
+            transition_id: s as i64,
+            qitem_id: item.into(),
+            ts: at(s),
+            state: state.into(),
+            source_seat: src.into(),
+            dest_seat: dst.into(),
+            closure_reason: closure_reason.map(Into::into),
+            closure_target: None,
+            chain_id: Some("chain-1".into()),
+            missions: vec![],
+        };
+        store
+            .insert_queue(&q_fact(
+                "q1",
+                1,
+                "item-1",
+                "closed",
+                "dev.build",
+                "dev.qa",
+                Some("handed_off_to"),
+            ))
+            .unwrap();
+        store
+            .insert_queue(&q_fact(
+                "q2",
+                2,
+                "item-1",
+                "closed",
+                "dev.qa",
+                "dev.build",
+                Some("handed_off_to"),
+            ))
+            .unwrap();
+        store
+            .insert_queue(&q_fact(
+                "q3",
+                3,
+                "item-1",
+                "closed",
+                "dev.build",
+                "dev.qa",
+                Some("handed_off_to"),
+            ))
+            .unwrap();
+        store
+            .insert_queue(&q_fact(
+                "q4",
+                4,
+                "item-1",
+                "closed",
+                "dev.qa",
+                "dev.build",
+                Some("handed_off_to"),
+            ))
+            .unwrap();
+
+        store.checkpoint().unwrap();
+        drop(store);
+
+        let from = "2026-10-08T00:00:00Z";
+        let to = "2026-10-11T00:00:00Z";
+
+        // Under defaults:
+        // - 2 tool failures do not trigger loop (default failures = 3)
+        // - handoff loops are not present
+        let rep_def = report_json(&db, "decisions", None, from, to).unwrap();
+        assert_eq!(
+            rep_def["payload"]["tool_loops"].as_array().unwrap().len(),
+            0
+        );
+        assert!(rep_def["payload"].get("loop_thresholds").is_none());
+        assert!(rep_def["payload"].get("handoff_loops").is_none());
+
+        // Under custom thresholds:
+        // failures = 2, window_secs = 60, returns = 1
+        let custom = LoopThresholds {
+            tool_loop_failures: 2,
+            tool_loop_window_secs: 60,
+            handoff_loop_returns: 1,
+        };
+        let rep_custom =
+            report_json_with_thresholds(&db, "decisions", None, from, to, custom).unwrap();
+        let tool_loops = rep_custom["payload"]["tool_loops"].as_array().unwrap();
+        assert_eq!(tool_loops.len(), 1);
+        assert_eq!(tool_loops[0]["count"], 2);
+        assert_eq!(tool_loops[0]["tool"], "Bash");
+
+        assert_eq!(
+            rep_custom["payload"]["loop_thresholds"],
+            json!({
+                "tool_loop_failures": 2,
+                "tool_loop_window_secs": 60,
+                "handoff_loop_returns": 1
+            })
+        );
+        let handoff_loops = rep_custom["payload"]["handoff_loops"].as_array().unwrap();
+        assert!(!handoff_loops.is_empty());
+        assert_eq!(handoff_loops[0]["chain"], "chain-1");
+
+        // Trace also contains loop_thresholds, handoff_loops, and custom definition
+        let trace_custom = trace_json_with_thresholds(&db, "m1", None, from, to, custom).unwrap();
+        assert_eq!(
+            trace_custom["inputs"]["loop_thresholds"],
+            json!({
+                "tool_loop_failures": 2,
+                "tool_loop_window_secs": 60,
+                "handoff_loop_returns": 1
+            })
+        );
+        assert_eq!(
+            trace_custom["inputs"]["handoff_loops"],
+            rep_custom["payload"]["handoff_loops"]
+        );
+        let def = &trace_custom["inputs"]["tool_loop_trace"]["definition"];
+        assert_eq!(def["failures"], 2);
+        assert_eq!(def["window_seconds"], 60);
+        assert_eq!(def["native_span_predicate"], "span<=60");
+        assert_eq!(def["codex_span_predicate"], "0<=span<=60");
+
+        let _ = fs::remove_dir_all(&dir);
     }
 }

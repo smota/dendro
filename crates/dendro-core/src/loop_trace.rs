@@ -90,6 +90,8 @@ pub(crate) struct EvidenceInput<'a> {
     pub rig: Option<&'a str>,
     pub from: &'a str,
     pub to: &'a str,
+    pub failures: usize,
+    pub window_secs: i64,
 }
 
 pub(crate) fn build(input: EvidenceInput<'_>) -> Value {
@@ -106,6 +108,8 @@ pub(crate) fn build(input: EvidenceInput<'_>) -> Value {
         rig,
         from,
         to,
+        failures,
+        window_secs,
     } = input;
     let mut ranks = vec![None; native.len() + codex.len()];
     let mut counters = HashMap::new();
@@ -299,7 +303,19 @@ pub(crate) fn build(input: EvidenceInput<'_>) -> Value {
             report_index += 1;
         }
     }
-    json!({"formula_version":"k11-tool-loop-trace-v1","definition":serde_json::from_str::<Value>(DEFINITION).expect("static loop definition"),
+    let mut def: Value = serde_json::from_str(DEFINITION).expect("static loop definition");
+    if (failures, window_secs) != (3, 600) {
+        def["failures"] = json!(failures);
+        def["window_seconds"] = json!(window_secs);
+        if failures != 3 {
+            def["witness"] = json!(format!(
+                "first_qualifying_consecutive_window_of_{failures}_in_run_order"
+            ));
+        }
+        def["native_span_predicate"] = json!(format!("span<={window_secs}"));
+        def["codex_span_predicate"] = json!(format!("0<=span<={window_secs}"));
+    }
+    json!({"formula_version":"k11-tool-loop-trace-v1","definition":def,
         "scope":{"rig":rig.map(redact),"from":from,"to":to,"interval":"[from,to)","untimed":"retained","consistency":"single_read_transaction",
             "replay":"captured_evaluation","independent_query_ties":"not_guaranteed","input_rank_basis":"scoped_native_then_scoped_codex","detector_rank_partition":["harness","session"]},
         "status":if unsupported.is_empty(){"complete"}else{"insufficient_evidence"},"limitations":limitations,"observations":observations,"sources":sources,"episodes":episodes})

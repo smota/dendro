@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::facts::*;
@@ -1067,6 +1067,85 @@ pub fn pair_medians(
     pairs.into_values().collect()
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LoopThresholds {
+    pub tool_loop_failures: usize,
+    pub tool_loop_window_secs: i64,
+    pub handoff_loop_returns: usize,
+}
+
+impl Default for LoopThresholds {
+    fn default() -> Self {
+        Self {
+            tool_loop_failures: 3,
+            tool_loop_window_secs: 600,
+            handoff_loop_returns: 2,
+        }
+    }
+}
+
+impl LoopThresholds {
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HandoffLoop {
+    pub from_seat: String,
+    pub to_seat: String,
+    pub chain: String,
+    pub returns: usize,
+    pub handoffs: usize,
+    pub source_keys: Vec<String>,
+}
+
+#[derive(Default)]
+struct HandoffGroup<'a> {
+    first_from: &'a str,
+    first_to: &'a str,
+    handoffs: usize,
+    returns: usize,
+    source_keys: Vec<String>,
+}
+
+pub fn handoff_loops(edges: &[HandoffEdge], max_returns: usize) -> Vec<HandoffLoop> {
+    let mut groups: BTreeMap<(&str, &str, &str), HandoffGroup<'_>> = BTreeMap::new();
+    for edge in edges {
+        let (seat_a, seat_b) = if edge.from_seat <= edge.to_seat {
+            (edge.from_seat.as_str(), edge.to_seat.as_str())
+        } else {
+            (edge.to_seat.as_str(), edge.from_seat.as_str())
+        };
+        let key = (edge.chain_key(), seat_a, seat_b);
+        let entry = groups.entry(key).or_insert_with(|| HandoffGroup {
+            first_from: edge.from_seat.as_str(),
+            first_to: edge.to_seat.as_str(),
+            ..Default::default()
+        });
+        entry.handoffs += 1;
+        if edge.is_return {
+            entry.returns += 1;
+        }
+        entry.source_keys.push(edge.source_key.clone());
+    }
+    let mut loops = Vec::new();
+    for ((chain, _, _), group) in groups {
+        let back_and_forth = group.returns.max(group.handoffs.saturating_sub(1));
+        if back_and_forth > max_returns {
+            loops.push(HandoffLoop {
+                from_seat: group.first_from.to_string(),
+                to_seat: group.first_to.to_string(),
+                chain: chain.to_string(),
+                returns: back_and_forth,
+                handoffs: group.handoffs,
+                source_keys: group.source_keys,
+            });
+        }
+    }
+    loops
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ToolLoop {
     pub harness: String,
@@ -1114,7 +1193,9 @@ pub(crate) fn evaluate_tool_loops(
             .or_default()
             .push(i);
     }
-    let window = chrono::Duration::seconds(window_secs);
+    let Some(window) = chrono::Duration::try_seconds(window_secs) else {
+        return LoopEvaluation::default();
+    };
     let mut result = LoopEvaluation::default();
     for ((harness, session), mut events) in by_session {
         events.sort_by_key(|&i| tools[i].seq);
@@ -1175,7 +1256,30 @@ pub fn codex_command_loops(observations: &[CodexObservation]) -> Vec<ToolLoop> {
         .collect()
 }
 
+pub fn codex_command_loops_with(
+    observations: &[CodexObservation],
+    failures: usize,
+    window_secs: i64,
+) -> Vec<ToolLoop> {
+    evaluate_codex_loops_with(observations, failures, window_secs)
+        .episodes
+        .into_iter()
+        .map(|e| e.projection)
+        .collect()
+}
+
 pub(crate) fn evaluate_codex_loops(observations: &[CodexObservation]) -> LoopEvaluation {
+    evaluate_codex_loops_with(observations, 3, 600)
+}
+
+pub(crate) fn evaluate_codex_loops_with(
+    observations: &[CodexObservation],
+    failures: usize,
+    window_secs: i64,
+) -> LoopEvaluation {
+    let Some(window) = chrono::Duration::try_seconds(window_secs) else {
+        return LoopEvaluation::default();
+    };
     let mut sessions: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
     for (i, row) in observations.iter().enumerate() {
         sessions
@@ -1206,15 +1310,19 @@ pub(crate) fn evaluate_codex_loops(observations: &[CodexObservation]) -> LoopEva
         result.order.extend_from_slice(&rows);
         let mut run: Vec<usize> = Vec::new();
         let flush = |run: &mut Vec<usize>, result: &mut LoopEvaluation| {
-            let witness = run.windows(3).find(|triple| {
-                match (
-                    observations[triple[0]].fact.ts,
-                    observations[triple[2]].fact.ts,
-                ) {
-                    (Some(a), Some(b)) => b >= a && b - a <= chrono::Duration::seconds(600),
-                    _ => false,
-                }
-            });
+            let witness = if failures > 0 {
+                run.windows(failures).find(|win| {
+                    match (
+                        observations[win[0]].fact.ts,
+                        observations[*win.last().unwrap()].fact.ts,
+                    ) {
+                        (Some(a), Some(b)) => b >= a && b - a <= window,
+                        _ => false,
+                    }
+                })
+            } else {
+                None
+            };
             if let Some(witness) = witness {
                 result.episodes.push(LoopEpisode {
                     projection: ToolLoop {
@@ -3263,6 +3371,133 @@ mod tests {
             members(&closed_items("seat-a", &queue, &snapshots, window)),
             vec!["clean"]
         );
+    }
+
+    #[test]
+    fn loop_thresholds_defaults_and_custom() {
+        let def = LoopThresholds::default();
+        assert_eq!(def.tool_loop_failures, 3);
+        assert_eq!(def.tool_loop_window_secs, 600);
+        assert_eq!(def.handoff_loop_returns, 2);
+        assert!(def.is_default());
+
+        let custom1 = LoopThresholds {
+            tool_loop_failures: 2,
+            ..def
+        };
+        assert!(!custom1.is_default());
+
+        let custom2 = LoopThresholds {
+            tool_loop_window_secs: 1200,
+            ..def
+        };
+        assert!(!custom2.is_default());
+
+        let custom3 = LoopThresholds {
+            handoff_loop_returns: 1,
+            ..def
+        };
+        assert!(!custom3.is_default());
+    }
+
+    #[test]
+    fn custom_tool_loop_thresholds_two_failures_in_sixty_seconds() {
+        let s = |secs: i64| Some(secs * 1000);
+        let run = failing_run("claude", "s1", &[s(0), s(30)]);
+        assert!(tool_loops(&run, 3, 600).is_empty());
+        let loops = tool_loops(&run, 2, 60);
+        assert_eq!(loops.len(), 1);
+        assert_eq!(loops[0].count, 2);
+
+        let slow_run = failing_run("claude", "s2", &[s(0), s(61)]);
+        assert!(tool_loops(&slow_run, 2, 60).is_empty());
+    }
+
+    #[test]
+    fn custom_tool_loop_thresholds_four_failures_in_twelve_hundred_seconds() {
+        let s = |secs: i64| Some(secs * 1000);
+        let run = failing_run("claude", "s1", &[s(0), s(300), s(600), s(900)]);
+        let loops = tool_loops(&run, 4, 1200);
+        assert_eq!(loops.len(), 1);
+        assert_eq!(loops[0].count, 4);
+
+        let three_run = failing_run("claude", "s2", &[s(0), s(300), s(600)]);
+        assert!(tool_loops(&three_run, 4, 1200).is_empty());
+    }
+
+    #[test]
+    fn custom_codex_command_loop_thresholds() {
+        let s = |secs: i64| Some(secs * 1000);
+        let obs: Vec<CodexObservation> = failing_run("codex", "cx1", &[s(0), s(45)])
+            .into_iter()
+            .map(|mut fact| {
+                fact.name = CODEX_COMMAND.into();
+                CodexObservation {
+                    source_id: "src1".into(),
+                    fact,
+                }
+            })
+            .collect();
+        assert!(codex_command_loops(&obs).is_empty());
+        let loops = codex_command_loops_with(&obs, 2, 60);
+        assert_eq!(loops.len(), 1);
+        assert_eq!(loops[0].count, 2);
+        assert_eq!(loops[0].harness, "codex");
+        assert_eq!(loops[0].tool, CODEX_COMMAND);
+    }
+
+    #[test]
+    fn handoff_loops_thresholds_and_determinism() {
+        let edge = |chain: &str, from: &str, to: &str, is_return: bool, key: &str| HandoffEdge {
+            from_seat: from.into(),
+            to_seat: to.into(),
+            qitem_id: "item1".into(),
+            chain_id: Some(chain.into()),
+            is_return,
+            returned_by: None,
+            ts: ts(0),
+            source_key: key.into(),
+        };
+
+        let edges = vec![
+            edge("c1", "seat-a", "seat-b", false, "k1"),
+            edge("c1", "seat-a", "seat-b", true, "k2"),
+            edge("c1", "seat-a", "seat-b", true, "k3"),
+        ];
+
+        let loops_default = handoff_loops(&edges, 2);
+        assert!(loops_default.is_empty());
+
+        let loops_custom = handoff_loops(&edges, 1);
+        assert_eq!(loops_custom.len(), 1);
+        assert_eq!(loops_custom[0].chain, "c1");
+        assert_eq!(loops_custom[0].from_seat, "seat-a");
+        assert_eq!(loops_custom[0].to_seat, "seat-b");
+        assert_eq!(loops_custom[0].returns, 2);
+        assert_eq!(loops_custom[0].handoffs, 3);
+        assert_eq!(loops_custom[0].source_keys, vec!["k1", "k2", "k3"]);
+
+        let mut edges_3 = edges.clone();
+        edges_3.push(edge("c1", "seat-a", "seat-b", true, "k4"));
+        let loops_3 = handoff_loops(&edges_3, 2);
+        assert_eq!(loops_3.len(), 1);
+        assert_eq!(loops_3[0].returns, 3);
+        assert_eq!(loops_3[0].handoffs, 4);
+        assert_eq!(loops_3[0].source_keys, vec!["k1", "k2", "k3", "k4"]);
+
+        let alternating = vec![
+            edge("c2", "seat-a", "seat-b", false, "a1"),
+            edge("c2", "seat-b", "seat-a", true, "a2"),
+            edge("c2", "seat-a", "seat-b", false, "a3"),
+            edge("c2", "seat-b", "seat-a", true, "a4"),
+        ];
+        let alt_loops = handoff_loops(&alternating, 2);
+        assert_eq!(alt_loops.len(), 1);
+        assert_eq!(alt_loops[0].from_seat, "seat-a");
+        assert_eq!(alt_loops[0].to_seat, "seat-b");
+        assert_eq!(alt_loops[0].returns, 3);
+        assert_eq!(alt_loops[0].handoffs, 4);
+        assert_eq!(alt_loops[0].source_keys, vec!["a1", "a2", "a3", "a4"]);
     }
 }
 
