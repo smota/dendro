@@ -166,3 +166,15 @@ Genuinely missing roots retain their ordinary missing-root handling for distinct
 outputs. This is a static identity check with existing publication checks; it
 does not guarantee safety against concurrent malicious namespace replacement or
 redesign auxiliary lock/key identity policy.
+
+## Busy OpenRig source (local v0.2.0 candidate, #30)
+
+After five unsuccessful snapshot attempts, the terminal diagnostic says:
+
+> the OpenRig source changed during each of 5 snapshot attempts; nothing was ingested. Retry in a moment, or retry when the rig is quieter.
+
+Run the same command again in a moment, or when the rig is quieter. This is a
+manual new invocation; it does not guarantee that the next snapshot succeeds.
+The five-attempt policy is unchanged. A non-OK private SQLite `quick_check` can
+also exhaust this existing path; the diagnostic does not distinguish every
+corruption case from source changes.
