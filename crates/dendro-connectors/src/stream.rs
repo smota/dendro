@@ -4,6 +4,7 @@ use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
+use dendro_core::file_metadata::{observe_path, FileMetadata};
 use dendro_core::{
     tool_fingerprint, AnalyticsStore, CodexCounters, ToolFact, UsageFact, WarningNote,
 };
@@ -56,7 +57,21 @@ pub fn ingest_jsonl_with_key(
     path: &Path,
     tool_key: Option<&[u8]>,
 ) -> Result<FileStats> {
+    ingest_jsonl_with_key_checking(store, source_id, harness, path, tool_key, || Ok(()))
+}
+
+// Tests substitute names at the real read boundary; production has no fault switch.
+fn ingest_jsonl_with_key_checking(
+    store: &AnalyticsStore,
+    source_id: &str,
+    harness: &str,
+    path: &Path,
+    tool_key: Option<&[u8]>,
+    after_header: impl FnOnce() -> Result<()>,
+) -> Result<FileStats> {
     let mut file = File::open(path)?;
+    let held_before = FileMetadata::from_file(&file);
+    let named_before = observe_path(path);
     let file_len = file.metadata()?.len() as i64;
     let prior = store.source_state(source_id)?;
     let (mut generation, mut offset, expected_hash) =
@@ -74,6 +89,14 @@ pub fn ingest_jsonl_with_key(
     file.seek(SeekFrom::Start(0))?;
     let prefix_end = offset;
     let mut hasher = Sha256::new();
+    // The bounded header read uses the same opened file as the streaming parser.
+    // A pathname replacement cannot silently supply a different session header.
+    let file_session = match harness {
+        "pi" | "codex" => Some(file_session(harness, &mut file, source_id)?),
+        _ => None,
+    };
+    after_header()?;
+    file.seek(SeekFrom::Start(0))?;
     // One reusable line buffer. The generation is never copied.
     let mut reader = BufReader::with_capacity(64 * 1024, file);
     let mut buf = Vec::new();
@@ -88,10 +111,6 @@ pub fn ingest_jsonl_with_key(
     let start_offset = prefix_end;
     let mut warnings = Vec::new();
     // K10: Pi and Codex sessions are named by the id on line 1 of the file.
-    let file_session = match harness {
-        "pi" | "codex" => Some(file_session(harness, path, source_id)?),
-        _ => None,
-    };
     if let Some(session) = &file_session {
         if !session.from_header && start_offset == 0 {
             warnings.push(WarningNote {
@@ -344,7 +363,21 @@ pub fn ingest_jsonl_with_key(
         tools = pass.new_calls;
         settled = pass.settled;
     }
-    store.commit_file_batch_reading(
+    let held_after = FileMetadata::from_file(reader.get_ref());
+    let named_after = observe_path(path);
+    let metadata = stable_ingest_metadata(
+        held_before,
+        named_before.metadata,
+        held_after,
+        named_after.metadata,
+    );
+    let baseline = dendro_core::FileBaselineAttempt {
+        attempted_at: named_after
+            .checked_at
+            .unwrap_or_else(|| chrono::Utc::now().to_rfc3339()),
+        metadata,
+    };
+    store.commit_file_batch_observed(
         source_id,
         harness,
         &path.display().to_string(),
@@ -363,6 +396,7 @@ pub fn ingest_jsonl_with_key(
             complete: reader_complete,
             native_session: source_session,
         },
+        &baseline,
     )?;
     for note in &warnings {
         store.record_warning(note)?;
@@ -371,6 +405,21 @@ pub fn ingest_jsonl_with_key(
         records_read,
         usage_records: usages.len() as u64,
     })
+}
+
+/// Both held and no-follow named metadata must agree across the complete read.
+/// Comparison intentionally excludes consumed offsets: a partial tail is file data.
+fn stable_ingest_metadata(
+    held_before: Option<FileMetadata>,
+    named_before: Option<FileMetadata>,
+    held_after: Option<FileMetadata>,
+    named_after: Option<FileMetadata>,
+) -> Option<FileMetadata> {
+    let before = held_before?;
+    (named_before.as_ref() == Some(&before)
+        && held_after.as_ref() == Some(&before)
+        && named_after.as_ref() == Some(&before))
+    .then_some(before)
 }
 
 /// A session file's native session: the line-1 header id, or a per-file
@@ -384,9 +433,9 @@ struct FileSession {
 const HEADER_LIMIT: u64 = 1 << 20;
 
 /// Reads only line 1, buffered and bounded, independent of the watermark.
-fn file_session(harness: &str, path: &Path, source_id: &str) -> Result<FileSession> {
+fn file_session(harness: &str, file: &mut File, source_id: &str) -> Result<FileSession> {
     let mut line = Vec::new();
-    BufReader::new(File::open(path)?.take(HEADER_LIMIT)).read_until(b'\n', &mut line)?;
+    BufReader::new(file.take(HEADER_LIMIT)).read_until(b'\n', &mut line)?;
     let id = serde_json::from_slice::<Value>(line.strip_suffix(b"\n").unwrap_or(&line))
         .ok()
         .and_then(|value| header_id(harness, &value));
@@ -1089,6 +1138,211 @@ mod tests {
     use super::*;
     use rusqlite::OpenFlags;
     use std::io::Write;
+
+    #[test]
+    fn ingest_baseline_uses_full_size_and_refreshes_partial_tail_noops() {
+        let dir = std::env::temp_dir().join(format!("dendro-baseline-tail-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let database = dir.join("analytics.duckdb");
+        let store = AnalyticsStore::open_path(&database, "key").unwrap();
+        let baseline = |harness: &str| -> (String, String, String) {
+            store.checkpoint().unwrap();
+            duckdb::Connection::open(&database).unwrap().query_row(
+                "SELECT latest_association, last_stable_size, latest_attempt_at FROM file_source_baselines WHERE source_id = ?",
+                [harness], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            ).unwrap()
+        };
+        for harness in ["claude", "pi", "codex"] {
+            let path = dir.join(format!("{harness}.jsonl"));
+            let header = match harness {
+                "pi" => r#"{"type":"session","id":"session"}"#,
+                "codex" => r#"{"type":"session_meta","payload":{"id":"session"}}"#,
+                _ => r#"{"type":"system","sessionId":"session"}"#,
+            };
+            fs::write(&path, format!("{header}\n{{\"partial\":")).unwrap();
+            ingest_jsonl(&store, harness, harness, &path).unwrap();
+            let before = baseline(harness);
+            assert_eq!(before.0, "verified", "{harness}");
+            assert_eq!(before.1, fs::metadata(&path).unwrap().len().to_string());
+            assert!(
+                before.1.parse::<i64>().unwrap() > store.source_state(harness).unwrap().unwrap().1
+            );
+            fs::OpenOptions::new()
+                .append(true)
+                .open(&path)
+                .unwrap()
+                .write_all(b"42")
+                .unwrap();
+            let stats = ingest_jsonl_with_key(&store, harness, harness, &path, None).unwrap();
+            assert_eq!(stats.records_read, 0);
+            let after = baseline(harness);
+            assert_eq!(after.0, "verified");
+            assert_eq!(after.1, fs::metadata(&path).unwrap().len().to_string());
+            assert_ne!(after.1, before.1);
+            assert_ne!(after.2, before.2);
+        }
+        drop(store);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn header_reads_the_held_file_when_its_name_is_replaced() {
+        let dir = std::env::temp_dir().join(format!("dendro-header-held-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        for harness in ["pi", "codex"] {
+            let header = |id| {
+                if harness == "pi" {
+                    format!(r#"{{"type":"session","id":"{id}"}}"#)
+                } else {
+                    format!(r#"{{"type":"session_meta","payload":{{"id":"{id}"}}}}"#)
+                }
+            };
+            let path = dir.join(format!("{harness}.jsonl"));
+            fs::write(&path, header("original")).unwrap();
+            let mut held = File::open(&path).unwrap();
+            let before = FileMetadata::from_file(&held);
+            let named_before = observe_path(&path).metadata;
+            let replacement = dir.join("replacement.jsonl");
+            fs::write(&replacement, header("replacement")).unwrap();
+            fs::rename(&replacement, &path).unwrap();
+            let session = file_session(harness, &mut held, "source").unwrap();
+            assert!(session.from_header);
+            assert_eq!(session.raw, "original");
+            assert!(stable_ingest_metadata(
+                before,
+                named_before,
+                FileMetadata::from_file(&held),
+                observe_path(&path).metadata
+            )
+            .is_none());
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn accepted_ingest_substitution_keeps_old_header_and_tracks_association_recovery() {
+        let dir = std::env::temp_dir().join(format!("dendro-ingest-swap-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let database = dir.join("analytics.duckdb");
+        let path = dir.join("pi.jsonl");
+        let original = concat!(
+            "{\"type\":\"session\",\"id\":\"original\"}\n",
+            "{\"type\":\"message\",\"id\":\"m\",\"message\":{\"role\":\"assistant\",\"usage\":{\"input\":3,\"output\":1,\"cacheRead\":0,\"cacheWrite\":0}}}\n"
+        );
+        fs::write(&path, original).unwrap();
+        let store = AnalyticsStore::open_path(&database, "key").unwrap();
+        let replacement = dir.join("replacement.jsonl");
+        let swap = |text: &str| -> Result<()> {
+            fs::write(&replacement, text)?;
+            fs::rename(&replacement, &path)?;
+            Ok(())
+        };
+        let baseline = || -> Vec<Option<String>> {
+            store.checkpoint().unwrap();
+            duckdb::Connection::open(&database)
+                .unwrap()
+                .query_row(
+                    "SELECT latest_association, latest_attempt_at, last_stable_observed_at,
+                        last_stable_type, last_stable_device, last_stable_inode,
+                        last_stable_size, last_stable_mtime_ns, association_reason
+                 FROM file_source_baselines WHERE source_id = 'source' AND generation = 1",
+                    [],
+                    |row| (0..9).map(|i| row.get(i)).collect(),
+                )
+                .unwrap()
+        };
+        ingest_jsonl_with_key_checking(&store, "source", "pi", &path, None, || {
+            swap(&original.replace("original", "replacement"))
+        })
+        .unwrap();
+        let usage = store.load_usage().unwrap();
+        assert_eq!(usage.len(), 1);
+        assert_eq!(usage[0].native_session, "original");
+        assert_eq!(
+            store.load_sources().unwrap()[0].4.as_deref(),
+            Some("original")
+        );
+        let first = baseline();
+        assert_eq!(first[0].as_deref(), Some("unavailable"));
+        assert!(first[2..8].iter().all(Option::is_none));
+        assert_eq!(first[8].as_deref(), Some("association_unverified"));
+        // Return the original content so this generation's producing prefix is unchanged.
+        fs::write(&path, original).unwrap();
+        ingest_jsonl(&store, "source", "pi", &path).unwrap();
+        let stable = baseline();
+        assert_eq!(stable[0].as_deref(), Some("verified"));
+        assert!(stable[2..8].iter().all(Option::is_some));
+        let noop =
+            ingest_jsonl_with_key_checking(&store, "source", "pi", &path, None, || swap(original))
+                .unwrap();
+        assert_eq!(noop.records_read, 0);
+        let stale = baseline();
+        assert_eq!(stale[0].as_deref(), Some("unavailable"));
+        assert_ne!(stale[1], stable[1]);
+        assert_eq!(
+            &stale[2..8],
+            &stable[2..8],
+            "accepted uncertainty retains prior stable data"
+        );
+        assert_eq!(store.source_state("source").unwrap().unwrap().0, 1);
+        ingest_jsonl(&store, "source", "pi", &path).unwrap();
+        let recovered = baseline();
+        assert_eq!(recovered[0].as_deref(), Some("verified"));
+        assert_ne!(
+            recovered[5], stable[5],
+            "stable recovery records the replacement inode"
+        );
+        assert_eq!(
+            store.load_usage().unwrap().len(),
+            1,
+            "metadata transitions never duplicate facts"
+        );
+        drop(store);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn metadata_association_rejects_substitutions_and_unavailable_checks() {
+        let metadata = |inode: &str| FileMetadata {
+            r#type: "regular".into(),
+            device: "7".into(),
+            inode: inode.into(),
+            size: "40".into(),
+            mtime_ns: "123".into(),
+        };
+        assert!(stable_ingest_metadata(
+            Some(metadata("1")),
+            Some(metadata("1")),
+            Some(metadata("1")),
+            Some(metadata("1"))
+        )
+        .is_some());
+        for position in 0..4 {
+            let mut values = [
+                Some(metadata("1")),
+                Some(metadata("1")),
+                Some(metadata("1")),
+                Some(metadata("1")),
+            ];
+            values[position] = Some(metadata("2"));
+            let [a, b, c, d] = values;
+            assert!(stable_ingest_metadata(a, b, c, d).is_none());
+            let mut values = [
+                Some(metadata("1")),
+                Some(metadata("1")),
+                Some(metadata("1")),
+                Some(metadata("1")),
+            ];
+            values[position] = None;
+            let [a, b, c, d] = values;
+            assert!(stable_ingest_metadata(a, b, c, d).is_none());
+        }
+    }
 
     mod header_identity {
         use super::*;

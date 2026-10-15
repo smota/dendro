@@ -3,6 +3,8 @@
 #![deny(unsafe_code)]
 
 pub mod facts;
+pub mod file_metadata;
+mod file_state;
 pub mod lifecycle;
 mod loop_trace;
 pub mod metrics;

@@ -4,6 +4,7 @@ use anyhow::{anyhow, Result};
 use duckdb::{params, Connection};
 
 use crate::facts::*;
+use crate::file_metadata::FileMetadata;
 use crate::privacy::{activity_state, closure_reason, queue_state, redact};
 
 /// Legacy entry point retained so the untouched watcher/CLI still typecheck.
@@ -30,12 +31,40 @@ enum FileBatchStage {
     BeforeCommit,
 }
 
+/// Metadata association captured around an ordinary accepted ingest read.
+/// An unavailable attempt keeps earlier stable evidence private and unchanged.
+#[derive(Clone, Debug)]
+pub struct FileBaselineAttempt {
+    pub attempted_at: String,
+    pub metadata: Option<FileMetadata>,
+}
+
+const FILE_BASELINES_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS file_source_baselines (
+    source_id VARCHAR NOT NULL,
+    generation BIGINT NOT NULL,
+    metadata_version INTEGER NOT NULL,
+    latest_association VARCHAR NOT NULL,
+    latest_attempt_at VARCHAR NOT NULL,
+    last_stable_observed_at VARCHAR,
+    last_stable_type VARCHAR,
+    last_stable_device VARCHAR,
+    last_stable_inode VARCHAR,
+    last_stable_size VARCHAR,
+    last_stable_mtime_ns VARCHAR,
+    association_reason VARCHAR NOT NULL,
+    PRIMARY KEY (source_id, generation)
+)";
+
 pub struct AnalyticsStore {
     conn: Connection,
     pub key_id: String,
 }
 
 impl AnalyticsStore {
+    pub(crate) fn connection(&self) -> &Connection {
+        &self.conn
+    }
+
     pub fn open_in_memory(key_id: &str) -> Result<Self> {
         let conn = Connection::open_in_memory()?;
         let store = Self {
@@ -229,6 +258,7 @@ impl AnalyticsStore {
             );
             "#,
         )?;
+        self.conn.execute_batch(FILE_BASELINES_SCHEMA)?;
         self.conn.execute(
             "INSERT INTO dendro_meta (schema_version, key_id) VALUES (?, ?)",
             params![SCHEMA_VERSION, self.key_id],
@@ -357,6 +387,7 @@ impl AnalyticsStore {
             tools,
             settled,
             None,
+            None,
             |_| Ok(()),
         )
     }
@@ -388,6 +419,41 @@ impl AnalyticsStore {
             tools,
             settled,
             Some(reader),
+            None,
+            |_| Ok(()),
+        )
+    }
+
+    /// Commits metadata association together with the exact accepted file batch.
+    #[allow(clippy::too_many_arguments)]
+    pub fn commit_file_batch_observed(
+        &self,
+        source_id: &str,
+        harness: &str,
+        display_path: &str,
+        generation: i64,
+        byte_offset: i64,
+        prefix_sha256: &str,
+        counters: Option<&CodexCounters>,
+        usages: &[UsageFact],
+        tools: &[ToolFact],
+        settled: &[(String, Option<bool>)],
+        reader: &ReaderState,
+        baseline: &FileBaselineAttempt,
+    ) -> Result<()> {
+        self.commit_file_batch_internal(
+            source_id,
+            harness,
+            display_path,
+            generation,
+            byte_offset,
+            prefix_sha256,
+            counters,
+            usages,
+            tools,
+            settled,
+            Some(reader),
+            Some(baseline),
             |_| Ok(()),
         )
     }
@@ -408,9 +474,41 @@ impl AnalyticsStore {
         tools: &[ToolFact],
         settled: &[(String, Option<bool>)],
         reader: Option<&ReaderState>,
+        baseline: Option<&FileBaselineAttempt>,
         mut checkpoint: impl FnMut(FileBatchStage) -> Result<()>,
     ) -> Result<()> {
         let tx = self.conn.unchecked_transaction()?;
+        if let Some(attempt) = baseline {
+            tx.execute_batch(FILE_BASELINES_SCHEMA)?;
+            let metadata = attempt.metadata.as_ref();
+            let verified = metadata.is_some();
+            tx.execute(
+                "INSERT INTO file_source_baselines VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 ON CONFLICT (source_id, generation) DO UPDATE SET
+                   metadata_version = 1,
+                   latest_association = excluded.latest_association,
+                   latest_attempt_at = excluded.latest_attempt_at,
+                   last_stable_observed_at = CASE WHEN excluded.latest_association = 'verified' THEN excluded.last_stable_observed_at ELSE file_source_baselines.last_stable_observed_at END,
+                   last_stable_type = CASE WHEN excluded.latest_association = 'verified' THEN excluded.last_stable_type ELSE file_source_baselines.last_stable_type END,
+                   last_stable_device = CASE WHEN excluded.latest_association = 'verified' THEN excluded.last_stable_device ELSE file_source_baselines.last_stable_device END,
+                   last_stable_inode = CASE WHEN excluded.latest_association = 'verified' THEN excluded.last_stable_inode ELSE file_source_baselines.last_stable_inode END,
+                   last_stable_size = CASE WHEN excluded.latest_association = 'verified' THEN excluded.last_stable_size ELSE file_source_baselines.last_stable_size END,
+                   last_stable_mtime_ns = CASE WHEN excluded.latest_association = 'verified' THEN excluded.last_stable_mtime_ns ELSE file_source_baselines.last_stable_mtime_ns END,
+                   association_reason = excluded.association_reason",
+                params![
+                    redact(source_id), generation,
+                    if verified { "verified" } else { "unavailable" },
+                    redact(&attempt.attempted_at),
+                    verified.then(|| redact(&attempt.attempted_at)),
+                    metadata.map(|m| redact(&m.r#type)),
+                    metadata.map(|m| redact(&m.device)),
+                    metadata.map(|m| redact(&m.inode)),
+                    metadata.map(|m| redact(&m.size)),
+                    metadata.map(|m| redact(&m.mtime_ns)),
+                    if verified { "verified" } else { "association_unverified" },
+                ],
+            )?;
+        }
         tx.execute(
             r#"INSERT INTO source_files (source_id, harness, display_path, generation, byte_offset, prefix_sha256)
                VALUES (?, ?, ?, ?, ?, ?)
@@ -1122,6 +1220,176 @@ fn refuse_legacy(conn: &Connection) -> Result<()> {
 mod tests {
     use super::*;
     use chrono::Utc;
+
+    fn synthetic_metadata(size: &str) -> FileMetadata {
+        FileMetadata {
+            r#type: "regular".into(),
+            device: "7".into(),
+            inode: "11".into(),
+            size: size.into(),
+            mtime_ns: "-1".into(),
+        }
+    }
+
+    fn baseline_row(store: &AnalyticsStore, generation: i64) -> Vec<Option<String>> {
+        store
+            .conn
+            .query_row(
+                "SELECT latest_association, latest_attempt_at, last_stable_observed_at,
+                    last_stable_type, last_stable_device, last_stable_inode,
+                    last_stable_size, last_stable_mtime_ns, association_reason
+             FROM file_source_baselines WHERE source_id = ? AND generation = ?",
+                params!["source", generation],
+                |row| (0..9).map(|i| row.get(i)).collect(),
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn baseline_association_tracks_noops_uncertainty_recovery_and_generations() {
+        let store = AnalyticsStore::open_in_memory("key").unwrap();
+        let commit = |generation, time: &str, metadata| {
+            store
+                .commit_file_batch_observed(
+                    "source",
+                    "pi",
+                    "/synthetic/source.jsonl",
+                    generation,
+                    10,
+                    "prefix",
+                    None,
+                    &[],
+                    &[],
+                    &[],
+                    &ReaderState {
+                        complete: true,
+                        native_session: None,
+                    },
+                    &FileBaselineAttempt {
+                        attempted_at: time.into(),
+                        metadata,
+                    },
+                )
+                .unwrap();
+        };
+        commit(1, "2026-10-15T00:00:00Z", Some(synthetic_metadata("30")));
+        commit(1, "2026-10-15T00:00:01Z", Some(synthetic_metadata("30")));
+        let stable = baseline_row(&store, 1);
+        assert_eq!(stable[1].as_deref(), Some("2026-10-15T00:00:01Z"));
+        assert_eq!(
+            stable[2], stable[1],
+            "a no-op is a fresh accepted association"
+        );
+        assert_eq!(
+            stable[6].as_deref(),
+            Some("30"),
+            "full size exceeds watermark"
+        );
+        commit(1, "2026-10-15T00:00:02Z", None);
+        let stale = baseline_row(&store, 1);
+        assert_eq!(stale[0].as_deref(), Some("unavailable"));
+        assert_eq!(stale[1].as_deref(), Some("2026-10-15T00:00:02Z"));
+        assert_eq!(&stale[2..8], &stable[2..8]);
+        assert_eq!(stale[8].as_deref(), Some("association_unverified"));
+        commit(2, "2026-10-15T00:00:03Z", None);
+        assert_eq!(
+            baseline_row(&store, 1),
+            stale,
+            "a new generation cannot update the old one"
+        );
+        let first_uncertain = baseline_row(&store, 2);
+        assert!(first_uncertain[2..8].iter().all(Option::is_none));
+        commit(1, "2026-10-15T00:00:04Z", Some(synthetic_metadata("40")));
+        let recovered = baseline_row(&store, 1);
+        assert_eq!(recovered[0].as_deref(), Some("verified"));
+        assert_eq!(recovered[6].as_deref(), Some("40"));
+        assert_eq!(recovered[2].as_deref(), Some("2026-10-15T00:00:04Z"));
+    }
+
+    #[test]
+    fn baseline_batch_failure_rolls_back_ddl_status_and_watermark() {
+        let store = AnalyticsStore::open_in_memory("key").unwrap();
+        let attempt = FileBaselineAttempt {
+            attempted_at: "2026-10-15T00:00:00Z".into(),
+            metadata: Some(synthetic_metadata("30")),
+        };
+        // Exercise old supported databases where the optional table is absent.
+        store
+            .conn
+            .execute_batch("DROP TABLE file_source_baselines")
+            .unwrap();
+        for prior in [false, true] {
+            if prior {
+                store
+                    .commit_file_batch_observed(
+                        "source",
+                        "pi",
+                        "/synthetic/source.jsonl",
+                        1,
+                        10,
+                        "old",
+                        None,
+                        &[],
+                        &[],
+                        &[],
+                        &ReaderState {
+                            complete: true,
+                            native_session: None,
+                        },
+                        &attempt,
+                    )
+                    .unwrap();
+            }
+            let before = prior.then(|| baseline_row(&store, 1));
+            let failed_attempt = FileBaselineAttempt {
+                attempted_at: "2026-10-15T00:00:01Z".into(),
+                metadata: None,
+            };
+            let failure = store.commit_file_batch_internal(
+                "source",
+                "pi",
+                "/synthetic/source.jsonl",
+                1,
+                20,
+                "new",
+                None,
+                &[],
+                &[],
+                &[],
+                Some(&ReaderState {
+                    complete: true,
+                    native_session: None,
+                }),
+                Some(&failed_attempt),
+                |stage| {
+                    if stage == FileBatchStage::BeforeCommit {
+                        Err(anyhow!("synthetic metadata batch fault"))
+                    } else {
+                        Ok(())
+                    }
+                },
+            );
+            assert!(failure.is_err());
+            if let Some(before) = before {
+                assert_eq!(baseline_row(&store, 1), before);
+                assert_eq!(
+                    store.source_state("source").unwrap(),
+                    Some((1, 10, "old".into()))
+                );
+            } else {
+                let tables: i64 = store
+                    .conn
+                    .query_row(
+                        "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = ?",
+                        params!["file_source_baselines"],
+                        |row| row.get(0),
+                    )
+                    .unwrap();
+                assert_eq!(tables, 0, "uncommitted optional DDL must disappear");
+                assert!(store.source_state("source").unwrap().is_none());
+            }
+        }
+    }
 
     #[test]
     fn text_columns_match_the_created_schema() {
@@ -1914,6 +2182,7 @@ mod tests {
                 std::slice::from_ref(&fact),
                 &[],
                 Some(&reader),
+                None,
                 |at| {
                     if at == stage {
                         reached = true;

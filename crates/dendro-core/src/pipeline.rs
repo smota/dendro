@@ -364,6 +364,7 @@ fn refuse_secret_path(path: &Path) -> Result<()> {
 struct ReportEvaluation {
     report: Value,
     loop_trace: Value,
+    file_states: Option<crate::file_state::Captured>,
 }
 
 pub fn report_json(
@@ -393,9 +394,12 @@ fn evaluate_report(
         return Err(anyhow!("unknown report kind {}", redact(kind)));
     }
     let store = AnalyticsStore::open_read_only(db)?;
-    store.read_snapshot(|store| {
+    let evaluation = store.read_snapshot(|store| {
         evaluate_report_snapshot(store, kind, rig, from, to, window, evidence)
-    })
+    })?;
+    // No analytics connection survives into the trace filesystem phase.
+    drop(store);
+    Ok(evaluation)
 }
 
 fn evaluate_report_snapshot(
@@ -1157,7 +1161,25 @@ fn evaluate_report_snapshot(
             "trace_inputs": trace_inputs,
         }),
     );
-    Ok(ReportEvaluation { report, loop_trace })
+    let file_states = if evidence {
+        Some(crate::file_state::Captured::capture(
+            store,
+            &usage,
+            &untimestamped,
+            &sources,
+            &source_coverage,
+            &bindings,
+            rig,
+            &loop_trace,
+        )?)
+    } else {
+        None
+    };
+    Ok(ReportEvaluation {
+        report,
+        loop_trace,
+        file_states,
+    })
 }
 
 fn parse_window(from: &str, to: &str) -> Result<Window> {
@@ -1180,8 +1202,16 @@ pub fn trace_json(
     from: &str,
     to: &str,
 ) -> Result<Value> {
-    let evaluation = evaluate_report(db, "decisions", rig, from, to, true)?;
-    let report = evaluation.report;
+    let mut evaluation = evaluate_report(db, "decisions", rig, from, to, true)?;
+    let mut report = evaluation.report;
+    let file_source_states = evaluation
+        .file_states
+        .take()
+        .expect("trace snapshot")
+        .annotate(
+            &mut report["payload"]["trace_inputs"],
+            &mut evaluation.loop_trace,
+        );
     let payload = &report["payload"];
     let (formula, value) = match metric_id {
         "m1" => (
@@ -1229,6 +1259,7 @@ pub fn trace_json(
         "formula": formula,
         "value": value,
         "inputs": {
+            "file_source_states": file_source_states,
             "tool_loops": payload["tool_loops"],
             "outcome_coverage": payload["outcome_coverage"],
             "outcome_coverage_exclusions": payload["outcome_coverage_exclusions"],
