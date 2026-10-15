@@ -64,6 +64,7 @@ that skip is recorded with a reason.
 
 - `0 -> 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8`
 - `1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8` for chores/bugs that do not need JTBD framing
+- **Composite Builder Pass (`3 -> 4 -> 5` in one turn for `P0` and `P1`):** Once the Phase 2/3 oracle digest is pinned, a Builder executing a `P0` (bounded) or `P1` (standard) slice may complete Phase 3 (`implementation-planner`), Phase 4 (`developer`), and Phase 5 (`tester`, delegated to an `effort: low` L2 verification subagent) in a single continuous turn before handing off to Phase 6 (`review`). Each phase transition (`3`, `4`, `5`) is still recorded in the durable evidence envelope, eliminating inter-seat queue round-trips without skipping verification. Slices rated `P2`–`P4` (or touching high-consequence paths) require a separate-seat Phase 5 (`tester` / `dev.qa`) handoff.
 - `4 -> 3` only when implementation reveals a planning defect
 - `6 -> 4` only when review returns findings
 - `7 -> 4` only when documentation changes require remediation
@@ -656,7 +657,7 @@ For the v2 delivery run interface, requirements remain in issues and current run
 
 ## 13. Autonomous Decision Governance & Anti-Loop Engine
 
-To eliminate autonomous deadlocks, rework loops, and metric-gaming across multi-agent rigs (OpenRig, Pi, Claude, Codex, Grok), AgentFlow SDLC enforces seven core architectural laws:
+To eliminate autonomous deadlocks, rework loops, and metric-gaming across multi-agent rigs (OpenRig, Pi, Claude, Codex, Grok), AgentFlow SDLC enforces eight core architectural laws:
 
 ### 13.1 Two-Plane Separation
 
@@ -717,3 +718,10 @@ The workflow is divided into two strictly isolated operating planes:
 - Model escalation from standard builders to frontier reasoning models (e.g. Codex GPT-6.1 Sol / Gemini Pro High) is governed by a pure, deterministic function (`evaluateDecisionPolicy`) based on distinct test failure categories and rework rounds, independent of self-reported agent confidence.
 - Fast heuristic triage (queue ordering, issue deduplication, nudge levels) connects via `lib/providers/decider-port.mjs` exclusively to loopback endpoints (`http://127.0.0.1:8002/v1/decide`) with Jev authentication.
 - All outbound decider payloads are strictly sanitized and redacted, eliminating raw source code, git diff hunks, and secrets, with pure deterministic fallbacks if the decider is unreachable.
+
+### 13.8 Supervisory Liveness & Non-Disruptive Human Interaction (`BTW` Mode)
+
+- **30-Minute Supervisory Liveness Circuit Breaker**: The supervisory steering plane maintains liveness through periodic heartbeats (`evaluateSupervisorLiveness`, `SUPERVISOR_STALE_TIMEOUT_MS = 30 * 60 * 1000`). If more than 30 minutes elapse without a supervisor heartbeat (`SUPERVISOR_UNREACHABLE`) and unmerged accepted slices exist (`unmergedAcceptedCount >= 1`), new slice admission is held (`holdNewSliceAdmission: true`) to prevent uncoordinated drift.
+- **Silent-Unless-Broken Kernel Rule**: The `operator-agent@kernel` seat never interrupts in-progress turns with conversational pings; intervention occurs strictly on confirmed process stalls/exits or supervisory unreachability.
+- **Non-Disruptive Status Queries (`steer btw`)**: Humans and supervisory observers inspect active goals and delivery state via `steer btw` (`mode: 'read-only-no-nudge'`). This executes read-only inspection of local artifacts (`.agent-runs/steer/heartbeat.json`, `.agentflow/state.json`) with zero worker nudges or interrupts (`nudgeDispatched: false`).
+- **Non-Disruptive Backlog Intake (`steer assign --no-nudge`)**: Live backlog grooming enqueues new capability briefs with `--no-nudge`, suppressing conversational notifications to preserve worker focus until natural phase boundaries.

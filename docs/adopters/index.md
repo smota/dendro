@@ -15,8 +15,8 @@ Adoption, and bringing an existing installation forward, is one journey:
 6. Add a source adapter or provider only when the project needs it.
 7. Run a first issue through the documented workflow.
 
-The core works with manual execution. A missing Claude, Codex, Agy, Pi, or Grok
-binary does not block adoption unless project policy explicitly requires that provider capability.
+The core works with manual execution or any single coding CLI (**Substrate `S0`**). A missing Claude, Codex, Agy, Pi, or Grok
+binary does not block adoption unless project policy explicitly requires that provider capability. As your team's needs grow, you can scale incrementally from **Substrate `S0`** (Single-CLI + native L2 subagents) to **Substrate `S1`** (Multi-CLI orthogonal builder/reviewer routing without a daemon) or **Substrate `S2`** ([OpenRig Lean 4-Seat Squad](../../OPENRIG.md)); see [Project setup](../project-setup.md).
 
 For a legacy or unrecognized installation, the same journey asks for an explicit
 [migration](../get-started.md#a-legacy-lock) or [recovery](../get-started.md#an-unknown-or-malformed-lock)

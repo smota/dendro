@@ -43,8 +43,8 @@ When MCP is not available, execute the equivalent CLI primitives:
 
 ### 1. Adoption & Setup (`/agentflow:setup`)
 
-1. Call `agentflow_status` to determine current repository posture.
-2. If unadopted, call `agentflow_plan_change` with desired profile (`standard` by default).
+1. Call `agentflow_status` to determine current repository posture and detected execution substrate (`S0` Single-CLI + L2 Subagents, `S1` Multi-CLI Orthogonal Routing, or `S2` OpenRig Lean 4-Seat Squad).
+2. If unadopted, call `agentflow_plan_change` with desired profile (`standard` by default) and recommended substrate tier.
 3. Present the plain-English summary to the human operator.
 4. Solicit affirmative confirmation.
 5. Upon confirmation, execute `agentflow_apply_change(confirm: true)`.
@@ -52,12 +52,12 @@ When MCP is not available, execute the equivalent CLI primitives:
 ### 2. Proactive Drift Warning & Health Inspection (`/agentflow:doctor`)
 
 1. Call `agentflow_doctor`.
-2. Categorize findings into valid, missing, and differing components.
+2. Categorize findings into valid, missing, and differing components, including effort-degradation warnings (persistent L1 seats pinned to `effort: high`) and single-family review blind spots when orthogonal CLIs are available.
 3. If drift is detected, explain clearly which files diverged and provide repair recommendations.
 
-### 3. Transactional Repair (`/agentflow:repair`)
+### 3. Transactional Repair & Substrate Switching (`/agentflow:repair`)
 
-1. Run `agentflow_plan_change` to generate preview mutations that resolve doctor findings.
+1. Run `agentflow_plan_change` to generate preview mutations that resolve doctor findings or switch execution substrates (`S0 <-> S1 <-> S2`) and squad presets (`lean-4-seat` vs. `multi-tier-7-seat`).
 2. Present the plain-English diff.
 3. Prompt human operator for confirmation.
 4. Execute `agentflow_apply_change(confirm: true)` upon approval.
