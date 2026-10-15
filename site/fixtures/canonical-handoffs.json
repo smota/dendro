@@ -1,0 +1,338 @@
+{
+  "definition_version": "acceptance-r1-a1",
+  "metric": "handoffs",
+  "payload": {
+    "product": "AI Fleet Intelligence",
+    "from": "2026-10-15T00:00:00Z",
+    "to": "2026-10-15T01:00:00Z",
+    "tokens": 0,
+    "m1_yield": 0.0,
+    "m1_by_seat": [
+      {
+        "closed_item_keys": [
+          "queue_transitions:l0",
+          "queue_transitions:l4"
+        ],
+        "closed_item_members": [
+          {
+            "at": "2026-10-15T00:00:10+00:00",
+            "closure_reason": "handed_off_to",
+            "destination_evidence": "events:queue.created:l0",
+            "qitem": "l0",
+            "snapshot_cutoff": null,
+            "state": "done",
+            "transition": "queue_transitions:l0"
+          },
+          {
+            "at": "2026-10-15T00:00:50+00:00",
+            "closure_reason": "no-follow-on",
+            "destination_evidence": "events:queue.created:l4",
+            "qitem": "l4",
+            "snapshot_cutoff": null,
+            "state": "done",
+            "transition": "queue_transitions:l4"
+          }
+        ],
+        "closed_items": 2,
+        "nonreturn_deliveries": 0,
+        "productive_closed_items": 2,
+        "recovery_by_reason": {},
+        "recovery_closed_items": 0,
+        "recovery_tax_ratio": 0.0,
+        "seat": "A",
+        "tokens": 0,
+        "tokens_per_closed_item": 0.0,
+        "yield": null
+      },
+      {
+        "closed_item_keys": [
+          "queue_transitions:l2"
+        ],
+        "closed_item_members": [
+          {
+            "at": "2026-10-15T00:00:30+00:00",
+            "closure_reason": "handed_off_to",
+            "destination_evidence": "events:queue.created:l2",
+            "qitem": "l2",
+            "snapshot_cutoff": null,
+            "state": "done",
+            "transition": "queue_transitions:l2"
+          }
+        ],
+        "closed_items": 1,
+        "nonreturn_deliveries": 1,
+        "productive_closed_items": 1,
+        "recovery_by_reason": {},
+        "recovery_closed_items": 0,
+        "recovery_tax_ratio": 0.0,
+        "seat": "B",
+        "tokens": 0,
+        "tokens_per_closed_item": 0.0,
+        "yield": 0.0
+      },
+      {
+        "closed_item_keys": [
+          "queue_transitions:l1",
+          "queue_transitions:l3"
+        ],
+        "closed_item_members": [
+          {
+            "at": "2026-10-15T00:00:20+00:00",
+            "closure_reason": "handed_off_to",
+            "destination_evidence": "events:queue.created:l1",
+            "qitem": "l1",
+            "snapshot_cutoff": null,
+            "state": "done",
+            "transition": "queue_transitions:l1"
+          },
+          {
+            "at": "2026-10-15T00:00:40+00:00",
+            "closure_reason": "handed_off_to",
+            "destination_evidence": "events:queue.created:l3",
+            "qitem": "l3",
+            "snapshot_cutoff": null,
+            "state": "done",
+            "transition": "queue_transitions:l3"
+          }
+        ],
+        "closed_items": 2,
+        "nonreturn_deliveries": 1,
+        "productive_closed_items": 2,
+        "recovery_by_reason": {},
+        "recovery_closed_items": 0,
+        "recovery_tax_ratio": 0.0,
+        "seat": "H",
+        "tokens": 0,
+        "tokens_per_closed_item": 0.0,
+        "yield": 0.0
+      }
+    ],
+    "handoff_members": [
+      {
+        "at": "2026-10-15T00:00:10+00:00",
+        "chain": "l0",
+        "from": "A",
+        "is_return": false,
+        "qitem_id": "l0",
+        "returned_by": {
+          "at": "2026-10-15T00:00:40+00:00",
+          "source_key": "queue_transitions:l3"
+        },
+        "returned_within_window": true,
+        "source_key": "queue_transitions:l0",
+        "to": "H"
+      },
+      {
+        "at": "2026-10-15T00:00:20+00:00",
+        "chain": "l0",
+        "from": "H",
+        "is_return": false,
+        "qitem_id": "l1",
+        "returned_by": {
+          "at": "2026-10-15T00:00:30+00:00",
+          "source_key": "queue_transitions:l2"
+        },
+        "returned_within_window": true,
+        "source_key": "queue_transitions:l1",
+        "to": "B"
+      },
+      {
+        "at": "2026-10-15T00:00:30+00:00",
+        "chain": "l0",
+        "from": "B",
+        "is_return": true,
+        "qitem_id": "l2",
+        "returned_by": null,
+        "returned_within_window": false,
+        "source_key": "queue_transitions:l2",
+        "to": "H"
+      },
+      {
+        "at": "2026-10-15T00:00:40+00:00",
+        "chain": "l0",
+        "from": "H",
+        "is_return": true,
+        "qitem_id": "l3",
+        "returned_by": null,
+        "returned_within_window": false,
+        "source_key": "queue_transitions:l3",
+        "to": "A"
+      }
+    ],
+    "pair_medians": [
+      {
+        "exec_invalid": 0,
+        "exec_median": 9.0,
+        "exec_sample_keys": [
+          [
+            "events:queue.claimed:l1",
+            "queue_transitions:l1"
+          ]
+        ],
+        "exec_samples": [
+          9.0
+        ],
+        "from": "A",
+        "intake_invalid": 0,
+        "intake_median": 0.0,
+        "intake_samples": [
+          0.0
+        ],
+        "to": "H",
+        "wait_invalid": 0,
+        "wait_median": 1.0,
+        "wait_sample_keys": [
+          [
+            "queue_transitions:l0",
+            "events:queue.claimed:l1"
+          ]
+        ],
+        "wait_samples": [
+          1.0
+        ]
+      },
+      {
+        "exec_invalid": 0,
+        "exec_median": 9.0,
+        "exec_sample_keys": [
+          [
+            "events:queue.claimed:l3",
+            "queue_transitions:l3"
+          ]
+        ],
+        "exec_samples": [
+          9.0
+        ],
+        "from": "B",
+        "intake_invalid": 0,
+        "intake_median": 0.0,
+        "intake_samples": [
+          0.0
+        ],
+        "to": "H",
+        "wait_invalid": 0,
+        "wait_median": 1.0,
+        "wait_sample_keys": [
+          [
+            "queue_transitions:l2",
+            "events:queue.claimed:l3"
+          ]
+        ],
+        "wait_samples": [
+          1.0
+        ]
+      },
+      {
+        "exec_invalid": 0,
+        "exec_median": 9.0,
+        "exec_sample_keys": [
+          [
+            "events:queue.claimed:l4",
+            "queue_transitions:l4"
+          ]
+        ],
+        "exec_samples": [
+          9.0
+        ],
+        "from": "H",
+        "intake_invalid": 0,
+        "intake_median": 0.0,
+        "intake_samples": [
+          0.0
+        ],
+        "to": "A",
+        "wait_invalid": 0,
+        "wait_median": 1.0,
+        "wait_sample_keys": [
+          [
+            "queue_transitions:l3",
+            "events:queue.claimed:l4"
+          ]
+        ],
+        "wait_samples": [
+          1.0
+        ]
+      },
+      {
+        "exec_invalid": 0,
+        "exec_median": 9.0,
+        "exec_sample_keys": [
+          [
+            "events:queue.claimed:l2",
+            "queue_transitions:l2"
+          ]
+        ],
+        "exec_samples": [
+          9.0
+        ],
+        "from": "H",
+        "intake_invalid": 0,
+        "intake_median": 0.0,
+        "intake_samples": [
+          0.0
+        ],
+        "to": "B",
+        "wait_invalid": 0,
+        "wait_median": 1.0,
+        "wait_sample_keys": [
+          [
+            "queue_transitions:l1",
+            "events:queue.claimed:l2"
+          ]
+        ],
+        "wait_samples": [
+          1.0
+        ]
+      }
+    ],
+    "m2_pairs": [
+      {
+        "from": "A",
+        "handoffs": 1,
+        "return_rate": 0.0,
+        "returns": 0,
+        "to": "H"
+      },
+      {
+        "from": "B",
+        "handoffs": 1,
+        "return_rate": 1.0,
+        "returns": 1,
+        "to": "H"
+      },
+      {
+        "from": "H",
+        "handoffs": 1,
+        "return_rate": 1.0,
+        "returns": 1,
+        "to": "A"
+      },
+      {
+        "from": "H",
+        "handoffs": 1,
+        "return_rate": 0.0,
+        "returns": 0,
+        "to": "B"
+      }
+    ],
+    "fleet_concurrency": {
+      "conserved": true,
+      "effective_parallelism": 0.0,
+      "effective_parallelism_milli": 0,
+      "fleet_duty_cycle": null,
+      "fleet_duty_cycle_bps": 0,
+      "histogram": [
+        {
+          "active_seats": 0,
+          "conserved": true,
+          "secs": 3600,
+          "share": 1.0
+        }
+      ],
+      "seat_count": 0,
+      "total_active_seat_secs": 0,
+      "window_secs": 3600
+    }
+  },
+  "tie_order": "source timestamp, then source sequence; queue boundaries apply before usage at the same timestamp"
+}
