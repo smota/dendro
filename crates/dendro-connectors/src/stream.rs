@@ -31,6 +31,83 @@ struct Buckets {
     prior_reasoning_output_tokens: Option<i64>,
 }
 
+#[derive(Default)]
+struct UsageAttribution {
+    model: Option<String>,
+    effort: Option<String>,
+}
+
+impl UsageAttribution {
+    /// Prefix records are observed too, restoring context after a watermark
+    /// resume without carrying metadata from a replaced file generation.
+    fn observe(&mut self, harness: &str, value: &Value) {
+        let kind = value.get("type").and_then(Value::as_str);
+        match harness {
+            "codex" if matches!(kind, Some("session_meta" | "turn_context" | "event_msg")) => {
+                update_attribution(&mut self.model, value, &["/payload/model", "/model"]);
+                update_attribution(
+                    &mut self.effort,
+                    value,
+                    &[
+                        "/payload/effort",
+                        "/payload/reasoning_effort",
+                        "/payload/collaboration_mode/settings/reasoning_effort",
+                        "/effort",
+                        "/reasoning_effort",
+                    ],
+                );
+            }
+            "pi" => match kind {
+                Some("model_change") => {
+                    update_attribution(&mut self.model, value, &["/modelId", "/model"]);
+                }
+                Some("thinking_level_change") => {
+                    update_attribution(&mut self.effort, value, &["/thinkingLevel"]);
+                }
+                Some("message")
+                    if value.pointer("/message/role").and_then(Value::as_str)
+                        == Some("assistant") =>
+                {
+                    update_attribution(&mut self.model, value, &["/message/model"]);
+                    update_attribution(&mut self.effort, value, &["/message/thinkingLevel"]);
+                }
+                _ => {}
+            },
+            "claude" if kind == Some("assistant") => {
+                // Claude records carry their own model; never borrow one from
+                // another message (a file may also contain several sessions).
+                *self = Self::default();
+                update_attribution(&mut self.model, value, &["/message/model"]);
+                update_attribution(
+                    &mut self.effort,
+                    value,
+                    &["/message/effort", "/message/reasoning_effort", "/effort"],
+                );
+            }
+            _ => {}
+        }
+    }
+}
+
+fn update_attribution(target: &mut Option<String>, value: &Value, paths: &[&str]) {
+    if let Some(field) = paths.iter().find_map(|path| value.pointer(path)) {
+        // An explicitly invalid or null value clears stale context.
+        *target = field
+            .as_str()
+            .filter(|s| safe_attribution_token(s))
+            .map(str::to_string);
+    }
+}
+
+fn safe_attribution_token(token: &str) -> bool {
+    !token.is_empty()
+        && token.len() <= 64
+        && token
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_'))
+        && !dendro_core::contains_secret(token)
+}
+
 pub fn ingest_jsonl(
     store: &AnalyticsStore,
     source_id: &str,
@@ -188,6 +265,8 @@ fn ingest_jsonl_bounded(
     }
     let mut first_codex_in_this_call = true;
     let mut usages = Vec::new();
+    let mut usage_models = Vec::new();
+    let mut usage_attribution = UsageAttribution::default();
     let mut tools = Vec::new();
     let mut tool_categories: Vec<(String, ToolCategory)> = Vec::new();
     let mut seen_messages = HashSet::new();
@@ -284,6 +363,7 @@ fn ingest_jsonl_bounded(
         if unknown_record_type(harness, &value).is_some() {
             reader_complete = false;
         }
+        usage_attribution.observe(harness, &value);
         if harness == "claude" {
             if let Some(id) = value.get("sessionId").and_then(Value::as_str) {
                 claude_sessions.insert(seal_session(tool_key, harness, id));
@@ -364,8 +444,14 @@ fn ingest_jsonl_bounded(
                         continue;
                     }
                 }
+                let source_key = format!("{source_id}:{generation}:{line_no}");
+                usage_models.push((
+                    source_key.clone(),
+                    usage_attribution.model.clone(),
+                    usage_attribution.effort.clone(),
+                ));
                 usages.push(UsageFact {
-                    source_key: format!("{source_id}:{generation}:{line_no}"),
+                    source_key,
                     harness: harness.to_string(),
                     native_session: seal_session(tool_key, harness, &bucket.native_session),
                     message_id: bucket
@@ -487,6 +573,7 @@ fn ingest_jsonl_bounded(
         &baseline,
     )?;
     store.record_tool_categories(&tool_categories)?;
+    store.record_usage_models(&usage_models)?;
     for note in &warnings {
         store.record_warning(note)?;
     }
@@ -1807,6 +1894,214 @@ mod tests {
                 .into_iter()
                 .filter(|w| w.starts_with(UNKNOWN_RECORD_TYPE))
                 .collect()
+        }
+
+        fn with_message_metadata(line: String, model: &str, field: &str, effort: &str) -> String {
+            let mut value: Value = serde_json::from_str(&line).unwrap();
+            value["message"]["model"] = model.into();
+            value["message"][field] = effort.into();
+            value.to_string()
+        }
+
+        fn model_rows(f: &Fixture) -> Vec<(Option<String>, Option<String>)> {
+            let models = f.db.load_usage_models().unwrap();
+            let mut usages = f.db.load_usage().unwrap();
+            usages.sort_by_key(|usage| (usage.generation, usage.seq));
+            usages
+                .iter()
+                .map(|usage| models.get(&usage.source_key).cloned().unwrap_or_default())
+                .collect()
+        }
+
+        #[test]
+        fn codex_model_effort_tracks_context_and_resumes_from_prefix() {
+            let fresh = Fixture::new("codex-model-fresh");
+            let split = Fixture::new("codex-model-split");
+            let part1 = vec![
+                r#"{"type":"session_meta","payload":{"id":"sku-session","model":"gpt-6.1","effort":"low"}}"#.into(),
+                codex_count(10, None),
+                r#"{"type":"turn_context","payload":{"model":"gpt-6.1-sol","collaboration_mode":{"settings":{"reasoning_effort":"high"}}}}"#.into(),
+            ];
+            let part2 = vec![
+                codex_count(15, None),
+                r#"{"type":"event_msg","payload":{"type":"model_selected","model":"gpt-6","reasoning_effort":"medium"}}"#.into(),
+                codex_count(20, None),
+                r#"{"type":"turn_context","payload":{"effort":"xhigh"}}"#.into(),
+                codex_count(25, None),
+            ];
+            let whole = fresh.file("sku.jsonl", &[part1.clone(), part2.clone()].concat());
+            fresh.ingest("codex", &whole);
+            let file = split.file("sku.jsonl", &part1);
+            split.ingest("codex", &file);
+            // Resume with the context in the prior prefix and no metadata on
+            // the next token_count. Prefix counters must not be reapplied.
+            split.append(&file, &part2);
+            split.ingest("codex", &file);
+            split.ingest("codex", &file);
+            assert_eq!(model_rows(&fresh), model_rows(&split));
+            assert_eq!(
+                model_rows(&split),
+                [
+                    (Some("gpt-6.1".into()), Some("low".into())),
+                    (Some("gpt-6.1-sol".into()), Some("high".into())),
+                    (Some("gpt-6".into()), Some("medium".into())),
+                    (Some("gpt-6".into()), Some("xhigh".into())),
+                ]
+            );
+            assert_eq!(split.sessions("codex").values().sum::<i64>(), 25);
+        }
+
+        #[test]
+        fn pi_model_effort_tracks_changes_messages_and_resumes() {
+            let f = Fixture::new("pi-model");
+            let file = f.file(
+                "sku.jsonl",
+                &[
+                    pi_header("sku-session"),
+                    r#"{"type":"model_change","modelId":"grok-4"}"#.into(),
+                    r#"{"type":"thinking_level_change","thinkingLevel":"medium"}"#.into(),
+                    pi_usage("first", 10),
+                ],
+            );
+            f.ingest("pi", &file);
+            f.append(
+                &file,
+                &[
+                    pi_usage("resumed", 20),
+                    with_message_metadata(
+                        pi_usage("override", 30),
+                        "claude-opus-4.1",
+                        "thinkingLevel",
+                        "high",
+                    ),
+                    pi_usage("after-override", 40),
+                    r#"{"type":"model_change","model":"gpt-6"}"#.into(),
+                    r#"{"type":"thinking_level_change","thinkingLevel":"low"}"#.into(),
+                    pi_usage("changed", 50),
+                ],
+            );
+            f.ingest("pi", &file);
+            assert_eq!(
+                model_rows(&f),
+                [
+                    (Some("grok-4".into()), Some("medium".into())),
+                    (Some("grok-4".into()), Some("medium".into())),
+                    (Some("claude-opus-4.1".into()), Some("high".into())),
+                    (Some("claude-opus-4.1".into()), Some("high".into())),
+                    (Some("gpt-6".into()), Some("low".into())),
+                ]
+            );
+        }
+
+        #[test]
+        fn claude_model_effort_is_per_message_and_keeps_usage_dedupe() {
+            let f = Fixture::new("claude-model");
+            let first = with_message_metadata(
+                claude_usage("first", 10, None),
+                "claude-opus-4.1",
+                "effort",
+                "high",
+            );
+            let file = f.file(
+                "sku.jsonl",
+                &[
+                    first.clone(),
+                    first,
+                    claude_usage("unknown", 20, None),
+                    with_message_metadata(
+                        claude_usage("last", 30, None),
+                        "claude-sonnet-4.5",
+                        "reasoning_effort",
+                        "medium",
+                    ),
+                ],
+            );
+            f.ingest("claude", &file);
+            assert_eq!(
+                model_rows(&f),
+                [
+                    (Some("claude-opus-4.1".into()), Some("high".into())),
+                    (None, None),
+                    (Some("claude-sonnet-4.5".into()), Some("medium".into())),
+                ]
+            );
+        }
+
+        #[test]
+        fn usage_model_metadata_rejects_secrets_and_invalid_tokens() {
+            for token in [
+                "",
+                " ",
+                "claude/opus",
+                "gpt model",
+                "éffort",
+                "sk-model-secret-canary",
+                "ghp_model-secret-canary",
+                "Bearer model-secret-canary",
+            ] {
+                assert!(!safe_attribution_token(token));
+            }
+            assert!(!safe_attribution_token(&"a".repeat(65)));
+            assert!(safe_attribution_token(&"a".repeat(64)));
+            assert!(safe_attribution_token("GPT-6.1_sol"));
+
+            let f = Fixture::new("model-privacy");
+            for harness in ["codex", "pi", "claude"] {
+                let lines = match harness {
+                    "codex" => vec![
+                        codex_header("session"),
+                        r#"{"type":"turn_context","payload":{"model":"gpt-6","effort":"high"}}"#.into(),
+                        r#"{"type":"turn_context","payload":{"model":"sk-model-secret-canary","effort":"ghp_effort-secret-canary"}}"#.into(),
+                        codex_count(10, None),
+                    ],
+                    "pi" => vec![
+                        pi_header("session"),
+                        r#"{"type":"model_change","modelId":"gpt-6"}"#.into(),
+                        r#"{"type":"thinking_level_change","thinkingLevel":"high"}"#.into(),
+                        r#"{"type":"model_change","modelId":"sk-model-secret-canary"}"#.into(),
+                        r#"{"type":"thinking_level_change","thinkingLevel":"ghp_effort-secret-canary"}"#.into(),
+                        pi_usage("message", 10),
+                    ],
+                    _ => vec![with_message_metadata(
+                        claude_usage("message", 10, None),
+                        "sk-model-secret-canary",
+                        "effort",
+                        "ghp_effort-secret-canary",
+                    )],
+                };
+                let file = f.file(&format!("{harness}.jsonl"), &lines);
+                f.ingest(harness, &file);
+            }
+            assert_eq!(f.db.load_usage().unwrap().len(), 3);
+            assert!(f.db.load_usage_models().unwrap().is_empty());
+        }
+
+        #[test]
+        fn replacement_generation_drops_previous_model_context() {
+            let f = Fixture::new("model-generation");
+            let file = f.file(
+                "sku.jsonl",
+                &[
+                    codex_header("session"),
+                    r#"{"type":"turn_context","payload":{"model":"gpt-6","effort":"high"}}"#.into(),
+                    codex_count(10, None),
+                ],
+            );
+            f.ingest("codex", &file);
+            fs::write(
+                &file,
+                format!(
+                    "{}\n{}\n",
+                    codex_header("new-session"),
+                    codex_count(5, None)
+                ),
+            )
+            .unwrap();
+            f.ingest("codex", &file);
+            assert_eq!(
+                model_rows(&f),
+                [(Some("gpt-6".into()), Some("high".into())), (None, None)]
+            );
         }
 
         #[test]

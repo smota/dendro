@@ -491,13 +491,14 @@ fn evaluate_report_snapshot(
         .filter(|row| in_scope(&row.harness, &row.native_session))
         .cloned()
         .collect();
-    let queue_all: Vec<_> = store
-        .load_queue()?
-        .into_iter()
+    let queue_context = store.load_queue()?;
+    let queue_all: Vec<_> = queue_context
+        .iter()
         .filter(|row| match &rig_seats {
             Some(seats) => seats.contains(&row.source_seat) || seats.contains(&row.dest_seat),
             None => true,
         })
+        .cloned()
         .collect();
     let edges_all = metrics::handoff_edges(&queue_all);
     let edges: Vec<_> = edges_all
@@ -1301,6 +1302,70 @@ fn evaluate_report_snapshot(
     if !m4_skill_exposure.is_empty() {
         payload["m4_skill_exposure"] = json!(m4_skill_exposure);
     }
+    let wave1 = crate::turnaround::evaluate(crate::turnaround::Input {
+        queue: &queue_all,
+        history_queue: &queue_context,
+        meta: &store.load_queue_item_meta()?,
+        edges: &edges,
+        closures: &k2_all,
+        identities: &identities,
+        usage: &usage,
+        models: &store.load_usage_models()?,
+        bindings: &bindings,
+        snapshots: &snapshot_destinations,
+        roles: &roles,
+        window,
+    });
+    for field in [
+        "watchdog_recovery",
+        "ring_boundaries",
+        "exec_turnaround",
+        "model_effort_tokens",
+        "four_eyes_independence",
+        "issue_lineage",
+        "task_intake_overhead",
+    ] {
+        payload[field] = wave1[field].clone();
+    }
+    for row in payload["pair_medians"].as_array_mut().expect("pair rows") {
+        if let Some(exec) = wave1["exec_pairs"]
+            .as_array()
+            .expect("execution pairs")
+            .iter()
+            .find(|e| e["from"] == row["from"] && e["to"] == row["to"])
+        {
+            for field in [
+                "exec_samples",
+                "exec_sample_keys",
+                "exec_invalid",
+                "exec_median",
+            ] {
+                row[field] = exec[field].clone();
+            }
+        }
+    }
+    for row in payload["m1_by_seat"].as_array_mut().expect("M1 rows") {
+        if let Some(counts) = wave1["watchdog_recovery"]["by_seat"]
+            .as_array()
+            .expect("recovery seats")
+            .iter()
+            .find(|c| c["seat"] == row["seat"])
+        {
+            for field in [
+                "productive_closed_items",
+                "recovery_closed_items",
+                "recovery_tax_ratio",
+                "recovery_by_reason",
+            ] {
+                row[field] = counts[field].clone();
+            }
+        } else {
+            row["productive_closed_items"] = json!(0);
+            row["recovery_closed_items"] = json!(0);
+            row["recovery_tax_ratio"] = Value::Null;
+            row["recovery_by_reason"] = json!({});
+        }
+    }
     annotate_openrig_evidence(store, &sources, &mut payload, evidence)?;
     let report = metrics::report_value(kind, payload);
     let file_states = if evidence {
@@ -1593,6 +1658,11 @@ pub fn trace_json_with_thresholds(
             "ceremony_calls / total_calls across ceremony vs engineering categories",
             payload["tool_categories"].clone(),
         ),
+        field @ ("watchdog_recovery" | "ring_boundaries" | "exec_turnaround" | "model_effort_tokens"
+            | "four_eyes_independence" | "issue_lineage" | "task_intake_overhead") => (
+            "additive Wave 1 projection from accepted facts; definition and source membership accompany each projection",
+            payload[field].clone(),
+        ),
         other => return Err(anyhow!("unknown metric id {}", redact(other))),
     };
     let mut inputs = json!({
@@ -1650,6 +1720,17 @@ pub fn trace_json_with_thresholds(
     if !thresholds.is_default() {
         inputs["loop_thresholds"] = json!(thresholds);
         inputs["handoff_loops"] = payload["handoff_loops"].clone();
+    }
+    for field in [
+        "watchdog_recovery",
+        "ring_boundaries",
+        "exec_turnaround",
+        "model_effort_tokens",
+        "four_eyes_independence",
+        "issue_lineage",
+        "task_intake_overhead",
+    ] {
+        inputs[field] = payload[field].clone();
     }
     if let Some(exposure) = payload.get("m4_skill_exposure") {
         inputs["m4_skill_exposure"] = exposure.clone();

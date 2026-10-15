@@ -65,6 +65,12 @@ pub struct QueueItemCutoff {
     pub tags_digest: String,
     #[serde(default)]
     pub mission_tags_digest: String,
+    /// Absent in manifests captured before wake-result attribution existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_nudge_result_digest: Option<String>,
+    /// Issue, phase, and recovery tags used by additive analytics.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub analytics_tags_digest: Option<String>,
 }
 
 impl CutoffManifest {
