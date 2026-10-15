@@ -15,11 +15,32 @@ pub fn with_output_lock<T>(lock_path: &Path, body: impl FnOnce() -> Result<T>) -
     if let Some(parent) = lock_path.parent() {
         fs::create_dir_all(parent)?;
     }
-    if fs::symlink_metadata(lock_path).is_ok_and(|meta| !meta.file_type().is_file()) {
-        return Err(anyhow!(
-            "refusing an output lock that is not a regular file"
-        ));
-    }
+    with_output_lock_metadata(lock_path, fs::symlink_metadata(lock_path), body)
+}
+
+// Consume the actual lstat result separately from output effects. Tests can
+// supply IO errors at this boundary without a production fault switch.
+fn with_output_lock_metadata<T>(
+    lock_path: &Path,
+    metadata: std::io::Result<fs::Metadata>,
+    body: impl FnOnce() -> Result<T>,
+) -> Result<T> {
+    use std::os::unix::fs::MetadataExt;
+    let before = match metadata {
+        Ok(meta) => {
+            if !meta.is_file() {
+                return Err(anyhow!(
+                    "refusing an output lock that is not a regular file"
+                ));
+            }
+            if meta.nlink() != 1 {
+                return Err(anyhow!("output lock identity is unsafe"));
+            }
+            Some(meta)
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
+        Err(err) => return Err(err.into()),
+    };
     let file = OpenOptions::new()
         .read(true)
         .write(true)
@@ -27,21 +48,46 @@ pub fn with_output_lock<T>(lock_path: &Path, body: impl FnOnce() -> Result<T>) -
         .truncate(false)
         .mode(0o600)
         .open(lock_path)?;
+    // Detect an opened/named/preexisting mismatch before acquiring exclusion.
+    // Static pre-open nlink rejection prevents source-hardlink writable opens;
+    // this later check does not undo an open or eliminate namespace races.
+    validate_lock_identity(
+        &file.metadata()?,
+        &fs::symlink_metadata(lock_path)?,
+        before.as_ref(),
+    )?;
     let mut lock = RwLock::new(file);
     let guard = lock
         .try_write()
         .map_err(|_| anyhow!("analytics output lock is busy"))?;
-    // The locked inode must be the one named by the lock path (not reached
-    // through a symlink) and have one link, so every creator and recovery
-    // uses the same lock.
+    with_locked_output(guard, lock_path, body)
+}
+
+fn validate_lock_identity(
+    held: &fs::Metadata,
+    named: &fs::Metadata,
+    before: Option<&fs::Metadata>,
+) -> Result<()> {
+    use std::os::unix::fs::MetadataExt;
+    let single_regular = |meta: &fs::Metadata| meta.is_file() && meta.nlink() == 1;
+    if !single_regular(held)
+        || !single_regular(named)
+        || !same_inode(held, named)
+        || before.is_some_and(|meta| !single_regular(meta) || !same_inode(meta, held))
     {
-        use std::os::unix::fs::MetadataExt;
-        let held = guard.metadata()?;
-        let named = fs::symlink_metadata(lock_path)?;
-        if held.ino() != named.ino() || held.dev() != named.dev() || held.nlink() != 1 {
-            return Err(anyhow!("output lock identity is unsafe"));
-        }
+        return Err(anyhow!("output lock identity is unsafe"));
     }
+    Ok(())
+}
+
+fn with_locked_output<T>(
+    guard: fd_lock::RwLockWriteGuard<'_, File>,
+    lock_path: &Path,
+    body: impl FnOnce() -> Result<T>,
+) -> Result<T> {
+    // Repeat under exclusion; owning the guard holds it across the body and
+    // releases it on every error, including a failed post-lock identity check.
+    validate_lock_identity(&guard.metadata()?, &fs::symlink_metadata(lock_path)?, None)?;
     body()
 }
 
@@ -496,6 +542,180 @@ mod tests {
             );
         }
         refuse_aliased_output(&dir.join("safe-out"), &[dir.join("missing-source")]).unwrap();
+        fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn lock_metadata_errors_never_create_open_lock_or_invoke_body() {
+        let dir = fixture("lock-errors");
+        let path = dir.join(".dendro-output.lock");
+        for code in [
+            libc::EACCES,
+            libc::ENOTDIR,
+            libc::ELOOP,
+            libc::EIO,
+            libc::EMFILE,
+        ] {
+            let err = with_output_lock_metadata(
+                &path,
+                Err(std::io::Error::from_raw_os_error(code)),
+                || -> Result<()> { panic!("metadata error must stop before body") },
+            )
+            .unwrap_err();
+            assert_eq!(
+                err.downcast_ref::<std::io::Error>().unwrap().raw_os_error(),
+                Some(code)
+            );
+            assert!(!err.to_string().contains(&dir.display().to_string()));
+            assert!(
+                !path.exists(),
+                "error must not be treated as absent safe lock"
+            );
+            assert_eq!(fs::read_dir(&dir).unwrap().count(), 0);
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn lock_not_found_creators_converge_and_reuse_without_truncation_or_chmod() {
+        use std::os::unix::fs::MetadataExt;
+        let dir = fixture("lock-create");
+        let path = dir.join(".dendro-output.lock");
+        with_output_lock(&path, || Ok(())).unwrap();
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        fs::write(&path, b"persistent synthetic lock bytes").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o640)).unwrap();
+        let before = fs::metadata(&path).unwrap();
+        // Another ordinary creator wins after lstat saw NotFound: reuse its
+        // inode, rather than failing create_new or replacing the shared lock.
+        with_output_lock_metadata(
+            &path,
+            Err(std::io::Error::from(std::io::ErrorKind::NotFound)),
+            || Ok(()),
+        )
+        .unwrap();
+        let after = fs::metadata(&path).unwrap();
+        assert!(same_inode(&before, &after));
+        assert_eq!(after.nlink(), 1);
+        assert_eq!(after.permissions().mode() & 0o777, 0o640);
+        assert_eq!(fs::read(&path).unwrap(), b"persistent synthetic lock bytes");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn multiply_linked_lock_refuses_before_permission_open_and_body() {
+        let dir = fixture("lock-multilink");
+        let source = dir.join("original");
+        let path = dir.join(".dendro-output.lock");
+        fs::write(&source, b"synthetic original").unwrap();
+        fs::hard_link(&source, &path).unwrap();
+        fs::set_permissions(&source, fs::Permissions::from_mode(0o400)).unwrap();
+        let err =
+            with_output_lock(&path, || -> Result<()> { panic!("unsafe lock body") }).unwrap_err();
+        assert_eq!(err.to_string(), "output lock identity is unsafe");
+        assert_eq!(fs::read(&source).unwrap(), b"synthetic original");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn lock_identity_validation_rejects_type_link_and_named_snapshot_mismatch() {
+        let dir = fixture("lock-invariants");
+        let held_path = dir.join("held");
+        let other_path = dir.join("other");
+        fs::write(&held_path, b"held").unwrap();
+        fs::write(&other_path, b"other").unwrap();
+        let held = fs::metadata(&held_path).unwrap();
+        let other = fs::metadata(&other_path).unwrap();
+        let directory = fs::metadata(&dir).unwrap();
+        symlink(&held_path, dir.join("link")).unwrap();
+        let symlink_meta = fs::symlink_metadata(dir.join("link")).unwrap();
+        validate_lock_identity(&held, &held, Some(&held)).unwrap();
+        for (opened, named, before) in [
+            (&held, &other, None),
+            (&held, &held, Some(&other)),
+            (&directory, &directory, None),
+            (&held, &directory, None),
+            (&held, &symlink_meta, None),
+        ] {
+            assert_eq!(
+                validate_lock_identity(opened, named, before)
+                    .unwrap_err()
+                    .to_string(),
+                "output lock identity is unsafe"
+            );
+        }
+        fs::hard_link(&held_path, dir.join("second-name")).unwrap();
+        let multilink = fs::metadata(&held_path).unwrap();
+        assert!(validate_lock_identity(&multilink, &multilink, None).is_err());
+        assert!(validate_lock_identity(&held, &multilink, None).is_err());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn preexisting_snapshot_mismatch_refuses_before_trying_busy_lock() {
+        let dir = fixture("lock-before-flock");
+        let path = dir.join(".dendro-output.lock");
+        fs::write(&path, b"first inode").unwrap();
+        let before = fs::symlink_metadata(&path).unwrap();
+        fs::rename(&path, dir.join("displaced")).unwrap();
+        fs::write(&path, b"replacement inode").unwrap();
+        let mut holder = RwLock::new(File::open(&path).unwrap());
+        let held = holder.try_write().unwrap();
+        let err = with_output_lock_metadata(&path, Ok(before), || -> Result<()> {
+            panic!("mismatched body")
+        })
+        .unwrap_err();
+        // A try_write before validation would instead return the busy error.
+        assert_eq!(err.to_string(), "output lock identity is unsafe");
+        drop(held);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn postlock_mismatch_excludes_body_and_releases_original_guard() {
+        let dir = fixture("lock-after-flock");
+        let path = dir.join(".dendro-output.lock");
+        let displaced = dir.join("displaced");
+        fs::write(&path, b"locked inode").unwrap();
+        let mut lock = RwLock::new(File::open(&path).unwrap());
+        let guard = lock.try_write().unwrap();
+        // Deterministic unit boundary, not a claimed public namespace race.
+        fs::rename(&path, &displaced).unwrap();
+        fs::write(&path, b"new inode").unwrap();
+        let err = with_locked_output(guard, &path, || -> Result<()> {
+            panic!("postlock mismatch body")
+        })
+        .unwrap_err();
+        assert_eq!(err.to_string(), "output lock identity is unsafe");
+        let mut probe = RwLock::new(File::open(&displaced).unwrap());
+        let reacquired = probe
+            .try_write()
+            .expect("failed post-lock check releases guard");
+        drop(reacquired);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn guard_excludes_other_descriptors_through_body_and_releases_on_body_error() {
+        let dir = fixture("lock-lifetime");
+        let path = dir.join(".dendro-output.lock");
+        let err = with_output_lock(&path, || -> Result<()> {
+            let mut competitor = RwLock::new(File::open(&path)?);
+            assert_eq!(
+                competitor.try_write().unwrap_err().kind(),
+                std::io::ErrorKind::WouldBlock
+            );
+            Err(anyhow!("synthetic body failure"))
+        })
+        .unwrap_err();
+        assert_eq!(err.to_string(), "synthetic body failure");
+        let mut competitor = RwLock::new(File::open(&path).unwrap());
+        let released = competitor
+            .try_write()
+            .expect("body error releases exclusion");
+        drop(released);
         fs::remove_dir_all(dir).unwrap();
     }
 }
