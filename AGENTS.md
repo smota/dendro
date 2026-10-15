@@ -1,6 +1,6 @@
 # AGENTS.md — Engineering Standards, Security & Autonomous Operations
 
-Welcome to **Dendro**. This repository is governed for fully autonomous, multi-agent software delivery.
+Welcome to **Dendro**. This repository uses governed autonomous delivery with explicit review and publication authority.
 
 Every agent operating in this repository (Claude, Codex, Grok, Pi, AGY) must adhere to the engineering standards and behavioral guidelines described below.
 
@@ -19,19 +19,14 @@ Dendro is a local-first AI Fleet Intelligence engine for multi-agent fleets, wri
 
 ## 2. Autonomous Delivery & Governance (AgentFlow SDLC)
 
-* **Posture:** **100% Autonomous (`autonomous`)**.
-* **Zero Human Blocking:** All changes, including critical scope and high-assurance contracts, proceed without human intervention or manual sign-off.
-* **Strict Four-Eyes Principle (No Self-Review):** Self-review is strictly forbidden (`allowsSelfReview: false`). Every implementation created by a builder agent (Grok) MUST be independently audited and reviewed by another agent (Codex in `rev.review`).
-* **Proof Over Promises:** Validate every change with automated verification (`cargo check`, `cargo test`, `cargo clippy`). Record reproducible evidence into the SDLC run logs.
-* **Squad Topology:**
-  * **`dendro-dev` (Delivery Squad):**
-    * Lead Architect & Coordinator: **Codex** (`orch.arch`)
-    * Builders (Jr, Pleno, Sr): **Grok** via Pi (`dev.build-jr`, `dev.build`, `dev.build-sr`)
-    * QA & Verification: **Codex** (`dev.qa`)
-    * Independent Reviewer: **Codex** (`rev.review`)
-  * **`dendro-pm` (Product Squad):**
-    * Product Manager: **Claude Code** (`pm.manager`)
-    * Business Analyst: **Claude Code** (`pm.analyst`)
+- **Authority:** `sdlc.config.json` defines review and action boundaries; `agent-workflow.config.json` defines workflow routing. Autonomous execution preserves their human and publication gates. High-assurance work requires human approval; external actions do not gain authority from a model route or role name.
+- **Independent review:** Preserve the configured no-self-review policy. A builder, oracle author, tester and reviewer have distinct action boundaries. Optional test engineering requires its own task authority and protected-path checks.
+- **Routing:** Single-agent workflow routing describes logical role execution, not proof of a particular live fleet. Desired runtime/provider/model/effort/profile contracts are previewed from the canonical configuration and checked against actual execution before work admission.
+- **Adoption hold:** The backlog remains paused; `executionPolicy.activation: held` blocks squad materialization. Proposed Munito Qwen builder routing is held pending meaningful coding/tool calibration, supported actual-route observation, and verified task custody. Model inventory or a small extraction calibration does not authorize implementation.
+- **Continuity:** Recover existing run/epoch/fence, oracle digests, queue custody and publication holds from authoritative records. Local-preview configuration with empty candidate inputs does not recreate historical G2 state.
+- **External steering:** Verify the authenticated decision owner and return route. Naming `steer.lead`, observing a heartbeat, or starting a local seat grants no approval power.
+- **Verification:** Preserve Rust checks and reproducible evidence. Source changes are separate from installed profiles/hooks and live runtime adoption.
+- **Current adoption review:** https://github.com/smota/agentflow-sdlc/issues/526 tracks the preview, remaining holds and rollback baseline.
 
 ---
 

@@ -133,5 +133,71 @@
     "subagentSearchEffort": "low",
     "highEffortMaxContextTokens": 40000,
     "enforceCleanSubagentForHighEffort": true
+  },
+  "adapters": {
+    "openrig": {
+      "executionPolicy": {
+        "activation": "held",
+        "preset": "all-codex",
+        "seats": {
+          "orch.arch": {
+            "runtime": "codex",
+            "providerRoute": "openai-codex",
+            "model": "gpt-6.1-sol",
+            "effort": "medium",
+            "profile": "architect"
+          },
+          "dev.build": {
+            "runtime": "pi",
+            "providerRoute": "munito",
+            "model": "qwen/qwen3.8-27b",
+            "effort": "medium",
+            "profile": "builder-pi"
+          },
+          "dev.qa": {
+            "runtime": "codex",
+            "providerRoute": "openai-codex",
+            "model": "gpt-6.1-sol",
+            "effort": "low",
+            "profile": "qa"
+          },
+          "rev.review": {
+            "runtime": "claude-code",
+            "providerRoute": "anthropic",
+            "model": "claude-sonnet-5-5",
+            "effort": "medium",
+            "profile": "reviewer"
+          },
+          "eval.tester": {
+            "runtime": "codex",
+            "providerRoute": "openai-codex",
+            "model": "gpt-6.1-sol",
+            "effort": "low",
+            "profile": "eval-tester"
+          },
+          "pm.manager": {
+            "runtime": "codex",
+            "providerRoute": "openai-codex",
+            "model": "gpt-6.1-sol",
+            "effort": "medium",
+            "profile": "product-manager"
+          },
+          "pm.analyst": {
+            "runtime": "codex",
+            "providerRoute": "openai-codex",
+            "model": "gpt-6.1-sol",
+            "effort": "medium",
+            "profile": "analyst"
+          },
+          "steer.lead": {
+            "runtime": "codex",
+            "providerRoute": "openai-codex",
+            "model": "gpt-6.1-sol",
+            "effort": "medium",
+            "profile": "steering-lead"
+          }
+        }
+      }
+    }
   }
 }
