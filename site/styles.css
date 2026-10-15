@@ -437,7 +437,7 @@ body {
   color: #fff;
 }
 
-/* ROI Calculator */
+/* Scenario Calculator */
 .calc-box {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -749,3 +749,34 @@ body {
   .video-header { flex-direction: column; align-items: flex-start; }
 }
 
+
+/* Local explorer and transparent scenario assumptions */
+.fleet-explorer { width:100%; height:850px; border:1px solid var(--border-hover); border-radius:12px; background:#090d16; }
+.explorer-links { margin-top:16px; color:var(--text-secondary); }
+.explorer-links a { color:#67e8f9; }
+.form-group small { display:block; color:var(--text-secondary); font-size:.8rem; }
+.calc-method,.calc-disclaimer { grid-column:1/-1; color:var(--text-secondary); font-size:.9rem; }
+.calc-method summary { color:#67e8f9; cursor:pointer; }
+.calc-method p { margin-top:12px; }
+:focus-visible { outline:3px solid var(--accent-cyan); outline-offset:4px; }
+@media(max-width:600px) {
+  .container,.nav-container { padding-left:16px; padding-right:16px; }
+  .hero { padding-top:48px; }
+  .hero-title { font-size:2.2rem; }
+  .hero-badge { flex-wrap:wrap; border-radius:12px; }
+  .hero-cta-group { flex-direction:column; align-items:center; }
+  .nav-actions .btn-secondary { display:none; }
+  .section { padding:50px 0; }
+  .section-title { font-size:2rem; }
+  .calc-box { padding:20px; gap:20px; }
+  .card { padding:24px; }
+  .video-showcase-card { padding:16px; }
+  .terminal-header { flex-wrap:wrap; gap:6px; }
+  .terminal-badge { margin-left:0; }
+  .terminal-body { overflow:auto; }
+  .msg-bubble { max-width:100%; }
+  .code-snippet { overflow:auto; }
+  .fleet-explorer { height:900px; }
+  .footer-links { flex-wrap:wrap; }
+}
+@media(prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none!important; transition:none!important; } }
