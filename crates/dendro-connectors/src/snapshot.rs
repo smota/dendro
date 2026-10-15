@@ -84,6 +84,8 @@ pub struct Snapshot {
     pub attempts: u32,
     /// sha256 of the accepted source state (sizes, mtimes, identity, WAL header).
     pub revision: String,
+    /// Identity of the accepted source, captured with the copied bytes.
+    pub source_identity_sha256: String,
     pub main_bytes: u64,
     pub wal_bytes: Option<u64>,
     pub copy_ms: u128,
@@ -179,7 +181,11 @@ pub(crate) fn snapshot_with(
         if !quick_check(&main_copy)? {
             continue;
         }
+        let mut identity = Sha256::new();
+        identity.update(before.main.dev.to_be_bytes());
+        identity.update(before.main.ino.to_be_bytes());
         return Ok(Snapshot {
+            source_identity_sha256: hex::encode(identity.finalize()),
             path: main_copy,
             attempts: attempt,
             revision: revision(&before),

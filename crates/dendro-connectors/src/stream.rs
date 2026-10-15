@@ -60,6 +60,19 @@ pub fn ingest_jsonl_with_key(
     ingest_jsonl_with_key_checking(store, source_id, harness, path, tool_key, || Ok(()))
 }
 
+/// Read a sealed prefix through the same read-only handle used by the parser.
+/// Verification happens both before parsing and against the bytes consumed.
+pub fn ingest_jsonl_with_cutoff(
+    store: &AnalyticsStore,
+    source_id: &str,
+    harness: &str,
+    path: &Path,
+    tool_key: Option<&[u8]>,
+    cutoff: Option<&dendro_core::FileCutoff>,
+) -> Result<FileStats> {
+    ingest_jsonl_bounded(store, source_id, harness, path, tool_key, cutoff, || Ok(()))
+}
+
 // Tests substitute names at the real read boundary; production has no fault switch.
 fn ingest_jsonl_with_key_checking(
     store: &AnalyticsStore,
@@ -69,10 +82,58 @@ fn ingest_jsonl_with_key_checking(
     tool_key: Option<&[u8]>,
     after_header: impl FnOnce() -> Result<()>,
 ) -> Result<FileStats> {
-    let mut file = File::open(path)?;
+    ingest_jsonl_bounded(
+        store,
+        source_id,
+        harness,
+        path,
+        tool_key,
+        None,
+        after_header,
+    )
+}
+
+fn ingest_jsonl_bounded(
+    store: &AnalyticsStore,
+    source_id: &str,
+    harness: &str,
+    path: &Path,
+    tool_key: Option<&[u8]>,
+    cutoff: Option<&dendro_core::FileCutoff>,
+    after_header: impl FnOnce() -> Result<()>,
+) -> Result<FileStats> {
+    let mismatch = |reason: &str| {
+        anyhow::anyhow!(
+            "mismatch: source {} {}",
+            dendro_core::redact(
+                cutoff
+                    .map(|entry| entry.source_id.as_str())
+                    .unwrap_or(source_id)
+            ),
+            reason
+        )
+    };
+    let mut file = File::open(path).map_err(|error| {
+        if cutoff.is_some() {
+            mismatch("file missing or unreadable")
+        } else {
+            error.into()
+        }
+    })?;
+    if let Some(entry) = cutoff {
+        if file.metadata()?.len() < entry.byte_length {
+            return Err(mismatch("file shorter than byte cutoff"));
+        }
+        if hash_prefix(&mut file, entry.byte_length)? != entry.prefix_sha256 {
+            return Err(mismatch("file prefix digest differs"));
+        }
+    }
     let held_before = FileMetadata::from_file(&file);
     let named_before = observe_path(path);
-    let file_len = file.metadata()?.len() as i64;
+    let byte_limit = cutoff
+        .map(|entry| entry.byte_length)
+        .unwrap_or(file.metadata()?.len());
+    let file_len = i64::try_from(byte_limit)?;
     let prior = store.source_state(source_id)?;
     let (mut generation, mut offset, expected_hash) =
         prior.clone().unwrap_or((1, 0, String::new()));
@@ -92,13 +153,17 @@ fn ingest_jsonl_with_key_checking(
     // The bounded header read uses the same opened file as the streaming parser.
     // A pathname replacement cannot silently supply a different session header.
     let file_session = match harness {
-        "pi" | "codex" => Some(file_session(harness, &mut file, source_id)?),
+        "pi" | "codex" => Some(file_session(
+            harness,
+            &mut (&mut file).take(byte_limit),
+            source_id,
+        )?),
         _ => None,
     };
     after_header()?;
     file.seek(SeekFrom::Start(0))?;
     // One reusable line buffer. The generation is never copied.
-    let mut reader = BufReader::with_capacity(64 * 1024, file);
+    let mut reader = BufReader::with_capacity(64 * 1024, file.take(byte_limit));
     let mut buf = Vec::new();
     let mut line_no = 0i64;
     let mut consumed = 0i64;
@@ -362,6 +427,13 @@ fn ingest_jsonl_with_key_checking(
         };
     }
     let prefix_sha = hex::encode(hasher.finalize());
+    if let Some(entry) = cutoff {
+        if consumed as u64 != entry.byte_length || prefix_sha != entry.prefix_sha256 {
+            return Err(mismatch(
+                "file prefix changed while reading or incomplete cutoff",
+            ));
+        }
+    }
     offset = consumed;
     let mut settled = Vec::new();
     if let Some(mut scan) = tool_scan {
@@ -373,7 +445,7 @@ fn ingest_jsonl_with_key_checking(
             store.insert_skill(&skill)?;
         }
     }
-    let held_after = FileMetadata::from_file(reader.get_ref());
+    let held_after = FileMetadata::from_file(reader.get_ref().get_ref());
     let named_after = observe_path(path);
     let metadata = stable_ingest_metadata(
         held_before,
@@ -443,11 +515,14 @@ struct FileSession {
 const HEADER_LIMIT: u64 = 1 << 20;
 
 /// Reads only line 1, buffered and bounded, independent of the watermark.
-fn file_session(harness: &str, file: &mut File, source_id: &str) -> Result<FileSession> {
+fn file_session(harness: &str, file: &mut impl Read, source_id: &str) -> Result<FileSession> {
     let mut line = Vec::new();
     BufReader::new(file.take(HEADER_LIMIT)).read_until(b'\n', &mut line)?;
-    let id = serde_json::from_slice::<Value>(line.strip_suffix(b"\n").unwrap_or(&line))
-        .ok()
+    // Header identity is evidence only after its line is complete, just like
+    // usage/tool records. Otherwise a zero-byte manifest could not replay it.
+    let id = line
+        .strip_suffix(b"\n")
+        .and_then(|line| serde_json::from_slice::<Value>(line).ok())
         .and_then(|value| header_id(harness, &value));
     Ok(match id {
         Some(raw) => FileSession {
@@ -1426,12 +1501,12 @@ mod tests {
                 }
             };
             let path = dir.join(format!("{harness}.jsonl"));
-            fs::write(&path, header("original")).unwrap();
+            fs::write(&path, format!("{}\n", header("original"))).unwrap();
             let mut held = File::open(&path).unwrap();
             let before = FileMetadata::from_file(&held);
             let named_before = observe_path(&path).metadata;
             let replacement = dir.join("replacement.jsonl");
-            fs::write(&replacement, header("replacement")).unwrap();
+            fs::write(&replacement, format!("{}\n", header("replacement"))).unwrap();
             fs::rename(&replacement, &path).unwrap();
             let session = file_session(harness, &mut held, "source").unwrap();
             assert!(session.from_header);
@@ -3501,4 +3576,19 @@ pub fn walk_jsonl(root: &Path) -> Vec<PathBuf> {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod sealed_header_tests {
+    #[test]
+    fn partial_first_header_is_not_identity_evidence_beyond_the_complete_line_cutoff() {
+        let header = br#"{"type":"session_meta","payload":{"id":"future-session"}}"#;
+        let partial = super::file_session("codex", &mut &header[..], "source").unwrap();
+        assert!(!partial.from_header);
+        let mut complete = header.to_vec();
+        complete.push(b'\n');
+        let complete = super::file_session("codex", &mut &complete[..], "source").unwrap();
+        assert!(complete.from_header);
+        assert_eq!(complete.raw, "future-session");
+    }
 }

@@ -68,8 +68,8 @@ those ties differently. This does not establish a new persistent tie order.
 The half-open time filter runs before detector ordering and retains untimed
 observations, including breakers and middle members.
 
-Source entries distinguish each retained row generation from the latest
-committed prefix's own generation. Latest prefix metadata does not establish a
+File-source tool entries distinguish each retained row generation from the latest
+committed prefix's own generation. Latest file-prefix metadata does not establish a
 row's producing revision: that revision remains `null` / `not_recorded`.
 Current source state is `not_checked`. Trace opens neither source files nor
 keys and performs no backfill. Missing latest metadata alone does not prevent
@@ -78,3 +78,48 @@ replaying surviving stored evidence. Missing essential evidence produces
 omitted with their original report indices while report counts remain visible.
 Coverage counts sources once using their persisted file-session linkage;
 Codex tool-call coverage remains `not read`.
+
+## Sealed replay (#13)
+
+Record the exact complete JSONL prefixes and OpenRig table cutoffs consumed by a run:
+
+```bash
+dendro run --db fleet.duckdb --root claude=/data/claude --root openrig=/data/openrig.sqlite --write-manifest cutoff.json
+dendro run --db fleet.duckdb --root claude=/data/claude --root openrig=/data/openrig.sqlite --sealed cutoff.json
+```
+
+`--manifest-out` is an alias for `--write-manifest`. Capture and replay flags are
+mutually exclusive. Manifest paths follow the secret-path policy; capture refuses
+analytics files, key/lock sidecars, source files, and paths inside source roots.
+The JSON contains content-free source identifiers, byte lengths, high-water keys,
+row counts, and SHA-256 digests. It contains no transcript or raw source path.
+
+Replay reads only named files, through their complete-line byte cutoffs, and only
+OpenRig events, transitions, and snapshots through the recorded keys. New files,
+rows, queue items, and partial tails are excluded. A missing, truncated, or changed
+named prefix produces `mismatch`, identifying the source and reason, before the
+analytics database is published. Unsealed runs continue ingesting new data.
+
+When capture includes history from earlier ingests, it also preserves the accepted
+analytics snapshot as `.dendro-sealed-<digest>.duckdb` beside the manifest. This
+companion contains the same sanitized derived evidence as the analytics database;
+its SHA-256 digest is recorded in the JSON. Keep it with the manifest.
+Missing or changed companions refuse replay. Fresh captures without prior history
+need no analytics companion. Replay into another database should retain the original
+analytics key sidecar: sealed secret-shaped item/session identifiers use that key,
+and historical companions require its key id. Source validation still runs before
+any historical analytics snapshot is restored.
+
+Mutable queue-item fields are reconstructed from creation events where supported.
+Otherwise report and trace mark affected metrics `not reproducible: mutable source`
+with the item and reason. OpenRig facts carry their producing `generation` (starting
+at 1) and `producing_revision`. Appended rows get a new producing generation;
+unchanged rows retain theirs. Reset/replacement retains superseded history under
+new fact keys. Retention-deleted rows retain their totals and trace as `gone` /
+`no longer available`. In-place changes issue an `openrig source changed` warning
+and replace the affected evidence in current recomputation. Trace also marks a
+missing OpenRig file without changing accepted totals.
+
+Source access remains read-only: SQLite is read from a validated private main/WAL
+copy, and the original `-shm` is untouched. Live producers may continue changing
+source hashes, sizes, and modification times throughout a run.

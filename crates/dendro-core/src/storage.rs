@@ -1,3 +1,8 @@
+#[path = "openrig_provenance.rs"]
+mod openrig_provenance;
+pub use openrig_provenance::{OpenRigIngest, OpenRigRecord, OpenRigRow};
+
+use std::cell::RefCell;
 use std::path::Path;
 
 use anyhow::{anyhow, Result};
@@ -58,6 +63,8 @@ const FILE_BASELINES_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS file_source_base
 pub struct AnalyticsStore {
     conn: Connection,
     pub key_id: String,
+    openrig_rows: RefCell<Option<openrig_provenance::OpenRigRowCache>>,
+    openrig_pending: RefCell<Option<Vec<OpenRigRecord>>>,
 }
 
 impl AnalyticsStore {
@@ -70,6 +77,8 @@ impl AnalyticsStore {
         let store = Self {
             conn,
             key_id: key_id.to_string(),
+            openrig_rows: RefCell::new(None),
+            openrig_pending: RefCell::new(None),
         };
         store.create_schema()?;
         Ok(store)
@@ -83,6 +92,8 @@ impl AnalyticsStore {
         let store = Self {
             conn,
             key_id: key_id.to_string(),
+            openrig_rows: RefCell::new(None),
+            openrig_pending: RefCell::new(None),
         };
         store.create_schema()?;
         Ok(store)
@@ -102,6 +113,8 @@ impl AnalyticsStore {
         Ok(Self {
             conn,
             key_id: key_id.to_string(),
+            openrig_rows: RefCell::new(None),
+            openrig_pending: RefCell::new(None),
         })
     }
 
@@ -117,7 +130,13 @@ impl AnalyticsStore {
         if version != SCHEMA_VERSION {
             return Err(anyhow!("unsupported analytics schema version {version}"));
         }
-        Ok(Self { conn, key_id })
+        conn.execute_batch(openrig_provenance::SCHEMA)?;
+        Ok(Self {
+            conn,
+            key_id,
+            openrig_rows: RefCell::new(None),
+            openrig_pending: RefCell::new(None),
+        })
     }
 
     pub fn open_read_only(path: &Path) -> Result<Self> {
@@ -133,7 +152,12 @@ impl AnalyticsStore {
         if version != SCHEMA_VERSION {
             return Err(anyhow!("unsupported analytics schema version {version}"));
         }
-        Ok(Self { conn, key_id })
+        Ok(Self {
+            conn,
+            key_id,
+            openrig_rows: RefCell::new(None),
+            openrig_pending: RefCell::new(None),
+        })
     }
 
     fn create_schema(&self) -> Result<()> {
@@ -259,6 +283,7 @@ impl AnalyticsStore {
             "#,
         )?;
         self.conn.execute_batch(FILE_BASELINES_SCHEMA)?;
+        self.conn.execute_batch(openrig_provenance::SCHEMA)?;
         self.conn.execute(
             "INSERT INTO dendro_meta (schema_version, key_id) VALUES (?, ?)",
             params![SCHEMA_VERSION, self.key_id],
@@ -685,47 +710,51 @@ impl AnalyticsStore {
     }
 
     pub fn insert_identity(&self, fact: &IdentityFact) -> Result<()> {
-        self.conn.execute(
-            r#"INSERT INTO identity_facts (source_key, harness, native_session, rig, seat, ts)
+        self.conn
+            .prepare_cached(
+                r#"INSERT INTO identity_facts (source_key, harness, native_session, rig, seat, ts)
                VALUES (?, ?, ?, ?, ?, ?)
                ON CONFLICT (source_key) DO NOTHING"#,
-            params![
+            )?
+            .execute(params![
                 redact(&fact.source_key),
                 redact(&fact.harness),
                 redact(&fact.native_session),
                 redact(&fact.rig),
                 redact(&fact.seat),
                 fact.ts.map(|t| t.to_rfc3339())
-            ],
-        )?;
+            ])?;
         Ok(())
     }
 
     pub fn insert_activity(&self, fact: &ActivityFact) -> Result<()> {
-        self.conn.execute(
-            r#"INSERT INTO activity_facts (source_key, seat, ts, state, seq)
+        self.conn
+            .prepare_cached(
+                r#"INSERT INTO activity_facts (source_key, seat, ts, state, seq)
                VALUES (?, ?, ?, ?, ?)
                ON CONFLICT (source_key) DO NOTHING"#,
-            params![
+            )?
+            .execute(params![
                 redact(&fact.source_key),
                 redact(&fact.seat),
                 fact.ts.to_rfc3339(),
                 activity_state(Some(fact.state.as_str())),
                 fact.seq
-            ],
-        )?;
+            ])?;
         Ok(())
     }
 
     pub fn insert_queue(&self, fact: &QueueFact) -> Result<()> {
-        self.conn.execute(
-            r#"INSERT INTO queue_facts (
+        self.conn
+            .prepare_cached(
+                r#"INSERT INTO queue_facts (
                    source_key, transition_id, qitem_id, ts, state, source_seat, dest_seat,
                    closure_reason, closure_target, chain_id, missions
                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT (source_key) DO UPDATE SET
                  chain_id = COALESCE(queue_facts.chain_id, excluded.chain_id)"#,
-            params![
+            )?
+            .execute(params![
                 redact(&fact.source_key),
                 fact.transition_id,
                 redact(&fact.qitem_id),
@@ -739,8 +768,7 @@ impl AnalyticsStore {
                 serde_json::to_string(
                     &fact.missions.iter().map(|m| redact(m)).collect::<Vec<_>>()
                 )?
-            ],
-        )?;
+            ])?;
         Ok(())
     }
 
@@ -759,11 +787,11 @@ impl AnalyticsStore {
         let missions =
             serde_json::to_string(&missions.iter().map(|m| redact(m)).collect::<Vec<_>>())?;
         let source_key = format!("queue_items:{qitem_id}:{destination}:{cutoff}:{missions}");
-        self.conn.execute(
+        self.conn.prepare_cached(
             r#"INSERT INTO destination_snapshots (source_key, qitem_id, destination, snapshot_cutoff, reroute_marked, missions)
                VALUES (?, ?, ?, ?, ?, ?)
                ON CONFLICT (source_key) DO UPDATE SET
-                 reroute_marked = destination_snapshots.reroute_marked OR excluded.reroute_marked"#,
+                 reroute_marked = destination_snapshots.reroute_marked OR excluded.reroute_marked"#)?.execute(
             params![source_key, qitem_id, destination, cutoff, reroute_marked, missions],
         )?;
         Ok(())
@@ -792,8 +820,8 @@ impl AnalyticsStore {
     /// One recorded role observation for a seat (K7): `check` or `other`, with
     /// the snapshot evidence it came from.
     pub fn insert_seat_role(&self, seat: &str, role: &str, evidence: &str) -> Result<()> {
-        self.conn.execute(
-            "INSERT INTO seat_roles (seat, role, evidence) VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
+        self.conn.prepare_cached(
+            "INSERT INTO seat_roles (seat, role, evidence) VALUES (?, ?, ?) ON CONFLICT DO NOTHING")?.execute(
             params![redact(seat), redact(role), redact(evidence)],
         )?;
         Ok(())
@@ -804,7 +832,15 @@ impl AnalyticsStore {
             .conn
             .prepare("SELECT seat, role, evidence FROM seat_roles ORDER BY seat, role, evidence")?;
         let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+        let mut roles = rows.collect::<Result<Vec<_>, _>>()?;
+        let changed: std::collections::HashSet<_> = self
+            .load_openrig_row_records()?
+            .into_iter()
+            .filter(|r| r.row_state == "changed")
+            .map(|r| r.source_key)
+            .collect();
+        roles.retain(|(_, _, evidence)| !changed.contains(evidence));
+        Ok(roles)
     }
 
     pub fn load_seat_bounds(&self) -> Result<Vec<SeatBound>> {
@@ -844,16 +880,17 @@ impl AnalyticsStore {
     }
 
     pub fn insert_skill(&self, fact: &SkillFact) -> Result<()> {
-        self.conn.execute(
-            r#"INSERT INTO skill_facts (source_key, seat, skill, invoked) VALUES (?, ?, ?, ?)
+        self.conn
+            .prepare_cached(
+                r#"INSERT INTO skill_facts (source_key, seat, skill, invoked) VALUES (?, ?, ?, ?)
                ON CONFLICT (source_key) DO NOTHING"#,
-            params![
+            )?
+            .execute(params![
                 redact(&fact.source_key),
                 redact(&fact.seat),
                 redact(&fact.skill),
                 fact.invoked
-            ],
-        )?;
+            ])?;
         Ok(())
     }
 
@@ -936,7 +973,15 @@ impl AnalyticsStore {
                 ts: ts.as_deref().and_then(parse_utc_time),
             })
         })?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+        let mut facts = rows.collect::<Result<Vec<_>, _>>()?;
+        let changed: std::collections::HashSet<_> = self
+            .load_openrig_row_records()?
+            .into_iter()
+            .filter(|r| r.row_state == "changed")
+            .map(|r| r.source_key)
+            .collect();
+        facts.retain(|fact| !changed.contains(&fact.source_key));
+        Ok(facts)
     }
 
     pub fn load_activity(&self) -> Result<Vec<ActivityFact>> {
@@ -953,7 +998,15 @@ impl AnalyticsStore {
                 seq: row.get(4)?,
             })
         })?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+        let mut facts = rows.collect::<Result<Vec<_>, _>>()?;
+        let changed: std::collections::HashSet<_> = self
+            .load_openrig_row_records()?
+            .into_iter()
+            .filter(|r| r.row_state == "changed")
+            .map(|r| r.source_key)
+            .collect();
+        facts.retain(|fact| !changed.contains(&fact.source_key));
+        Ok(facts)
     }
 
     pub fn load_queue(&self) -> Result<Vec<QueueFact>> {
@@ -979,7 +1032,15 @@ impl AnalyticsStore {
                 missions: serde_json::from_str(&missions).unwrap_or_default(),
             })
         })?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+        let mut facts = rows.collect::<Result<Vec<_>, _>>()?;
+        let changed: std::collections::HashSet<_> = self
+            .load_openrig_row_records()?
+            .into_iter()
+            .filter(|r| r.row_state == "changed")
+            .map(|r| r.source_key)
+            .collect();
+        facts.retain(|fact| !changed.contains(&fact.source_key));
+        Ok(facts)
     }
 
     /// A single committed read snapshot for every input to a report evaluation.
@@ -1106,7 +1167,15 @@ impl AnalyticsStore {
                 invoked: row.get(3)?,
             })
         })?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+        let mut facts = rows.collect::<Result<Vec<_>, _>>()?;
+        let changed: std::collections::HashSet<_> = self
+            .load_openrig_row_records()?
+            .into_iter()
+            .filter(|r| r.row_state == "changed")
+            .map(|r| r.source_key)
+            .collect();
+        facts.retain(|fact| !changed.contains(&fact.source_key));
+        Ok(facts)
     }
 
     pub fn message_seen(
@@ -1566,6 +1635,23 @@ mod tests {
                 created_at: Some(now),
                 stopped_at: None,
             }])
+            .unwrap();
+        store
+            .begin_openrig_ingest(
+                canary,
+                canary,
+                &[OpenRigRow {
+                    table_name: canary.into(),
+                    row_id: canary.into(),
+                    row_digest: canary.into(),
+                }],
+            )
+            .unwrap();
+        store
+            .qualify_openrig_fact(canary, canary, canary, canary)
+            .unwrap();
+        store
+            .record_mutable_source_disclosure(canary, canary, canary)
             .unwrap();
         let mut checked = 0usize;
         for qualified in crate::privacy::TEXT_COLUMNS {

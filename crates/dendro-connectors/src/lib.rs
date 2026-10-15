@@ -10,7 +10,7 @@ pub mod pi;
 pub mod snapshot;
 pub mod stream;
 
-pub use ingest::{ingest_staged, SourceRoot};
+pub use ingest::{ingest_staged, ingest_staged_with_manifest, SourceRoot};
 
 pub use claude::ClaudeConnector;
 pub use codex::CodexConnector;

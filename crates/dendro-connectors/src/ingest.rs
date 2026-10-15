@@ -19,21 +19,40 @@ pub struct SourceRoot {
 pub fn ingest_staged(
     staged_db: &Path,
     roots: &[SourceRoot],
-    _frozen: bool,
+    frozen: bool,
     key: &[u8],
 ) -> Result<Vec<String>> {
+    ingest_staged_with_manifest(staged_db, roots, frozen, key, None).map(|(notes, _)| notes)
+}
+
+/// A sealed run rebuilds its stage using only named prefixes. Existing output
+/// history may contain facts beyond the requested cutoff and cannot be reused.
+pub fn ingest_staged_with_manifest(
+    staged_db: &Path,
+    roots: &[SourceRoot],
+    _frozen: bool,
+    key: &[u8],
+    sealed: Option<&dendro_core::CutoffManifest>,
+) -> Result<(Vec<String>, dendro_core::CutoffManifest)> {
+    if sealed.is_some() {
+        std::fs::remove_file(staged_db)?;
+        let fresh = AnalyticsStore::open_path(staged_db, &dendro_core::key_id(key))?;
+        fresh.checkpoint()?;
+    }
     let store = AnalyticsStore::open_staged(staged_db)?;
     let stage_dir = staged_db.parent().unwrap_or_else(|| Path::new("."));
     let mut notes = Vec::new();
     let mut lives = Vec::new();
     let mut lifecycle_complete = true;
+    let mut manifest = dendro_core::CutoffManifest::default();
+    let mut seen_files = std::collections::BTreeSet::new();
+    let mut seen_openrig = std::collections::BTreeSet::new();
     for root in roots {
         let shown = dendro_core::redact(&root.name);
         if !root.path.exists() {
             if root.name == "openrig" {
                 lifecycle_complete = false;
             }
-            // AC1: a missing source is listed, warned, and the run goes on.
             notes.push(format!("{shown} missing"));
             store.record_warning(&dendro_core::WarningNote {
                 path: root.path.display().to_string(),
@@ -44,101 +63,237 @@ pub fn ingest_staged(
         }
         match root.name.as_str() {
             "claude" | "codex" | "pi" => {
-                let files = walk_jsonl(&root.path);
+                let mut files = walk_jsonl(&root.path);
+                files.sort();
                 let mut read = stream::FileStats::default();
+                let mut file_count = 0;
                 for file in &files {
-                    let stats = stream::ingest_jsonl_with_key(
+                    let id = manifest_source_id(root, file);
+                    let entry = sealed.and_then(|manifest| {
+                        manifest
+                            .files
+                            .iter()
+                            .find(|entry| entry.source_id == id && entry.harness == root.name)
+                    });
+                    if sealed.is_some() && entry.is_none() {
+                        continue;
+                    }
+                    if !seen_files.insert(id.clone()) {
+                        continue;
+                    }
+                    let source_id = stable_source_id(&root.name, &root.path, file, key);
+                    let stats = stream::ingest_jsonl_with_cutoff(
                         &store,
-                        &stable_source_id(&root.name, &root.path, file, key),
+                        &source_id,
                         &root.name,
                         file,
                         Some(key),
+                        entry,
                     )?;
+                    let (_, offset, digest) = store
+                        .source_state(&source_id)?
+                        .ok_or_else(|| anyhow::anyhow!("missing file cutoff after ingest"))?;
+                    manifest.files.push(dendro_core::FileCutoff {
+                        source_id: dendro_core::redact(&id),
+                        harness: dendro_core::redact(&root.name),
+                        byte_length: u64::try_from(offset)?,
+                        prefix_sha256: digest,
+                    });
+                    file_count += 1;
                     read.records_read += stats.records_read;
                     read.usage_records += stats.usage_records;
                 }
-                // Q6 (#40): Codex tool calls are not read in this version, so
-                // its loop and intake coverage is not available, never zero.
                 let coverage = if root.name == "codex" {
                     " tool_calls=not read"
                 } else {
                     ""
                 };
                 notes.push(format!(
-                    "{shown} files={} records_read={} usage_records={}{coverage}",
-                    files.len(),
-                    read.records_read,
-                    read.usage_records
+                    "{shown} files={file_count} records_read={} usage_records={}{coverage}",
+                    read.records_read, read.usage_records
                 ));
             }
             "openrig" => {
-                let (count, snapshot) = ingest_openrig(&store, root, key, &mut lives, stage_dir)?;
+                let id = manifest_source_id(root, &root.path);
+                let entry = sealed.and_then(|manifest| {
+                    manifest.openrig.iter().find(|entry| entry.source_id == id)
+                });
+                if sealed.is_some() && entry.is_none() {
+                    continue;
+                }
+                if !seen_openrig.insert(id.clone()) {
+                    continue;
+                }
+                let (count, snapshot, cutoff, changed) =
+                    ingest_openrig(&store, root, key, &mut lives, stage_dir, &id, entry)?;
+                manifest.openrig.push(cutoff);
+                let changed_note = if changed {
+                    " openrig source changed"
+                } else {
+                    ""
+                };
                 notes.push(format!(
-                    "openrig events={count} revision={} attempts={} main_bytes={} wal_bytes={} copy_ms={} check_ms={}",
-                    &snapshot.revision[..16],
-                    snapshot.attempts,
-                    snapshot.main_bytes,
-                    snapshot.wal_bytes.unwrap_or(0),
-                    snapshot.copy_ms,
-                    snapshot.check_ms
+                    "openrig events={count} revision={} attempts={} main_bytes={} wal_bytes={} copy_ms={} check_ms={}{changed_note}",
+                    &snapshot.revision[..16], snapshot.attempts, snapshot.main_bytes,
+                    snapshot.wal_bytes.unwrap_or(0), snapshot.copy_ms, snapshot.check_ms
                 ));
             }
             "agy" | "grok" => notes.push(format!("{shown} present-not-parsed")),
             _ => notes.push(format!("{shown} unsupported")),
         }
     }
-    // Lives come from the whole history of every OpenRig root, so they are
-    // replaced once. A missing root keeps the stored lives rather than erase them.
+    if let Some(sealed) = sealed {
+        if let Some(id) = sealed
+            .files
+            .iter()
+            .map(|entry| &entry.source_id)
+            .filter(|id| !seen_files.contains(*id))
+            .chain(
+                sealed
+                    .openrig
+                    .iter()
+                    .map(|entry| &entry.source_id)
+                    .filter(|id| !seen_openrig.contains(*id)),
+            )
+            .next()
+        {
+            return Err(anyhow::anyhow!(
+                "mismatch: source {} missing or outside the selected roots",
+                dendro_core::redact(id)
+            ));
+        }
+    }
     if roots.iter().any(|root| root.name == "openrig") {
         if lifecycle_complete {
+            // A reset's accepted lifetimes remain history on every later ingest.
+            // A surviving lifetime's current stop edge replaces its earlier open
+            // observation, rather than accumulating duplicate intervals.
+            if store
+                .load_openrig_row_records()?
+                .iter()
+                .any(|row| row.table_name == "events" && row.row_state == "superseded")
+            {
+                for old in store.load_seat_bounds()? {
+                    if !lives.iter().any(|current| {
+                        current.seat == old.seat && current.created_at == old.created_at
+                    }) {
+                        lives.push(old);
+                    }
+                }
+            }
+            lives.sort_by(|a, b| {
+                (&a.seat, a.created_at, a.stopped_at).cmp(&(&b.seat, b.created_at, b.stopped_at))
+            });
+            lives.dedup_by(|a, b| {
+                a.seat == b.seat && a.created_at == b.created_at && a.stopped_at == b.stopped_at
+            });
             store.replace_seat_bounds(&lives)?;
         } else {
             notes.push("openrig lifecycle unchanged: a root is missing".to_string());
         }
     }
-    Ok(notes)
+    manifest.redact_identifiers();
+    Ok((notes, manifest))
 }
 
+/// A deterministic, content-free identity. Unlike the persisted display id,
+/// the manifest never contains source paths, including ordinary non-secret paths.
+fn manifest_source_id(root: &SourceRoot, file: &Path) -> String {
+    use sha2::{Digest, Sha256};
+    let mut digest = Sha256::new();
+    let canonical = dendro_core::canonical_root(&root.path);
+    for value in [
+        root.name.as_bytes(),
+        canonical.as_os_str().as_encoded_bytes(),
+        file.strip_prefix(&root.path)
+            .unwrap_or(file)
+            .as_os_str()
+            .as_encoded_bytes(),
+    ] {
+        digest.update((value.len() as u64).to_le_bytes());
+        digest.update(value);
+    }
+    hex::encode(digest.finalize())
+}
+
+#[allow(clippy::too_many_arguments)]
 fn ingest_openrig(
     store: &AnalyticsStore,
     root: &SourceRoot,
     key: &[u8],
     lives: &mut Vec<dendro_core::SeatBound>,
     stage_dir: &Path,
-) -> Result<(i64, crate::snapshot::Snapshot)> {
-    // Every run reads a coherent private copy in the run's stage (AC12): no
-    // SQLite connection is ever opened on the original source. The copy is
-    // removed as soon as it has been read; the stage removes it on any other
-    // exit.
+    manifest_id: &str,
+    sealed: Option<&dendro_core::OpenRigCutoff>,
+) -> Result<(
+    i64,
+    crate::snapshot::Snapshot,
+    dendro_core::OpenRigCutoff,
+    bool,
+)> {
     let snap_dir = stage_dir.join(dendro_core::lifecycle::SNAPSHOT_DIR);
     let snapshot =
-        crate::snapshot::snapshot_sqlite(&root.path, &snap_dir, &dendro_core::RUN_CANCEL)?;
-    // Provenance: the original source (never the temporary copy) and the
-    // accepted revision, as this source's file row.
+        crate::snapshot::snapshot_sqlite(&root.path, &snap_dir, &dendro_core::RUN_CANCEL).map_err(
+            |error| {
+                if sealed.is_some() && error.downcast_ref::<dendro_core::Interrupted>().is_none() {
+                    anyhow::anyhow!(
+                        "mismatch: source {} snapshot unavailable",
+                        dendro_core::redact(manifest_id)
+                    )
+                } else {
+                    error
+                }
+            },
+        )?;
+    let mut prepared =
+        crate::openrig::prepare_openrig_snapshot(&snapshot.path, manifest_id, key, sealed)?;
+    let source_id = stable_source_id(&root.name, &root.path, &root.path, key);
+    prepared.rows.push(dendro_core::OpenRigRow {
+        table_name: "source_identity".into(),
+        row_id: "file".into(),
+        row_digest: snapshot.source_identity_sha256.clone(),
+    });
+    let provenance = store.begin_openrig_ingest(&source_id, &snapshot.revision, &prepared.rows)?;
     store.commit_file_batch(
-        &stable_source_id(&root.name, &root.path, &root.path, key),
+        &source_id,
         "openrig",
         &root.path.display().to_string(),
-        0,
+        provenance.generation,
         snapshot.main_bytes as i64 + snapshot.wal_bytes.unwrap_or(0) as i64,
         &snapshot.revision,
         None,
         &[],
         &[],
     )?;
-    let result = read_openrig(store, &snapshot.path, key, lives);
+    for disclosure in &prepared.disclosures {
+        store.record_mutable_source_disclosure(
+            &disclosure.qitem_id,
+            &disclosure.seat,
+            &disclosure.reason,
+        )?;
+    }
+    let result = store.with_openrig_fact_batch(|| {
+        read_openrig_with_source(store, &snapshot.path, key, lives, Some(&source_id))
+    });
     let removed = std::fs::remove_dir_all(&snap_dir);
     let count = result?;
     removed.map_err(|_| anyhow::anyhow!("snapshot cleanup failed"))?;
-    Ok((count, snapshot))
+    Ok((count, snapshot, prepared.cutoff, provenance.changed))
 }
 
-fn read_openrig(
+fn read_openrig_with_source(
     store: &AnalyticsStore,
     open_path: &Path,
     key: &[u8],
     lives: &mut Vec<dendro_core::SeatBound>,
+    source_id: Option<&str>,
 ) -> Result<i64> {
+    let fact_key = |table: &str, row: &str, key: String| -> Result<String> {
+        match source_id {
+            Some(source) => store.qualify_openrig_fact(source, table, row, &key),
+            None => Ok(key),
+        }
+    };
     // `open_path` is always the private copy, so SQLite may keep its own
     // index next to it inside the private stage.
     let conn = rusqlite::Connection::open_with_flags(open_path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
@@ -152,6 +307,7 @@ fn read_openrig(
             rig_names.insert(row.0, row.1);
         }
     }
+    let created_items = crate::openrig::created_items(&conn)?;
     let mut count = 0i64;
     let mut lifecycle = Vec::new();
     // K5 reroute marks, by raw qitem id.
@@ -163,7 +319,20 @@ fn read_openrig(
         let rows = stmt.query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
         })?;
-        chains.extend(rows.flatten());
+        chains.extend(rows.flatten().map(|(qitem, chain)| {
+            let chain = created_items
+                .get(&qitem)
+                .and_then(|v| v.get("chainOfRecord"))
+                .map(|v| {
+                    if let Some(text) = v.as_str() {
+                        text.to_string()
+                    } else {
+                        v.to_string()
+                    }
+                })
+                .or(chain);
+            (qitem, chain)
+        }));
     }
     // None when the source has no handed_off_from column: no walk to cross-check.
     let parents = match conn.prepare("SELECT qitem_id, handed_off_from FROM queue_items") {
@@ -171,7 +340,18 @@ fn read_openrig(
             let rows = stmt.query_map([], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
             })?;
-            Some(rows.flatten().collect::<Vec<_>>())
+            Some(
+                rows.flatten()
+                    .map(|(qitem, parent)| {
+                        let parent = created_items
+                            .get(&qitem)
+                            .and_then(|v| v.get("handedOffFrom"))
+                            .map(|v| v.as_str().map(str::to_owned))
+                            .unwrap_or(parent);
+                        (qitem, parent)
+                    })
+                    .collect::<Vec<_>>(),
+            )
         }
         Err(_) => None,
     };
@@ -219,7 +399,7 @@ fn read_openrig(
             let rig_id = parsed.get("rigId").and_then(|v| v.as_str()).unwrap_or("");
             let rig = rig_names.get(rig_id).map(String::as_str).unwrap_or(rig_id);
             store.insert_identity(&IdentityFact {
-                source_key: format!("events:{seq}"),
+                source_key: fact_key("events", &seq.to_string(), format!("events:{seq}"))?,
                 harness: normalize_harness(key, runtime),
                 native_session: dendro_core::seal_identifier(
                     key,
@@ -247,7 +427,11 @@ fn read_openrig(
                 .or(ts);
             let Some(when) = when else { continue };
             store.insert_activity(&ActivityFact {
-                source_key: format!("seat.activity_changed:{seq}"),
+                source_key: fact_key(
+                    "events",
+                    &seq.to_string(),
+                    format!("seat.activity_changed:{seq}"),
+                )?,
                 seat: dendro_core::seal_identifier(key, "seat", seat),
                 ts: when,
                 state,
@@ -265,7 +449,7 @@ fn read_openrig(
                 continue;
             };
             store.insert_queue(&QueueFact {
-                source_key: format!("events:{kind}:{seq}"),
+                source_key: fact_key("events", &seq.to_string(), format!("events:{kind}:{seq}"))?,
                 transition_id: seq,
                 qitem_id: dendro_core::seal_identifier(key, "qitem", qitem),
                 ts: when,
@@ -286,7 +470,7 @@ fn read_openrig(
                 continue;
             };
             store.insert_queue(&QueueFact {
-                source_key: format!("events:{kind}:{seq}"),
+                source_key: fact_key("events", &seq.to_string(), format!("events:{kind}:{seq}"))?,
                 transition_id: seq,
                 qitem_id: dendro_core::seal_identifier(key, "qitem", qitem),
                 ts: when,
@@ -318,7 +502,7 @@ fn read_openrig(
                 .and_then(|v| v.as_str())
                 .unwrap_or(destination);
             store.insert_queue(&QueueFact {
-                source_key: format!("events:{kind}:{seq}"),
+                source_key: fact_key("events", &seq.to_string(), format!("events:{kind}:{seq}"))?,
                 transition_id: seq,
                 qitem_id: dendro_core::seal_identifier(key, "qitem", qitem),
                 ts: when,
@@ -380,7 +564,11 @@ fn read_openrig(
                 None => "unknown".to_string(),
             };
             store.insert_queue(&QueueFact {
-                source_key: format!("queue_transitions:{}", row.0),
+                source_key: fact_key(
+                    "queue_transitions",
+                    &row.0.to_string(),
+                    format!("queue_transitions:{}", row.0),
+                )?,
                 transition_id: row.0,
                 qitem_id: dendro_core::seal_identifier(key, "qitem", &row.1),
                 ts,
@@ -406,8 +594,18 @@ fn read_openrig(
         })?;
         for (qitem, tags) in rows.flatten() {
             dendro_core::RUN_CANCEL.check()?;
-            let tags: Vec<String> = tags
+            let event_tags = created_items
+                .get(&qitem)
+                .and_then(|v| v.get("tags"))
+                .map(|value| {
+                    value
+                        .as_str()
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| value.to_string())
+                });
+            let tags: Vec<String> = event_tags
                 .as_deref()
+                .or(tags.as_deref())
                 .and_then(|text| serde_json::from_str(text).ok())
                 .unwrap_or_default();
             let missions = tags
@@ -418,22 +616,34 @@ fn read_openrig(
             item_missions.insert(qitem, missions);
         }
     }
-    if let Ok(mut stmt) = conn.prepare("SELECT data FROM snapshots") {
-        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-        for data in rows.flatten() {
+    if let Ok(mut stmt) = conn.prepare("SELECT rowid, data FROM snapshots") {
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })?;
+        for (snapshot_rowid, data) in rows.flatten() {
             dendro_core::RUN_CANCEL.check()?;
             for (seat, role, evidence) in snapshot_roles(&data) {
-                store.insert_seat_role(
-                    &dendro_core::seal_identifier(key, "seat", &seat),
-                    role,
-                    &evidence,
-                )?;
+                let seat = dendro_core::seal_identifier(key, "seat", &seat);
+                let evidence = if source_id.is_some() {
+                    fact_key(
+                        "snapshots",
+                        &snapshot_rowid.to_string(),
+                        format!("snapshots:role:{snapshot_rowid}:{seat}:{role}:{evidence}"),
+                    )?
+                } else {
+                    evidence
+                };
+                store.insert_seat_role(&seat, role, &evidence)?;
             }
             for (seat, skill_name) in snapshot_skills(&data) {
                 let seat_sealed = dendro_core::seal_identifier(key, "seat", &seat);
                 let skill_sealed = dendro_core::seal_identifier(key, "skill", &skill_name);
                 store.insert_skill(&dendro_core::SkillFact {
-                    source_key: format!("snapshots:skill:{seat_sealed}:{skill_sealed}"),
+                    source_key: fact_key(
+                        "snapshots",
+                        &snapshot_rowid.to_string(),
+                        format!("snapshots:skill:{snapshot_rowid}:{seat_sealed}:{skill_sealed}"),
+                    )?,
                     seat: seat_sealed,
                     skill: skill_sealed,
                     invoked: false,
@@ -462,6 +672,12 @@ fn read_openrig(
                 rerouted.contains(&row.0),
                 item_missions.get(&row.0).map(Vec::as_slice).unwrap_or(&[]),
             )?;
+            if let Some(source_id) = source_id {
+                store.record_openrig_destination(
+                    source_id,
+                    &dendro_core::seal_identifier(key, "qitem", &row.0),
+                )?;
+            }
         }
     }
     Ok(count)

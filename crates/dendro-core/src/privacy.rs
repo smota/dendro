@@ -133,6 +133,16 @@ pub fn closure_reason(raw: Option<&str>) -> Option<String> {
 }
 
 pub const TEXT_COLUMNS: &[&str] = &[
+    "openrig_row_records.source_id",
+    "openrig_row_records.producing_revision",
+    "openrig_row_records.table_name",
+    "openrig_row_records.row_id",
+    "openrig_row_records.row_digest",
+    "openrig_row_records.row_state",
+    "openrig_row_records.source_key",
+    "mutable_source_disclosures.qitem_id",
+    "mutable_source_disclosures.seat",
+    "mutable_source_disclosures.reason",
     "dendro_meta.key_id",
     "source_files.source_id",
     "source_files.harness",

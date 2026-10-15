@@ -29,6 +29,12 @@ enum Commands {
         root: Vec<String>,
         #[arg(long)]
         frozen: bool,
+        /// Write the exact file and SQLite cutoffs consumed by this run.
+        #[arg(long, visible_alias = "manifest-out", conflicts_with = "sealed")]
+        write_manifest: Option<PathBuf>,
+        /// Replay only the prefixes recorded in this cutoff manifest.
+        #[arg(long, conflicts_with = "write_manifest")]
+        sealed: Option<PathBuf>,
     },
     /// Print an Operational Intelligence report as JSON.
     Report {
@@ -90,7 +96,13 @@ async fn main() -> Result<()> {
     };
 
     match cli.command {
-        Commands::Run { db, root, frozen } => {
+        Commands::Run {
+            db,
+            root,
+            frozen,
+            write_manifest,
+            sealed,
+        } => {
             let mut roots = if root.is_empty() {
                 default_roots()
             } else {
@@ -114,16 +126,25 @@ async fn main() -> Result<()> {
             let mut interrupt = signal(SignalKind::interrupt())?;
             let mut terminate = signal(SignalKind::terminate())?;
             let mut worker = tokio::task::spawn_blocking(move || {
-                dendro_core::run_locked_with_openrig(&db, &paths, &openrig_roots, |staged, key| {
-                    let mut roots = roots;
-                    for root in &mut roots {
-                        if root.name == "openrig" {
-                            root.path =
-                                dendro_core::align_openrig_spelling(&db_for_align, &root.path)?;
+                dendro_core::run_locked_with_manifest(
+                    &db,
+                    &paths,
+                    &openrig_roots,
+                    write_manifest.as_deref(),
+                    sealed.as_deref(),
+                    |staged, key, manifest| {
+                        let mut roots = roots;
+                        for root in &mut roots {
+                            if root.name == "openrig" {
+                                root.path =
+                                    dendro_core::align_openrig_spelling(&db_for_align, &root.path)?;
+                            }
                         }
-                    }
-                    dendro_connectors::ingest_staged(staged, &roots, frozen, key)
-                })
+                        dendro_connectors::ingest_staged_with_manifest(
+                            staged, &roots, frozen, key, manifest,
+                        )
+                    },
+                )
             });
             let code = tokio::select! {
                 joined = &mut worker => {

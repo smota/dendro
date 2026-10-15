@@ -351,7 +351,7 @@ fn refuse_bound_openrig_root(db: &Path, incoming: &[PathBuf]) -> Result<()> {
     Ok(())
 }
 
-fn refuse_secret_path(path: &Path) -> Result<()> {
+pub fn refuse_secret_path(path: &Path) -> Result<()> {
     let shown = path.display().to_string();
     if contains_secret(&shown) {
         return Err(anyhow!(
@@ -463,11 +463,12 @@ fn evaluate_report_snapshot(
     // AC12 provenance: the original OpenRig path and the source revision the
     // run's coherent private copy was accepted at.
     let mut openrig_sources = Vec::new();
-    for (source_id, harness, path, _, _) in &sources {
+    for (source_id, harness, path, generation, _) in &sources {
         if harness == "openrig" {
             if let Some((_, bytes, revision)) = store.source_state(source_id)? {
                 openrig_sources.push(json!({
                     "source_id": source_id,
+                    "generation": (*generation).max(1),
                     "path": path,
                     "revision": revision,
                     "bytes": bytes,
@@ -922,6 +923,7 @@ fn evaluate_report_snapshot(
         .map(|(qitem, snapshot)| {
             json!({
                 "qitem_id": qitem,
+                "source_key": format!("queue_items:{qitem}:{}:{}:{}", snapshot.destination, snapshot.cutoff, json!(snapshot.missions)),
                 "destination": snapshot.destination,
                 "snapshot_cutoff": snapshot.cutoff,
                 "reroute_marked": snapshot.reroute_marked,
@@ -1230,6 +1232,7 @@ fn evaluate_report_snapshot(
     if !m4_skill_exposure.is_empty() {
         payload["m4_skill_exposure"] = json!(m4_skill_exposure);
     }
+    annotate_openrig_evidence(store, &sources, &mut payload, evidence)?;
     let report = metrics::report_value(kind, payload);
     let file_states = if evidence {
         Some(crate::file_state::Captured::capture(
@@ -1250,6 +1253,183 @@ fn evaluate_report_snapshot(
         loop_trace,
         file_states,
     })
+}
+
+/// Enrich accepted facts without rereading live source contents. Only trace
+/// probes source existence, and that probe never changes a computed total.
+#[allow(clippy::type_complexity)]
+fn annotate_openrig_evidence(
+    store: &AnalyticsStore,
+    sources: &[(String, String, String, i64, Option<String>)],
+    payload: &mut Value,
+    trace: bool,
+) -> Result<()> {
+    let records = store.load_openrig_row_records()?;
+    let missing: std::collections::HashSet<_> = sources
+        .iter()
+        .filter(|(_, harness, path, _, _)| {
+            harness == "openrig" && trace && !Path::new(path).exists()
+        })
+        .map(|(id, _, _, _, _)| id.as_str())
+        .collect();
+    let record_json = |r: &crate::OpenRigRecord| {
+        let state = if missing.contains(r.source_id.as_str()) {
+            "gone"
+        } else {
+            &r.row_state
+        };
+        json!({"source_id":r.source_id, "generation":r.generation,
+            "producing_revision":r.producing_revision, "table_name":r.table_name,
+            "row_id":r.row_id, "row_digest":r.row_digest,
+            "source_key":r.source_key, "state":state,
+            "status":if state == "gone" { "no longer available" } else { state }})
+    };
+    let by_key: std::collections::HashMap<_, _> = records
+        .iter()
+        .filter(|r| !r.source_key.is_empty())
+        .map(|r| (r.source_key.clone(), record_json(r)))
+        .collect();
+    fn annotate(value: &mut Value, by_key: &std::collections::HashMap<String, Value>) {
+        match value {
+            Value::Array(items) => {
+                for item in items {
+                    annotate(item, by_key);
+                }
+            }
+            Value::Object(object) => {
+                for value in object.values_mut() {
+                    annotate(value, by_key);
+                }
+                if let Some(evidence) = object
+                    .get("source_key")
+                    .or_else(|| object.get("transition"))
+                    .and_then(Value::as_str)
+                    .and_then(|key| by_key.get(key))
+                {
+                    for field in [
+                        "source_id",
+                        "generation",
+                        "producing_revision",
+                        "state",
+                        "status",
+                    ] {
+                        // Preserve semantic activity/queue state, exposing row availability separately.
+                        let name = if field == "state" && object.contains_key("state") {
+                            "row_state"
+                        } else {
+                            field
+                        };
+                        object.insert(name.into(), evidence[field].clone());
+                    }
+                }
+                if let Some(evidence) = object.get("evidence").and_then(Value::as_array) {
+                    let provenance: Vec<_> = evidence
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .filter_map(|key| by_key.get(key))
+                        .cloned()
+                        .collect();
+                    if let Some(last) = provenance
+                        .iter()
+                        .max_by_key(|p| p["generation"].as_i64().unwrap_or(0))
+                    {
+                        object.insert("generation".into(), last["generation"].clone());
+                        object.insert(
+                            "producing_revision".into(),
+                            last["producing_revision"].clone(),
+                        );
+                    }
+                    if !provenance.is_empty() {
+                        object.insert("evidence_provenance".into(), json!(provenance));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    annotate(payload, &by_key);
+    if let Some(sources) = payload["openrig_sources"].as_array_mut() {
+        for source in sources {
+            let id = source["source_id"].as_str().unwrap_or("");
+            let state = if missing.contains(id) {
+                "gone"
+            } else if records
+                .iter()
+                .any(|r| r.source_id == id && r.row_state == "changed")
+            {
+                "changed"
+            } else {
+                "present"
+            };
+            source["state"] = json!(state);
+            source["status"] = json!(if state == "gone" {
+                "no longer available"
+            } else {
+                state
+            });
+        }
+    }
+    payload["openrig_row_states"] = json!(records.iter().map(record_json).collect::<Vec<_>>());
+    let disclosures = store.load_mutable_source_disclosures()?;
+    if !disclosures.is_empty() {
+        if let Some(seats) = payload["m1_by_seat"].as_array_mut() {
+            for seat in seats {
+                let affected: Vec<_> = disclosures
+                    .iter()
+                    .filter(|d| {
+                        d["seat"] == seat["seat"]
+                            || d["seat"] == "unknown"
+                            || d["seat"] == ""
+                            || seat["closed_item_members"]
+                                .as_array()
+                                .is_some_and(|members| {
+                                    members
+                                        .iter()
+                                        .any(|member| d["qitem_id"] == member["qitem"])
+                                })
+                    })
+                    .cloned()
+                    .collect();
+                if !affected.is_empty() {
+                    seat["tokens_per_closed_item"] = json!("not reproducible: mutable source");
+                    seat["mutable_source_disclosures"] = json!(affected);
+                    if let Some(members) = seat["closed_item_members"].as_array_mut() {
+                        for member in members {
+                            if affected.iter().any(|d| {
+                                d["qitem_id"] == member["qitem"]
+                                    || d["seat"] == "unknown"
+                                    || d["seat"] == ""
+                            }) {
+                                member["status"] = json!("not reproducible: mutable source");
+                                member["mutable_source_disclosures"] = json!(affected);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(members) = payload["k2_insufficient_history_members"].as_array_mut() {
+            for member in members {
+                let affected: Vec<_> = disclosures
+                    .iter()
+                    .filter(|d| {
+                        d["qitem_id"] == member["qitem"]
+                            || d["seat"] == "unknown"
+                            || d["seat"] == ""
+                    })
+                    .cloned()
+                    .collect();
+                if !affected.is_empty() {
+                    member["status"] = json!("not reproducible: mutable source");
+                    member["mutable_source_disclosures"] = json!(affected);
+                }
+            }
+        }
+        payload["mission_tokens"]["status"] = json!("not reproducible: mutable source");
+        payload["mission_tokens"]["mutable_source_disclosures"] = json!(disclosures);
+    }
+    payload["mutable_source_disclosures"] = json!(disclosures);
+    Ok(())
 }
 
 fn parse_window(from: &str, to: &str) -> Result<Window> {
@@ -1377,6 +1557,10 @@ pub fn trace_json_with_thresholds(
         "activity": payload["activity"],
         "seat_lives": payload["seat_lives"],
         "openrig_sources": payload["openrig_sources"],
+        "openrig_row_states": payload["openrig_row_states"],
+        "mutable_source_disclosures": payload["mutable_source_disclosures"],
+        "links": payload["links"],
+        "handoff_edges": payload["handoff_edges"],
         "mission_definition": payload["mission_definition"],
         "mission_tokens": payload["mission_tokens"],
         "mission_ambiguous_by_reason": payload["mission_ambiguous_by_reason"],
