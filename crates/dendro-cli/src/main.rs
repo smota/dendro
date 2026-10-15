@@ -1,7 +1,10 @@
 #![deny(unsafe_code)]
 
+mod extensions;
+
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
+use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio::signal::unix::{signal, Signal, SignalKind};
@@ -64,8 +67,173 @@ impl FrictionArgs {
     }
 }
 
+#[derive(Args, Debug, Default)]
+struct AdvisoryArgs {
+    #[arg(long)]
+    advisory_container_hold_secs: Option<u64>,
+    #[arg(long)]
+    advisory_leaf_stall_secs: Option<u64>,
+    #[arg(long)]
+    advisory_detached_target_secs: Option<u64>,
+    #[arg(long, value_parser = parse_return_rate)]
+    spotlight_ceremony_ratio: Option<f64>,
+    #[arg(long, value_parser = parse_return_rate)]
+    spotlight_serialization_ratio: Option<f64>,
+    #[arg(long, value_parser = parse_nonnegative)]
+    spotlight_parallelism: Option<f64>,
+    #[arg(long)]
+    spotlight_minimum_seats: Option<usize>,
+    #[arg(long, value_parser = parse_return_rate)]
+    spotlight_container_ratio: Option<f64>,
+    #[arg(long, value_parser = parse_return_rate)]
+    spotlight_recovery_ratio: Option<f64>,
+    #[arg(long, value_parser = parse_return_rate)]
+    spotlight_context_drop_ratio: Option<f64>,
+    #[arg(long)]
+    spotlight_cache_bleed_tokens: Option<u64>,
+    #[arg(long, value_parser = parse_return_rate)]
+    spotlight_builder_duty_ratio: Option<f64>,
+    #[arg(long, value_parser = parse_return_rate)]
+    spotlight_peer_saturation_ratio: Option<f64>,
+    #[arg(long, value_delimiter = ',')]
+    spotlight_builder_seats: Vec<String>,
+}
+impl AdvisoryArgs {
+    fn supplied(&self) -> bool {
+        self.advisory_container_hold_secs.is_some()
+            || self.advisory_leaf_stall_secs.is_some()
+            || self.advisory_detached_target_secs.is_some()
+            || self.spotlight_ceremony_ratio.is_some()
+            || self.spotlight_serialization_ratio.is_some()
+            || self.spotlight_parallelism.is_some()
+            || self.spotlight_minimum_seats.is_some()
+            || self.spotlight_container_ratio.is_some()
+            || self.spotlight_recovery_ratio.is_some()
+            || self.spotlight_context_drop_ratio.is_some()
+            || self.spotlight_cache_bleed_tokens.is_some()
+            || self.spotlight_builder_duty_ratio.is_some()
+            || self.spotlight_peer_saturation_ratio.is_some()
+            || !self.spotlight_builder_seats.is_empty()
+    }
+    fn options(&self) -> dendro_core::advisory::AdvisoryOptions {
+        let d = dendro_core::advisory::AdvisoryOptions::default();
+        dendro_core::advisory::AdvisoryOptions {
+            container_hold_secs: self
+                .advisory_container_hold_secs
+                .unwrap_or(d.container_hold_secs),
+            leaf_stall_secs: self.advisory_leaf_stall_secs.unwrap_or(d.leaf_stall_secs),
+            detached_target_secs: self
+                .advisory_detached_target_secs
+                .unwrap_or(d.detached_target_secs),
+            ceremony_ratio: self.spotlight_ceremony_ratio.unwrap_or(d.ceremony_ratio),
+            serialization_ratio: self
+                .spotlight_serialization_ratio
+                .unwrap_or(d.serialization_ratio),
+            parallelism: self.spotlight_parallelism.unwrap_or(d.parallelism),
+            minimum_seats: self.spotlight_minimum_seats.unwrap_or(d.minimum_seats),
+            container_ratio: self.spotlight_container_ratio.unwrap_or(d.container_ratio),
+            recovery_ratio: self.spotlight_recovery_ratio.unwrap_or(d.recovery_ratio),
+            context_drop_ratio: self
+                .spotlight_context_drop_ratio
+                .unwrap_or(d.context_drop_ratio),
+            cache_bleed_tokens: self
+                .spotlight_cache_bleed_tokens
+                .unwrap_or(d.cache_bleed_tokens),
+            builder_duty_ratio: self
+                .spotlight_builder_duty_ratio
+                .unwrap_or(d.builder_duty_ratio),
+            peer_saturation_ratio: self
+                .spotlight_peer_saturation_ratio
+                .unwrap_or(d.peer_saturation_ratio),
+            builder_seats: self.spotlight_builder_seats.clone(),
+        }
+    }
+}
+fn parse_nonnegative(value: &str) -> Result<f64, String> {
+    let n = value
+        .parse::<f64>()
+        .map_err(|_| "expected a finite nonnegative number")?;
+    if !n.is_finite() || n < 0.0 {
+        return Err("expected a finite nonnegative number".into());
+    }
+    Ok(n)
+}
+#[derive(Args, Debug)]
+struct ReportScope {
+    #[arg(long, default_value = "dendro.duckdb")]
+    db: PathBuf,
+    #[arg(long)]
+    rig: Option<String>,
+    #[arg(long, default_value = "2026-10-08T00:00:00Z")]
+    from: String,
+    #[arg(long, default_value = "2026-10-11T00:00:00Z")]
+    to: String,
+}
+async fn canonical_decisions(scope: ReportScope) -> Result<serde_json::Value> {
+    tokio::task::spawn_blocking(move || {
+        dendro_core::report_json(
+            &scope.db,
+            "decisions",
+            scope.rig.as_deref(),
+            &scope.from,
+            &scope.to,
+        )
+    })
+    .await?
+}
+
+fn issue_publish_args(repo: &str, body: &str) -> Result<Vec<String>> {
+    let parts: Vec<_> = repo.split('/').collect();
+    if parts.len() != 2
+        || parts.iter().any(|p| {
+            p.is_empty()
+                || *p == "."
+                || *p == ".."
+                || !p
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
+        })
+    {
+        anyhow::bail!("repository must be OWNER/REPO");
+    }
+    Ok(vec![
+        "issue".into(),
+        "create".into(),
+        "--repo".into(),
+        repo.into(),
+        "--title".into(),
+        "Investigate observed fleet operational debt".into(),
+        "--body".into(),
+        dendro_core::redact(body),
+    ])
+}
+
 #[derive(Subcommand)]
 enum Commands {
+    #[command(flatten)]
+    Extensions(extensions::Commands),
+    /// Draft local Markdown; publish only with explicit --publish --repo.
+    IssueDraft {
+        #[command(flatten)]
+        scope: ReportScope,
+        #[arg(long, default_value = "m3", value_parser=["m3","handoff_friction","advisory_idle_claimed","anomaly_spotlights"])]
+        metric: String,
+        #[arg(long,value_parser=parse_nonnegative)]
+        usd_per_million: Option<f64>,
+        #[arg(long, requires = "repo")]
+        publish: bool,
+        #[arg(long, requires = "publish")]
+        repo: Option<String>,
+    },
+    /// Emit an advisory CI verdict: 0 pass, 2 breach, 3 insufficient evidence.
+    Assert {
+        #[command(flatten)]
+        scope: ReportScope,
+        #[arg(long,default_value="0.15",value_parser=parse_return_rate)]
+        max_rework_rate: f64,
+        #[arg(long,default_value="0.20",value_parser=parse_return_rate)]
+        max_idle_rate: f64,
+    },
     /// Run one-shot ingest into a local analytics database.
     Run {
         #[arg(short, long, default_value = "dendro.duckdb")]
@@ -84,6 +252,13 @@ enum Commands {
     /// Print an Operational Intelligence report as JSON.
     Report {
         kind: String,
+        #[arg(long,value_parser=["json","table","markdown","ndjson"])]
+        format: Option<String>,
+        /// Print terminal block graphs instead of a serialized report.
+        #[arg(long, conflicts_with = "format")]
+        viz: bool,
+        #[arg(long,value_parser=["idle-claimed"])]
+        anomaly: Option<String>,
         /// Request the handoff friction field (also present without this flag).
         #[arg(long)]
         friction: bool,
@@ -103,6 +278,8 @@ enum Commands {
         handoff_loop_returns: usize,
         #[command(flatten)]
         friction_thresholds: FrictionArgs,
+        #[command(flatten)]
+        advisory_thresholds: AdvisoryArgs,
     },
     /// Print the trace inputs for one metric id.
     Trace {
@@ -124,6 +301,8 @@ enum Commands {
         handoff_loop_returns: usize,
         #[command(flatten)]
         friction_thresholds: FrictionArgs,
+        #[command(flatten)]
+        advisory_thresholds: AdvisoryArgs,
     },
 }
 
@@ -148,6 +327,53 @@ async fn main() -> Result<()> {
     };
 
     match cli.command {
+        Commands::Extensions(command) => extensions::run(command).await?,
+        Commands::IssueDraft {
+            scope,
+            metric,
+            usd_per_million,
+            publish,
+            repo,
+        } => {
+            if publish {
+                let _ = issue_publish_args(repo.as_deref().expect("clap requires repo"), "")?;
+            }
+            let report = canonical_decisions(scope).await?;
+            let body =
+                dendro_core::spotlight::issue_draft(&report["payload"], &metric, usd_per_million)?;
+            if publish {
+                let args = issue_publish_args(repo.as_deref().expect("clap requires repo"), &body)?;
+                let result = tokio::task::spawn_blocking(move || {
+                    std::process::Command::new("gh").args(args).output()
+                })
+                .await
+                .map_err(|_| anyhow::anyhow!("issue publication worker failed"))?
+                .map_err(|_| anyhow::anyhow!("issue publication command could not run"))?;
+                if !result.status.success() {
+                    anyhow::bail!("issue publication command failed");
+                }
+                println!(
+                    "{}",
+                    dendro_core::redact(&String::from_utf8_lossy(&result.stdout))
+                );
+            } else {
+                print!("{body}");
+            }
+        }
+        Commands::Assert {
+            scope,
+            max_rework_rate,
+            max_idle_rate,
+        } => {
+            let report = canonical_decisions(scope).await?;
+            let verdict = dendro_core::spotlight::assertion(
+                &report["payload"],
+                max_rework_rate,
+                max_idle_rate,
+            );
+            eprintln!("{verdict}");
+            std::process::exit(verdict["exit_code"].as_i64().unwrap_or(3) as i32);
+        }
         Commands::Run {
             db,
             root,
@@ -210,6 +436,9 @@ async fn main() -> Result<()> {
         }
         Commands::Report {
             kind,
+            format,
+            viz,
+            anomaly,
             friction,
             db,
             rig,
@@ -219,6 +448,7 @@ async fn main() -> Result<()> {
             tool_loop_window_secs,
             handoff_loop_returns,
             friction_thresholds,
+            advisory_thresholds,
         } => {
             let thresholds = dendro_core::LoopThresholds {
                 tool_loop_failures,
@@ -232,16 +462,81 @@ async fn main() -> Result<()> {
             {
                 anyhow::bail!("friction thresholds require report handoffs or decisions");
             }
-            let report = dendro_core::report_json_with_options(
-                &db,
-                &kind,
-                rig.as_deref(),
-                &from,
-                &to,
-                thresholds,
-                friction_thresholds.thresholds(),
-            )?;
-            println!("{report}");
+            if (advisory_thresholds.supplied() || anomaly.is_some())
+                && !matches!(
+                    kind.as_str(),
+                    "advisory" | "anomalies" | "spotlights" | "decisions"
+                )
+            {
+                anyhow::bail!("advisory options and formats require advisory, anomalies, spotlights or decisions");
+            }
+            if format.as_deref() == Some("ndjson")
+                && !matches!(
+                    kind.as_str(),
+                    "advisory" | "anomalies" | "spotlights" | "decisions"
+                )
+            {
+                anyhow::bail!(
+                    "NDJSON findings require advisory, anomalies, spotlights or decisions"
+                );
+            }
+            if anomaly.is_some() && kind != "advisory" {
+                anyhow::bail!("--anomaly requires report advisory");
+            }
+            let evaluated_kind = kind.clone();
+            let report = tokio::task::spawn_blocking(move || {
+                dendro_core::report_json_with_analysis(
+                    &db,
+                    &evaluated_kind,
+                    rig.as_deref(),
+                    &from,
+                    &to,
+                    thresholds,
+                    friction_thresholds.thresholds(),
+                    advisory_thresholds.options(),
+                )
+            })
+            .await??;
+            if viz {
+                print!("{}", dendro_core::presentation::viz(&report));
+                return Ok(());
+            }
+            let format = format.unwrap_or_else(|| {
+                if std::io::stdout().is_terminal() {
+                    "table".into()
+                } else {
+                    "json".into()
+                }
+            });
+            match format.as_str() {
+                "table" => print!("{}", dendro_core::presentation::human(&report, false)),
+                "markdown" if !matches!(kind.as_str(), "advisory" | "anomalies" | "spotlights") => {
+                    print!("{}", dendro_core::presentation::human(&report, true))
+                }
+                "markdown" => {
+                    let field = if kind == "advisory" {
+                        "advisory_idle_claimed"
+                    } else {
+                        "anomaly_spotlights"
+                    };
+                    print!(
+                        "{}",
+                        dendro_core::spotlight::markdown(&report["payload"][field])
+                    );
+                }
+                "ndjson" => {
+                    let field = if kind == "advisory" {
+                        "advisory_idle_claimed"
+                    } else {
+                        "anomaly_spotlights"
+                    };
+                    let value = &report["payload"][field];
+                    for record in dendro_core::spotlight::ndjson_records(value) {
+                        println!("{record}");
+                    }
+                }
+                _ => println!("{report}"),
+            }
         }
         Commands::Trace {
             db,
@@ -253,21 +548,26 @@ async fn main() -> Result<()> {
             tool_loop_window_secs,
             handoff_loop_returns,
             friction_thresholds,
+            advisory_thresholds,
         } => {
             let thresholds = dendro_core::LoopThresholds {
                 tool_loop_failures,
                 tool_loop_window_secs,
                 handoff_loop_returns,
             };
-            let report = dendro_core::trace_json_with_options(
-                &db,
-                &metric_id,
-                rig.as_deref(),
-                &from,
-                &to,
-                thresholds,
-                friction_thresholds.thresholds(),
-            )?;
+            let report = tokio::task::spawn_blocking(move || {
+                dendro_core::trace_json_with_analysis(
+                    &db,
+                    &metric_id,
+                    rig.as_deref(),
+                    &from,
+                    &to,
+                    thresholds,
+                    friction_thresholds.thresholds(),
+                    advisory_thresholds.options(),
+                )
+            })
+            .await??;
             println!("{report}");
         }
     }
@@ -643,5 +943,75 @@ mod friction_tests {
             "--friction"
         ])
         .is_err());
+    }
+}
+
+#[cfg(test)]
+mod advisory_cli_tests {
+    use super::*;
+    #[test]
+    fn advice_thresholds_formats_and_assert_defaults_parse() {
+        let cli = Cli::try_parse_from([
+            "dendro",
+            "report",
+            "spotlights",
+            "--format",
+            "markdown",
+            "--spotlight-ceremony-ratio",
+            "0.2",
+            "--spotlight-builder-seats",
+            "junior,senior",
+        ])
+        .unwrap();
+        if let Commands::Report {
+            advisory_thresholds,
+            format,
+            ..
+        } = cli.command
+        {
+            assert_eq!(format.as_deref(), Some("markdown"));
+            assert_eq!(advisory_thresholds.options().ceremony_ratio, 0.2);
+            assert_eq!(
+                advisory_thresholds.options().builder_seats,
+                vec!["junior", "senior"]
+            );
+        } else {
+            panic!("expected report")
+        };
+        let cli = Cli::try_parse_from(["dendro", "assert"]).unwrap();
+        if let Commands::Assert {
+            max_rework_rate,
+            max_idle_rate,
+            ..
+        } = cli.command
+        {
+            assert_eq!(max_rework_rate, 0.15);
+            assert_eq!(max_idle_rate, 0.2);
+        } else {
+            panic!("expected assert")
+        }
+    }
+    #[test]
+    fn publication_is_explicit_and_uses_argument_vector() {
+        assert!(Cli::try_parse_from(["dendro", "issue-draft", "--publish"]).is_err());
+        assert!(Cli::try_parse_from(["dendro", "issue-draft", "--repo", "owner/repo"]).is_err());
+        let args = issue_publish_args("owner/repo", "literal `command` $(never run)\nsecond line")
+            .unwrap();
+        assert_eq!(args[0..4], ["issue", "create", "--repo", "owner/repo"]);
+        assert!(args.last().unwrap().contains("$(never run)"));
+        assert!(issue_publish_args("--evil", "body").is_err());
+        assert!(issue_publish_args("owner/repo;command", "body").is_err());
+    }
+    #[test]
+    fn malformed_advice_values_fail_without_db_access() {
+        for (flag, value) in [
+            ("--spotlight-ceremony-ratio", "NaN"),
+            ("--spotlight-recovery-ratio", "2"),
+            ("--spotlight-parallelism", "-1"),
+            ("--advisory-leaf-stall-secs", "1.5"),
+            ("--advisory-detached-target-secs", "-1"),
+        ] {
+            assert!(Cli::try_parse_from(["dendro", "report", "advisory", flag, value]).is_err());
+        }
     }
 }

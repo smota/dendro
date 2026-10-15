@@ -75,40 +75,40 @@ impl AnalyticsStore {
     /// Batch all facts and their provenance mappings from one accepted source
     /// snapshot into one transaction. A failed reader rolls the batch back.
     pub fn with_openrig_fact_batch<T>(&self, ingest: impl FnOnce() -> Result<T>) -> Result<T> {
-        if self.openrig_pending.borrow().is_some() {
-            return Err(anyhow!("OpenRig fact batch is already active"));
-        }
-        let tx = self.conn.unchecked_transaction()?;
-        *self.openrig_pending.borrow_mut() = Some(Vec::new());
-        let result = ingest();
-        // Clear the buffer before propagating reader/flush errors so rollback
-        // cannot leave mappings available to the next accepted batch.
-        let records = self.openrig_pending.borrow_mut().take().unwrap_or_default();
-        let result = result?;
-        if !records.is_empty() {
-            tx.execute_batch("CREATE TEMP TABLE openrig_provenance_stage AS SELECT * FROM openrig_row_records WHERE FALSE")?;
-            {
-                let mut appender = tx.appender("openrig_provenance_stage")?;
-                for row in &records {
-                    crate::RUN_CANCEL.check()?;
-                    appender.append_row(params![
-                        row.source_id,
-                        row.generation,
-                        row.producing_revision,
-                        row.table_name,
-                        row.row_id,
-                        row.row_digest,
-                        row.row_state,
-                        row.source_key
-                    ])?;
-                }
-                appender.flush()?;
+        self.canonical_write(|| {
+            if self.openrig_pending.borrow().is_some() {
+                return Err(anyhow!("OpenRig fact batch is already active"));
             }
-            tx.execute_batch("INSERT INTO openrig_row_records SELECT DISTINCT * FROM openrig_provenance_stage ON CONFLICT DO NOTHING; DROP TABLE openrig_provenance_stage")?;
-        }
-        crate::RUN_CANCEL.check()?;
-        tx.commit()?;
-        Ok(result)
+            *self.openrig_pending.borrow_mut() = Some(Vec::new());
+            let result = ingest();
+            // Clear the buffer before propagating reader/flush errors so rollback
+            // cannot leave mappings available to the next accepted batch.
+            let records = self.openrig_pending.borrow_mut().take().unwrap_or_default();
+            let result = result?;
+            if !records.is_empty() {
+                self.conn.execute_batch("CREATE TEMP TABLE openrig_provenance_stage AS SELECT * FROM openrig_row_records WHERE FALSE")?;
+                {
+                    let mut appender = self.conn.appender("openrig_provenance_stage")?;
+                    for row in &records {
+                        crate::RUN_CANCEL.check()?;
+                        appender.append_row(params![
+                            row.source_id,
+                            row.generation,
+                            row.producing_revision,
+                            row.table_name,
+                            row.row_id,
+                            row.row_digest,
+                            row.row_state,
+                            row.source_key
+                        ])?;
+                    }
+                    appender.flush()?;
+                }
+                self.conn.execute_batch("INSERT INTO openrig_row_records SELECT DISTINCT * FROM openrig_provenance_stage ON CONFLICT DO NOTHING; DROP TABLE openrig_provenance_stage")?;
+            }
+            crate::RUN_CANCEL.check()?;
+            Ok(result)
+        })
     }
 
     /// Include the source inode identity, so a replacement with reused row
@@ -203,6 +203,7 @@ impl AnalyticsStore {
             max_generation
         };
         let tx = self.conn.unchecked_transaction()?;
+        self.invalidate_semantic()?;
         tx.execute("DELETE FROM mutable_source_disclosures", [])?;
         if reset {
             tx.execute("UPDATE openrig_row_records SET row_state = 'superseded' WHERE source_id = ? AND row_state IN ('present', 'gone')", params![source_id])?;
@@ -315,13 +316,15 @@ impl AnalyticsStore {
     }
 
     fn record_openrig_mapping(&self, row: OpenRigRecord) -> Result<()> {
-        if let Some(pending) = self.openrig_pending.borrow_mut().as_mut() {
-            pending.push(row);
-            return Ok(());
-        }
-        self.conn.prepare_cached("INSERT INTO openrig_row_records VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING")?.execute(
-            params![row.source_id,row.generation,row.producing_revision,row.table_name,row.row_id,row.row_digest,row.row_state,row.source_key])?;
-        Ok(())
+        self.canonical_write(|| {
+            if let Some(pending) = self.openrig_pending.borrow_mut().as_mut() {
+                pending.push(row);
+                return Ok(());
+            }
+            self.conn.prepare_cached("INSERT INTO openrig_row_records VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING")?.execute(
+                params![row.source_id,row.generation,row.producing_revision,row.table_name,row.row_id,row.row_digest,row.row_state,row.source_key])?;
+            Ok(())
+        })
     }
 
     /// Attach stored mutable destination observations to their source row.
@@ -389,12 +392,14 @@ impl AnalyticsStore {
         seat: &str,
         reason: &str,
     ) -> Result<()> {
-        self.conn.execute_batch(SCHEMA)?;
-        self.conn.execute(
-            "INSERT INTO mutable_source_disclosures VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
-            params![redact(qitem_id), redact(seat), redact(reason)],
-        )?;
-        Ok(())
+        self.canonical_write(|| {
+            self.conn.execute_batch(SCHEMA)?;
+            self.conn.execute(
+                "INSERT INTO mutable_source_disclosures VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
+                params![redact(qitem_id), redact(seat), redact(reason)],
+            )?;
+            Ok(())
+        })
     }
 
     pub fn load_mutable_source_disclosures(&self) -> Result<Vec<Value>> {

@@ -1,35 +1,6 @@
-# Nao Dashboard: Seat Dynamics & Yield (Question 1)
 dashboard:
   id: seat_dynamics
-  title: "Seat Dynamics & Capacity Yield"
-  description: "Active time tracking vs. genuine idle waste and seat bottlenecks"
-
+  title: Seat activity and canonical yield
 queries:
   - id: idle_ranking
-    title: "Seat Idle Waste Ranking"
-    nl_prompt: "Which seats had the highest idle-with-work time over the last 7 days?"
-    sql: >
-      SELECT 
-        s.seat_id,
-        s.role,
-        s.runtime,
-        ROUND(SUM(a.active_seconds) / 3600.0, 2) AS active_hours,
-        ROUND(SUM(a.idle_with_work_seconds) / 3600.0, 2) AS idle_with_work_hours,
-        ROUND(SUM(a.idle_no_work_seconds) / 3600.0, 2) AS idle_no_work_hours,
-        ROUND(SUM(a.idle_with_work_seconds) * 100.0 / NULLIF(SUM(a.active_seconds + a.idle_with_work_seconds + a.idle_no_work_seconds), 0), 1) AS waste_pct
-      FROM dim_seats s
-      LEFT JOIN fct_seat_activity a ON s.seat_id = a.seat_id
-      GROUP BY s.seat_id, s.role, s.runtime
-      ORDER BY waste_pct DESC NULLS LAST;
-
-  - id: human_waiting
-    title: "Time Blocked on Human Approval"
-    nl_prompt: "Did any seat stall waiting for human confirmation or input?"
-    sql: >
-      SELECT 
-        seat_id,
-        ROUND(SUM(waiting_human_seconds) / 60.0, 1) AS waiting_minutes
-      FROM fct_seat_activity
-      GROUP BY seat_id
-      HAVING SUM(waiting_human_seconds) > 0
-      ORDER BY waiting_minutes DESC;
+    sql: SELECT * FROM v_seat_idle_ranking ORDER BY idle_with_work_secs DESC, seat_id

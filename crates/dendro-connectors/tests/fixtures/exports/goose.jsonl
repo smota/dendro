@@ -1,0 +1,3 @@
+{"working_dir":"/synthetic","description":"PRIVATE_TRANSCRIPT","message_count":2,"created_at":"2026-01-01T00:00:00Z","input_tokens":10,"output_tokens":2,"accumulated_input_tokens":30,"accumulated_output_tokens":6}
+{"id":"msg-1","role":"assistant","created":1767225601,"content":[{"type":"toolRequest","id":"call-1","toolCall":{"status":"success","value":{"name":"developer__shell","arguments":{"command":"echo sk-SYNTHETIC_DO_NOT_PERSIST"}}}}]}
+{"id":"msg-2","role":"user","created":1767225602,"content":[{"type":"toolResponse","id":"call-1","toolResult":{"status":"success","value":{"content":[{"type":"text","text":"PRIVATE_TRANSCRIPT"}]}}}]}

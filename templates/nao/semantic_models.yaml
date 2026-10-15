@@ -1,0 +1,33 @@
+# Dendro's local adapter manifest; not a claim of compatibility with an unpinned Nao release.
+version: 3
+data_source:
+  type: duckdb
+  path_file: database.json
+  read_only: true
+refresh:
+  command: dendro materialize --db <database> --from <RFC3339> --to <RFC3339> [--rig <rig>]
+  semantics: one canonical decisions report, exact half-open window, explicit refresh after ingestion
+  stale_policy: refuse
+models:
+  - name: seat_idle_ranking
+    table: v_seat_idle_ranking
+    dimensions: [seat_id, rig, window_from, window_to, definition_version]
+    columns: [observed_secs, active_secs, idle_with_work_secs, idle_between_work_secs, waiting_external_secs, unknown_secs, unparked_container_secs, leaf_stall_secs, ceremony_ratio, tool_categories, m1, source_keys, row_json]
+  - name: handoff_rework_analysis
+    table: v_handoff_rework_analysis
+    dimensions: [from_seat, to_seat, rig, window_from, window_to, ring_boundary]
+    columns: [handoffs, rework_returns, return_rate, wait_median_ms, exec_turnaround_median_ms, source_keys, row_json]
+  - name: mission_token_burn
+    table: v_mission_token_burn
+    dimensions: [seat_id, model, effort, attribution_bucket, missions, issues, phases, rig, window_from, window_to]
+    columns: [input_uncached, output, cache_read, cache_write, source_keys]
+  - name: executive_governance
+    table: v_executive_governance
+    dimensions: [rig, window_from, window_to, definition_version]
+    columns: [m1_yield, m1_by_seat, m2_return_rate, m3_rework_chains, token_categories, link_rates, fleet_concurrency, watchdog_recovery, four_eyes_independence, context_compactions, cross_slice_cache_bleed, task_intake_overhead, issue_lineage, vortex_loops, ring_boundaries, source_keys, row_json]
+prompts:
+  file: prompts.md
+  patterns: [Compare, Rank, Explain, Verify, Trace, HonestLimits]
+  execution: local deterministic allowlist
+  arbitrary_sql: false
+  unsupported_response: 'Insufficient data: unsupported intent or metric'

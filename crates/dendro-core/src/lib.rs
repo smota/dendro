@@ -2,6 +2,7 @@
 #![recursion_limit = "256"]
 #![deny(unsafe_code)]
 
+pub mod advisory;
 pub mod compaction;
 pub mod concurrency;
 pub mod facts;
@@ -14,8 +15,11 @@ pub mod metrics;
 pub mod models;
 pub mod output;
 pub mod pipeline;
+pub mod presentation;
 pub mod privacy;
+pub mod routing;
 pub mod sealed_run;
+pub mod spotlight;
 pub mod storage;
 pub mod tool_category;
 pub mod traits;
@@ -36,3 +40,7 @@ pub use sealed_run::*;
 pub use storage::*;
 pub use tool_category::*;
 pub use traits::*;
+pub mod portfolio;
+pub mod semantic;
+
+pub mod simulation;

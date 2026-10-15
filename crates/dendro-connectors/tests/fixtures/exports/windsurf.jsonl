@@ -1,0 +1,4 @@
+{"type":"user_input","status":"done","user_input":{"user_response":"PRIVATE_TRANSCRIPT"}}
+{"type":"code_action","status":"done","code_action":{"new_content":"sk-SYNTHETIC_DO_NOT_PERSIST","path":"/synthetic/private.txt"}}
+{"agent_action_name":"post_run_command","trajectory_id":"synthetic-windsurf","tool_info":{"command_line":"echo PRIVATE_TRANSCRIPT","cwd":"/synthetic"}}
+{"agent_action_name":"post_cascade_response_with_transcript","tool_info":{"transcript_path":"/outside/DO_NOT_FOLLOW.jsonl"}}

@@ -408,7 +408,33 @@ pub fn report_json_with_options(
     thresholds: LoopThresholds,
     friction: crate::FrictionThresholds,
 ) -> Result<Value> {
-    Ok(evaluate_report(db, kind, rig, from, to, false, thresholds, friction)?.report)
+    report_json_with_analysis(
+        db,
+        kind,
+        rig,
+        from,
+        to,
+        thresholds,
+        friction,
+        crate::advisory::AdvisoryOptions::default(),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn report_json_with_analysis(
+    db: &Path,
+    kind: &str,
+    rig: Option<&str>,
+    from: &str,
+    to: &str,
+    thresholds: LoopThresholds,
+    friction: crate::FrictionThresholds,
+    advisory: crate::advisory::AdvisoryOptions,
+) -> Result<Value> {
+    Ok(evaluate_report(
+        db, kind, rig, from, to, false, thresholds, friction, &advisory, None,
+    )?
+    .report)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -421,7 +447,10 @@ fn evaluate_report(
     evidence: bool,
     thresholds: LoopThresholds,
     friction: crate::FrictionThresholds,
+    advisory: &crate::advisory::AdvisoryOptions,
+    requested_metric: Option<&str>,
 ) -> Result<ReportEvaluation> {
+    advisory.validate()?;
     let friction = friction.validate()?;
     refuse_secret_path(db)?;
     let window = parse_window(from, to)?;
@@ -436,16 +465,48 @@ fn evaluate_report(
     }
     if !matches!(
         kind,
-        "links" | "activity" | "handoffs" | "tokens" | "decisions"
+        "links"
+            | "activity"
+            | "handoffs"
+            | "tokens"
+            | "decisions"
+            | "advisory"
+            | "anomalies"
+            | "spotlights"
     ) {
         return Err(anyhow!("unknown report kind {}", redact(kind)));
     }
     let store = AnalyticsStore::open_read_only(db)?;
-    let evaluation = store.read_snapshot(|store| {
+    let mut evaluation = store.read_snapshot(|store| {
         evaluate_report_snapshot(
-            store, kind, rig, from, to, window, evidence, thresholds, friction,
+            store,
+            kind,
+            rig,
+            from,
+            to,
+            window,
+            evidence,
+            thresholds,
+            friction,
+            advisory,
+            requested_metric,
         )
     })?;
+    for (field, metric) in [
+        ("advisory_idle_claimed", "advisory_idle_claimed"),
+        ("anomaly_spotlights", "anomaly_spotlights"),
+    ] {
+        if let Some(value) = evaluation.report["payload"].get_mut(field) {
+            crate::spotlight::attach_drilldown(
+                value,
+                &db.display().to_string(),
+                rig,
+                from,
+                to,
+                metric,
+            );
+        }
+    }
     // No analytics connection survives into the trace filesystem phase.
     drop(store);
     Ok(evaluation)
@@ -462,6 +523,8 @@ fn evaluate_report_snapshot(
     evidence: bool,
     thresholds: LoopThresholds,
     friction: crate::FrictionThresholds,
+    advisory: &crate::advisory::AdvisoryOptions,
+    requested_metric: Option<&str>,
 ) -> Result<ReportEvaluation> {
     let identities = store.load_identity()?;
     // One binding rule for links, tokens, missions, intakes and rig scope.
@@ -520,7 +583,10 @@ fn evaluate_report_snapshot(
         .filter(|row| in_scope(&row.harness, &row.native_session))
         .cloned()
         .collect();
-    if matches!(kind, "handoffs" | "decisions") {
+    if matches!(
+        kind,
+        "handoffs" | "decisions" | "advisory" | "anomalies" | "spotlights"
+    ) {
         crate::vortex::validate_persisted_usage(&usage)?;
     }
     let queue_context = store.load_queue()?;
@@ -818,7 +884,7 @@ fn evaluate_report_snapshot(
         .map(|row| &row.fact)
         .collect();
 
-    for tool in tools.iter().chain(in_window_codex) {
+    for tool in tools.iter().chain(in_window_codex.iter().copied()) {
         let cat = tool_categories
             .get(&tool.source_key)
             .copied()
@@ -1432,7 +1498,14 @@ fn evaluate_report_snapshot(
             row["recovery_by_reason"] = json!({});
         }
     }
-    let friction_evaluation = if matches!(kind, "handoffs" | "decisions") {
+    let friction_evaluation = if matches!(
+        kind,
+        "handoffs" | "decisions" | "advisory" | "anomalies" | "spotlights"
+    ) && (!evidence
+        || matches!(
+            requested_metric,
+            Some("handoff_friction" | "anomaly_spotlights")
+        )) {
         let friction_usage: Vec<_> = usage_all
             .iter()
             .filter(|u| in_scope(&u.harness, &u.native_session))
@@ -1448,7 +1521,7 @@ fn evaluate_report_snapshot(
             snapshots: &snapshot_destinations,
             window,
             thresholds: friction,
-            capture_replay: evidence,
+            capture_replay: evidence && requested_metric == Some("handoff_friction"),
         })
     } else {
         crate::vortex::Evaluation {
@@ -1458,8 +1531,109 @@ fn evaluate_report_snapshot(
     };
     // Add after legacy provenance annotation so report/trace metric values stay identical.
     annotate_openrig_evidence(store, &sources, &mut payload, evidence)?;
-    if matches!(kind, "handoffs" | "decisions") {
+    if matches!(
+        kind,
+        "handoffs" | "decisions" | "advisory" | "anomalies" | "spotlights"
+    ) {
         payload["handoff_friction"] = friction_evaluation.value;
+    }
+    if matches!(kind, "advisory" | "anomalies" | "spotlights" | "decisions")
+        && (!evidence
+            || matches!(
+                requested_metric,
+                Some("advisory_idle_claimed" | "anomaly_spotlights")
+            ))
+    {
+        let scoped_seats: std::collections::BTreeSet<_> = identities
+            .iter()
+            .filter(|i| rig.is_none_or(|r| i.rig == r))
+            .map(|i| i.seat.clone())
+            .chain(seats.iter().cloned())
+            .chain(
+                queue_all
+                    .iter()
+                    .map(|q| q.dest_seat.clone())
+                    .filter(|seat| rig_seats.as_ref().is_none_or(|set| set.contains(seat))),
+            )
+            .collect();
+        let mut local_activity = Vec::new();
+        let mut unresolved_activity = Vec::new();
+        let mut add_local =
+            |key: &str, harness: &str, native: &str, ts: Option<chrono::DateTime<chrono::Utc>>| {
+                if !in_scope(harness, native) || ts.is_some_and(|t| t >= window.to) {
+                    return;
+                }
+                let seat = binding(harness, native).seat().map(str::to_owned);
+                match (seat, ts) {
+                    (Some(seat), Some(ts)) => local_activity.push(crate::advisory::ActivityPoint {
+                        seat,
+                        ts,
+                        source_key: key.into(),
+                    }),
+                    (seat, _) => unresolved_activity.push(crate::advisory::UnresolvedActivity {
+                        source_key: key.into(),
+                        seat,
+                        reason: "missing_timestamp_or_unproven_session_binding",
+                    }),
+                }
+            };
+        for u in &usage_all {
+            add_local(&u.source_key, &u.harness, &u.native_session, u.ts);
+        }
+        for t in scoped_tools
+            .iter()
+            .chain(codex_observations.iter().map(|r| &r.fact))
+        {
+            add_local(&t.source_key, &t.harness, &t.native_session, t.ts);
+        }
+        let raw_meta = store.load_queue_metadata_evidence()?;
+        let idle = crate::advisory::evaluate(crate::advisory::Input {
+            queue: &queue_context,
+            metadata: &raw_meta,
+            activity: &activity,
+            bounds: &bounds,
+            local_activity: &local_activity,
+            unresolved_activity: &unresolved_activity,
+            snapshots: &snapshot_destinations,
+            seats: &scoped_seats,
+            nudge_metadata: &queue_meta,
+            window,
+            options: advisory,
+        });
+        payload["advisory_idle_claimed"] = idle;
+        let represented: std::collections::BTreeSet<_> = queue_all
+            .iter()
+            .filter(|q| q.ts >= window.from && q.ts < window.to)
+            .map(|q| q.qitem_id.as_str())
+            .collect();
+        payload["advisory_queue_volume"] = json!({"items":represented.len(),"recovery_items":represented.iter().filter(|id|queue_meta.get(**id).is_some_and(|m|m.is_recovery||m.recovery_reason.is_some())).count(),
+            "source_keys":queue_all.iter().filter(|q|q.ts>=window.from&&q.ts<window.to).map(|q|&q.source_key).collect::<Vec<_>>()});
+        let routing_tools: Vec<_> = tools
+            .iter()
+            .chain(in_window_codex.iter().copied())
+            .cloned()
+            .collect();
+        let routing = crate::routing::evaluate(
+            &usage,
+            &routing_tools,
+            &store.load_usage_models()?,
+            &tool_categories,
+            &bindings,
+            window,
+            &payload["outcome_coverage"],
+        );
+        for field in [
+            "routing_effort_status",
+            "routing_effort_evidence",
+            "routing_effort_coverage",
+        ] {
+            payload[field] = routing[field].clone();
+        }
+        payload["anomaly_spotlights"] = crate::spotlight::evaluate(&payload, advisory);
+        if evidence {
+            payload["advisory_trace_inputs"] = json!({"queue":queue_context,"metadata":raw_meta,"nudge_metadata":queue_meta,"activity":activity,"seat_bounds":bounds,
+                "local_activity":local_activity,"unresolved_activity":unresolved_activity,"destination_snapshots":snapshot_destinations,"identities":identities});
+        }
     }
     let report = metrics::report_value(kind, payload);
     let file_states = if evidence {
@@ -1713,8 +1887,41 @@ pub fn trace_json_with_options(
     thresholds: LoopThresholds,
     friction: crate::FrictionThresholds,
 ) -> Result<Value> {
-    let mut evaluation =
-        evaluate_report(db, "decisions", rig, from, to, true, thresholds, friction)?;
+    trace_json_with_analysis(
+        db,
+        metric_id,
+        rig,
+        from,
+        to,
+        thresholds,
+        friction,
+        crate::advisory::AdvisoryOptions::default(),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn trace_json_with_analysis(
+    db: &Path,
+    metric_id: &str,
+    rig: Option<&str>,
+    from: &str,
+    to: &str,
+    thresholds: LoopThresholds,
+    friction: crate::FrictionThresholds,
+    advisory: crate::advisory::AdvisoryOptions,
+) -> Result<Value> {
+    let mut evaluation = evaluate_report(
+        db,
+        "decisions",
+        rig,
+        from,
+        to,
+        true,
+        thresholds,
+        friction,
+        &advisory,
+        Some(metric_id),
+    )?;
     let mut report = evaluation.report;
     let file_source_states = evaluation
         .file_states
@@ -1726,6 +1933,8 @@ pub fn trace_json_with_options(
         );
     let payload = &report["payload"];
     let (formula, value) = match metric_id {
+        "advisory_idle_claimed" => ("advisory-idle-claimed-v1",payload["advisory_idle_claimed"].clone()),
+        "anomaly_spotlights" => ("anomaly-spotlights-v1",payload["anomaly_spotlights"].clone()),
         "handoff_friction" => (crate::vortex::FORMULA_VERSION, payload["handoff_friction"].clone()),
         "m1" => (
             "seat tokens / non-returned deliveries, plus tokens per closed item",
@@ -1841,6 +2050,12 @@ pub fn trace_json_with_options(
         "handoff_members": payload["handoff_members"],
         "window": {"from": from, "to": to},
     });
+    if matches!(metric_id, "advisory_idle_claimed" | "anomaly_spotlights") {
+        inputs["advisory_idle_claimed"] = payload["advisory_idle_claimed"].clone();
+        inputs["anomaly_spotlights"] = payload["anomaly_spotlights"].clone();
+        inputs["advisory_trace_inputs"] = payload["advisory_trace_inputs"].clone();
+        inputs["advisory_queue_volume"] = payload["advisory_queue_volume"].clone();
+    }
     if metric_id == "handoff_friction" {
         inputs["handoff_friction"] = evaluation.friction_replay;
     }
@@ -1867,7 +2082,9 @@ pub fn trace_json_with_options(
     }
     Ok(json!({
         "metric_id": metric_id,
-        "formula_version": if metric_id == "handoff_friction" {
+        "formula_version": if metric_id == "advisory_idle_claimed" {"advisory-idle-claimed-v1"}
+        else if metric_id == "anomaly_spotlights" {"anomaly-spotlights-v1"}
+        else if metric_id == "handoff_friction" {
             crate::vortex::FORMULA_VERSION
         } else if metric_id == "medians" {
             "acceptance-r1-a1-wait-fractional-v1"
@@ -4210,5 +4427,36 @@ mod tests {
         assert_eq!(trace["inputs"]["fleet_concurrency"], *fc);
 
         let _ = fs::remove_dir_all(&dir);
+    }
+    #[test]
+    fn unrelated_trace_skips_new_parent_metadata_and_friction_capture() {
+        let dir = std::env::temp_dir().join(format!("dendro-lazy-replay-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("data.duckdb");
+        let store = AnalyticsStore::open_path(&db, "fixture").unwrap();
+        store.checkpoint().unwrap();
+        drop(store);
+        crate::storage::FRICTION_METADATA_READS.with(|n| n.set(0));
+        let trace = trace_json(
+            &db,
+            "m1",
+            None,
+            "2026-10-15T00:00:00Z",
+            "2026-10-15T01:00:00Z",
+        )
+        .unwrap();
+        crate::storage::FRICTION_METADATA_READS.with(|n| assert_eq!(n.get(), 0));
+        assert!(trace["inputs"].get("handoff_friction").is_none());
+        let trace = trace_json(
+            &db,
+            "handoff_friction",
+            None,
+            "2026-10-15T00:00:00Z",
+            "2026-10-15T01:00:00Z",
+        )
+        .unwrap();
+        crate::storage::FRICTION_METADATA_READS.with(|n| assert_eq!(n.get(), 1));
+        assert!(trace["inputs"]["handoff_friction"].is_object());
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }
