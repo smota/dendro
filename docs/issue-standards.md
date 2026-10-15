@@ -111,18 +111,54 @@ _Exact file paths, template names, or data structures expected. The Architect ph
 
 ## Issue Hierarchy
 
-A child issue names its parent with the existing part-of link: the `parent` that
-`agentflow-sdlc phase append --parent` stores on a work record, or the `**Epic:** #<id>` line on an
-older child issue. That link is the product tree, and AgentFlow rebuilds the tree from it (see
-[source adapters](sources/index.md)).
+This is the one description of how a work record shows its kind and its parent.
 
-GitHub sub-issues and issue links may mirror the part-of link so a person can navigate in GitHub.
-They are only a mirror. If the two disagree, the part-of link wins. An assisted run and a one-agent
-run write the same part-of link.
+A work record has a kind of `goal`, `capability`, or `spec` in the body marker
+`<!-- agentflow-work:{...} -->`. The title starts with `goal:`, `capability:`, or `spec:`, and the
+issue wears `kind:goal`, `kind:capability`, or `kind:spec`. Those three names are the same kind.
+A record with no kind is a legacy bug. It keeps a conventional title, it wears no `kind:` label,
+and it is not a goal.
+
+`Part of #<parent>` is the only parent. A capability or a spec has one. A goal has none.
+`**Epic:** #<parent>` may repeat that same number and must not name a different one. A GitHub
+sub-issue is only a navigation mirror. The open path writes the title prefix, the kind label, the
+marker, and `Part of` together. The issue validator rejects a disagreement.
+
+A part has one current record. A breakdown note that is not yet admitted has the `capability:`
+title, the `kind:capability` label, one `Part of`, and no work marker. That shape is valid. An
+admitted capability may carry one `Replaces #<note>` line. That line is the only replacement
+authority. It sets no parent, it does not move what a person agreed, and the note is not edited. A
+goal's current parts are its admitted records plus the notes nothing replaces. Given the other
+records (`validate-sdlc-issue --records <file>`), the issue validator refuses two capabilities that
+replace one note, a capability that names more than one note, a note under another parent, and a
+replacement of a goal, a spec, an admitted capability, or itself.
+
+### Goal Child Completion and Parts Ledger
+
+Goals maintain a deterministic, structured section under `## Child Work & History` (or `## Parts Ledger`) documenting all child parts, replacement relations, merging PRs, commits, dates, and delivery completion:
+
+```markdown
+## Child Work & History
+
+> **Status:** All child capabilities delivered — ready for person review/closure
+> **Progress:** 5/5 delivered (100%)
+
+| Part | Kind       | Title                                    | Status    | Replacement   | Delivery PR | Commit    | Date       |
+| :--- | :--------- | :--------------------------------------- | :-------- | :------------ | :---------- | :-------- | :--------- |
+| #440 | capability | capability: zero-friction assisted setup | Delivered | Replaces #435 | #445        | `573989c` | 2026-10-13 |
+| #441 | capability | capability: self-healing configuration   | Delivered | —             | #446        | `6b823dd` | 2026-10-13 |
+```
+
+Rules and Invariants:
+
+1. **Non-Automatic Closure Invariant**: Parent goals must **never** be auto-closed by child PR merges. The human person retains final authority to review and close the completed goal.
+2. **Ready-for-Closure Milestone**: When all admitted child capabilities are delivered, the goal ledger visibly reflects this milestone with `> **Status:** All child capabilities delivered — ready for person review/closure`.
+3. **Audit Trail**: Every delivered child records its merging PR, merge commit SHA, completion date, and replacement mapping.
+4. **Validation & Synchronization**: Tooling (`agentflow-sdlc goal sync <number>`, `scripts/sync-goal-ledger.mjs`, and `scripts/validate-sdlc-issue.mjs --records`) validates ledger consistency against child issue records and rejects desynchronized or premature ready-for-closure statuses. Updating the ledger section does not move the goal subject a person agreed to in human gates.
 
 ## Issue Titles
 
-All issue titles must start with one of these exact Conventional Commit prefixes:
+A legacy record, which has no work kind, must start with one of these exact Conventional Commit prefixes. A goal, capability, or spec uses the kind prefix in [Issue Hierarchy](#issue-hierarchy) instead.
 
 - `feat:` - user-facing product capability or feature work
 - `fix:` - defect, regression, or security bug fix

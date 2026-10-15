@@ -1,0 +1,661 @@
+1647611 execve("/home/sam/code/dendro/target/debug/dendro", ["/home/sam/code/dendro/target/debug/dendro", "run", "--db", "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/output/analytics.duckdb", "--root", "openrig=/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/source/openrig.sqlite"], 0x7ffd6b8253b8 /* 88 vars */) = 0
+1647611 brk(NULL)                       = 0x61c12528c000
+1647611 mmap(NULL, 8192, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x757c329f8000
+1647611 access("/etc/ld.so.preload", R_OK) = -1 ENOENT (No such file or directory)
+1647611 openat(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/.agent-runs/tools/strace/extracted/usr/lib/x86_64-linux-gnu/glibc-hwcaps/x86-64-v4/libstdc++.so.6", O_RDONLY|O_CLOEXEC) = -1 ENOENT (No such file or directory)
+1647611 newfstatat(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/.agent-runs/tools/strace/extracted/usr/lib/x86_64-linux-gnu/glibc-hwcaps/x86-64-v4/", 0x7ffcc62ea070, 0) = -1 ENOENT (No such file or directory)
+1647611 openat(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/.agent-runs/tools/strace/extracted/usr/lib/x86_64-linux-gnu/glibc-hwcaps/x86-64-v3/libstdc++.so.6", O_RDONLY|O_CLOEXEC) = -1 ENOENT (No such file or directory)
+1647611 newfstatat(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/.agent-runs/tools/strace/extracted/usr/lib/x86_64-linux-gnu/glibc-hwcaps/x86-64-v3/", 0x7ffcc62ea070, 0) = -1 ENOENT (No such file or directory)
+1647611 openat(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/.agent-runs/tools/strace/extracted/usr/lib/x86_64-linux-gnu/glibc-hwcaps/x86-64-v2/libstdc++.so.6", O_RDONLY|O_CLOEXEC) = -1 ENOENT (No such file or directory)
+1647611 newfstatat(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/.agent-runs/tools/strace/extracted/usr/lib/x86_64-linux-gnu/glibc-hwcaps/x86-64-v2/", 0x7ffcc62ea070, 0) = -1 ENOENT (No such file or directory)
+1647611 openat(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/.agent-runs/tools/strace/extracted/usr/lib/x86_64-linux-gnu/libstdc++.so.6", O_RDONLY|O_CLOEXEC) = -1 ENOENT (No such file or directory)
+1647611 newfstatat(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/.agent-runs/tools/strace/extracted/usr/lib/x86_64-linux-gnu/", {st_mode=S_IFDIR|0755, st_size=4096, ...}, 0) = 0
+1647611 openat(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/etc/ld.so.cache", O_RDONLY|O_CLOEXEC) = 3</etc/ld.so.cache>
+1647611 mmap(NULL, 32611, PROT_READ, MAP_PRIVATE, 3</etc/ld.so.cache>, 0) = 0x757c329f0000
+1647611 close(3</etc/ld.so.cache>)      = 0
+1647611 openat(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/usr/lib/x86_64-linux-gnu/libstdc++.so.6", O_RDONLY|O_CLOEXEC) = 3</usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.35>
+1647611 read(0x3, 0x7ffcc62ea1c8, 0x340) = 0x340
+1647611 mmap(NULL, 2749504, PROT_READ, MAP_PRIVATE|MAP_DENYWRITE, 3</usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.35>, 0) = 0x757c32600000
+1647611 mmap(0x757c326a3000, 1421312, PROT_READ|PROT_EXEC, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3</usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.35>, 0xa3000) = 0x757c326a3000
+1647611 mmap(0x757c327fe000, 573440, PROT_READ, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3</usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.35>, 0x1fe000) = 0x757c327fe000
+1647611 mmap(0x757c3288a000, 73728, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3</usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.35>, 0x28a000) = 0x757c3288a000
+1647611 mmap(0x757c3289c000, 13376, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_ANONYMOUS, -1, 0) = 0x757c3289c000
+1647611 close(3</usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.35>) = 0
+1647611 openat(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/.agent-runs/tools/strace/extracted/usr/lib/x86_64-linux-gnu/libgcc_s.so.1", O_RDONLY|O_CLOEXEC) = -1 ENOENT (No such file or directory)
+1647611 openat(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/usr/lib/x86_64-linux-gnu/libgcc_s.so.1", O_RDONLY|O_CLOEXEC) = 3</usr/lib/x86_64-linux-gnu/libgcc_s.so.1>
+1647611 read(0x3, 0x7ffcc62ea1a8, 0x340) = 0x340
+1647611 mmap(NULL, 185256, PROT_READ, MAP_PRIVATE|MAP_DENYWRITE, 3</usr/lib/x86_64-linux-gnu/libgcc_s.so.1>, 0) = 0x757c329c2000
+1647611 mmap(0x757c329c6000, 147456, PROT_READ|PROT_EXEC, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3</usr/lib/x86_64-linux-gnu/libgcc_s.so.1>, 0x4000) = 0x757c329c6000
+1647611 mmap(0x757c329ea000, 16384, PROT_READ, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3</usr/lib/x86_64-linux-gnu/libgcc_s.so.1>, 0x28000) = 0x757c329ea000
+1647611 mmap(0x757c329ee000, 8192, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3</usr/lib/x86_64-linux-gnu/libgcc_s.so.1>, 0x2c000) = 0x757c329ee000
+1647611 close(3</usr/lib/x86_64-linux-gnu/libgcc_s.so.1>) = 0
+1647611 openat(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/.agent-runs/tools/strace/extracted/usr/lib/x86_64-linux-gnu/libm.so.6", O_RDONLY|O_CLOEXEC) = -1 ENOENT (No such file or directory)
+1647611 openat(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/usr/lib/x86_64-linux-gnu/libm.so.6", O_RDONLY|O_CLOEXEC) = 3</usr/lib/x86_64-linux-gnu/libm.so.6>
+1647611 read(0x3, 0x7ffcc62ea188, 0x340) = 0x340
+1647611 mmap(NULL, 1200152, PROT_READ, MAP_PRIVATE|MAP_DENYWRITE, 3</usr/lib/x86_64-linux-gnu/libm.so.6>, 0) = 0x757c324da000
+1647611 mmap(0x757c324ec000, 655360, PROT_READ|PROT_EXEC, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3</usr/lib/x86_64-linux-gnu/libm.so.6>, 0x12000) = 0x757c324ec000
+1647611 mmap(0x757c3258c000, 466944, PROT_READ, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3</usr/lib/x86_64-linux-gnu/libm.so.6>, 0xb2000) = 0x757c3258c000
+1647611 mmap(0x757c325fe000, 8192, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3</usr/lib/x86_64-linux-gnu/libm.so.6>, 0x123000) = 0x757c325fe000
+1647611 close(3</usr/lib/x86_64-linux-gnu/libm.so.6>) = 0
+1647611 openat(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/.agent-runs/tools/strace/extracted/usr/lib/x86_64-linux-gnu/libc.so.6", O_RDONLY|O_CLOEXEC) = -1 ENOENT (No such file or directory)
+1647611 openat(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/usr/lib/x86_64-linux-gnu/libc.so.6", O_RDONLY|O_CLOEXEC) = 3</usr/lib/x86_64-linux-gnu/libc.so.6>
+1647611 read(0x3, 0x7ffcc62ea168, 0x340) = 0x340
+1647611 pread64(0x3, 0x7ffcc62e9d40, 0x348, 0x40) = 0x348
+1647611 pread64(0x3, 0x7ffcc62e9c20, 0x348, 0x40) = 0x348
+1647611 mmap(NULL, 2231696, PROT_READ, MAP_PRIVATE|MAP_DENYWRITE, 3</usr/lib/x86_64-linux-gnu/libc.so.6>, 0) = 0x757c32200000
+1647611 mmap(0x757c32228000, 1671168, PROT_READ|PROT_EXEC, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3</usr/lib/x86_64-linux-gnu/libc.so.6>, 0x28000) = 0x757c32228000
+1647611 mmap(0x757c323c0000, 319488, PROT_READ, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3</usr/lib/x86_64-linux-gnu/libc.so.6>, 0x1c0000) = 0x757c323c0000
+1647611 mmap(0x757c3240e000, 24576, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_DENYWRITE, 3</usr/lib/x86_64-linux-gnu/libc.so.6>, 0x20e000) = 0x757c3240e000
+1647611 mmap(0x757c32414000, 52624, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_FIXED|MAP_ANONYMOUS, -1, 0) = 0x757c32414000
+1647611 close(3</usr/lib/x86_64-linux-gnu/libc.so.6>) = 0
+1647611 mmap(NULL, 8192, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x757c329c0000
+1647611 mmap(NULL, 20480, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x757c329bb000
+1647611 mprotect(0x757c3240e000, 16384, PROT_READ) = 0
+1647611 mprotect(0x757c325fe000, 4096, PROT_READ) = 0
+1647611 mprotect(0x757c329ee000, 4096, PROT_READ) = 0
+1647611 mmap(NULL, 8192, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x757c329b9000
+1647611 mprotect(0x757c3288a000, 61440, PROT_READ) = 0
+1647611 mprotect(0x61c103be2000, 937984, PROT_READ) = 0
+1647611 mprotect(0x757c32a3d000, 8192, PROT_READ) = 0
+1647611 munmap(0x757c329f0000, 32611)   = 0
+1647611 brk(NULL)                       = 0x61c12528c000
+1647611 brk(0x61c1252bf000)             = 0x61c1252bf000
+1647611 openat(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/proc/self/maps", O_RDONLY|O_CLOEXEC) = 3</proc/1647611/maps>
+1647611 read(0x3, 0x61c12529e5a0, 0x400) = 0x400
+1647611 read(0x3, 0x61c12529e5a0, 0x400) = 0x400
+1647611 read(0x3, 0x61c12529e5a0, 0x400) = 0x400
+1647611 read(0x3, 0x61c12529e5a0, 0x400) = 0x3ac
+1647611 close(3</proc/1647611/maps>)    = 0
+1647611 mmap(NULL, 12288, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0) = 0x757c329f5000
+1647611 mprotect(0x757c329f5000, 4096, PROT_NONE) = 0
+1647611 mmap(NULL, 4096, PROT_READ|PROT_WRITE, MAP_DROPPABLE|MAP_ANONYMOUS, -1, 0) = 0x757c329f4000
+1647611 mmap(NULL, 4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x757c329f3000
+1647611 openat(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/proc/self/cgroup", O_RDONLY|O_CLOEXEC) = 3</proc/1647611/cgroup>
+1647611 statx(3</proc/1647611/cgroup>, "", AT_STATX_SYNC_AS_STAT|AT_EMPTY_PATH, STATX_ALL, {stx_mask=STATX_BASIC_STATS|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFREG|0444, stx_size=0, ...}) = 0
+1647611 read(0x3, 0x61c12529f0a0, 0x80) = 0x80
+1647611 read(0x3, 0x7ffcc62e9600, 0x20) = 0
+1647611 close(3</proc/1647611/cgroup>)  = 0
+1647611 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/app-tmux.slice/tmux-spawn-bbc1f0fb-433e-472e-9213-a690b91cf56a.scope/cgroup.controllers", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_BASIC_STATS|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFREG|0444, stx_size=0, ...}) = 0
+1647611 openat(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/app-tmux.slice/tmux-spawn-bbc1f0fb-433e-472e-9213-a690b91cf56a.scope/cpu.max", O_RDONLY|O_CLOEXEC) = -1 ENOENT (No such file or directory)
+1647611 openat(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/app-tmux.slice/cpu.max", O_RDONLY|O_CLOEXEC) = -1 ENOENT (No such file or directory)
+1647611 openat(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/cpu.max", O_RDONLY|O_CLOEXEC) = 3</sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/cpu.max>
+1647611 statx(3</sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/cpu.max>, "", AT_STATX_SYNC_AS_STAT|AT_EMPTY_PATH, STATX_ALL, {stx_mask=STATX_BASIC_STATS|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFREG|0644, stx_size=0, ...}) = 0
+1647611 read(0x3, 0x7ffcc62e95b0, 0x20) = 0xb
+1647611 read(0x3, 0x61c12529f25b, 0x9)  = 0
+1647611 close(3</sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/cpu.max>) = 0
+1647611 openat(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/cpu.max", O_RDONLY|O_CLOEXEC) = 3</sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/cpu.max>
+1647611 statx(3</sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/cpu.max>, "", AT_STATX_SYNC_AS_STAT|AT_EMPTY_PATH, STATX_ALL, {stx_mask=STATX_BASIC_STATS|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFREG|0644, stx_size=0, ...}) = 0
+1647611 read(0x3, 0x7ffcc62e95b0, 0x20) = 0xb
+1647611 read(0x3, 0x61c12529f25b, 0x9)  = 0
+1647611 close(3</sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/cpu.max>) = 0
+1647611 openat(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/sys/fs/cgroup/user.slice/user-1000.slice/cpu.max", O_RDONLY|O_CLOEXEC) = 3</sys/fs/cgroup/user.slice/user-1000.slice/cpu.max>
+1647611 statx(3</sys/fs/cgroup/user.slice/user-1000.slice/cpu.max>, "", AT_STATX_SYNC_AS_STAT|AT_EMPTY_PATH, STATX_ALL, {stx_mask=STATX_BASIC_STATS|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFREG|0644, stx_size=0, ...}) = 0
+1647611 read(0x3, 0x7ffcc62e95b0, 0x20) = 0xb
+1647611 read(0x3, 0x61c12529f25b, 0x9)  = 0
+1647611 close(3</sys/fs/cgroup/user.slice/user-1000.slice/cpu.max>) = 0
+1647611 openat(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/sys/fs/cgroup/user.slice/cpu.max", O_RDONLY|O_CLOEXEC) = 3</sys/fs/cgroup/user.slice/cpu.max>
+1647611 statx(3</sys/fs/cgroup/user.slice/cpu.max>, "", AT_STATX_SYNC_AS_STAT|AT_EMPTY_PATH, STATX_ALL, {stx_mask=STATX_BASIC_STATS|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFREG|0644, stx_size=0, ...}) = 0
+1647611 read(0x3, 0x7ffcc62e95b0, 0x20) = 0xb
+1647611 read(0x3, 0x61c12529f25b, 0x9)  = 0
+1647611 close(3</sys/fs/cgroup/user.slice/cpu.max>) = 0
+1647611 openat(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/sys/fs/cgroup/cpu.max", O_RDONLY|O_CLOEXEC) = -1 ENOENT (No such file or directory)
+1647611 epoll_create1(EPOLL_CLOEXEC)    = 3<anon_inode:[eventpoll]>
+1647611 eventfd2(0, EFD_CLOEXEC|EFD_NONBLOCK) = 4<{eventfd-count=0, eventfd-id=201, eventfd-semaphore=0}>
+1647611 fcntl(3<anon_inode:[eventpoll]>, F_DUPFD_CLOEXEC, 3) = 5<anon_inode:[eventpoll]>
+1647611 socketpair(AF_UNIX, SOCK_STREAM|SOCK_CLOEXEC|SOCK_NONBLOCK, 0, [6<UNIX-STREAM:[7845004->7845005]>, 7<UNIX-STREAM:[7845005->7845004]>]) = 0
+1647611 fcntl(6<UNIX-STREAM:[7845004->7845005]>, F_DUPFD_CLOEXEC, 3) = 8<UNIX-STREAM:[7845004->7845005]>
+1647611 mmap(NULL, 2101248, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0) = 0x757c31fff000
+1647611 madvise(0x757c31fff000, 4096, MADV_GUARD_INSTALL) = 0
+1647611 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x757c321ffce8, parent_tid=0x757c321ff990, exit_signal=0, stack=0x757c31fff000, stack_size=0x1fdc40, tls=0x757c321ff6c0} => {parent_tid=[1647612]}, 88) = 1647612
+1647611 mmap(NULL, 2101248, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0) = 0x757c31dfe000
+1647611 madvise(0x757c31dfe000, 4096, MADV_GUARD_INSTALL) = 0
+1647611 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x757c31ffece8, parent_tid=0x757c31ffe990, exit_signal=0, stack=0x757c31dfe000, stack_size=0x1fdc40, tls=0x757c31ffe6c0} => {parent_tid=[1647613]}, 88) = 1647613
+1647612 mmap(NULL, 134217728, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x757c29c00000
+1647611 mmap(NULL, 2101248, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0 <unfinished ...>
+1647612 munmap(0x757c29c00000, 37748736 <unfinished ...>
+1647611 <... mmap resumed>)             = 0x757c299ff000
+1647612 <... munmap resumed>)           = 0
+1647611 madvise(0x757c299ff000, 4096, MADV_GUARD_INSTALL <unfinished ...>
+1647612 munmap(0x757c30000000, 29360128 <unfinished ...>
+1647611 <... madvise resumed>)          = 0
+1647612 <... munmap resumed>)           = 0
+1647612 mprotect(0x757c2c000000, 135168, PROT_READ|PROT_WRITE <unfinished ...>
+1647611 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x757c29bffce8, parent_tid=0x757c29bff990, exit_signal=0, stack=0x757c299ff000, stack_size=0x1fdc40, tls=0x757c29bff6c0} <unfinished ...>
+1647613 mmap(NULL, 134217728, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0 <unfinished ...>
+1647612 <... mprotect resumed>)         = 0
+1647613 <... mmap resumed>)             = 0x757c21800000
+1647611 <... clone3 resumed> => {parent_tid=[1647614]}, 88) = 1647614
+1647613 munmap(0x757c21800000, 41943040) = 0
+1647611 mmap(NULL, 2101248, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0 <unfinished ...>
+1647613 munmap(0x757c28000000, 25165824 <unfinished ...>
+1647611 <... mmap resumed>)             = 0x757c31bfd000
+1647613 <... munmap resumed>)           = 0
+1647611 madvise(0x757c31bfd000, 4096, MADV_GUARD_INSTALL <unfinished ...>
+1647613 mprotect(0x757c24000000, 135168, PROT_READ|PROT_WRITE <unfinished ...>
+1647611 <... madvise resumed>)          = 0
+1647613 <... mprotect resumed>)         = 0
+1647612 mmap(NULL, 12288, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0 <unfinished ...>
+1647614 mmap(NULL, 134217728, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0 <unfinished ...>
+1647611 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x757c31dfdce8, parent_tid=0x757c31dfd990, exit_signal=0, stack=0x757c31bfd000, stack_size=0x1fdc40, tls=0x757c31dfd6c0} <unfinished ...>
+1647614 <... mmap resumed>)             = 0x757c1c000000
+1647612 <... mmap resumed>)             = 0x757c329f0000
+1647614 munmap(0x757c20000000, 67108864 <unfinished ...>
+1647611 <... clone3 resumed> => {parent_tid=[1647615]}, 88) = 1647615
+1647612 mprotect(0x757c329f0000, 4096, PROT_NONE <unfinished ...>
+1647614 <... munmap resumed>)           = 0
+1647614 mprotect(0x757c1c000000, 135168, PROT_READ|PROT_WRITE <unfinished ...>
+1647612 <... mprotect resumed>)         = 0
+1647611 mmap(NULL, 2101248, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0) = 0x757c319fc000
+1647614 <... mprotect resumed>)         = 0
+1647611 madvise(0x757c319fc000, 4096, MADV_GUARD_INSTALL) = 0
+1647613 mmap(NULL, 12288, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0) = 0x757c329b6000
+1647611 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x757c31bfcce8, parent_tid=0x757c31bfc990, exit_signal=0, stack=0x757c319fc000, stack_size=0x1fdc40, tls=0x757c31bfc6c0} <unfinished ...>
+1647613 mprotect(0x757c329b6000, 4096, PROT_NONE <unfinished ...>
+1647615 mmap(0x757c20000000, 67108864, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0 <unfinished ...>
+1647613 <... mprotect resumed>)         = 0
+1647615 <... mmap resumed>)             = 0x757c20000000
+1647614 mmap(NULL, 12288, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0 <unfinished ...>
+1647615 mprotect(0x757c20000000, 135168, PROT_READ|PROT_WRITE <unfinished ...>
+1647614 <... mmap resumed>)             = 0x757c329b3000
+1647615 <... mprotect resumed>)         = 0
+1647614 mprotect(0x757c329b3000, 4096, PROT_NONE <unfinished ...>
+1647611 <... clone3 resumed> => {parent_tid=[1647616]}, 88) = 1647616
+1647614 <... mprotect resumed>)         = 0
+1647611 mmap(NULL, 2101248, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0) = 0x757c317fb000
+1647611 madvise(0x757c317fb000, 4096, MADV_GUARD_INSTALL) = 0
+1647616 mmap(NULL, 134217728, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0 <unfinished ...>
+1647611 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x757c319fbce8, parent_tid=0x757c319fb990, exit_signal=0, stack=0x757c317fb000, stack_size=0x1fdc40, tls=0x757c319fb6c0} <unfinished ...>
+1647616 <... mmap resumed>)             = 0x757c14000000
+1647615 mmap(NULL, 12288, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0 <unfinished ...>
+1647616 munmap(0x757c18000000, 67108864 <unfinished ...>
+1647615 <... mmap resumed>)             = 0x757c329b0000
+1647616 <... munmap resumed>)           = 0
+1647615 mprotect(0x757c329b0000, 4096, PROT_NONE <unfinished ...>
+1647611 <... clone3 resumed> => {parent_tid=[1647617]}, 88) = 1647617
+1647616 mprotect(0x757c14000000, 135168, PROT_READ|PROT_WRITE) = 0
+1647615 <... mprotect resumed>)         = 0
+1647611 mmap(NULL, 2101248, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0) = 0x757c315fa000
+1647611 madvise(0x757c315fa000, 4096, MADV_GUARD_INSTALL) = 0
+1647616 mmap(NULL, 12288, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0 <unfinished ...>
+1647611 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x757c317face8, parent_tid=0x757c317fa990, exit_signal=0, stack=0x757c315fa000, stack_size=0x1fdc40, tls=0x757c317fa6c0} <unfinished ...>
+1647616 <... mmap resumed>)             = 0x757c329ad000
+1647617 mmap(0x757c18000000, 67108864, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0 <unfinished ...>
+1647611 <... clone3 resumed> => {parent_tid=[1647618]}, 88) = 1647618
+1647617 <... mmap resumed>)             = 0x757c18000000
+1647616 mprotect(0x757c329ad000, 4096, PROT_NONE <unfinished ...>
+1647617 mprotect(0x757c18000000, 135168, PROT_READ|PROT_WRITE <unfinished ...>
+1647616 <... mprotect resumed>)         = 0
+1647617 <... mprotect resumed>)         = 0
+1647618 mmap(NULL, 134217728, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x757c0c000000
+1647617 mmap(NULL, 12288, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0 <unfinished ...>
+1647618 munmap(0x757c10000000, 67108864 <unfinished ...>
+1647617 <... mmap resumed>)             = 0x757c329aa000
+1647618 <... munmap resumed>)           = 0
+1647617 mprotect(0x757c329aa000, 4096, PROT_NONE <unfinished ...>
+1647618 mprotect(0x757c0c000000, 135168, PROT_READ|PROT_WRITE <unfinished ...>
+1647617 <... mprotect resumed>)         = 0
+1647618 <... mprotect resumed>)         = 0
+1647611 mmap(NULL, 2101248, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0) = 0x757c313f9000
+1647618 mmap(NULL, 12288, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0 <unfinished ...>
+1647611 madvise(0x757c313f9000, 4096, MADV_GUARD_INSTALL <unfinished ...>
+1647618 <... mmap resumed>)             = 0x757c329a7000
+1647611 <... madvise resumed>)          = 0
+1647618 mprotect(0x757c329a7000, 4096, PROT_NONE) = 0
+1647611 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x757c315f9ce8, parent_tid=0x757c315f9990, exit_signal=0, stack=0x757c313f9000, stack_size=0x1fdc40, tls=0x757c315f96c0} => {parent_tid=[1647619]}, 88) = 1647619
+1647611 mmap(NULL, 2101248, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0) = 0x757c311f8000
+1647611 madvise(0x757c311f8000, 4096, MADV_GUARD_INSTALL) = 0
+1647611 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x757c313f8ce8, parent_tid=0x757c313f8990, exit_signal=0, stack=0x757c311f8000, stack_size=0x1fdc40, tls=0x757c313f86c0} <unfinished ...>
+1647619 mmap(0x757c10000000, 67108864, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x757c10000000
+1647619 mprotect(0x757c10000000, 135168, PROT_READ|PROT_WRITE <unfinished ...>
+1647611 <... clone3 resumed> => {parent_tid=[1647620]}, 88) = 1647620
+1647619 <... mprotect resumed>)         = 0
+1647611 mmap(NULL, 2101248, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0) = 0x757c30ff7000
+1647611 madvise(0x757c30ff7000, 4096, MADV_GUARD_INSTALL <unfinished ...>
+1647620 openat(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/sys/devices/system/cpu/online", O_RDONLY|O_CLOEXEC <unfinished ...>
+1647619 mmap(NULL, 12288, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0 <unfinished ...>
+1647611 <... madvise resumed>)          = 0
+1647620 <... openat resumed>)           = 9</sys/devices/system/cpu/online>
+1647620 read(0x9, 0x757c313f5620, 0x400 <unfinished ...>
+1647619 <... mmap resumed>)             = 0x757c329a4000
+1647620 <... read resumed>)             = 0x5
+1647619 mprotect(0x757c329a4000, 4096, PROT_NONE <unfinished ...>
+1647611 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x757c311f7ce8, parent_tid=0x757c311f7990, exit_signal=0, stack=0x757c30ff7000, stack_size=0x1fdc40, tls=0x757c311f76c0} <unfinished ...>
+1647620 close(9</sys/devices/system/cpu/online> <unfinished ...>
+1647619 <... mprotect resumed>)         = 0
+1647620 <... close resumed>)            = 0
+1647611 <... clone3 resumed> => {parent_tid=[1647621]}, 88) = 1647621
+1647620 mmap(NULL, 134217728, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x757c04000000
+1647620 munmap(0x757c08000000, 67108864 <unfinished ...>
+1647611 mmap(NULL, 2101248, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0 <unfinished ...>
+1647620 <... munmap resumed>)           = 0
+1647611 <... mmap resumed>)             = 0x757c30df6000
+1647620 mprotect(0x757c04000000, 135168, PROT_READ|PROT_WRITE <unfinished ...>
+1647611 madvise(0x757c30df6000, 4096, MADV_GUARD_INSTALL <unfinished ...>
+1647620 <... mprotect resumed>)         = 0
+1647611 <... madvise resumed>)          = 0
+1647611 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x757c30ff6ce8, parent_tid=0x757c30ff6990, exit_signal=0, stack=0x757c30df6000, stack_size=0x1fdc40, tls=0x757c30ff66c0} <unfinished ...>
+1647621 mmap(0x757c08000000, 67108864, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x757c08000000
+1647621 mprotect(0x757c08000000, 135168, PROT_READ|PROT_WRITE <unfinished ...>
+1647611 <... clone3 resumed> => {parent_tid=[1647622]}, 88) = 1647622
+1647621 <... mprotect resumed>)         = 0
+1647611 mmap(NULL, 2101248, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0) = 0x757c30bf5000
+1647620 mmap(NULL, 12288, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0 <unfinished ...>
+1647611 madvise(0x757c30bf5000, 4096, MADV_GUARD_INSTALL) = 0
+1647620 <... mmap resumed>)             = 0x757c329a1000
+1647620 mprotect(0x757c329a1000, 4096, PROT_NONE) = 0
+1647611 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x757c30df5ce8, parent_tid=0x757c30df5990, exit_signal=0, stack=0x757c30bf5000, stack_size=0x1fdc40, tls=0x757c30df56c0} <unfinished ...>
+1647622 mmap(NULL, 134217728, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x757bfc000000
+1647621 mmap(NULL, 12288, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0 <unfinished ...>
+1647611 <... clone3 resumed> => {parent_tid=[1647623]}, 88) = 1647623
+1647622 munmap(0x757c00000000, 67108864 <unfinished ...>
+1647621 <... mmap resumed>)             = 0x757c3299e000
+1647622 <... munmap resumed>)           = 0
+1647621 mprotect(0x757c3299e000, 4096, PROT_NONE <unfinished ...>
+1647622 mprotect(0x757bfc000000, 135168, PROT_READ|PROT_WRITE <unfinished ...>
+1647621 <... mprotect resumed>)         = 0
+1647622 <... mprotect resumed>)         = 0
+1647623 mmap(0x757c00000000, 67108864, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x757c00000000
+1647623 mprotect(0x757c00000000, 135168, PROT_READ|PROT_WRITE) = 0
+1647622 mmap(NULL, 12288, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0) = 0x757c3299b000
+1647622 mprotect(0x757c3299b000, 4096, PROT_NONE <unfinished ...>
+1647611 mmap(NULL, 2101248, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0 <unfinished ...>
+1647622 <... mprotect resumed>)         = 0
+1647611 <... mmap resumed>)             = 0x757c309f4000
+1647611 madvise(0x757c309f4000, 4096, MADV_GUARD_INSTALL <unfinished ...>
+1647623 mmap(NULL, 12288, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0 <unfinished ...>
+1647611 <... madvise resumed>)          = 0
+1647623 <... mmap resumed>)             = 0x757c32998000
+1647623 mprotect(0x757c32998000, 4096, PROT_NONE) = 0
+1647611 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x757c30bf4ce8, parent_tid=0x757c30bf4990, exit_signal=0, stack=0x757c309f4000, stack_size=0x1fdc40, tls=0x757c30bf46c0} => {parent_tid=[1647624]}, 88) = 1647624
+1647624 mmap(NULL, 134217728, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x757bf4000000
+1647624 munmap(0x757bf8000000, 67108864) = 0
+1647624 mprotect(0x757bf4000000, 135168, PROT_READ|PROT_WRITE) = 0
+1647611 mmap(NULL, 2101248, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0) = 0x757c307f3000
+1647611 madvise(0x757c307f3000, 4096, MADV_GUARD_INSTALL) = 0
+1647611 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x757c309f3ce8, parent_tid=0x757c309f3990, exit_signal=0, stack=0x757c307f3000, stack_size=0x1fdc40, tls=0x757c309f36c0} <unfinished ...>
+1647624 mmap(NULL, 12288, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0) = 0x757c32995000
+1647611 <... clone3 resumed> => {parent_tid=[1647625]}, 88) = 1647625
+1647624 mprotect(0x757c32995000, 4096, PROT_NONE) = 0
+1647611 mmap(NULL, 2101248, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0) = 0x757c305f2000
+1647611 madvise(0x757c305f2000, 4096, MADV_GUARD_INSTALL) = 0
+1647625 mmap(0x757bf8000000, 67108864, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0 <unfinished ...>
+1647611 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x757c307f2ce8, parent_tid=0x757c307f2990, exit_signal=0, stack=0x757c305f2000, stack_size=0x1fdc40, tls=0x757c307f26c0} <unfinished ...>
+1647625 <... mmap resumed>)             = 0x757bf8000000
+1647625 mprotect(0x757bf8000000, 135168, PROT_READ|PROT_WRITE) = 0
+1647611 <... clone3 resumed> => {parent_tid=[1647626]}, 88) = 1647626
+1647611 mmap(NULL, 2101248, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0) = 0x757c303f1000
+1647611 madvise(0x757c303f1000, 4096, MADV_GUARD_INSTALL) = 0
+1647611 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x757c305f1ce8, parent_tid=0x757c305f1990, exit_signal=0, stack=0x757c303f1000, stack_size=0x1fdc40, tls=0x757c305f16c0} <unfinished ...>
+1647626 mmap(NULL, 134217728, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0 <unfinished ...>
+1647625 mmap(NULL, 12288, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0 <unfinished ...>
+1647626 <... mmap resumed>)             = 0x757bec000000
+1647625 <... mmap resumed>)             = 0x757c32992000
+1647626 munmap(0x757bf0000000, 67108864 <unfinished ...>
+1647625 mprotect(0x757c32992000, 4096, PROT_NONE <unfinished ...>
+1647611 <... clone3 resumed> => {parent_tid=[1647627]}, 88) = 1647627
+1647626 <... munmap resumed>)           = 0
+1647625 <... mprotect resumed>)         = 0
+1647626 mprotect(0x757bec000000, 135168, PROT_READ|PROT_WRITE) = 0
+1647611 mmap(NULL, 2101248, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0) = 0x757c301f0000
+1647611 madvise(0x757c301f0000, 4096, MADV_GUARD_INSTALL) = 0
+1647627 mmap(0x757bf0000000, 67108864, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x757bf0000000
+1647611 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x757c303f0ce8, parent_tid=0x757c303f0990, exit_signal=0, stack=0x757c301f0000, stack_size=0x1fdc40, tls=0x757c303f06c0} <unfinished ...>
+1647627 mprotect(0x757bf0000000, 135168, PROT_READ|PROT_WRITE <unfinished ...>
+1647626 mmap(NULL, 12288, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0 <unfinished ...>
+1647627 <... mprotect resumed>)         = 0
+1647626 <... mmap resumed>)             = 0x757c3298f000
+1647611 <... clone3 resumed> => {parent_tid=[1647628]}, 88) = 1647628
+1647626 mprotect(0x757c3298f000, 4096, PROT_NONE) = 0
+1647611 mmap(NULL, 2101248, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0) = 0x757c2bdff000
+1647611 madvise(0x757c2bdff000, 4096, MADV_GUARD_INSTALL) = 0
+1647627 mmap(NULL, 12288, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0 <unfinished ...>
+1647611 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x757c2bfffce8, parent_tid=0x757c2bfff990, exit_signal=0, stack=0x757c2bdff000, stack_size=0x1fdc40, tls=0x757c2bfff6c0} <unfinished ...>
+1647627 <... mmap resumed>)             = 0x757c3298c000
+1647628 mmap(NULL, 134217728, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0 <unfinished ...>
+1647627 mprotect(0x757c3298c000, 4096, PROT_NONE <unfinished ...>
+1647628 <... mmap resumed>)             = 0x757be4000000
+1647627 <... mprotect resumed>)         = 0
+1647611 <... clone3 resumed> => {parent_tid=[1647629]}, 88) = 1647629
+1647628 munmap(0x757be8000000, 67108864) = 0
+1647628 mprotect(0x757be4000000, 135168, PROT_READ|PROT_WRITE) = 0
+1647611 brk(0x61c1252e3000)             = 0x61c1252e3000
+1647629 mmap(0x757be8000000, 67108864, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x757be8000000
+1647629 mprotect(0x757be8000000, 135168, PROT_READ|PROT_WRITE) = 0
+1647628 mmap(NULL, 12288, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0) = 0x757c32989000
+1647611 readlink("/home" <unfinished ...>
+1647628 mprotect(0x757c32989000, 4096, PROT_NONE <unfinished ...>
+1647611 <... readlink resumed>, 0x7ffcc62e6e20, 1023) = -1 EINVAL (Invalid argument)
+1647628 <... mprotect resumed>)         = 0
+1647611 readlink("/home/sam", 0x7ffcc62e6e20, 1023) = -1 EINVAL (Invalid argument)
+1647611 readlink("/home/sam/code" <unfinished ...>
+1647629 mmap(NULL, 12288, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0 <unfinished ...>
+1647611 <... readlink resumed>, 0x7ffcc62e6e20, 1023) = -1 EINVAL (Invalid argument)
+1647629 <... mmap resumed>)             = 0x757c32986000
+1647611 readlink("/home/sam/code/dendro" <unfinished ...>
+1647629 mprotect(0x757c32986000, 4096, PROT_NONE <unfinished ...>
+1647611 <... readlink resumed>, 0x7ffcc62e6e20, 1023) = -1 EINVAL (Invalid argument)
+1647629 <... mprotect resumed>)         = 0
+1647611 readlink("/home/sam/code/dendro/goals", 0x7ffcc62e6e20, 1023) = -1 EINVAL (Invalid argument)
+1647611 readlink("/home/sam/code/dendro/goals/auxiliary-lock-source-alias", 0x7ffcc62e6e20, 1023) = -1 EINVAL (Invalid argument)
+1647611 readlink("/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe", 0x7ffcc62e6e20, 1023) = -1 EINVAL (Invalid argument)
+1647611 readlink("/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm", 0x7ffcc62e6e20, 1023) = -1 EINVAL (Invalid argument)
+1647611 readlink("/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture", 0x7ffcc62e6e20, 1023) = -1 EINVAL (Invalid argument)
+1647611 readlink("/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/source", 0x7ffcc62e6e20, 1023) = -1 EINVAL (Invalid argument)
+1647611 readlink("/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/source/openrig.sqlite", 0x7ffcc62e6e20, 1023) = -1 EINVAL (Invalid argument)
+1647611 readlink("/home", 0x7ffcc62e6cc0, 1023) = -1 EINVAL (Invalid argument)
+1647611 readlink("/home/sam", 0x7ffcc62e6cc0, 1023) = -1 EINVAL (Invalid argument)
+1647611 readlink("/home/sam/code", 0x7ffcc62e6cc0, 1023) = -1 EINVAL (Invalid argument)
+1647611 readlink("/home/sam/code/dendro", 0x7ffcc62e6cc0, 1023) = -1 EINVAL (Invalid argument)
+1647611 readlink("/home/sam/code/dendro/goals", 0x7ffcc62e6cc0, 1023) = -1 EINVAL (Invalid argument)
+1647611 readlink("/home/sam/code/dendro/goals/auxiliary-lock-source-alias", 0x7ffcc62e6cc0, 1023) = -1 EINVAL (Invalid argument)
+1647611 readlink("/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe", 0x7ffcc62e6cc0, 1023) = -1 EINVAL (Invalid argument)
+1647611 readlink("/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm", 0x7ffcc62e6cc0, 1023) = -1 EINVAL (Invalid argument)
+1647611 readlink("/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture", 0x7ffcc62e6cc0, 1023) = -1 EINVAL (Invalid argument)
+1647611 readlink("/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/source", 0x7ffcc62e6cc0, 1023) = -1 EINVAL (Invalid argument)
+1647611 readlink("/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/source/openrig.sqlite", 0x7ffcc62e6cc0, 1023) = -1 EINVAL (Invalid argument)
+1647611 readlink("/home", 0x7ffcc62e70e0, 1023) = -1 EINVAL (Invalid argument)
+1647611 readlink("/home/sam", 0x7ffcc62e70e0, 1023) = -1 EINVAL (Invalid argument)
+1647611 readlink("/home/sam/code", 0x7ffcc62e70e0, 1023) = -1 EINVAL (Invalid argument)
+1647611 readlink("/home/sam/code/dendro", 0x7ffcc62e70e0, 1023) = -1 EINVAL (Invalid argument)
+1647611 readlink("/home/sam/code/dendro/goals", 0x7ffcc62e70e0, 1023) = -1 EINVAL (Invalid argument)
+1647611 readlink("/home/sam/code/dendro/goals/auxiliary-lock-source-alias", 0x7ffcc62e70e0, 1023) = -1 EINVAL (Invalid argument)
+1647611 readlink("/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe", 0x7ffcc62e70e0, 1023) = -1 EINVAL (Invalid argument)
+1647611 readlink("/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm", 0x7ffcc62e70e0, 1023) = -1 EINVAL (Invalid argument)
+1647611 readlink("/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture", 0x7ffcc62e70e0, 1023) = -1 EINVAL (Invalid argument)
+1647611 readlink("/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/source", 0x7ffcc62e70e0, 1023) = -1 EINVAL (Invalid argument)
+1647611 readlink("/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/source/openrig.sqlite", 0x7ffcc62e70e0, 1023) = -1 EINVAL (Invalid argument)
+1647611 mmap(NULL, 2101248, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0) = 0x757c2bbfe000
+1647611 madvise(0x757c2bbfe000, 4096, MADV_GUARD_INSTALL) = 0
+1647611 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x757c2bdfece8, parent_tid=0x757c2bdfe990, exit_signal=0, stack=0x757c2bbfe000, stack_size=0x1fdc40, tls=0x757c2bdfe6c0} => {parent_tid=[1647633]}, 88) = 1647633
+1647633 mmap(NULL, 134217728, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x757bdc000000
+1647633 munmap(0x757be0000000, 67108864) = 0
+1647633 mprotect(0x757bdc000000, 135168, PROT_READ|PROT_WRITE) = 0
+1647633 mmap(NULL, 12288, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_STACK, -1, 0) = 0x757c32983000
+1647633 mprotect(0x757c32983000, 4096, PROT_NONE) = 0
+1647633 readlink("/home", 0x757c2bdf9dc0, 1023) = -1 EINVAL (Invalid argument)
+1647633 readlink("/home/sam", 0x757c2bdf9dc0, 1023) = -1 EINVAL (Invalid argument)
+1647633 readlink("/home/sam/code", 0x757c2bdf9dc0, 1023) = -1 EINVAL (Invalid argument)
+1647633 readlink("/home/sam/code/dendro", 0x757c2bdf9dc0, 1023) = -1 EINVAL (Invalid argument)
+1647633 readlink("/home/sam/code/dendro/goals", 0x757c2bdf9dc0, 1023) = -1 EINVAL (Invalid argument)
+1647633 readlink("/home/sam/code/dendro/goals/auxiliary-lock-source-alias", 0x757c2bdf9dc0, 1023) = -1 EINVAL (Invalid argument)
+1647633 readlink("/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe", 0x757c2bdf9dc0, 1023) = -1 EINVAL (Invalid argument)
+1647633 readlink("/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm", 0x757c2bdf9dc0, 1023) = -1 EINVAL (Invalid argument)
+1647633 readlink("/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture", 0x757c2bdf9dc0, 1023) = -1 EINVAL (Invalid argument)
+1647633 readlink("/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/source", 0x757c2bdf9dc0, 1023) = -1 EINVAL (Invalid argument)
+1647633 readlink("/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/source/openrig.sqlite", 0x757c2bdf9dc0, 1023) = -1 EINVAL (Invalid argument)
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/output/analytics.duckdb", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, 0x757c2bdf8e20) = -1 ENOENT (No such file or directory)
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=STATX_ATTR_MOUNT_ROOT, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0750, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0750, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/output", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/output", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/output/analytics.duckdb", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, 0x757c2bdf7f50) = -1 ENOENT (No such file or directory)
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/output/analytics.duckdb", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, 0x757c2bdf8e20) = -1 ENOENT (No such file or directory)
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=STATX_ATTR_MOUNT_ROOT, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0750, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0750, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/source", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/source", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/source/openrig.sqlite", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFREG|0644, stx_size=8192, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/source/openrig.sqlite", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFREG|0644, stx_size=8192, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=STATX_ATTR_MOUNT_ROOT, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0750, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0750, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/source", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/source", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/source/openrig.sqlite", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFREG|0644, stx_size=8192, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/source/openrig.sqlite", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFREG|0644, stx_size=8192, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=STATX_ATTR_MOUNT_ROOT, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0750, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0750, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/source", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/source", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/source/openrig.sqlite-wal", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFREG|0644, stx_size=4152, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/source/openrig.sqlite-wal", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFREG|0644, stx_size=4152, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=STATX_ATTR_MOUNT_ROOT, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0750, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0750, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/source", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/source", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/source/openrig.sqlite-shm", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFREG|0644, stx_size=32768, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/source/openrig.sqlite-shm", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFREG|0644, stx_size=32768, ...}) = 0
+1647633 mkdir("/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/output", 0777) = -1 EEXIST (File exists)
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/output", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 mkdir("/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/output", 0777) = -1 EEXIST (File exists)
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/output", AT_STATX_SYNC_AS_STAT, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFDIR|0755, stx_size=4096, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/output/.dendro-output.lock", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFREG|0644, stx_size=32768, ...}) = 0
+1647633 openat(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/output/.dendro-output.lock", O_RDWR|O_CREAT|O_CLOEXEC, 0600) = 9</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/output/.dendro-output.lock>
+1647633 flock(9</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/output/.dendro-output.lock>, LOCK_EX|LOCK_NB) = 0
+1647633 statx(9</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/output/.dendro-output.lock>, "", AT_STATX_SYNC_AS_STAT|AT_EMPTY_PATH, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFREG|0644, stx_size=32768, ...}) = 0
+1647633 statx(AT_FDCWD</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture>, "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/output/.dendro-output.lock", AT_STATX_SYNC_AS_STAT|AT_SYMLINK_NOFOLLOW, STATX_ALL, {stx_mask=STATX_ALL|STATX_MNT_ID, stx_attributes=0, stx_mode=S_IFREG|0644, stx_size=32768, ...}) = 0
+1647633 flock(9</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/output/.dendro-output.lock>, LOCK_UN) = 0
+1647633 fcntl(9</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/output/.dendro-output.lock>, F_GETFD) = 0x1 (flags FD_CLOEXEC)
+1647633 close(9</home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/output/.dendro-output.lock>) = 0
+1647611 write(0x4, 0x7ffcc62ea0b8, 0x8) = 0x8
+1647633 munmap(0x757c32983000, 12288)   = 0
+1647612 munmap(0x757c329f0000, 12288 <unfinished ...>
+1647633 madvise(0x757c2bbfe000, 2068480, MADV_DONTNEED <unfinished ...>
+1647615 munmap(0x757c329b0000, 12288 <unfinished ...>
+1647612 <... munmap resumed>)           = 0
+1647633 <... madvise resumed>)          = 0
+1647633 exit(0 <unfinished ...>
+1647615 <... munmap resumed>)           = 0
+1647633 <... exit resumed>)             = ?
+1647633 +++ exited with 0 +++
+1647613 munmap(0x757c329b6000, 12288 <unfinished ...>
+1647612 madvise(0x757c31fff000, 2068480, MADV_DONTNEED <unfinished ...>
+1647613 <... munmap resumed>)           = 0
+1647617 munmap(0x757c329aa000, 12288 <unfinished ...>
+1647615 madvise(0x757c31bfd000, 2068480, MADV_DONTNEED <unfinished ...>
+1647612 <... madvise resumed>)          = 0
+1647617 <... munmap resumed>)           = 0
+1647615 <... madvise resumed>)          = 0
+1647612 exit(0 <unfinished ...>
+1647615 exit(0 <unfinished ...>
+1647613 madvise(0x757c31dfe000, 2068480, MADV_DONTNEED <unfinished ...>
+1647617 madvise(0x757c317fb000, 2068480, MADV_DONTNEED <unfinished ...>
+1647615 <... exit resumed>)             = ?
+1647614 munmap(0x757c329b3000, 12288 <unfinished ...>
+1647612 <... exit resumed>)             = ?
+1647617 <... madvise resumed>)          = 0
+1647615 +++ exited with 0 +++
+1647614 <... munmap resumed>)           = 0
+1647613 <... madvise resumed>)          = 0
+1647612 +++ exited with 0 +++
+1647617 exit(0 <unfinished ...>
+1647616 munmap(0x757c329ad000, 12288 <unfinished ...>
+1647617 <... exit resumed>)             = ?
+1647613 exit(0 <unfinished ...>
+1647618 munmap(0x757c329a7000, 12288 <unfinished ...>
+1647616 <... munmap resumed>)           = 0
+1647618 <... munmap resumed>)           = 0
+1647617 +++ exited with 0 +++
+1647614 madvise(0x757c299ff000, 2068480, MADV_DONTNEED <unfinished ...>
+1647613 <... exit resumed>)             = ?
+1647619 munmap(0x757c329a4000, 12288 <unfinished ...>
+1647614 <... madvise resumed>)          = 0
+1647619 <... munmap resumed>)           = 0
+1647613 +++ exited with 0 +++
+1647620 munmap(0x757c329a1000, 12288 <unfinished ...>
+1647618 madvise(0x757c315fa000, 2068480, MADV_DONTNEED <unfinished ...>
+1647614 exit(0 <unfinished ...>
+1647620 <... munmap resumed>)           = 0
+1647616 madvise(0x757c319fc000, 2068480, MADV_DONTNEED <unfinished ...>
+1647619 madvise(0x757c313f9000, 2068480, MADV_DONTNEED <unfinished ...>
+1647618 <... madvise resumed>)          = 0
+1647614 <... exit resumed>)             = ?
+1647621 munmap(0x757c3299e000, 12288 <unfinished ...>
+1647619 <... madvise resumed>)          = 0
+1647618 exit(0 <unfinished ...>
+1647616 <... madvise resumed>)          = 0
+1647621 <... munmap resumed>)           = 0
+1647619 exit(0 <unfinished ...>
+1647618 <... exit resumed>)             = ?
+1647614 +++ exited with 0 +++
+1647616 exit(0 <unfinished ...>
+1647623 munmap(0x757c32998000, 12288 <unfinished ...>
+1647620 madvise(0x757c311f8000, 2068480, MADV_DONTNEED <unfinished ...>
+1647619 <... exit resumed>)             = ?
+1647623 <... munmap resumed>)           = 0
+1647620 <... madvise resumed>)          = 0
+1647618 +++ exited with 0 +++
+1647616 <... exit resumed>)             = ?
+1647622 munmap(0x757c3299b000, 12288 <unfinished ...>
+1647621 madvise(0x757c30ff7000, 2068480, MADV_DONTNEED <unfinished ...>
+1647620 exit(0 <unfinished ...>
+1647619 +++ exited with 0 +++
+1647622 <... munmap resumed>)           = 0
+1647621 <... madvise resumed>)          = 0
+1647616 +++ exited with 0 +++
+1647624 munmap(0x757c32995000, 12288 <unfinished ...>
+1647623 madvise(0x757c30bf5000, 2068480, MADV_DONTNEED <unfinished ...>
+1647620 <... exit resumed>)             = ?
+1647621 exit(0 <unfinished ...>
+1647624 <... munmap resumed>)           = 0
+1647623 <... madvise resumed>)          = 0
+1647620 +++ exited with 0 +++
+1647621 <... exit resumed>)             = ?
+1647625 munmap(0x757c32992000, 12288 <unfinished ...>
+1647623 exit(0 <unfinished ...>
+1647626 munmap(0x757c3298f000, 12288 <unfinished ...>
+1647625 <... munmap resumed>)           = 0
+1647622 madvise(0x757c30df6000, 2068480, MADV_DONTNEED <unfinished ...>
+1647621 +++ exited with 0 +++
+1647626 <... munmap resumed>)           = 0
+1647623 <... exit resumed>)             = ?
+1647624 madvise(0x757c309f4000, 2068480, MADV_DONTNEED <unfinished ...>
+1647622 <... madvise resumed>)          = 0
+1647627 munmap(0x757c3298c000, 12288 <unfinished ...>
+1647625 madvise(0x757c307f3000, 2068480, MADV_DONTNEED <unfinished ...>
+1647623 +++ exited with 0 +++
+1647624 <... madvise resumed>)          = 0
+1647626 madvise(0x757c305f2000, 2068480, MADV_DONTNEED <unfinished ...>
+1647622 exit(0 <unfinished ...>
+1647629 munmap(0x757c32986000, 12288 <unfinished ...>
+1647627 <... munmap resumed>)           = 0
+1647626 <... madvise resumed>)          = 0
+1647625 <... madvise resumed>)          = 0
+1647624 exit(0 <unfinished ...>
+1647629 <... munmap resumed>)           = 0
+1647628 fcntl(3<anon_inode:[eventpoll]>, F_GETFD <unfinished ...>
+1647626 exit(0 <unfinished ...>
+1647625 exit(0 <unfinished ...>
+1647622 <... exit resumed>)             = ?
+1647628 <... fcntl resumed>)            = 0x1 (flags FD_CLOEXEC)
+1647626 <... exit resumed>)             = ?
+1647625 <... exit resumed>)             = ?
+1647624 <... exit resumed>)             = ?
+1647628 close(3<anon_inode:[eventpoll]> <unfinished ...>
+1647627 madvise(0x757c303f1000, 2068480, MADV_DONTNEED <unfinished ...>
+1647626 +++ exited with 0 +++
+1647622 +++ exited with 0 +++
+1647629 madvise(0x757c2bdff000, 2068480, MADV_DONTNEED <unfinished ...>
+1647628 <... close resumed>)            = 0
+1647625 +++ exited with 0 +++
+1647624 +++ exited with 0 +++
+1647629 <... madvise resumed>)          = 0
+1647627 <... madvise resumed>)          = 0
+1647629 exit(0 <unfinished ...>
+1647628 fcntl(8<UNIX-STREAM:[7845004->7845005]>, F_GETFD <unfinished ...>
+1647627 exit(0 <unfinished ...>
+1647629 <... exit resumed>)             = ?
+1647628 <... fcntl resumed>)            = 0x1 (flags FD_CLOEXEC)
+1647627 <... exit resumed>)             = ?
+1647629 +++ exited with 0 +++
+1647628 close(8<UNIX-STREAM:[7845004->7845005]> <unfinished ...>
+1647627 +++ exited with 0 +++
+1647628 <... close resumed>)            = 0
+1647628 fcntl(5<anon_inode:[eventpoll]>, F_GETFD) = 0x1 (flags FD_CLOEXEC)
+1647628 close(5<anon_inode:[eventpoll]>) = 0
+1647628 fcntl(4<{eventfd-count=0x1, eventfd-id=201, eventfd-semaphore=0}>, F_GETFD) = 0x1 (flags FD_CLOEXEC)
+1647628 close(4<{eventfd-count=0x1, eventfd-id=201, eventfd-semaphore=0}>) = 0
+1647628 munmap(0x757c32989000, 12288)   = 0
+1647628 madvise(0x757c301f0000, 2068480, MADV_DONTNEED) = 0
+1647628 exit(0)                         = ?
+1647628 +++ exited with 0 +++
+1647611 write(0x2, 0x61c0ff694611, 0x7) = 0x7
+1647611 write(0x2, 0x61c0ff69e8a7, 0x1e) = 0x1e
+1647611 write(0x2, 0x61c0ff69461a, 0x1) = 0x1
+1647611 munmap(0x757c329f5000, 12288)   = 0
+1647611 exit_group(1)                   = ?
+1647611 +++ exited with 1 +++

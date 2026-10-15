@@ -1,0 +1,4 @@
+Error: file is not a database
+
+Caused by:
+    Error code 26: File opened that is not a database file

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "phase": 1,
+  "role": "analyst",
+  "seat": "pm.analyst",
+  "status": "pass",
+  "reason": null,
+  "body": "Phase 1 — Dendro G2 (v0.2.0), STAGED scope #12 and #13, Revision 1. FROZEN. Answers the Phase 0 revisit dendro-g2-p0-c4 (R1 Emenda 2 knock-on, sponsor 19:44Z). Job, outcome, staging (E1-E3) and release intent are unchanged.\n\nChange: R1 Emenda 2 C4 moved the handoff-loop detector out of R1. #12 now builds it FIRST, as F12-0, to the unchanged R1 §4 definition (same item or chain, same ordered seat pair, more than 2 passes; 2 passes is not a loop; different pairs do not combine; traced per R1 AC7). F12-5 (advisory alerts) starts only after F12-0 passes. The capability rework-friction now includes the detector. G-A1 now states that R1 merges under Emenda 2 (cc365c88): no R1 detector (C4), and configurable loop thresholds in v0.2 (C1), which #12's advisory thresholds may share. The base contract reference is updated to Emenda 2.\n\nUnchanged: F12-1..F12-7 otherwise, F13-1..F13-8, anti-goals, out of scope, V4 evidence, assumptions G-A2..G-A5.\nAcceptance: docs/ACCEPTANCE_G2_STAGED.md, sha256 b51ddaf0. Interface acceptance (#7, #14, #16, #17, #18) is still not in this phase (E1). Delivery handoff for #12/#13 is held until R1 merges.\nReferences: docs/ACCEPTANCE_G2_STAGED.md, docs/ACCEPTANCE_R1.md §10, goals/g2 transitions/0003.json.",
+  "idempotencyKey": "dendro-g2-p1-staged-r1",
+  "uri": "transitions/0004.json"
+}

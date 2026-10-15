@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "phase": 1,
+  "role": "analyst",
+  "seat": "pm.analyst",
+  "status": "pass",
+  "reason": null,
+  "body": "Phase 1 - Dendro G2 (v0.2.0), STAGED scope #12 and #13, Revision 2. FROZEN. Rebased on the official R1 release v0.1.1 (sponsor decision 2026-10-12 06:05Z via pm.manager: PR #11 merge authorized; hotfix bb13e39, product 45f3e59, binary ff0169af, merges to main and is tagged v0.1.1; freeze lifted). Job, outcome, staging (E1-E3) and release intent are unchanged.\n\nBaseline: contract docs/ACCEPTANCE_R1.md cc365c88 (Emenda 2) plus register K1-K11 44a3032e. v0.1.1 changes values, not definitions: Claude and Pi tool calls read under R1 section 4; Pi write/edit end intake windows; Codex tool calls not read (#40). Usage and token totals unchanged; M2 intake values and tool-loop counts changed. #12 does not use intake windows or tool loops.\n\nChanges (marked \"(Rev 2)\"):\n- #12: K6 window-bounded returns, K7 M3 unknown chains (their own count, never in a pair), K3/K5 historical destination, single session resolver. Five attribution bands (F12-2), unlinked total equals R1 (F12-2), F12-1 and F12-6 updated; #33 gives no trace exemption.\n- #13: new F13-9 closes the K9 OpenRig deferrals and #32 with one source-state model (pm.manager agreed to fold #32).\n- F13-8: v0.1.1 AC1 measured 287.961 s of 300 s (12.0 s headroom). New G-A7: #41 restores headroom; land it before or with #13.\n- New G-A6: one OpenRig root per DB (K9 (d)); #31 before or with #13; multi-root is #27.\n- Out of scope: #30, #31, #33, #34, #40 (CommandExecution as call unit = new register entry), #41.\n\nUnchanged: F12-0, F12-3..F12-5, F12-7, F13-1..F13-7, anti-goals, V4 evidence, G-A2..G-A5.\nAcceptance: docs/ACCEPTANCE_G2_STAGED.md, sha256 a8bda6956f64c1abb4fbf169160950cc12efb6b2f2bbab89260955e9e3a377f6. Interface acceptance (#7, #14, #16, #17, #18) is still not in this phase (E1). Next: Phase 2 by orch-arch.\nReferences: docs/ACCEPTANCE_G2_STAGED.md, docs/ACCEPTANCE_R1.md, docs/ACCEPTANCE_R1_CLARIFICATIONS.md, goals/g2 transitions/0004.json.",
+  "idempotencyKey": "dendro-g2-p1-staged-r2",
+  "uri": "transitions/0006.json"
+}

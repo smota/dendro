@@ -1,0 +1,2 @@
+5 literal parser controls PASS: resumed/descendant/shared-fd/hardlink/mmap/raw write; failed writable open; unresolved fd; unfinished; execve argv
+mapping-upgrade descendant control PASS

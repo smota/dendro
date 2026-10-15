@@ -1,0 +1,11 @@
+{
+  "busy_existing_exact": true,
+  "busy_fresh_exact": true,
+  "existing_analytics_unchanged": true,
+  "fresh_unpublished": true,
+  "no_stage_after_refusal": true,
+  "source_bytes_unchanged": true,
+  "stable_controls_succeed": true,
+  "corrupt_separate": true,
+  "captured_output_canaries_absent": true
+}

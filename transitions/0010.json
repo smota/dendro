@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "phase": 4,
+  "role": "developer",
+  "seat": "dev.build-sr",
+  "status": "pass",
+  "reason": null,
+  "body": "Phase 4 corrected candidate after the first phase 6 to 4 return. Goal URI /home/sam/code/dendro. Previous transition transitions/0009.json. Candidate commit 97147d766e422c6117b3ec0a8478e9589bc28613 on work/dendro-r1. This is developer evidence, not independent QA and not a ptrace or source-network claim.\n\nQA defects on 081da7d are addressed in this commit: a nonexistent rig no longer returns unrelated activity seats or tool loops; trace --metric-id activity exits 0; queue history is retained for carry-in and return detection while displayed edges stay inside the window; activity intervals come from seat.activity_changed; queue item ids and closure targets are sealed.\n\nSame-candidate gates: cargo fmt --check exit 0; cargo clippy -p dendro-core -p dendro-connectors -p dendro-cli -p dendro-resolver -p dendro-watcher -- -D warnings exit 0; cargo test --workspace exit 0 (connectors 4 passed, 1 ignored; core 17 passed; resolver 4 passed). python3 scripts/ac3_ac12_fixtures.py exit 0, 24 of 24, including qa_nonexistent_rig and qa_trace_activity.\n\nHistorical defect remains visible: before 3d8e314 a fake sk-ant secret in a session id leaked into report stdout and the analytics database.\n\nNot claimed: independent ptrace or live source/network observation. That remains QA-owned. No push or merge.",
+  "idempotencyKey": "dendro-r1-p4-r2",
+  "uri": "transitions/0010.json"
+}

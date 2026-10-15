@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "phase": 4,
+  "role": "developer",
+  "seat": "dev.build-sr",
+  "status": "pass",
+  "reason": "Resubmitted Phase 4 naming commit fe4e395 with pure dynamic build_ledger derivation fed by raw SQLite events and usage, exact 64-char script hashes, and complete untruncated evidence.",
+  "seatVerified": true,
+  "seatRig": "dendro-dev",
+  "body": "Candidate fe4e3955a3d52737271a732ffe9e065e5aa94a2d in .worktrees/work/g2-rework-friction: Release binary SHA-256 e7f9548d118753d09daee35b468028ffa04d99fc855ca6cb93689ad40a5d3631. Independent P2 script SHA-256 5e0b47111d318b54423fc23c679cdeff418150787ba9244d19329c873aed39a1 dynamically builds world state from raw SQLite events/snapshots and feeds usage into build_ledger for all 6 seats, verifying derived 5 bands match friction report. All P0-P7 gates dynamically verified with Exit 0 in p0_p7_reproducible_evidence.json and receipt p0_p7_comprehensive_receipt.md.",
+  "idempotencyKey": "g2-p4-friction-rev7-fe4e395-v8",
+  "uri": "transitions/0018.json"
+}

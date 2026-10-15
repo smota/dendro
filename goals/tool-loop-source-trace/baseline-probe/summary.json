@@ -1,0 +1,123 @@
+{
+  "head": "65a75a9e52ed8bfee52d119d278391ad3b39dca4",
+  "binary_sha256": "f1d250493d6c707280144a5559b92d580aa4de82a4010aa96a66485791a598d0",
+  "report_episodes": [
+    {
+      "count": 4,
+      "harness": "codex",
+      "seat": "synthetic-seat",
+      "session": "synthetic-33-session",
+      "tool": "CommandExecution",
+      "unit": "command_execution"
+    }
+  ],
+  "report_coverage": [
+    {
+      "harness": "claude",
+      "sources_read": 0,
+      "sources_total": 0,
+      "status": "not read",
+      "unit": "tool_call",
+      "unknowns": {
+        "input": 0,
+        "linkage": 0,
+        "outcome": 0,
+        "timestamp": 0
+      }
+    },
+    {
+      "harness": "pi",
+      "sources_read": 0,
+      "sources_total": 0,
+      "status": "not read",
+      "unit": "tool_call",
+      "unknowns": {
+        "input": 0,
+        "linkage": 0,
+        "outcome": 0,
+        "timestamp": 0
+      }
+    },
+    {
+      "harness": "codex",
+      "sources_read": 0,
+      "sources_total": 1,
+      "status": "not read",
+      "unit": "tool_call",
+      "unknowns": {
+        "input": null,
+        "linkage": null,
+        "outcome": null,
+        "timestamp": null
+      }
+    },
+    {
+      "harness": "codex",
+      "sources_read": 1,
+      "sources_total": 1,
+      "status": "read",
+      "unit": "command_execution",
+      "unknowns": {
+        "input": 0,
+        "linkage": 0,
+        "outcome": 0,
+        "timestamp": 0
+      }
+    }
+  ],
+  "trace_metric_id": "tokens",
+  "trace_input_keys": [
+    "activity",
+    "activity_events",
+    "demand_events",
+    "destination_snapshots",
+    "handoff_members",
+    "intakes",
+    "k2_closed_item",
+    "k2_closed_items_with_insufficient_history",
+    "k2_destination_rule",
+    "k2_insufficient_history_members",
+    "m1_by_seat",
+    "m1_yield",
+    "m2_pairs",
+    "m2_return_rate",
+    "m3_chains",
+    "m3_rework_chains",
+    "m3_rework_members",
+    "m3_rework_proportion",
+    "m3_unknown_chains",
+    "m3_unknown_members",
+    "mission_ambiguous_by_reason",
+    "mission_by_seat",
+    "mission_definition",
+    "mission_records",
+    "mission_tokens",
+    "nonreturn_handoffs",
+    "openrig_sources",
+    "pair_medians",
+    "reasoning_rule",
+    "rows",
+    "seat_lives",
+    "seat_token_categories",
+    "sessions",
+    "token_categories",
+    "tokens",
+    "unlinked_token_categories",
+    "unlinked_tokens",
+    "untimestamped_count",
+    "untimestamped_tokens_all_time",
+    "window"
+  ],
+  "trace_has_tool_loops": false,
+  "trace_has_loop_trace": false,
+  "source_sha256_before": {
+    "sources/codex/session.jsonl": "3eb3e44d500b000c0dbded910ecfc988ee627a1f296bf25fb1e4bf0aec866186",
+    "sources/openrig.sqlite": "7c4c414799cd89acf4634777ccbed50d6f76d18d77a4f68c6ad69b6b877e868f"
+  },
+  "source_sha256_after": {
+    "sources/codex/session.jsonl": "3eb3e44d500b000c0dbded910ecfc988ee627a1f296bf25fb1e4bf0aec866186",
+    "sources/openrig.sqlite": "7c4c414799cd89acf4634777ccbed50d6f76d18d77a4f68c6ad69b6b877e868f"
+  },
+  "canaries_absent_from_public_report_trace": true,
+  "limits": "synthetic current-entry report/trace gap reproduction; no candidate proof, owner logs/key read, source modification or real-corpus census"
+}

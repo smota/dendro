@@ -1,0 +1,136 @@
+{
+  "head": "a1db495b5d131112c6f179e465b8e53411e65480",
+  "binary_sha256": "53dfa2d21c405a9d234ef960149352d94c3cf157b7100c1db63ba2b8233f5d17",
+  "initial_tokens": 15,
+  "initial_loop_episode_count": 1,
+  "initial_loop_full_count": 3,
+  "analytics_sha256": "67e47a233417446ecf5d368085dccbfdd099854f126a7049c4ff5d81bffc7ea6",
+  "checks": [
+    {
+      "case": "append-without-ingest",
+      "report_exactly_equal": true,
+      "trace_exactly_equal": true,
+      "tokens": 15,
+      "loop_count": 3,
+      "source_states": [
+        {
+          "source_id": "codex\n/home/sam/code/dendro/goals/file-source-state/baseline-probe/sources/codex\nsession.jsonl",
+          "generation": 1,
+          "current_state": "not_checked"
+        },
+        {
+          "source_id": "claude\n/home/sam/code/dendro/goals/file-source-state/baseline-probe/sources/claude\nsession.jsonl",
+          "generation": 1,
+          "current_state": "not_checked"
+        },
+        {
+          "source_id": "pi\n/home/sam/code/dendro/goals/file-source-state/baseline-probe/sources/pi\nsession.jsonl",
+          "generation": 1,
+          "current_state": "not_checked"
+        }
+      ],
+      "analytics_bytes_unchanged": true
+    },
+    {
+      "case": "truncate-without-ingest",
+      "report_exactly_equal": true,
+      "trace_exactly_equal": true,
+      "tokens": 15,
+      "loop_count": 3,
+      "source_states": [
+        {
+          "source_id": "codex\n/home/sam/code/dendro/goals/file-source-state/baseline-probe/sources/codex\nsession.jsonl",
+          "generation": 1,
+          "current_state": "not_checked"
+        },
+        {
+          "source_id": "claude\n/home/sam/code/dendro/goals/file-source-state/baseline-probe/sources/claude\nsession.jsonl",
+          "generation": 1,
+          "current_state": "not_checked"
+        },
+        {
+          "source_id": "pi\n/home/sam/code/dendro/goals/file-source-state/baseline-probe/sources/pi\nsession.jsonl",
+          "generation": 1,
+          "current_state": "not_checked"
+        }
+      ],
+      "analytics_bytes_unchanged": true
+    },
+    {
+      "case": "same-size-mtime-new-inode",
+      "report_exactly_equal": true,
+      "trace_exactly_equal": true,
+      "tokens": 15,
+      "loop_count": 3,
+      "source_states": [
+        {
+          "source_id": "codex\n/home/sam/code/dendro/goals/file-source-state/baseline-probe/sources/codex\nsession.jsonl",
+          "generation": 1,
+          "current_state": "not_checked"
+        },
+        {
+          "source_id": "claude\n/home/sam/code/dendro/goals/file-source-state/baseline-probe/sources/claude\nsession.jsonl",
+          "generation": 1,
+          "current_state": "not_checked"
+        },
+        {
+          "source_id": "pi\n/home/sam/code/dendro/goals/file-source-state/baseline-probe/sources/pi\nsession.jsonl",
+          "generation": 1,
+          "current_state": "not_checked"
+        }
+      ],
+      "analytics_bytes_unchanged": true
+    },
+    {
+      "case": "delete-without-ingest",
+      "report_exactly_equal": true,
+      "trace_exactly_equal": true,
+      "tokens": 15,
+      "loop_count": 3,
+      "source_states": [
+        {
+          "source_id": "codex\n/home/sam/code/dendro/goals/file-source-state/baseline-probe/sources/codex\nsession.jsonl",
+          "generation": 1,
+          "current_state": "not_checked"
+        },
+        {
+          "source_id": "claude\n/home/sam/code/dendro/goals/file-source-state/baseline-probe/sources/claude\nsession.jsonl",
+          "generation": 1,
+          "current_state": "not_checked"
+        },
+        {
+          "source_id": "pi\n/home/sam/code/dendro/goals/file-source-state/baseline-probe/sources/pi\nsession.jsonl",
+          "generation": 1,
+          "current_state": "not_checked"
+        }
+      ],
+      "analytics_bytes_unchanged": true
+    },
+    {
+      "case": "detached-sources-missing-key",
+      "report_exactly_equal": true,
+      "trace_exactly_equal": true,
+      "tokens": 15,
+      "loop_count": 3,
+      "source_states": [
+        {
+          "source_id": "codex\n/home/sam/code/dendro/goals/file-source-state/baseline-probe/sources/codex\nsession.jsonl",
+          "generation": 1,
+          "current_state": "not_checked"
+        },
+        {
+          "source_id": "claude\n/home/sam/code/dendro/goals/file-source-state/baseline-probe/sources/claude\nsession.jsonl",
+          "generation": 1,
+          "current_state": "not_checked"
+        },
+        {
+          "source_id": "pi\n/home/sam/code/dendro/goals/file-source-state/baseline-probe/sources/pi\nsession.jsonl",
+          "generation": 1,
+          "current_state": "not_checked"
+        }
+      ],
+      "analytics_bytes_unchanged": true
+    }
+  ],
+  "limits": "synthetic current-entry gap reproduction, no source-stat baseline or candidate annotation implementation, no owner source/key access; source edits are fixture setup between reads, not attributed to Dendro"
+}

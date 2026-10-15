@@ -1,0 +1,22 @@
+[
+  {
+    "command": "cargo check --workspace",
+    "exit": 0,
+    "log": "goals/source-output-alias/auxiliary-referral-cargo-check.log"
+  },
+  {
+    "command": "cargo test --workspace",
+    "exit": 0,
+    "log": "goals/source-output-alias/auxiliary-referral-cargo-test.log"
+  },
+  {
+    "command": "cargo clippy --workspace -- -D warnings",
+    "exit": 0,
+    "log": "goals/source-output-alias/auxiliary-referral-cargo-clippy.log"
+  },
+  {
+    "command": "cargo fmt --check",
+    "exit": 0,
+    "log": "goals/source-output-alias/auxiliary-referral-cargo-fmt.log"
+  }
+]

@@ -59,7 +59,7 @@
       ],
       "optionalRoles": [],
       "allowsSelfReview": false,
-      "requiresHumanApproval": false
+      "requiresHumanApproval": true
     },
     "exploratory": {
       "requiredRoles": ["product-manager", "analyst", "architect", "reviewer"],

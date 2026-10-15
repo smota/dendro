@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "phase": 0,
+  "role": "product-manager",
+  "seat": "pm.manager",
+  "status": "pass",
+  "reason": null,
+  "body": "G2 Phase 0 revisit after the R1 release decision (sponsor, typed directly in the pm-manager terminal, 2026-10-12 06:05Z): v0.1.1 (fix/r1-hotfix-v0.1.1 bb13e39; product 45f3e59; binary ff0169af) is the official R1 release, and v0.1.0 stays untagged. The G2 job, outcome, staging (E1-E3) and release intent are unchanged.\n\nChange: the G2 baseline is released R1 v0.1.1, with contract cc365c88 and register K1-K11 44a3032e unchanged. v0.1.1 changes values, not definitions (it reads Claude and Pi tool calls and results).\n\nInputs for G2 Phase 1 Rev 2:\n- #32 (file source gone/superseded) is folded into #13 via F13-9, PM-approved 2026-10-11.\n- #41 (first-run headroom; AC1 287.961 s with a 12 s margin) must land before or with #13 (sealed and unsealed runs both within AC1).\n- #40 (Codex outcomes; a CommandExecution call unit would be a new K) and #38/#39 (deferred C1/C2) stay out of #12/#13 scope unless Phase 1 shows a shared mechanism (F12-5 may share C1).\n- The R1 review session (O8) is still the entry condition for freezing G2 interface acceptance (E1).\n\nNext: pm.analyst Phase 1 (key dendro-g2-p1-staged-r2), then orch.arch.",
+  "idempotencyKey": "dendro-g2-p0-v011",
+  "uri": "transitions/0005.json"
+}

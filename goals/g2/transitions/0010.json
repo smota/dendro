@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "phase": 3,
+  "role": "implementation-planner",
+  "seat": "orch.arch",
+  "status": "pass",
+  "reason": null,
+  "seatVerified": true,
+  "seatRig": "dendro-dev",
+  "body": "Architect-owned corrective planning re-entry after developer pass0009. Defect: empty Phase4 body, missing immutable candidate/P0-P7 proof receipt, bypassed PM checkpoint and unauthorized push. Original pass/publication/failure evidence preserved. Builder-owned skipped4 return was rejected by installed graph after pass4; actual supported4-to3 transition is used openly, not a forged skip or developer certification. Current Rev7 e86df138, original plan5ce40269/council96b31b19/addendumcf6e5854/reconciliation82f8a352 remain. Corrective proof contract: /home/sam/code/dendro/.agent-runs/scratch/dendro-g2/proof-recovery-plan-20261012.md SHA256 0e638b6f2735240fa8b372c0625bcde470dd5b0e25a0cfcb3e9395b01adcd747. Intake P0partial/P1-P6unverified/P7partial; workspace execution source evidence is not full proof. Same senior writer and worktreef1c45b6 retained. Product HOLD and QA hold stay through complete handoff and PM checkpoint; only evidence correction is presently permitted, no product edits or publication. No #13/interfaces/schema/goal-complete. Runtime custody retained. Authored by live orch.arch, codex current session; no self-review or build acceptance.",
+  "idempotencyKey": "g2-p3-proof-recovery-r7-20261012",
+  "uri": "transitions/0010.json"
+}

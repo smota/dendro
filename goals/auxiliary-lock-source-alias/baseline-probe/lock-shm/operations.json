@@ -1,0 +1,86 @@
+{
+  "status": "violations",
+  "unknown": [],
+  "violations": [
+    {
+      "kind": "write-capable-open-attempt",
+      "path": "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/output/.dendro-output.lock",
+      "line": 507,
+      "end_line": 507,
+      "pid": 1647633,
+      "call": "openat"
+    },
+    {
+      "kind": "original-content-open-attempt",
+      "path": "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/output/.dendro-output.lock",
+      "line": 507,
+      "end_line": 507,
+      "pid": 1647633,
+      "call": "openat"
+    }
+  ],
+  "protected_accesses": [
+    {
+      "line": 507,
+      "call": "openat",
+      "path": "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/output/.dendro-output.lock",
+      "flags": "O_RDWR|O_CREAT|O_CLOEXEC,0600",
+      "success": true
+    },
+    {
+      "line": 508,
+      "call": "flock",
+      "path": "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/output/.dendro-output.lock"
+    },
+    {
+      "line": 511,
+      "call": "flock",
+      "path": "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/output/.dendro-output.lock"
+    }
+  ],
+  "events": 499,
+  "pids": [
+    1647611,
+    1647612,
+    1647613,
+    1647614,
+    1647615,
+    1647616,
+    1647617,
+    1647618,
+    1647619,
+    1647620,
+    1647621,
+    1647622,
+    1647623,
+    1647624,
+    1647625,
+    1647626,
+    1647627,
+    1647628,
+    1647629,
+    1647633
+  ],
+  "clone_parent": {
+    "1647612": 1647611,
+    "1647613": 1647611,
+    "1647614": 1647611,
+    "1647615": 1647611,
+    "1647616": 1647611,
+    "1647617": 1647611,
+    "1647618": 1647611,
+    "1647619": 1647611,
+    "1647620": 1647611,
+    "1647621": 1647611,
+    "1647622": 1647611,
+    "1647623": 1647611,
+    "1647624": 1647611,
+    "1647625": 1647611,
+    "1647626": 1647611,
+    "1647627": 1647611,
+    "1647628": 1647611,
+    "1647629": 1647611,
+    "1647633": 1647611
+  },
+  "normal_exit_observed": true
+}

@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "phase": 4,
+  "role": "developer",
+  "seat": "dev.build-sr",
+  "status": "pass",
+  "reason": "Resubmitted Phase 4 naming commit 94271cd with dynamic 5-band derivation executed through build_ledger across all bands, exact 64-char script hashes, and complete untruncated evidence.",
+  "seatVerified": true,
+  "seatRig": "dendro-dev",
+  "body": "Candidate 94271cd706a63ef95c03090c05828c489bf2533c in .worktrees/work/g2-rework-friction: Release binary SHA-256 e7f9548d118753d09daee35b468028ffa04d99fc855ca6cb93689ad40a5d3631. Independent P2 script SHA-256 5df18762569abbdf8767ba5d3f639af2374abd6017b72c487964f7103b83f7af dynamically derives all five bands (rework, other, unknown, ambiguous, no_item) through build_ledger. All P0-P7 gates dynamically verified with Exit 0 in p0_p7_reproducible_evidence.json and receipt p0_p7_comprehensive_receipt.md.",
+  "idempotencyKey": "g2-p4-friction-rev7-94271cd-v12",
+  "uri": "transitions/0022.json"
+}

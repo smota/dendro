@@ -1,0 +1,86 @@
+{
+  "status": "violations",
+  "unknown": [],
+  "violations": [
+    {
+      "kind": "write-capable-open-attempt",
+      "path": "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-wal/fixture/output/.dendro-output.lock",
+      "line": 508,
+      "end_line": 508,
+      "pid": 1647607,
+      "call": "openat"
+    },
+    {
+      "kind": "original-content-open-attempt",
+      "path": "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-wal/fixture/output/.dendro-output.lock",
+      "line": 508,
+      "end_line": 508,
+      "pid": 1647607,
+      "call": "openat"
+    }
+  ],
+  "protected_accesses": [
+    {
+      "line": 508,
+      "call": "openat",
+      "path": "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-wal/fixture/output/.dendro-output.lock",
+      "flags": "O_RDWR|O_CREAT|O_CLOEXEC,0600",
+      "success": true
+    },
+    {
+      "line": 509,
+      "call": "flock",
+      "path": "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-wal/fixture/output/.dendro-output.lock"
+    },
+    {
+      "line": 512,
+      "call": "flock",
+      "path": "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-wal/fixture/output/.dendro-output.lock"
+    }
+  ],
+  "events": 497,
+  "pids": [
+    1647588,
+    1647589,
+    1647590,
+    1647591,
+    1647592,
+    1647593,
+    1647594,
+    1647595,
+    1647596,
+    1647597,
+    1647598,
+    1647599,
+    1647600,
+    1647601,
+    1647602,
+    1647603,
+    1647604,
+    1647605,
+    1647606,
+    1647607
+  ],
+  "clone_parent": {
+    "1647589": 1647588,
+    "1647590": 1647588,
+    "1647591": 1647588,
+    "1647592": 1647588,
+    "1647593": 1647588,
+    "1647594": 1647588,
+    "1647595": 1647588,
+    "1647596": 1647588,
+    "1647597": 1647588,
+    "1647598": 1647588,
+    "1647599": 1647588,
+    "1647600": 1647588,
+    "1647601": 1647588,
+    "1647602": 1647588,
+    "1647603": 1647588,
+    "1647604": 1647588,
+    "1647605": 1647588,
+    "1647606": 1647588,
+    "1647607": 1647588
+  },
+  "normal_exit_observed": true
+}

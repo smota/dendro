@@ -1,0 +1,10 @@
+{
+  "lock-main-scope": true,
+  "lock-main-runtime-defect-confirmed": true,
+  "lock-wal-scope": true,
+  "lock-wal-runtime-defect-confirmed": true,
+  "lock-shm-scope": true,
+  "lock-shm-runtime-defect-confirmed": true,
+  "safe-distinct-scope": true,
+  "safe-distinct-success-control": true
+}

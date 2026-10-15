@@ -54,6 +54,8 @@ Work is held at three altitudes. Each one is a different record, with a `kind` o
 | Capability | the specification of how the goal is met | a goal that a person accepted | reviews it only when it is high-assurance |
 | Spec       | one implementation unit                  | a capability                  | none at this altitude                     |
 
+How a GitHub issue shows that kind and its parent is defined in [Issue Hierarchy](issue-standards.md#issue-hierarchy).
+
 Phases 0-8 are the lifecycle inside a spec. They are not extra records, and they are not seats.
 A follow-up is a capability or a spec under an existing goal. It is not a second goal for the same
 intent.
@@ -81,8 +83,9 @@ attestation, checked by `satisfyGate` in `lib/core/gate.mjs`. Only decision `agr
 are refusals. A gate bound to another subject, of another gate class, or altered after sealing is
 refused.
 
-The subject is what the person agreed to. For a capability, it is the digest of the goal revision and
-the change class together (`admissionDigest`), because the class decides whether its specs need a
+The subject is what the person agreed to. For a capability, it is the digest of the goal subject and
+the change class together (`admissionDigest`). The goal subject is the goal a person reads, not the
+medium revision, so saving the answer does not move it. The class decides whether its specs need a
 review. The capability keeps that gate and attestation as its admission. When a spec opens, the
 admission is checked again against the change class stored at that moment. Downgrading the class,
 on disk or in an issue body, no longer matches, and the spec is refused. Replacing the class and the
@@ -98,11 +101,13 @@ A medium stores the kind, the parent, the change class, and a capability's admis
 is evidence that is checked again every time, never a stored yes.
 
 The high-assurance capability review uses the existing `adequacy-of-intent` gate class over the
-capability. These altitudes add no new gate class and no new person gate. The person gates are the gate classes in `lib/core/gate.mjs`,
+capability. These altitudes add no new gate class. An admission is the same class with subject kind
+`admission`, not a second class. The person gates are the gate classes in `lib/core/gate.mjs`,
 resolved by `lib/core/posture.mjs`:
 
-- **Intent freeze** (`adequacy-of-intent`): a person accepts the goal. This is required at every
-  posture.
+- **Intent freeze** (`adequacy-of-intent`): a person accepts the goal. The same class on subject kind
+  `admission` admits capabilities under that goal at one change class. Agreeing to the goal does not
+  admit a class. This is required at every posture.
 - **Agent escalation** (`agent-escalation`): an agent stops and asks. This is required at every
   posture.
 - **Release or merge** (`release-of-candidate`): required when the posture or the change class asks

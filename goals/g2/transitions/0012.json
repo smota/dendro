@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "phase": 5,
+  "role": "tester",
+  "seat": "dev.qa",
+  "status": "pass",
+  "reason": "Verified cargo test --workspace, cargo clippy --workspace -- -D warnings, cargo fmt --all -- --check in work/g2-rework-friction.",
+  "seatVerified": true,
+  "seatRig": "dendro-dev",
+  "body": "All 118+ tests passed (51 unit, 2 privacy sweep, 61 dendro-core, 1 benchmark_nao, 4 resolver). Clippy clean with zero warnings.",
+  "idempotencyKey": "g2-p5-friction-rev7-qa-pass",
+  "uri": "transitions/0012.json"
+}

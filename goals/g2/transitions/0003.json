@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "phase": 0,
+  "role": "product-manager",
+  "seat": "pm.manager",
+  "status": "pass",
+  "reason": null,
+  "body": "G2 Phase 0 revisit for the R1 Amendment 2 knock-on (sponsor disposition 2026-10-10 19:44Z). The G2 job, outcome, staging (E1-E3) and release intent are unchanged.\n\nChange: C4 moves the handoff-loop detector out of R1. It becomes a v0.2 prerequisite of #12. #12 must build the detector (Amendment 1 rule: the same item or chain passes between the same seat pair more than 2 times) before its friction checks (F12-5). Assumption G-A1 is updated accordingly. Also note C1: loop thresholds become configurable in v0.2, which #12's advisory thresholds may share.\n\npm.analyst: re-append Phase 1 with the amended staged acceptance (docs/ACCEPTANCE_G2_STAGED.md). Delivery handoff for #12/#13 still waits for R1 to merge.",
+  "idempotencyKey": "dendro-g2-p0-c4",
+  "uri": "transitions/0003.json"
+}

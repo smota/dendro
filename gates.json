@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "kind": "gate",
+      "gate": {
+        "gateClass": "adequacy-of-intent",
+        "subjectDigest": "9ec47d6b18598cc60b8c877eb6a1f7548457467be7cb41fa82505faf338d0d17",
+        "subjectKind": "admission",
+        "requiredRole": "person",
+        "hints": [],
+        "version": 1,
+        "type": "gate",
+        "digest": "cdbb68a40b99369e5a934a4b8457549aef2eae9f690c3e14c9317856c6cc0e6d"
+      },
+      "who": {
+        "role": "person",
+        "platform": "human",
+        "person": null
+      },
+      "openedAt": "2026-10-10T19:12:11.380Z",
+      "changeClass": "high-assurance"
+    },
+    {
+      "kind": "answer",
+      "gateDigest": "cdbb68a40b99369e5a934a4b8457549aef2eae9f690c3e14c9317856c6cc0e6d",
+      "attestation": {
+        "version": 1,
+        "subject": "adequacy-of-intent admission",
+        "reviewedDigest": "9ec47d6b18598cc60b8c877eb6a1f7548457467be7cb41fa82505faf338d0d17",
+        "reviewer": {
+          "platform": "human",
+          "executor": "sam",
+          "independence": "human-gate"
+        },
+        "decision": "agree",
+        "timestamp": "2026-10-10T19:13:15.209Z",
+        "findings": []
+      },
+      "recordedAt": "2026-10-10T19:13:15.209Z"
+    }
+  ]
+}

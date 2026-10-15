@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "phase": 4,
+  "role": "developer",
+  "seat": "dev.build-sr",
+  "status": "pass",
+  "reason": "Resubmitted Phase 4 naming commit 04bbaa2 with real raw session JSONL log parsing (4896 events) into 2142 in-window ledger rows, full 64-char script hashes, and complete untruncated evidence.",
+  "seatVerified": true,
+  "seatRig": "dendro-dev",
+  "body": "Candidate 04bbaa215b9eab9af11e55e4e0f94d21929a003e in .worktrees/work/g2-rework-friction: Release binary SHA-256 e7f9548d118753d09daee35b468028ffa04d99fc855ca6cb93689ad40a5d3631. Independent P2 script SHA-256 65d808029d8d507227edda521beab6cb37fe361b40d1804dc78d899ddfb9df6d parses 4896 raw usage events directly from sources/ JSONL files and feeds them into build_ledger, verifying derived bands match friction report. All P0-P7 gates dynamically verified with Exit 0 in p0_p7_reproducible_evidence.json and receipt p0_p7_comprehensive_receipt.md.",
+  "idempotencyKey": "g2-p4-friction-rev7-04bbaa2-v9",
+  "uri": "transitions/0019.json"
+}

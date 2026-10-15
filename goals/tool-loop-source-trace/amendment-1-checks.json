@@ -1,0 +1,22 @@
+[
+  {
+    "command": "cargo check --workspace",
+    "exit": 0,
+    "log": "goals/tool-loop-source-trace/amendment-1-cargo-check.log"
+  },
+  {
+    "command": "cargo test --workspace",
+    "exit": 0,
+    "log": "goals/tool-loop-source-trace/amendment-1-cargo-test.log"
+  },
+  {
+    "command": "cargo clippy --workspace -- -D warnings",
+    "exit": 0,
+    "log": "goals/tool-loop-source-trace/amendment-1-cargo-clippy.log"
+  },
+  {
+    "command": "cargo fmt --check",
+    "exit": 0,
+    "log": "goals/tool-loop-source-trace/amendment-1-cargo-fmt.log"
+  }
+]

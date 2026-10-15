@@ -1,0 +1,47 @@
+{
+  "head": "1e4909bee5eefe924cff6c1c1c87ce51f32bfd46",
+  "binary_sha256": "ad7d769a6bd9075bcfce08c50ffdb5281940d6d89206e514dae470e4c21a3af0",
+  "source_sha256_before": "1dc14419392556e9112342911482f8cac85acb55efb865fb893ae3aae3829fed",
+  "source_sha256_after": "1dc14419392556e9112342911482f8cac85acb55efb865fb893ae3aae3829fed",
+  "source_bytes_unchanged": true,
+  "producer": "synthetic mtime-only changes; no byte edits, no live source, not a commit-rate or performance experiment",
+  "producer_changes": 2725,
+  "analytics_sha256_before_refusal": "2d574be2b60a120689d153828dc84af9884a51a373384664a36ac7515ac6cb71",
+  "analytics_sha256_after_refusal": "2d574be2b60a120689d153828dc84af9884a51a373384664a36ac7515ac6cb71",
+  "analytics_unchanged_by_refusal": true,
+  "fresh_database_exists_after_refusal": false,
+  "private_stages_after_refusal": [],
+  "corrupt_source_unchanged": true,
+  "rows": [
+    {
+      "name": "stable-before",
+      "exit": 0,
+      "stdout": "{\"key_id\":\"2311fa50e7aa2e57050162fd4e2e20cd\",\"product\":\"AI Fleet Intelligence\",\"sources\":[\"openrig events=1 revision=a1161d484de65ecc attempts=1 main_bytes=16822272 wal_bytes=0 copy_ms=23 check_ms=4\"],\"staging\":[],\"status\":\"ready\"}\n",
+      "stderr": ""
+    },
+    {
+      "name": "busy-existing",
+      "exit": 1,
+      "stdout": "",
+      "stderr": "Error: the OpenRig source changed during each of 5 snapshot attempts; nothing was ingested\n"
+    },
+    {
+      "name": "busy-fresh",
+      "exit": 1,
+      "stdout": "",
+      "stderr": "Error: the OpenRig source changed during each of 5 snapshot attempts; nothing was ingested\n"
+    },
+    {
+      "name": "stable-after",
+      "exit": 0,
+      "stdout": "{\"key_id\":\"2311fa50e7aa2e57050162fd4e2e20cd\",\"product\":\"AI Fleet Intelligence\",\"sources\":[\"openrig events=1 revision=ab09318fd6aa5815 attempts=1 main_bytes=16822272 wal_bytes=0 copy_ms=13 check_ms=3\"],\"staging\":[],\"status\":\"ready\"}\n",
+      "stderr": ""
+    },
+    {
+      "name": "corrupt-control",
+      "exit": 1,
+      "stdout": "",
+      "stderr": "Error: file is not a database\n\nCaused by:\n    Error code 26: File opened that is not a database file\n"
+    }
+  ]
+}

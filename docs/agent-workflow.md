@@ -89,7 +89,10 @@ Before phase advancement, the orchestrator must run `collaboration advance` agai
 handoff, delivery, owner decision, council evidence when required, and explicit open-rework ledger.
 Rejected, returned, conditional, or stale decisions block advancement. A review return to
 implementation must carry the review findings in its rework contract; it cannot silently skip
-the rework gate.
+the rework gate. Rework iterations are capped by a circuit breaker (`maxReworkRounds: 2` by default);
+exceeding the cap triggers automatic escalation to Steerer/Person rather than unbounded bilateral rework.
+Criteria support `severity: blocking` (default) and `severity: advisory` (for non-blocking exploratory
+observations and disclosed limits).
 
 ### Phase diagram
 
@@ -434,6 +437,8 @@ If a PR implements the final remaining open child issues of an Epic, the PR body
 `Closes #<epic>` after the child closure lines. Do not add the Epic close line early while any child
 issue is still open or intentionally deferred.
 
+For **Goals** (`kind:goal`), parent goals must **never** be auto-closed by child PR merges. When all child capabilities are integrated, the goal's `## Child Work & History` ledger reflects the completed status and marks the goal as ready for human review and closure (`agentflow-sdlc goal sync <number>`). Closure of a goal remains an explicit action reserved for the human person.
+
 PR readiness is incomplete until the created PR is verified directly in GitHub for:
 
 - PR number/URL
@@ -521,6 +526,9 @@ the append idempotent. Then come these lines, in order:
 - `role`: the role that owns that phase
 - `status`: `pass` or `skipped`
 - `seat`: who performed the phase
+- `seatVerified`: `true` when the caller's OpenRig session holds that seat, `false` when the caller
+  had no seat identity
+- `seatRig`: the rig of a verified caller; empty when unverified
 - `reason`: required for `skipped`; may be empty for `pass`
 - `body`: the role-pass content, on the lines after `body:`
 
@@ -532,10 +540,20 @@ phase: 1
 role: analyst
 status: pass
 seat: pm.analyst
+seatVerified: true
+seatRig: agentflow-pm
 reason:
 body:
 Acceptance criteria for the goal, written for the architect.
 ```
+
+A transition may name a seat only when that seat wrote it. When `OPENRIG_SESSION_NAME` is one
+`<logical>@<rig>` session, the logical name maps to a seat by turning its first hyphen into a dot
+(`orch-arch` is `orch.arch`), and `--seat` must be that seat. Another seat is refused and nothing is
+written; a repeated key is refused the same way unless the same seat and rig wrote it. With no seat
+identity, as for a person, CI, or a single agent with no rig, the append is accepted and marked
+`seatVerified: false`. This is the local trust model, not a signature. A transition written before
+this check has no `seatVerified` line, and none is added.
 
 A comment without the marker on its first line is not a transition, even when it has every other
 line or quotes the marker in its prose.
@@ -635,3 +653,67 @@ Do not leave TODO comments or silent omissions.
 ## Governed run coordination
 
 For the v2 delivery run interface, requirements remain in issues and current run transitions are acknowledged as immutable, digest-linked records on the isolated source coordination ref. Workflow-status comments are navigable projections; they do not advance state. Role phases, bilateral acceptance and human review remain required. Local `.agent-runs/` records report preview durability explicitly. See [reliable delivery](reliable-delivery.md) and [run operations](run-operations.md).
+
+## 13. Autonomous Decision Governance & Anti-Loop Engine
+
+To eliminate autonomous deadlocks, rework loops, and metric-gaming across multi-agent rigs (OpenRig, Pi, Claude, Codex, Grok), AgentFlow SDLC enforces seven core architectural laws:
+
+### 13.1 Two-Plane Separation
+
+The workflow is divided into two strictly isolated operating planes:
+
+1. **External Supervisory Steering Plane** (`steer.lead`):
+   - Operates outside worker execution rigs via CLI orchestration, direct session interaction, or external supervisory runtimes.
+   - Owns high-level goal decomposition, workstream prioritization, unfreeze resolution, pragmatic defect triage (`accept_and_register`), and merge verbs.
+   - Barred from writing production code, authoring test oracles, or fabricating self-approvals.
+2. **Internal Execution Worker Squads** (`dev.build*`, `dev.test-eng`, `pm.*`, `rev.gate`, `orch.arch`):
+   - Execute strictly inside dedicated git worktrees (`.worktrees/<branch-name>`).
+   - Own Phase 0–8 delivery artifacts, code authoring, and test execution.
+   - Barred from granting merge verbs, modifying external steering state, or unfreezing deadlocked worktrees without external unfreeze resolutions.
+
+### 13.2 Dedicated Test Engineering (`dev.test-eng`) & Oracle Pinning
+
+- **Phase 3 Oracle Pinning**: Before implementation starts (Phase 4), `dev.test-eng` authors verification oracles and test suites under `tests/oracles/**` from the Phase 1/2 specifications.
+- **Oracle Digest Pin**: The implementation plan in Phase 3 pins an immutable SHA256 digest of `tests/oracles/**`.
+- **Builder Bar**: Builder seats (`dev.build`, `dev.build-jr`, `dev.build-sr`) are barred from editing `tests/oracles/**` and `tests/**/oracles/**` to prevent metric-gaming or relaxing acceptance checks.
+- **Test Engineer Allowlist**: `dev.test-eng` is allowed to edit `tests/**`, `lib/__tests__/**`, `scripts/__tests__/**`, and `guidance/**`, with `src/**` denied explicitly and `defaultDeny: true`.
+- **Phase 5 Verification**: Tester seats execute verification as read-only runners against the pinned oracles.
+
+### 13.3 Path Ownership Boundaries
+
+- **PM Allowlist**: Product management seats (`pm.manager`, `pm.analyst`, `pm.lead` / `pm.*`) write only to `.agentflow/**` and `goals/**` (`defaultDeny: true`). Commits touching code, libraries, or test fixtures (`src/**`, `lib/**`, `tests/**`) are rejected.
+- **Steering Write Guard**: Steering seats (`steer.lead` / `steer.*`) have no file write permissions (`allow: []`, `defaultDeny: true`). Commits authored under steering identities are rejected mechanically.
+- **Governance Protection**: All agent seats are barred from modifying governance files (`manifests/path-ownership.json`, `scripts/validate-path-ownership.mjs`).
+- **Enforcement**: Path ownership is validated deterministically in CI via `node scripts/validate-path-ownership.mjs` (and `pnpm validate:release`) on pull requests into integration branches (`development`, `staging`, `main`) for commits bearing seat attribution.
+
+### 13.4 Deterministic Ledger Circuit Breaker & Epoch Fencing
+
+- Rework iterations are counted monotonically from the transition ledger via `deriveReworkRound`.
+- When rework iterations exceed the circuit breaker limit (`DEFAULT_MAX_REWORK_ROUNDS = 2`), advancement fails closed.
+- The ledger breaker trips via `tripLedgerBreaker`, setting `ledger.frozen = true`, incrementing integer `fencingToken`, and emitting a sealed `reverse-seam-packet` record (`{ triggerCondition: 'rework-exhausted', fencingToken, round, targetIdentityDigest }`).
+- Subsequent commits or transitions carrying an older fencing token (`authored.fencingToken < ledger.fencingToken`) are rejected on the frozen branch.
+
+### 13.5 Reverse-Seam Unfreeze Resolution Protocol
+
+- Unfreezing a deadlocked worktree is an external steering responsibility under repository policy (`steer.lead` or human authority).
+- The supervisory authority records a sealed `unfreeze-resolution` record (`createUnfreezeResolution`) containing:
+  - `resolution`: must be one of `re-scope`, `slice-split`, `person-waiver`, or `abandonment`.
+  - `actor`: declared authority string (policy restricts to `steer.lead` or human authority; validated structurally as a non-empty string).
+  - `rationale`: substantive rationale explaining the intervention.
+  - `fencingToken`: integer epoch token matching `ledger.fencingToken + 1`.
+- `unfreezeLedger` verifies the resolution record, clears `ledger.frozen = false`, advances `ledger.fencingToken`, and records `unfreezeResolutionDigest`. Worker squads resume execution under the incremented epoch without history rewriting.
+
+### 13.6 Pragmatic Defect Triage (`accept_and_register`)
+
+- To prevent minor or non-blocking exploratory observations from stalling delivery, the external steerer may apply `accept_and_register`.
+- This maps to `accepted-with-conditions` with mandatory, idempotent creation of a tracked GitHub follow-up issue on every condition.
+- **Strict Boundaries**:
+  - Rejected while the ledger circuit breaker is tripped (`ledger.frozen === true`).
+  - Rejected if any finding was initially logged as `[B] Blocker`.
+  - Rejected on sensitive surfaces (`ACCEPT_AND_REGISTER_SURFACES`): `auth`, `crypto`, `migration`, `billing`.
+
+### 13.7 Pure-Function Model Escalation Ladder & Decider Port
+
+- Model escalation from standard builders to frontier reasoning models (e.g. Codex GPT-6.1 Sol / Gemini Pro High) is governed by a pure, deterministic function (`evaluateDecisionPolicy`) based on distinct test failure categories and rework rounds, independent of self-reported agent confidence.
+- Fast heuristic triage (queue ordering, issue deduplication, nudge levels) connects via `lib/providers/decider-port.mjs` exclusively to loopback endpoints (`http://127.0.0.1:8002/v1/decide`) with Jev authentication.
+- All outbound decider payloads are strictly sanitized and redacted, eliminating raw source code, git diff hunks, and secrets, with pure deterministic fallbacks if the decider is unreachable.

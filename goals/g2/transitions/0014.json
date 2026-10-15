@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "phase": 4,
+  "role": "developer",
+  "seat": "dev.build-sr",
+  "status": "pass",
+  "reason": "Resubmitted Phase 4 with complete independent P0-P7 evidence ledger and pinned candidate binary.",
+  "seatVerified": true,
+  "seatRig": "dendro-dev",
+  "body": "Candidate f1c45b6 in .worktrees/work/g2-rework-friction: Release binary SHA-256 e7f9548d118753d09daee35b468028ffa04d99fc855ca6cb93689ad40a5d3631. Independent P2 5-band derivation script SHA-256 b3af15d0feac0f05b1e178313adfe6e644cc3f71a8fdf2f23ff0dfcbc8f4cfb9 passes with Exit Code 0. Comprehensive receipt at .agent-runs/scratch/dendro-g2/p0_p7_comprehensive_receipt.md. All workspace gates pass.",
+  "idempotencyKey": "g2-p4-friction-rev7-f1c45b6-v4",
+  "uri": "transitions/0014.json"
+}

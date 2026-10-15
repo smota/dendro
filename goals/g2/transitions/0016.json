@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "phase": 4,
+  "role": "developer",
+  "seat": "dev.build-sr",
+  "status": "pass",
+  "reason": "Resubmitted Phase 4 naming current worktree commit fad3a6f, with independent P2 derived bands verified on sealed window, full 64-char script hashes, and complete untruncated P0-P7 evidence ledger.",
+  "seatVerified": true,
+  "seatRig": "dendro-dev",
+  "body": "Candidate fad3a6f396d190768c8556f1b10943f03ad5738e in .worktrees/work/g2-rework-friction: Release binary SHA-256 e7f9548d118753d09daee35b468028ffa04d99fc855ca6cb93689ad40a5d3631. Independent P2 script SHA-256 045953cf488427ac56e2194832997ee957de9a6963c42be16debc8e60f2b5ddd verifies derived bands equal friction report on sealed window across 6 seats. All P0-P7 gates dynamically verified with Exit 0 in p0_p7_reproducible_evidence.json with full outputs and P7 workspace tests. Comprehensive receipt at .agent-runs/scratch/dendro-g2/p0_p7_comprehensive_receipt.md.",
+  "idempotencyKey": "g2-p4-friction-rev7-fad3a6f-v6",
+  "uri": "transitions/0016.json"
+}

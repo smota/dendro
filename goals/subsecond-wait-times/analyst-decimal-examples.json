@@ -1,0 +1,171 @@
+{
+  "method": "stdlib timezone-aware datetime subtraction into integer microseconds, Decimal division, independently sorted exact-decimal median; no candidate parsing/metrics",
+  "status": "analyst expected examples, not Phase 3 frozen QA oracle",
+  "vectors": {
+    "disclosed": {
+      "endpoints": [
+        [
+          "00:00:00.000000",
+          "00:00:24.734000"
+        ]
+      ],
+      "samples_seconds": [
+        "24.734"
+      ],
+      "median_seconds": "24.734"
+    },
+    "cross_second": {
+      "endpoints": [
+        [
+          "00:00:00.900000",
+          "00:00:01.100000"
+        ]
+      ],
+      "samples_seconds": [
+        "0.2"
+      ],
+      "median_seconds": "0.2"
+    },
+    "odd_unsorted": {
+      "endpoints": [
+        [
+          "00:00:00",
+          "00:00:00.154"
+        ],
+        [
+          "00:00:00",
+          "00:00:00.049"
+        ],
+        [
+          "00:00:00",
+          "00:00:00.051"
+        ]
+      ],
+      "samples_seconds": [
+        "0.154",
+        "0.049",
+        "0.051"
+      ],
+      "median_seconds": "0.051"
+    },
+    "even_adversary": {
+      "endpoints": [
+        [
+          "00:00:00",
+          "00:00:00.049"
+        ],
+        [
+          "00:00:00",
+          "00:00:00.149"
+        ]
+      ],
+      "samples_seconds": [
+        "0.049",
+        "0.149"
+      ],
+      "median_seconds": "0.099"
+    },
+    "duplicates": {
+      "endpoints": [
+        [
+          "00:00:00",
+          "00:00:00.1"
+        ],
+        [
+          "00:00:00",
+          "00:00:00.1"
+        ],
+        [
+          "00:00:00",
+          "00:00:00.9"
+        ]
+      ],
+      "samples_seconds": [
+        "0.1",
+        "0.1",
+        "0.9"
+      ],
+      "median_seconds": "0.1"
+    },
+    "whole_seconds": {
+      "endpoints": [
+        [
+          "00:00:00",
+          "00:00:01"
+        ],
+        [
+          "00:00:00",
+          "00:00:03"
+        ],
+        [
+          "00:00:00",
+          "00:00:05"
+        ],
+        [
+          "00:00:00",
+          "00:00:07"
+        ]
+      ],
+      "samples_seconds": [
+        "1",
+        "3",
+        "5",
+        "7"
+      ],
+      "median_seconds": "4"
+    },
+    "zero": {
+      "endpoints": [
+        [
+          "00:00:00.100000",
+          "00:00:00.100000"
+        ]
+      ],
+      "samples_seconds": [
+        "0"
+      ],
+      "median_seconds": "0"
+    },
+    "microsecond": {
+      "endpoints": [
+        [
+          "00:00:00.000000",
+          "00:00:00.000001"
+        ]
+      ],
+      "samples_seconds": [
+        "0.000001"
+      ],
+      "median_seconds": "0.000001"
+    },
+    "half_microsecond": {
+      "endpoints": [
+        [
+          "00:00:00",
+          "00:00:00"
+        ],
+        [
+          "00:00:00",
+          "00:00:00.000001"
+        ]
+      ],
+      "samples_seconds": [
+        "0",
+        "0.000001"
+      ],
+      "median_seconds": "5E-7"
+    },
+    "offset": {
+      "endpoints": [
+        [
+          "02:00:00.900000+02:00",
+          "00:00:01.100000Z"
+        ]
+      ],
+      "samples_seconds": [
+        "0.2"
+      ],
+      "median_seconds": "0.2"
+    }
+  }
+}

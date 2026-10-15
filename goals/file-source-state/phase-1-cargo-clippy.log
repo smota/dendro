@@ -1,0 +1,6 @@
+    Checking dendro-core v0.1.0 (/home/sam/code/dendro/crates/dendro-core)
+    Checking dendro-resolver v0.1.0 (/home/sam/code/dendro/crates/dendro-resolver)
+    Checking dendro-connectors v0.1.0 (/home/sam/code/dendro/crates/dendro-connectors)
+    Checking dendro-watcher v0.1.0 (/home/sam/code/dendro/crates/dendro-watcher)
+    Checking dendro-cli v0.1.0 (/home/sam/code/dendro/crates/dendro-cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.15s

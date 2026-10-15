@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "phase": 6,
+  "role": "reviewer",
+  "seat": "rev.review",
+  "status": "pass",
+  "reason": "Audited branch work/g2-rework-friction against staged acceptance Rev 7. Code verified, non-breaking, clean quality gates.",
+  "seatVerified": true,
+  "seatRig": "dendro-dev",
+  "body": "Approved by rev.review with verified evidence from qitem-20261012162801-c7fe3065 and clean cargo test/clippy/fmt results.",
+  "idempotencyKey": "g2-p6-friction-rev7-review-pass",
+  "uri": "transitions/0013.json"
+}

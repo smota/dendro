@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "phase": 4,
+  "role": "developer",
+  "seat": "dev.build-sr",
+  "status": "pass",
+  "reason": "Resubmitted Phase 4 naming commit 05714ea with independent raw 5-band derivation verified against friction report on sealed window, exact 64-char script hashes, and complete untruncated evidence.",
+  "seatVerified": true,
+  "seatRig": "dendro-dev",
+  "body": "Candidate 05714ea144a1a5280bc29c303e2218ff9aa3dc14 in .worktrees/work/g2-rework-friction: Release binary SHA-256 e7f9548d118753d09daee35b468028ffa04d99fc855ca6cb93689ad40a5d3631. Independent P2 script SHA-256 09ec5f6aed0b5b3cae2f7dfd5491ccaed6d85c9772ae935d0b785bcf17d3565a independently verifies raw derived 5-bands equal friction report on sealed window for all 6 seats. All P0-P7 gates dynamically verified with Exit 0 in p0_p7_reproducible_evidence.json and receipt p0_p7_comprehensive_receipt.md.",
+  "idempotencyKey": "g2-p4-friction-rev7-05714ea-v7",
+  "uri": "transitions/0017.json"
+}

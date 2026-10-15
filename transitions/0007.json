@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "phase": 4,
+  "role": "developer",
+  "seat": "dev.build-sr",
+  "status": "pass",
+  "reason": null,
+  "body": "Phase 4 developer evidence for Dendro R1. Goal URI /home/sam/code/dendro. Previous transition transitions/0006.json. Candidate commit 081da7d29fabefe0c84e2ec95cd5f505882d36c0 on work/dendro-r1. This is not independent QA and not a ptrace/source-network claim.\n\nSame-candidate gates: cargo fmt --check exit 0; cargo clippy -p dendro-core -p dendro-connectors -p dendro-cli -p dendro-resolver -p dendro-watcher -- -D warnings exit 0; cargo test --workspace exit 0 (connectors 4 passed, 1 ignored; core 17 passed; resolver 4 passed). python3 scripts/ac3_ac12_fixtures.py exit 0, 22 of 22. Those checks include identity link and unlinked, distinct redacted session ids, idle demand 10/50, unknown window, one return, intake estimate 5, no-data intake, even wait median 5, three-failure loop, trace replay, unchanged rerun, M1 no data, symlink and hardlink refusal.\n\nSealed snapshot evidence on parent 182cf092: ingest 128.18s plus token report, independent oracle matched Claude/Codex/Pi, trace replay matched, second run unchanged, manifest unchanged. Scoped AC1 timing on that parent was 126.25s ingest plus 0.12s report.\n\nHistorical defect remains visible: before 3d8e314 a fake sk-ant secret in a session id leaked into report stdout and the analytics database.\n\nNot claimed: independent ptrace or live source/network observation. That is QA-owned after this phase. AGY and Grok are present-not-parsed. No push or merge.",
+  "idempotencyKey": "dendro-r1-p4",
+  "uri": "transitions/0007.json"
+}

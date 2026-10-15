@@ -1,0 +1,6 @@
+   Compiling dendro-core v0.1.0 (/home/sam/code/dendro/crates/dendro-core)
+   Compiling dendro-watcher v0.1.0 (/home/sam/code/dendro/crates/dendro-watcher)
+   Compiling dendro-connectors v0.1.0 (/home/sam/code/dendro/crates/dendro-connectors)
+   Compiling dendro-resolver v0.1.0 (/home/sam/code/dendro/crates/dendro-resolver)
+   Compiling dendro-cli v0.1.0 (/home/sam/code/dendro/crates/dendro-cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 5.04s

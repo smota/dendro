@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "phase": 5,
+  "role": "tester",
+  "seat": "dev.qa",
+  "status": "skipped",
+  "reason": "Independent QA defects on 081da7d: rig isolation and activity trace fail; acceptance incomplete (return to phase 4)",
+  "body": "Candidate 081da7d29fabefe0c84e2ec95cd5f505882d36c0 independently tested in clean .worktrees/work/dendro-r1. cargo check --workspace, cargo test --workspace, cargo clippy --workspace -- -D warnings, cargo fmt --check all exit 0. Tests:25 passed,0 failed,1 ignored. cargo build -p dendro-cli exit0. Builder synthetic CLI script rerun with artifact paths confined to .agent-runs/qa/081da7d:22/22 pass. Independent CLI negative tests: report activity --rig nonexistent-rig returns 2 unrelated seats and 1 tool loop; report tokens same scope repeats them with tokens0. trace --metric-id activity exits1 unknown metric. Reproductions with exact commands/output: .worktrees/work/dendro-r1/.agent-runs/qa/081da7d/independent-reproductions.json. Structural source findings: pipeline.rs filters queue facts before window and fails rig/time filtering of tools/activity; trace_json lacks activity and sufficient denominator/source history; ingest.rs uses agent.activity instead of authoritative seat.activity_changed and persists raw queue identifiers/closure_target. No phase5 pass. Exact-candidate AC1, independent ptrace negative controls, full privacy and trace replay remain unverified; known functional defects require remediation before final acceptance. Architect must route bounded return to builder; no reviewer acceptance handoff.",
+  "idempotencyKey": "dendro-r1-p5-defects-081da7d",
+  "uri": "transitions/0008.json"
+}

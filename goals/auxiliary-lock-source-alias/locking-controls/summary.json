@@ -1,0 +1,24 @@
+{
+  "method": "synthetic parent holds the actual shared directory lock with flock; close_fds child has no inherited lock descriptor; no source mutation or privilege change",
+  "cases": [
+    {
+      "case": "first.duckdb held directory lock",
+      "exit": 1,
+      "stdout": "",
+      "stderr": "Error: analytics output lock is busy\n",
+      "database_exists": false
+    },
+    {
+      "case": "second.duckdb held directory lock",
+      "exit": 1,
+      "stdout": "",
+      "stderr": "Error: analytics output lock is busy\n",
+      "database_exists": false
+    },
+    {
+      "case": "ordinary run after release",
+      "exit": 0,
+      "ready": true
+    }
+  ]
+}

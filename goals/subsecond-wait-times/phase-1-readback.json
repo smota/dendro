@@ -1,0 +1,13 @@
+{
+  "currentPhase": 1,
+  "allowedNext": [
+    2,
+    0
+  ],
+  "revision": "81e12175059d7b7d0ea94ceefabb32ea03d43af7daf31fbd9c9e4559b636b43c",
+  "transition": "https://github.com/smota/dendro/issues/34#issuecomment-6178194115",
+  "seat": "pm.analyst",
+  "seatVerified": true,
+  "spec_sha256": "bc1b32bbcfad446945bacc4054990511752a982e0e11b0d8dc5731627655bc08",
+  "bodyMatches": "exact except phase-reader-stripped final newline"
+}

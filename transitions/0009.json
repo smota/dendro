@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "phase": 6,
+  "role": "reviewer",
+  "seat": "rev.review",
+  "status": "skipped",
+  "reason": "QA blockers prevent independent review acceptance on 081da7d; rig isolation and activity trace fail; first phase 6 to 4 correction cycle (return to phase 4)",
+  "body": "Routing-only skipped reviewer transition, not a candidate acceptance review or approval. Previous tester transition transitions/0008.json independently read: skipped, no QA pass; allowedNext [6]. Preserve that evidence unchanged. Candidate 081da7d29fabefe0c84e2ec95cd5f505882d36c0. Exact QA reproductions inspected at .worktrees/work/dendro-r1/.agent-runs/qa/081da7d/independent-reproductions.json: report activity --rig nonexistent-rig returns seat-a and seat-old plus a tool loop; report tokens with the same rig repeats unrelated activity and loop; trace --metric-id activity exits 1 unknown metric. QA source findings require complete historical queue data before deriving intervals and chains with carry-in, rig/time isolation of activity/tools, authoritative seat.activity_changed, privacy-safe opaque/redacted queue IDs and closure targets, and trace numeric denominator/sample/history evidence. Exact-candidate timing, full privacy, trace-only replay and independent syscall observer remain unverified. Bounded builder remediation under Amendment 1 and frozen phase 3 plan; English deliverables, Nao excluded. This records first 6-to-4 return cycle, not a nonexistent 5-to-4 transition. Corrected phase 4 candidate must go through independent QA phase 5 before reviewer acceptance. No implementation changes, fake QA pass, workflow engine edits or merge authorization.",
+  "idempotencyKey": "dendro-r1-p6-return4-cycle1-081da7d",
+  "uri": "transitions/0009.json"
+}

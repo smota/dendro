@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "phase": 5,
+  "role": "tester",
+  "seat": "dev.qa",
+  "status": "skipped",
+  "reason": "AC10 synthetic activity-state secret persists in DB and trace; sponsor-approved bounded cycle3 requires routing-only phase6 return4",
+  "body": "Independent QA tested exact candidate a3e1d28eb95af788ffca4e80304990a26e028c69 after reading transitions/0013.json. Four workspace gates and CLI build exit0;25 tests passed0 failed1 ignored;28 builder fixture checks independently rerun pass. New synthetic event seat.activity_changed state with fake sk-ant canary ingests exit0 and trace activity exit0; fake token appears in DB bytes and trace activity_events. Evidence .worktrees/work/dendro-r1/.agent-runs/qa/a3e1d28/privacy-reproduction.json with exact commands and outputs. AC10 failed; no independent QA pass. Full exact-candidate AC1 timing, independent trace replay, field-by-field privacy and source/network ptrace negative controls remain unknown. Sponsor exception independently verified from pm.manager qitem-20261010190622-590c0482 at19:06Z: one bounded cycle3, known activity-state allowlist before persistence/emission, all text-bearing-column/output/privacy regression, full AC1-AC12 and four-eyes review, Amendment1 unchanged. Two prior6to4 returns remain recorded. Reviewer is authorized only skipped routing return4 for this exception, not acceptance. Further failure requires renewed sponsor escalation; no fourth correction authorized. No push/merge.",
+  "idempotencyKey": "dendro-r1-p5-ac10-a3e1d28",
+  "uri": "transitions/0014.json"
+}

@@ -1,0 +1,204 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.10s
+     Running unittests src/main.rs (target/debug/deps/dendro-817df49cfac36e89)
+
+running 3 tests
+test tests::a_relative_openrig_root_is_stored_as_an_absolute_path ... ok
+test tests::one_openrig_file_under_two_spellings_is_kept_once ... ok
+test tests::two_openrig_roots_in_any_position_are_refused ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/dendro_connectors-b8ad316506be38c0)
+
+running 55 tests
+test ingest::tests::a_stop_without_a_launch_keeps_an_unknown_start_and_counts_once ... ok
+test ingest::tests::a_fresh_launch_opens_a_life_and_never_closes_one ... ok
+test ingest::tests::detach_status_and_unknown_events_are_not_stops ... ok
+test ingest::tests::equal_times_order_by_sequence ... ok
+test ingest::tests::node_removal_resolves_the_seat_through_its_launch ... ok
+test ingest::tests::chain_roots_need_agreeing_source_readings_and_never_guess ... ok
+test ingest::tests::openrig_created_at_is_utc_seconds_without_a_zone ... ok
+test ingest::tests::relaunch_of_a_running_seat_continues_its_life ... ok
+test ingest::tests::relaunch_after_a_stop_starts_a_new_life ... ok
+test ingest::tests::rig_stop_and_delete_end_every_seat_of_that_rig_only ... ok
+test ingest::tests::snapshot_roles_come_from_recorded_specs_not_names ... ok
+test stream::tests::ac1_real_logs_finish_within_five_minutes ... ignored, reads this machine's local logs; run explicitly for AC1
+test snapshot::tests::a_stable_source_is_copied_with_its_wal_only_rows_and_no_shm ... ok
+test snapshot::tests::cancellation_stops_between_attempts ... ok
+test snapshot::tests::a_source_without_a_wal_gets_none_created ... ok
+test snapshot::tests::identity_replacement_and_an_appearing_wal_are_changes ... ok
+test snapshot::tests::exhaustion_fails_cleanly_and_leaves_no_copy ... ok
+test snapshot::tests::any_change_during_an_attempt_discards_it_and_retries ... ok
+test stream::tests::frozen_sqlite_copy_preserves_source_hashes_and_reads_wal ... ok
+test stream::tests::header_identity::an_unknown_type_name_never_shows_secret_or_odd_text ... ok
+test stream::tests::header_identity::a_zero_usage_file_records_its_header_session_for_discovery ... ok
+test stream::tests::header_identity::an_unknown_claude_record_warns_beside_malformed_lines_qa_fixture ... ok
+test stream::tests::codex_uses_only_cumulative_token_count_and_reset ... ok
+test stream::tests::header_identity::a_secret_shaped_header_id_is_sealed_and_distinct ... ok
+test stream::tests::header_identity::codex_sessions_come_from_session_meta_with_reset_arithmetic_unchanged ... ok
+test stream::tests::header_identity::a_later_conflicting_header_or_codex_id_warns_and_keeps_the_first ... ok
+test stream::tests::header_identity::a_replaced_file_reads_its_new_generation_whole_37 ... ok
+test stream::tests::append_adds_only_new_lines_and_replacement_drops_old_generation ... ok
+test stream::tests::header_identity::a_conflict_appended_after_ingest_keeps_earlier_facts_and_adds_only_new_tokens ... ok
+test stream::tests::header_identity::object_inputs_match_only_when_written_the_same_q4 ... ok
+test stream::tests::codex_append_keeps_same_generation_prior_and_replacement_resets ... ok
+test stream::tests::header_identity::reader_coverage_never_assigns_a_multisession_claude_source_to_the_first_session ... ok
+test stream::tests::header_identity::each_codex_file_says_once_that_its_tool_calls_are_not_read_q6 ... ok
+test stream::tests::header_identity::pi_write_and_edit_are_structured_writes_bash_and_read_are_not_q5 ... ok
+test stream::tests::header_identity::pi_sessions_come_from_line_one_and_never_collapse ... ok
+test stream::tests::partial_tail_and_unknown_line_do_not_move_totals ... ok
+test stream::tests::header_identity::pi_tool_calls_are_settled_by_their_tool_results_q5 ... ok
+test stream::tests::header_identity::each_harness_warns_once_per_file_and_unknown_type ... ok
+test stream::tests::header_identity::a_missing_or_malformed_header_uses_a_per_file_fallback_and_is_never_rescued ... ok
+test stream::tests::header_identity::rejected_records_yield_no_tool_facts_36 ... ok
+test stream::tests::header_identity::tool_outcomes_come_only_from_matching_results_37 ... ok
+test stream::tests::header_identity::streamed_copies_keep_each_distinct_tool_once_and_usage_once_35 ... ok
+test ingest::tests::ac1_counts_records_read_per_harness_and_a_missing_root_warns_and_continues ... ok
+test stream::tests::header_identity::codex_partial_replay_and_unsupported_append_track_committed_prefix ... ok
+test stream::tests::header_identity::pi_results_appended_later_match_a_fresh_ingest_q5 ... ok
+test ingest::tests::k5_reroute_marks_and_unclaim_reach_the_k2_report ... ok
+test ingest::tests::openrig_roots_do_not_erase_each_others_lives ... ok
+test stream::tests::native_command_inputs_outputs_and_metadata_leave_no_canary_in_wal ... ok
+test stream::tests::source_tool_names_do_not_keep_credential_families ... ok
+test stream::tests::source_hash_counter_snapshot_and_warning_reason_are_not_raw_secrets ... ok
+test stream::tests::source_message_closure_and_mission_drop_credential_text ... ok
+test stream::tests::source_identity_activity_and_warning_paths_drop_credential_text ... ok
+test stream::tests::same_relative_name_under_two_roots_does_not_share_a_watermark ... ok
+test stream::tests::header_identity::appended_results_settle_and_unsettle_like_a_fresh_ingest_37 ... ok
+test stream::tests::source_identity_follows_path_not_directory_order ... ok
+
+test result: ok. 54 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 2.20s
+
+     Running tests/privacy_sweep.rs (target/debug/deps/privacy_sweep-4ecea8d5fcddf8b3)
+
+running 2 tests
+test the_sweep_sees_ordinary_values_that_reach_output ... ok
+test every_family_through_every_source_field_stays_out_of_storage_and_output ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 40.16s
+
+     Running unittests src/lib.rs (target/debug/deps/dendro_core-8a52133631072e1b)
+
+running 72 tests
+test lifecycle::tests::a_dropped_stage_is_removed_as_a_fallback ... ok
+test lifecycle::tests::a_stage_is_private_marked_and_removed_by_finish ... ok
+test lifecycle::tests::a_failed_cleanup_keeps_the_marker_and_the_next_run_recovers_the_stage ... ok
+test lifecycle::tests::an_others_writable_parent_is_reported_not_cleaned ... ok
+test lifecycle::tests::ordinary_cleanup_still_removes_everything ... ok
+test metrics::tests::a_launch_before_the_window_still_carries_its_own_state ... ok
+test metrics::tests::a_loop_needs_some_three_within_exactly_ten_minutes_k11 ... ok
+test metrics::tests::a_receiver_queue_close_ends_intake_before_a_later_write_qa_fixture ... ok
+test metrics::tests::a_seat_launched_mid_window_is_observed_from_its_launch ... ok
+test metrics::tests::a_seat_stopped_before_the_window_is_not_observed ... ok
+test metrics::tests::a_seat_without_lifecycle_events_is_observed_for_the_whole_window ... ok
+test metrics::tests::a_state_does_not_carry_across_a_stop_and_relaunch ... ok
+test metrics::tests::an_unavailable_chain_finds_returns_within_the_item_only ... ok
+test metrics::tests::decision_metrics_keep_zero_denominator_and_even_median ... ok
+test metrics::tests::closed_items_follow_k2_states_reasons_and_window ... ok
+test metrics::tests::fractional_marks_conserve_every_observed_second_across_lives ... ok
+test metrics::tests::fractional_wait_binary64_resolution_is_magnitude_dependent ... ok
+test metrics::tests::fractional_waits_do_not_drop_datetime_extrema ... ok
+test metrics::tests::handoff_return_uses_prior_seats_on_the_item ... ok
+test metrics::tests::every_reason_is_recorded_and_the_primary_follows_the_fixed_order ... ok
+test lifecycle::tests::recovery_removes_only_marked_owned_allowlisted_stages ... ok
+test metrics::tests::fractional_wait_samples_preserve_order_keys_and_medians ... ok
+test metrics::tests::indirect_return_marks_membership_without_inflating_is_return ... ok
+test metrics::tests::k3_mission_follows_in_progress_intervals_and_destination ... ok
+test metrics::tests::idle_splits_when_demand_appears ... ok
+test metrics::tests::k5_without_proof_of_no_change_is_insufficient_history ... ok
+test metrics::tests::intake_includes_claim_and_excludes_the_write ... ok
+test metrics::tests::the_wait_and_intake_claim_is_on_the_next_chain_item ... ok
+test metrics::tests::tool_loop_counts_three_or_more_as_one_episode ... ok
+test metrics::tests::two_in_progress_items_with_different_missions_are_ambiguous ... ok
+test metrics::tests::intake_follows_every_row_of_the_frozen_f2_table ... ok
+test metrics::tests::k3_unprovable_history_or_tags_are_ambiguous_with_their_reason ... ok
+test metrics::tests::k6_m1_counts_a_return_only_inside_the_same_window ... ok
+test metrics::tests::m3_counts_a_return_to_build_after_qa ... ok
+test metrics::tests::k7_m3_uses_recorded_roles_and_keeps_unknown_chains_apart ... ok
+test metrics::tests::returns_follow_the_chain_across_items ... ok
+test output::tests::symlink_output_is_refused ... ok
+test metrics::tests::the_same_session_id_in_two_harnesses_is_two_sessions ... ok
+test pipeline::tests::empty_roots_fail_before_a_database_is_created ... ok
+test output::tests::key_is_created_once_and_reused ... ok
+test metrics::tests::k5_untimed_mark_blocks_but_a_timed_reroute_after_the_closure_does_not ... ok
+test metrics::tests::k5_destination_comes_from_created_and_reroute_history ... ok
+test metrics::tests::no_event_in_window_is_entirely_unknown ... ok
+test privacy::tests::lexical_json_does_not_collapse_and_needs_the_key ... ok
+test metrics::tests::overlapping_lives_from_two_sources_count_once ... ok
+test privacy::tests::native_command_fingerprint_matches_independent_synthetic_reference ... ok
+test privacy::tests::redacts_secret_shapes_and_keeps_ordinary_ids ... ok
+test pipeline::tests::two_distinct_openrig_roots_do_not_create_a_database ... ok
+test privacy::tests::sealed_secret_ids_stay_distinct ... ok
+test privacy::tests::activity_and_queue_states_drop_secret_text_without_changing_known_values ... ok
+test privacy::tests::seal_does_not_wrap_an_already_sealed_identifier ... ok
+test lifecycle::tests::private_copy_is_0600_refuses_existing_targets_and_stops_on_cancel ... ok
+test storage::tests::batch_rollback_leaves_watermark ... ok
+test pipeline::tests::report_json_does_not_invent_a_yield_for_an_empty_database ... ok
+test storage::tests::codex_same_line_item_positions_remain_distinct_and_ordered ... ok
+test storage::tests::secret_activity_state_is_stored_as_unknown ... ok
+test storage::tests::legacy_schema_is_refused_without_rewrite ... ok
+test storage::tests::text_columns_match_the_created_schema ... ok
+test pipeline::tests::report_and_trace_expose_the_lifecycle_behind_the_bands ... ok
+test storage::tests::privacy_matrix_keeps_canaries_out_of_every_text_column ... ok
+test storage::tests::reader_state_fails_closed_for_snapshot_mismatch_and_never_becomes_a_tool ... ok
+test pipeline::tests::m1_report_and_trace_carry_k2_verbatim_and_member_evidence ... ok
+test pipeline::tests::exposed_handoff_sets_reproduce_m1_m2_and_pair_samples ... ok
+test pipeline::tests::a_relative_binding_stays_the_same_file_after_the_working_directory_changes ... ok
+test pipeline::tests::mission_bands_conserve_per_seat_with_reasons_and_separate_counts ... ok
+test pipeline::tests::a_run_without_openrig_still_runs_and_a_mixed_database_is_refused ... ok
+test pipeline::tests::a_different_bound_root_is_refused_and_the_same_file_is_not ... ok
+test pipeline::tests::session_rows_conserve_categories_seats_unlinked_and_rig_scope ... ok
+test storage::tests::failed_file_batch_rolls_back_and_retries_on_same_connection ... ok
+test storage::tests::privacy_matrix_covers_every_marker_family_on_disk ... ok
+test pipeline::tests::fractional_waits_agree_across_public_reports_and_traces ... ok
+test storage::tests::reader_batch_faults_roll_back_facts_state_and_session_then_retry ... ok
+
+test result: ok. 72 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.40s
+
+     Running tests/benchmark_nao.rs (target/debug/deps/benchmark_nao-909f5e4c46b6833a)
+
+running 1 test
+test test_nao_analytical_performance_benchmark ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.55s
+
+     Running unittests src/lib.rs (target/debug/deps/dendro_resolver-605502b1ed1ed847)
+
+running 4 tests
+test tests::disagreeing_events_are_a_collision ... ok
+test tests::explicit_identity_links_and_a_name_collision_does_not ... ok
+test tests::heuristic_resolvers_do_not_invent_a_link ... ok
+test tests::repeated_same_binding_stays_linked ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/dendro_watcher-59074344c8012ec2)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests dendro_connectors
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests dendro_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests dendro_resolver
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests dendro_watcher
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

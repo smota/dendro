@@ -1,0 +1,8 @@
+{
+  "original_semantic_vector_sha256": "90e4370053d2102848c98d049b42daac585c1db6458d3176bcbb5c519ef71cdd",
+  "line_locator_correction_sha256": "acf0f54346db5921f715d3f3fe96138db68aef32fdaa945180d7120060dd1d14",
+  "facts_and_permitted_enumerations_unchanged": true,
+  "nature": "literal permitted-enumeration counterexample, not observed runtime SQL instability",
+  "original_spec_sha256": "c2ef4ec39b41090440e00cd2174658df540066cae1005e9bb5a8aff56fb85200",
+  "amended_spec_sha256": "aabd85e8da7ffe0e307502965918a5975b951b044994b0db7bc2e84a702c1893"
+}

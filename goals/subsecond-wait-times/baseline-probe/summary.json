@@ -1,0 +1,166 @@
+{
+  "source_sha256_before": "8c59b787561e8ac7ef51b4bf3b3da540ad820615510b339a28dcc22b922e800b",
+  "source_sha256_after": "8c59b787561e8ac7ef51b4bf3b3da540ad820615510b339a28dcc22b922e800b",
+  "binary_sha256": "b3ba5cd2ea6778a2ba154d8b6f26f6ed717f6b863567324d31bd0124c70fe124",
+  "head": "13423047ba4f4094e49a9267fcf2278be0da43ab",
+  "rows": [
+    {
+      "from": "sender-even",
+      "intake_invalid": 2,
+      "intake_median": null,
+      "intake_samples": [],
+      "to": "receiver-even",
+      "wait_invalid": 0,
+      "wait_median": 0.0,
+      "wait_sample_keys": [
+        [
+          "queue_transitions:50",
+          "queue_transitions:51"
+        ],
+        [
+          "queue_transitions:60",
+          "queue_transitions:61"
+        ]
+      ],
+      "wait_samples": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "from": "sender-invalid",
+      "intake_invalid": 1,
+      "intake_median": null,
+      "intake_samples": [],
+      "to": "receiver-invalid",
+      "wait_invalid": 1,
+      "wait_median": null,
+      "wait_sample_keys": [],
+      "wait_samples": []
+    },
+    {
+      "from": "sender-micro",
+      "intake_invalid": 1,
+      "intake_median": null,
+      "intake_samples": [],
+      "to": "receiver-micro",
+      "wait_invalid": 0,
+      "wait_median": 0.0,
+      "wait_sample_keys": [
+        [
+          "queue_transitions:80",
+          "queue_transitions:81"
+        ]
+      ],
+      "wait_samples": [
+        0.0
+      ]
+    },
+    {
+      "from": "sender-missing",
+      "intake_invalid": 1,
+      "intake_median": null,
+      "intake_samples": [],
+      "to": "receiver-missing",
+      "wait_invalid": 1,
+      "wait_median": null,
+      "wait_sample_keys": [],
+      "wait_samples": []
+    },
+    {
+      "from": "sender-nano",
+      "intake_invalid": 1,
+      "intake_median": null,
+      "intake_samples": [],
+      "to": "receiver-nano",
+      "wait_invalid": 0,
+      "wait_median": 0.0,
+      "wait_sample_keys": [
+        [
+          "queue_transitions:90",
+          "queue_transitions:91"
+        ]
+      ],
+      "wait_samples": [
+        0.0
+      ]
+    },
+    {
+      "from": "sender-negative",
+      "intake_invalid": 1,
+      "intake_median": null,
+      "intake_samples": [],
+      "to": "receiver-negative",
+      "wait_invalid": 1,
+      "wait_median": null,
+      "wait_sample_keys": [],
+      "wait_samples": []
+    },
+    {
+      "from": "sender-odd",
+      "intake_invalid": 3,
+      "intake_median": null,
+      "intake_samples": [],
+      "to": "receiver-odd",
+      "wait_invalid": 0,
+      "wait_median": 0.0,
+      "wait_sample_keys": [
+        [
+          "queue_transitions:20",
+          "queue_transitions:21"
+        ],
+        [
+          "queue_transitions:30",
+          "queue_transitions:31"
+        ],
+        [
+          "queue_transitions:40",
+          "queue_transitions:41"
+        ]
+      ],
+      "wait_samples": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "from": "sender-reported",
+      "intake_invalid": 1,
+      "intake_median": null,
+      "intake_samples": [],
+      "to": "receiver-reported",
+      "wait_invalid": 0,
+      "wait_median": 24.0,
+      "wait_sample_keys": [
+        [
+          "queue_transitions:10",
+          "queue_transitions:11"
+        ]
+      ],
+      "wait_samples": [
+        24.0
+      ]
+    },
+    {
+      "from": "sender-zero",
+      "intake_invalid": 1,
+      "intake_median": null,
+      "intake_samples": [],
+      "to": "receiver-zero",
+      "wait_invalid": 0,
+      "wait_median": 0.0,
+      "wait_sample_keys": [
+        [
+          "queue_transitions:70",
+          "queue_transitions:71"
+        ]
+      ],
+      "wait_samples": [
+        0.0
+      ]
+    }
+  ],
+  "trace_rows": [],
+  "parity": true
+}

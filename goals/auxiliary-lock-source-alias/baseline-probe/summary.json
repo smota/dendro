@@ -1,0 +1,158 @@
+{
+  "head": "d7f180715440d0389101626cfc1eedbb0ce8490b",
+  "binary_sha256": "0262540a9f54f70ef2218470ec8aba6f41182c33c00190f8844817ca2ac89d9e",
+  "observer_sha256": "b5fcb570c54fa1ab89345faa688b1f05938d2cd0d267fb5d9f2b58214aa76c09",
+  "observer_provenance": {
+    "purpose": "Project-local unprivileged verification observer only; no system install/profile/service changes",
+    "source": "Configured Ubuntu resolute apt repository; apt download strace6.19+ds-0ubuntu5/libunwind8 1.8.3-0ubuntu1",
+    "smoke": "strace --version and openat-only trace of own /usr/bin/true exited0; not product/source proof",
+    "files": [
+      {
+        "path": ".agent-runs/tools/strace/strace_6.19+ds-0ubuntu5_amd64.deb",
+        "sha256": "aa530bb652e46beaf92d5c916403182a5ac6b2ba79a94f18e5b9da45d1799ee5"
+      },
+      {
+        "path": ".agent-runs/tools/strace/libunwind8_1.8.3-0ubuntu1_amd64.deb",
+        "sha256": "7a9978fadf0940f45500ced0fba219cb5954f322a31068b7b32ad04f3ddc5c3f"
+      },
+      {
+        "path": ".agent-runs/tools/strace/extracted/usr/bin/strace",
+        "sha256": "f47342683309e807bca57d6d89b82f94a9b39aa614e9c28c2b67cefbc35eee58"
+      },
+      {
+        "path": ".agent-runs/tools/strace/bin/strace",
+        "sha256": "1ab1c4c937d7934d61e36189aaf66937579ec60d2bae6ece6d1f9a0ccb37d674"
+      },
+      {
+        "path": ".agent-runs/tools/strace/extracted/usr/lib/x86_64-linux-gnu/libunwind-ptrace.so.0.0.0",
+        "sha256": "d22b4d04f3379571e733c02611884d2d3e0c5e588637c96cc8a8df44b00801b5"
+      },
+      {
+        "path": ".agent-runs/tools/strace/extracted/usr/lib/x86_64-linux-gnu/libunwind.so.8.2.0",
+        "sha256": "ba50c4006ec13e89fc7065e1928345737d58e4f17c7f0ecff0914c3ac96e711f"
+      },
+      {
+        "path": ".agent-runs/tools/strace/extracted/usr/lib/x86_64-linux-gnu/libunwind-coredump.so.0.0.0",
+        "sha256": "189e953d953d351ebf7787a1a6bfdf4efacd491652995a264b2832a024775d5d"
+      },
+      {
+        "path": ".agent-runs/tools/strace/extracted/usr/lib/x86_64-linux-gnu/libunwind-x86_64.so.8.2.0",
+        "sha256": "e7cf258af27d39ff199342f4fb181218368df93238fb9d2ecf2eae52bf049b32"
+      }
+    ]
+  },
+  "parser_controls": "5 literal parser controls PASS: resumed/descendant/shared-fd/hardlink/mmap/raw write; failed writable open; unresolved fd; unfinished; execve argv\nmapping-upgrade descendant control PASS\n",
+  "raw_buffer_capture": false,
+  "cases": [
+    {
+      "case": "lock-main",
+      "exit": 1,
+      "stderr": "Error: output lock identity is unsafe\n",
+      "primary_distinct": true,
+      "lock_identity": [
+        2096,
+        1160106
+      ],
+      "target_identity": [
+        2096,
+        1160106
+      ],
+      "source_state_unchanged": true,
+      "tree_unchanged": true,
+      "write_capable_source_opens": [
+        {
+          "kind": "write-capable-open-attempt",
+          "path": "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-main/fixture/output/.dendro-output.lock",
+          "line": 526,
+          "end_line": 526,
+          "pid": 1647585,
+          "call": "openat"
+        }
+      ],
+      "observed_source_mutators": [],
+      "observer_unknown": [],
+      "normal_descendant_exit_coverage": true,
+      "canaries_absent_from_cli": true,
+      "primary_db_exists": false
+    },
+    {
+      "case": "lock-wal",
+      "exit": 1,
+      "stderr": "Error: output lock identity is unsafe\n",
+      "primary_distinct": true,
+      "lock_identity": [
+        2096,
+        1160117
+      ],
+      "target_identity": [
+        2096,
+        1160117
+      ],
+      "source_state_unchanged": true,
+      "tree_unchanged": true,
+      "write_capable_source_opens": [
+        {
+          "kind": "write-capable-open-attempt",
+          "path": "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-wal/fixture/output/.dendro-output.lock",
+          "line": 508,
+          "end_line": 508,
+          "pid": 1647607,
+          "call": "openat"
+        }
+      ],
+      "observed_source_mutators": [],
+      "observer_unknown": [],
+      "normal_descendant_exit_coverage": true,
+      "canaries_absent_from_cli": true,
+      "primary_db_exists": false
+    },
+    {
+      "case": "lock-shm",
+      "exit": 1,
+      "stderr": "Error: output lock identity is unsafe\n",
+      "primary_distinct": true,
+      "lock_identity": [
+        2096,
+        1160129
+      ],
+      "target_identity": [
+        2096,
+        1160129
+      ],
+      "source_state_unchanged": true,
+      "tree_unchanged": true,
+      "write_capable_source_opens": [
+        {
+          "kind": "write-capable-open-attempt",
+          "path": "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/lock-shm/fixture/output/.dendro-output.lock",
+          "line": 507,
+          "end_line": 507,
+          "pid": 1647633,
+          "call": "openat"
+        }
+      ],
+      "observed_source_mutators": [],
+      "observer_unknown": [],
+      "normal_descendant_exit_coverage": true,
+      "canaries_absent_from_cli": true,
+      "primary_db_exists": false
+    },
+    {
+      "case": "safe-distinct",
+      "exit": 0,
+      "stderr": "",
+      "primary_distinct": true,
+      "lock_identity": null,
+      "target_identity": null,
+      "source_state_unchanged": true,
+      "tree_unchanged": false,
+      "write_capable_source_opens": [],
+      "observed_source_mutators": [],
+      "observer_unknown": [],
+      "normal_descendant_exit_coverage": true,
+      "canaries_absent_from_cli": true,
+      "primary_db_exists": true
+    }
+  ],
+  "limits": "analyst entry-behavior investigation, not candidate QA/review; no real owner source/key or runtime frequency claim; counts apply only to recorded trace scope"
+}

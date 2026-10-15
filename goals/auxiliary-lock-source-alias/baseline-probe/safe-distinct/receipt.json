@@ -1,0 +1,193 @@
+{
+  "cwd": "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/safe-distinct/fixture",
+  "argv": [
+    "/home/sam/code/dendro/target/debug/dendro",
+    "run",
+    "--db",
+    "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/safe-distinct/fixture/output/analytics.duckdb",
+    "--root",
+    "openrig=/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/safe-distinct/fixture/source/openrig.sqlite"
+  ],
+  "observer_argv": [
+    "/home/sam/code/dendro/.agent-runs/tools/strace/bin/strace",
+    "-f",
+    "-yy",
+    "-s",
+    "4096",
+    "-o",
+    "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/safe-distinct/trace.syscalls",
+    "-e",
+    "trace=%file,%memory,%process,eventfd,eventfd2,epoll_create,epoll_create1,socket,socketpair,pipe,pipe2,accept,accept4,close,dup,dup2,dup3,fcntl,flock,ftruncate,fallocate,copy_file_range,sendfile,splice,fsync,fdatasync,read,write,pread64,pwrite64,readv,writev,preadv,pwritev,preadv2,pwritev2",
+    "-e",
+    "raw=read,write,pread64,pwrite64,readv,writev,preadv,pwritev,preadv2,pwritev2",
+    "/home/sam/code/dendro/target/debug/dendro",
+    "run",
+    "--db",
+    "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/safe-distinct/fixture/output/analytics.duckdb",
+    "--root",
+    "openrig=/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/safe-distinct/fixture/source/openrig.sqlite"
+  ],
+  "protected_paths": [
+    "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/safe-distinct/fixture/source/openrig.sqlite",
+    "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/safe-distinct/fixture/source/openrig.sqlite-wal",
+    "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/safe-distinct/fixture/source/openrig.sqlite-shm"
+  ],
+  "protected_dirs": [],
+  "identity_paths": {
+    "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/safe-distinct/fixture/output": [
+      2096,
+      1160137
+    ],
+    "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/safe-distinct/fixture/source": [
+      2096,
+      1160136
+    ],
+    "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/safe-distinct/fixture/source/openrig.sqlite": [
+      2096,
+      1160138
+    ],
+    "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/safe-distinct/fixture/source/openrig.sqlite-shm": [
+      2096,
+      1160140
+    ],
+    "/home/sam/code/dendro/goals/auxiliary-lock-source-alias/baseline-probe/safe-distinct/fixture/source/openrig.sqlite-wal": [
+      2096,
+      1160139
+    ]
+  },
+  "protected_inodes": [
+    [
+      2096,
+      1160138
+    ],
+    [
+      2096,
+      1160139
+    ],
+    [
+      2096,
+      1160140
+    ]
+  ],
+  "before": {
+    "output": {
+      "dev": 2096,
+      "ino": 1160137,
+      "nlink": 2,
+      "mode": 16877,
+      "size": 4096,
+      "mtime_ns": 1792023793644713804
+    },
+    "source": {
+      "dev": 2096,
+      "ino": 1160136,
+      "nlink": 2,
+      "mode": 16877,
+      "size": 4096,
+      "mtime_ns": 1792023793664713679
+    },
+    "source/openrig.sqlite": {
+      "dev": 2096,
+      "ino": 1160138,
+      "nlink": 1,
+      "mode": 33188,
+      "size": 8192,
+      "mtime_ns": 1792023793664713679,
+      "sha256": "f42b710e0d9f7dfff2cd315589d67c9628f30cf898ff4ae1ef9ae418cf492901"
+    },
+    "source/openrig.sqlite-shm": {
+      "dev": 2096,
+      "ino": 1160140,
+      "nlink": 1,
+      "mode": 33188,
+      "size": 32768,
+      "mtime_ns": 1792023793672713628,
+      "sha256": "c09d12b299346538b5fe43f46476bcb75ad941fa326f0a9b7825e2d69a08d78d"
+    },
+    "source/openrig.sqlite-wal": {
+      "dev": 2096,
+      "ino": 1160139,
+      "nlink": 1,
+      "mode": 33188,
+      "size": 4152,
+      "mtime_ns": 1792023793668713653,
+      "sha256": "a610b7af56d92a200a9aca48bdd629091c9d38a6e04f3b27e865f609bf4a8366"
+    }
+  },
+  "after": {
+    "output": {
+      "dev": 2096,
+      "ino": 1160137,
+      "nlink": 2,
+      "mode": 16877,
+      "size": 4096,
+      "mtime_ns": 1792023794536708208
+    },
+    "output/.dendro-output.lock": {
+      "dev": 2096,
+      "ino": 1160142,
+      "nlink": 1,
+      "mode": 33152,
+      "size": 0,
+      "mtime_ns": 1792023793744713177,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "output/analytics.duckdb": {
+      "dev": 2096,
+      "ino": 1160146,
+      "nlink": 1,
+      "mode": 33188,
+      "size": 2109440,
+      "mtime_ns": 1792023794380709187,
+      "sha256": "e36dec7fc5e649364cbad23fef1ff2671109086ea6c408310806315ecec1446d"
+    },
+    "output/analytics.duckdb.key": {
+      "dev": 2096,
+      "ino": 1160143,
+      "nlink": 1,
+      "mode": 33152,
+      "size": 72,
+      "mtime_ns": 1792023793750147503,
+      "content": "excluded; never read"
+    },
+    "source": {
+      "dev": 2096,
+      "ino": 1160136,
+      "nlink": 2,
+      "mode": 16877,
+      "size": 4096,
+      "mtime_ns": 1792023793664713679
+    },
+    "source/openrig.sqlite": {
+      "dev": 2096,
+      "ino": 1160138,
+      "nlink": 1,
+      "mode": 33188,
+      "size": 8192,
+      "mtime_ns": 1792023793664713679,
+      "sha256": "f42b710e0d9f7dfff2cd315589d67c9628f30cf898ff4ae1ef9ae418cf492901"
+    },
+    "source/openrig.sqlite-shm": {
+      "dev": 2096,
+      "ino": 1160140,
+      "nlink": 1,
+      "mode": 33188,
+      "size": 32768,
+      "mtime_ns": 1792023793672713628,
+      "sha256": "c09d12b299346538b5fe43f46476bcb75ad941fa326f0a9b7825e2d69a08d78d"
+    },
+    "source/openrig.sqlite-wal": {
+      "dev": 2096,
+      "ino": 1160139,
+      "nlink": 1,
+      "mode": 33188,
+      "size": 4152,
+      "mtime_ns": 1792023793668713653,
+      "sha256": "a610b7af56d92a200a9aca48bdd629091c9d38a6e04f3b27e865f609bf4a8366"
+    }
+  },
+  "exit": 0,
+  "stdout": "{\"key_id\":\"642133d3b65245cf5c7e9ce27d7e3d57\",\"product\":\"AI Fleet Intelligence\",\"sources\":[\"openrig events=2 revision=f0aa69b310c70232 attempts=1 main_bytes=8192 wal_bytes=4152 copy_ms=10 check_ms=20\"],\"staging\":[],\"status\":\"ready\"}\n",
+  "stderr": "",
+  "producer": "synthetic SQLite connection quiescent throughout before/CLI/after; close/checkpoint only after manifests; child close_fds=True, source producer descriptors not inherited"
+}

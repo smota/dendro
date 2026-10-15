@@ -1,0 +1,142 @@
+{
+  "kind": "analyst entry investigation, not frozen independent QA oracle",
+  "head": "d7f180715440d0389101626cfc1eedbb0ce8490b",
+  "binary_sha256": "0262540a9f54f70ef2218470ec8aba6f41182c33c00190f8844817ca2ac89d9e",
+  "files": [
+    {
+      "path": "baseline-build.log",
+      "sha256": "d4e50fbdf63b8ff7da318c84c5b65c8f68debc7fc5471bfca816fa24c05c81f8",
+      "bytes": 145
+    },
+    {
+      "path": "baseline-probe/checks.json",
+      "sha256": "274ea4f48b0fccaed931329d4660445f02049ee2380afe90ab97087b2eef574f",
+      "bytes": 290
+    },
+    {
+      "path": "baseline-probe/lock-main/operations.json",
+      "sha256": "cb0b2250e72d8bfbdb56624562978e6a06f8df8deccb03317857f094e1610f9b",
+      "bytes": 2093
+    },
+    {
+      "path": "baseline-probe/lock-main/receipt.json",
+      "sha256": "c75482e743f477480bcbde5759a76a2158e77f2534710ceb51423936239821e6",
+      "bytes": 5974
+    },
+    {
+      "path": "baseline-probe/lock-main/stderr",
+      "sha256": "b9f6bafe7bcb579e3a1cbd89ea3297e2844c22f174a12fab6b3d565b9d6e1eb1",
+      "bytes": 38
+    },
+    {
+      "path": "baseline-probe/lock-main/stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "baseline-probe/lock-main/trace.syscalls",
+      "sha256": "fc5b252e19ece0084d63eebfcab12e0ef2c79cb70da3c8c8830ef6ffa5f0f4d0",
+      "bytes": 88666
+    },
+    {
+      "path": "baseline-probe/lock-shm/operations.json",
+      "sha256": "37ea903d178ff418f9c162e592a24bcfe7a67f03a4d2c7781d6bacf070de77ac",
+      "bytes": 2088
+    },
+    {
+      "path": "baseline-probe/lock-shm/receipt.json",
+      "sha256": "6cc8286511ceb65f0795d67f418134b59d7d51c2987d02fb5107794914628dac",
+      "bytes": 5961
+    },
+    {
+      "path": "baseline-probe/lock-shm/stderr",
+      "sha256": "b9f6bafe7bcb579e3a1cbd89ea3297e2844c22f174a12fab6b3d565b9d6e1eb1",
+      "bytes": 38
+    },
+    {
+      "path": "baseline-probe/lock-shm/stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "baseline-probe/lock-shm/trace.syscalls",
+      "sha256": "50ff912719c4448def535043f0f73811acad5221cbc99fca8b2d5c20a3c5478a",
+      "bytes": 87374
+    },
+    {
+      "path": "baseline-probe/lock-wal/operations.json",
+      "sha256": "9aa8d5ba469f0e92c816466dfcb1d10f2e08549dcada1448d2c0f61e6e5df36c",
+      "bytes": 2088
+    },
+    {
+      "path": "baseline-probe/lock-wal/receipt.json",
+      "sha256": "7c884b2edf84af3f8e6c9970d577b460ae6cbf6632f2468bd85fd41cce4db9d2",
+      "bytes": 5959
+    },
+    {
+      "path": "baseline-probe/lock-wal/stderr",
+      "sha256": "b9f6bafe7bcb579e3a1cbd89ea3297e2844c22f174a12fab6b3d565b9d6e1eb1",
+      "bytes": 38
+    },
+    {
+      "path": "baseline-probe/lock-wal/stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "baseline-probe/lock-wal/trace.syscalls",
+      "sha256": "4ac88c3d2c781940cfc094a567f1a0cd8a1e0bdd22f720e13e825d47573efe7b",
+      "bytes": 87446
+    },
+    {
+      "path": "baseline-probe/observer-controls.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "baseline-probe/observer-controls.stdout",
+      "sha256": "29472cd193ddba0b7254412c5a481761d3a80726518fa852ff4175157ba1acca",
+      "bytes": 187
+    },
+    {
+      "path": "baseline-probe/safe-distinct/operations.json",
+      "sha256": "9ad9763a9a4d5bc73d5c90b3e4585363c7515693352c868b8431ca42137aba07",
+      "bytes": 7687
+    },
+    {
+      "path": "baseline-probe/safe-distinct/receipt.json",
+      "sha256": "324492b21a2459f13940572552b4293b416623b7e1c49479c5572b5dc89ab645",
+      "bytes": 6302
+    },
+    {
+      "path": "baseline-probe/safe-distinct/stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "baseline-probe/safe-distinct/stdout",
+      "sha256": "0b894f3270c2faa163e0730f99d9392dc2af1ff0374bfa576af11d2966bbcb35",
+      "bytes": 232
+    },
+    {
+      "path": "baseline-probe/safe-distinct/trace.syscalls",
+      "sha256": "4f2846b8fca2336018a6c1de3eb71e9ec0176117f9a8336c91a965196af9d70d",
+      "bytes": 634672
+    },
+    {
+      "path": "baseline-probe/summary.json",
+      "sha256": "711622d5acdfffca443b3686356ae08bbf29371b5b7e329f1cf526febe3b4d1b",
+      "bytes": 5712
+    },
+    {
+      "path": "baseline-probe.py",
+      "sha256": "4347bb1129a846a2e1dcf66ee5603ffc648c551b1c2c54c80482311471f745f7",
+      "bytes": 6069
+    },
+    {
+      "path": "locking-controls/summary.json",
+      "sha256": "f817813171b0f0b906aeb96571f2cb4953254a083b758695be940a9811914aaa",
+      "bytes": 665
+    }
+  ]
+}
