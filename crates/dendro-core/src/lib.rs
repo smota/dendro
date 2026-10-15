@@ -2,6 +2,7 @@
 #![recursion_limit = "256"]
 #![deny(unsafe_code)]
 
+pub mod compaction;
 pub mod facts;
 pub mod file_metadata;
 mod file_state;

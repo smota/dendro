@@ -444,22 +444,26 @@ fn execution(input: &Input<'_>) -> (Value, BTreeMap<(String, String), Execution>
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
-struct Lineage {
-    missions: BTreeSet<String>,
-    issues: BTreeSet<String>,
+pub(crate) struct Lineage {
+    pub(crate) missions: BTreeSet<String>,
+    pub(crate) issues: BTreeSet<String>,
     phases: BTreeSet<String>,
-    ancestors: BTreeSet<String>,
+    pub(crate) ancestors: BTreeSet<String>,
     unresolved: bool,
     mission_unresolved: bool,
 }
 
-fn lineage(input: &Input<'_>) -> BTreeMap<String, Lineage> {
+pub(crate) fn lineage(
+    history_queue: &[QueueFact],
+    meta: &BTreeMap<String, QueueItemMeta>,
+    snapshots: &Snapshots,
+) -> BTreeMap<String, Lineage> {
     let mut own = BTreeMap::<String, Lineage>::new();
     let mut parents = BTreeMap::<String, BTreeSet<String>>::new();
-    for q in input.history_queue {
+    for q in history_queue {
         let own = own.entry(q.qitem_id.clone()).or_default();
         // The snapshots are the creation-tag readings used by K3.
-        if let Some(s) = input.snapshots.get(&q.qitem_id).and_then(|s| s.last()) {
+        if let Some(s) = snapshots.get(&q.qitem_id).and_then(|s| s.last()) {
             own.missions.extend(s.missions.iter().cloned());
         } else {
             own.missions.extend(q.missions.iter().cloned());
@@ -473,7 +477,7 @@ fn lineage(input: &Input<'_>) -> BTreeMap<String, Lineage> {
             }
         }
     }
-    for (id, meta) in input.meta {
+    for (id, meta) in meta {
         let own = own.entry(id.clone()).or_default();
         own.issues.extend(meta.issue_tags.iter().cloned());
         own.phases.extend(meta.phase_tags.iter().cloned());
@@ -583,7 +587,7 @@ fn build_seat(seat: &str) -> bool {
 
 /// All new projections are computed from the caller's coherent read snapshot.
 pub fn evaluate(input: Input<'_>) -> Value {
-    let lineage = lineage(&input);
+    let lineage = lineage(input.history_queue, input.meta, input.snapshots);
     let mut sku = BTreeMap::<(Option<String>, Option<String>, Option<String>), i64>::new();
     let mut chain_models = BTreeMap::<(String, String), (BTreeSet<String>, bool)>::new();
     let mut mission_tokens = BTreeMap::<String, i64>::new();

@@ -1302,6 +1302,23 @@ fn evaluate_report_snapshot(
     if !m4_skill_exposure.is_empty() {
         payload["m4_skill_exposure"] = json!(m4_skill_exposure);
     }
+    let compaction = crate::compaction::evaluate(crate::compaction::Input {
+        usage: &usage_all,
+        queue: &queue_all,
+        history_queue: &queue_context,
+        meta: &store.load_queue_item_meta()?,
+        snapshots: &snapshot_destinations,
+        bindings: &bindings,
+        rig,
+        window,
+    });
+    for field in [
+        "context_compactions",
+        "context_depth_brackets",
+        "cross_slice_cache_bleed",
+    ] {
+        payload[field] = compaction[field].clone();
+    }
     let wave1 = crate::turnaround::evaluate(crate::turnaround::Input {
         queue: &queue_all,
         history_queue: &queue_context,
@@ -1659,7 +1676,8 @@ pub fn trace_json_with_thresholds(
             payload["tool_categories"].clone(),
         ),
         field @ ("watchdog_recovery" | "ring_boundaries" | "exec_turnaround" | "model_effort_tokens"
-            | "four_eyes_independence" | "issue_lineage" | "task_intake_overhead") => (
+            | "four_eyes_independence" | "issue_lineage" | "task_intake_overhead"
+            | "context_compactions" | "context_depth_brackets" | "cross_slice_cache_bleed") => (
             "additive Wave 1 projection from accepted facts; definition and source membership accompany each projection",
             payload[field].clone(),
         ),
@@ -1722,6 +1740,9 @@ pub fn trace_json_with_thresholds(
         inputs["handoff_loops"] = payload["handoff_loops"].clone();
     }
     for field in [
+        "context_compactions",
+        "context_depth_brackets",
+        "cross_slice_cache_bleed",
         "watchdog_recovery",
         "ring_boundaries",
         "exec_turnaround",
@@ -1755,6 +1776,196 @@ pub fn trace_json_with_thresholds(
 mod tests {
     use super::*;
     use crate::AnalyticsStore;
+
+    #[test]
+    fn compaction_depth_and_bleed_roundtrip_reports_traces_and_rig_scope() {
+        use chrono::{DateTime, Utc};
+        let at = |s| DateTime::<Utc>::from_timestamp(s, 0).unwrap();
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(format!(".test-issue54-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("analytics.duckdb");
+        let store = AnalyticsStore::open_path(&db, "test").unwrap();
+        store
+            .insert_identity(&crate::IdentityFact {
+                source_key: "identity".into(),
+                harness: "codex".into(),
+                native_session: "persistent".into(),
+                seat: "builder".into(),
+                rig: "worker".into(),
+                ts: Some(at(0)),
+            })
+            .unwrap();
+        for (id, start, end, mission) in [("a", 1, 8, "A"), ("b", 8, 20, "B")] {
+            for (ts, state, key) in [
+                (start - 1, "pending", format!("events:queue.created:{id}")),
+                (start, "in-progress", format!("claim:{id}")),
+                (end, "done", format!("done:{id}")),
+            ] {
+                store
+                    .insert_queue(&crate::QueueFact {
+                        source_key: key,
+                        transition_id: ts,
+                        qitem_id: id.into(),
+                        ts: at(ts),
+                        state: state.into(),
+                        source_seat: "actor".into(),
+                        dest_seat: "builder".into(),
+                        closure_reason: None,
+                        closure_target: None,
+                        chain_id: None,
+                        missions: vec![mission.into()],
+                    })
+                    .unwrap();
+            }
+            store
+                .insert_destination_snapshot(
+                    id,
+                    "builder",
+                    &at(end).to_rfc3339(),
+                    false,
+                    &[mission.into()],
+                )
+                .unwrap();
+        }
+        let mut usages: Vec<crate::UsageFact> = [
+            (5, 240_000, 200_000),
+            (10, 260_000, 200_000),
+            (11, 325_000, 300_000),
+            (12, 34_000, 30_000),
+            (21, 100_000, 90_000),
+            (22, 10_000, 5_000),
+            (100, 50_000, 0),
+        ]
+        .into_iter()
+        .map(|(seq, context, cache)| {
+            serde_json::from_value(json!({
+                "source_key": format!("source:1:{seq}"), "harness": "codex",
+                "native_session": if seq == 100 { "unlinked" } else { "persistent" },
+                "ts": at(if seq == 100 { 10 } else { seq }), "seq": seq,
+                "input_uncached": context - cache, "cache_read": cache,
+                "cache_write": 0, "output": 1000, "reasoning": 500, "generation": 1
+            }))
+            .unwrap()
+        })
+        .collect();
+        let mut untimed = usages[0].clone();
+        untimed.source_key = "source:1:101".into();
+        untimed.seq = 101;
+        untimed.ts = None;
+        usages.push(untimed);
+        store
+            .commit_file_batch(
+                "source",
+                "codex",
+                "fixture.jsonl",
+                1,
+                0,
+                "hash",
+                None,
+                &usages,
+                &[],
+            )
+            .unwrap();
+        store.checkpoint().unwrap();
+        drop(store);
+        let from = at(8).to_rfc3339();
+        let to = at(23).to_rfc3339();
+        for kind in ["tokens", "decisions"] {
+            let report = report_json(&db, kind, None, &from, &to).unwrap();
+            let p = &report["payload"];
+            assert_eq!(p["tokens"], 785_000);
+            assert_eq!(p["unlinked_tokens"], 51_000);
+            assert_eq!(p["untimestamped_count"], 1);
+            assert_eq!(p["mission_tokens"]["mission:B"], 622_000);
+            assert_eq!(p["mission_tokens"]["no_mission"], 112_000);
+            assert_eq!(p["task_intake_overhead"]["conserved"], true);
+            assert_eq!(p["context_compactions"]["mid_item_hazard_count"], 1);
+            assert_eq!(p["context_compactions"]["boundary_reset_count"], 1);
+            let event = &p["context_compactions"]["events"][0];
+            assert_eq!(event["pre_drop_context_tokens"], 325_000);
+            assert_eq!(event["post_drop_context_tokens"], 34_000);
+            assert_eq!(event["active_item_id"], "b");
+            assert_eq!(event["pre_source_key"], "source:1:11");
+            assert_eq!(event["post_source_key"], "source:1:12");
+            assert!(event["queue_source_keys"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("claim:b")));
+            let d = &p["context_depth_brackets"]["overall"];
+            assert_eq!(d["under_100k"]["turn_count"], 3);
+            assert_eq!(d["100k_to_250k"]["turn_count"], 1);
+            assert_eq!(d["over_250k"]["turn_count"], 2);
+            let b = &p["cross_slice_cache_bleed"];
+            assert_eq!(b["total_inherited_entry_tokens"], 200_000);
+            assert_eq!(b["total_cumulative_bleed_tokens"], 440_000);
+            assert!(b["events"][0]["source_keys"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("source:1:5")));
+            for metric in [
+                "context_compactions",
+                "context_depth_brackets",
+                "cross_slice_cache_bleed",
+            ] {
+                let trace = trace_json_with_thresholds(
+                    &db,
+                    metric,
+                    None,
+                    &from,
+                    &to,
+                    LoopThresholds::default(),
+                )
+                .unwrap();
+                assert_eq!(trace["value"], p[metric]);
+                for input in [
+                    "context_compactions",
+                    "context_depth_brackets",
+                    "cross_slice_cache_bleed",
+                ] {
+                    assert_eq!(trace["inputs"][input], p[input]);
+                }
+            }
+        }
+        let p = report_json(&db, "tokens", Some("worker"), &from, &to).unwrap();
+        assert_eq!(p["payload"]["tokens"], 734_000);
+        assert_eq!(
+            p["payload"]["context_depth_brackets"]["by_session"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            p["payload"]["context_depth_brackets"]["overall"]["under_100k"]["turn_count"],
+            2
+        );
+        let p = report_json(&db, "tokens", Some("other"), &from, &to).unwrap();
+        assert_eq!(p["payload"]["context_compactions"]["events"], json!([]));
+        assert_eq!(p["payload"]["cross_slice_cache_bleed"]["events"], json!([]));
+        assert_eq!(
+            p["payload"]["context_depth_brackets"]["by_session"],
+            json!([])
+        );
+        // A narrow window still detects the drop using its pre-window predecessor.
+        let p = report_json(
+            &db,
+            "tokens",
+            None,
+            &at(12).to_rfc3339(),
+            &at(13).to_rfc3339(),
+        )
+        .unwrap();
+        assert_eq!(
+            p["payload"]["context_compactions"]["mid_item_hazard_count"],
+            1
+        );
+        assert_eq!(
+            p["payload"]["context_compactions"]["events"][0]["pre_source_key"],
+            "source:1:11"
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn report_json_does_not_invent_a_yield_for_an_empty_database() {
