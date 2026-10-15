@@ -1,48 +1,26 @@
-// Dendro Interactive Rework Scenario Modeler Script
+'use strict';
+// All values are operator assumptions. No network calls or hidden benchmark constants.
+function modelScenario({seats,missions,tokensK,reworkPercent,costPerMillion,hours,reduction}) {
+  const returned = missions * reworkPercent / 100;
+  const tokenMillions = returned * tokensK / 1000;
+  return {returned,tokenMillions,cost:tokenMillions*costPerMillion,
+    hours:returned*hours*reduction/100,capacity:reworkPercent*reduction/100,
+    missionsPerSeat:missions/seats};
+}
 document.addEventListener('DOMContentLoaded', () => {
-  const missionsInput = document.getElementById('missionsInput');
-  const tokensPerMissionInput = document.getElementById('tokensPerMissionInput');
-  const reworkRateInput = document.getElementById('reworkRateInput');
-  const tokenCostInput = document.getElementById('tokenCostInput');
-
-  const missionsVal = document.getElementById('missionsVal');
-  const tokensPerMissionVal = document.getElementById('tokensPerMissionVal');
-  const reworkRateVal = document.getElementById('reworkRateVal');
-  const tokenCostVal = document.getElementById('tokenCostVal');
-
-  const reworkChainsVal = document.getElementById('reworkChainsVal');
-  const reworkTokensVal = document.getElementById('reworkTokensVal');
-  const reworkCostVal = document.getElementById('reworkCostVal');
-
-  function calculateRework() {
-    const missions = parseInt(missionsInput.value, 10);
-    const tokensK = parseInt(tokensPerMissionInput.value, 10);
-    const reworkPercent = parseInt(reworkRateInput.value, 10);
-    const costPerMillion = parseInt(tokenCostInput.value, 10);
-
-    // Update slider label displays
-    missionsVal.textContent = `${missions} missions`;
-    tokensPerMissionVal.textContent = `${tokensK}k tokens`;
-    reworkRateVal.textContent = `${reworkPercent}%`;
-    tokenCostVal.textContent = `$${costPerMillion} / 1M`;
-
-    // Transparent calculation derived directly from operator inputs:
-    const reworkRate = reworkPercent / 100;
-    const reworkChains = Math.round(missions * reworkRate);
-    const tokensPerMissionMillions = tokensK / 1000;
-    const reworkTokensMillions = (missions * reworkRate * tokensPerMissionMillions);
-    const reworkCost = Math.round(reworkTokensMillions * costPerMillion);
-
-    reworkChainsVal.textContent = `${reworkChains} chain${reworkChains === 1 ? '' : 's'}`;
-    reworkTokensVal.textContent = `${reworkTokensMillions.toFixed(1)}M tokens`;
-    reworkCostVal.textContent = `$${reworkCost.toLocaleString()} USD`;
+  const fields={seats:'seatsInput',missions:'missionsInput',tokensK:'tokensPerMissionInput',reworkPercent:'reworkRateInput',costPerMillion:'tokenCostInput',hours:'hoursInput',reduction:'reductionInput'};
+  const format=n=>n.toLocaleString(undefined,{maximumFractionDigits:2});
+  const write=(id,text)=>{document.getElementById(id).textContent=text;};
+  function update(){
+    const input=Object.fromEntries(Object.entries(fields).map(([key,id])=>[key,Number(document.getElementById(id).value)]));
+    const r=modelScenario(input);
+    write('seatsVal',`${input.seats} seats`);write('missionsVal',`${input.missions} missions`);
+    write('tokensPerMissionVal',`${input.tokensK}k tokens`);write('reworkRateVal',`${input.reworkPercent}%`);
+    write('tokenCostVal',`$${input.costPerMillion} / 1M`);write('hoursVal',`${input.hours} hours`);write('reductionVal',`${input.reduction}%`);
+    write('reworkChainsVal',`${format(r.returned)} expected returns`);write('reworkTokensVal',`${format(r.tokenMillions)}M tokens`);
+    write('reworkCostVal',`$${r.cost.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} USD`);
+    write('hoursSavedVal',`${format(r.hours)} hours / month`);write('capacityVal',`${format(r.capacity)}%`);
+    write('seatLoadVal',`${format(r.missionsPerSeat)} missions per seat / month, assuming an even workload.`);
   }
-
-  if (missionsInput && tokensPerMissionInput && reworkRateInput && tokenCostInput) {
-    missionsInput.addEventListener('input', calculateRework);
-    tokensPerMissionInput.addEventListener('input', calculateRework);
-    reworkRateInput.addEventListener('input', calculateRework);
-    tokenCostInput.addEventListener('input', calculateRework);
-    calculateRework();
-  }
+  if(Object.values(fields).every(id=>document.getElementById(id))){Object.values(fields).forEach(id=>document.getElementById(id).addEventListener('input',update));update();}
 });
