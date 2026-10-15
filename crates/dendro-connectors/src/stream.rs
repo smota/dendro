@@ -6,7 +6,8 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use dendro_core::file_metadata::{observe_path, FileMetadata};
 use dendro_core::{
-    tool_fingerprint, AnalyticsStore, CodexCounters, SkillFact, ToolFact, UsageFact, WarningNote,
+    classify_tool_invocation, tool_fingerprint, AnalyticsStore, CodexCounters, SkillFact,
+    ToolCategory, ToolFact, UsageFact, WarningNote,
 };
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -188,6 +189,7 @@ fn ingest_jsonl_bounded(
     let mut first_codex_in_this_call = true;
     let mut usages = Vec::new();
     let mut tools = Vec::new();
+    let mut tool_categories: Vec<(String, ToolCategory)> = Vec::new();
     let mut seen_messages = HashSet::new();
     let mut unknown_types = HashSet::new();
     let mut records_read = 0u64;
@@ -288,6 +290,7 @@ fn ingest_jsonl_bounded(
             }
         }
         let mut codex_skills = Vec::new();
+        let mut codex_categories = Vec::new();
         if harness == "codex" && unknown_record_type(harness, &value).is_none() {
             reader_complete &= observe_codex(
                 &value,
@@ -300,12 +303,14 @@ fn ingest_jsonl_bounded(
                 tool_key,
                 &mut tools,
                 &mut codex_skills,
+                &mut codex_categories,
             )?;
         }
         if is_new {
             for skill in codex_skills {
                 store.insert_skill(&skill)?;
             }
+            tool_categories.extend(codex_categories);
         }
         if !is_new {
             if let Some(scan) = tool_scan.as_mut() {
@@ -441,6 +446,7 @@ fn ingest_jsonl_bounded(
         let pass = scan.finish();
         tools = pass.new_calls;
         settled = pass.settled;
+        tool_categories.extend(pass.categories);
         for skill in pass.skills {
             store.insert_skill(&skill)?;
         }
@@ -480,6 +486,7 @@ fn ingest_jsonl_bounded(
         },
         &baseline,
     )?;
+    store.record_tool_categories(&tool_categories)?;
     for note in &warnings {
         store.record_warning(note)?;
     }
@@ -970,10 +977,11 @@ fn observe_codex(
     key: Option<&[u8]>,
     tools: &mut Vec<ToolFact>,
     skills: &mut Vec<SkillFact>,
+    categories: &mut Vec<(String, ToolCategory)>,
 ) -> Result<bool> {
     let envelope = value.get("type").and_then(Value::as_str);
     let kind = value.pointer("/payload/type").and_then(Value::as_str);
-    let (name, failed, fingerprint) = match (envelope, kind) {
+    let (name, failed, fingerprint, category) = match (envelope, kind) {
         (Some("event_msg"), Some("item_completed")) => {
             let Some(item) = value.pointer("/payload/item") else {
                 return Ok(false);
@@ -992,6 +1000,12 @@ fn observe_codex(
                         } else {
                             String::new()
                         };
+                    let cmd_raw = item
+                        .get("command")
+                        .map(Value::to_string)
+                        .unwrap_or_else(|| cmd_text.clone());
+                    let category =
+                        classify_tool_invocation("codex", "CommandExecution", Some(&cmd_raw));
                     for (idx, skill_name) in
                         extract_skills_from_text(&cmd_text).into_iter().enumerate()
                     {
@@ -1025,7 +1039,7 @@ fn observe_codex(
                     } else {
                         None
                     };
-                    (dendro_core::CODEX_COMMAND, failed, fingerprint)
+                    (dendro_core::CODEX_COMMAND, failed, fingerprint, category)
                 }
                 // Known non-command native items are not extra calls.
                 Some(
@@ -1049,7 +1063,7 @@ fn observe_codex(
             }
         }
         (Some("response_item"), Some("custom_tool_call" | "function_call" | "tool_call")) => {
-            if let Some(payload) = value.pointer("/payload") {
+            let category = if let Some(payload) = value.pointer("/payload") {
                 for (idx, skill_name) in extract_skills_from_codex_call(payload)
                     .into_iter()
                     .enumerate()
@@ -1061,8 +1075,36 @@ fn observe_codex(
                         invoked: true,
                     });
                 }
-            }
-            (dendro_core::CODEX_CALL, None, None)
+                let tool_name = payload
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .unwrap_or("custom_tool_call");
+                let arg_str = if let Some(args) = payload.get("arguments") {
+                    if let Some(s) = args.as_str() {
+                        Some(s.to_string())
+                    } else {
+                        Some(args.to_string())
+                    }
+                } else if let Some(input) = payload.get("input") {
+                    if let Some(s) = input.as_str() {
+                        Some(s.to_string())
+                    } else {
+                        Some(input.to_string())
+                    }
+                } else if let Some(cmd) = payload.get("command") {
+                    if let Some(s) = cmd.as_str() {
+                        Some(s.to_string())
+                    } else {
+                        Some(cmd.to_string())
+                    }
+                } else {
+                    None
+                };
+                classify_tool_invocation("codex", tool_name, arg_str.as_deref())
+            } else {
+                ToolCategory::Other
+            };
+            (dendro_core::CODEX_CALL, None, None, category)
         }
         (
             Some("response_item"),
@@ -1096,8 +1138,10 @@ fn observe_codex(
     *ordinal = ordinal
         .checked_add(1)
         .ok_or_else(|| anyhow::anyhow!("Codex observation order overflow"))?;
+    let source_key = format!("{source_id}:{generation}:{line}:codex:0");
+    categories.push((source_key.clone(), category));
     tools.push(ToolFact {
-        source_key: format!("{source_id}:{generation}:{line}:codex:0"),
+        source_key,
         harness: "codex".into(),
         native_session: session.into(),
         ts: timestamp_of(value),
@@ -1138,6 +1182,7 @@ struct ToolPass {
     new_calls: Vec<ToolFact>,
     settled: Vec<(String, Option<bool>)>,
     skills: Vec<SkillFact>,
+    categories: Vec<(String, ToolCategory)>,
 }
 
 struct ToolCall {
@@ -1145,6 +1190,7 @@ struct ToolCall {
     line: i64,
     results: Vec<Option<bool>>,
     result_in_new_lines: bool,
+    category: ToolCategory,
 }
 
 struct ToolScan<'a> {
@@ -1252,6 +1298,15 @@ impl<'a> ToolScan<'a> {
                         .get(input_field)
                         .or_else(|| block.get("input"))
                         .or_else(|| block.get("arguments"));
+                    let input_str = input_val.map(|v| {
+                        if let Some(s) = v.as_str() {
+                            s.to_string()
+                        } else {
+                            v.to_string()
+                        }
+                    });
+                    let raw_command_or_input = lexical.as_deref().or(input_str.as_deref());
+                    let category = classify_tool_invocation(harness, name, raw_command_or_input);
                     let parsed_input: Option<Value> = match input_val {
                         Some(Value::Object(_)) => input_val.cloned(),
                         Some(Value::String(s)) => serde_json::from_str(s).ok(),
@@ -1316,6 +1371,7 @@ impl<'a> ToolScan<'a> {
                         line: line_no,
                         results: Vec::new(),
                         result_in_new_lines: false,
+                        category,
                     });
                 }
                 Some("tool_result") if harness == "claude" => {
@@ -1343,6 +1399,7 @@ impl<'a> ToolScan<'a> {
             new_calls: Vec::new(),
             settled: Vec::new(),
             skills: Vec::new(),
+            categories: Vec::new(),
         };
         for (line, fact) in self.skills {
             if line > new_from {
@@ -1358,6 +1415,8 @@ impl<'a> ToolScan<'a> {
                 _ => None,
             };
             if call.line > new_from {
+                pass.categories
+                    .push((call.fact.source_key.clone(), call.category));
                 pass.new_calls.push(call.fact);
             } else if call.result_in_new_lines {
                 pass.settled.push((call.fact.source_key, call.fact.failed));
@@ -3547,6 +3606,126 @@ mod tests {
         assert_eq!(skills[0].seat, "codex:sess-fc");
         assert_eq!(skills[0].skill, "build-step");
         assert!(skills[0].invoked);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_all_8_tool_categories_across_claude_codex_pi() {
+        let dir = std::env::temp_dir().join(format!("dendro-cat-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let db = store();
+
+        // 1. Claude session with tool calls covering all categories
+        let claude_path = dir.join("claude.jsonl");
+        let claude_content = concat!(
+            "{\"sessionId\":\"c-sess\",\"type\":\"assistant\",\"message\":{\"content\":[",
+            "{\"type\":\"tool_use\",\"id\":\"c_1\",\"name\":\"Write\",\"input\":{\"path\":\"foo.rs\",\"content\":\"// test\"}},",
+            "{\"type\":\"tool_use\",\"id\":\"c_2\",\"name\":\"Read\",\"input\":{\"file_path\":\"foo.rs\"}},",
+            "{\"type\":\"tool_use\",\"id\":\"c_3\",\"name\":\"bash\",\"input\":{\"command\":\"cargo check\"}},",
+            "{\"type\":\"tool_use\",\"id\":\"c_4\",\"name\":\"bash\",\"input\":{\"command\":\"git status\"}},",
+            "{\"type\":\"tool_use\",\"id\":\"c_5\",\"name\":\"bash\",\"input\":{\"command\":\"rig queue pop\"}},",
+            "{\"type\":\"tool_use\",\"id\":\"c_6\",\"name\":\"bash\",\"input\":{\"command\":\"rig whoami\"}},",
+            "{\"type\":\"tool_use\",\"id\":\"c_7\",\"name\":\"bash\",\"input\":{\"command\":\"agentflow-sdlc next\"}},",
+            "{\"type\":\"tool_use\",\"id\":\"c_8\",\"name\":\"bash\",\"input\":{\"command\":\"curl -s https://example.com\"}}",
+            "]}}\n"
+        );
+        fs::write(&claude_path, claude_content).unwrap();
+        ingest_jsonl(&db, "src-claude", "claude", &claude_path).unwrap();
+
+        // 2. Codex session
+        let codex_path = dir.join("codex.jsonl");
+        let codex_content = concat!(
+            "{\"type\":\"session_meta\",\"payload\":{\"id\":\"sess-codex\"}}\n",
+            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"item_completed\",\"item\":{\"type\":\"CommandExecution\",\"exit_code\":0,\"command\":\"cargo test\"}}}\n",
+            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"item_completed\",\"item\":{\"type\":\"CommandExecution\",\"exit_code\":0,\"command\":\"git diff\"}}}\n",
+            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"item_completed\",\"item\":{\"type\":\"CommandExecution\",\"exit_code\":0,\"command\":\"rig ps\"}}}\n",
+            "{\"type\":\"response_item\",\"payload\":{\"type\":\"function_call\",\"name\":\"exec_command\",\"arguments\":\"{\\\"cmd\\\":\\\"cat skills/build/SKILL.md\\\"}\"}}\n"
+        );
+        fs::write(&codex_path, codex_content).unwrap();
+        ingest_jsonl(&db, "src-codex", "codex", &codex_path).unwrap();
+
+        // 3. Pi session
+        let pi_path = dir.join("pi.jsonl");
+        let pi_content = concat!(
+            "{\"sessionId\":\"pi-sess\"}\n",
+            "{\"sessionId\":\"pi-sess\",\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[",
+            "{\"type\":\"toolCall\",\"id\":\"p_1\",\"name\":\"write\",\"arguments\":{\"path\":\"bar.rs\",\"content\":\"\"}},",
+            "{\"type\":\"toolCall\",\"id\":\"p_2\",\"name\":\"read\",\"arguments\":{\"path\":\"bar.rs\"}},",
+            "{\"type\":\"toolCall\",\"id\":\"p_3\",\"name\":\"bash\",\"arguments\":{\"command\":\"npm test\"}}",
+            "]}}\n"
+        );
+        fs::write(&pi_path, pi_content).unwrap();
+        ingest_jsonl(&db, "src-pi", "pi", &pi_path).unwrap();
+
+        let categories = db.load_tool_categories().unwrap();
+
+        // Check Claude categories
+        assert_eq!(
+            categories.get("src-claude:1:1:0"),
+            Some(&ToolCategory::EngCodeEdit)
+        ); // Write
+        assert_eq!(
+            categories.get("src-claude:1:1:1"),
+            Some(&ToolCategory::InspectRead)
+        ); // Read
+        assert_eq!(
+            categories.get("src-claude:1:1:2"),
+            Some(&ToolCategory::EngBuildTest)
+        ); // cargo check
+        assert_eq!(
+            categories.get("src-claude:1:1:3"),
+            Some(&ToolCategory::EngVcs)
+        ); // git status
+        assert_eq!(
+            categories.get("src-claude:1:1:4"),
+            Some(&ToolCategory::CoordQueue)
+        ); // rig queue pop
+        assert_eq!(
+            categories.get("src-claude:1:1:5"),
+            Some(&ToolCategory::CoordStatus)
+        ); // rig whoami
+        assert_eq!(
+            categories.get("src-claude:1:1:6"),
+            Some(&ToolCategory::GovernancePhase)
+        ); // agentflow-sdlc
+        assert_eq!(
+            categories.get("src-claude:1:1:7"),
+            Some(&ToolCategory::Other)
+        ); // curl
+
+        // Check Codex categories
+        assert_eq!(
+            categories.get("src-codex:1:2:codex:0"),
+            Some(&ToolCategory::EngBuildTest)
+        ); // cargo test
+        assert_eq!(
+            categories.get("src-codex:1:3:codex:0"),
+            Some(&ToolCategory::EngVcs)
+        ); // git diff
+        assert_eq!(
+            categories.get("src-codex:1:4:codex:0"),
+            Some(&ToolCategory::CoordStatus)
+        ); // rig ps
+        assert_eq!(
+            categories.get("src-codex:1:5:codex:0"),
+            Some(&ToolCategory::InspectRead)
+        ); // cat
+
+        // Check Pi categories
+        assert_eq!(
+            categories.get("src-pi:1:2:0"),
+            Some(&ToolCategory::EngCodeEdit)
+        ); // write
+        assert_eq!(
+            categories.get("src-pi:1:2:1"),
+            Some(&ToolCategory::InspectRead)
+        ); // read
+        assert_eq!(
+            categories.get("src-pi:1:2:2"),
+            Some(&ToolCategory::EngBuildTest)
+        ); // npm test
+
         let _ = fs::remove_dir_all(&dir);
     }
 }

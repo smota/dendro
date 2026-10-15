@@ -202,6 +202,10 @@ impl ToolCategory {
         }
     }
 
+    pub fn parse_str(label: &str) -> Self {
+        Self::from_label(label)
+    }
+
     pub fn is_ceremony(&self) -> bool {
         matches!(
             self,

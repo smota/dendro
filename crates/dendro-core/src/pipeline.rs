@@ -668,35 +668,6 @@ fn evaluate_report_snapshot(
     }
     seats.sort();
     seats.dedup();
-    let activity_rows: Vec<_> = seats
-        .iter()
-        .map(|seat| {
-            let lives: Vec<SeatBound> = bounds
-                .iter()
-                .filter(|bound| bound.seat == *seat)
-                .cloned()
-                .collect();
-            let bands = metrics::activity_bands(seat, &activity, &queue_all, window, &lives);
-            let spans = metrics::observation_spans(window, &lives);
-            let evidence = |recorded: bool| if recorded { "recorded" } else { "unavailable" };
-            json!({
-                "seat": seat,
-                "observed_secs": metrics::observed_secs(&spans),
-                "observed_spans": spans
-                    .iter()
-                    .map(|span| json!({"from": span.start.to_rfc3339(), "to": span.end.to_rfc3339()}))
-                    .collect::<Vec<_>>(),
-                "launch_evidence": evidence(lives.iter().any(|life| life.created_at.is_some())),
-                "stop_evidence": evidence(lives.iter().any(|life| life.stopped_at.is_some())),
-                "active_secs": bands.active_secs,
-                "idle_with_work_secs": bands.idle_with_work_secs,
-                "idle_without_work_secs": bands.idle_without_work_secs,
-                "waiting_human_secs": bands.waiting_human_secs,
-                "unknown_secs": bands.unknown_secs,
-                "sum": bands.sum(),
-            })
-        })
-        .collect();
     let seat_lives: Vec<_> = bounds
         .iter()
         .filter(|bound| seats.contains(&bound.seat))
@@ -795,6 +766,103 @@ fn evaluate_report_snapshot(
             .iter()
             .map(|e| e.projection.clone()),
     );
+    let tool_categories = store.load_tool_categories()?;
+    let mut tool_categories_summary = crate::tool_category::ToolCategoriesSummary::default();
+    for seat in &seats {
+        tool_categories_summary.by_seat.insert(
+            seat.clone(),
+            crate::tool_category::ToolCategoryBreakdown::empty(),
+        );
+    }
+
+    let in_window_codex: Vec<_> = codex_observations
+        .iter()
+        .filter(|row| {
+            row.fact
+                .ts
+                .is_some_and(|ts| ts >= window.from && ts < window.to)
+        })
+        .map(|row| &row.fact)
+        .collect();
+
+    for tool in tools.iter().chain(in_window_codex) {
+        let cat = tool_categories
+            .get(&tool.source_key)
+            .copied()
+            .unwrap_or_else(|| crate::facts::ToolCategory::classify_tool_name(&tool.name));
+        tool_categories_summary
+            .overall
+            .record(cat, &tool.source_key);
+
+        let seat_opt = binding(&tool.harness, &tool.native_session)
+            .seat()
+            .map(String::from);
+        let mission_label = match (&seat_opt, tool.ts) {
+            (Some(seat_name), Some(ts)) => {
+                let evidence =
+                    metrics::mission_evidence(seat_name, &queue_all, &snapshot_destinations, ts);
+                match evidence.bucket {
+                    metrics::MissionBucket::Mission(name) => format!("mission:{name}"),
+                    metrics::MissionBucket::None => "no_mission".to_string(),
+                    metrics::MissionBucket::Ambiguous(_) => "ambiguous".to_string(),
+                }
+            }
+            (None, _) => "unlinked".to_string(),
+            _ => "untimestamped".to_string(),
+        };
+
+        if let Some(seat_name) = &seat_opt {
+            tool_categories_summary
+                .by_seat
+                .entry(seat_name.clone())
+                .or_insert_with(crate::tool_category::ToolCategoryBreakdown::empty)
+                .record(cat, &tool.source_key);
+        }
+        tool_categories_summary
+            .by_mission
+            .entry(mission_label)
+            .or_insert_with(crate::tool_category::ToolCategoryBreakdown::empty)
+            .record(cat, &tool.source_key);
+    }
+
+    let activity_rows: Vec<_> = seats
+        .iter()
+        .map(|seat| {
+            let lives: Vec<SeatBound> = bounds
+                .iter()
+                .filter(|bound| bound.seat == *seat)
+                .cloned()
+                .collect();
+            let bands = metrics::activity_bands(seat, &activity, &queue_all, window, &lives);
+            let spans = metrics::observation_spans(window, &lives);
+            let evidence = |recorded: bool| if recorded { "recorded" } else { "unavailable" };
+            let seat_bd = tool_categories_summary
+                .by_seat
+                .get(seat)
+                .cloned()
+                .unwrap_or_else(crate::tool_category::ToolCategoryBreakdown::empty);
+            json!({
+                "seat": seat,
+                "observed_secs": metrics::observed_secs(&spans),
+                "observed_spans": spans
+                    .iter()
+                    .map(|span| json!({"from": span.start.to_rfc3339(), "to": span.end.to_rfc3339()}))
+                    .collect::<Vec<_>>(),
+                "launch_evidence": evidence(lives.iter().any(|life| life.created_at.is_some())),
+                "stop_evidence": evidence(lives.iter().any(|life| life.stopped_at.is_some())),
+                "active_secs": bands.active_secs,
+                "idle_with_work_secs": bands.idle_with_work_secs,
+                "idle_without_work_secs": bands.idle_without_work_secs,
+                "waiting_human_secs": bands.waiting_human_secs,
+                "unknown_secs": bands.unknown_secs,
+                "sum": bands.sum(),
+                "ceremony_calls": seat_bd.ceremony_calls,
+                "engineering_calls": seat_bd.engineering_calls,
+                "ceremony_ratio": seat_bd.ceremony_ratio,
+                "tool_categories": seat_bd.categories,
+            })
+        })
+        .collect();
     let loop_trace = if evidence {
         let source_ids = store.tool_source_ids()?;
         let prefixes = store.source_prefixes()?;
@@ -1224,6 +1292,7 @@ fn evaluate_report_snapshot(
         "handoff_members": handoff_members,
         "destination_snapshots": snapshot_rows,
         "trace_inputs": trace_inputs,
+        "tool_categories": tool_categories_summary.to_payload_value(),
     });
     if !thresholds.is_default() {
         payload["loop_thresholds"] = json!(thresholds);
@@ -1520,6 +1589,10 @@ pub fn trace_json_with_thresholds(
             "five disjoint seat bands clipped to the half-open window",
             payload["activity"].clone(),
         ),
+        "tool_categories" => (
+            "ceremony_calls / total_calls across ceremony vs engineering categories",
+            payload["tool_categories"].clone(),
+        ),
         other => return Err(anyhow!("unknown metric id {}", redact(other))),
     };
     let mut inputs = json!({
@@ -1555,6 +1628,7 @@ pub fn trace_json_with_thresholds(
         "intakes": payload["intakes"],
         "pair_medians": payload["pair_medians"],
         "activity": payload["activity"],
+        "tool_categories": payload["tool_categories"],
         "seat_lives": payload["seat_lives"],
         "openrig_sources": payload["openrig_sources"],
         "openrig_row_states": payload["openrig_row_states"],
@@ -3299,6 +3373,199 @@ mod tests {
         let payload_str = serde_json::to_string(&report["payload"]).unwrap();
         assert!(!payload_str.contains(secret));
         assert!(payload_str.contains("[redacted]"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_tool_categories_report_and_trace_end_to_end() {
+        use crate::{ToolCategory, ToolFact};
+
+        let dir = std::env::temp_dir().join(format!("dendro-cat-pipeline-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("analytics.duckdb");
+        let store = AnalyticsStore::open_path(&db, "kid").unwrap();
+
+        let ts1 = chrono::DateTime::parse_from_rfc3339("2026-10-09T01:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let ts2 = chrono::DateTime::parse_from_rfc3339("2026-10-09T02:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let ts3 = chrono::DateTime::parse_from_rfc3339("2026-10-09T03:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+
+        // Setup seat identity
+        store
+            .insert_identity(&crate::IdentityFact {
+                source_key: "id-1".into(),
+                ts: Some(ts1),
+                harness: "claude".into(),
+                native_session: "sess-1".into(),
+                seat: "dev.builder".into(),
+                rig: "alpha".into(),
+            })
+            .unwrap();
+        store
+            .insert_activity(&crate::ActivityFact {
+                source_key: "act-1".into(),
+                seat: "dev.builder".into(),
+                ts: ts1,
+                state: "running".into(),
+                seq: 1,
+            })
+            .unwrap();
+
+        // Ingest tool facts
+        // 1. Ceremony call (coord_queue)
+        let t1 = ToolFact {
+            source_key: "src1:1:1:0".into(),
+            harness: "claude".into(),
+            native_session: "sess-1".into(),
+            ts: Some(ts1),
+            seq: 100,
+            name: "bash".into(),
+            fingerprint: None,
+            failed: Some(false),
+            structured_write: false,
+            generation: 1,
+        };
+        // 2. Engineering call (eng_build_test)
+        let t2 = ToolFact {
+            source_key: "src1:1:2:0".into(),
+            harness: "claude".into(),
+            native_session: "sess-1".into(),
+            ts: Some(ts2),
+            seq: 200,
+            name: "bash".into(),
+            fingerprint: None,
+            failed: Some(false),
+            structured_write: false,
+            generation: 1,
+        };
+        // 3. Engineering call (eng_code_edit)
+        let t3 = ToolFact {
+            source_key: "src1:1:3:0".into(),
+            harness: "claude".into(),
+            native_session: "sess-1".into(),
+            ts: Some(ts3),
+            seq: 300,
+            name: "Write".into(),
+            fingerprint: None,
+            failed: Some(false),
+            structured_write: true,
+            generation: 1,
+        };
+
+        let baseline = crate::FileBaselineAttempt {
+            attempted_at: "2026-10-09T01:00:00Z".into(),
+            metadata: None,
+        };
+        store
+            .commit_file_batch_observed(
+                "src1",
+                "claude",
+                "/path/to/claude.jsonl",
+                1,
+                1000,
+                "sha256",
+                None,
+                &[],
+                &[t1, t2, t3],
+                &[],
+                &crate::ReaderState {
+                    complete: true,
+                    native_session: Some("sess-1".into()),
+                },
+                &baseline,
+            )
+            .unwrap();
+
+        store
+            .record_tool_categories(&[
+                ("src1:1:1:0".into(), ToolCategory::CoordQueue),
+                ("src1:1:2:0".into(), ToolCategory::EngBuildTest),
+                ("src1:1:3:0".into(), ToolCategory::EngCodeEdit),
+            ])
+            .unwrap();
+
+        store.checkpoint().unwrap();
+
+        let from = "2026-10-09T00:00:00Z";
+        let to = "2026-10-09T04:00:00Z";
+
+        // 1. Report: activity
+        let rep_act = report_json(&db, "activity", None, from, to).unwrap();
+        let payload_act = &rep_act["payload"];
+        let tc_act = &payload_act["tool_categories"];
+
+        assert_eq!(tc_act["ceremony_calls"], 1);
+        assert_eq!(tc_act["engineering_calls"], 2);
+        assert_eq!(tc_act["total_calls"], 3);
+        let ratio = tc_act["ceremony_ratio"].as_f64().unwrap();
+        assert!((ratio - (1.0 / 3.0)).abs() < 1e-6);
+
+        // Check categories map has all 8 variants
+        for cat in ToolCategory::ALL {
+            assert!(
+                tc_act["categories"].get(cat.as_str()).is_some(),
+                "missing category {}",
+                cat.as_str()
+            );
+        }
+        assert_eq!(tc_act["categories"]["coord_queue"]["count"], 1);
+        assert_eq!(
+            tc_act["categories"]["coord_queue"]["source_keys"],
+            json!(["src1:1:1:0"])
+        );
+        assert_eq!(tc_act["categories"]["eng_build_test"]["count"], 1);
+        assert_eq!(
+            tc_act["categories"]["eng_build_test"]["source_keys"],
+            json!(["src1:1:2:0"])
+        );
+        assert_eq!(tc_act["categories"]["eng_code_edit"]["count"], 1);
+        assert_eq!(
+            tc_act["categories"]["eng_code_edit"]["source_keys"],
+            json!(["src1:1:3:0"])
+        );
+
+        // Check payload["activity"] rows are enriched
+        let act_rows = payload_act["activity"].as_array().unwrap();
+        assert!(!act_rows.is_empty());
+        let builder_row = act_rows
+            .iter()
+            .find(|r| r["seat"] == "dev.builder")
+            .unwrap();
+        assert_eq!(builder_row["ceremony_calls"], 1);
+        assert_eq!(builder_row["engineering_calls"], 2);
+        let seat_ratio = builder_row["ceremony_ratio"].as_f64().unwrap();
+        assert!((seat_ratio - (1.0 / 3.0)).abs() < 1e-6);
+        assert_eq!(builder_row["tool_categories"]["coord_queue"]["count"], 1);
+
+        // 2. Report: decisions
+        let rep_dec = report_json(&db, "decisions", None, from, to).unwrap();
+        assert_eq!(rep_dec["payload"]["tool_categories"]["ceremony_calls"], 1);
+        assert_eq!(
+            rep_dec["payload"]["tool_categories"]["engineering_calls"],
+            2
+        );
+
+        // 3. Trace: tool_categories
+        let trace = trace_json(&db, "tool_categories", None, from, to).unwrap();
+        assert_eq!(trace["metric_id"], "tool_categories");
+        assert_eq!(trace["value"], rep_act["payload"]["tool_categories"]);
+        assert_eq!(
+            trace["inputs"]["tool_categories"],
+            rep_act["payload"]["tool_categories"]
+        );
+
+        // AC7 traceability: source_keys point to exact source_keys
+        let trace_keys = trace["value"]["categories"]["eng_build_test"]["source_keys"]
+            .as_array()
+            .unwrap();
+        assert_eq!(trace_keys[0], "src1:1:2:0");
 
         let _ = fs::remove_dir_all(&dir);
     }

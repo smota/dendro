@@ -15,6 +15,7 @@ pub mod pipeline;
 pub mod privacy;
 pub mod sealed_run;
 pub mod storage;
+pub mod tool_category;
 pub mod traits;
 
 pub use facts::*;
@@ -27,4 +28,5 @@ pub use pipeline::*;
 pub use privacy::*;
 pub use sealed_run::*;
 pub use storage::*;
+pub use tool_category::*;
 pub use traits::*;
