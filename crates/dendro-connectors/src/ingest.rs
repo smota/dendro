@@ -308,6 +308,8 @@ fn read_openrig_with_source(
         }
     }
     let created_items = crate::openrig::created_items(&conn)?;
+    let mut item_meta = queue_item_metadata(&conn, &created_items)?;
+    let mut event_nudges = std::collections::BTreeMap::new();
     let mut count = 0i64;
     let mut lifecycle = Vec::new();
     // K5 reroute marks, by raw qitem id.
@@ -363,7 +365,8 @@ fn read_openrig_with_source(
             .get(qitem)
             .map(|root| dendro_core::seal_identifier(key, "qitem", root))
     };
-    let mut stmt = conn.prepare("SELECT seq, type, payload, created_at FROM events")?;
+    let mut stmt =
+        conn.prepare("SELECT seq, type, payload, created_at FROM events ORDER BY seq")?;
     let rows = stmt.query_map([], |row| {
         Ok((
             row.get::<_, i64>(0)?,
@@ -379,6 +382,21 @@ fn read_openrig_with_source(
         let Ok(parsed) = serde_json::from_str::<Value>(&payload) else {
             continue;
         };
+        if let Some(qitem) = parsed
+            .get("qitemId")
+            .or_else(|| parsed.get("qitem_id"))
+            .and_then(Value::as_str)
+        {
+            let meta = item_meta.entry(qitem.to_owned()).or_default();
+            meta.tags.extend(queue_tags(parsed.get("tags")));
+            if let Some(value) = parsed
+                .get("lastNudgeResult")
+                .or_else(|| parsed.get("last_nudge_result"))
+                .and_then(Value::as_str)
+            {
+                event_nudges.insert(qitem.to_owned(), value.to_owned());
+            }
+        }
         let ts = dendro_core::parse_utc_time(&created_at);
         if let Some(event) = lifecycle_event(&kind, &parsed) {
             if let Some(at) = ts {
@@ -516,7 +534,15 @@ fn read_openrig_with_source(
                 closure_reason: None,
                 closure_target: None,
                 chain_id: chain_of(qitem),
-                missions: Vec::new(),
+                missions: if kind == "queue.created" {
+                    queue_tags(parsed.get("tags"))
+                        .iter()
+                        .filter_map(|tag| tag.strip_prefix("mission:"))
+                        .map(|mission| dendro_core::seal_identifier(key, "mission", mission))
+                        .collect()
+                } else {
+                    Vec::new()
+                },
             })?;
         }
     }
@@ -680,7 +706,124 @@ fn read_openrig_with_source(
             }
         }
     }
+    // Write enrichment after all queue facts exist. Mission tags above retain
+    // their K3 creation-time meaning; parent links expose additive lineage.
+    for (qitem, mut raw) in item_meta {
+        dendro_core::RUN_CANCEL.check()?;
+        if raw.last_nudge_result.is_none() {
+            raw.last_nudge_result = event_nudges.remove(&qitem);
+        }
+        raw.tags.sort();
+        raw.tags.dedup();
+        let recovery_prefix = qitem.starts_with("qitem-recovery-");
+        let recovery_reason = raw
+            .tags
+            .iter()
+            .filter_map(|tag| tag.strip_prefix("stuck-sweep:"))
+            .find_map(safe_queue_token)
+            .or_else(|| recovery_prefix.then(|| "qitem-recovery".to_owned()));
+        store.record_queue_item_meta(&dendro_core::QueueItemMeta {
+            qitem_id: dendro_core::seal_identifier(key, "qitem", &qitem),
+            is_recovery: recovery_prefix
+                || raw.tags.iter().any(|tag| tag.starts_with("stuck-sweep:")),
+            recovery_reason,
+            last_nudge_result: raw.last_nudge_result.as_deref().and_then(safe_queue_token),
+            issue_tags: raw
+                .tags
+                .iter()
+                .filter_map(|tag| tag.strip_prefix("issue:"))
+                .map(|value| dendro_core::seal_identifier(key, "issue", value))
+                .collect(),
+            phase_tags: raw
+                .tags
+                .iter()
+                .filter_map(|tag| tag.strip_prefix("phase:"))
+                .map(|value| dendro_core::seal_identifier(key, "phase", value))
+                .collect(),
+            parent_qitem_id: raw
+                .parent
+                .as_deref()
+                .filter(|value| !value.is_empty())
+                .map(|value| dendro_core::seal_identifier(key, "qitem", value)),
+        })?;
+    }
     Ok(count)
+}
+
+#[derive(Default)]
+struct RawQueueItemMeta {
+    tags: Vec<String>,
+    parent: Option<String>,
+    last_nudge_result: Option<String>,
+}
+
+fn queue_tags(value: Option<&Value>) -> Vec<String> {
+    match value {
+        Some(Value::Array(tags)) => tags
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::to_owned)
+            .collect(),
+        Some(Value::String(text)) => serde_json::from_str(text).unwrap_or_default(),
+        _ => Vec::new(),
+    }
+}
+
+fn safe_queue_token(value: &str) -> Option<String> {
+    (!value.is_empty()
+        && value.len() <= 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"-._".contains(&byte))
+        && !dendro_core::contains_secret(value))
+    .then(|| value.to_owned())
+}
+
+/// OpenRig versions differ in their optional queue-item columns. Read named
+/// columns without making any one enrichment column mandatory.
+fn queue_item_metadata(
+    conn: &rusqlite::Connection,
+    created: &std::collections::BTreeMap<String, Value>,
+) -> Result<std::collections::BTreeMap<String, RawQueueItemMeta>> {
+    let mut items = std::collections::BTreeMap::new();
+    if let Ok(mut stmt) = conn.prepare("SELECT * FROM queue_items") {
+        let id = stmt.column_index("qitem_id").ok();
+        let tags = stmt.column_index("tags").ok();
+        let parent = stmt.column_index("handed_off_from").ok();
+        let nudge = stmt.column_index("last_nudge_result").ok();
+        if let Some(id) = id {
+            let mut rows = stmt.query([])?;
+            while let Some(row) = rows.next()? {
+                dendro_core::RUN_CANCEL.check()?;
+                let text = |column: Option<usize>| -> rusqlite::Result<Option<String>> {
+                    column.map(|index| row.get(index)).unwrap_or(Ok(None))
+                };
+                let tags = text(tags)?;
+                items.insert(
+                    row.get::<_, String>(id)?,
+                    RawQueueItemMeta {
+                        tags: tags
+                            .as_deref()
+                            .and_then(|text| serde_json::from_str(text).ok())
+                            .unwrap_or_default(),
+                        parent: text(parent)?,
+                        last_nudge_result: text(nudge)?,
+                    },
+                );
+            }
+        }
+    }
+    for (qitem, value) in created {
+        let meta = items.entry(qitem.clone()).or_default();
+        meta.tags.extend(queue_tags(value.get("tags")));
+        if let Some(parent) = value
+            .get("handedOffFrom")
+            .or_else(|| value.get("handed_off_from"))
+        {
+            meta.parent = parent.as_str().map(str::to_owned);
+        }
+    }
+    Ok(items)
 }
 
 /// Each item's chain root. Two source readings must agree: the first item in

@@ -165,7 +165,7 @@ fn field_digest(value: Option<&str>) -> String {
 #[derive(Clone)]
 struct MutableItem {
     id: String,
-    fields: [Option<String>; 5],
+    fields: [Option<String>; 6],
 }
 
 fn mutable_items(conn: &Connection) -> Result<Vec<MutableItem>> {
@@ -187,10 +187,11 @@ fn mutable_items(conn: &Connection) -> Result<Vec<MutableItem>> {
         "chain_of_record",
         "handed_off_from",
         "tags",
+        "last_nudge_result",
     ]
     .map(position);
     let rows = stmt.query_map([], |row| {
-        let mut fields: [Option<String>; 5] = Default::default();
+        let mut fields: [Option<String>; 6] = Default::default();
         for (index, column) in indices.iter().enumerate() {
             if let Some(column) = column {
                 fields[index] = row.get(*column)?;
@@ -227,7 +228,27 @@ fn item_cutoff(item: &MutableItem, key: &[u8]) -> QueueItemCutoff {
                 &serde_json::to_string(&tags).expect("string array serializes"),
             ))
         },
+        last_nudge_result_digest: Some(field_digest(item.fields[5].as_deref())),
+        analytics_tags_digest: Some(analytics_tags_digest(item.fields[4].as_deref())),
     }
+}
+
+fn analytics_tags_digest(raw: Option<&str>) -> String {
+    let mut tags = raw
+        .and_then(|value| serde_json::from_str::<Vec<String>>(value).ok())
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|tag| {
+            tag.starts_with("issue:")
+                || tag.starts_with("phase:")
+                || tag.starts_with("stuck-sweep:")
+        })
+        .collect::<Vec<_>>();
+    tags.sort();
+    tags.dedup();
+    field_digest(Some(
+        &serde_json::to_string(&tags).expect("string array serializes"),
+    ))
 }
 
 pub(crate) fn created_items(conn: &Connection) -> Result<BTreeMap<String, serde_json::Value>> {
@@ -468,7 +489,13 @@ pub fn prepare_openrig_snapshot(
                     "tags",
                     observed.tags_digest != original.tags_digest
                         && (original.mission_tags_digest.is_empty()
-                            || observed.mission_tags_digest != original.mission_tags_digest),
+                            || observed.mission_tags_digest != original.mission_tags_digest
+                            || original
+                                .analytics_tags_digest
+                                .as_ref()
+                                .is_some_and(|digest| {
+                                    observed.analytics_tags_digest.as_ref() != Some(digest)
+                                })),
                 ),
             ] {
                 if !changed {
@@ -498,6 +525,19 @@ pub fn prepare_openrig_snapshot(
                         );
                         continue;
                     }
+                    if index == 4
+                        && original
+                            .analytics_tags_digest
+                            .as_ref()
+                            .is_some_and(|digest| {
+                                analytics_tags_digest(value.as_deref()) != *digest
+                            })
+                    {
+                        reasons.push(
+                            "analytics tags changed without recoverable sealed backing".to_owned(),
+                        );
+                        continue;
+                    }
                     let sql = match index {
                         0 => "UPDATE queue_items SET destination_session = ?1 WHERE qitem_id = ?2",
                         2 => "UPDATE queue_items SET chain_of_record = ?1 WHERE qitem_id = ?2",
@@ -507,6 +547,53 @@ pub fn prepare_openrig_snapshot(
                     conn.execute(sql, params![value, item.id])?;
                 } else {
                     reasons.push(format!("{field} changed without queue.created backing"));
+                }
+            }
+            if let Some(expected_nudge) = &original.last_nudge_result_digest {
+                if observed.last_nudge_result_digest.as_ref() != Some(expected_nudge) {
+                    // A digest cannot recover an arbitrary old wake result.
+                    // Only use independently pinned creation evidence that
+                    // matches it, or restore a known NULL. Otherwise expose
+                    // the existing mutable-source uncertainty to consumers.
+                    let candidate = if expected_nudge == &field_digest(None) {
+                        Some(None)
+                    } else {
+                        evidence
+                            .and_then(|value| {
+                                value
+                                    .get("lastNudgeResult")
+                                    .or_else(|| value.get("last_nudge_result"))
+                            })
+                            .and_then(|value| match value {
+                                serde_json::Value::Null => Some(None),
+                                serde_json::Value::String(text) => Some(Some(text.as_str())),
+                                _ => None,
+                            })
+                            .filter(|value| field_digest(*value) == *expected_nudge)
+                    };
+                    if let Some(value) = candidate {
+                        // A missing source column is equivalent to NULL; no
+                        // update is needed when both versions lack a value.
+                        if conn
+                            .prepare("SELECT last_nudge_result FROM queue_items LIMIT 0")
+                            .is_ok()
+                        {
+                            conn.execute(
+                                "UPDATE queue_items SET last_nudge_result = ?1 WHERE qitem_id = ?2",
+                                params![value, item.id],
+                            )?;
+                        } else {
+                            reasons.push(
+                                "last_nudge_result changed without recoverable sealed backing"
+                                    .to_string(),
+                            );
+                        }
+                    } else {
+                        reasons.push(
+                            "last_nudge_result changed without recoverable sealed backing"
+                                .to_string(),
+                        );
+                    }
                 }
             }
             if observed.ts_updated_digest != original.ts_updated_digest
@@ -699,6 +786,110 @@ mod cutoff_tests {
     }
 
     #[test]
+    fn sealed_nudge_drift_uses_only_matching_creation_backing() {
+        for (captured, creation, expected, disclosed) in [
+            ("delivered", "delivered", "delivered", false),
+            ("delivered", "unroutable", "failed", true),
+        ] {
+            let fixture = Fixture::new();
+            let conn = Connection::open(&fixture.0).unwrap();
+            conn.execute_batch("ALTER TABLE queue_items ADD COLUMN last_nudge_result TEXT;")
+                .unwrap();
+            conn.execute(
+                "UPDATE queue_items SET last_nudge_result=?1",
+                params![captured],
+            )
+            .unwrap();
+            conn.execute(
+                "UPDATE events SET payload=?1 WHERE seq=1",
+                params![json!({
+                    "qitemId":"q1", "destinationSession":"seat-a", "lastNudgeResult":creation
+                })
+                .to_string()],
+            )
+            .unwrap();
+            drop(conn);
+            let cutoff = fixture.capture();
+            assert_eq!(
+                cutoff.queue_items[0].last_nudge_result_digest.as_deref(),
+                Some(field_digest(Some(captured)).as_str())
+            );
+            Connection::open(&fixture.0)
+                .unwrap()
+                .execute_batch("UPDATE queue_items SET last_nudge_result='failed'")
+                .unwrap();
+            let prepared =
+                prepare_openrig_snapshot(&fixture.0, "source-1", b"key", Some(&cutoff)).unwrap();
+            assert_eq!(!prepared.disclosures.is_empty(), disclosed);
+            if disclosed {
+                assert!(prepared.disclosures[0]
+                    .reason
+                    .contains("last_nudge_result changed"));
+            }
+            let value: String = Connection::open(&fixture.0)
+                .unwrap()
+                .query_row("SELECT last_nudge_result FROM queue_items", [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(value, expected);
+        }
+    }
+
+    #[test]
+    fn sealed_nudge_null_is_recoverable_without_creation_backing() {
+        let fixture = Fixture::new();
+        let conn = Connection::open(&fixture.0).unwrap();
+        conn.execute_batch("ALTER TABLE queue_items ADD COLUMN last_nudge_result TEXT;")
+            .unwrap();
+        drop(conn);
+        let cutoff = fixture.capture();
+        Connection::open(&fixture.0)
+            .unwrap()
+            .execute_batch("UPDATE queue_items SET last_nudge_result='failed'")
+            .unwrap();
+        let prepared =
+            prepare_openrig_snapshot(&fixture.0, "source-1", b"key", Some(&cutoff)).unwrap();
+        assert!(prepared.disclosures.is_empty());
+        let value: Option<String> = Connection::open(&fixture.0)
+            .unwrap()
+            .query_row("SELECT last_nudge_result FROM queue_items", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(value, None);
+    }
+
+    #[test]
+    fn pre_attribution_manifest_keeps_legacy_nudge_behavior() {
+        let fixture = Fixture::new();
+        let conn = Connection::open(&fixture.0).unwrap();
+        conn.execute_batch("ALTER TABLE queue_items ADD COLUMN last_nudge_result TEXT; UPDATE queue_items SET last_nudge_result='delivered'").unwrap();
+        drop(conn);
+        let mut serialized = serde_json::to_value(fixture.capture()).unwrap();
+        serialized["queue_items"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("last_nudge_result_digest");
+        let cutoff: OpenRigCutoff = serde_json::from_value(serialized).unwrap();
+        assert_eq!(cutoff.queue_items[0].last_nudge_result_digest, None);
+        Connection::open(&fixture.0)
+            .unwrap()
+            .execute_batch("UPDATE queue_items SET last_nudge_result='failed'")
+            .unwrap();
+        let prepared =
+            prepare_openrig_snapshot(&fixture.0, "source-1", b"key", Some(&cutoff)).unwrap();
+        assert!(prepared.disclosures.is_empty());
+        let value: String = Connection::open(&fixture.0)
+            .unwrap()
+            .query_row("SELECT last_nudge_result FROM queue_items", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(value, "failed");
+    }
+
+    #[test]
     fn non_mission_tag_append_does_not_disclose_an_unchanged_metric() {
         let fixture = Fixture::new();
         let conn = Connection::open(&fixture.0).unwrap();
@@ -714,6 +905,96 @@ mod cutoff_tests {
             .execute(
                 "UPDATE queue_items SET tags = ?1",
                 params![json!(["mission:m1", "prompt-episode:later"]).to_string()],
+            )
+            .unwrap();
+        let prepared =
+            prepare_openrig_snapshot(&fixture.0, "source-1", b"key", Some(&cutoff)).unwrap();
+        assert!(prepared.disclosures.is_empty());
+    }
+
+    #[test]
+    fn sealed_analytics_tag_drift_requires_matching_creation_backing() {
+        for (original_tags, created_tags, changed_tags, disclosed) in [
+            (
+                json!(["issue:55", "phase:build", "stuck-sweep:stalled-after-claim"]),
+                json!(["issue:55", "phase:build", "stuck-sweep:stalled-after-claim"]),
+                json!(["issue:56", "phase:review"]),
+                false,
+            ),
+            (
+                json!(["issue:55", "stuck-sweep:stalled-after-claim"]),
+                json!(["issue:55"]),
+                json!(["issue:55"]),
+                true,
+            ),
+            (
+                json!(["issue:55"]),
+                json!(["issue:55"]),
+                json!(["issue:55", "prompt-episode:later"]),
+                false,
+            ),
+        ] {
+            let fixture = Fixture::new();
+            let conn = Connection::open(&fixture.0).unwrap();
+            conn.execute(
+                "UPDATE queue_items SET tags=?1",
+                params![original_tags.to_string()],
+            )
+            .unwrap();
+            conn.execute(
+                "UPDATE events SET payload=?1 WHERE seq=1",
+                params![json!({
+                    "qitemId":"q1", "destinationSession":"seat-a", "tags":created_tags
+                })
+                .to_string()],
+            )
+            .unwrap();
+            drop(conn);
+            let cutoff = fixture.capture();
+            Connection::open(&fixture.0)
+                .unwrap()
+                .execute(
+                    "UPDATE queue_items SET tags=?1",
+                    params![changed_tags.to_string()],
+                )
+                .unwrap();
+            let prepared =
+                prepare_openrig_snapshot(&fixture.0, "source-1", b"key", Some(&cutoff)).unwrap();
+            assert_eq!(!prepared.disclosures.is_empty(), disclosed);
+            if disclosed {
+                assert!(prepared.disclosures[0]
+                    .reason
+                    .contains("analytics tags changed"));
+            } else {
+                let tags: String = Connection::open(&fixture.0)
+                    .unwrap()
+                    .query_row("SELECT tags FROM queue_items", [], |row| row.get(0))
+                    .unwrap();
+                assert_eq!(
+                    analytics_tags_digest(Some(&tags)),
+                    analytics_tags_digest(Some(&original_tags.to_string()))
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn pre_attribution_manifest_keeps_legacy_non_mission_tag_behavior() {
+        let fixture = Fixture::new();
+        let mut serialized = serde_json::to_value(fixture.capture()).unwrap();
+        serialized["queue_items"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("analytics_tags_digest");
+        let cutoff: OpenRigCutoff = serde_json::from_value(serialized).unwrap();
+        assert_eq!(cutoff.queue_items[0].analytics_tags_digest, None);
+        Connection::open(&fixture.0)
+            .unwrap()
+            .execute(
+                "UPDATE queue_items SET tags=?1",
+                params![
+                    json!(["mission:m1", "issue:55", "stuck-sweep:undelivered-wake"]).to_string()
+                ],
             )
             .unwrap();
         let prepared =

@@ -234,3 +234,193 @@ fn in_place_change_updates_fact_and_announces_changed_source() {
     assert_eq!(report["activity_events"][0]["state"], "idle");
     assert_eq!(trace(&db)["activity_events"], report["activity_events"]);
 }
+
+#[test]
+fn queue_metadata_combines_current_recovery_and_creation_lineage_without_changing_k3() {
+    let dir = Scratch::new();
+    let source = dir.0.join("openrig.sqlite");
+    let db = dir.0.join("analytics.duckdb");
+    fixture(&source, "q1");
+    let conn = Connection::open(&source).unwrap();
+    conn.execute_batch("ALTER TABLE queue_items ADD COLUMN last_nudge_result TEXT;")
+        .unwrap();
+    conn.execute("UPDATE events SET payload=? WHERE seq=3", [json!({
+        "qitemId":"q1", "destinationSession":"seat-a", "tags":["mission:original", "issue:55", "phase:build"],
+        "handedOffFrom":"parent", "chainOfRecord":[], "lastNudgeResult":"delivered"
+    }).to_string()]).unwrap();
+    conn.execute(
+        "UPDATE queue_items SET tags=?, last_nudge_result='unroutable' WHERE qitem_id='q1'",
+        [json!([
+            "mission:changed",
+            "stuck-sweep:stalled-after-claim",
+            "issue:55",
+            "phase:review"
+        ])
+        .to_string()],
+    )
+    .unwrap();
+    // No mutable queue_items row: the retained creation event still provides
+    // enrichment for this item's queue facts.
+    conn.execute("INSERT INTO events VALUES(4,'queue.created',?,'2026-10-09T03:00:00Z')", [json!({
+        "qitemId":"qitem-recovery-event-only", "destinationSession":"seat-b", "tags":["issue:56", "phase:verify"],
+        "handedOffFrom":"q1", "lastNudgeResult":"failed"
+    }).to_string()]).unwrap();
+    // Later events can supply optional wake evidence on older OpenRig versions.
+    conn.execute(
+        "INSERT INTO events VALUES(5,'queue.nudged',?,'2026-10-09T04:00:00Z')",
+        [json!({
+            "qitemId":"qitem-recovery-event-only", "last_nudge_result":"undelivered"
+        })
+        .to_string()],
+    )
+    .unwrap();
+    drop(conn);
+    run(&db, &source);
+    let store = AnalyticsStore::open_read_only(&db).unwrap();
+    let meta = store.load_queue_item_meta().unwrap();
+    let original = &meta["q1"];
+    assert!(original.is_recovery);
+    assert_eq!(
+        original.recovery_reason.as_deref(),
+        Some("stalled-after-claim")
+    );
+    assert_eq!(original.last_nudge_result.as_deref(), Some("unroutable"));
+    assert_eq!(original.issue_tags, ["55"]);
+    assert_eq!(original.phase_tags, ["build", "review"]);
+    assert_eq!(original.parent_qitem_id.as_deref(), Some("parent"));
+    let event_only = &meta["qitem-recovery-event-only"];
+    assert!(event_only.is_recovery);
+    assert_eq!(
+        event_only.recovery_reason.as_deref(),
+        Some("qitem-recovery")
+    );
+    assert_eq!(event_only.last_nudge_result.as_deref(), Some("undelivered"));
+    assert_eq!(event_only.issue_tags, ["56"]);
+    assert_eq!(event_only.phase_tags, ["verify"]);
+    assert_eq!(event_only.parent_qitem_id.as_deref(), Some("q1"));
+    let destinations = store.load_destination_snapshots().unwrap();
+    let original = destinations
+        .iter()
+        .find(|(qitem, _)| qitem == "q1")
+        .unwrap();
+    assert_eq!(original.1.missions, ["original"]);
+}
+
+#[test]
+fn queue_metadata_seals_identifier_canaries_and_rejects_unsafe_plain_tokens() {
+    let dir = Scratch::new();
+    let source = dir.0.join("openrig.sqlite");
+    let db = dir.0.join("analytics.duckdb");
+    fixture(&source, "q1");
+    let conn = Connection::open(&source).unwrap();
+    conn.execute("UPDATE events SET payload=? WHERE seq=3", [json!({
+        "qitemId":"q1", "destinationSession":"seat-a", "tags":[
+            "issue:ghp_ISSUECANARY", "phase:sk-PHASECANARY", "stuck-sweep:gho_REASONCANARY"
+        ], "handedOffFrom":"xai-PARENTCANARY", "chainOfRecord":[], "lastNudgeResult":"Bearer NUDGECANARY"
+    }).to_string()]).unwrap();
+    // Prefix detection is independent of whether a recovery reason is safe.
+    conn.execute("INSERT INTO events VALUES(4,'queue.created',?,'2026-10-09T03:00:00Z')", [json!({
+        "qitemId":"qitem-recovery-fallback", "destinationSession":"seat-b", "tags":["stuck-sweep:two words"],
+        "lastNudgeResult":"unroutable"
+    }).to_string()]).unwrap();
+    drop(conn);
+    let key = b"queue-meta-test-key";
+    drop(AnalyticsStore::open_path(&db, &dendro_core::key_id(key)).unwrap());
+    ingest_staged(
+        &db,
+        &[SourceRoot {
+            name: "openrig".into(),
+            path: source,
+        }],
+        false,
+        key,
+    )
+    .unwrap();
+    let store = AnalyticsStore::open_read_only(&db).unwrap();
+    let meta = store.load_queue_item_meta().unwrap();
+    let item = &meta["q1"];
+    assert!(item.is_recovery);
+    assert_eq!(item.recovery_reason, None);
+    assert_eq!(item.last_nudge_result, None);
+    assert_eq!(
+        item.issue_tags,
+        [dendro_core::seal_identifier(
+            key,
+            "issue",
+            "ghp_ISSUECANARY"
+        )]
+    );
+    assert_eq!(
+        item.phase_tags,
+        [dendro_core::seal_identifier(key, "phase", "sk-PHASECANARY")]
+    );
+    assert_eq!(
+        item.parent_qitem_id,
+        Some(dendro_core::seal_identifier(
+            key,
+            "qitem",
+            "xai-PARENTCANARY"
+        ))
+    );
+    let serialized = serde_json::to_string(&meta).unwrap();
+    for canary in [
+        "ISSUECANARY",
+        "PHASECANARY",
+        "REASONCANARY",
+        "PARENTCANARY",
+        "NUDGECANARY",
+    ] {
+        assert!(!serialized.contains(canary), "metadata leaked {canary}");
+    }
+    let fallback = &meta["qitem-recovery-fallback"];
+    assert_eq!(fallback.recovery_reason.as_deref(), Some("qitem-recovery"));
+    assert_eq!(fallback.last_nudge_result.as_deref(), Some("unroutable"));
+}
+
+#[test]
+fn retained_creation_event_supplies_mission_lineage_after_parent_row_is_deleted() {
+    let dir = Scratch::new();
+    let source = dir.0.join("openrig.sqlite");
+    let db = dir.0.join("analytics.duckdb");
+    fixture(&source, "parent");
+    let conn = Connection::open(&source).unwrap();
+    conn.execute("UPDATE events SET payload=? WHERE seq=3", [json!({
+        "qitemId":"parent", "destinationSession":"seat-a", "tags":["mission:retained", "issue:55", "phase:build"],
+        "handedOffFrom":null, "chainOfRecord":[]
+    }).to_string()]).unwrap();
+    conn.execute_batch("DELETE FROM queue_items WHERE qitem_id='parent';
+        INSERT INTO queue_items VALUES('child','seat-b','2026-10-09T03:00:00Z','[]','parent','[]');").unwrap();
+    conn.execute(
+        "INSERT INTO events VALUES(4,'queue.created',?,'2026-10-09T03:00:00Z')",
+        [json!({
+            "qitemId":"child", "destinationSession":"seat-b", "tags":[], "handedOffFrom":"parent"
+        })
+        .to_string()],
+    )
+    .unwrap();
+    drop(conn);
+    run(&db, &source);
+    let store = AnalyticsStore::open_read_only(&db).unwrap();
+    let queue = store.load_queue().unwrap();
+    let creation = queue
+        .iter()
+        .find(|row| row.qitem_id == "parent" && row.state == "pending")
+        .unwrap();
+    assert_eq!(creation.missions, ["retained"]);
+    assert!(store
+        .load_destination_snapshots()
+        .unwrap()
+        .iter()
+        .all(|(qitem, _)| qitem != "parent"));
+    drop(store);
+    let payload = report(&db);
+    let child = payload["issue_lineage"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["qitem_id"] == "child")
+        .unwrap();
+    assert_eq!(child["missions"], json!(["retained"]));
+    assert_eq!(child["issues"], json!(["55"]));
+    assert_eq!(child["phases"], json!(["build"]));
+}

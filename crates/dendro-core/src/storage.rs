@@ -921,7 +921,10 @@ impl AnalyticsStore {
                    closure_reason, closure_target, chain_id, missions, is_recovery, recovery_reason
                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT (source_key) DO UPDATE SET
-                 chain_id = COALESCE(queue_facts.chain_id, excluded.chain_id)"#,
+                 chain_id = COALESCE(queue_facts.chain_id, excluded.chain_id),
+                 missions = CASE
+                   WHEN queue_facts.missions = '[]' AND excluded.missions <> '[]'
+                   THEN excluded.missions ELSE queue_facts.missions END"#,
             )?
             .execute(params![
                 redact(&fact.source_key),
@@ -1460,6 +1463,39 @@ fn refuse_legacy(conn: &Connection) -> Result<()> {
 mod tests {
     use super::*;
     use chrono::Utc;
+
+    #[test]
+    fn queue_reingest_backfills_empty_creation_missions_without_replacing_evidence() {
+        let store = AnalyticsStore::open_in_memory("key").unwrap();
+        let mut fact = QueueFact {
+            source_key: "events:queue.created:1".into(),
+            transition_id: 1,
+            qitem_id: "parent".into(),
+            ts: Utc::now(),
+            state: "pending".into(),
+            source_seat: "seat-a".into(),
+            dest_seat: "seat-b".into(),
+            closure_reason: None,
+            closure_target: None,
+            chain_id: None,
+            missions: vec![],
+        };
+        store.insert_queue(&fact).unwrap();
+        fact.missions = vec!["creation-mission".into()];
+        store.insert_queue(&fact).unwrap();
+        assert_eq!(
+            store.load_queue().unwrap()[0].missions,
+            ["creation-mission"]
+        );
+        fact.missions = vec!["replacement-mission".into()];
+        store.insert_queue(&fact).unwrap();
+        fact.missions.clear();
+        store.insert_queue(&fact).unwrap();
+        assert_eq!(
+            store.load_queue().unwrap()[0].missions,
+            ["creation-mission"]
+        );
+    }
 
     fn synthetic_metadata(size: &str) -> FileMetadata {
         FileMetadata {
