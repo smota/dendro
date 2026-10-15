@@ -4,9 +4,9 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, Result};
 use serde_json::{json, Value};
 
-use crate::facts::SeatBound;
+use crate::facts::{SeatBound, SkillFact};
 use crate::lifecycle;
-use crate::metrics::{self, LoopThresholds, Window};
+use crate::metrics::{self, LoopThresholds, SessionBinding, Window};
 use crate::output::{
     self, load_or_create_key, refuse_aliased_output_with_openrig, with_output_lock,
 };
@@ -1085,6 +1085,37 @@ fn evaluate_report_snapshot(
         })
         .collect();
     let handoff_loops = metrics::handoff_loops(&edges, thresholds.handoff_loop_returns);
+    let all_skill_facts = store.load_skills()?;
+    let resolve_skill_seat = |skill: &SkillFact| -> Option<String> {
+        if let Some((harness, native_session)) = skill.seat.split_once(':') {
+            if matches!(harness, "claude" | "codex" | "pi") {
+                if let SessionBinding::Linked {
+                    rig: bound_rig,
+                    seat: bound_seat,
+                } = binding(harness, native_session)
+                {
+                    if rig.is_none_or(|r| r == bound_rig) {
+                        return Some(bound_seat.clone());
+                    }
+                }
+                return None;
+            }
+        }
+        if rig_seats
+            .as_ref()
+            .is_none_or(|seats| seats.contains(&skill.seat))
+        {
+            return Some(skill.seat.clone());
+        }
+        None
+    };
+    let mut resolved_skills: Vec<(String, SkillFact)> = Vec::new();
+    for fact in all_skill_facts {
+        if let Some(canonical_seat) = resolve_skill_seat(&fact) {
+            resolved_skills.push((canonical_seat, fact));
+        }
+    }
+    let m4_skill_exposure = metrics::m4_skill_exposure(&resolved_skills);
     let mut payload = json!({
         "product": "AI Fleet Intelligence",
         "rig": rig.map(redact),
@@ -1196,6 +1227,9 @@ fn evaluate_report_snapshot(
         payload["loop_thresholds"] = json!(thresholds);
         payload["handoff_loops"] = json!(handoff_loops);
     }
+    if !m4_skill_exposure.is_empty() {
+        payload["m4_skill_exposure"] = json!(m4_skill_exposure);
+    }
     let report = metrics::report_value(kind, payload);
     let file_states = if evidence {
         Some(crate::file_state::Captured::capture(
@@ -1277,7 +1311,19 @@ pub fn trace_json_with_thresholds(
             "rework_chains / chains",
             payload["m3_rework_chains"].clone(),
         ),
-        "m4" => ("impact is insufficient data", payload["m4_impact"].clone()),
+        "m4" => {
+            if let Some(exposure) = payload.get("m4_skill_exposure") {
+                (
+                    "impact is insufficient data",
+                    json!({
+                        "impact": payload["m4_impact"],
+                        "exposure": exposure,
+                    }),
+                )
+            } else {
+                ("impact is insufficient data", payload["m4_impact"].clone())
+            }
+        }
         "tokens" => (
             "sum of four token buckets in the half-open window",
             payload["tokens"].clone(),
@@ -1346,6 +1392,9 @@ pub fn trace_json_with_thresholds(
     if !thresholds.is_default() {
         inputs["loop_thresholds"] = json!(thresholds);
         inputs["handoff_loops"] = payload["handoff_loops"].clone();
+    }
+    if let Some(exposure) = payload.get("m4_skill_exposure") {
+        inputs["m4_skill_exposure"] = exposure.clone();
     }
     Ok(json!({
         "metric_id": metric_id,
@@ -2603,6 +2652,206 @@ mod tests {
     }
 
     #[test]
+    fn m4_skill_exposure_preserves_byte_identity_when_empty_and_reports_exposure_when_present() {
+        let dir = scratch("m4-test");
+        let db = dir.join("analytics.duckdb");
+        let store = AnalyticsStore::open_path(&db, "kid").unwrap();
+        // Insert identities mapping sessions to seats
+        store
+            .insert_identity(&crate::IdentityFact {
+                source_key: "id-1".into(),
+                harness: "claude".into(),
+                native_session: "sess-claude".into(),
+                rig: "rig-1".into(),
+                seat: "dev.build".into(),
+                ts: None,
+            })
+            .unwrap();
+        store
+            .insert_identity(&crate::IdentityFact {
+                source_key: "id-2".into(),
+                harness: "pi".into(),
+                native_session: "sess-pi".into(),
+                rig: "rig-1".into(),
+                seat: "dev.qa".into(),
+                ts: None,
+            })
+            .unwrap();
+        store.checkpoint().unwrap();
+
+        let (from, to) = ("2026-10-09T00:00:00Z", "2026-10-09T04:00:00Z");
+
+        // 1. When no skills are stored:
+        // Report payload has NO m4_skill_exposure key, m4_impact is untouched.
+        let report_empty = report_json(&db, "decisions", None, from, to).unwrap();
+        let payload_empty = &report_empty["payload"];
+        assert!(payload_empty.get("m4_skill_exposure").is_none());
+        assert_eq!(payload_empty["m4_impact"], crate::m4_impact());
+
+        // Trace for m4 when empty: formula is "impact is insufficient data", value is string, inputs has no m4_skill_exposure
+        let trace_empty = trace_json(&db, "m4", None, from, to).unwrap();
+        assert_eq!(trace_empty["formula"], "impact is insufficient data");
+        assert_eq!(trace_empty["value"], crate::m4_impact());
+        assert!(trace_empty["inputs"].get("m4_skill_exposure").is_none());
+
+        // 2. Insert skills:
+        // - OpenRig loaded skills for dev.build (invoked: false)
+        store
+            .insert_skill(&crate::SkillFact {
+                source_key: "snapshots:skill:dev.build:git-tools".into(),
+                seat: "dev.build".into(),
+                skill: "git-tools".into(),
+                invoked: false,
+            })
+            .unwrap();
+        store
+            .insert_skill(&crate::SkillFact {
+                source_key: "snapshots:skill:dev.build:rust-analyzer".into(),
+                seat: "dev.build".into(),
+                skill: "rust-analyzer".into(),
+                invoked: false,
+            })
+            .unwrap();
+        // - Harness stream invoked skill via native session sess-claude -> dev.build (invoked: true)
+        store
+            .insert_skill(&crate::SkillFact {
+                source_key: "claude-src:0:15:skill:0".into(),
+                seat: "claude:sess-claude".into(),
+                skill: "git-tools".into(),
+                invoked: true,
+            })
+            .unwrap();
+        // Duplicate invocation on dev.build
+        store
+            .insert_skill(&crate::SkillFact {
+                source_key: "claude-src:0:20:skill:0".into(),
+                seat: "claude:sess-claude".into(),
+                skill: "git-tools".into(),
+                invoked: true,
+            })
+            .unwrap();
+        // - Harness stream invoked skill via native session sess-pi -> dev.qa (invoked: true)
+        store
+            .insert_skill(&crate::SkillFact {
+                source_key: "pi-src:0:22:skill:0".into(),
+                seat: "pi:sess-pi".into(),
+                skill: "test-runner".into(),
+                invoked: true,
+            })
+            .unwrap();
+        // - (c) Unlinked and colliding native sessions: must be excluded from m4_skill_exposure
+        store
+            .insert_skill(&crate::SkillFact {
+                source_key: "claude-src:0:99:skill:0".into(),
+                seat: "claude:sess-unlinked".into(),
+                skill: "orphan-skill".into(),
+                invoked: true,
+            })
+            .unwrap();
+        store
+            .insert_identity(&crate::IdentityFact {
+                source_key: "id-c1".into(),
+                harness: "claude".into(),
+                native_session: "sess-conflict".into(),
+                rig: "rig-1".into(),
+                seat: "dev.build".into(),
+                ts: None,
+            })
+            .unwrap();
+        store
+            .insert_identity(&crate::IdentityFact {
+                source_key: "id-c2".into(),
+                harness: "claude".into(),
+                native_session: "sess-conflict".into(),
+                rig: "rig-1".into(),
+                seat: "dev.qa".into(),
+                ts: None,
+            })
+            .unwrap();
+        store
+            .insert_skill(&crate::SkillFact {
+                source_key: "claude-src:0:98:skill:0".into(),
+                seat: "claude:sess-conflict".into(),
+                skill: "conflict-skill".into(),
+                invoked: true,
+            })
+            .unwrap();
+        store.checkpoint().unwrap();
+
+        // 3. Evaluate report with skills
+        let report_populated = report_json(&db, "decisions", None, from, to).unwrap();
+        let payload = &report_populated["payload"];
+        assert_eq!(payload["m4_impact"], crate::m4_impact());
+        let exposure = payload["m4_skill_exposure"]
+            .as_array()
+            .expect("m4_skill_exposure should be present");
+        assert_eq!(
+            exposure.len(),
+            2,
+            "unlinked and colliding sessions must be excluded"
+        );
+        assert!(!exposure
+            .iter()
+            .any(|row| row["seat"] == "sess-unlinked" || row["seat"] == "sess-conflict"));
+        assert!(!exposure.iter().any(|row| {
+            let inv = row["invoked_skills"].as_array().unwrap();
+            inv.iter()
+                .any(|s| s == "orphan-skill" || s == "conflict-skill")
+        }));
+
+        let build = exposure
+            .iter()
+            .find(|row| row["seat"] == "dev.build")
+            .expect("dev.build row");
+        assert_eq!(
+            build["loaded_skills"],
+            json!(["git-tools", "rust-analyzer"])
+        );
+        assert_eq!(build["invoked_skills"], json!(["git-tools"]));
+        assert_eq!(
+            build["source_keys"],
+            json!([
+                "claude-src:0:15:skill:0",
+                "claude-src:0:20:skill:0",
+                "snapshots:skill:dev.build:git-tools",
+                "snapshots:skill:dev.build:rust-analyzer"
+            ])
+        );
+
+        let qa = exposure
+            .iter()
+            .find(|row| row["seat"] == "dev.qa")
+            .expect("dev.qa row");
+        assert_eq!(qa["loaded_skills"], json!([] as [&str; 0]));
+        assert_eq!(qa["invoked_skills"], json!(["test-runner"]));
+        assert_eq!(qa["source_keys"], json!(["pi-src:0:22:skill:0"]));
+
+        // 4. Trace for m4 with skills
+        let trace = trace_json(&db, "m4", None, from, to).unwrap();
+        assert_eq!(trace["formula"], "impact is insufficient data");
+        assert_eq!(
+            trace["value"],
+            json!({
+                "impact": crate::m4_impact(),
+                "exposure": exposure
+            })
+        );
+        assert_eq!(trace["inputs"]["m4_skill_exposure"], json!(exposure));
+
+        // 5. Rig scope: scoped to rig-1 includes both seats
+        let report_rig1 = report_json(&db, "decisions", Some("rig-1"), from, to).unwrap();
+        assert!(report_rig1["payload"]["m4_skill_exposure"]
+            .as_array()
+            .is_some());
+
+        // Rig scope: scoped to other rig excludes these seats
+        let report_other = report_json(&db, "decisions", Some("rig-other"), from, to).unwrap();
+        assert!(report_other["payload"].get("m4_skill_exposure").is_none());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn pipeline_default_thresholds_produce_byte_identical_json() {
         let dir = std::env::temp_dir().join(format!("dendro-byte-id-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
@@ -2830,6 +3079,42 @@ mod tests {
         assert_eq!(def["window_seconds"], 60);
         assert_eq!(def["native_span_predicate"], "span<=60");
         assert_eq!(def["codex_span_predicate"], "0<=span<=60");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn m4_skill_exposure_redacts_secret_shaped_skills() {
+        let dir = scratch("m4-secret-test");
+        let db = dir.join("analytics.duckdb");
+        let store = AnalyticsStore::open_path(&db, "kid").unwrap();
+        let secret =
+            "sk-ant-api03-abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890-test";
+        let sealed_secret = crate::seal_identifier(b"test-key", "skill", secret);
+        assert!(sealed_secret.contains("[redacted]"));
+        assert!(!sealed_secret.contains(secret));
+
+        store
+            .insert_skill(&crate::SkillFact {
+                source_key: format!("snapshots:skill:dev.sec:{sealed_secret}"),
+                seat: "dev.sec".into(),
+                skill: sealed_secret.clone(),
+                invoked: false,
+            })
+            .unwrap();
+        store.checkpoint().unwrap();
+
+        let report = report_json(
+            &db,
+            "decisions",
+            None,
+            "2026-10-09T00:00:00Z",
+            "2026-10-09T04:00:00Z",
+        )
+        .unwrap();
+        let payload_str = serde_json::to_string(&report["payload"]).unwrap();
+        assert!(!payload_str.contains(secret));
+        assert!(payload_str.contains("[redacted]"));
 
         let _ = fs::remove_dir_all(&dir);
     }

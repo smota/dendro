@@ -1541,6 +1541,43 @@ pub fn m4_impact() -> &'static str {
     "insufficient data: a valid skill comparison needs the same role with and without the skill and at least five closed items on each side"
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SeatSkillExposure {
+    pub seat: String,
+    pub loaded_skills: Vec<String>,
+    pub invoked_skills: Vec<String>,
+    pub source_keys: Vec<String>,
+}
+
+pub fn m4_skill_exposure(skills: &[(String, SkillFact)]) -> Vec<SeatSkillExposure> {
+    #[derive(Default)]
+    struct SeatSkills {
+        loaded: BTreeSet<String>,
+        invoked: BTreeSet<String>,
+        keys: BTreeSet<String>,
+    }
+
+    let mut by_seat: BTreeMap<String, SeatSkills> = BTreeMap::new();
+    for (seat, fact) in skills {
+        let entry = by_seat.entry(seat.clone()).or_default();
+        if fact.invoked {
+            entry.invoked.insert(fact.skill.clone());
+        } else {
+            entry.loaded.insert(fact.skill.clone());
+        }
+        entry.keys.insert(fact.source_key.clone());
+    }
+    by_seat
+        .into_iter()
+        .map(|(seat, s)| SeatSkillExposure {
+            seat,
+            loaded_skills: s.loaded.into_iter().collect(),
+            invoked_skills: s.invoked.into_iter().collect(),
+            source_keys: s.keys.into_iter().collect(),
+        })
+        .collect()
+}
+
 pub fn report_value(kind: &str, payload: Value) -> Value {
     json!({
         "metric": kind,

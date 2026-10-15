@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use dendro_core::file_metadata::{observe_path, FileMetadata};
 use dendro_core::{
-    tool_fingerprint, AnalyticsStore, CodexCounters, ToolFact, UsageFact, WarningNote,
+    tool_fingerprint, AnalyticsStore, CodexCounters, SkillFact, ToolFact, UsageFact, WarningNote,
 };
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -222,6 +222,7 @@ fn ingest_jsonl_with_key_checking(
                 claude_sessions.insert(seal_session(tool_key, harness, id));
             }
         }
+        let mut codex_skills = Vec::new();
         if harness == "codex" && unknown_record_type(harness, &value).is_none() {
             reader_complete &= observe_codex(
                 &value,
@@ -233,7 +234,13 @@ fn ingest_jsonl_with_key_checking(
                 &mut codex_ordinal,
                 tool_key,
                 &mut tools,
+                &mut codex_skills,
             )?;
+        }
+        if is_new {
+            for skill in codex_skills {
+                store.insert_skill(&skill)?;
+            }
         }
         if !is_new {
             if let Some(scan) = tool_scan.as_mut() {
@@ -362,6 +369,9 @@ fn ingest_jsonl_with_key_checking(
         let pass = scan.finish();
         tools = pass.new_calls;
         settled = pass.settled;
+        for skill in pass.skills {
+            store.insert_skill(&skill)?;
+        }
     }
     let held_after = FileMetadata::from_file(reader.get_ref());
     let named_after = observe_path(path);
@@ -499,6 +509,116 @@ fn seal_message(key: Option<&[u8]>, raw: &str) -> String {
         Some(key) => dendro_core::seal_identifier(key, "message", raw),
         None => raw.to_string(),
     }
+}
+
+fn seal_skill(key: Option<&[u8]>, raw: &str) -> String {
+    match key {
+        Some(key) => dendro_core::seal_identifier(key, "skill", raw),
+        None => dendro_core::seal_identifier(b"", "skill", raw),
+    }
+}
+
+pub(crate) fn extract_skills_from_text(text: &str) -> Vec<String> {
+    let needle = "skills/";
+    let mut search_from = 0;
+    let mut skills = Vec::new();
+    while let Some(pos) = text[search_from..].find(needle) {
+        let actual_pos = search_from + pos;
+        let is_valid_prefix = actual_pos == 0
+            || text.as_bytes()[actual_pos - 1] == b'/'
+            || text.as_bytes()[actual_pos - 1] == b'\\'
+            || text.as_bytes()[actual_pos - 1] == b'"'
+            || text.as_bytes()[actual_pos - 1] == b'\''
+            || text.as_bytes()[actual_pos - 1].is_ascii_whitespace();
+        let rest = &text[actual_pos + needle.len()..];
+        if is_valid_prefix {
+            if let Some((name, after)) = rest.split_once('/') {
+                let matches_skill_md = after == "SKILL.md"
+                    || after.starts_with("SKILL.md/")
+                    || after.starts_with("SKILL.md\\")
+                    || after.starts_with("SKILL.md\"")
+                    || after.starts_with("SKILL.md'")
+                    || after.starts_with("SKILL.md ")
+                    || after.starts_with("SKILL.md\t")
+                    || after.starts_with("SKILL.md\n")
+                    || after.starts_with("SKILL.md\r")
+                    || after.starts_with("SKILL.md;")
+                    || after.starts_with("SKILL.md&")
+                    || after.starts_with("SKILL.md|");
+                let is_clean_name = !name.is_empty()
+                    && name
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.');
+                if matches_skill_md && is_clean_name && !skills.contains(&name.to_string()) {
+                    skills.push(name.to_string());
+                }
+            }
+        }
+        search_from = actual_pos + needle.len();
+    }
+    skills
+}
+
+fn collect_skills_from_value(val: &Value, out: &mut Vec<String>) {
+    match val {
+        Value::String(s) => {
+            if let Ok(decoded) = serde_json::from_str::<Value>(s) {
+                if !matches!(decoded, Value::String(_)) {
+                    collect_skills_from_value(&decoded, out);
+                    return;
+                }
+            }
+            for skill in extract_skills_from_text(s) {
+                if !out.contains(&skill) {
+                    out.push(skill);
+                }
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                collect_skills_from_value(item, out);
+            }
+        }
+        Value::Object(map) => {
+            for v in map.values() {
+                collect_skills_from_value(v, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn extract_skills_from_codex_call(call: &Value) -> Vec<String> {
+    let mut skills = Vec::new();
+    let name = call.get("name").and_then(Value::as_str).unwrap_or_default();
+    let arg_val = call.get("arguments").or_else(|| call.get("input"));
+    let parsed_args: Option<Value> = match arg_val {
+        Some(Value::Object(_)) => arg_val.cloned(),
+        Some(Value::String(s)) => serde_json::from_str(s).ok(),
+        _ => None,
+    };
+    if matches!(name, "Skill" | "use_skill") {
+        if let Some(s) = parsed_args
+            .as_ref()
+            .and_then(|inp| {
+                inp.get("skill")
+                    .or_else(|| inp.get("name"))
+                    .or_else(|| inp.get("skill_name"))
+            })
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            skills.push(s.to_string());
+        }
+    }
+    if let Some(args) = arg_val {
+        collect_skills_from_value(args, &mut skills);
+    }
+    if let Some(cmd) = call.get("command") {
+        collect_skills_from_value(cmd, &mut skills);
+    }
+    skills
 }
 
 fn generation_was_reset(prior: Option<(i64, i64, String)>, generation: i64) -> bool {
@@ -774,6 +894,7 @@ fn observe_codex(
     ordinal: &mut i64,
     key: Option<&[u8]>,
     tools: &mut Vec<ToolFact>,
+    skills: &mut Vec<SkillFact>,
 ) -> Result<bool> {
     let envelope = value.get("type").and_then(Value::as_str);
     let kind = value.pointer("/payload/type").and_then(Value::as_str);
@@ -784,6 +905,28 @@ fn observe_codex(
             };
             match item.get("type").and_then(Value::as_str) {
                 Some("CommandExecution") => {
+                    let cmd_text =
+                        if let Some(parts) = item.get("command").and_then(Value::as_array) {
+                            parts
+                                .iter()
+                                .filter_map(Value::as_str)
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                        } else if let Some(cmd) = item.get("command").and_then(Value::as_str) {
+                            cmd.to_string()
+                        } else {
+                            String::new()
+                        };
+                    for (idx, skill_name) in
+                        extract_skills_from_text(&cmd_text).into_iter().enumerate()
+                    {
+                        skills.push(SkillFact {
+                            source_key: format!("{source_id}:{generation}:{line}:skill:{idx}"),
+                            seat: format!("codex:{session}"),
+                            skill: seal_skill(key, &skill_name),
+                            invoked: true,
+                        });
+                    }
                     let failed = item
                         .get("exit_code")
                         .and_then(Value::as_i64)
@@ -814,10 +957,36 @@ fn observe_codex(
                     "AgentMessage" | "Reasoning" | "Plan" | "FileChange" | "McpToolCall"
                     | "WebSearch" | "ImageView" | "UserMessage" | "Extension" | "ContextCompaction",
                 ) => return Ok(true),
+                Some("tool_call" | "custom_tool_call" | "function_call") => {
+                    for (idx, skill_name) in
+                        extract_skills_from_codex_call(item).into_iter().enumerate()
+                    {
+                        skills.push(SkillFact {
+                            source_key: format!("{source_id}:{generation}:{line}:skill:{idx}"),
+                            seat: format!("codex:{session}"),
+                            skill: seal_skill(key, &skill_name),
+                            invoked: true,
+                        });
+                    }
+                    return Ok(true);
+                }
                 _ => return Ok(false),
             }
         }
-        (Some("response_item"), Some("custom_tool_call" | "function_call")) => {
+        (Some("response_item"), Some("custom_tool_call" | "function_call" | "tool_call")) => {
+            if let Some(payload) = value.pointer("/payload") {
+                for (idx, skill_name) in extract_skills_from_codex_call(payload)
+                    .into_iter()
+                    .enumerate()
+                {
+                    skills.push(SkillFact {
+                        source_key: format!("{source_id}:{generation}:{line}:skill:{idx}"),
+                        seat: format!("codex:{session}"),
+                        skill: seal_skill(key, &skill_name),
+                        invoked: true,
+                    });
+                }
+            }
             (dendro_core::CODEX_CALL, None, None)
         }
         (
@@ -893,6 +1062,7 @@ fn raw_codex_command(text: &str) -> Option<&serde_json::value::RawValue> {
 struct ToolPass {
     new_calls: Vec<ToolFact>,
     settled: Vec<(String, Option<bool>)>,
+    skills: Vec<SkillFact>,
 }
 
 struct ToolCall {
@@ -913,6 +1083,7 @@ struct ToolScan<'a> {
     calls: Vec<ToolCall>,
     by_id: std::collections::HashMap<(String, String), usize>,
     results: Vec<((String, String), Option<bool>, i64)>,
+    skills: Vec<(i64, SkillFact)>,
 }
 
 impl<'a> ToolScan<'a> {
@@ -935,6 +1106,7 @@ impl<'a> ToolScan<'a> {
             calls: Vec::new(),
             by_id: std::collections::HashMap::new(),
             results: Vec::new(),
+            skills: Vec::new(),
         }
     }
 
@@ -983,6 +1155,7 @@ impl<'a> ToolScan<'a> {
         };
         let ts = timestamp_of(value);
         let raw_blocks = raw_content_blocks(text);
+        let mut line_skill_idx = 0usize;
         for (index, block) in content.iter().enumerate() {
             match block.get("type").and_then(|item| item.as_str()) {
                 Some(kind) if kind == call_type => {
@@ -1000,6 +1173,52 @@ impl<'a> ToolScan<'a> {
                     let lexical = tool_input_lexical(block, raw_blocks.get(index), input_field);
                     let fingerprint =
                         key.and_then(|key| tool_fingerprint(key, name, lexical.as_deref()));
+                    let input_val = block
+                        .get(input_field)
+                        .or_else(|| block.get("input"))
+                        .or_else(|| block.get("arguments"));
+                    let parsed_input: Option<Value> = match input_val {
+                        Some(Value::Object(_)) => input_val.cloned(),
+                        Some(Value::String(s)) => serde_json::from_str(s).ok(),
+                        _ => None,
+                    };
+                    let extracted_skills: Vec<String> = if matches!(name, "Skill" | "use_skill") {
+                        parsed_input
+                            .as_ref()
+                            .and_then(|inp| {
+                                inp.get("skill")
+                                    .or_else(|| inp.get("name"))
+                                    .or_else(|| inp.get("skill_name"))
+                            })
+                            .and_then(Value::as_str)
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty())
+                            .into_iter()
+                            .collect()
+                    } else if matches!(name, "Read" | "read" | "view_file") {
+                        parsed_input
+                            .as_ref()
+                            .and_then(|inp| inp.get("file_path").or_else(|| inp.get("path")))
+                            .and_then(Value::as_str)
+                            .map(extract_skills_from_text)
+                            .unwrap_or_default()
+                    } else {
+                        Vec::new()
+                    };
+                    for skill_name in extracted_skills {
+                        self.skills.push((
+                            line_no,
+                            SkillFact {
+                                source_key: format!(
+                                    "{source_id}:{generation}:{line_no}:skill:{line_skill_idx}"
+                                ),
+                                seat: format!("{harness}:{}", seal_session(key, harness, &session)),
+                                skill: seal_skill(key, &skill_name),
+                                invoked: true,
+                            },
+                        ));
+                        line_skill_idx += 1;
+                    }
                     self.calls.push(ToolCall {
                         fact: ToolFact {
                             source_key: format!("{source_id}:{generation}:{line_no}:{index}"),
@@ -1048,7 +1267,13 @@ impl<'a> ToolScan<'a> {
         let mut pass = ToolPass {
             new_calls: Vec::new(),
             settled: Vec::new(),
+            skills: Vec::new(),
         };
+        for (line, fact) in self.skills {
+            if line > new_from {
+                pass.skills.push(fact);
+            }
+        }
         for mut call in self.calls {
             let first = call.results.first().copied().flatten();
             call.fact.failed = match first {
@@ -2962,6 +3187,177 @@ mod tests {
     }
 
     #[test]
+    fn claude_and_pi_extract_skill_invocations() {
+        let dir = std::env::temp_dir().join(format!("dendro-skill-stream-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let db = AnalyticsStore::open_path(&dir.join("test.duckdb"), "k").unwrap();
+
+        // 1. Claude session invoking Skill tool and reading a SKILL.md
+        let claude_path = dir.join("claude.jsonl");
+        let claude_data = concat!(
+            "{\"sessionId\":\"c-sess-1\",\"type\":\"assistant\",\"message\":{\"content\":[",
+            "{\"type\":\"tool_use\",\"id\":\"call_1\",\"name\":\"Skill\",\"input\":{\"skill\":\"unit-test\"}}",
+            "]}}\n",
+            "{\"sessionId\":\"c-sess-1\",\"type\":\"assistant\",\"message\":{\"content\":[",
+            "{\"type\":\"tool_use\",\"id\":\"call_2\",\"name\":\"view_file\",\"input\":{\"file_path\":\"/path/to/skills/git-workflow/SKILL.md\"}}",
+            "]}}\n",
+            "{\"sessionId\":\"c-sess-1\",\"type\":\"assistant\",\"message\":{\"content\":[",
+            "{\"type\":\"tool_use\",\"id\":\"call_3\",\"name\":\"Skill\",\"input\":{\"skill\":\"sk-ant-secret-token\"}}",
+            "]}}\n",
+        );
+        write(&claude_path, claude_data);
+        ingest_jsonl_with_key(&db, "claude-src", "claude", &claude_path, Some(b"key")).unwrap();
+
+        // 2. Pi session invoking use_skill and read
+        let pi_path = dir.join("pi.jsonl");
+        let pi_data = concat!(
+            "{\"sessionId\":\"pi-sess-1\"}\n",
+            "{\"sessionId\":\"pi-sess-1\",\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[",
+            "{\"type\":\"toolCall\",\"id\":\"pi_call_1\",\"name\":\"use_skill\",\"arguments\":{\"name\":\"pr-review\"}}",
+            "]}}\n",
+            "{\"sessionId\":\"pi-sess-1\",\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[",
+            "{\"type\":\"toolCall\",\"id\":\"pi_call_2\",\"name\":\"read\",\"arguments\":{\"path\":\"skills/deploy/SKILL.md\"}}",
+            "]}}\n",
+        );
+        write(&pi_path, pi_data);
+        ingest_jsonl_with_key(&db, "pi-src", "pi", &pi_path, Some(b"key")).unwrap();
+
+        let skills = db.load_skills().unwrap();
+        assert_eq!(skills.len(), 5);
+        for skill in &skills {
+            assert!(skill.invoked);
+            assert!(!skill.skill.contains("sk-ant-secret-token"));
+        }
+        assert!(skills.iter().any(|s| s.skill == "unit-test"));
+        assert!(skills.iter().any(|s| s.skill == "git-workflow"));
+        assert!(skills.iter().any(|s| s.skill == "pr-review"));
+        assert!(skills.iter().any(|s| s.skill == "deploy"));
+        assert!(skills.iter().any(|s| s.skill.contains("[redacted]")));
+
+        drop(db);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn codex_extracts_skill_from_command_execution() {
+        let dir = std::env::temp_dir().join(format!("dendro-skill-codex-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let db = AnalyticsStore::open_path(&dir.join("test.duckdb"), "k").unwrap();
+
+        let codex_path = dir.join("codex.jsonl");
+        let codex_data = concat!(
+            "{\"session_id\":\"codex-sess-1\"}\n",
+            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"item_completed\",\"item\":{\"type\":\"CommandExecution\",\"exit_code\":0,\"command\":[\"cat\",\"/opt/skills/build-step/SKILL.md\"]}}}\n",
+            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"item_completed\",\"item\":{\"type\":\"CommandExecution\",\"exit_code\":0,\"command\":\"node /skills/sk-ant-codex-secret/SKILL.md\"}}}\n",
+        );
+        write(&codex_path, codex_data);
+        ingest_jsonl_with_key(&db, "codex-src", "codex", &codex_path, Some(b"key")).unwrap();
+
+        let skills = db.load_skills().unwrap();
+        assert_eq!(skills.len(), 2);
+        for skill in &skills {
+            assert!(skill.invoked);
+            assert!(!skill.skill.contains("sk-ant-codex-secret"));
+        }
+        assert!(skills.iter().any(|s| s.skill == "build-step"));
+        assert!(skills.iter().any(|s| s.skill.contains("[redacted]")));
+
+        drop(db);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn multiple_skills_on_same_line_have_unique_deterministic_keys() {
+        let dir = std::env::temp_dir().join(format!("dendro-multi-skill-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let db = AnalyticsStore::open_path(&dir.join("test.duckdb"), "k").unwrap();
+
+        // 1. Codex line with multiple skills in a single command
+        let codex_path = dir.join("codex.jsonl");
+        let codex_data = concat!(
+            "{\"session_id\":\"codex-multi\"}\n",
+            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"item_completed\",\"item\":{\"type\":\"CommandExecution\",\"exit_code\":0,\"command\":\"cat skills/alpha/SKILL.md skills/beta/SKILL.md\"}}}\n",
+        );
+        write(&codex_path, codex_data);
+        ingest_jsonl_with_key(&db, "codex-src", "codex", &codex_path, Some(b"key")).unwrap();
+
+        // 2. Claude line with multiple tool uses
+        let claude_path = dir.join("claude.jsonl");
+        let claude_data = concat!(
+            "{\"sessionId\":\"claude-multi\",\"type\":\"assistant\",\"message\":{\"content\":[",
+            "{\"type\":\"tool_use\",\"id\":\"call_1\",\"name\":\"Skill\",\"input\":{\"skill\":\"gamma\"}},",
+            "{\"type\":\"tool_use\",\"id\":\"call_2\",\"name\":\"view_file\",\"input\":{\"file_path\":\"/skills/delta/SKILL.md\"}}",
+            "]}}\n",
+        );
+        write(&claude_path, claude_data);
+        ingest_jsonl_with_key(&db, "claude-src", "claude", &claude_path, Some(b"key")).unwrap();
+
+        let skills = db.load_skills().unwrap();
+        assert_eq!(skills.len(), 4);
+
+        let alpha = skills.iter().find(|s| s.skill == "alpha").unwrap();
+        assert!(alpha.source_key.ends_with(":skill:0"));
+        assert!(alpha.seat.starts_with("codex:"));
+
+        let beta = skills.iter().find(|s| s.skill == "beta").unwrap();
+        assert!(beta.source_key.ends_with(":skill:1"));
+        assert!(beta.seat.starts_with("codex:"));
+
+        let gamma = skills.iter().find(|s| s.skill == "gamma").unwrap();
+        assert!(gamma.source_key.ends_with(":skill:0"));
+        assert!(gamma.seat.starts_with("claude:"));
+
+        let delta = skills.iter().find(|s| s.skill == "delta").unwrap();
+        assert!(delta.source_key.ends_with(":skill:1"));
+        assert!(delta.seat.starts_with("claude:"));
+
+        drop(db);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn messages_and_prompts_mentioning_skills_are_ignored() {
+        let dir = std::env::temp_dir().join(format!("dendro-skill-ignore-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let db = AnalyticsStore::open_path(&dir.join("test.duckdb"), "k").unwrap();
+
+        // Codex message mentioning SKILL.md
+        let codex_path = dir.join("codex.jsonl");
+        let codex_data = concat!(
+            "{\"session_id\":\"codex-msg\"}\n",
+            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"item_completed\",\"item\":{\"type\":\"AgentMessage\",\"text\":\"Please refer to skills/secret-agent/SKILL.md\"}}}\n",
+            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"item_completed\",\"item\":{\"type\":\"UserMessage\",\"text\":\"I want you to use skills/user-prompt/SKILL.md\"}}}\n",
+            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"item_completed\",\"item\":{\"type\":\"Reasoning\",\"text\":\"Thinking about skills/reasoning-skill/SKILL.md\"}}}\n",
+        );
+        write(&codex_path, codex_data);
+        ingest_jsonl_with_key(&db, "codex-src", "codex", &codex_path, Some(b"key")).unwrap();
+
+        // Claude text message mentioning SKILL.md (not a tool call)
+        let claude_path = dir.join("claude.jsonl");
+        let claude_data = concat!(
+            "{\"sessionId\":\"claude-msg\",\"type\":\"assistant\",\"message\":{\"content\":[",
+            "{\"type\":\"text\",\"text\":\"You should read skills/fake-skill/SKILL.md\"}",
+            "]}}\n",
+        );
+        write(&claude_path, claude_data);
+        ingest_jsonl_with_key(&db, "claude-src", "claude", &claude_path, Some(b"key")).unwrap();
+
+        let skills = db.load_skills().unwrap();
+        assert_eq!(
+            skills.len(),
+            0,
+            "Non-tool messages must not produce skill facts"
+        );
+
+        drop(db);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn frozen_sqlite_copy_preserves_source_hashes_and_reads_wal() {
         let dir = std::env::temp_dir().join(format!("dendro-frozen-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
@@ -3056,6 +3452,27 @@ mod tests {
         let elapsed = started.elapsed();
         eprintln!("AC1 {} ms {:?}", elapsed.as_millis(), found);
         assert!(elapsed.as_secs() <= 300, "AC1 exceeded 300s: {elapsed:?}");
+    }
+
+    #[test]
+    fn codex_json_encoded_function_call_arguments_extract_skills() {
+        let dir = std::env::temp_dir().join(format!("dendro-codex-fc-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("codex.jsonl");
+        let content = concat!(
+            "{\"type\":\"session_meta\",\"payload\":{\"id\":\"sess-fc\"}}\n",
+            "{\"type\":\"response_item\",\"payload\":{\"type\":\"function_call\",\"name\":\"exec_command\",\"arguments\":\"{\\\"cmd\\\":\\\"cat skills/build-step/SKILL.md\\\"}\"}}\n"
+        );
+        fs::write(&path, content).unwrap();
+        let db = store();
+        ingest_jsonl(&db, "codex-fc", "codex", &path).unwrap();
+        let skills = db.load_skills().unwrap();
+        assert_eq!(skills.len(), 1);
+        assert_eq!(skills[0].seat, "codex:sess-fc");
+        assert_eq!(skills[0].skill, "build-step");
+        assert!(skills[0].invoked);
+        let _ = fs::remove_dir_all(&dir);
     }
 }
 

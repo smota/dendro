@@ -429,6 +429,16 @@ fn read_openrig(
                     &evidence,
                 )?;
             }
+            for (seat, skill_name) in snapshot_skills(&data) {
+                let seat_sealed = dendro_core::seal_identifier(key, "seat", &seat);
+                let skill_sealed = dendro_core::seal_identifier(key, "skill", &skill_name);
+                store.insert_skill(&dendro_core::SkillFact {
+                    source_key: format!("snapshots:skill:{seat_sealed}:{skill_sealed}"),
+                    seat: seat_sealed,
+                    skill: skill_sealed,
+                    invoked: false,
+                })?;
+            }
         }
     }
     let mut items =
@@ -571,6 +581,75 @@ fn snapshot_roles(data: &str) -> Vec<(String, &'static str, String)> {
         roles.push((name, if role { "check" } else { "other" }, evidence));
     }
     roles
+}
+
+fn snapshot_skills(data: &str) -> Vec<(String, String)> {
+    let Ok(snapshot) = serde_json::from_str::<Value>(data) else {
+        return Vec::new();
+    };
+    let text =
+        |value: &Value, name: &str| value.get(name).and_then(|v| v.as_str()).map(str::to_string);
+    let nodes: std::collections::BTreeMap<String, &Value> = snapshot
+        .get("nodes")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|node| Some((text(node, "id")?, node)))
+        .collect();
+    let startup_context = snapshot.get("nodeStartupContext");
+    let mut skills = Vec::new();
+    for session in snapshot
+        .get("sessions")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+    {
+        let (Some(seat), Some(node_id)) = (text(session, "sessionName"), text(session, "nodeId"))
+        else {
+            continue;
+        };
+        let Some(node) = nodes.get(&node_id) else {
+            continue;
+        };
+        if let Some(refs) = node.get("packageRefs").and_then(|v| v.as_array()) {
+            for item in refs {
+                if let Some(s) = item.as_str() {
+                    let trimmed = s.trim();
+                    if !trimmed.is_empty() {
+                        skills.push((seat.clone(), trimmed.to_string()));
+                    }
+                }
+            }
+        }
+        let startup_files = startup_context
+            .and_then(|ctx| {
+                if let Some(map) = ctx.as_object() {
+                    map.get(&node_id)
+                } else if let Some(arr) = ctx.as_array() {
+                    arr.iter()
+                        .find(|item| text(item, "nodeId").as_deref() == Some(&node_id))
+                } else {
+                    None
+                }
+            })
+            .and_then(|nctx| nctx.get("resolvedStartupFiles"))
+            .and_then(|v| v.as_array());
+
+        if let Some(files) = startup_files {
+            for file_entry in files {
+                let path_str = file_entry
+                    .get("path")
+                    .and_then(|v| v.as_str())
+                    .or_else(|| file_entry.get("absolutePath").and_then(|v| v.as_str()));
+                if let Some(path) = path_str {
+                    for skill_name in crate::stream::extract_skills_from_text(path) {
+                        skills.push((seat.clone(), skill_name));
+                    }
+                }
+            }
+        }
+    }
+    skills
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1288,5 +1367,51 @@ mod tests {
             dendro_core::parse_utc_time("2026-10-10 15:38:41"),
             Some(Utc.with_ymd_and_hms(2026, 10, 10, 15, 38, 41).unwrap())
         );
+    }
+
+    #[test]
+    fn snapshot_skills_extracts_package_refs_and_startup_files() {
+        let snapshot = serde_json::json!({
+            "nodes": [
+                {
+                    "id": "n1",
+                    "packageRefs": ["git-workflow", "sk-ant-secret-pkg", ""]
+                },
+                {
+                    "id": "n2",
+                    "packageRefs": ["code-review"]
+                }
+            ],
+            "sessions": [
+                {"nodeId": "n1", "sessionName": "dev.build-sr"},
+                {"nodeId": "n2", "sessionName": "dev.qa"},
+                {"nodeId": "n_missing", "sessionName": "orphan"}
+            ],
+            "nodeStartupContext": {
+                "n1": {
+                    "resolvedStartupFiles": [
+                        {"path": "skills/unit-test/SKILL.md"},
+                        {"absolutePath": "/home/user/.openrig/skills/linter/SKILL.md"},
+                        {"path": "other/file.txt"}
+                    ]
+                },
+                "n2": {
+                    "resolvedStartupFiles": [
+                        {"path": "skills/qa-review/SKILL.md"}
+                    ]
+                }
+            }
+        });
+        let skills = snapshot_skills(&snapshot.to_string());
+        assert!(skills.contains(&("dev.build-sr".to_string(), "git-workflow".to_string())));
+        assert!(skills.contains(&("dev.build-sr".to_string(), "sk-ant-secret-pkg".to_string())));
+        assert!(skills.contains(&("dev.build-sr".to_string(), "unit-test".to_string())));
+        assert!(skills.contains(&("dev.build-sr".to_string(), "linter".to_string())));
+        assert!(skills.contains(&("dev.qa".to_string(), "code-review".to_string())));
+        assert!(skills.contains(&("dev.qa".to_string(), "qa-review".to_string())));
+        assert!(!skills.iter().any(|(seat, _)| seat == "orphan"));
+        assert!(!skills
+            .iter()
+            .any(|(_, skill)| skill.is_empty() || skill == "file.txt"));
     }
 }
