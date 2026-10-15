@@ -1,4 +1,14 @@
 {
+  "roleAssignments": {
+    "adversarial-reviewer": "deep-reasoning",
+    "architect": "architect-lead",
+    "coordinator": "architect-lead",
+    "developer": "balanced",
+    "developer-jr": "lightweight",
+    "fixture-builder": "lightweight",
+    "reviewer": "deep-reasoning",
+    "tester": "deep-reasoning"
+  },
   "tiers": {
     "architect-lead": {
       "capabilities": [
@@ -7,16 +17,16 @@
         "deep-reasoning"
       ]
     },
-    "deep-reasoning": {
-      "capabilities": [
-        "adversarial-audit",
-        "security-analysis"
-      ]
-    },
     "balanced": {
       "capabilities": [
         "fast-implementation",
         "unit-testing"
+      ]
+    },
+    "deep-reasoning": {
+      "capabilities": [
+        "adversarial-audit",
+        "security-analysis"
       ]
     },
     "lightweight": {
@@ -26,11 +36,5 @@
         "inventory"
       ]
     }
-  },
-  "roleAssignments": {
-    "coordinator": "architect-lead",
-    "adversarial-reviewer": "deep-reasoning",
-    "developer": "balanced",
-    "fixture-builder": "lightweight"
   }
 }

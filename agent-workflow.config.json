@@ -121,5 +121,17 @@
   },
   "gateNotifications": {
     "hookUrl": null
+  },
+  "executionTopology": {
+    "substrateTier": "auto",
+    "openrigSquadPreset": "lean-4-seat",
+    "compositeBuilderMaxRung": "P1",
+    "requireOrthogonalReviewFamily": true
+  },
+  "effortPolicy": {
+    "defaultLoopEffort": "medium",
+    "subagentSearchEffort": "low",
+    "highEffortMaxContextTokens": 40000,
+    "enforceCleanSubagentForHighEffort": true
   }
 }
