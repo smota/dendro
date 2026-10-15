@@ -832,6 +832,28 @@ impl AnalyticsStore {
         Ok(())
     }
 
+    /// Preserve distinct retained parent readings for friction, without changing legacy aggregation.
+    pub fn load_queue_metadata_evidence(&self) -> Result<Vec<crate::vortex::ItemEvidence>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT source_key, qitem_id, parent_qitem_id, is_recovery, recovery_reason, issue_tags FROM queue_facts ORDER BY source_key",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let tags: Option<String> = row.get(5)?;
+            Ok(crate::vortex::ItemEvidence {
+                source_key: row.get(0)?,
+                qitem_id: row.get(1)?,
+                parent_qitem_id: row.get(2)?,
+                is_recovery: row.get::<_, Option<bool>>(3)?.unwrap_or(false),
+                recovery_reason: row.get(4)?,
+                issue_tags: tags
+                    .as_deref()
+                    .and_then(|v| serde_json::from_str(v).ok())
+                    .unwrap_or_default(),
+            })
+        })?;
+        rows.collect::<Result<_, _>>().map_err(Into::into)
+    }
+
     pub fn load_queue_item_meta(
         &self,
     ) -> Result<std::collections::BTreeMap<String, QueueItemMeta>> {

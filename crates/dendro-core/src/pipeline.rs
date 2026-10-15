@@ -365,6 +365,7 @@ struct ReportEvaluation {
     report: Value,
     loop_trace: Value,
     file_states: Option<crate::file_state::Captured>,
+    friction_replay: Value,
 }
 
 pub fn report_json(
@@ -385,9 +386,32 @@ pub fn report_json_with_thresholds(
     to: &str,
     thresholds: LoopThresholds,
 ) -> Result<Value> {
-    Ok(evaluate_report(db, kind, rig, from, to, false, thresholds)?.report)
+    report_json_with_options(
+        db,
+        kind,
+        rig,
+        from,
+        to,
+        thresholds,
+        crate::FrictionThresholds::default(),
+    )
 }
 
+/// Additive friction settings; legacy loop settings remain independent.
+#[allow(clippy::too_many_arguments)]
+pub fn report_json_with_options(
+    db: &Path,
+    kind: &str,
+    rig: Option<&str>,
+    from: &str,
+    to: &str,
+    thresholds: LoopThresholds,
+    friction: crate::FrictionThresholds,
+) -> Result<Value> {
+    Ok(evaluate_report(db, kind, rig, from, to, false, thresholds, friction)?.report)
+}
+
+#[allow(clippy::too_many_arguments)]
 fn evaluate_report(
     db: &Path,
     kind: &str,
@@ -396,7 +420,9 @@ fn evaluate_report(
     to: &str,
     evidence: bool,
     thresholds: LoopThresholds,
+    friction: crate::FrictionThresholds,
 ) -> Result<ReportEvaluation> {
+    let friction = friction.validate()?;
     refuse_secret_path(db)?;
     let window = parse_window(from, to)?;
     if thresholds.tool_loop_failures == 0 {
@@ -416,7 +442,9 @@ fn evaluate_report(
     }
     let store = AnalyticsStore::open_read_only(db)?;
     let evaluation = store.read_snapshot(|store| {
-        evaluate_report_snapshot(store, kind, rig, from, to, window, evidence, thresholds)
+        evaluate_report_snapshot(
+            store, kind, rig, from, to, window, evidence, thresholds, friction,
+        )
     })?;
     // No analytics connection survives into the trace filesystem phase.
     drop(store);
@@ -433,6 +461,7 @@ fn evaluate_report_snapshot(
     window: Window,
     evidence: bool,
     thresholds: LoopThresholds,
+    friction: crate::FrictionThresholds,
 ) -> Result<ReportEvaluation> {
     let identities = store.load_identity()?;
     // One binding rule for links, tokens, missions, intakes and rig scope.
@@ -491,6 +520,9 @@ fn evaluate_report_snapshot(
         .filter(|row| in_scope(&row.harness, &row.native_session))
         .cloned()
         .collect();
+    if matches!(kind, "handoffs" | "decisions") {
+        crate::vortex::validate_persisted_usage(&usage)?;
+    }
     let queue_context = store.load_queue()?;
     let queue_all: Vec<_> = queue_context
         .iter()
@@ -1400,7 +1432,35 @@ fn evaluate_report_snapshot(
             row["recovery_by_reason"] = json!({});
         }
     }
+    let friction_evaluation = if matches!(kind, "handoffs" | "decisions") {
+        let friction_usage: Vec<_> = usage_all
+            .iter()
+            .filter(|u| in_scope(&u.harness, &u.native_session))
+            .cloned()
+            .collect();
+        crate::vortex::evaluate(crate::vortex::Input {
+            queue: &queue_context,
+            metadata: &store.load_queue_metadata_evidence()?,
+            edges: &edges,
+            usage: &friction_usage,
+            identities: &identities,
+            activity: &store.load_activity()?,
+            snapshots: &snapshot_destinations,
+            window,
+            thresholds: friction,
+            capture_replay: evidence,
+        })
+    } else {
+        crate::vortex::Evaluation {
+            value: Value::Null,
+            replay: Value::Null,
+        }
+    };
+    // Add after legacy provenance annotation so report/trace metric values stay identical.
     annotate_openrig_evidence(store, &sources, &mut payload, evidence)?;
+    if matches!(kind, "handoffs" | "decisions") {
+        payload["handoff_friction"] = friction_evaluation.value;
+    }
     let report = metrics::report_value(kind, payload);
     let file_states = if evidence {
         Some(crate::file_state::Captured::capture(
@@ -1420,6 +1480,7 @@ fn evaluate_report_snapshot(
         report,
         loop_trace,
         file_states,
+        friction_replay: friction_evaluation.replay,
     })
 }
 
@@ -1631,7 +1692,29 @@ pub fn trace_json_with_thresholds(
     to: &str,
     thresholds: LoopThresholds,
 ) -> Result<Value> {
-    let mut evaluation = evaluate_report(db, "decisions", rig, from, to, true, thresholds)?;
+    trace_json_with_options(
+        db,
+        metric_id,
+        rig,
+        from,
+        to,
+        thresholds,
+        crate::FrictionThresholds::default(),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn trace_json_with_options(
+    db: &Path,
+    metric_id: &str,
+    rig: Option<&str>,
+    from: &str,
+    to: &str,
+    thresholds: LoopThresholds,
+    friction: crate::FrictionThresholds,
+) -> Result<Value> {
+    let mut evaluation =
+        evaluate_report(db, "decisions", rig, from, to, true, thresholds, friction)?;
     let mut report = evaluation.report;
     let file_source_states = evaluation
         .file_states
@@ -1643,6 +1726,7 @@ pub fn trace_json_with_thresholds(
         );
     let payload = &report["payload"];
     let (formula, value) = match metric_id {
+        "handoff_friction" => (crate::vortex::FORMULA_VERSION, payload["handoff_friction"].clone()),
         "m1" => (
             "seat tokens / non-returned deliveries, plus tokens per closed item",
             json!({
@@ -1757,6 +1841,9 @@ pub fn trace_json_with_thresholds(
         "handoff_members": payload["handoff_members"],
         "window": {"from": from, "to": to},
     });
+    if metric_id == "handoff_friction" {
+        inputs["handoff_friction"] = evaluation.friction_replay;
+    }
     if !thresholds.is_default() {
         inputs["loop_thresholds"] = json!(thresholds);
         inputs["handoff_loops"] = payload["handoff_loops"].clone();
@@ -1780,7 +1867,9 @@ pub fn trace_json_with_thresholds(
     }
     Ok(json!({
         "metric_id": metric_id,
-        "formula_version": if metric_id == "medians" {
+        "formula_version": if metric_id == "handoff_friction" {
+            crate::vortex::FORMULA_VERSION
+        } else if metric_id == "medians" {
             "acceptance-r1-a1-wait-fractional-v1"
         } else {
             "acceptance-r1-a1"

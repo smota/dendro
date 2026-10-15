@@ -1,7 +1,7 @@
 #![deny(unsafe_code)]
 
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio::signal::unix::{signal, Signal, SignalKind};
@@ -17,6 +17,51 @@ const SHUTDOWN_LIMIT: Duration = Duration::from_secs(30);
 struct Cli {
     #[command(subcommand)]
     command: Commands,
+}
+
+#[derive(Args, Debug)]
+struct FrictionArgs {
+    #[arg(long, value_parser = parse_return_rate)]
+    friction_return_rate: Option<f64>,
+    #[arg(long)]
+    friction_chain_returns: Option<u64>,
+    #[arg(long)]
+    friction_rework_tokens: Option<u64>,
+    #[arg(long, value_parser = dendro_core::parse_friction_duration)]
+    friction_loop_duration: Option<u64>,
+}
+
+fn parse_return_rate(value: &str) -> Result<f64, String> {
+    let rate = value
+        .parse::<f64>()
+        .map_err(|_| "friction-return-rate must be finite and between 0 and 1")?;
+    if !rate.is_finite() || !(0.0..=1.0).contains(&rate) {
+        return Err("friction-return-rate must be finite and between 0 and 1".into());
+    }
+    Ok(rate)
+}
+impl FrictionArgs {
+    fn supplied(&self) -> bool {
+        self.friction_return_rate.is_some()
+            || self.friction_chain_returns.is_some()
+            || self.friction_rework_tokens.is_some()
+            || self.friction_loop_duration.is_some()
+    }
+    fn thresholds(&self) -> dendro_core::FrictionThresholds {
+        let defaults = dendro_core::FrictionThresholds::default();
+        dendro_core::FrictionThresholds {
+            return_rate: self.friction_return_rate.unwrap_or(defaults.return_rate),
+            chain_returns: self
+                .friction_chain_returns
+                .unwrap_or(defaults.chain_returns),
+            rework_tokens: self
+                .friction_rework_tokens
+                .unwrap_or(defaults.rework_tokens),
+            loop_duration_secs: self
+                .friction_loop_duration
+                .unwrap_or(defaults.loop_duration_secs),
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -39,6 +84,9 @@ enum Commands {
     /// Print an Operational Intelligence report as JSON.
     Report {
         kind: String,
+        /// Request the handoff friction field (also present without this flag).
+        #[arg(long)]
+        friction: bool,
         #[arg(long, default_value = "dendro.duckdb")]
         db: PathBuf,
         #[arg(long)]
@@ -53,6 +101,8 @@ enum Commands {
         tool_loop_window_secs: i64,
         #[arg(long, default_value_t = 2)]
         handoff_loop_returns: usize,
+        #[command(flatten)]
+        friction_thresholds: FrictionArgs,
     },
     /// Print the trace inputs for one metric id.
     Trace {
@@ -72,6 +122,8 @@ enum Commands {
         tool_loop_window_secs: i64,
         #[arg(long, default_value_t = 2)]
         handoff_loop_returns: usize,
+        #[command(flatten)]
+        friction_thresholds: FrictionArgs,
     },
 }
 
@@ -158,6 +210,7 @@ async fn main() -> Result<()> {
         }
         Commands::Report {
             kind,
+            friction,
             db,
             rig,
             from,
@@ -165,19 +218,28 @@ async fn main() -> Result<()> {
             tool_loop_failures,
             tool_loop_window_secs,
             handoff_loop_returns,
+            friction_thresholds,
         } => {
             let thresholds = dendro_core::LoopThresholds {
                 tool_loop_failures,
                 tool_loop_window_secs,
                 handoff_loop_returns,
             };
-            let report = dendro_core::report_json_with_thresholds(
+            if friction && kind != "handoffs" {
+                anyhow::bail!("--friction is supported only by report handoffs");
+            }
+            if friction_thresholds.supplied() && !matches!(kind.as_str(), "handoffs" | "decisions")
+            {
+                anyhow::bail!("friction thresholds require report handoffs or decisions");
+            }
+            let report = dendro_core::report_json_with_options(
                 &db,
                 &kind,
                 rig.as_deref(),
                 &from,
                 &to,
                 thresholds,
+                friction_thresholds.thresholds(),
             )?;
             println!("{report}");
         }
@@ -190,19 +252,21 @@ async fn main() -> Result<()> {
             tool_loop_failures,
             tool_loop_window_secs,
             handoff_loop_returns,
+            friction_thresholds,
         } => {
             let thresholds = dendro_core::LoopThresholds {
                 tool_loop_failures,
                 tool_loop_window_secs,
                 handoff_loop_returns,
             };
-            let report = dendro_core::trace_json_with_thresholds(
+            let report = dendro_core::trace_json_with_options(
                 &db,
                 &metric_id,
                 rig.as_deref(),
                 &from,
                 &to,
                 thresholds,
+                friction_thresholds.thresholds(),
             )?;
             println!("{report}");
         }
@@ -497,5 +561,87 @@ mod tests {
             }
             _ => panic!("expected Report command"),
         }
+    }
+}
+
+#[cfg(test)]
+mod friction_tests {
+    use super::*;
+
+    #[test]
+    fn friction_defaults_and_report_trace_duration_normalization() {
+        for args in [
+            vec!["dendro", "report", "handoffs"],
+            vec!["dendro", "trace", "--metric-id", "handoff_friction"],
+        ] {
+            let parsed = Cli::try_parse_from(args).unwrap();
+            let thresholds = match parsed.command {
+                Commands::Report {
+                    friction_thresholds,
+                    ..
+                }
+                | Commands::Trace {
+                    friction_thresholds,
+                    ..
+                } => friction_thresholds.thresholds(),
+                _ => panic!("expected report/trace"),
+            };
+            assert_eq!(thresholds, dendro_core::FrictionThresholds::default());
+        }
+        for value in ["600s", "10m"] {
+            let cli = Cli::try_parse_from([
+                "dendro",
+                "report",
+                "handoffs",
+                "--friction-loop-duration",
+                value,
+                "--friction-return-rate",
+                "0.30",
+                "--friction-chain-returns",
+                "0",
+            ])
+            .unwrap();
+            if let Commands::Report {
+                friction_thresholds,
+                ..
+            } = cli.command
+            {
+                assert_eq!(friction_thresholds.thresholds().loop_duration_secs, 600);
+                assert_eq!(friction_thresholds.thresholds().return_rate, 0.30);
+                assert_eq!(friction_thresholds.thresholds().chain_returns, 0);
+            } else {
+                panic!("expected report")
+            }
+        }
+    }
+    #[test]
+    fn invalid_thresholds_fail_during_clap_parsing() {
+        for (flag, values) in [
+            ("--friction-return-rate", vec!["NaN", "inf", "-1", "1.01"]),
+            (
+                "--friction-chain-returns",
+                vec!["-1", "1.5", "18446744073709551616"],
+            ),
+            ("--friction-rework-tokens", vec!["-1", "1.5"]),
+            (
+                "--friction-loop-duration",
+                vec!["600", "-1s", "1.5m", "18446744073709551615m"],
+            ),
+        ] {
+            for value in values {
+                assert!(
+                    Cli::try_parse_from(["dendro", "report", "handoffs", flag, value]).is_err(),
+                    "{flag} {value}"
+                );
+            }
+        }
+        assert!(Cli::try_parse_from([
+            "dendro",
+            "trace",
+            "--metric-id",
+            "handoff_friction",
+            "--friction"
+        ])
+        .is_err());
     }
 }

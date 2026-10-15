@@ -196,3 +196,55 @@ No lock is unlinked or replaced to bypass a holder. Static metadata checks do no
 eliminate malicious namespace races; this protection covers the accepted
 preexisting two-name regular hard-link condition. Prior primary-output safeguards
 and the manual snapshot-retry policy remain in force.
+
+## Handoff friction and rework vortex evidence (#12)
+
+`report handoffs` and `report decisions` include `payload.handoff_friction` with
+formula `handoff-friction-v1`. `report handoffs --friction` requests the same
+field explicitly. Replay the metric with:
+
+```bash
+dendro report handoffs --db dendro.duckdb --friction --friction-return-rate 0.10 --friction-chain-returns 2 --friction-rework-tokens 1000000 --friction-loop-duration 600s
+dendro trace --db dendro.duckdb --metric-id handoff_friction --friction-loop-duration 10m
+```
+
+These four threshold options apply to handoffs, decisions and trace. They use
+CLI values only. Durations require an unsigned integer followed by `s` or `m`;
+`600s` and `10m` normalize to 600 seconds. Rates must be finite in [0,1], and
+count/token limits must be nonnegative integers. All comparisons are strictly
+greater than the limit. Existing `--handoff-loop-returns` controls the separate
+legacy metric. Friction options on unrelated report kinds are rejected before
+opening the analytics database; `trace` has no `--friction` switch.
+
+Pairs separate productive and recovery counts. Their new pickup median measures
+receiver creation to first valid claim in milliseconds; execution measures that
+claim to its uninterrupted successful terminal. Missing/multiple explicit
+children and interrupted first claims carry invalid reasons. Legacy
+`wait_median` values retain their existing definition. Sparse absent pairs imply
+zero counts, null ratios/medians and no observed token data.
+
+Returns and 2–4 edge closed witnesses use explicit parent links and matching
+seat endpoints. Shared chain IDs or issue tags provide labels, never causal
+links. Prewindow ancestors can establish returns; all edges of a loop must be
+in the selected window. Forks, recovery gaps and unresolved conflicting lineage
+break loop adjacency. Witnesses can overlap: A-B-A-B-A has three ping-pongs and
+one quad cycle. Do not sum loop totals into pair or fleet totals.
+
+Rework tokens are the four disjoint usage components assigned uniquely to
+productive return receiver intervals `[claim, terminal)`, intersected with the
+report window. Reasoning is already contained in output. Concurrent competing
+runs exclude uncertain usage; no proportional allocation is made. Coverage is
+`no_data` without relevant usage or activity, `ambiguous` for proven concurrent
+competitors/conflicting evidence, `partial` for missing boundaries, otherwise
+`complete`. An incomplete token lower bound over a limit proves a breach;
+otherwise its status is null. Each threshold reason is reported separately.
+
+Trace inputs retain sanitized accepted facts, per-source parent readings,
+receiver endpoints, bindings and assigned/excluded usage records. Reports and
+trace expose the same metric value. Coverage describes retained accepted
+history: source conflicts discarded before storage, or IDs collapsed by
+redaction, cannot be reconstructed. Handoffs/decisions and their trace refuse
+malformed or overflowing persisted token totals with a fixed arithmetic error
+before legacy arithmetic runs. The pure evaluator reports excluded invalid
+components and names aggregate overflow with a null token total.
+This capability is unreleased.

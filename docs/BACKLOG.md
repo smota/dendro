@@ -41,7 +41,7 @@ This document serves as the authoritative, human-readable index of **Dendro's Mu
 | **[#4](https://github.com/smota/dendro/issues/4)** | `feat(analytics): Question 2 — Handover Flow` | Handoff counting, returns, intake cost window | Delivered (v0.1.1) |
 | **[#5](https://github.com/smota/dendro/issues/5)** | `feat(analytics): Question 3 — Token Burn` | Token attribution by mission/seat, tool loop detection | Delivered (v0.1.1) |
 | **[#6](https://github.com/smota/dendro/issues/6)** | `feat(storage): DuckDB Engine & Privacy` | Local storage, key-salt hashing, symlink guards | Delivered (v0.1.1) |
-| **[#13](https://github.com/smota/dendro/issues/13)** | `feat(engine): Live-Producer Snapshotting` | Atomic byte-cutoff manifests for live producer runs | Milestone v0.2.0 / Sealed Replay |
+| **[#13](https://github.com/smota/dendro/issues/13)** | `feat(engine): Live-Producer Snapshotting` | Atomic byte-cutoff manifests for live producer runs | Delivered (main; publication follows release policy) |
 
 ---
 
@@ -52,20 +52,20 @@ This document serves as the authoritative, human-readable index of **Dendro's Mu
 | Issue | Title | Capabilities | Status |
 | :--- | :--- | :--- | :--- |
 | **[#7](https://github.com/smota/dendro/issues/7)** | **Goal 2 (Epic)** | Conversational & Semantic Analytics Architecture | Backlog |
-| **[#12](https://github.com/smota/dendro/issues/12)** | `feat(analytics): Rework Vortex Detection` | Automatic circular feedback loop detection & friction heatmaps | Backlog |
+| **[#12](https://github.com/smota/dendro/issues/12)** | `feat(analytics): Rework Vortex Detection` | Automatic circular feedback loop detection & friction heatmaps | Implemented (unreleased direct-delivery candidate) |
 | **[#14](https://github.com/smota/dendro/issues/14)** | `feat(tui): Interactive Seat Ribbon Timeline` | Ratatui TUI with stacked ribbons & curiosity breadcrumbs | Backlog |
 | **[#16](https://github.com/smota/dendro/issues/16)** | `feat(nao): 4 Semantic Materialized Views` | `v_seat_idle`, `v_handoff_rework`, `v_token_burn`, `v_governance` | Backlog (Benchmarked <20ms prototype) |
 | **[#17](https://github.com/smota/dendro/issues/17)** | `feat(nao): 6 Interrogation Patterns` | Compare, Rank, Explain, Verify, Trace, Limit patterns | Backlog |
 | **[#18](https://github.com/smota/dendro/issues/18)** | `test(nao): Sub-Millisecond Benchmark Suite`| Automated regression assertion gate for query latency | Backlog (Prototype suite ready) |
-| **[#30](https://github.com/smota/dendro/issues/30)** | `feat(ux): Busy-source retry hint` | Busy-source refusal suggests a retry | Backlog |
-| **[#31](https://github.com/smota/dendro/issues/31)** | `fix(ingest): One OpenRig root per DB guard` | Refuse a second OpenRig root on an existing analytics DB (K9 limit d) | Backlog (first post-v0.1.0 fix) |
-| **[#32](https://github.com/smota/dendro/issues/32)** | `feat(trace): File source gone/superseded` | Trace marks deleted or replaced file sources (v0.1.0 known limit F3) | Backlog |
+| **[#30](https://github.com/smota/dendro/issues/30)** | `feat(ux): Busy-source retry hint` | Busy-source refusal suggests a retry | Delivered (main; publication follows release policy) |
+| **[#31](https://github.com/smota/dendro/issues/31)** | `fix(ingest): One OpenRig root per DB guard` | Refuse a second OpenRig root on an existing analytics DB (K9 limit d) | Delivered (main; publication follows release policy) |
+| **[#32](https://github.com/smota/dendro/issues/32)** | `feat(trace): File source gone/superseded` | Trace marks deleted or replaced file sources (v0.1.0 known limit F3) | Delivered (main; publication follows release policy) |
 | **[#33](https://github.com/smota/dendro/issues/33)** | `feat(trace): Tool-loop provenance` | Loop counts traceable to source records under K11 (known limit F5) | Delivered (#51) |
 | **[#34](https://github.com/smota/dendro/issues/34)** | `fix(report): Sub-second wait precision` | Exact wait samples and medians (known limit O1) | Delivered (#45) |
-| **[#52](https://github.com/smota/dendro/issues/52)** | `feat(analytics): Ceremony vs. engineering tool categories` | Pre-redaction enum classification (`coord_queue`, `coord_status`, `governance_phase`, `eng_*`) | Backlog |
-| **[#53](https://github.com/smota/dendro/issues/53)** | `feat(analytics): Fleet concurrency & container-vs-leaf claims` | $k$-seat concurrency histogram, effective parallelism, and `unparked_container_secs` | Backlog |
-| **[#54](https://github.com/smota/dendro/issues/54)** | `feat(analytics): Mid-phase compaction & cross-slice cache bleed` | Auto-compaction hazard detection (`>50%` drop while `in-progress`) and carryover cache tax | Backlog |
-| **[#55](https://github.com/smota/dendro/issues/55)** | `feat(analytics): Recovery items, ring boundaries & SKU/effort` | Separate `qitem-recovery-*`, `claimed->done` turnaround, `in_ring`/`out_of_ring`, and `(model, effort)` | Backlog |
+| **[#52](https://github.com/smota/dendro/issues/52)** | `feat(analytics): Ceremony vs. engineering tool categories` | Pre-redaction enum classification (`coord_queue`, `coord_status`, `governance_phase`, `eng_*`) | Delivered (main; publication follows release policy) |
+| **[#53](https://github.com/smota/dendro/issues/53)** | `feat(analytics): Fleet concurrency & container-vs-leaf claims` | $k$-seat concurrency histogram, effective parallelism, and `unparked_container_secs` | Delivered (main; publication follows release policy) |
+| **[#54](https://github.com/smota/dendro/issues/54)** | `feat(analytics): Mid-phase compaction & cross-slice cache bleed` | Auto-compaction hazard detection (`>50%` drop while `in-progress`) and carryover cache tax | Delivered (main; publication follows release policy) |
+| **[#55](https://github.com/smota/dendro/issues/55)** | `feat(analytics): Recovery items, ring boundaries & SKU/effort` | Separate `qitem-recovery-*`, `claimed->done` turnaround, `in_ring`/`out_of_ring`, and `(model, effort)` | Delivered (main; publication follows release policy) |
 
 ---
 
