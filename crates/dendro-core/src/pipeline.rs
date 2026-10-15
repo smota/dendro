@@ -7,7 +7,9 @@ use serde_json::{json, Value};
 use crate::facts::SeatBound;
 use crate::lifecycle;
 use crate::metrics::{self, Window};
-use crate::output::{self, load_or_create_key, refuse_aliased_output, with_output_lock};
+use crate::output::{
+    self, load_or_create_key, refuse_aliased_output_with_openrig, with_output_lock,
+};
 use crate::privacy::{contains_secret, opaque_id, redact};
 use crate::storage::AnalyticsStore;
 
@@ -44,20 +46,16 @@ where
     for root in source_roots.iter().chain(openrig_roots.iter()) {
         refuse_secret_path(root)?;
     }
+    // Source identity must be established before mkdir, locking, SQLite
+    // preflight, key lookup or any other output/source-content effect.
+    refuse_aliased_output_with_openrig(db, source_roots, openrig_roots)?;
     let parent = db.parent().unwrap_or_else(|| Path::new("."));
     fs::create_dir_all(parent)?;
     let lock_path = parent.join(".dendro-output.lock");
-    with_output_lock(&lock_path, || {
-        run_inner(db, source_roots, openrig_roots, ingest)
-    })
+    with_output_lock(&lock_path, || run_inner(db, openrig_roots, ingest))
 }
 
-fn run_inner<F>(
-    db: &Path,
-    source_roots: &[PathBuf],
-    openrig_roots: &[PathBuf],
-    ingest: F,
-) -> Result<Value>
+fn run_inner<F>(db: &Path, openrig_roots: &[PathBuf], ingest: F) -> Result<Value>
 where
     F: FnOnce(&Path, &[u8]) -> Result<Vec<String>>,
 {
@@ -66,7 +64,7 @@ where
     if db.exists() {
         refuse_bound_openrig_root(db, openrig_roots)?;
     }
-    refuse_aliased_output(db, source_roots)?;
+    output::refuse_existing_output_wal(db)?;
     let before = fs::symlink_metadata(db).ok();
     if before
         .as_ref()
@@ -2352,5 +2350,37 @@ mod tests {
         assert_eq!(absolute_openrig_root(Path::new(&stored.2)), absolute);
         std::env::set_current_dir(&previous).unwrap();
         let _ = fs::remove_dir_all(&dir);
+    }
+    #[test]
+    fn alias_guard_precedes_output_artifacts_sqlite_and_ingest() {
+        let dir = std::env::temp_dir().join(format!("dendro-outer-guard-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let source_dir = dir.join("source");
+        fs::create_dir_all(&source_dir).unwrap();
+        let source = source_dir.join("source.sqlite");
+        let bytes = b"synthetic source, not an analytics schema";
+        fs::write(&source, bytes).unwrap();
+        for (dest, root, typed) in [
+            (source.clone(), source.clone(), true),
+            (source_dir.join("source.sqlite-wal"), source.clone(), true),
+            (
+                source_dir.join("absent/deep/analytics.duckdb"),
+                source_dir.clone(),
+                false,
+            ),
+        ] {
+            let openrig = if typed { vec![source.clone()] } else { vec![] };
+            let err = run_locked_with_openrig(&dest, &[root], &openrig, |_, _| {
+                panic!("refused source alias must never reach ingest")
+            })
+            .unwrap_err();
+            assert!(
+                err.to_string().contains("aliases a source file")
+                    || err.to_string().contains("inside a source root")
+            );
+            assert_eq!(fs::read(&source).unwrap(), bytes);
+            assert_eq!(fs::read_dir(&source_dir).unwrap().count(), 1);
+        }
+        fs::remove_dir_all(dir).unwrap();
     }
 }
