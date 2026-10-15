@@ -877,25 +877,100 @@ pub fn evaluate(input: Input<'_>) -> Evaluation {
                 "exceeds_threshold":any_status([pair_rate,chain,token,time]) }));
         }
     }
-    let (coverage, _, _) = summarize(&selected_indices);
+    let (coverage, global_tokens, global_assigned) = summarize(&selected_indices);
     let seats: BTreeSet<_> = pairs.keys().flat_map(|(a, b)| [*a, *b]).collect();
     let value = json!({"definition":FORMULA_VERSION,"formula_version":FORMULA_VERSION,
         "scope":"retained accepted history; sparse absent pairs imply zero counts, null ratios/medians and no observed token data; loop witnesses overlap and must not be summed",
         "window":{"from":input.window.from,"to":input.window.to},"thresholds":input.thresholds,
         "seats":seats,"pairs":pair_values,"chains":chain_values,"vortex_loops":loops.into_values().collect::<Vec<_>>(),
-        "coverage":coverage.name(),"evidence_census":{"usage_unique":usage.len(),"usage_conflicts":usage_conflicts,
+        "coverage":coverage.name(),"rework_tokens":global_tokens,"assigned_usage_tokens":global_assigned,"evidence_census":{"usage_unique":usage.len(),"usage_conflicts":usage_conflicts,
             "queue_conflicts":queue_conflicts,"assigned_usage":usage_evidence.values().filter(|v|v["status"]=="assigned").count(),
             "excluded_usage":usage_evidence.values().filter(|v|v["status"]=="excluded").count()},
         "history_limit":"conflicts discarded before storage or collapsed by redaction cannot be reconstructed" });
     let replay = if input.capture_replay {
+        let mut necessary_items = BTreeSet::new();
+        let mut necessary_seats = BTreeSet::new();
+        for &i in &selected_indices {
+            let edge = &edges[i];
+            necessary_items.extend(ancestry(&edge.row.qitem_id, &items).0);
+            necessary_seats.extend([edge.row.source_seat.as_str(), edge.to]);
+            necessary_items.extend(
+                children
+                    .get(edge.row.qitem_id.as_str())
+                    .into_iter()
+                    .flatten()
+                    .copied(),
+            );
+        }
+        for u in &usage {
+            if let Some(seat) = metrics::binding_of(&bindings, &u.harness, &u.native_session).seat()
+            {
+                necessary_seats.insert(seat);
+            }
+        }
+        let necessary_runs: Vec<_> = runs
+            .iter()
+            .filter(|r| {
+                r.seat
+                    .as_deref()
+                    .is_none_or(|seat| necessary_seats.contains(seat))
+                    && r.claim.ts < input.window.to
+                    && r.end.is_none_or(|end| end.ts > input.window.from)
+            })
+            .collect();
+        for r in &necessary_runs {
+            necessary_items.insert(r.claim.qitem_id.as_str());
+        }
+        // Receiver endpoints may close outside the report window; keep their complete histories.
+        for &i in &selected_indices {
+            if let Some(child) = edges[i].child {
+                necessary_items.insert(child);
+            }
+        }
+        let necessary_queue: Vec<_> = queue
+            .iter()
+            .filter(|q| necessary_items.contains(q.qitem_id.as_str()))
+            .copied()
+            .collect();
+        let necessary_metadata: Vec<_> = input
+            .metadata
+            .iter()
+            .filter(|m| necessary_items.contains(m.qitem_id.as_str()))
+            .collect();
+        let necessary_snapshots: BTreeMap<_, _> = input
+            .snapshots
+            .iter()
+            .filter(|(id, _)| necessary_items.contains(id.as_str()))
+            .collect();
+        let usage_sessions: BTreeSet<_> = usage
+            .iter()
+            .map(|u| (u.harness.as_str(), u.native_session.as_str()))
+            .collect();
+        let necessary_identities: Vec<_> = input
+            .identities
+            .iter()
+            .filter(|i| {
+                necessary_seats.contains(i.seat.as_str())
+                    || usage_sessions.contains(&(i.harness.as_str(), i.native_session.as_str()))
+            })
+            .collect();
+        let necessary_activity: Vec<_> = input
+            .activity
+            .iter()
+            .filter(|a| {
+                necessary_seats.contains(a.seat.as_str())
+                    && a.ts >= input.window.from
+                    && a.ts < input.window.to
+            })
+            .collect();
         json!({"formula_version":FORMULA_VERSION,"window":{"from":input.window.from,"to":input.window.to},
-        "thresholds":input.thresholds,"queue":queue,"metadata":input.metadata,"destination_snapshots":input.snapshots,
-        "identities":input.identities,"activity":input.activity,"usage":usage,
-        "conflicting_queue_variants":input.queue.iter().filter(|q|queue_conflicts.contains(&q.source_key)).collect::<Vec<_>>(),
+        "thresholds":input.thresholds,"queue":necessary_queue,"metadata":necessary_metadata,"destination_snapshots":necessary_snapshots,
+        "identities":necessary_identities,"activity":necessary_activity,"usage":usage,
+        "conflicting_queue_variants":input.queue.iter().filter(|q|necessary_items.contains(q.qitem_id.as_str())&&queue_conflicts.contains(&q.source_key)).collect::<Vec<_>>(),
         "conflicting_usage_variants":input.usage.iter().filter(|u|usage_conflicts.contains(&u.source_key)).collect::<Vec<_>>(),
         "usage_disposition":usage_evidence.into_values().collect::<Vec<_>>(),
         "edges":selected_indices.iter().map(|i| edge_replay(&edges[*i],&runs)).collect::<Vec<_>>(),
-        "runs":runs.iter().map(|r|json!({"claim_source_key":r.claim.source_key,"end_source_key":r.end.map(|e|&e.source_key),
+        "runs":necessary_runs.iter().map(|r|json!({"claim_source_key":r.claim.source_key,"end_source_key":r.end.map(|e|&e.source_key),
             "seat":r.seat,"successful":r.success,"ambiguous":r.ambiguous})).collect::<Vec<_>>() })
     } else {
         Value::Null
@@ -1379,5 +1454,46 @@ mod tests {
                 .as_deref(),
             Some("p2")
         );
+    }
+    #[test]
+    fn replay_prunes_unrelated_seats_but_keeps_prewindow_ancestors_and_competitors() {
+        let mut f = Fixture::path(&["C", "A", "B"]);
+        f.queue.extend([
+            row(9, 16, "pending", "events:queue.created:competitor", "B"),
+            row(9, 17, "in-progress", "events:queue.claimed:competitor", "B"),
+            row(9, 28, "done", "queue_transitions:competitor", "B"),
+            row(8, 0, "pending", "events:queue.created:unrelated", "Z"),
+            row(8, 1, "in-progress", "events:queue.claimed:unrelated", "Z"),
+        ]);
+        f.ids.push(IdentityFact {
+            source_key: "identity:Z".into(),
+            harness: "codex".into(),
+            native_session: "unrelated-session".into(),
+            rig: "unrelated".into(),
+            seat: "Z".into(),
+            ts: None,
+        });
+        f.activity.push(ActivityFact {
+            source_key: "activity:Z".into(),
+            seat: "Z".into(),
+            ts: at(16),
+            state: "running".into(),
+            seq: 0,
+        });
+        let replay = f.window(at(15), at(40)).replay;
+        let queue = replay["queue"].as_array().unwrap();
+        assert!(queue.iter().any(|q| q["qitem_id"] == "i0"));
+        assert!(queue.iter().any(|q| q["qitem_id"] == "i9"));
+        assert!(!queue.iter().any(|q| q["qitem_id"] == "i8"));
+        assert!(!replay["identities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i["seat"] == "Z"));
+        assert!(!replay["activity"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i["seat"] == "Z"));
     }
 }

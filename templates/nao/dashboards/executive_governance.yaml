@@ -1,19 +1,6 @@
-# Nao Dashboard: Executive Governance (Indices M1 to M4)
 dashboard:
   id: executive_governance
-  title: "Executive Squad Governance"
-  description: "Consolidated strategic indicators for fleet topology and budget decision making"
-
+  title: Canonical governance evidence
 queries:
-  - id: rig_executive_summary
-    title: "Strategic Executive Summary by Rig"
-    nl_prompt: "Show the four governance decision metrics across my agent fleet"
-    sql: >
-      SELECT 
-        rig_id,
-        ROUND(seat_yield, 2) AS m1_seat_yield,
-        ROUND(handoff_efficiency * 100.0, 1) || '%' AS m2_handoff_efficiency,
-        ROUND(rework_rate * 100.0, 1) || '%' AS m3_rework_rate,
-        ROUND(skill_exposure * 100.0, 1) || '%' AS m4_skill_exposure
-      FROM fct_decision_metrics
-      ORDER BY rig_id;
+  - id: scorecard
+    sql: SELECT * FROM v_executive_governance

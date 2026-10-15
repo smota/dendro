@@ -2,6 +2,31 @@
 
 This document serves as the authoritative, human-readable index of **Dendro's Multi-Goal Product Backlog**, maintained autonomously under the **AgentFlow SDLC** governance framework.
 
+## Checkpoint — 2026-10-15 (paused by operator)
+
+The operator requested a tested commit/push checkpoint and a pause. Continue from branch `feature/backlog-checkpoint-2026-10-15`; this checkpoint is **not merged or acceptance of the entire backlog**. No rigs are needed. Use economical direct agents and fresh Claude reviews.
+
+Checkpoint verification: all four required Rust gates pass (`cargo check/test/clippy --workspace --locked`, Clippy with `-D warnings`, and `cargo fmt --check`). Workspace tests: **373 passed, 0 failed, 1 explicitly ignored real-log corpus test**. Site tests: **14 passed** with the retained native CLI fixture directory. The 5,500-fact benchmark, bounded large-payload regression, 17 portfolio tests, two routing pipeline regressions and nine simulator tests are included. Independent review of the final integration is still pending; passing tests are not approval to merge. Local exact commands/logs: `.agent-runs/backlog-completion/checkpoint/`.
+
+Already on `main`: #12 via [PR #56](https://github.com/smota/dendro/pull/56), and #22/#23 via [PR #57](https://github.com/smota/dendro/pull/57). Remaining issues stay open.
+
+| Stream | Checkpoint content | Remaining acceptance work |
+| --- | --- | --- |
+| #19–21 connectors / epic #8 | SDK example, four bounded verified-export adapters, staged/sealed replay; Claude approved connector fixes | Final integrated review; native private stores/cloud webhooks explicitly unsupported |
+| #26/#15/#25 advisory/governance | Strict parent-backed idle intervals, metric-specific local/opt-in publish drafts, CI assertion exits | Claude approved these corrections; preserve independent final-head review |
+| #29 spotlights | A1–A6, explicit builder roster, scoped routing-only seat-window producer, portfolio supervisory evidence | A5 mixed-harness/Codex integration correction needs fresh Claude review; no per-turn causation claim |
+| #27 portfolio | Independent DB aggregation, source-local mapping, unknown coverage, B1–B4 hold evidence | Latest review fixes need Claude re-review; no live hold/residence or atomic cross-DB snapshot claim |
+| #16–18 / epic #7 | Canonical views, bounded local English intents, safe native Nao workspace; typed materializer | Fresh independent semantic/storage review; organic Nao operator/provider roundtrip not performed |
+| #14/#28 terminal/export | Human formats, ANSI distributions, keyboard explorer, offline aliased HTML with actual classified intervals | Independent final review; aggregate counts are not temporal or token-transfer evidence |
+| #24 / epic #10 | Pure Rust historical simulator; nine focused tests pass | **`dendro simulate topology` CLI is not wired.** Finish flags/native CLI QA, then independent review |
+| Documentation / epic #9 | Truthful commands, calculator assumptions, historical media labels | Final claims/links review and epic closure after acceptance |
+
+A 5,500-fact integrated run exposed ~53GB JSON materialization growth. Its test alone was stopped, and its ~10GB temporary spill was removed while logs and synthetic DB were retained. The replacement uses typed appenders, a 1GB refresh cap and a 5,500-fact + 16MB extension regression under 512MB. Do not reuse the failed run as passing performance evidence. Warm query timings and cold setup are separate; there is no sub-millisecond claim.
+
+Resume in this order: read local `AUTHORITY.md`, `DECISIONS.md`, `PROGRESS.md`, `PROGRAM.json` and `checkpoint/STATE.json` under `/home/sam/code/dendro/.agent-runs/backlog-completion/`; inspect the exact checkpoint checks; complete outstanding independent reviews; finish #24 CLI; rerun appropriate gates on the final candidate; then push/merge and close accepted issues. Do not manufacture missing operator/source evidence. Publication authority from the earlier instruction persists, but the operator's latest instruction pauses delivery now.
+
+Local worktrees and ignored proof artifacts are retained for continuation. The primary clone's owner-modified `AGENTS.md` is preserved (SHA256 `9115f41d1970fd48c613a08be54d82b433195ec06ce8405b608340200dc7993e`). Never force-remove dirty or unmerged historical worktrees. Serialize Cargo, use shared target `/home/sam/code/dendro/target`, and touch the selected worktree's local Rust sources before switching builds: a cross-worktree freshness collision was observed. No tests are an organic operator usability study.
+
 ---
 
 ## 🗺️ Multi-Goal Product Roadmap Overview

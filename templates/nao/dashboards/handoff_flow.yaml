@@ -1,33 +1,6 @@
-# Nao Dashboard: Handoff Efficiency & Rework (Question 2)
 dashboard:
   id: handoff_flow
-  title: "Handoff Flow & Rework Diagnostics"
-  description: "Task handoff topology mapping and rework return cycle detection"
-
+  title: Recorded handoff friction
 queries:
-  - id: rework_matrix
-    title: "Inter-Seat Rework Matrix"
-    nl_prompt: "How many times did tasks return from QA or Review to Builder seats?"
-    sql: >
-      SELECT 
-        from_seat,
-        to_seat,
-        COUNT(*) AS total_transfers,
-        COUNT(CASE WHEN is_rework THEN 1 END) AS rework_returns,
-        ROUND(COUNT(CASE WHEN is_rework THEN 1 END) * 100.0 / COUNT(*), 1) AS rework_pct
-      FROM fct_handoffs
-      GROUP BY from_seat, to_seat
-      ORDER BY rework_returns DESC;
-
-  - id: context_bloat
-    title: "Context Bloat by Receiving Seat"
-    nl_prompt: "Which seat consumes the most tokens absorbing context on handoff intake?"
-    sql: >
-      SELECT 
-        to_seat AS receiver_seat,
-        COUNT(*) AS handoffs_received,
-        ROUND(AVG(intake_token_cost), 0) AS avg_intake_tokens,
-        ROUND(AVG(queue_wait_seconds), 1) AS avg_wait_seconds
-      FROM fct_handoffs
-      GROUP BY to_seat
-      ORDER BY avg_intake_tokens DESC;
+  - id: handoffs
+    sql: SELECT * FROM v_handoff_rework_analysis ORDER BY rework_returns DESC, from_seat, to_seat

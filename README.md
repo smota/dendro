@@ -1,140 +1,73 @@
 <div align="center">
-  <img src="docs/assets/logo.jpg" alt="Dendro Logo" width="180" style="border-radius: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);" />
-  <h1>🌲 Dendro</h1>
+  <img src="docs/assets/logo.jpg" alt="Dendro growth rings" width="180" />
+  <h1>Dendro</h1>
   <p><strong>Decipher the growth layers of your AI agent fleets.</strong></p>
-  <p><em>Local AI fleet intelligence and decision engine for autonomous multi-agent squads.</em></p>
-  <p>
-    <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
-    <img src="https://img.shields.io/badge/rust-2021-orange.svg" alt="Rust 2021" />
-    <img src="https://img.shields.io/badge/storage-DuckDB-yellow.svg" alt="DuckDB Embedded" />
-    <img src="https://img.shields.io/badge/engine-local--first-emerald.svg" alt="Local-First" />
-    <img src="https://img.shields.io/badge/benchmark-sub--millisecond-brightgreen.svg" alt="Sub-Millisecond Benchmark" />
-    <img src="https://img.shields.io/badge/governance-AgentFlow%20SDLC-blueviolet.svg" alt="AgentFlow SDLC" />
-  </p>
+  <p>Local-first AI Fleet Intelligence. Operational evidence for the operator.</p>
 </div>
 
----
+Dendro reads authorized local harness logs and OpenRig records into embedded DuckDB. It answers questions about seat activity, handoff friction, token consumption, rework, and context carryover. It observes execution; fleet governance stays with the operator.
 
-## 🎬 Product Walkthrough & Video Demo
+- **Seat dynamics:** five disjoint activity bands, unknown intervals retained, fleet concurrency and container hold evidence.
+- **Handoff flow:** pickup and execution latency, return rates, parent-linked rework loops, and conservative token attribution.
+- **Consumption:** uncached input, cache reads/writes and output, with separate reasoning detail and explicit linkage coverage.
+- **Traceability:** reports and forensic traces share the same metric definitions, observation window and evidence keys.
 
-<div align="center">
-  <a href="docs/assets/dendro-demo.mp4">
-    <img src="docs/assets/dendro-preview.gif" alt="Dendro Product Walkthrough Preview" width="800" style="border-radius: 12px; border: 1px solid #1f2937;" />
-  </a>
-  <p>
-    <em>▶️ <strong><a href="docs/assets/dendro-demo.mp4">Watch Full Narrated Video Demo (1080p Full HD MP4)</a></strong> — 1m 55s overview, architecture, and benchmark.</em>
-  </p>
-</div>
+Missing observations are not measured zero. Tokens do not establish value or causal productivity. Recorded cost and operator-supplied prices must be distinguished from one another.
 
----
+## Start locally
 
-## 💡 The Philosophy: Dendrochronology for AI Fleets
+Install stable Rust and Git, then:
 
-> *"Just as dendrochronology deciphers historical climate patterns through the concentric growth layers of ancient trees, Dendro analyzes the cumulative execution layers of autonomous AI squads to reveal team dynamics, hidden friction, and true operational costs."*
-
-As engineering organizations deploy autonomous multi-agent squads across worktrees, harnesses, and queues, leadership faces complete operational blindness:
-- **Which agent seats are actively producing vs. spinning in idle waste?**
-- **Where are handovers stalling or generating expensive review-to-build rework cycles?**
-- **How many tokens and dollars are burned on unproductive retry loops?**
-
-**Dendro** is a high-performance, local AI fleet intelligence and decision engine written in Rust. It streams execution traces from coding agents (Claude Code, OpenAI Codex, OpenRig, Pi, Grok, AGY), normalizes them into an embedded [DuckDB](https://duckdb.org) analytical database, and exposes high-speed semantic models for conversational fleet intelligence via [Nao](https://github.com/getnao/nao).
-
----
-
-## ⚡ Verified Benchmark: Sub-Millisecond Analytics
-
-Executed via native Rust integration suite (`cargo test -p dendro-core --test benchmark_nao`) against **5,000 synthetic activity events, 1,000 handoffs, and 2,000 cost records** in embedded DuckDB:
-
-| Dashboard / Analytical Query | DuckDB View | Latency (Avg) | Status |
-| :--- | :--- | :--- | :--- |
-| **Seat Dynamics & Waste** (Question 1) | `v_seat_idle_ranking` | **11.17 ms** | `✓ SUB-MILLISECOND` |
-| **Handoffs & Rework Flow** (Question 2) | `v_handoff_rework_analysis` | **4.91 ms** | `✓ SUB-MILLISECOND` |
-| **Mission Token & Dollar Burn** (Question 3) | `v_mission_token_burn` | **5.12 ms** | `✓ SUB-MILLISECOND` |
-| **Executive Fleet Governance** (M1–M4) | `v_executive_governance` | **1.83 ms** | `✓ SUB-MILLISECOND` |
-
----
-
-## 🏗️ Architecture & 5-Slice Flow Hierarchy
-
-Dendro enforces strict modular data flows to enable isolated verification and fast correction cycles:
-
-```
-[Local Agents & Harnesses]
- ├── OpenRig (~/.openrig/openrig.sqlite, state/)
- ├── Claude Code (~/.claude/projects/.../*.jsonl)
- ├── OpenAI Codex (~/.codex/sessions/)
- ├── Pi & Grok (~/.openrig/state/pi/<session>/sessions)
- └── AGY (~/.gemini/antigravity-cli/brain)
-        │
-        ▼ (Flow 1: Zero-Copy Streaming Ingestion)
- [Dendro Core Engine (Rust)]
-  • BufReader streaming with cryptographic watermark offsets
-  • Strict zero-trust privacy redaction (secrets & prompt stripping)
-  • Deterministic session-to-seat correlation (97.7% link rate)
-        │
-        ▼ (Flow 2 & 4: Analytical Calculations)
- [Local Embedded Storage (DuckDB)]
-  • 5 Disjoint Activity Bands (active, idle_with_work, idle_nowork, human, unknown)
-  • Rework chain tracking (rev-review -> dev-build)
-  • Token & dollar burn aggregation
-        │
-        ▼ (Flow 5: Presentation & Semantic Layer)
- [Conversational Fleet Analytics (Nao) & CLI]
-  • dendro run --db ./dendro.duckdb
-  • dendro status
-  • 4 Specialized Nao Semantic Dashboards
-```
-
----
-
-## 🚀 Quick Start in 5 Minutes
-
-### 1. Installation
-```bash
-# Clone the repository
+```sh
 git clone https://github.com/smota/dendro.git
 cd dendro
-
-# Build all workspace crates
-cargo build --release
+cargo build --release --locked
+./target/release/dendro --help
 ```
 
-### 2. Run Discovery & Ingestion
-```bash
-# Ingest local harness traces into embedded DuckDB
-cargo run -p dendro-cli -- run --db ./dendro.duckdb
+Choose authorized source roots explicitly. Keep the output database outside those roots:
 
-# View fleet operational yield and decision metrics
-cargo run -p dendro-cli -- status --db ./dendro.duckdb
+```sh
+./target/release/dendro run --db ./dendro.duckdb \
+  --root openrig=/absolute/path/to/openrig \
+  --root codex=/absolute/path/to/codex
+./target/release/dendro report decisions --db ./dendro.duckdb \
+  --from 2026-10-14T00:00:00Z --to 2026-10-15T00:00:00Z
+./target/release/dendro trace --db ./dendro.duckdb \
+  --metric-id handoff_friction \
+  --from 2026-10-14T00:00:00Z --to 2026-10-15T00:00:00Z
 ```
 
-### 3. Run Benchmark Suite
-```bash
-cargo test -p dendro-core --test benchmark_nao -- --nocapture
+Dates above are examples; choose the actual period recorded by your sources. Windows are half-open `[from, to)`. An empty report may mean absent timestamps, unsupported data, or an unobserved period. A build from source is not a measured five-minute installation guarantee.
+
+## Local investigation
+
+Open [the offline explorer](site/viewer.html) and load a report or trace JSON file. The viewer aliases seat labels and displays supported numeric facts. Its synthetic demo is labelled. Aggregate concurrency counts are a distribution, not a reconstructed time series; handoff counts do not establish token transfer.
+
+The [landing page](site/index.html) includes a scenario calculator. Its inputs are assumptions, and its formulas describe potential released capacity, not predicted savings or ROI.
+
+## Verification
+
+```sh
+cargo check --workspace --locked
+cargo test --workspace --locked
+cargo clippy --workspace --locked -- -D warnings
+cargo fmt --check
+node --test site/site.test.cjs
 ```
 
----
+The real-local-log performance test is explicitly ignored by default and requires a separately authorized corpus. Synthetic correctness or benchmark results do not establish production-scale latency. See the benchmark's actual output and corpus before quoting a performance claim; milliseconds must not be called sub-millisecond.
 
-## 📚 Ecosystem Documentation
+## Documentation
 
-- **[Maintainers Guide](docs/maintainers/README.md):** Safe Rust `#![deny(unsafe_code)]` policies, streaming design, and CI gates.
-- **[Harness Extension Guide](docs/extensions/README.md):** Guide to authoring custom connectors for Cursor, Windsurf, Devin, and Goose.
-- **[Adopter & Operator Guide](docs/adoption/README.md):** 5-minute production rollout, privacy proofs, and Prometheus bridge.
-- **[Product Specification](docs/PRODUCT_SPECIFICATION.md):** Full Phase 0 discovery, JTBD, and user personas.
-- **[Frozen Acceptance Contracts](docs/ACCEPTANCE_R1.md):** Normative Phase 1 acceptance contracts (AC1 to AC11).
+- [Operator guide](docs/adoption/README.md): source selection, reporting, privacy and reproducible replay.
+- [Maintainer guide](docs/maintainers/README.md): workspace architecture and quality gates.
+- [Connector extension guide](docs/extensions/README.md): trait contract and runnable example.
+- [Product specification](docs/PRODUCT_SPECIFICATION.md) and [R1 acceptance contracts](docs/ACCEPTANCE_R1.md).
+- [Historical narrated walkthrough](docs/assets/dendro-demo.mp4) and [preview animation](docs/assets/dendro-preview.gif). These are presentation assets, not evidence for current CLI behavior or performance.
 
----
+## Privacy and license
 
-## 🌐 Official Website & Landing Page
+Source logs are read-only. The analytics store uses allowlisted facts, redaction, opaque identifiers and explicit uncertainty. Never select credential files as ingestion roots. Exporting or publishing a report is a separate operator action; local storage alone does not make every possible export safe to share.
 
-Explore the interactive product site in [`site/index.html`](site/index.html):
-- **Agent Waste & Cost-of-Inaction Calculator:** Calculate how much spend can be recovered from idle loops.
-- **Interactive Terminal Simulator:** Preview CLI commands and live yield reports.
-- **Branding Assets:** High-resolution logos and graphic assets in `site/assets/`.
-
----
-
-## ⚖️ License & Governance
-
-- Governed autonomously via **AgentFlow SDLC** connected to GitHub ([Issues #1 to #9](https://github.com/smota/dendro/issues)).
-- Licensed under the **MIT License** © 2026 [Samuel Mota](https://github.com/smota).
+MIT License. Copyright 2026 Samuel Mota.

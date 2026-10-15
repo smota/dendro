@@ -1,3 +1,6 @@
+#[cfg(test)]
+thread_local! {pub(crate) static FRICTION_METADATA_READS: std::cell::Cell<usize> = const {std::cell::Cell::new(0)};}
+
 #[path = "openrig_provenance.rs"]
 mod openrig_provenance;
 pub use openrig_provenance::{OpenRigIngest, OpenRigRecord, OpenRigRow};
@@ -65,11 +68,44 @@ pub struct AnalyticsStore {
     pub key_id: String,
     openrig_rows: RefCell<Option<openrig_provenance::OpenRigRowCache>>,
     openrig_pending: RefCell<Option<Vec<OpenRigRecord>>>,
+    canonical_write_active: std::cell::Cell<bool>,
 }
 
 impl AnalyticsStore {
     pub(crate) fn connection(&self) -> &Connection {
         &self.conn
+    }
+
+    // Derived cache state only: canonical fact schemas remain unchanged.
+    pub(super) const SEMANTIC_STATE_SCHEMA: &'static str = "CREATE TABLE IF NOT EXISTS dendro_semantic_state (id INTEGER PRIMARY KEY, dirty BOOLEAN NOT NULL); INSERT INTO dendro_semantic_state VALUES (1, TRUE) ON CONFLICT DO NOTHING";
+
+    pub(super) fn invalidate_semantic(&self) -> Result<()> {
+        self.conn.execute(
+            "UPDATE dendro_semantic_state SET dirty = TRUE WHERE id = 1 AND NOT dirty",
+            [],
+        )?;
+        Ok(())
+    }
+
+    /// Join our existing canonical batch, or atomically fence a standalone write.
+    /// duckdb-rs 1.x is_autocommit() is a stub, so track only transactions we own.
+    pub(super) fn canonical_write<T>(&self, write: impl FnOnce() -> Result<T>) -> Result<T> {
+        if self.canonical_write_active.get() {
+            return write();
+        }
+        let tx = self.conn.unchecked_transaction()?;
+        self.canonical_write_active.set(true);
+        struct Reset<'a>(&'a std::cell::Cell<bool>);
+        impl Drop for Reset<'_> {
+            fn drop(&mut self) {
+                self.0.set(false);
+            }
+        }
+        let _reset = Reset(&self.canonical_write_active);
+        self.invalidate_semantic()?;
+        let result = write()?;
+        tx.commit()?;
+        Ok(result)
     }
 
     pub fn open_in_memory(key_id: &str) -> Result<Self> {
@@ -79,6 +115,7 @@ impl AnalyticsStore {
             key_id: key_id.to_string(),
             openrig_rows: RefCell::new(None),
             openrig_pending: RefCell::new(None),
+            canonical_write_active: std::cell::Cell::new(false),
         };
         store.create_schema()?;
         Ok(store)
@@ -94,6 +131,7 @@ impl AnalyticsStore {
             key_id: key_id.to_string(),
             openrig_rows: RefCell::new(None),
             openrig_pending: RefCell::new(None),
+            canonical_write_active: std::cell::Cell::new(false),
         };
         store.create_schema()?;
         Ok(store)
@@ -110,11 +148,13 @@ impl AnalyticsStore {
         if stored != key_id {
             return Err(anyhow!("analytics key id does not match the sidecar"));
         }
+        conn.execute_batch(Self::SEMANTIC_STATE_SCHEMA)?;
         Ok(Self {
             conn,
             key_id: key_id.to_string(),
             openrig_rows: RefCell::new(None),
             openrig_pending: RefCell::new(None),
+            canonical_write_active: std::cell::Cell::new(false),
         })
     }
 
@@ -131,11 +171,13 @@ impl AnalyticsStore {
             return Err(anyhow!("unsupported analytics schema version {version}"));
         }
         conn.execute_batch(openrig_provenance::SCHEMA)?;
+        conn.execute_batch(Self::SEMANTIC_STATE_SCHEMA)?;
         Ok(Self {
             conn,
             key_id,
             openrig_rows: RefCell::new(None),
             openrig_pending: RefCell::new(None),
+            canonical_write_active: std::cell::Cell::new(false),
         })
     }
 
@@ -157,6 +199,7 @@ impl AnalyticsStore {
             key_id,
             openrig_rows: RefCell::new(None),
             openrig_pending: RefCell::new(None),
+            canonical_write_active: std::cell::Cell::new(false),
         })
     }
 
@@ -291,6 +334,7 @@ impl AnalyticsStore {
             );
             "#,
         )?;
+        self.conn.execute_batch(Self::SEMANTIC_STATE_SCHEMA)?;
         self.conn.execute_batch(FILE_BASELINES_SCHEMA)?;
         self.conn.execute_batch(openrig_provenance::SCHEMA)?;
         self.conn.execute(
@@ -306,11 +350,13 @@ impl AnalyticsStore {
     }
 
     pub fn record_warning(&self, note: &WarningNote) -> Result<()> {
-        self.conn.execute(
-            "INSERT INTO warnings (path, line_no, reason) VALUES (?, ?, ?)",
-            params![redact(&note.path), note.line, redact(&note.reason)],
-        )?;
-        Ok(())
+        self.canonical_write(|| {
+            self.conn.execute(
+                "INSERT INTO warnings (path, line_no, reason) VALUES (?, ?, ?)",
+                params![redact(&note.path), note.line, redact(&note.reason)],
+            )?;
+            Ok(())
+        })
     }
 
     /// Whether this warning was already stored for this path, compared as stored.
@@ -512,6 +558,7 @@ impl AnalyticsStore {
         mut checkpoint: impl FnMut(FileBatchStage) -> Result<()>,
     ) -> Result<()> {
         let tx = self.conn.unchecked_transaction()?;
+        self.invalidate_semantic()?;
         if let Some(attempt) = baseline {
             tx.execute_batch(FILE_BASELINES_SCHEMA)?;
             let metadata = attempt.metadata.as_ref();
@@ -727,6 +774,7 @@ impl AnalyticsStore {
             return Ok(());
         }
         let tx = self.conn.unchecked_transaction()?;
+        self.invalidate_semantic()?;
         {
             let mut stmt = tx.prepare("UPDATE tool_facts SET category = ? WHERE source_key = ?")?;
             for (source_key, category) in categories {
@@ -757,6 +805,7 @@ impl AnalyticsStore {
             return Ok(());
         }
         let tx = self.conn.unchecked_transaction()?;
+        self.invalidate_semantic()?;
         {
             let mut stmt =
                 tx.prepare("UPDATE usage_facts SET model = ?, effort = ? WHERE source_key = ?")?;
@@ -792,48 +841,52 @@ impl AnalyticsStore {
     }
 
     pub fn record_queue_item_meta(&self, meta: &QueueItemMeta) -> Result<()> {
-        let qitem_id = redact(&meta.qitem_id);
-        let recovery_reason = meta.recovery_reason.as_deref().map(redact);
-        let last_nudge_result = meta.last_nudge_result.as_deref().map(redact);
-        let issue_tags = serde_json::to_string(
-            &meta
-                .issue_tags
-                .iter()
-                .map(|t| redact(t))
-                .collect::<Vec<_>>(),
-        )?;
-        let phase_tags = serde_json::to_string(
-            &meta
-                .phase_tags
-                .iter()
-                .map(|t| redact(t))
-                .collect::<Vec<_>>(),
-        )?;
-        let parent_qitem_id = meta.parent_qitem_id.as_deref().map(redact);
-        self.conn.execute(
-            r#"UPDATE queue_facts SET
-                 is_recovery = ?,
-                 recovery_reason = COALESCE(?, queue_facts.recovery_reason),
-                 last_nudge_result = COALESCE(?, queue_facts.last_nudge_result),
-                 issue_tags = ?,
-                 phase_tags = ?,
-                 parent_qitem_id = COALESCE(?, queue_facts.parent_qitem_id)
-               WHERE qitem_id = ?"#,
-            params![
-                meta.is_recovery,
-                recovery_reason,
-                last_nudge_result,
-                issue_tags,
-                phase_tags,
-                parent_qitem_id,
-                qitem_id
-            ],
-        )?;
-        Ok(())
+        self.canonical_write(|| {
+            let qitem_id = redact(&meta.qitem_id);
+            let recovery_reason = meta.recovery_reason.as_deref().map(redact);
+            let last_nudge_result = meta.last_nudge_result.as_deref().map(redact);
+            let issue_tags = serde_json::to_string(
+                &meta
+                    .issue_tags
+                    .iter()
+                    .map(|t| redact(t))
+                    .collect::<Vec<_>>(),
+            )?;
+            let phase_tags = serde_json::to_string(
+                &meta
+                    .phase_tags
+                    .iter()
+                    .map(|t| redact(t))
+                    .collect::<Vec<_>>(),
+            )?;
+            let parent_qitem_id = meta.parent_qitem_id.as_deref().map(redact);
+            self.conn.execute(
+                r#"UPDATE queue_facts SET
+                     is_recovery = ?,
+                     recovery_reason = COALESCE(?, queue_facts.recovery_reason),
+                     last_nudge_result = COALESCE(?, queue_facts.last_nudge_result),
+                     issue_tags = ?,
+                     phase_tags = ?,
+                     parent_qitem_id = COALESCE(?, queue_facts.parent_qitem_id)
+                   WHERE qitem_id = ?"#,
+                params![
+                    meta.is_recovery,
+                    recovery_reason,
+                    last_nudge_result,
+                    issue_tags,
+                    phase_tags,
+                    parent_qitem_id,
+                    qitem_id
+                ],
+            )?;
+            Ok(())
+        })
     }
 
     /// Preserve distinct retained parent readings for friction, without changing legacy aggregation.
     pub fn load_queue_metadata_evidence(&self) -> Result<Vec<crate::vortex::ItemEvidence>> {
+        #[cfg(test)]
+        FRICTION_METADATA_READS.with(|n| n.set(n.get() + 1));
         let mut stmt = self.conn.prepare(
             "SELECT source_key, qitem_id, parent_qitem_id, is_recovery, recovery_reason, issue_tags FROM queue_facts ORDER BY source_key",
         )?;
@@ -899,73 +952,79 @@ impl AnalyticsStore {
     }
 
     pub fn insert_identity(&self, fact: &IdentityFact) -> Result<()> {
-        self.conn
-            .prepare_cached(
-                r#"INSERT INTO identity_facts (source_key, harness, native_session, rig, seat, ts)
-               VALUES (?, ?, ?, ?, ?, ?)
-               ON CONFLICT (source_key) DO NOTHING"#,
-            )?
-            .execute(params![
-                redact(&fact.source_key),
-                redact(&fact.harness),
-                redact(&fact.native_session),
-                redact(&fact.rig),
-                redact(&fact.seat),
-                fact.ts.map(|t| t.to_rfc3339())
-            ])?;
-        Ok(())
+        self.canonical_write(|| {
+            self.conn
+                .prepare_cached(
+                    r#"INSERT INTO identity_facts (source_key, harness, native_session, rig, seat, ts)
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT (source_key) DO NOTHING"#,
+                )?
+                .execute(params![
+                    redact(&fact.source_key),
+                    redact(&fact.harness),
+                    redact(&fact.native_session),
+                    redact(&fact.rig),
+                    redact(&fact.seat),
+                    fact.ts.map(|t| t.to_rfc3339())
+                ])?;
+            Ok(())
+        })
     }
 
     pub fn insert_activity(&self, fact: &ActivityFact) -> Result<()> {
-        self.conn
-            .prepare_cached(
-                r#"INSERT INTO activity_facts (source_key, seat, ts, state, seq)
-               VALUES (?, ?, ?, ?, ?)
-               ON CONFLICT (source_key) DO NOTHING"#,
-            )?
-            .execute(params![
-                redact(&fact.source_key),
-                redact(&fact.seat),
-                fact.ts.to_rfc3339(),
-                activity_state(Some(fact.state.as_str())),
-                fact.seq
-            ])?;
-        Ok(())
+        self.canonical_write(|| {
+            self.conn
+                .prepare_cached(
+                    r#"INSERT INTO activity_facts (source_key, seat, ts, state, seq)
+                   VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT (source_key) DO NOTHING"#,
+                )?
+                .execute(params![
+                    redact(&fact.source_key),
+                    redact(&fact.seat),
+                    fact.ts.to_rfc3339(),
+                    activity_state(Some(fact.state.as_str())),
+                    fact.seq
+                ])?;
+            Ok(())
+        })
     }
 
     pub fn insert_queue(&self, fact: &QueueFact) -> Result<()> {
-        let qitem_redacted = redact(&fact.qitem_id);
-        let auto_recovery = qitem_redacted.starts_with("qitem-recovery-");
-        self.conn
-            .prepare_cached(
-                r#"INSERT INTO queue_facts (
-                   source_key, transition_id, qitem_id, ts, state, source_seat, dest_seat,
-                   closure_reason, closure_target, chain_id, missions, is_recovery, recovery_reason
-               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT (source_key) DO UPDATE SET
-                 chain_id = COALESCE(queue_facts.chain_id, excluded.chain_id),
-                 missions = CASE
-                   WHEN queue_facts.missions = '[]' AND excluded.missions <> '[]'
-                   THEN excluded.missions ELSE queue_facts.missions END"#,
-            )?
-            .execute(params![
-                redact(&fact.source_key),
-                fact.transition_id,
-                qitem_redacted,
-                fact.ts.to_rfc3339(),
-                queue_state(&fact.state),
-                redact(&fact.source_seat),
-                redact(&fact.dest_seat),
-                closure_reason(fact.closure_reason.as_deref()),
-                fact.closure_target.as_deref().map(redact),
-                fact.chain_id.as_deref().map(redact),
-                serde_json::to_string(
-                    &fact.missions.iter().map(|m| redact(m)).collect::<Vec<_>>()
-                )?,
-                auto_recovery,
-                auto_recovery.then(|| "recovery".to_string())
-            ])?;
-        Ok(())
+        self.canonical_write(|| {
+            let qitem_redacted = redact(&fact.qitem_id);
+            let auto_recovery = qitem_redacted.starts_with("qitem-recovery-");
+            self.conn
+                .prepare_cached(
+                    r#"INSERT INTO queue_facts (
+                       source_key, transition_id, qitem_id, ts, state, source_seat, dest_seat,
+                       closure_reason, closure_target, chain_id, missions, is_recovery, recovery_reason
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT (source_key) DO UPDATE SET
+                     chain_id = COALESCE(queue_facts.chain_id, excluded.chain_id),
+                     missions = CASE
+                       WHEN queue_facts.missions = '[]' AND excluded.missions <> '[]'
+                       THEN excluded.missions ELSE queue_facts.missions END"#,
+                )?
+                .execute(params![
+                    redact(&fact.source_key),
+                    fact.transition_id,
+                    qitem_redacted,
+                    fact.ts.to_rfc3339(),
+                    queue_state(&fact.state),
+                    redact(&fact.source_seat),
+                    redact(&fact.dest_seat),
+                    closure_reason(fact.closure_reason.as_deref()),
+                    fact.closure_target.as_deref().map(redact),
+                    fact.chain_id.as_deref().map(redact),
+                    serde_json::to_string(
+                        &fact.missions.iter().map(|m| redact(m)).collect::<Vec<_>>()
+                    )?,
+                    auto_recovery,
+                    auto_recovery.then(|| "recovery".to_string())
+                ])?;
+            Ok(())
+        })
     }
 
     /// `reroute_marked`: the source shows a K5 reroute mark for this item.
@@ -977,25 +1036,28 @@ impl AnalyticsStore {
         reroute_marked: bool,
         missions: &[String],
     ) -> Result<()> {
-        let qitem_id = redact(qitem_id);
-        let destination = redact(destination);
-        let cutoff = redact(cutoff);
-        let missions =
-            serde_json::to_string(&missions.iter().map(|m| redact(m)).collect::<Vec<_>>())?;
-        let source_key = format!("queue_items:{qitem_id}:{destination}:{cutoff}:{missions}");
-        self.conn.prepare_cached(
-            r#"INSERT INTO destination_snapshots (source_key, qitem_id, destination, snapshot_cutoff, reroute_marked, missions)
-               VALUES (?, ?, ?, ?, ?, ?)
-               ON CONFLICT (source_key) DO UPDATE SET
-                 reroute_marked = destination_snapshots.reroute_marked OR excluded.reroute_marked"#)?.execute(
-            params![source_key, qitem_id, destination, cutoff, reroute_marked, missions],
-        )?;
-        Ok(())
+        self.canonical_write(|| {
+            let qitem_id = redact(qitem_id);
+            let destination = redact(destination);
+            let cutoff = redact(cutoff);
+            let missions =
+                serde_json::to_string(&missions.iter().map(|m| redact(m)).collect::<Vec<_>>())?;
+            let source_key = format!("queue_items:{qitem_id}:{destination}:{cutoff}:{missions}");
+            self.conn.prepare_cached(
+                r#"INSERT INTO destination_snapshots (source_key, qitem_id, destination, snapshot_cutoff, reroute_marked, missions)
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT (source_key) DO UPDATE SET
+                     reroute_marked = destination_snapshots.reroute_marked OR excluded.reroute_marked"#)?.execute(
+                params![source_key, qitem_id, destination, cutoff, reroute_marked, missions],
+            )?;
+            Ok(())
+        })
     }
 
     /// Replaces every seat life. Lives are rebuilt from the whole event history on each ingest.
     pub fn replace_seat_bounds(&self, bounds: &[SeatBound]) -> Result<()> {
         let tx = self.conn.unchecked_transaction()?;
+        self.invalidate_semantic()?;
         tx.execute("DELETE FROM seat_bounds", [])?;
         {
             let mut stmt = tx.prepare(
@@ -1016,11 +1078,13 @@ impl AnalyticsStore {
     /// One recorded role observation for a seat (K7): `check` or `other`, with
     /// the snapshot evidence it came from.
     pub fn insert_seat_role(&self, seat: &str, role: &str, evidence: &str) -> Result<()> {
-        self.conn.prepare_cached(
-            "INSERT INTO seat_roles (seat, role, evidence) VALUES (?, ?, ?) ON CONFLICT DO NOTHING")?.execute(
-            params![redact(seat), redact(role), redact(evidence)],
-        )?;
-        Ok(())
+        self.canonical_write(|| {
+            self.conn.prepare_cached(
+                "INSERT INTO seat_roles (seat, role, evidence) VALUES (?, ?, ?) ON CONFLICT DO NOTHING")?.execute(
+                params![redact(seat), redact(role), redact(evidence)],
+            )?;
+            Ok(())
+        })
     }
 
     pub fn load_seat_roles(&self) -> Result<Vec<(String, String, String)>> {
@@ -1076,27 +1140,31 @@ impl AnalyticsStore {
     }
 
     pub fn insert_skill(&self, fact: &SkillFact) -> Result<()> {
-        self.conn
-            .prepare_cached(
-                r#"INSERT INTO skill_facts (source_key, seat, skill, invoked) VALUES (?, ?, ?, ?)
-               ON CONFLICT (source_key) DO NOTHING"#,
-            )?
-            .execute(params![
-                redact(&fact.source_key),
-                redact(&fact.seat),
-                redact(&fact.skill),
-                fact.invoked
-            ])?;
-        Ok(())
+        self.canonical_write(|| {
+            self.conn
+                .prepare_cached(
+                    r#"INSERT INTO skill_facts (source_key, seat, skill, invoked) VALUES (?, ?, ?, ?)
+                   ON CONFLICT (source_key) DO NOTHING"#,
+                )?
+                .execute(params![
+                    redact(&fact.source_key),
+                    redact(&fact.seat),
+                    redact(&fact.skill),
+                    fact.invoked
+                ])?;
+            Ok(())
+        })
     }
 
     /// Records a session file's native session (K10), sealed by the caller.
     pub fn set_source_session(&self, source_id: &str, native_session: &str) -> Result<()> {
-        self.conn.execute(
-            "UPDATE source_files SET native_session = ? WHERE source_id = ?",
-            params![redact(native_session), redact(source_id)],
-        )?;
-        Ok(())
+        self.canonical_write(|| {
+            self.conn.execute(
+                "UPDATE source_files SET native_session = ? WHERE source_id = ?",
+                params![redact(native_session), redact(source_id)],
+            )?;
+            Ok(())
+        })
     }
 
     /// (source_id, harness, display_path, generation, native_session).

@@ -15,3 +15,14 @@ pub use ingest::{ingest_staged, ingest_staged_with_manifest, SourceRoot};
 pub use claude::ClaudeConnector;
 pub use codex::CodexConnector;
 pub use openrig::OpenRigConnector;
+pub mod sdk;
+
+pub mod cursor;
+pub mod devin;
+pub mod exports;
+pub mod goose;
+pub mod windsurf;
+pub use cursor::CursorConnector;
+pub use devin::DevinConnector;
+pub use goose::GooseConnector;
+pub use windsurf::WindsurfConnector;

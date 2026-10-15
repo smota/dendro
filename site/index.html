@@ -48,11 +48,11 @@
         Decipher the growth layers of your <span class="gradient-text">AI agent fleets</span>.
       </h1>
       <p class="hero-subtitle">
-        Just as dendrochronology deciphers historical climate patterns through the concentric growth rings of ancient trees, Dendro illuminates every invisible execution layer across your autonomous agent squads — delivering empirical visibility into bottlenecks, review-to-build rework, and true seat economics.
+        Just as dendrochronology deciphers historical climate patterns through the concentric growth rings of ancient trees, Dendro reads retained execution evidence across your agent squads to expose observed bottlenecks, review-to-build rework, and token consumption.
       </p>
       <div class="hero-cta-group">
         <a href="#demo" class="btn btn-primary btn-lg">▶ Watch Product Video</a>
-        <a href="#docs" class="btn btn-secondary btn-lg">5-Minute Quickstart</a>
+        <a href="#docs" class="btn btn-secondary btn-lg">Local Quickstart</a>
       </div>
 
       <!-- Narrated Video Demo Showcase -->
@@ -72,7 +72,7 @@
           </video>
         </div>
         <div class="video-caption">
-          <span>⏱️ Duration: 1m 40s • English Voice Narration • Zero-Copy Ingestion, DuckDB OLAP & Nao Conversational Analytics</span>
+          <span>⏱️ Historical walkthrough: 1m 40s • English narration • Presentation assets may show earlier CLI behavior; current commands and measured evidence take precedence.</span>
         </div>
       </div>
 
@@ -84,16 +84,16 @@
             <span class="dot dot-yellow"></span>
             <span class="dot dot-green"></span>
           </div>
-          <span class="terminal-title">dendro report activity --db analytics.duckdb</span>
+          <span class="terminal-title">dendro report decisions --db analytics.duckdb</span>
           <span class="terminal-badge">SYNTHETIC CLI PREVIEW</span>
         </div>
         <div class="terminal-body">
-          <div class="term-line"><span class="term-prompt">$</span> dendro ingest --db analytics.duckdb</div>
+          <div class="term-line"><span class="term-prompt">$</span> dendro run --db analytics.duckdb</div>
           <div class="term-line term-muted">▶ Ingesting local agent event streams...</div>
           <div class="term-line term-success">✓ OpenRig Core SQLite: private staging and atomic snapshot copy completed</div>
           <div class="term-line term-success">✓ Claude Code & Codex Harnesses: sessions sanitized and indexed</div>
           <div class="term-line term-info">ℹ Ingested into analytics.duckdb with credential redaction enabled.</div>
-          <div class="term-line"><span class="term-prompt">$</span> dendro report activity --db analytics.duckdb --from 2026-10-10T00:00:00Z --to 2026-10-11T00:00:00Z</div>
+          <div class="term-line"><span class="term-prompt">$</span> dendro report decisions --db analytics.duckdb --from 2026-10-10T00:00:00Z --to 2026-10-11T00:00:00Z</div>
           <p class="term-muted">Synthetic presentation of metric values; the CLI emits JSON.</p>
           <div class="term-output">
 ## AI Fleet Intelligence Report [2026-10-10T00:00:00Z .. 2026-10-11T00:00:00Z)
@@ -133,7 +133,7 @@
         <div class="card metaphor-card active-card">
           <div class="metaphor-icon">🤖</div>
           <h3>Agent Execution Rings</h3>
-          <p>Every session, tool invocation, and queue handoff leaves indelible execution footprints across your local workstation's disk.</p>
+          <p>Supported harnesses retain session, tool, and queue records on your workstation. Missing records remain unknown.</p>
         </div>
         <div class="card metaphor-card">
           <div class="metaphor-icon">⚡</div>
@@ -183,7 +183,7 @@
           </p>
           <ul class="ring-features">
             <li><strong>Rework Chains:</strong> Pinpoints review-to-builder returns along task item histories.</li>
-            <li><strong>Intake Token Overhead:</strong> Measures token rehydration costs for downstream seats.</li>
+            <li><strong>Intake Token Overhead:</strong> Estimates attributable intake tokens with explicit coverage and uncertainty.</li>
             <li><strong>Queue Wait Latency:</strong> Quantifies time lost between task creation and seat pickup.</li>
           </ul>
         </div>
@@ -201,7 +201,7 @@
           <ul class="ring-features">
             <li><strong>Token Attribution:</strong> Compare recorded input, output and cache tokens by mission and seat.</li>
             <li><strong>Retry Loop Detection:</strong> Surfaces repeated failing tool executions with source evidence.</li>
-            <li><strong>Deterministic Spend Ledger:</strong> Reconciles prompt, completion, and cache tokens.</li>
+            <li><strong>Token Components:</strong> Separates recorded input, output, and cache tokens; absent prices do not establish spend.</li>
           </ul>
         </div>
       </div>
@@ -344,7 +344,7 @@
       <div class="docs-grid">
         <div class="card doc-card">
           <h3>Adoption & Quickstart Guide</h3>
-          <p>Install the compiled binary, execute your first fleet scan in under 5 minutes, and inspect interactive reports.</p>
+          <p>Build the binary, select authorized sources and an observation period, then inspect local reports.</p>
           <a href="https://github.com/smota/dendro/blob/main/docs/adoption/README.md" target="_blank" class="doc-link">View Adoption Guide →</a>
         </div>
         <div class="card doc-card">

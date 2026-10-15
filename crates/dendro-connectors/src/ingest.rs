@@ -113,6 +113,66 @@ pub fn ingest_staged_with_manifest(
                     read.records_read, read.usage_records
                 ));
             }
+            "cursor" | "windsurf" | "goose" | "devin" => {
+                let format = match root.name.as_str() {
+                    "cursor" => crate::exports::Format::Cursor,
+                    "windsurf" => crate::exports::Format::Windsurf,
+                    "goose" => crate::exports::Format::Goose,
+                    "devin" => crate::exports::Format::Devin,
+                    _ => unreachable!(),
+                };
+                let harness = match format {
+                    crate::exports::Format::Cursor => "cursor",
+                    crate::exports::Format::Windsurf => "windsurf",
+                    crate::exports::Format::Goose => "goose",
+                    crate::exports::Format::Devin => "devin",
+                };
+                let connector = crate::exports::ExportConnector::new(
+                    root.path.clone(),
+                    key.to_vec(),
+                    harness,
+                    format,
+                );
+                let mut file_count = 0;
+                for file in connector.discover()? {
+                    let id = manifest_source_id(root, &file);
+                    let entry = sealed.and_then(|manifest| {
+                        manifest
+                            .files
+                            .iter()
+                            .find(|entry| entry.source_id == id && entry.harness == root.name)
+                    });
+                    if sealed.is_some() && entry.is_none() {
+                        continue;
+                    }
+                    if !seen_files.insert(id.clone()) {
+                        continue;
+                    }
+                    let (warnings, watermark) =
+                        connector.ingest_file_with_cutoff(&store, &file, entry)?;
+                    for reason in warnings {
+                        store.record_warning(&dendro_core::WarningNote {
+                            path: id.clone(),
+                            line: None,
+                            reason: reason.into(),
+                        })?;
+                        notes.push(format!("{shown} {reason}"));
+                    }
+                    manifest.files.push(dendro_core::FileCutoff {
+                        source_id: id,
+                        harness: harness.into(),
+                        byte_length: watermark.byte_offset,
+                        prefix_sha256: watermark
+                            .session_id
+                            .as_deref()
+                            .and_then(|value| value.strip_prefix("sdk-v1:"))
+                            .ok_or_else(|| anyhow::anyhow!("missing export prefix digest"))?
+                            .into(),
+                    });
+                    file_count += 1;
+                }
+                notes.push(format!("{shown} files={file_count} format=verified-export-only native-storage=unsupported"));
+            }
             "openrig" => {
                 let id = manifest_source_id(root, &root.path);
                 let entry = sealed.and_then(|manifest| {

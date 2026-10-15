@@ -1,0 +1,4 @@
+{"type":"system","subtype":"init","session_id":"synthetic-cursor","model":"demo","cwd":"/synthetic"}
+{"type":"tool_call","subtype":"started","session_id":"synthetic-cursor","call_id":"call-1","tool_call":{"readToolCall":{"args":{"path":"private.txt"}}}}
+{"type":"tool_call","subtype":"completed","session_id":"synthetic-cursor","call_id":"call-1","tool_call":{"readToolCall":{"args":{"path":"private.txt"},"result":{"success":{"content":"sk-SYNTHETIC_DO_NOT_PERSIST"}}}}}
+{"type":"result","subtype":"success","session_id":"synthetic-cursor","result":"PRIVATE_TRANSCRIPT"}

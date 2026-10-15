@@ -248,3 +248,58 @@ malformed or overflowing persisted token totals with a fixed arithmetic error
 before legacy arithmetic runs. The pure evaluator reports excluded invalid
 components and names aggregate overflow with a null token total.
 This capability is unreleased.
+
+## Idle advisories, anomaly spotlights and CI verdicts
+
+```bash
+dendro report advisory --anomaly idle-claimed --advisory-container-hold-secs 900 --advisory-leaf-stall-secs 1800 --advisory-detached-target-secs 300
+dendro report anomalies --format markdown --spotlight-ceremony-ratio 0.40
+dendro report spotlights --format ndjson --spotlight-builder-seats dev-build-jr,dev-build-sr
+dendro trace --metric-id advisory_idle_claimed
+dendro trace --metric-id anomaly_spotlights
+dendro issue-draft --metric m3 --usd-per-million 3
+dendro assert --max-rework-rate 0.15 --max-idle-rate 0.20
+```
+
+Advisory intervals require an observed idle seat holding an in-progress claim.
+Explicit recorded parent links distinguish unparked containers with active
+children from leaf stalls; shared tags alone do not establish a child. Local
+usage/tool evidence ends a continuous idle interval; a new idle observation is
+required before counting another. Untimed or unbound local activity is explicit
+partial coverage and suppresses unsupported claimed-idle findings. Lifecycle stops bound
+observation. Detached-target findings require failed delivery metadata and
+recorded stopped/unreachable target evidence. Nudge metadata is the latest
+persisted snapshot, not a timed delivery-attempt history. Threshold equality
+never triggers. Defaults are 900/1800/300 seconds for container/leaf/detached.
+
+Spotlights A1–A6 consume canonical ceremony, concurrency, container/recovery,
+compaction/cache, model-family and transport projections. High thresholds use
+strict `>`; low parallelism and duty-cycle thresholds use strict `<`. Ratios and
+parallelism overrides are finite; ratios are in [0,1]. Builder starvation needs
+an explicit builder roster and observed peer saturation. Missing roster,
+authoritative portfolio dispatch evidence is `no_data`, never an invented zero.
+Routing effort accepts only the source-complete routing-only observed seat-window
+producer, labelled explicitly as a window measurement rather than causal turn
+attribution. Incomplete producer records remain unavailable. Canonical compaction events carry only producer-detected drops of at least
+50% and 50,000 tokens; smaller ratio overrides are rejected before DB open.
+Known evaluated negative results remain observed, distinct from missing data. A6's optional `supervisory_dispatch`
+extension accepts source-backed portfolio classifications; it does not claim
+hold-file ingestion. Drilldown argv preserves scope and all normalized operator
+thresholds. These diagnostics suggest investigations and never operate agents.
+
+JSON is the default. `--format markdown` provides the plain report section;
+`--format ndjson` emits coverage and finding records. `issue-draft` writes local
+GitHub-compatible Markdown to stdout. Financial annotations require explicit
+pricing and the canonical global usage-key union, never a sum of pair amounts.
+Published drafts use bounded source fingerprints instead of raw local locators;
+annotations describe only observed-window attributed token lower bounds; no
+monthly extrapolation or causal waste estimate is invented. Publication is an
+explicit opt-in: `dendro issue-draft --metric m3 --publish --repo OWNER/REPO`.
+This invokes installed `gh` with an argument vector and never changes agents.
+
+`assert` emits JSON to stderr and exits 0 for a proven pass, 2 for an observed
+threshold breach, or 3 when evidence is insufficient. Defaults are 0.15 rework
+and 0.20 idle-with-work share (including recorded pending demand); these are operator policy limits from the
+issue contract, not universal fleet health claims. Unknown role/activity
+coverage cannot establish a pass. CI decides what to block; Dendro only emits
+the verdict and its evidence.

@@ -19,3 +19,7 @@ hex.workspace = true
 
 [dev-dependencies]
 duckdb.workspace = true
+
+[[example]]
+name = "custom_connector"
+path = "../../examples/custom_connector.rs"
