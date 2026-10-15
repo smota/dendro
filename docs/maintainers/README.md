@@ -178,3 +178,21 @@ manual new invocation; it does not guarantee that the next snapshot succeeds.
 The five-attempt policy is unchanged. A non-OK private SQLite `quick_check` can
 also exhaust this existing path; the diagnostic does not distinguish every
 corruption case from source changes.
+
+### Auxiliary output-lock source protection
+
+Every analytics filename in one output directory shares `.dendro-output.lock`.
+A preexisting regular lock with multiple hard-link names is refused before a
+writable open or exclusion-lock attempt, including links to original main, WAL,
+SHM or other regular source files. Nonregular and symlink locks remain refused.
+Only a genuine missing-lock result permits creation; other metadata errors stop
+the run with the existing path-free IO error class.
+
+Opened, named and previously observed lock identities are checked before locking,
+then held/named identity is checked again under exclusion before ingest. New safe
+locks retain mode0600, existing single-link locks retain their permissions and
+bytes, and other output names in the directory retain nonblocking busy behavior.
+No lock is unlinked or replaced to bypass a holder. Static metadata checks do not
+eliminate malicious namespace races; this protection covers the accepted
+preexisting two-name regular hard-link condition. Prior primary-output safeguards
+and the manual snapshot-retry policy remain in force.
