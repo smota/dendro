@@ -4,6 +4,7 @@
 
 pub mod facts;
 pub mod lifecycle;
+mod loop_trace;
 pub mod metrics;
 pub mod models;
 pub mod output;
