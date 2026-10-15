@@ -20,6 +20,8 @@ pub mod storage;
 pub mod tool_category;
 pub mod traits;
 pub mod turnaround;
+pub mod vortex;
+pub use vortex::{parse_friction_duration, FrictionThresholds};
 
 pub use concurrency::*;
 pub use facts::*;
