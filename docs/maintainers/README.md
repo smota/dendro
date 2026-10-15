@@ -247,5 +247,4 @@ redaction, cannot be reconstructed. Handoffs/decisions and their trace refuse
 malformed or overflowing persisted token totals with a fixed arithmetic error
 before legacy arithmetic runs. The pure evaluator reports excluded invalid
 components and names aggregate overflow with a null token total.
-This local implementation awaits independent QA and review; it does not
-announce a release.
+This capability is unreleased.
