@@ -1,12 +1,33 @@
 {
   "version": 2,
-  "profile": "minimal",
+  "profile": "standard",
   "package": {
     "name": "agentflow-sdlc",
     "version": "1.10.0"
   },
-  "planToken": "f381ca0496550d8006c7bf6d29d4223d5b470774e079aa20b7b4885aedb4d52a",
+  "planToken": "ae34da746321e6edf54d0fdae2ef652a29e4c7cd5183e33d371cbfdb54fb960b",
   "entries": [
+    {
+      "source": "adapters/openrig/incident-evidence.mjs",
+      "target": "adapters/openrig/incident-evidence.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "4b6a30e4001cbb3e06eec2b7e31aa051ef4f78cee303cb821fd360b56bc14619"
+    },
+    {
+      "source": "adapters/openrig/platform-fallback.mjs",
+      "target": "adapters/openrig/platform-fallback.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "385cae0e87244d444d203bada10b7bb8e1e6c1e41295124ac61a20ea0174dcef"
+    },
+    {
+      "source": "adapters/openrig/recovery.mjs",
+      "target": "adapters/openrig/recovery.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "18a530a720fe68b09d83739c7487faa8796588e62d6b4a77f4035c5afb94c558"
+    },
     {
       "source": "defaults/agent-workflow.config.json",
       "target": "agent-workflow.config.json",
@@ -113,6 +134,27 @@
       "hash": "c4f197e6299ec0dcbf64d6fdaa00db969c68cc2d0a6e7cd206605362cb7b3c4b"
     },
     {
+      "source": "docs/providers/authoring.md",
+      "target": "docs/providers/authoring.md",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "adf2ed2e769092314bd8a007acc9fdf56624bc6a6af4cc9989842420a7d9fbd6"
+    },
+    {
+      "source": "docs/providers/index.md",
+      "target": "docs/providers/index.md",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "c8a0c3479825e1a758ff2d8a302d7202fd61384f2eadce8f759432ad443c4259"
+    },
+    {
+      "source": "docs/providers/provider-matrix.md",
+      "target": "docs/providers/provider-matrix.md",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "6e6b6c14df602379ef109028e699ae052a0eec99dcf00fd202ed25c9c77b5179"
+    },
+    {
       "source": "docs/reliable-delivery.md",
       "target": "docs/reliable-delivery.md",
       "ownership": "managed",
@@ -155,6 +197,13 @@
       "hash": "60ace8da4c9685674a07f7f75f60783bc910f2683c997f824e992b1c0194b601"
     },
     {
+      "source": "docs/sources/product-discipline.md",
+      "target": "docs/sources/product-discipline.md",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "b912d2597e23fcd4d7fc808e309e5624b1312414bed0fdbcea46a4b6d73755e2"
+    },
+    {
       "source": "agents/templates/stack-conventions.md",
       "target": "docs/stack-conventions.md",
       "ownership": "seed-once",
@@ -162,11 +211,88 @@
       "hash": "d580e73fd754d8faaef90021ecfb95a72b5885b2bdc50dba283e06fd8dbfa31e"
     },
     {
+      "source": "lib/adoption/lock-validation.mjs",
+      "target": "lib/adoption/lock-validation.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "f110ac9adec38c97813f43661a16c2bdfd5901ac972c33aca9921b2039573daa"
+    },
+    {
       "source": "lib/adoption/operation-lock.mjs",
       "target": "lib/adoption/operation-lock.mjs",
       "ownership": "managed",
       "state": "managed",
       "hash": "6ab89b7b93886a590b3600414e608a5bd1d356b9837f11da353323e23a1451ea"
+    },
+    {
+      "source": "lib/adoption/profiles.mjs",
+      "target": "lib/adoption/profiles.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "e4fa523f67bf491ff53c6375f8dc30d831d88513b46acf1f823f472bf9e8d370"
+    },
+    {
+      "source": "lib/adoption/transaction.mjs",
+      "target": "lib/adoption/transaction.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "b68b6bbd8fb5b4d7dc972eaa83a3657bbc34a26c399f374d6f1124636e012ad2"
+    },
+    {
+      "source": "lib/application/configured-run-source.mjs",
+      "target": "lib/application/configured-run-source.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "0ceac6b8495f1ec2681624415d8f5cedee3f6c1712dd528f6d931c18ad8f8133"
+    },
+    {
+      "source": "lib/application/context-service.mjs",
+      "target": "lib/application/context-service.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "d7b0b473c1f475bce7e86df4d2d9190286180ecc61be7ab99030c5283fd95f1e"
+    },
+    {
+      "source": "lib/application/continuation-service.mjs",
+      "target": "lib/application/continuation-service.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "9a1ea75f02d8a9351cde7867993d5729056eed3fa3dd4510a34cd74c52d4538f"
+    },
+    {
+      "source": "lib/application/local-cooperative-issuer.mjs",
+      "target": "lib/application/local-cooperative-issuer.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "e844d719216065f609b3cc4d5722c3b5e7e91734dd81515dcb30b142e8824efa"
+    },
+    {
+      "source": "lib/application/onboarding-service.mjs",
+      "target": "lib/application/onboarding-service.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "542045bb1098aeaa31d6d7c7abe9f418c81072b7ff21bb64ced96c215c9fc01f"
+    },
+    {
+      "source": "lib/application/publication-service.mjs",
+      "target": "lib/application/publication-service.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "8be3486e45773b7190655f03271d5f0634c70363023ea2a476da22341e820fdd"
+    },
+    {
+      "source": "lib/application/run-service.mjs",
+      "target": "lib/application/run-service.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "18dde1c0e197fc9a4ab8d24dfb4a5e7ff60dad14dd5b1d45f29670c7feddbafc"
+    },
+    {
+      "source": "lib/collaboration-plan.mjs",
+      "target": "lib/collaboration-plan.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "6ea8fc015fbaca0114dfc58dad73d2d730783a4994445c17a2ed022e51f705be"
     },
     {
       "source": "lib/config/authority.mjs",
@@ -190,11 +316,39 @@
       "hash": "65481dfea42cbc6f62e639604b16bf10752a6d6d9973e0b4d3edd1adffd54369"
     },
     {
+      "source": "lib/config/execution-defaults.mjs",
+      "target": "lib/config/execution-defaults.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "4fb21c796dface5a40d91d18638f38e540f6e76a4e2b1c09991faa5288fbf0bd"
+    },
+    {
       "source": "lib/config/execution-distribution.mjs",
       "target": "lib/config/execution-distribution.mjs",
       "ownership": "managed",
       "state": "managed",
       "hash": "dfa326e1991ea8431e98a5d488b5040f290f5b024fb23663c8e85a7a504aaa30"
+    },
+    {
+      "source": "lib/config/harness-defaults.mjs",
+      "target": "lib/config/harness-defaults.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "6a43bb26c1188c831bd76ba586d59829c0a968cd655852d66cefb57f9e817a48"
+    },
+    {
+      "source": "lib/config/harness-intelligence.mjs",
+      "target": "lib/config/harness-intelligence.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "d6ce145d3d1c7998f63758ec862c9457cb7b0fd4d737e0c1b0edf1d97a7cf306"
+    },
+    {
+      "source": "lib/config/projection.mjs",
+      "target": "lib/config/projection.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "a81d809d4afdac22d96b05473809fd00d69cae412fe5f15681dfbe4d51363b92"
     },
     {
       "source": "lib/core/artifact-ref.mjs",
@@ -246,6 +400,20 @@
       "hash": "ee506e38ff70ac628fb8d0645dfe6cf13fc1b73b356bcba083231dc9344fa384"
     },
     {
+      "source": "lib/core/gate.mjs",
+      "target": "lib/core/gate.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "bb32bcda98eaf0c233994f4c28c4f758fcff44f39b4e78815fc747e506597813"
+    },
+    {
+      "source": "lib/core/goal-revision.mjs",
+      "target": "lib/core/goal-revision.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "6d4a7acecba3ae66063db21544c86bdcf3d5b0c9e3837077113433c91ee4bef8"
+    },
+    {
       "source": "lib/core/intent-consent.mjs",
       "target": "lib/core/intent-consent.mjs",
       "ownership": "managed",
@@ -286,6 +454,27 @@
       "ownership": "managed",
       "state": "managed",
       "hash": "7206d8a3131151efda6b9d410e031c18eeb0c27ddadab674225a7fe776472d74"
+    },
+    {
+      "source": "lib/core/phase-graph.mjs",
+      "target": "lib/core/phase-graph.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "77b91e81f710c7598f15cf751c29a2f47dbd4e5208ad3f68ce90e060656cb041"
+    },
+    {
+      "source": "lib/core/posture.mjs",
+      "target": "lib/core/posture.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "ae65ae9047bf92c388d729069bf12810e881e971606053ced38953614ae04d55"
+    },
+    {
+      "source": "lib/core/process-state.mjs",
+      "target": "lib/core/process-state.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "3b2369d1848da535221664c2ed949ebee98bae93d9171683d48162994693d4c0"
     },
     {
       "source": "lib/core/provider-binding.mjs",
@@ -344,11 +533,67 @@
       "hash": "f09d4e6d1f8ac92f76a6f88c6a3d57601beb3d20bf195a9ebe23bbdad41997e6"
     },
     {
+      "source": "lib/core/work-altitude.mjs",
+      "target": "lib/core/work-altitude.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "ff16d913ee7dd10c42280f71996474fc843dc966c2aa3927e46ef95ba319378a"
+    },
+    {
+      "source": "lib/core/work-projection.mjs",
+      "target": "lib/core/work-projection.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "589b073bfa311540254dbdcc40a008409a282c4b69b9b6f87f77368a53c6dd51"
+    },
+    {
+      "source": "lib/environment.mjs",
+      "target": "lib/environment.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "4dbe322f294f66cc0e9cfd3212a449bbe4700e38ed8a1da0f923285641b6384e"
+    },
+    {
       "source": "lib/execution-targets.mjs",
       "target": "lib/execution-targets.mjs",
       "ownership": "managed",
       "state": "managed",
       "hash": "9f217656c619180a8f3f7217cc42b603d4f83f9833e6368d2ccaa1d9477ca851"
+    },
+    {
+      "source": "lib/init.mjs",
+      "target": "lib/init.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "2949d993853250da9488e1aa29720639edb16392e5d190195cc0adda83e10744"
+    },
+    {
+      "source": "lib/lockfile.mjs",
+      "target": "lib/lockfile.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "611a8bd2c37d8bff31242c4cca5bd7f646e8c891d0d2dd1bb97d39ecfc95c942"
+    },
+    {
+      "source": "lib/observability/bounded-trace-processor.mjs",
+      "target": "lib/observability/bounded-trace-processor.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "047dc8d8799b44ce7d8ae8b9543d37fd02f5d030b73f4cc76b092efb7b06f44f"
+    },
+    {
+      "source": "lib/observability/events.mjs",
+      "target": "lib/observability/events.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "2f7d36f7629493013b3c7299429b4006b50b6eae62c5a1073075cfe52a2de429"
+    },
+    {
+      "source": "lib/observability/local-buffer.mjs",
+      "target": "lib/observability/local-buffer.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "7a1a2ec86c8398facf623334e65305a1b1567f7e582e599d50e373c620eccec1"
     },
     {
       "source": "lib/observability/observer.mjs",
@@ -358,11 +603,186 @@
       "hash": "25da990fbf9a6acea1ae9c9df8838630f18049c338c585fab9fffc3078abb2a9"
     },
     {
+      "source": "lib/observability/otel.mjs",
+      "target": "lib/observability/otel.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "cbfcadf8175f62f01412204e07dcc0ed1cfc9c5cd8cae70d52bd4ddaff8c9492"
+    },
+    {
+      "source": "lib/onboarding/cli.mjs",
+      "target": "lib/onboarding/cli.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "115f660d9c5cc72fbba1eed0841edba0904c345d9d17ae255bc65d380fdb8c08"
+    },
+    {
+      "source": "lib/onboarding/project-reader.mjs",
+      "target": "lib/onboarding/project-reader.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "469b7bac19d639ad9cecfe352fd44e17920225b208abef9f23fc5d42f0961837"
+    },
+    {
+      "source": "lib/onboarding/project-writer.mjs",
+      "target": "lib/onboarding/project-writer.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "d15d6e52b4e6472b46676ef8ab376609834e75d2eeb29529716bd787a17003bb"
+    },
+    {
+      "source": "lib/onboarding/prompt.mjs",
+      "target": "lib/onboarding/prompt.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "e104be878396036572ced0e609ee23a99ee4db2ecd559a3906dc45200dd49a95"
+    },
+    {
+      "source": "lib/onboarding/readiness-report.mjs",
+      "target": "lib/onboarding/readiness-report.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "a600e23ac0d4c8a2404d408068485fd0c5083f981736dd9140e77f9880420435"
+    },
+    {
+      "source": "lib/onboarding/runtime-handoff.mjs",
+      "target": "lib/onboarding/runtime-handoff.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "e632285459f0c52d4019f8e56c71c0f143e63038390c937f761d21cfcfc3be08"
+    },
+    {
+      "source": "lib/onboarding/wizard.mjs",
+      "target": "lib/onboarding/wizard.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "c341bdd13e5b8482ed185bd94a6bc998d52c655a97802287f9b47d8ae5e8d7a0"
+    },
+    {
+      "source": "lib/plugin-manifests.mjs",
+      "target": "lib/plugin-manifests.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "1b53693c1293ed43c7215a41c4432be2d52a7839a33b8c51d458d8ffe1b9217c"
+    },
+    {
+      "source": "lib/providers/catalog.mjs",
+      "target": "lib/providers/catalog.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "3e23372fdf1d9883b1436878df004a7d056ddc9ae2b257d8a980a983a883319c"
+    },
+    {
+      "source": "lib/providers/codex-engineering.mjs",
+      "target": "lib/providers/codex-engineering.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "7c3b2dc118dea0e051d43e192c97d519604d8a638dc7871067a5f468a706f063"
+    },
+    {
+      "source": "lib/providers/engineering-evidence.mjs",
+      "target": "lib/providers/engineering-evidence.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "d3589710f7d24ec99fe76d3ec36d814d4a336ad95668349bc742a57ed07e0ec5"
+    },
+    {
+      "source": "lib/providers/github-delivery-actions.mjs",
+      "target": "lib/providers/github-delivery-actions.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "4c6174c46e87269579a8a6baf6596f0a7b51d243c9647c4199949e578702d3db"
+    },
+    {
+      "source": "lib/providers/github-merge.mjs",
+      "target": "lib/providers/github-merge.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "3860b80f121091be68f803e50d65a25c36b6f8bc754b599774ee9a34d1eae402"
+    },
+    {
+      "source": "lib/providers/governed-engineering.mjs",
+      "target": "lib/providers/governed-engineering.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "05928acff30ebd5174a02fed89367f03d1dd789214f38ba5492b6b84dd1179fe"
+    },
+    {
+      "source": "lib/providers/grok.mjs",
+      "target": "lib/providers/grok.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "61451b5e91077a883e28b8df4c97b4ffcec5e34b5719125425f89e3aca2f5174"
+    },
+    {
+      "source": "lib/providers/harness-dispatch.mjs",
+      "target": "lib/providers/harness-dispatch.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "04eb18361ccc4c89f69568e80734f3fae4bc965c63f1eeecaee40db8cb848307"
+    },
+    {
+      "source": "lib/providers/local-cli.mjs",
+      "target": "lib/providers/local-cli.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "0ea2feb431b42c1b52afde70c6dc53cd75f19a34eb785b45ee5ef467fff9893f"
+    },
+    {
+      "source": "lib/providers/manual.mjs",
+      "target": "lib/providers/manual.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "d1f9f8ff4f6097637905aec789825fefd5731df62433d03f92b68740fcbb086f"
+    },
+    {
+      "source": "lib/providers/provider-api.mjs",
+      "target": "lib/providers/provider-api.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "3ca16c6e5def28774750bdb2f89fb51a4bfde6bfdb51241f8a658824e2a72911"
+    },
+    {
+      "source": "lib/providers/provider-receipt.mjs",
+      "target": "lib/providers/provider-receipt.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "935fd386ce3d05b71d318bb4fc8f94ea1dd20973a2076fd634783a2a68547845"
+    },
+    {
+      "source": "lib/providers/registry.mjs",
+      "target": "lib/providers/registry.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "d7d566c88a64e22f821da4bd175f4a5ca16935fb5e79e885e5f10edc1ef49f8f"
+    },
+    {
+      "source": "lib/providers/writer-status.mjs",
+      "target": "lib/providers/writer-status.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "2a3c7b2fe8201e87f819705dc961a3c347a977aa4e4219551483e22494c4f7a1"
+    },
+    {
+      "source": "lib/role-adapters.mjs",
+      "target": "lib/role-adapters.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "5f06b2c502d0d1643fa19f2bd23e833a486223692d23e46e607ef36fd8f0f3be"
+    },
+    {
       "source": "lib/role-catalog.mjs",
       "target": "lib/role-catalog.mjs",
       "ownership": "managed",
       "state": "managed",
       "hash": "4f79b415e23818fd27da276c65d1be1d87a4b3c4f4a2918ef01863e9d036c291"
+    },
+    {
+      "source": "lib/role-routing.mjs",
+      "target": "lib/role-routing.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "c75294881cf18cc4851b8d61e7c6d3284b60b67940db41ff939c8376b16a61b9"
     },
     {
       "source": "lib/runtime-platforms.mjs",
@@ -372,11 +792,137 @@
       "hash": "b0c029ae435be2176ce326c249c89e84b4380caaaddaa41c84cbada55948f8b6"
     },
     {
+      "source": "lib/runtime/context-sanitizer.mjs",
+      "target": "lib/runtime/context-sanitizer.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "1fb7f4b93e211ea317aa617b452512532dd1d16f422ceaf7a62b06643fde467a"
+    },
+    {
+      "source": "lib/sdlc-state.mjs",
+      "target": "lib/sdlc-state.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "e49ef7daedec67b0ffc7c6086201f4afbe4ee02bdc9be125d7571050d8f3084f"
+    },
+    {
       "source": "lib/sdlc-vocabulary.mjs",
       "target": "lib/sdlc-vocabulary.mjs",
       "ownership": "managed",
       "state": "managed",
       "hash": "277769f8f3ed335447ba36daa3d53fae1fd4b810057a038d6bdbfbfce81e5e54"
+    },
+    {
+      "source": "lib/services/doctor-readers.mjs",
+      "target": "lib/services/doctor-readers.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "620f0bd28b5501a906f1e0ac9dbcb0f2b5336c54dc985f8fc7009688cc19408b"
+    },
+    {
+      "source": "lib/services/doctor-report.mjs",
+      "target": "lib/services/doctor-report.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "24040e8c81aa9b58999bf778214d01e3bbbd7b00a7a147bc1c1c13db76532a41"
+    },
+    {
+      "source": "lib/services/doctor-service.mjs",
+      "target": "lib/services/doctor-service.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "9bd85deef151372401e95c2dbb0e47608d31f67ba5e99db9fd606a06d1757f02"
+    },
+    {
+      "source": "lib/skill-adapters.mjs",
+      "target": "lib/skill-adapters.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "ff68da1f31e4b3f66ff30423c8d68cb2db1307261c27d7b7703ab65a43b5628f"
+    },
+    {
+      "source": "lib/skill-catalog.mjs",
+      "target": "lib/skill-catalog.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "641d515cd51f0b641d102dfc1b8139792b616b83cfdea2e4e0cbda67ac40d446"
+    },
+    {
+      "source": "lib/sources/github-api-cli.mjs",
+      "target": "lib/sources/github-api-cli.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "4303fa61c03d6f284db3de51bc39c99be96f52183b452fb49f5422ddf659a63a"
+    },
+    {
+      "source": "lib/sources/github-run-store.mjs",
+      "target": "lib/sources/github-run-store.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "20d84b3be1ed4862c87fd9f98c8e3e2510dcbf59066a8bbdbe38e1494349fe4a"
+    },
+    {
+      "source": "lib/sources/journaled-run-store.mjs",
+      "target": "lib/sources/journaled-run-store.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "ebf4b851bd88066d5a4bc5dbb08713e0255135d3674f42a5b5aa79f1fd77b187"
+    },
+    {
+      "source": "lib/sources/pending-audit-journal.mjs",
+      "target": "lib/sources/pending-audit-journal.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "1f02422aab6ce32a84b55e91d4b0b4c887efc15a1770bf22f6d04665a2a4424a"
+    },
+    {
+      "source": "lib/sources/run-store.mjs",
+      "target": "lib/sources/run-store.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "41eb3d8cbb9d43f8a505914c905a828fc2b9c67a5fcdd9ec6cf3347ee4b0c480"
+    },
+    {
+      "source": "lib/sources/segmented-run-store.mjs",
+      "target": "lib/sources/segmented-run-store.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "3159ecbe568d1615cef1e1fa94aa8c7a33bd53c07e1565bc09d6f180776fdfab"
+    },
+    {
+      "source": "lib/structural-merge.mjs",
+      "target": "lib/structural-merge.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "f46dccf419ff05bd5bdb3d117088fd33daacfbea7d24b830674cd42ec10e3707"
+    },
+    {
+      "source": "lib/verification/junit-report.mjs",
+      "target": "lib/verification/junit-report.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "504ef09823a3971e54b5cc7837670a106ce31c95d466b731c44c2e2cc4cabff2"
+    },
+    {
+      "source": "lib/verification/observation-resolver.mjs",
+      "target": "lib/verification/observation-resolver.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "ff228f05dc9782088154a8cac104ef3523ab717ac9146fa58699933fa70a1dce"
+    },
+    {
+      "source": "lib/verification/oracle-package-resolver.mjs",
+      "target": "lib/verification/oracle-package-resolver.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "43b3bb937e48956dc5c3da0e47ddc761ac27fc9da5ebbcf0b5c028c96c5ea646"
+    },
+    {
+      "source": "lib/verification/process-collector.mjs",
+      "target": "lib/verification/process-collector.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "bb8fd7926426817cdc3c3236543069c481f7a98d1c76f1b378409906b7f7a2e5"
     },
     {
       "source": "lib/verification/workspace.mjs",
@@ -405,6 +951,20 @@
       "ownership": "managed",
       "state": "managed",
       "hash": "10d4fbaff8dbad761ace569da513da7e8f46465ff786b0937b33f405b8b0dbf2"
+    },
+    {
+      "source": "manifests/runtime-platforms.json",
+      "target": "manifests/runtime-platforms.json",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "ab815064e7d0cfe5eb7a3590832f5aecf5b102e40460c69771545888150f11ba"
+    },
+    {
+      "source": "manifests/skill-catalog.json",
+      "target": "manifests/skill-catalog.json",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "56d0d47fdd71aeebcf882a2a32e1ca6beb2ea35da17140ca3d30350cb4fb33ba"
     },
     {
       "source": "roles/analyst/ROLE.md",
@@ -554,6 +1114,13 @@
       "hash": "dddbdb48f579736a95320bf16accd5de561540e841c09775f764b2bdd37b4eda"
     },
     {
+      "source": "schemas/delivery-config.schema.json",
+      "target": "schemas/delivery-config.schema.json",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "78d0abeb3215ed90ae0fd6707165034f185853e4662548e62fed30c1c2a72ecd"
+    },
+    {
       "source": "schemas/delivery-receipt.schema.json",
       "target": "schemas/delivery-receipt.schema.json",
       "ownership": "managed",
@@ -673,11 +1240,25 @@
       "hash": "3bc7c649cb65546196137c450008e64e0248312aff8517dfee65bab72e035fea"
     },
     {
+      "source": "schemas/runtime-platform-registry.schema.json",
+      "target": "schemas/runtime-platform-registry.schema.json",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "89d0e48732ef0426a796ae8c23a8d0f4b2cab572f1c5f281fb583eae165e2b91"
+    },
+    {
       "source": "schemas/sdlc-config.schema.json",
       "target": "schemas/sdlc-config.schema.json",
       "ownership": "managed",
       "state": "managed",
       "hash": "d2559526f3d5b4cebaf695ccb210558604045cabb21ce1b3912df954d3d9220b"
+    },
+    {
+      "source": "schemas/skill-catalog.schema.json",
+      "target": "schemas/skill-catalog.schema.json",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "55e6dd8cbcf8bcf5c01b444bf358f20faf43d17ceaf1ca6e266e64e12c919f47"
     },
     {
       "source": "schemas/source-adapter.schema.json",
@@ -708,11 +1289,207 @@
       "hash": "f999bba746b31e857a3439b108c2c3c23dda4b6e7011508cdd79f486ae76e314"
     },
     {
+      "source": "scripts/probe-environment.mjs",
+      "target": "scripts/probe-environment.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "4405a1de8626cb97dbd581a66986852dd732eb0a7255b095c202d46516a821a3"
+    },
+    {
+      "source": "scripts/provider-status.mjs",
+      "target": "scripts/provider-status.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "ddda7878844cc7a11176ba75a55fa5eca6499a932059034790db17399bd12409"
+    },
+    {
+      "source": "scripts/role-collaboration-smoke.mjs",
+      "target": "scripts/role-collaboration-smoke.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "c40db89ccda39684045b42348669e1c11c3c65d0e1badc17f878347dc8fd60a0"
+    },
+    {
+      "source": "scripts/role-collaboration.mjs",
+      "target": "scripts/role-collaboration.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "2ed5249eb6ee0d5d536664b4955065920f0c9ee1c9264cd9ba42a8605d16147e"
+    },
+    {
+      "source": "scripts/run-delivery.mjs",
+      "target": "scripts/run-delivery.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "1d5ec72e986c60e456f156ff5bda5fd8e7346291e0a319b868510e23b96ed456"
+    },
+    {
+      "source": "scripts/validate-path-ownership.mjs",
+      "target": "scripts/validate-path-ownership.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "0dacb709deb784abca3c1f1e88c3fd60601c8ac7ac0c11e38f2c5c03becf9835"
+    },
+    {
+      "source": "scripts/validate-role-catalog.mjs",
+      "target": "scripts/validate-role-catalog.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "772342be227197fe99905a47abd0ef18582c70e8bdeb745a1075f770733ab5aa"
+    },
+    {
+      "source": "scripts/validate-skill-catalog.mjs",
+      "target": "scripts/validate-skill-catalog.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "3e1c70fcb383452dbf15eb38e34b59bc7222fdc367d44e0cffb46bc81c87dd90"
+    },
+    {
       "source": "defaults/sdlc.config.json",
       "target": "sdlc.config.json",
       "ownership": "seed-once",
       "state": "managed",
       "hash": "33b14f6371e55c022dccca785993d6d322ce2b291f3c2eef82c8ab9ef65c7c8d"
+    },
+    {
+      "source": "skills/agentflow-auditor/references/workflow-compliance.md",
+      "target": "skills/agentflow-auditor/references/workflow-compliance.md",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "61c72c28fb7bd2e09db3058870fb7e7453ce5edff4d750178d4c2053225d92fd"
+    },
+    {
+      "source": "skills/agentflow-auditor/SKILL.md",
+      "target": "skills/agentflow-auditor/SKILL.md",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "52a5294ac51faa152ff8c5f12fe1288fdd7a3f22756bc7a595dad92ff3baea9f"
+    },
+    {
+      "source": "skills/agentflow-collaborator/references/bounded-environments.md",
+      "target": "skills/agentflow-collaborator/references/bounded-environments.md",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "c5228d2f9af4d0de53add5749e1404614865e1d1c1cc3fb84d2a49e5ee5cab06"
+    },
+    {
+      "source": "skills/agentflow-collaborator/references/collaboration-modes.md",
+      "target": "skills/agentflow-collaborator/references/collaboration-modes.md",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "ae01486e528c4f6446b7a697933e68c0891db08dbe524b9539c0bfad7e9fb725"
+    },
+    {
+      "source": "skills/agentflow-collaborator/SKILL.md",
+      "target": "skills/agentflow-collaborator/SKILL.md",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "3895d313da96e4c0accd29d6aeab800afaad2e407621cd9176e95465de29c75d"
+    },
+    {
+      "source": "skills/agentflow-designer/references/definition-completeness.md",
+      "target": "skills/agentflow-designer/references/definition-completeness.md",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "2368972dcf4f9ee36574b9a61db3f04b7fa0f929a8d87d162e32f91c05d663e6"
+    },
+    {
+      "source": "skills/agentflow-designer/SKILL.md",
+      "target": "skills/agentflow-designer/SKILL.md",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "dc820914f0ae144a27ddc846e0c792fbe2f740f7f7a91ab97d9b63db4792a004"
+    },
+    {
+      "source": "skills/agentflow-maintainer/SKILL.md",
+      "target": "skills/agentflow-maintainer/SKILL.md",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "8387bd852ecd6bc1c90880df0ce00ff3261146d5b842d0cdc7b62c16daea32ec"
+    },
+    {
+      "source": "skills/agentflow-migrator/references/preflight.md",
+      "target": "skills/agentflow-migrator/references/preflight.md",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "c6068fc3984a2493c8011ec5394c76de2f692b86be1144d0a0f490342b8152dd"
+    },
+    {
+      "source": "skills/agentflow-migrator/SKILL.md",
+      "target": "skills/agentflow-migrator/SKILL.md",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "6eb0823fa1e73d2f9fcb30b13bab026968098f7d2c824d3ff2b380d6ebb406ce"
+    },
+    {
+      "source": "skills/agentflow-orchestrator/SKILL.md",
+      "target": "skills/agentflow-orchestrator/SKILL.md",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "294ae129ec197477855dbb30e30e7e6c28fddb480e3b03f5c33927c878f823cd"
+    },
+    {
+      "source": "skills/agentflow-scanner/SKILL.md",
+      "target": "skills/agentflow-scanner/SKILL.md",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "05489aef1fe8b4d779c9e822bddf36dcb9481beb46d40a923bb531d6aaa92f81"
+    },
+    {
+      "source": "skills/agentflow-steerer/assets/steer-state.yaml",
+      "target": "skills/agentflow-steerer/assets/steer-state.yaml",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "6cbc12d6894cd63246a57009d3cb85cf0325b05c202f7671b8fa6b8f580c43c7"
+    },
+    {
+      "source": "skills/agentflow-steerer/references/adapter-github.md",
+      "target": "skills/agentflow-steerer/references/adapter-github.md",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "8550ba4514bb4147ab99eb757cf249a634b956ac0de8eb3f81f4cf6d3f6dacfb"
+    },
+    {
+      "source": "skills/agentflow-steerer/references/adapter-openrig.md",
+      "target": "skills/agentflow-steerer/references/adapter-openrig.md",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "8bcbfe29e08737168ad15c0a280100291a86301ab2c80499b751670e13b583d6"
+    },
+    {
+      "source": "skills/agentflow-steerer/references/adapter-tmux.md",
+      "target": "skills/agentflow-steerer/references/adapter-tmux.md",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "d96fdb7e0a6d4319af042cc0ae152131f5d83c6ad4d1ad05c53dcd712cc3d128"
+    },
+    {
+      "source": "skills/agentflow-steerer/references/envelope.md",
+      "target": "skills/agentflow-steerer/references/envelope.md",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "035bcfbd827e7260faf20ed752e1974a4de16f8b140628981816048931741024"
+    },
+    {
+      "source": "skills/agentflow-steerer/references/heartbeat.md",
+      "target": "skills/agentflow-steerer/references/heartbeat.md",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "b0cef02680516c86898a0869b3c7f4748a888cd4a8080cf90db42e143a8517fa"
+    },
+    {
+      "source": "skills/agentflow-steerer/references/seam-rules.md",
+      "target": "skills/agentflow-steerer/references/seam-rules.md",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "f9d83f3a0ada23999436d81c9aa34ce2425b35f592f787662817e41e5e389521"
+    },
+    {
+      "source": "skills/agentflow-steerer/SKILL.md",
+      "target": "skills/agentflow-steerer/SKILL.md",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "daf4cbe264544d5bb068c1219e8825a7c4fc6dd7ef1a047083aca72c4bbc6430"
     }
   ]
 }
