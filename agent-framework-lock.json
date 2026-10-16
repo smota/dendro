@@ -5,7 +5,7 @@
     "name": "agentflow-sdlc",
     "version": "1.10.0"
   },
-  "planToken": "ff395bd281af2b56638868838ba414603cdcf5d5d162449f4eddcc9b9c8dc656",
+  "planToken": "ae34da746321e6edf54d0fdae2ef652a29e4c7cd5183e33d371cbfdb54fb960b",
   "entries": [
     {
       "source": "adapters/openrig/incident-evidence.mjs",
@@ -19,7 +19,7 @@
       "target": "adapters/openrig/platform-fallback.mjs",
       "ownership": "managed",
       "state": "managed",
-      "hash": "eecf88b83597d8b88ef729b52b4f3edfde79f48a601ca2e314fbadde91aabc1e"
+      "hash": "385cae0e87244d444d203bada10b7bb8e1e6c1e41295124ac61a20ea0174dcef"
     },
     {
       "source": "adapters/openrig/recovery.mjs",
@@ -33,14 +33,14 @@
       "target": "agent-workflow.config.json",
       "ownership": "seed-once",
       "state": "managed",
-      "hash": "338ef9e30f5e265259fc78628859f5648e2cd18e25caf97e770f4a832a4cb3e7"
+      "hash": "8ff93b17b6df6371b7cfc29571404579acef654a65fb820fde3b6c4051b385d0"
     },
     {
       "source": "defaults/AGENTS.md",
       "target": "AGENTS.md",
       "ownership": "seed-once",
       "state": "managed",
-      "hash": "c60083bdc148ee12192f179e340f946326a0b59b45bd32eef0654f9e121a1de8"
+      "hash": "4ecb1380c0fa2fbd7de07f33ace1fd159d12addf39cd59ea0e0cc3bbcc2ad02b"
     },
     {
       "source": "docs/adopters/index.md",
@@ -97,6 +97,13 @@
       "ownership": "managed",
       "state": "managed",
       "hash": "299b9a44454abc58453ef9e1536f2351628222becabe00f98b71ff07a2646180"
+    },
+    {
+      "source": "docs/execution-distributions.md",
+      "target": "docs/execution-distributions.md",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "48e3966c603341346732a470bb62e98dc8a65acc629dccee7b30c7fb48f2cd8a"
     },
     {
       "source": "docs/intelligent-collaboration.md",
@@ -292,7 +299,21 @@
       "target": "lib/config/authority.mjs",
       "ownership": "managed",
       "state": "managed",
-      "hash": "099bd262ad392420c89e359163fa31fa6dfbf739eefdbdfab139ac4a9e5b3834"
+      "hash": "9d26c17a0dbd84e40835250dcabcddf16261b091b8fc781dc4cbe8a68c90c26f"
+    },
+    {
+      "source": "lib/config/distribution-change.mjs",
+      "target": "lib/config/distribution-change.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "bd728d218e37c1e36c8f7039295cee2e9132dcb1d1530d1d6eaecf8850ac76ba"
+    },
+    {
+      "source": "lib/config/distribution-cli.mjs",
+      "target": "lib/config/distribution-cli.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "65481dfea42cbc6f62e639604b16bf10752a6d6d9973e0b4d3edd1adffd54369"
     },
     {
       "source": "lib/config/execution-defaults.mjs",
@@ -300,6 +321,13 @@
       "ownership": "managed",
       "state": "managed",
       "hash": "4fb21c796dface5a40d91d18638f38e540f6e76a4e2b1c09991faa5288fbf0bd"
+    },
+    {
+      "source": "lib/config/execution-distribution.mjs",
+      "target": "lib/config/execution-distribution.mjs",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "dfa326e1991ea8431e98a5d488b5040f290f5b024fb23663c8e85a7a504aaa30"
     },
     {
       "source": "lib/config/harness-defaults.mjs",
@@ -754,7 +782,7 @@
       "target": "lib/role-routing.mjs",
       "ownership": "managed",
       "state": "managed",
-      "hash": "71d0eda80a624d075d7d60ebcf2b06f660dcf5b3b4b7a689b1050e83909de522"
+      "hash": "c75294881cf18cc4851b8d61e7c6d3284b60b67940db41ff939c8376b16a61b9"
     },
     {
       "source": "lib/runtime-platforms.mjs",
@@ -902,6 +930,13 @@
       "ownership": "managed",
       "state": "managed",
       "hash": "186b82f8cf77c462dd1fa171078fc6b33a657ee05753fec336fbbabc1264e403"
+    },
+    {
+      "source": "manifests/execution-distributions/subscription-balanced-v1.json",
+      "target": "manifests/execution-distributions/subscription-balanced-v1.json",
+      "ownership": "managed",
+      "state": "managed",
+      "hash": "ee1d0738de7d20a056ec64e5de8c4e1d41a63a8b01d06ff4172d2976642f3504"
     },
     {
       "source": "manifests/method-catalog.json",
@@ -1454,7 +1489,7 @@
       "target": "skills/agentflow-steerer/SKILL.md",
       "ownership": "managed",
       "state": "managed",
-      "hash": "68dcd23fbdc73d6dd66e6fb49e65b6837b4aaffee583fb140456fa84791f464a"
+      "hash": "daf4cbe264544d5bb068c1219e8825a7c4fc6dd7ef1a047083aca72c4bbc6430"
     }
   ]
 }

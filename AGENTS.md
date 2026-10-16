@@ -6,6 +6,17 @@ Every agent operating in this repository (Claude, Codex, Grok, Pi, AGY) must adh
 
 ---
 
+## Execution distribution
+
+Before selecting models, routing, expanding seats, recovering or upgrading, run
+`agentflow-sdlc distribution inspect --target <project> --json` and use the project's pinned
+`executionDistribution`. [The shared contract](docs/execution-distributions.md) owns model,
+effort, client and two ordered fallbacks. Software upgrades, calibration and quota recovery
+preserve that selection and explicit overrides. A policy migration requires its own before/after
+preview and explicit person authorization. Temporary fallbacks leave defaults unchanged; actual
+execution remains unknown until observed. Preserve the backlog pause, review/publication gates
+and existing run/custody history.
+
 ## 1. Project Context & Mission
 
 Dendro is a local-first AI Fleet Intelligence engine for multi-agent fleets, written in **Rust**. Operational Intelligence is the evidence layer. Fleet Governance stays with the operator.
@@ -22,7 +33,7 @@ Dendro is a local-first AI Fleet Intelligence engine for multi-agent fleets, wri
 - **Authority:** `sdlc.config.json` defines review and action boundaries; `agent-workflow.config.json` defines workflow routing. Autonomous execution preserves their human and publication gates. High-assurance work requires human approval; external actions do not gain authority from a model route or role name.
 - **Independent review:** Preserve the configured no-self-review policy. A builder, oracle author, tester and reviewer have distinct action boundaries. Optional test engineering requires its own task authority and protected-path checks.
 - **Routing:** Single-agent workflow routing describes logical role execution, not proof of a particular live fleet. Desired runtime/provider/model/effort/profile contracts are previewed from the canonical configuration and checked against actual execution before work admission.
-- **Adoption hold:** The backlog remains paused; `executionPolicy.activation: held` blocks squad materialization. Proposed Munito Qwen builder routing is held pending meaningful coding/tool calibration, supported actual-route observation, and verified task custody. Model inventory or a small extraction calibration does not authorize implementation.
+- **Adoption hold:** The feature backlog remains paused and `executionPolicy.activation: held` preserves work-admission holds. The pinned subscription-balanced distribution favors Gemini in its normal defaults; exhausted quota selects only an eligible temporary fallback at a safe checkpoint. Munito calibration does not authorize a default or fallback migration.
 - **Continuity:** Recover existing run/epoch/fence, oracle digests, queue custody and publication holds from authoritative records. Local-preview configuration with empty candidate inputs does not recreate historical G2 state.
 - **External steering:** Verify the authenticated decision owner and return route. Naming `steer.lead`, observing a heartbeat, or starting a local seat grants no approval power.
 - **Verification:** Preserve Rust checks and reproducible evidence. Source changes are separate from installed profiles/hooks and live runtime adoption.

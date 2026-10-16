@@ -1,3 +1,4 @@
+import { selectDistributionRoute } from '../../lib/config/execution-distribution.mjs'
 import {
   CAPABILITY_TIER_RANK,
   validateFourEyesIndependence,
@@ -26,6 +27,9 @@ export function resolveTwoLevelFallback({
   tierMatrix = null,
   config = {},
   bundleConfig = {},
+  availability = [],
+  excludedFamilies = [],
+  now = Date.now(),
 } = {}) {
   if (
     !atPhaseBoundary &&
@@ -36,6 +40,29 @@ export function resolveTwoLevelFallback({
     throw new Error(
       'MID_PHASE_PLATFORM_SWITCH_DENIED: platform fallback switches are only allowed at phase boundaries',
     )
+  }
+
+  const selection = config.executionDistribution ?? bundleConfig.distribution
+  if (selection) {
+    if (!atPhaseBoundary) {
+      return { ok: false, status: 'DISTRIBUTION_PHASE_BOUNDARY_REQUIRED', effects: [] }
+    }
+    const proposal = selectDistributionRoute({
+      selection,
+      role: seat,
+      availability,
+      excludedFamilies,
+      now,
+    })
+    return {
+      ...proposal,
+      ok: false,
+      proposalOnly: true,
+      desiredExecution: proposal.selected,
+      status: proposal.selected
+        ? 'DISTRIBUTION_PROPOSAL_REQUIRES_ADMISSION'
+        : 'DISTRIBUTION_AVAILABILITY_UNKNOWN',
+    }
   }
 
   const tier = capabilityTier ?? SEAT_DEFAULT_TIER[seat] ?? 'balanced'
@@ -80,7 +107,18 @@ export function resolveFourEyesReviewerTarget({
   reviewerTier = null,
   platformChains = DEFAULT_PLATFORM_CHAINS,
   tierMatrix = DEFAULT_TIER_MODEL_MATRIX,
+  config = {},
+  bundleConfig = {},
 } = {}) {
+  if (config.executionDistribution ?? bundleConfig.distribution) {
+    return {
+      ok: false,
+      status: 'DISTRIBUTION_REVIEW_ADMISSION_REQUIRED',
+      reason:
+        'Pinned distribution review requires observed independent execution and tier evidence',
+      effects: [],
+    }
+  }
   const builderTier = builderReceipt?.metadata?.capabilityTier ?? 'balanced'
   const minRank = Math.max(
     CAPABILITY_TIER_RANK[builderTier] ?? 1,

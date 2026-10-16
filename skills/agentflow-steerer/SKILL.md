@@ -39,6 +39,19 @@ The full cognitive model is below. For supporting methodology, consult
 skill directory. That reference supplies background, not additional action authority. Use local
 accepted records and supplied evidence; the playbook requires no runtime URL loading.
 
+## Resolve steering execution policy
+
+When starting steering or changing its execution settings, run
+`agentflow-sdlc distribution inspect --target <project> --json` and resolve `steer.lead` from
+the pinned profile and explicit project overrides. Present the default, both fallbacks, efforts
+and clients; reuse already confirmed settings. Missing selection or conflicting legacy seat maps
+requires a `distribution plan` preview and a specific person decision before `distribution apply`.
+Calibration results and a software-upgrade instruction preserve the selected distribution.
+Quota pressure selects only an eligible approved fallback, with the work checkpointed and
+independence/custody preserved; it does not edit policy. Keep actual execution unknown until
+observed. See `docs/execution-distributions.md` in the adopting project. Guided parameter UX
+and automatic quota monitoring remain separately tracked in #534 and #535.
+
 ## Grooming protocol
 
 Work through these steps in order. Keep accepted promises separate from proposed changes.
