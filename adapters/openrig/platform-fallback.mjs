@@ -1,5 +1,17 @@
 import { selectDistributionRoute } from '../../lib/config/execution-distribution.mjs'
 import {
+  evaluateSeatQuotaControl,
+  resolveQuotaControlPolicy,
+  classifyQuotaObservation,
+  QUOTA_COVERAGE_DISCLOSURE,
+} from '../../lib/config/quota-policy.mjs'
+export {
+  evaluateSeatQuotaControl,
+  resolveQuotaControlPolicy,
+  classifyQuotaObservation,
+  QUOTA_COVERAGE_DISCLOSURE,
+}
+import {
   CAPABILITY_TIER_RANK,
   validateFourEyesIndependence,
 } from '../../lib/core/execution-receipt.mjs'

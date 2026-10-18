@@ -67,7 +67,35 @@ The shared selector supports excluded provider families for independent review. 
 falls back to OpenAI, exclude OpenAI from the reviewer options as required by the task contract.
 Changing Gemini models on the same subscription does not create an independent quota pool.
 After verified recovery, return to the preferred route at a safe checkpoint. Never rewrite the
-saved policy to explain a transient quota event. Automatic monitoring belongs to goal #535.
+saved policy to explain a transient quota event.
+
+## Optional quota checkpoints and fallback
+
+Quota control defaults off (`quotaControl.enabled: false`). When a person explicitly enables
+`quotaControl` in workflow configuration (or evaluates it via `agentflow-sdlc distribution quota`),
+monitoring supports `weekly` and `five-hour` quota windows (`thresholdRemainingPct: 25` by default,
+using a `most-restrictive` rule when both windows are configured).
+
+```bash
+agentflow-sdlc distribution quota --target /path/to/project --json
+agentflow-sdlc distribution quota --enable --window weekly --window five-hour --threshold 25 --observations quota.json --seat dev.build --json
+```
+
+Observations are classified as `supported` (direct provider/rate-limit header evidence),
+`approximate` (local quota ledger estimate), `stale` (expired or out-of-window), or `unavailable`
+(missing or unsupported). Context-window token consumption (`context-tokens`, `context-window`) and
+transcript wording (`transcript-text`, `transcript`) are explicitly rejected as quota evidence.
+Missing, stale, or unsupported observations hold quota-driven switching (`hold-unverified-quota`)
+rather than guessing or treating unknown quota as healthy.
+
+When remaining quota crosses the configured threshold (`< thresholdRemainingPct`), an active seat
+must first reach a safe checkpoint (`QUOTA_THRESHOLD_REACH_CHECKPOINT`) before any fallback route
+is selected. At a safe checkpoint, `evaluateSeatQuotaControl` marks the exhausted subscription budget
+as unavailable so models sharing the same subscription pool are never treated as independent quota,
+preserves `excludedFamilies` for four-eyes reviewer independence, and preserves seat ownership,
+`taskId`, `worktree`, `oracleCustodyDigest`, and `artifactDigests`. If no eligible fallback exists or
+cooldown/switch-count/concurrent-writer guards trigger, the seat parks cleanly at the checkpoint
+(`park-and-checkpoint`) without mutating saved policy or granting publication authority.
 
 ## Generated projections and compatibility
 
