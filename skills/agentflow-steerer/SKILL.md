@@ -39,18 +39,44 @@ The full cognitive model is below. For supporting methodology, consult
 skill directory. That reference supplies background, not additional action authority. Use local
 accepted records and supplied evidence; the playbook requires no runtime URL loading.
 
-## Resolve steering execution policy
+## Resolve steering execution policy and operating agreement
 
-When starting steering or changing its execution settings, run
-`agentflow-sdlc distribution inspect --target <project> --json` and resolve `steer.lead` from
-the pinned profile and explicit project overrides. Present the default, both fallbacks, efforts
-and clients; reuse already confirmed settings. Missing selection or conflicting legacy seat maps
-requires a `distribution plan` preview and a specific person decision before `distribution apply`.
-Calibration results and a software-upgrade instruction preserve the selected distribution.
-Quota pressure selects only an eligible approved fallback, with the work checkpointed and
-independence/custody preserved; it does not edit policy. Keep actual execution unknown until
-observed. See `docs/execution-distributions.md` in the adopting project. Guided parameter UX
-and automatic quota monitoring remain separately tracked in #534 and #535.
+When starting steering or changing its operating settings, run:
+
+```bash
+agentflow-sdlc steer setup --inspect --target <project> --json
+```
+
+`steer setup` resolves `steer.lead` from the pinned `executionDistribution` profile and explicit
+project overrides (`agentflow-sdlc distribution inspect --target <project> --json`), inspects existing
+workflow and domain configuration (`agent-workflow.config.json` / `sdlc.config.json`), reuses valid
+already-confirmed steering parameters (`reusedConfirmedAgreement: true`), asks bounded questions when
+`executionDistribution` or `goalScope` is missing, and presents resolved defaults for `steeringOwner`,
+`returnRoute`, `reviewAndPublicationAuthority`, `quotaPolicy`, and `checkpointsAndStopConditions` so
+the complete operating agreement requires one explicit digest confirmation.
+
+When parameters are unconfirmed or changed, preview and persist the explicit operating agreement:
+
+```bash
+agentflow-sdlc steer setup --plan --goal <scope> --owner <identity> --return-route <seat> --json > .agent-runs/steer-plan.json
+agentflow-sdlc steer setup --apply --plan-file .agent-runs/steer-plan.json --confirm <digest> --json
+```
+
+Missing distribution selection or conflicting legacy seat maps require a `distribution plan` preview
+and a specific person decision before `distribution apply`. Calibration results and a software-upgrade
+instruction preserve the selected distribution. Quota pressure selects only an eligible approved
+fallback (`approved-fallback-only`) or parks work (`park-and-checkpoint`), with the work checkpointed
+and independence/custody preserved; it does not edit policy. Keep actual execution unknown until
+observed.
+
+**Enforcement limits disclosure:** `steer-guard` blocks direct file edits and git mutations, not
+`agentflow-sdlc steer setup --apply`. Conversational confirmation and `steer setup --apply` record
+operating preferences and resolved parameters only. They never authenticate a host steering endpoint,
+never satisfy `evaluateSteeringBinding` or `evaluateMergeReadiness`, and never grant merge, unfreeze,
+or publication authority. Prose guidance in skills and culture documents is advisory; runtime gates
+enforce authority and readiness independently. Optional quota checkpoints (`quotaControl.enabled: false`
+by default) can be inspected or evaluated via `agentflow-sdlc distribution quota --target <project> --json`.
+See `docs/execution-distributions.md` and `docs/steering-merge-authority.md` in the adopting project.
 
 ## Grooming protocol
 
