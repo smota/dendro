@@ -2283,7 +2283,7 @@ mod tests {
                     10,
                     "old-sha",
                     Some(&old_counters),
-                    &[usage.clone()],
+                    std::slice::from_ref(&usage),
                     &old_tools,
                     &[],
                 )

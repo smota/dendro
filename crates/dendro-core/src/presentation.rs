@@ -598,48 +598,84 @@ pub fn offline_html(report: &Value) -> Result<String> {
         1,
     ))
 }
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn export_scrubs_serialized_bytes_and_keeps_numeric_values() {
-        let r = json!({"payload":{"product":"sk-private","from":"2026-01-01T00:00:00Z","to":"2026-01-02T00:00:00Z","tokens":42,"m1_by_seat":[{"seat":"</script><script>alert(1)</script>ghp_canary","tokens":42,"source_key":"/private/path"}],"metadata":"secretcanary","activity_events":[{"seat":"</script><script>alert(1)</script>ghp_canary","ts":"2026-01-01T00:00:00Z","state":"running"}]}});
-        let h = offline_html(&r).unwrap();
-        assert!(!h.contains("ghp_canary"));
-        assert!(!h.contains("secretcanary"));
-        assert!(!h.contains("/private/path"));
-        assert!(!h.contains("alert(1)"));
-        let p = public_projection(&r);
-        assert_eq!(p["payload"]["tokens"], 42);
-        assert_eq!(
-            p["payload"]["m1_by_seat"][0]["seat"],
-            p["payload"]["activity_events"][0]["seat"]
-        );
+fn detail_json(value: &Value) -> Result<String> {
+    let mut out = String::new();
+    for ch in crate::redact(&serde_json::to_string_pretty(value)?).chars() {
+        if ch != '\n' && ch.is_control() {
+            use std::fmt::Write as _;
+            let _ = write!(out, "\\u{:04x}", ch as u32);
+        } else {
+            out.push(ch);
+        }
     }
-    #[test]
-    fn unknown_zero_and_percentages_remain_distinct() {
-        let r = json!({"metric":"decisions","payload":{"m2_return_rate":0.5,"m1_yield":null,"tokens":0,"m1_by_seat":[{"seat":"abc\u{1b}[2J","tokens":0}]}});
-        let text = human(&r, true);
-        assert!(text.contains("50.0%"));
-        assert!(text.contains("Unavailable"));
-        assert!(!text.contains('\u{1b}'));
-        assert!(text.contains("| Recorded tokens | 0 |"));
+    Ok(out)
+}
+
+#[derive(Default)]
+struct UiState {
+    panel: usize,
+    selected: usize,
+    detail: Option<String>,
+    escape: u8,
+}
+
+fn step_ui_key(state: &mut UiState, byte: u8, report: &Value, traces: &[Value]) -> Result<bool> {
+    match byte {
+        b'q' | 3 | 4 => return Ok(false),
+        27 => state.escape = 1,
+        b'[' if state.escape == 1 => state.escape = 2,
+        b'C' if state.escape == 2 => {
+            state.panel = (state.panel + 1) % 3;
+            state.detail = None;
+            state.escape = 0;
+        }
+        b'D' if state.escape == 2 => {
+            state.panel = (state.panel + 2) % 3;
+            state.detail = None;
+            state.escape = 0;
+        }
+        b'A' if state.escape == 2 => {
+            state.selected = state.selected.saturating_sub(1);
+            state.detail = None;
+            state.escape = 0;
+        }
+        b'B' if state.escape == 2 => {
+            state.selected = (state.selected + 1).min(
+                rows(&report["payload"]["activity"])
+                    .count()
+                    .saturating_sub(1),
+            );
+            state.detail = None;
+            state.escape = 0;
+        }
+        b'\t' => {
+            state.panel = (state.panel + 1) % 3;
+            state.detail = None;
+            state.escape = 0;
+        }
+        b'1'..=b'3' => {
+            let i = (byte - b'1') as usize;
+            state.detail = Some(format!(
+                "Forensic trace {} (cached at this observation window)\n{}\nTab or arrows to return; q quit",
+                i + 1,
+                detail_json(traces.get(i).unwrap_or(&Value::Null))?
+            ));
+            state.escape = 0;
+        }
+        b'\r' | b'\n' => {
+            state.detail = Some(format!(
+                "Seat evidence (cached)\n{}\nTab to return",
+                detail_json(
+                    rows(&report["payload"]["activity"])
+                        .nth(state.selected)
+                        .unwrap_or(&Value::Null)
+                )?
+            ));
+            state.escape = 0;
+        }
+        _ => state.escape = 0,
     }
-    #[test]
-    fn human_markdown_keeps_large_integer_precision_and_escapes_native_html() {
-        let r = json!({"metric":"decisions","payload":{"tokens":9007199254740993u64,"m1_by_seat":[{"seat":"<img src=x onerror=alert(1)>","tokens":9007199254740993u64}]}});
-        let out = human(&r, true);
-        assert!(out.contains("9007199254740993"));
-        assert!(!out.contains("<img"));
-        assert!(out.contains("&lt;img"));
-    }
-    #[test]
-    fn aggregate_graphs_and_unknown_panels_do_not_invent_observations() {
-        let r = json!({"payload":{"activity":[{"seat":"a","observed_secs":100,"unknown_secs":100}],"fleet_concurrency":{"histogram":[{"active_seats":0,"secs":100}]}}});
-        assert!(viz(&r).contains("not a temporal ribbon"));
-        assert!(explorer(&r, 0, 0).contains("????????"));
-        assert!(trailing_window(2).is_err());
-    }
+    Ok(true)
 }
 
 /// Terminal mode is restored on normal exit and errors. Ctrl-C is read as a key.
@@ -684,13 +720,10 @@ pub fn terminal_ui(report: &Value, traces: &[Value], once: bool) -> Result<()> {
     }
     print!("\x1b[?1049h");
     let mut input = std::io::stdin().lock();
-    let mut panel = 0usize;
-    let mut selected = 0usize;
-    let mut detail = None;
-    let mut escape = 0;
+    let mut state = UiState::default();
     loop {
-        let rendered = explorer(report, panel, selected);
-        let text: &str = detail.as_deref().unwrap_or(&rendered);
+        let rendered = explorer(report, state.panel, state.selected);
+        let text: &str = state.detail.as_deref().unwrap_or(&rendered);
         println!("\x1b[H\x1b[2J{text}");
         std::io::stdout().flush()?;
         let mut byte = [0];
@@ -702,55 +735,81 @@ pub fn terminal_ui(report: &Value, traces: &[Value], once: bool) -> Result<()> {
                 break;
             }
         }
-        match byte[0] {
-            b'q' | 3 | 4 => break,
-            27 => escape = 1,
-            b'[' if escape == 1 => escape = 2,
-            b'C' if escape == 2 => {
-                panel = (panel + 1) % 3;
-                detail = None;
-                escape = 0;
-            }
-            b'D' if escape == 2 => {
-                panel = (panel + 2) % 3;
-                detail = None;
-                escape = 0;
-            }
-            b'A' if escape == 2 => {
-                selected = selected.saturating_sub(1);
-                detail = None;
-                escape = 0;
-            }
-            b'B' if escape == 2 => {
-                selected = (selected + 1).min(
-                    rows(&report["payload"]["activity"])
-                        .count()
-                        .saturating_sub(1),
-                );
-                detail = None;
-                escape = 0;
-            }
-            b'\t' => {
-                panel = (panel + 1) % 3;
-                detail = None;
-            }
-            b'1'..=b'3' => {
-                let i = (byte[0] - b'1') as usize;
-                detail=Some(format!("Forensic trace {} (cached at this observation window)\n{}\nTab or arrows to return; q quit",i+1,crate::redact(&serde_json::to_string_pretty(traces.get(i).unwrap_or(&Value::Null))?)));
-            }
-            b'\r' | b'\n' => {
-                detail = Some(format!(
-                    "Seat evidence (cached)\n{}\nTab to return",
-                    crate::redact(&serde_json::to_string_pretty(
-                        rows(&report["payload"]["activity"])
-                            .nth(selected)
-                            .unwrap_or(&Value::Null)
-                    )?)
-                ));
-            }
-            _ => escape = 0,
+        if !step_ui_key(&mut state, byte[0], report, traces)? {
+            break;
         }
     }
     drop(restore);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn export_scrubs_serialized_bytes_and_keeps_numeric_values() {
+        let r = json!({"payload":{"product":"sk-private","from":"2026-01-01T00:00:00Z","to":"2026-01-02T00:00:00Z","tokens":42,"m1_by_seat":[{"seat":"</script><script>alert(1)</script>ghp_canary","tokens":42,"source_key":"/private/path"}],"metadata":"secretcanary","activity_events":[{"seat":"</script><script>alert(1)</script>ghp_canary","ts":"2026-01-01T00:00:00Z","state":"running"}]}});
+        let h = offline_html(&r).unwrap();
+        assert!(!h.contains("ghp_canary"));
+        assert!(!h.contains("secretcanary"));
+        assert!(!h.contains("/private/path"));
+        assert!(!h.contains("alert(1)"));
+        let p = public_projection(&r);
+        assert_eq!(p["payload"]["tokens"], 42);
+        assert_eq!(
+            p["payload"]["m1_by_seat"][0]["seat"],
+            p["payload"]["activity_events"][0]["seat"]
+        );
+    }
+    #[test]
+    fn unknown_zero_and_percentages_remain_distinct() {
+        let r = json!({"metric":"decisions","payload":{"m2_return_rate":0.5,"m1_yield":null,"tokens":0,"m1_by_seat":[{"seat":"abc\u{1b}[2J","tokens":0}]}});
+        let text = human(&r, true);
+        assert!(text.contains("50.0%"));
+        assert!(text.contains("Unavailable"));
+        assert!(!text.contains('\u{1b}'));
+        assert!(text.contains("| Recorded tokens | 0 |"));
+    }
+    #[test]
+    fn human_markdown_keeps_large_integer_precision_and_escapes_native_html() {
+        let r = json!({"metric":"decisions","payload":{"tokens":9007199254740993u64,"m1_by_seat":[{"seat":"<img src=x onerror=alert(1)>","tokens":9007199254740993u64}]}});
+        let out = human(&r, true);
+        assert!(out.contains("9007199254740993"));
+        assert!(!out.contains("<img"));
+        assert!(out.contains("&lt;img"));
+    }
+    #[test]
+    fn aggregate_graphs_and_unknown_panels_do_not_invent_observations() {
+        let r = json!({"payload":{"activity":[{"seat":"a","observed_secs":100,"unknown_secs":100}],"fleet_concurrency":{"histogram":[{"active_seats":0,"secs":100}]}}});
+        assert!(viz(&r).contains("not a temporal ribbon"));
+        assert!(explorer(&r, 0, 0).contains("????????"));
+        assert!(trailing_window(2).is_err());
+    }
+    #[test]
+    fn terminal_escape_resets_on_navigation_and_escapes_c1_controls() {
+        let r = json!({"payload":{"activity":[{"seat":"s1\u{009b}2J\u{0085}","observed_secs":10},{"seat":"s2","observed_secs":20}]}});
+        let traces = vec![json!({"note":"trace\u{009b}31m\u{007f}"})];
+        let mut state = UiState::default();
+        for key in *b"\t1\n" {
+            assert!(step_ui_key(&mut state, 27, &r, &traces).unwrap());
+            assert_eq!(state.escape, 1);
+            assert!(step_ui_key(&mut state, key, &r, &traces).unwrap());
+            assert_eq!(state.escape, 0);
+            let panel_before = state.panel;
+            assert!(step_ui_key(&mut state, b'[', &r, &traces).unwrap());
+            assert_eq!(state.escape, 0);
+            assert!(step_ui_key(&mut state, b'C', &r, &traces).unwrap());
+            assert_eq!(state.panel, panel_before);
+        }
+        step_ui_key(&mut state, b'1', &r, &traces).unwrap();
+        let trace_detail = state.detail.as_deref().unwrap();
+        assert!(!trace_detail.chars().any(|c| c != '\n' && c.is_control()));
+        assert!(trace_detail.contains("\\u009b"));
+        assert!(trace_detail.contains("\\u007f"));
+        step_ui_key(&mut state, b'\r', &r, &traces).unwrap();
+        let seat_detail = state.detail.as_deref().unwrap();
+        assert!(!seat_detail.chars().any(|c| c != '\n' && c.is_control()));
+        assert!(seat_detail.contains("\\u009b"));
+        assert!(seat_detail.contains("\\u0085"));
+    }
 }

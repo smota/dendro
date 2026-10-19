@@ -2052,6 +2052,7 @@ mod tests {
         );
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn queue(
         id: &str,
         key: &str,
@@ -2770,6 +2771,7 @@ mod tests {
         assert!(K2_CLOSED_ITEM.contains("zero closed items = no data"));
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn q(
         key: &str,
         id: i64,
