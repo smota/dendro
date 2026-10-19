@@ -2,15 +2,13 @@
 
 This document serves as the authoritative, human-readable index of **Dendro's Multi-Goal Product Backlog**, maintained autonomously under the **AgentFlow SDLC** governance framework.
 
-## Checkpoint — 2026-10-15 (paused by operator)
+## Backlog Fulfillment — 2026-10-19 (delivered on `main`)
 
-The operator requested a tested checkpoint and a pause, then authorized push, merge and cleanup. Delivery is through [PR #58](https://github.com/smota/dendro/pull/58); consult its live status and resume from `main` after merge. **The entire backlog remains incomplete and paused.** No rigs are needed. Use economical direct agents and fresh Claude reviews.
+All Goal 1–Goal 5 backlog slices, post-checkpoint hardening (#59), and Rust 1.98 strict Clippy validation (#66) are delivered on `main` via [PR #56](https://github.com/smota/dendro/pull/56), [PR #57](https://github.com/smota/dendro/pull/57), [PR #58](https://github.com/smota/dendro/pull/58), and [PR #68](https://github.com/smota/dendro/pull/68). All 20 backlog issues and parent epics (#7–#10, #14–#21, #24–#29, #59, #66) are closed with verified receipts.
 
-Checkpoint verification: all four required Rust gates pass (`cargo check/test/clippy --workspace --locked`, Clippy with `-D warnings`, and `cargo fmt --check`). Workspace tests: **373 passed, 0 failed, 1 explicitly ignored real-log corpus test**. Site tests: **14 passed** with the retained native CLI fixture directory. The 5,500-fact benchmark, bounded large-payload regression, 17 portfolio tests, two routing pipeline regressions and nine simulator tests are included. Claude approved the integrated source at `a49188b` with no merge blockers. Exact-head native CLI, portfolio/A6, export, real PTY restoration and semantic QA also passed. Non-blocking hardening observations are tracked in [#59](https://github.com/smota/dendro/issues/59). Local exact commands/logs: `.agent-runs/backlog-completion/checkpoint/`.
+Verification summary: all four required Rust gates pass (`cargo check/test/clippy --workspace --locked`, Clippy with `-D warnings`, and `cargo fmt --check`). Workspace tests: **379 passed, 0 failed, 1 explicitly ignored real-log corpus test** across 22 suites. Site tests: **14 total (13 passed, 1 optional fixture skipped)**. The 5,500-fact benchmark, bounded large-payload regression, portfolio tests (including dangling-symlink `hold_dir` refusal), routing pipeline regressions, legacy semantic sidecar compatibility, failed-export partial file cleanup, terminal UI escape/C1 hygiene, and `dendro simulate topology` CLI + library tests are included. Independent read-only Claude reviews approved both the PR #58 checkpoint (`a49188b` / `c2249ba`) and the PR #68 completion wave (`04cad5b`). Local exact commands/logs: `.agent-runs/backlog-completion/checkpoint/`.
 
-Already on `main`: #12 via [PR #56](https://github.com/smota/dendro/pull/56), and #22/#23 via [PR #57](https://github.com/smota/dendro/pull/57). Remaining issues stay open.
-
-| Stream | Checkpoint content | Remaining acceptance work |
+| Stream | Delivered content | Verification & truthful scope boundary |
 | --- | --- | --- |
 | #19–21 connectors / epic #8 | SDK example, four bounded verified-export adapters, staged/sealed replay; Claude approved connector fixes | Integrated review approved; native private stores/cloud webhooks explicitly unsupported |
 | #26/#15/#25 advisory/governance | Strict parent-backed idle intervals, metric-specific local/opt-in publish drafts, CI assertion exits | Claude approved corrections and integrated source |
@@ -18,8 +16,8 @@ Already on `main`: #12 via [PR #56](https://github.com/smota/dendro/pull/56), an
 | #27 portfolio | Independent DB aggregation, source-local mapping, unknown coverage, B1–B4 hold evidence | Integrated review approved; no live hold/residence or atomic cross-DB snapshot claim |
 | #16–18 / epic #7 | Canonical views, bounded local English intents, safe native Nao workspace; typed materializer | Claude approved semantic/storage source; organic Nao operator/provider roundtrip not performed |
 | #14/#28 terminal/export | Human formats, ANSI distributions, keyboard explorer, offline aliased HTML with actual classified intervals | Integrated review approved; aggregate counts are not temporal or token-transfer evidence |
-| #24 / epic #10 | Pure Rust historical simulator; `dendro simulate topology` CLI wired; focused + CLI tests pass | Observational what-if assumptions only; no causal prediction or live rig mutation claim |
-| #59 / #66 hardening | Legacy semantic sidecar signature, failed-export partial file cleanup, TUI escape/C1 hygiene, dangling-symlink `hold_dir` refusal, Rust 1.98 strict Clippy | Implemented and verified by focused regression tests and strict workspace gates |
+| #24 / epic #10 | Pure Rust historical simulator; `dendro simulate topology` CLI wired (#68); focused + CLI tests pass | Observational what-if assumptions only; no causal prediction or live rig mutation claim |
+| #59 / #66 hardening | Legacy semantic sidecar signature, failed-export partial file cleanup, TUI escape/C1 hygiene, dangling-symlink `hold_dir` refusal, Rust 1.98 strict Clippy (#68) | Implemented, verified by focused regression tests + strict workspace gates, and Claude-approved |
 | Documentation / epic #9 | Truthful commands, calculator assumptions, historical media labels | Delivered (#22, #23, #28) |
 
 A 5,500-fact integrated run exposed ~53GB JSON materialization growth. Its test alone was stopped, and its ~10GB temporary spill was removed while logs were retained; the synthetic DB is disposable and its regression fixture is committed. The replacement uses typed appenders, a 1GB refresh cap and a 5,500-fact + 16MB extension regression under 512MB. Do not reuse the failed run as passing performance evidence. Warm query timings and cold setup are separate; there is no sub-millisecond claim.

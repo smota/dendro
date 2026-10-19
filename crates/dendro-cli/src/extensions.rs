@@ -97,10 +97,10 @@ pub enum SimulateCommand {
         db: PathBuf,
         #[arg(long)]
         rig: Option<String>,
-        #[arg(long, default_value = "2026-10-08T00:00:00Z")]
-        from: String,
-        #[arg(long, default_value = "2026-10-11T00:00:00Z")]
-        to: String,
+        #[arg(long, requires = "to")]
+        from: Option<String>,
+        #[arg(long, requires = "from")]
+        to: Option<String>,
         #[arg(long)]
         scenario: Option<PathBuf>,
         #[arg(long, value_delimiter = ',')]
@@ -147,7 +147,7 @@ fn build_simulation_scenario(
 ) -> Result<dendro_core::simulation::Scenario> {
     let mut scenario: dendro_core::simulation::Scenario = match scenario_path {
         Some(path) => serde_json::from_value(json_file(path)?)
-            .map_err(|e| anyhow::anyhow!("invalid simulation scenario: {e}"))?,
+            .map_err(|_| anyhow::anyhow!("invalid simulation scenario"))?,
         None => Default::default(),
     };
     if !remove.is_empty() {
@@ -161,7 +161,7 @@ fn build_simulation_scenario(
     }
     if let Some(path) = tier_policy_path {
         scenario.tier_policy = serde_json::from_value(json_file(path)?)
-            .map_err(|e| anyhow::anyhow!("invalid tier policy: {e}"))?;
+            .map_err(|_| anyhow::anyhow!("invalid tier policy"))?;
     }
     if let Some(threshold) = boundary_reset_threshold {
         scenario.boundary_reset_threshold = Some(threshold);
@@ -235,13 +235,7 @@ fn sources(
                 match fs::symlink_metadata(&p) {
                     Ok(meta) => {
                         if meta.file_type().is_symlink() {
-                            let target = p.canonicalize().map_err(|_| {
-                                anyhow::anyhow!("hold directory escapes its authorized root")
-                            })?;
-                            if !target.starts_with(&root) {
-                                bail!("hold directory escapes its authorized root");
-                            }
-                            return Ok(target);
+                            bail!("hold directory escapes its authorized root");
                         }
                         return resolve(path);
                     }
@@ -394,6 +388,10 @@ pub async fn run(command: Commands) -> Result<()> {
                         enforce_model_family_diversity,
                     },
             } => {
+                let (from, to) = match (from, to) {
+                    (Some(f), Some(t)) => (f, t),
+                    _ => dendro_core::presentation::trailing_window(1)?,
+                };
                 let scenario = build_simulation_scenario(
                     scenario.as_deref(),
                     remove,
