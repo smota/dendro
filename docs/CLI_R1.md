@@ -123,3 +123,22 @@ missing OpenRig file without changing accepted totals.
 Source access remains read-only: SQLite is read from a validated private main/WAL
 copy, and the original `-shm` is untouched. Live producers may continue changing
 source hashes, sizes, and modification times throughout a run.
+
+## v0.6.0 Operator Usability & Smart Window Extensions
+
+In `v0.6.0`, Dendro adds zero-ceremony operator entry points and rig-scoped smart window resolution while preserving all R1/v0.5.0 contracts and flags:
+
+```bash
+dendro                                              # defaults to `dendro status`
+dendro status [--db <path>] [--rig <rig>] [--format text|json]
+dendro dashboard [--db <path>] [--rig <rig>] [--window 1h|24h|7d|30d|all] [--once] [--html [path]] [--auto-ingest]
+dendro ui [--db <path>] [--rig <rig>] [--window 1h|24h|7d|30d|all] [--once] [--auto-ingest]
+dendro ask [--db <path>] ["<question>"] [--window 1h|24h|7d|30d|all] [--list-intents] [--no-refresh]
+dendro simulate topology [--db <path>] [--rig <rig>] [--window 1h|24h|7d|30d|all] [options]
+```
+
+- **Status preflight (`dendro` / `dendro status`):** Opens the database read-only and reports `status` (`ready`, `empty`, or `not_initialized`), rig-scoped `min_timestamp` and `max_timestamp`, redacted `rigs` and `seats`, `usage_rows`, `activity_rows`, `queue_rows`, `semantic_fresh`, discovered local harness roots, and copy-pasteable next commands.
+- **Rig-scoped smart `--window` (`1h|24h|7d|30d|all`):** Supported across `dashboard`, `ui`, `report`, `trace`, `materialize`, `export`, `ask`, and `simulate topology`. (`report` and `trace` preserve their v0.5.0 `--from`/`--to` defaults when `--window` is omitted.) When `--window` is resolved against a populated database, `resolve_window` scopes timestamp bounds to `--rig` (when supplied), floors `min_timestamp` to whole seconds, sets the half-open `[from, to)` upper bound to `max_timestamp + 1s` so events at `max_timestamp` (including sub-second timestamps) are included, and discloses `"window_resolution"` (`"recorded_bounds"`, `"anchored_to_recorded_data"`, `"explicit"`, or `"trailing_utc"`).
+- **Conditional `--auto-ingest`:** When `--auto-ingest` is passed to `dendro dashboard` or `dendro ui` and the target database does not exist or is not `ready`, Dendro runs a read-only local ingest over default harness roots before opening the dashboard.
+- **In-app TUI help (`?` / `h`):** Pressing `?` or `h` inside `dendro dashboard` or `dendro ui` opens the interactive keyboard navigation guide.
+

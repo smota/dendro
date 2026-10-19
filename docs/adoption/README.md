@@ -1,6 +1,29 @@
 # Operator guide
 
-Dendro is a local, one-shot evidence engine. It does not need a running rig, webserver or background monitoring service to report on retained execution facts. Start with `dendro --help`; command examples below use `./target/release/dendro` after `cargo build --release --locked`.
+Dendro is a local, one-shot evidence engine. It does not need a running rig, webserver or background monitoring service to report on retained execution facts. Start with bare `./target/release/dendro` (which runs `dendro status`) or `./target/release/dendro --help` after `cargo build --release --locked`.
+
+## Zero-ceremony quickstart (`v0.6.0`)
+
+Inspect database readiness, discovered local harness roots, and recorded timestamp bounds, or open the dashboard in one command:
+
+```sh
+# Inspect status, discovered local harness roots, and recorded [min_timestamp, max_timestamp]
+./target/release/dendro status --db ./fleet.duckdb
+
+# Open the interactive TUI explorer (auto-ingests local harness roots if fleet.duckdb is missing/empty)
+./target/release/dendro dashboard --db ./fleet.duckdb --auto-ingest
+
+# Print a non-interactive terminal snapshot or export a self-contained offline HTML dashboard
+./target/release/dendro dashboard --db ./fleet.duckdb --once
+./target/release/dendro dashboard --db ./fleet.duckdb --html ./fleet-dashboard.html
+
+# Ask natural questions (automatically refreshes semantic views when missing or stale)
+./target/release/dendro ask --db ./fleet.duckdb "highest idle"
+./target/release/dendro ask --db ./fleet.duckdb "where do tokens go?"
+./target/release/dendro ask --list-intents
+```
+
+Inside the interactive terminal explorer (`dendro dashboard` or `dendro ui`), press `?` or `h` at any time to open the keyboard navigation help overlay.
 
 ## Choose sources and a period
 
@@ -11,25 +34,26 @@ Use dedicated authorized roots and put the analytics database outside them:
   --root openrig=/absolute/path/to/openrig \
   --root claude=/absolute/path/to/claude \
   --root codex=/absolute/path/to/codex
+./target/release/dendro report decisions --db ./fleet.duckdb --window 7d
 ./target/release/dendro report decisions --db ./fleet.duckdb \
   --from 2026-10-14T00:00:00Z --to 2026-10-15T00:00:00Z
 ```
 
-Select dates present in your data. Timestamps must include their timezone; the interval includes its start and excludes its end. The default report dates are historical examples, so supply your own. A repeated append-only ingest advances watermarks instead of counting accepted bytes again. One OpenRig root belongs to each analytics database; do not combine independent roots by bypassing that guard.
+You can supply `--window 1h|24h|7d|30d|all` (which anchors relative windows to the database's rig-scoped `[min_timestamp, max_timestamp + 1s)` bounds when data exists and discloses `"window_resolution"`) or explicit RFC3339 `--from` and `--to` timestamps. Timestamps must include their timezone; the interval includes its start and excludes its end (`[from, to)`). A repeated append-only ingest advances watermarks instead of counting accepted bytes again. One OpenRig root belongs to each analytics database; do not combine independent roots by bypassing that guard.
 
-Supported baseline roots include OpenRig, Claude Code, Codex, Pi and AGY. Check `run --help` and the [extension guide](../extensions/README.md) for additional export adapters and their version limits. The absence of counters or timestamps remains unknown rather than being replaced with guessed consumption or dates.
+Supported baseline roots include OpenRig, Claude Code, Codex, Pi, AGY, and Grok. Check `run --help` and the [extension guide](../extensions/README.md) for additional export adapters and their version limits. The absence of counters or timestamps remains unknown rather than being replaced with guessed consumption or dates.
 
 ## Answer and inspect
 
 ```sh
-./target/release/dendro report activity --db ./fleet.duckdb --from 2026-10-14T00:00:00Z --to 2026-10-15T00:00:00Z
-./target/release/dendro report handoffs --db ./fleet.duckdb --friction --from 2026-10-14T00:00:00Z --to 2026-10-15T00:00:00Z
-./target/release/dendro trace --db ./fleet.duckdb --metric-id handoff_friction --from 2026-10-14T00:00:00Z --to 2026-10-15T00:00:00Z
+./target/release/dendro report activity --db ./fleet.duckdb --window 7d
+./target/release/dendro report handoffs --db ./fleet.duckdb --friction --window 7d
+./target/release/dendro trace --db ./fleet.duckdb --metric-id handoff_friction --window 7d
 ```
 
-`links`, `activity`, `handoffs`, `tokens`, and `decisions` use the same canonical report engine. Keep `--rig`, `--from`, `--to` and thresholds identical when comparing a report with its trace. Inspect coverage before interpreting a rate. M1 is tokens per nonreturned delivery, not monetary ROI. M4 needs a valid comparison population and otherwise refuses an impact claim.
+`links`, `activity`, `handoffs`, `tokens`, and `decisions` use the same canonical report engine. Keep `--rig`, `--window` (or `--from`/`--to`) and thresholds identical when comparing a report with its trace. Inspect coverage before interpreting a rate. M1 is tokens per nonreturned delivery, not monetary ROI. M4 needs a valid comparison population and otherwise refuses an impact claim.
 
-Save a report to a local JSON file and open [the standalone viewer](../../site/viewer.html) to explore supported fields offline. Its activity bands and concurrency histogram are aggregates; they do not invent missing temporal intervals. Uploaded files stay inside that browser page.
+Export a self-contained HTML bundle via `dendro dashboard --html ./fleet-dashboard.html`, or save a report to a local JSON file and open [the standalone viewer](../../site/viewer.html) to explore supported fields offline. Its activity bands and concurrency histogram are aggregates; they do not invent missing temporal intervals. Uploaded files stay inside that browser page.
 
 ## Reproduce ingestion
 
@@ -44,4 +68,4 @@ A sealed replay consumes recorded prefixes and refuses changed accepted bytes. T
 
 Do not select authentication files or credential directories. Source logs remain read-only; analytics facts use allowlists and secret redaction. No cloud request is needed for the core reports. A third-party conversational client may have its own network and model configuration; local DuckDB does not imply that such a client is offline.
 
-This guide does not promise a `status`, `watch`, Prometheus exporter, or OTel bridge. Use actual `--help` output for available commands. Build time depends on the machine; no measured five-minute build claim is made.
+`dendro status` inspects local database readiness and discovered harness roots read-only. This guide does not promise a background `watch` daemon, Prometheus exporter, or OTel bridge. Use actual `--help` output for available commands. Build time depends on the machine; no measured five-minute build claim is made.
