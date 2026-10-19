@@ -2254,7 +2254,7 @@ mod tests {
             let c = f.file(
                 "c.jsonl",
                 &[
-                    chunk("m1", "s", 1, &[read.clone()], 5),
+                    chunk("m1", "s", 1, std::slice::from_ref(&read), 5),
                     chunk("m1", "s", 2, &[tool_use("t2", "Write", "{\"p\":2}")], 5),
                     chunk("m1", "s", 3, &[tool_use("t3", "Read", "{\"p\":3}")], 5),
                     chunk("m1", "s", 4, &[read], 5),

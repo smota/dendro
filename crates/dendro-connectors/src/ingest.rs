@@ -1224,10 +1224,9 @@ mod tests {
         }
     }
 
-    fn lives_of(
-        events: Vec<(DateTime<Utc>, i64, Lifecycle)>,
-        seat: &str,
-    ) -> Vec<(Option<DateTime<Utc>>, Option<DateTime<Utc>>)> {
+    type SeatLifeSpan = (Option<DateTime<Utc>>, Option<DateTime<Utc>>);
+
+    fn lives_of(events: Vec<(DateTime<Utc>, i64, Lifecycle)>, seat: &str) -> Vec<SeatLifeSpan> {
         seat_lives(events)
             .into_iter()
             .filter(|life| life.seat == seat)
@@ -1547,7 +1546,6 @@ mod tests {
             serde_json::json!({"qitemId": "q-clean", "destinationSession": "seat-a"}),
             "2026-10-09 01:40:00",
         );
-        drop(event);
         let mut transition = 0;
         let mut step = |item: &str, state: &str, note: Option<&str>| {
             transition += 1;
@@ -1574,7 +1572,6 @@ mod tests {
         for item in ["q-note", "q-chain", "q-event", "q-clean", "q-nocreate"] {
             step(item, "done", None);
         }
-        drop(step);
         for (item, chain) in [
             ("q-note", "[]"),
             ("q-chain", "[\"fallback-from:seat-a\"]"),
@@ -1608,11 +1605,11 @@ mod tests {
             .into_iter()
             .map(|(item, snapshot)| (item, snapshot.reroute_marked))
             .collect();
-        assert_eq!(marked["q-note"], true, "transition note mark");
-        assert_eq!(marked["q-chain"], true, "chain_of_record mark");
-        assert_eq!(marked["q-event"], true, "reroute event mark");
-        assert_eq!(marked["q-clean"], false);
-        assert_eq!(marked["q-nocreate"], false);
+        assert!(marked["q-note"], "transition note mark");
+        assert!(marked["q-chain"], "chain_of_record mark");
+        assert!(marked["q-event"], "reroute event mark");
+        assert!(!marked["q-clean"]);
+        assert!(!marked["q-nocreate"]);
         drop(store);
         let report = dendro_core::report_json(
             &db,

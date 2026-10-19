@@ -397,13 +397,16 @@ fn read_holds(
     sender_rig: impl Fn(&str) -> Option<String>,
 ) -> Result<(Vec<Value>, Vec<&'static str>)> {
     crate::refuse_secret_path(directory)?;
-    if !directory.exists() {
-        return Ok((Vec::new(), vec!["hold-directory-missing"]));
+    match fs::symlink_metadata(directory) {
+        Ok(meta) => ensure!(
+            !meta.file_type().is_symlink(),
+            "symlink hold directory refused"
+        ),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            return Ok((Vec::new(), vec!["hold-directory-missing"]));
+        }
+        Err(_) => anyhow::bail!("hold directory unavailable"),
     }
-    ensure!(
-        !fs::symlink_metadata(directory)?.file_type().is_symlink(),
-        "symlink hold directory refused"
-    );
     let root = directory
         .canonicalize()
         .map_err(|_| anyhow::anyhow!("hold directory unavailable"))?;

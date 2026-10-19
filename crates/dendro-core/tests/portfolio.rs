@@ -641,3 +641,19 @@ fn sealed_sender_labels_remain_unknown_without_guessing_a_redacted_join() {
     );
     assert!(!report.to_string().contains("ghp_SYNTHETIC_SENDER"));
 }
+
+#[test]
+fn dangling_symlink_hold_dir_is_refused() {
+    let f = Fixture::new();
+    let db = f.dir.join("a.duckdb");
+    drop(AnalyticsStore::open_path(&db, "test").unwrap());
+    let dangling = f.dir.join("dangling-holds");
+    std::os::unix::fs::symlink(f.dir.join("missing-target"), &dangling).unwrap();
+    let mut mapping = source(db, &["worker"]);
+    mapping.hold_dir = Some(dangling);
+    let err = portfolio_json(&[mapping], FROM, TO).unwrap_err();
+    assert!(
+        err.to_string().contains("symlink hold directory refused"),
+        "unexpected error: {err}"
+    );
+}

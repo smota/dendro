@@ -82,7 +82,42 @@ pub enum Commands {
         #[arg(long, default_value_t = 300)]
         pending_threshold_secs: u64,
     },
+    /// Run deterministic historical what-if simulations over canonical reports.
+    Simulate {
+        #[command(subcommand)]
+        command: SimulateCommand,
+    },
 }
+
+#[derive(Subcommand)]
+pub enum SimulateCommand {
+    /// Model historical seat removal, direct handoffs, tier multipliers, and boundary resets.
+    Topology {
+        #[arg(long, default_value = "dendro.duckdb")]
+        db: PathBuf,
+        #[arg(long)]
+        rig: Option<String>,
+        #[arg(long, default_value = "2026-10-08T00:00:00Z")]
+        from: String,
+        #[arg(long, default_value = "2026-10-11T00:00:00Z")]
+        to: String,
+        #[arg(long)]
+        scenario: Option<PathBuf>,
+        #[arg(long, value_delimiter = ',')]
+        remove: Vec<String>,
+        #[arg(long)]
+        replacement_seat: Option<String>,
+        #[arg(long)]
+        direct_handoffs: bool,
+        #[arg(long)]
+        tier_policy: Option<PathBuf>,
+        #[arg(long)]
+        boundary_reset_threshold: Option<u64>,
+        #[arg(long)]
+        enforce_model_family_diversity: bool,
+    },
+}
+
 fn json_file(path: &Path) -> Result<Value> {
     dendro_core::refuse_secret_path(path)?;
     if !fs::symlink_metadata(path)
@@ -99,6 +134,59 @@ fn json_file(path: &Path) -> Result<Value> {
     }
     serde_json::from_slice(&bytes).map_err(|_| anyhow::anyhow!("invalid JSON input"))
 }
+
+#[allow(clippy::too_many_arguments)]
+fn build_simulation_scenario(
+    scenario_path: Option<&Path>,
+    remove: Vec<String>,
+    replacement_seat: Option<String>,
+    direct_handoffs: bool,
+    tier_policy_path: Option<&Path>,
+    boundary_reset_threshold: Option<u64>,
+    enforce_model_family_diversity: bool,
+) -> Result<dendro_core::simulation::Scenario> {
+    let mut scenario: dendro_core::simulation::Scenario = match scenario_path {
+        Some(path) => serde_json::from_value(json_file(path)?)
+            .map_err(|e| anyhow::anyhow!("invalid simulation scenario: {e}"))?,
+        None => Default::default(),
+    };
+    if !remove.is_empty() {
+        scenario.remove = remove;
+    }
+    if let Some(seat) = replacement_seat {
+        scenario.replacement_seat = Some(seat);
+    }
+    if direct_handoffs {
+        scenario.direct_handoffs = true;
+    }
+    if let Some(path) = tier_policy_path {
+        scenario.tier_policy = serde_json::from_value(json_file(path)?)
+            .map_err(|e| anyhow::anyhow!("invalid tier policy: {e}"))?;
+    }
+    if let Some(threshold) = boundary_reset_threshold {
+        scenario.boundary_reset_threshold = Some(threshold);
+    }
+    if enforce_model_family_diversity {
+        scenario.enforce_model_family_diversity = true;
+    }
+    Ok(scenario)
+}
+
+fn write_new_private_output_with(
+    output: &Path,
+    bytes: &[u8],
+    write_fn: impl FnOnce(&mut fs::File, &[u8]) -> std::io::Result<()>,
+) -> Result<()> {
+    let mut file = dendro_core::lifecycle::create_private_file(output)
+        .context("export requires a new output file")?;
+    if let Err(err) = write_fn(&mut file, bytes).and_then(|()| file.sync_all()) {
+        drop(file);
+        let _ = fs::remove_file(output);
+        return Err(err.into());
+    }
+    Ok(())
+}
+
 fn sources(
     mapping: Option<&Path>,
     directories: &[PathBuf],
@@ -144,14 +232,27 @@ fn sources(
                 } else {
                     root.join(path)
                 };
-                if p.exists() {
-                    return resolve(path);
+                match fs::symlink_metadata(&p) {
+                    Ok(meta) => {
+                        if meta.file_type().is_symlink() {
+                            let target = p.canonicalize().map_err(|_| {
+                                anyhow::anyhow!("hold directory escapes its authorized root")
+                            })?;
+                            if !target.starts_with(&root) {
+                                bail!("hold directory escapes its authorized root");
+                            }
+                            return Ok(target);
+                        }
+                        return resolve(path);
+                    }
+                    Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(_) => bail!("hold directory unavailable"),
                 }
                 let parent = p
                     .parent()
                     .context("hold directory needs a parent")?
                     .canonicalize()
-                    .context("hold parent unavailable")?;
+                    .map_err(|_| anyhow::anyhow!("hold directory escapes its authorized root"))?;
                 if !parent.starts_with(&root) {
                     bail!("hold directory escapes its authorized root");
                 }
@@ -246,10 +347,9 @@ pub async fn run(command: Commands) -> Result<()> {
                     &scope.to,
                 )?;
                 let html = dendro_core::presentation::offline_html(&report)?;
-                let mut file = dendro_core::lifecycle::create_private_file(&output)
-                    .context("export requires a new output file")?;
-                file.write_all(html.as_bytes())?;
-                file.sync_all()?;
+                write_new_private_output_with(&output, html.as_bytes(), |file, data| {
+                    file.write_all(data)
+                })?;
                 println!(
                     "{{\"status\":\"exported\",\"format\":\"html\",\"seat_labels\":\"aliases\"}}"
                 );
@@ -278,9 +378,189 @@ pub async fn run(command: Commands) -> Result<()> {
                     _ => println!("{report}"),
                 }
             }
+            Commands::Simulate {
+                command:
+                    SimulateCommand::Topology {
+                        db,
+                        rig,
+                        from,
+                        to,
+                        scenario,
+                        remove,
+                        replacement_seat,
+                        direct_handoffs,
+                        tier_policy,
+                        boundary_reset_threshold,
+                        enforce_model_family_diversity,
+                    },
+            } => {
+                let scenario = build_simulation_scenario(
+                    scenario.as_deref(),
+                    remove,
+                    replacement_seat,
+                    direct_handoffs,
+                    tier_policy.as_deref(),
+                    boundary_reset_threshold,
+                    enforce_model_family_diversity,
+                )?;
+                let report =
+                    dendro_core::report_json(&db, "decisions", rig.as_deref(), &from, &to)?;
+                println!("{}", dendro_core::simulation::simulate(&report, &scenario)?);
+            }
             Commands::Ui { .. } => unreachable!(),
         }
         Ok(())
     })
     .await?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    struct TempDir(PathBuf);
+    impl TempDir {
+        fn new(prefix: &str) -> Self {
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let dir = std::env::temp_dir().join(format!(
+                "dendro-ext-{prefix}-{}-{nanos}",
+                std::process::id(),
+            ));
+            fs::create_dir_all(&dir).unwrap();
+            Self(dir)
+        }
+    }
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn failed_export_write_removes_partial_private_file_and_preserves_existing() {
+        let dir = TempDir::new("export");
+        let output = dir.0.join("report.html");
+        let err = write_new_private_output_with(&output, b"complete", |file, _| {
+            file.write_all(b"partial")?;
+            Err(std::io::Error::other("injected write failure"))
+        });
+        assert!(err.is_err());
+        assert!(!output.exists(), "partial private file must be removed");
+
+        write_new_private_output_with(&output, b"complete", |file, data| file.write_all(data))
+            .unwrap();
+        assert_eq!(fs::read(&output).unwrap(), b"complete");
+
+        let duplicate =
+            write_new_private_output_with(&output, b"overwrite", |file, data| file.write_all(data));
+        assert!(duplicate.is_err());
+        assert_eq!(
+            fs::read(&output).unwrap(),
+            b"complete",
+            "existing file must not be removed or overwritten"
+        );
+    }
+
+    #[test]
+    fn dangling_symlink_hold_dir_is_refused_with_explicit_containment_error() {
+        let dir = TempDir::new("hold-symlink");
+        let root = dir.0.join("source");
+        fs::create_dir_all(&root).unwrap();
+        let db = root.join("analytics.duckdb");
+        fs::write(&db, b"placeholder").unwrap();
+        std::os::unix::fs::symlink(
+            dir.0.join("outside-missing-target"),
+            root.join("dangling-holds"),
+        )
+        .unwrap();
+        fs::write(
+            root.join("dendro-source.json"),
+            serde_json::to_vec(&json!({
+                "db": "analytics.duckdb",
+                "rigs": ["rig-a"],
+                "hold_dir": "dangling-holds"
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let err = sources(None, std::slice::from_ref(&root)).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("hold directory escapes its authorized root"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn simulation_scenario_overlays_supplied_flags_and_refuses_unknown_fields() {
+        let dir = TempDir::new("sim");
+        let scenario_file = dir.0.join("scenario.json");
+        fs::write(
+            &scenario_file,
+            serde_json::to_vec(&json!({
+                "remove": ["dev-build-jr@team"],
+                "replacement_seat": "dev-build@team",
+                "direct_handoffs": false,
+                "boundary_reset_threshold": 300000,
+                "weights": {"uncached": 1.0, "cache_read": 0.1},
+                "boundary": {
+                    "turns": 15,
+                    "stale_context_tokens": 350000,
+                    "clean_context_tokens": 60000,
+                    "cold_boot_tokens": 35000
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let tier_file = dir.0.join("tiers.json");
+        fs::write(
+            &tier_file,
+            serde_json::to_vec(&json!([{
+                "seat": "dev-build@team",
+                "uncached_multiplier": 0.8,
+                "cache_read_multiplier": 1.0,
+                "work_class": "P1",
+                "model_family": "claude",
+                "effort": "medium"
+            }]))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let merged = build_simulation_scenario(
+            Some(&scenario_file),
+            vec![],
+            None,
+            true,
+            Some(&tier_file),
+            Some(250000),
+            true,
+        )
+        .unwrap();
+        assert_eq!(merged.remove, vec!["dev-build-jr@team"]);
+        assert_eq!(merged.replacement_seat.as_deref(), Some("dev-build@team"));
+        assert!(merged.direct_handoffs);
+        assert_eq!(merged.boundary_reset_threshold, Some(250000));
+        assert!(merged.enforce_model_family_diversity);
+        assert_eq!(merged.tier_policy.len(), 1);
+        assert_eq!(merged.tier_policy[0].seat, "dev-build@team");
+
+        let unknown_file = dir.0.join("unknown.json");
+        fs::write(&unknown_file, br#"{"unknown_field": true}"#).unwrap();
+        assert!(build_simulation_scenario(
+            Some(&unknown_file),
+            vec![],
+            None,
+            false,
+            None,
+            None,
+            false
+        )
+        .is_err());
+    }
 }

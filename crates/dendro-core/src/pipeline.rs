@@ -2313,13 +2313,10 @@ mod tests {
         )
         .unwrap();
         assert!(report["payload"]["m1_yield"].is_null());
-        assert_eq!(
-            report["payload"]["m4_impact"]
-                .as_str()
-                .unwrap()
-                .contains("insufficient data"),
-            true
-        );
+        assert!(report["payload"]["m4_impact"]
+            .as_str()
+            .unwrap()
+            .contains("insufficient data"));
         assert!(report_json(
             &db,
             "not-a-kind",

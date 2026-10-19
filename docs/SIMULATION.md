@@ -14,7 +14,7 @@ Observed mid-item compaction hazards remain historical facts. `projected_elimina
 
 All projections cite their actual historical usage/handoff keys and enumerate assumptions. Missing baselines, unresolved allocation, unsupported source provenance, or incomplete causal adjacency return `no_data` rather than a fabricated saving. All numeric weights/multipliers must be finite and nonnegative.
 
-Checkpoint status: the Rust simulator API is implemented; `dendro simulate topology` is not yet wired. The pending CLI integration contract uses `--scenario <JSON-path>` for explicit assumptions and `--tier-policy <JSON-path>` for an array of tier rules. Its four topology flags will overlay only supplied fields. Unknown JSON fields, duplicate tier rules, removed replacement seats and nonfinite/negative numbers refuse. Example scenario:
+`dendro simulate topology` runs `simulation::simulate` over the canonical `decisions` report for `--db <path>`, optional `--rig <rig>`, and `--from <utc>` / `--to <utc>`. It accepts `--scenario <JSON-path>` for explicit assumptions and `--tier-policy <JSON-path>` for an array of tier rules. Supplied topology flags (`--remove`, `--replacement-seat`, `--direct-handoffs`, `--boundary-reset-threshold`, `--enforce-model-family-diversity`) overlay only the specified fields. Unknown JSON fields, duplicate tier rules, removed replacement seats and nonfinite/negative numbers refuse. Example scenario:
 
 ```json
 {

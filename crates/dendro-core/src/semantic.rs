@@ -16,8 +16,8 @@ pub const VIEWS: [&str; 4] = [
     "v_executive_governance",
 ];
 // Fixed SQL: identifiers and expressions never come from a conversational request.
-const SIGNATURE: &str = "SELECT CAST(list(kind || ':' || n || ':' || digest ORDER BY kind) AS VARCHAR) FROM (SELECT kind, count(*) n, bit_xor(h) digest FROM (SELECT 'dendro_meta' kind, hash(t) h FROM dendro_meta t UNION ALL
-SELECT 'file_source_baselines' kind, hash(t) h FROM file_source_baselines t UNION ALL
+const BASE_SIGNATURE: &str = "SELECT kind, count(*) n, CAST(bit_xor(h) AS VARCHAR) digest FROM (
+SELECT 'dendro_meta' kind, hash(t) h FROM dendro_meta t UNION ALL
 SELECT 'codex_counters' kind, hash(t) h FROM codex_counters t UNION ALL
 SELECT 'warnings' kind, hash(t) h FROM warnings t UNION ALL
 SELECT 'usage_facts' kind, hash(t) h FROM usage_facts t UNION ALL
@@ -29,11 +29,58 @@ SELECT 'seat_bounds' kind, hash(t) h FROM seat_bounds t UNION ALL
 SELECT 'seat_roles' kind, hash(t) h FROM seat_roles t UNION ALL
 SELECT 'skill_facts' kind, hash(t) h FROM skill_facts t UNION ALL
 SELECT 'destination_snapshots' kind, hash(t) h FROM destination_snapshots t UNION ALL
-SELECT 'source_files' kind, hash(t) h FROM source_files t UNION ALL
-SELECT 'openrig_row_records' kind, hash(t) h FROM openrig_row_records t UNION ALL
-SELECT 'mutable_source_disclosures' kind, hash(t) h FROM mutable_source_disclosures t) GROUP BY kind)";
+SELECT 'source_files' kind, hash(t) h FROM source_files t) GROUP BY kind";
+
+const OPTIONAL_SIGNATURES: [(&str, &str); 3] = [
+    (
+        "file_source_baselines",
+        "SELECT count(*) n, CAST(bit_xor(hash(t)) AS VARCHAR) digest FROM file_source_baselines t HAVING count(*) > 0",
+    ),
+    (
+        "openrig_row_records",
+        "SELECT count(*) n, CAST(bit_xor(hash(t)) AS VARCHAR) digest FROM openrig_row_records t HAVING count(*) > 0",
+    ),
+    (
+        "mutable_source_disclosures",
+        "SELECT count(*) n, CAST(bit_xor(hash(t)) AS VARCHAR) digest FROM mutable_source_disclosures t HAVING count(*) > 0",
+    ),
+];
+
 fn signature(store: &AnalyticsStore) -> Result<String> {
-    Ok(store.connection().query_row(SIGNATURE, [], |r| r.get(0))?)
+    let conn = store.connection();
+    let mut parts = BTreeMap::<String, String>::new();
+    let mut stmt = conn.prepare(BASE_SIGNATURE)?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let kind: String = row.get(0)?;
+        let n: i64 = row.get(1)?;
+        let digest: String = row.get(2)?;
+        parts.insert(kind.clone(), format!("{kind}:{n}:{digest}"));
+    }
+    for (table, query) in OPTIONAL_SIGNATURES {
+        let exists: i64 = conn.query_row(
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'main' AND table_name = ?",
+            params![table],
+            |r| r.get(0),
+        )?;
+        if exists == 0 {
+            parts.insert(table.to_string(), format!("{table}:absent"));
+            continue;
+        }
+        let mut opt_stmt = conn.prepare(query)?;
+        let mut opt_rows = opt_stmt.query([])?;
+        if let Some(row) = opt_rows.next()? {
+            let n: i64 = row.get(0)?;
+            let digest: String = row.get(1)?;
+            parts.insert(table.to_string(), format!("{table}:{n}:{digest}"));
+        } else {
+            parts.insert(table.to_string(), format!("{table}:present:0"));
+        }
+    }
+    Ok(format!(
+        "[{}]",
+        parts.into_values().collect::<Vec<_>>().join(", ")
+    ))
 }
 
 /// Refresh the four views for exactly this report scope. Source readers close before writes.
@@ -635,6 +682,72 @@ mod tests {
             )?,
             0
         );
+        Ok(())
+    }
+
+    #[test]
+    fn legacy_sidecar_without_file_source_baselines_refreshes_and_invalidates_cleanly() -> Result<()>
+    {
+        struct Directory(std::path::PathBuf);
+        impl Drop for Directory {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let directory = Directory(std::env::current_dir()?.join("target/semantic-tests").join(
+            format!("legacy-{}-{}", std::process::id(), rand::random::<u64>()),
+        ));
+        std::fs::create_dir_all(&directory.0)?;
+        let db = directory.0.join("legacy.duckdb");
+        {
+            let store = AnalyticsStore::open_path(&db, "legacy")?;
+            let ts = chrono::DateTime::parse_from_rfc3339("2026-10-01T00:05:00Z")?
+                .with_timezone(&chrono::Utc);
+            store.insert_activity(&ActivityFact {
+                source_key: "act-1".into(),
+                seat: "dev.build@rig".into(),
+                ts,
+                state: "idle".into(),
+                seq: 1,
+            })?;
+            store
+                .connection()
+                .execute_batch("DROP TABLE file_source_baselines")?;
+            store.checkpoint()?;
+        }
+        let before_refresh = answer(&db, "Rank idle", None)?;
+        assert_eq!(before_refresh["status"], "insufficient_data");
+
+        let refreshed = refresh(&db, None, "2026-10-01T00:00:00Z", "2026-10-02T00:00:00Z")?;
+        assert_eq!(refreshed["status"], "refreshed");
+
+        let answered = answer(&db, "Rank idle", None)?;
+        assert_eq!(answered["status"], "ok");
+
+        // Recreating and then dropping the optional table invalidates the snapshot cleanly.
+        {
+            let store = AnalyticsStore::open_existing(&db, "legacy")?;
+            store.connection().execute_batch(
+                "CREATE TABLE file_source_baselines (
+                    source_id VARCHAR NOT NULL,
+                    generation BIGINT NOT NULL,
+                    metadata_version INTEGER NOT NULL,
+                    latest_association VARCHAR NOT NULL,
+                    latest_attempt_at VARCHAR NOT NULL,
+                    last_stable_observed_at VARCHAR,
+                    last_stable_type VARCHAR,
+                    last_stable_device VARCHAR,
+                    last_stable_inode VARCHAR,
+                    last_stable_size VARCHAR,
+                    last_stable_mtime_ns VARCHAR,
+                    association_reason VARCHAR NOT NULL,
+                    PRIMARY KEY (source_id, generation)
+                )",
+            )?;
+            store.checkpoint()?;
+        }
+        let after_schema_change = answer(&db, "Rank idle", None)?;
+        assert_eq!(after_schema_change["status"], "insufficient_data");
         Ok(())
     }
 }
