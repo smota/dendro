@@ -389,6 +389,7 @@ pub fn parse_intent(question: &str) -> Option<Intent> {
         }
         "trace idle"
         | "trace rework"
+        | "trace handoffs"
         | "trace tokens"
         | "trace yield"
         | "where does idle come from"

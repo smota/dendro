@@ -208,17 +208,52 @@ fn natural_aliases_supported_intents_and_window_bounds_work() -> anyhow::Result<
         None,
     )?;
     assert_eq!(mode, "recorded_bounds");
-    assert!(from <= to);
+    assert_eq!(from, "2026-10-01T00:00:00Z");
+    assert_eq!(to, "2026-10-02T00:00:01Z");
 
     let (_, _, mode_7d) =
         dendro_core::presentation::resolve_window(&f.db, Some("test-rig"), Some("7d"), None, None)?;
     assert_eq!(mode_7d, "anchored_to_recorded_data");
+
+    // Rig-scoped anchoring and single-timestamp ceiling: insert a second rig at a single timestamp.
+    let conn = Connection::open(&f.db)?;
+    conn.execute_batch(
+        "INSERT INTO identity_facts VALUES ('id:single','claude','sess-single','rig-ghp_secret12345678901234567890','seat-sk-secret12345678901234567890@rig-ghp_secret12345678901234567890','2026-09-15 05:00:00');
+         INSERT INTO usage_facts (source_key,harness,native_session,ts,seq,input_uncached,output_tokens,cache_read,cache_write,reasoning,generation,source_id)
+         VALUES ('single:0:1','claude','sess-single','2026-09-15 05:00:00.500',1,10,5,0,0,0,0,'file');",
+    )?;
+    drop(conn);
+
+    let (single_from, single_to, single_mode) = dendro_core::presentation::resolve_window(
+        &f.db,
+        Some("rig-ghp_secret12345678901234567890"),
+        Some("all"),
+        None,
+        None,
+    )?;
+    assert_eq!(single_mode, "recorded_bounds");
+    assert_eq!(single_from, "2026-09-15T05:00:00Z");
+    assert_eq!(single_to, "2026-09-15T05:00:01Z");
+
+    // Verify test-rig bounds remain unaffected by the older rig.
+    let (test_rig_from, test_rig_to, _) = dendro_core::presentation::resolve_window(
+        &f.db,
+        Some("test-rig"),
+        Some("all"),
+        None,
+        None,
+    )?;
+    assert_eq!(test_rig_from, "2026-10-01T00:00:00Z");
+    assert_eq!(test_rig_to, "2026-10-02T00:00:01Z");
 
     semantic::refresh(&f.db, Some("test-rig"), fixture::FROM, fixture::TO)?;
     let status = dendro_core::presentation::database_status(&f.db, Some("test-rig"))?;
     assert_eq!(status["status"], "ready");
     assert_eq!(status["semantic_fresh"], true);
     assert!(status["usage_rows"].as_i64().unwrap() > 0);
+    let status_str = status.to_string();
+    assert!(!status_str.contains("ghp_secret"));
+    assert!(!status_str.contains("sk-secret"));
 
     assert_eq!(
         semantic::answer(&f.db, "highest idle", None)?["status"],
@@ -235,6 +270,10 @@ fn natural_aliases_supported_intents_and_window_bounds_work() -> anyhow::Result<
     );
     assert_eq!(
         semantic::answer(&f.db, "trace tokens", None)?["status"],
+        "ok"
+    );
+    assert_eq!(
+        semantic::answer(&f.db, "trace handoffs", None)?["status"],
         "ok"
     );
     assert_eq!(

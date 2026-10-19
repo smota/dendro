@@ -386,14 +386,16 @@ pub async fn run(command: Commands) -> Result<()> {
         let mut terminate =
             tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
         let mut worker = tokio::task::spawn_blocking(move || -> Result<()> {
-            let (from, to, _) = dendro_core::presentation::resolve_window(
+            let (from, to, mode) = dendro_core::presentation::resolve_window(
                 &db,
                 rig.as_deref(),
                 window.as_deref(),
                 from.as_deref(),
                 to.as_deref(),
             )?;
-            let report = dendro_core::report_json(&db, "decisions", rig.as_deref(), &from, &to)?;
+            let mut report =
+                dendro_core::report_json(&db, "decisions", rig.as_deref(), &from, &to)?;
+            report["window_resolution"] = serde_json::json!(mode);
             let mut traces = Vec::new();
             if !once {
                 for id in ["handoff_friction", "activity", "tokens"] {

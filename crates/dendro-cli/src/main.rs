@@ -422,21 +422,35 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Commands::Extensions(command) => {
-            let auto_ingest_db = match &command {
+            let auto_ingest_target = match &command {
                 extensions::Commands::Ui {
                     db,
+                    rig,
                     auto_ingest: true,
                     ..
                 }
                 | extensions::Commands::Dashboard {
                     db,
+                    rig,
                     auto_ingest: true,
                     ..
-                } => Some(db.clone()),
+                } => Some((db.clone(), rig.clone())),
                 _ => None,
             };
-            if let Some(db) = auto_ingest_db {
-                let _ = run_ingest(db, Vec::new(), false, None, None).await?;
+            if let Some((db, rig)) = auto_ingest_target {
+                let needs_ingest = tokio::task::spawn_blocking({
+                    let db = db.clone();
+                    move || {
+                        !db.exists()
+                            || dendro_core::presentation::database_status(&db, rig.as_deref())
+                                .map(|s| s["status"] != "ready")
+                                .unwrap_or(true)
+                    }
+                })
+                .await?;
+                if needs_ingest {
+                    let _ = run_ingest(db, Vec::new(), false, None, None).await?;
+                }
             }
             extensions::run(command).await?;
         }
@@ -572,20 +586,20 @@ async fn main() -> Result<()> {
                 anyhow::bail!("--anomaly requires report advisory");
             }
             let evaluated_kind = kind.clone();
-            let report = tokio::task::spawn_blocking(move || {
-                let (from, to) = if window.is_some() {
-                    let (f, t, _) = dendro_core::presentation::resolve_window(
+            let report = tokio::task::spawn_blocking(move || -> Result<serde_json::Value> {
+                let (from, to, mode) = if window.is_some() {
+                    let (f, t, m) = dendro_core::presentation::resolve_window(
                         &db,
                         rig.as_deref(),
                         window.as_deref(),
                         None,
                         None,
                     )?;
-                    (f, t)
+                    (f, t, Some(m))
                 } else {
-                    (from, to)
+                    (from, to, None)
                 };
-                dendro_core::report_json_with_analysis(
+                let mut r = dendro_core::report_json_with_analysis(
                     &db,
                     &evaluated_kind,
                     rig.as_deref(),
@@ -594,7 +608,11 @@ async fn main() -> Result<()> {
                     thresholds,
                     friction_thresholds.thresholds(),
                     advisory_thresholds.options(),
-                )
+                )?;
+                if let Some(m) = mode {
+                    r["window_resolution"] = serde_json::json!(m);
+                }
+                Ok(r)
             })
             .await??;
             if viz {
@@ -656,20 +674,20 @@ async fn main() -> Result<()> {
                 tool_loop_window_secs,
                 handoff_loop_returns,
             };
-            let report = tokio::task::spawn_blocking(move || {
-                let (from, to) = if window.is_some() {
-                    let (f, t, _) = dendro_core::presentation::resolve_window(
+            let report = tokio::task::spawn_blocking(move || -> Result<serde_json::Value> {
+                let (from, to, mode) = if window.is_some() {
+                    let (f, t, m) = dendro_core::presentation::resolve_window(
                         &db,
                         rig.as_deref(),
                         window.as_deref(),
                         None,
                         None,
                     )?;
-                    (f, t)
+                    (f, t, Some(m))
                 } else {
-                    (from, to)
+                    (from, to, None)
                 };
-                dendro_core::trace_json_with_analysis(
+                let mut r = dendro_core::trace_json_with_analysis(
                     &db,
                     &metric_id,
                     rig.as_deref(),
@@ -678,7 +696,11 @@ async fn main() -> Result<()> {
                     thresholds,
                     friction_thresholds.thresholds(),
                     advisory_thresholds.options(),
-                )
+                )?;
+                if let Some(m) = mode {
+                    r["window_resolution"] = serde_json::json!(m);
+                }
+                Ok(r)
             })
             .await??;
             println!("{report}");

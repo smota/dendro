@@ -291,7 +291,16 @@ const BANDS: [(&str, &str, char); 5] = [
 ];
 /// Render cached facts for keyboard navigation; no database access occurs here.
 pub fn explorer(report: &Value, panel: usize, selected: usize) -> String {
-    let mut out=format!("Dendro local explorer · {} to {}\nTab/←/→ panels · ↑/↓ seats · Enter detail · 1/2/3 trace · q quit\n\n",label(&report["payload"]["from"]),label(&report["payload"]["to"]));
+    let mode_suffix = report["window_resolution"]
+        .as_str()
+        .map(|_| format!(" · window={}", label(&report["window_resolution"])))
+        .unwrap_or_default();
+    let mut out = format!(
+        "Dendro local explorer · {} to {}{}\nTab/←/→ panels · ↑/↓ seats · Enter detail · 1/2/3 trace · ?/h help · q quit\n\n",
+        label(&report["payload"]["from"]),
+        label(&report["payload"]["to"]),
+        mode_suffix
+    );
     match panel % 3 {
         0 => {
             out.push_str("Activity bands (aggregate duration, not inferred tool execution)\n");
@@ -355,21 +364,45 @@ pub fn database_status(db: &std::path::Path, rig: Option<&str>) -> Result<Value>
     }
     let store = crate::AnalyticsStore::open_read_only(db)?;
     let conn = store.connection();
-    let (min_ts, max_ts): (Option<String>, Option<String>) = conn.query_row(
-        "SELECT
-            strftime(MIN(ts), '%Y-%m-%dT%H:%M:%SZ'),
-            strftime(MAX(ts), '%Y-%m-%dT%H:%M:%SZ')
-         FROM (
-            SELECT ts FROM usage_facts WHERE ts IS NOT NULL
-            UNION ALL SELECT ts FROM activity_facts
-            UNION ALL SELECT ts FROM queue_facts
-            UNION ALL SELECT ts FROM tool_facts WHERE ts IS NOT NULL
-            UNION ALL SELECT created_at AS ts FROM seat_bounds WHERE created_at IS NOT NULL
-            UNION ALL SELECT stopped_at AS ts FROM seat_bounds WHERE stopped_at IS NOT NULL
-         )",
-        [],
-        |r| Ok((r.get(0)?, r.get(1)?)),
-    )?;
+    let (min_ts, max_ts): (Option<String>, Option<String>) = if let Some(r) = rig {
+        conn.query_row(
+            "WITH rig_sessions AS (
+                SELECT DISTINCT harness, native_session FROM identity_facts WHERE rig = ?1
+             ),
+             rig_seats AS (
+                SELECT DISTINCT seat FROM identity_facts WHERE rig = ?1 AND seat <> ''
+             )
+             SELECT
+                strftime(date_trunc('second', MIN(ts)), '%Y-%m-%dT%H:%M:%SZ'),
+                strftime(date_trunc('second', MAX(ts)), '%Y-%m-%dT%H:%M:%SZ')
+             FROM (
+                SELECT u.ts FROM usage_facts u JOIN rig_sessions s ON u.harness = s.harness AND u.native_session = s.native_session WHERE u.ts IS NOT NULL
+                UNION ALL SELECT t.ts FROM tool_facts t JOIN rig_sessions s ON t.harness = s.harness AND t.native_session = s.native_session WHERE t.ts IS NOT NULL
+                UNION ALL SELECT a.ts FROM activity_facts a WHERE right(a.seat, length(?1) + 1) = ('@' || ?1) OR a.seat IN (SELECT seat FROM rig_seats)
+                UNION ALL SELECT q.ts FROM queue_facts q WHERE right(q.source_seat, length(?1) + 1) = ('@' || ?1) OR right(q.dest_seat, length(?1) + 1) = ('@' || ?1) OR q.source_seat IN (SELECT seat FROM rig_seats) OR q.dest_seat IN (SELECT seat FROM rig_seats)
+                UNION ALL SELECT b.created_at AS ts FROM seat_bounds b WHERE b.created_at IS NOT NULL AND (right(b.seat, length(?1) + 1) = ('@' || ?1) OR b.seat IN (SELECT seat FROM rig_seats))
+                UNION ALL SELECT b.stopped_at AS ts FROM seat_bounds b WHERE b.stopped_at IS NOT NULL AND (right(b.seat, length(?1) + 1) = ('@' || ?1) OR b.seat IN (SELECT seat FROM rig_seats))
+             )",
+            duckdb::params![r],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?
+    } else {
+        conn.query_row(
+            "SELECT
+                strftime(date_trunc('second', MIN(ts)), '%Y-%m-%dT%H:%M:%SZ'),
+                strftime(date_trunc('second', MAX(ts)), '%Y-%m-%dT%H:%M:%SZ')
+             FROM (
+                SELECT ts FROM usage_facts WHERE ts IS NOT NULL
+                UNION ALL SELECT ts FROM activity_facts
+                UNION ALL SELECT ts FROM queue_facts
+                UNION ALL SELECT ts FROM tool_facts WHERE ts IS NOT NULL
+                UNION ALL SELECT created_at AS ts FROM seat_bounds WHERE created_at IS NOT NULL
+                UNION ALL SELECT stopped_at AS ts FROM seat_bounds WHERE stopped_at IS NOT NULL
+             )",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?
+    };
     let usage_rows: i64 = conn.query_row("SELECT COUNT(*) FROM usage_facts", [], |r| r.get(0))?;
     let activity_rows: i64 =
         conn.query_row("SELECT COUNT(*) FROM activity_facts", [], |r| r.get(0))?;
@@ -378,7 +411,10 @@ pub fn database_status(db: &std::path::Path, rig: Option<&str>) -> Result<Value>
         conn.prepare("SELECT DISTINCT rig FROM identity_facts WHERE rig <> '' ORDER BY rig")?;
     let rigs: Vec<String> = rig_stmt
         .query_map([], |r| r.get::<_, String>(0))?
-        .collect::<duckdb::Result<Vec<_>>>()?;
+        .collect::<duckdb::Result<Vec<_>>>()?
+        .into_iter()
+        .map(|s| crate::redact(&s))
+        .collect();
     let mut seat_stmt = conn.prepare(
         "SELECT DISTINCT seat FROM (
             SELECT seat FROM identity_facts WHERE seat <> ''
@@ -390,13 +426,16 @@ pub fn database_status(db: &std::path::Path, rig: Option<&str>) -> Result<Value>
     )?;
     let seats: Vec<String> = seat_stmt
         .query_map([], |r| r.get::<_, String>(0))?
-        .collect::<duckdb::Result<Vec<_>>>()?;
+        .collect::<duckdb::Result<Vec<_>>>()?
+        .into_iter()
+        .map(|s| crate::redact(&s))
+        .collect();
     drop(seat_stmt);
     drop(rig_stmt);
     drop(store);
     let semantic = crate::semantic::cached_scope(db).map(|(r, f, t, fresh)| {
         json!({
-            "rig": r,
+            "rig": r.map(|v| crate::redact(&v)),
             "from": f,
             "to": t,
             "fresh": fresh
@@ -410,7 +449,7 @@ pub fn database_status(db: &std::path::Path, rig: Option<&str>) -> Result<Value>
         "exists": true,
         "db": db_display,
         "status": if min_ts.is_some() { "ready" } else { "empty" },
-        "selected_rig": rig,
+        "selected_rig": rig.map(crate::redact),
         "min_timestamp": min_ts,
         "max_timestamp": max_ts,
         "usage_rows": usage_rows,
@@ -430,6 +469,8 @@ pub fn database_status(db: &std::path::Path, rig: Option<&str>) -> Result<Value>
 
 /// Resolve an explicit (`--from`/`--to`) or relative (`--window 1h|24h|7d|30d|all`) window,
 /// anchoring relative windows to the database's recorded timestamp bounds when available.
+/// Because `report_json` uses a half-open `[from, to)` interval (`ts >= from AND ts < to`),
+/// `end_d` is set to `max_d + 1s` so events recorded at `max_timestamp` (including sub-second events) are included.
 pub fn resolve_window(
     db: &std::path::Path,
     rig: Option<&str>,
@@ -459,11 +500,7 @@ pub fn resolve_window(
                 .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
                 .map(|d| d.with_timezone(&chrono::Utc));
             if let (Some(min_d), Some(max_d)) = (min_dt, max_dt) {
-                let end_d = if max_d > min_d {
-                    max_d
-                } else {
-                    min_d + chrono::Duration::seconds(1)
-                };
+                let end_d = max_d + chrono::Duration::seconds(1);
                 let (start_d, mode) = match dur {
                     Some(d) => ((end_d - d).max(min_d), "anchored_to_recorded_data"),
                     None => (min_d, "recorded_bounds"),
