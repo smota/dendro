@@ -8,17 +8,37 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[derive(Args)]
+#[derive(Args, Clone, Debug)]
 pub struct Scope {
     #[arg(long, default_value = "dendro.duckdb")]
     pub db: PathBuf,
     #[arg(long)]
     pub rig: Option<String>,
-    #[arg(long)]
-    pub from: String,
-    #[arg(long)]
-    pub to: String,
+    #[arg(
+        long,
+        value_parser = ["1h", "24h", "7d", "30d", "all"],
+        conflicts_with_all = ["from", "to"],
+        help = "Relative window anchored to recorded DB data (default: all)"
+    )]
+    pub window: Option<String>,
+    #[arg(long, requires = "to")]
+    pub from: Option<String>,
+    #[arg(long, requires = "from")]
+    pub to: Option<String>,
 }
+
+impl Scope {
+    pub fn resolve(&self) -> Result<(String, String, String)> {
+        dendro_core::presentation::resolve_window(
+            &self.db,
+            self.rig.as_deref(),
+            self.window.as_deref(),
+            self.from.as_deref(),
+            self.to.as_deref(),
+        )
+    }
+}
+
 #[derive(Subcommand)]
 pub enum Commands {
     /// Refresh the canonical, explicitly scoped Nao projection cache.
@@ -26,14 +46,34 @@ pub enum Commands {
         #[command(flatten)]
         scope: Scope,
     },
-    /// Answer a supported local intent against an explicitly materialized scope.
+    /// Answer a supported local intent (auto-materializes when stale unless --no-refresh is set).
     Ask {
+        /// Question in plain English (may also be passed via --question).
+        query: Option<String>,
         #[arg(long, default_value = "dendro.duckdb")]
         db: PathBuf,
         #[arg(long)]
-        question: String,
+        question: Option<String>,
         #[arg(long)]
         baseline: Option<PathBuf>,
+        #[arg(long)]
+        rig: Option<String>,
+        #[arg(
+            long,
+            value_parser = ["1h", "24h", "7d", "30d", "all"],
+            conflicts_with_all = ["from", "to"]
+        )]
+        window: Option<String>,
+        #[arg(long, requires = "to")]
+        from: Option<String>,
+        #[arg(long, requires = "from")]
+        to: Option<String>,
+        /// List all supported conversational intents and example questions.
+        #[arg(long)]
+        list_intents: bool,
+        /// Do not auto-materialize when the semantic snapshot is missing or stale.
+        #[arg(long)]
+        no_refresh: bool,
     },
     /// Create a new Nao workspace; existing directories are never overwritten.
     InitNao {
@@ -51,13 +91,18 @@ pub enum Commands {
         #[arg(long)]
         output: PathBuf,
     },
-    /// Explore a cached 24h/7d report with keyboard navigation.
+    /// Explore a cached report with keyboard navigation (auto-anchors to recorded DB window).
     Ui {
         #[arg(long, default_value = "dendro.duckdb")]
         db: PathBuf,
         #[arg(long)]
         rig: Option<String>,
-        #[arg(long,value_parser=["24h","7d"],conflicts_with_all=["from","to"],help="Trailing window (default: 24h); conflicts with fixed --from/--to")]
+        #[arg(
+            long,
+            value_parser = ["1h", "24h", "7d", "30d", "all"],
+            conflicts_with_all = ["from", "to"],
+            help = "Window (default: 7d anchored to recorded data); conflicts with fixed --from/--to"
+        )]
         window: Option<String>,
         #[arg(long, requires = "to")]
         from: Option<String>,
@@ -65,6 +110,35 @@ pub enum Commands {
         to: Option<String>,
         #[arg(long)]
         once: bool,
+        /// Automatically run incremental ingestion before opening the UI if needed.
+        #[arg(long)]
+        auto_ingest: bool,
+    },
+    /// One-command interactive or HTML dashboard with automatic window discovery and optional auto-ingest.
+    Dashboard {
+        #[arg(long, default_value = "dendro.duckdb")]
+        db: PathBuf,
+        #[arg(long)]
+        rig: Option<String>,
+        #[arg(
+            long,
+            value_parser = ["1h", "24h", "7d", "30d", "all"],
+            conflicts_with_all = ["from", "to"],
+            help = "Window (default: all recorded data); conflicts with fixed --from/--to"
+        )]
+        window: Option<String>,
+        #[arg(long, requires = "to")]
+        from: Option<String>,
+        #[arg(long, requires = "from")]
+        to: Option<String>,
+        /// Export self-contained offline HTML dashboard to path (default: dendro-dashboard.html).
+        #[arg(long, num_args = 0..=1, default_missing_value = "dendro-dashboard.html")]
+        html: Option<PathBuf>,
+        #[arg(long)]
+        once: bool,
+        /// Automatically run incremental ingestion from local harness roots before rendering.
+        #[arg(long)]
+        auto_ingest: bool,
     },
     /// Aggregate explicitly mapped, independently ingested analytics databases.
     Portfolio {
@@ -97,6 +171,12 @@ pub enum SimulateCommand {
         db: PathBuf,
         #[arg(long)]
         rig: Option<String>,
+        #[arg(
+            long,
+            value_parser = ["1h", "24h", "7d", "30d", "all"],
+            conflicts_with_all = ["from", "to"]
+        )]
+        window: Option<String>,
         #[arg(long, requires = "to")]
         from: Option<String>,
         #[arg(long, requires = "from")]
@@ -258,32 +338,64 @@ fn sources(
     Ok(sources)
 }
 pub async fn run(command: Commands) -> Result<()> {
-    if let Commands::Ui {
-        db,
-        rig,
-        window,
-        from,
-        to,
-        once,
-    } = command
-    {
+    let ui_request = match &command {
+        Commands::Ui {
+            db,
+            rig,
+            window,
+            from,
+            to,
+            once,
+            ..
+        } => Some((
+            db.clone(),
+            rig.clone(),
+            Some(window.clone().unwrap_or_else(|| "7d".into())),
+            from.clone(),
+            to.clone(),
+            *once,
+        )),
+        Commands::Dashboard {
+            db,
+            rig,
+            window,
+            from,
+            to,
+            html: None,
+            once,
+            ..
+        } => {
+            use std::io::IsTerminal;
+            let effective_once =
+                *once || !std::io::stdin().is_terminal() || !std::io::stdout().is_terminal();
+            Some((
+                db.clone(),
+                rig.clone(),
+                Some(window.clone().unwrap_or_else(|| "all".into())),
+                from.clone(),
+                to.clone(),
+                effective_once,
+            ))
+        }
+        _ => None,
+    };
+    if let Some((db, rig, window, from, to, once)) = ui_request {
         // Signals request cooperative exit; the blocking input loop has a 100ms read timeout.
         let mut interrupt =
             tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
         let mut terminate =
             tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
         let mut worker = tokio::task::spawn_blocking(move || -> Result<()> {
-            let (from, to) = match (from, to) {
-                (Some(f), Some(t)) => (f, t),
-                _ => dendro_core::presentation::trailing_window(
-                    if window.as_deref() == Some("7d") {
-                        7
-                    } else {
-                        1
-                    },
-                )?,
-            };
-            let report = dendro_core::report_json(&db, "decisions", rig.as_deref(), &from, &to)?;
+            let (from, to, mode) = dendro_core::presentation::resolve_window(
+                &db,
+                rig.as_deref(),
+                window.as_deref(),
+                from.as_deref(),
+                to.as_deref(),
+            )?;
+            let mut report =
+                dendro_core::report_json(&db, "decisions", rig.as_deref(), &from, &to)?;
+            report["window_resolution"] = serde_json::json!(mode);
             let mut traces = Vec::new();
             if !once {
                 for id in ["handoff_friction", "activity", "tokens"] {
@@ -303,25 +415,83 @@ pub async fn run(command: Commands) -> Result<()> {
     }
     tokio::task::spawn_blocking(move || -> Result<()> {
         match command {
-            Commands::Materialize { scope } => println!(
-                "{}",
-                dendro_core::semantic::refresh(
-                    &scope.db,
-                    scope.rig.as_deref(),
-                    &scope.from,
-                    &scope.to
-                )?
-            ),
+            Commands::Materialize { scope } => {
+                let (from, to, mode) = scope.resolve()?;
+                let mut res =
+                    dendro_core::semantic::refresh(&scope.db, scope.rig.as_deref(), &from, &to)?;
+                if scope.from.is_none() {
+                    res["window_resolution"] = serde_json::json!(mode);
+                }
+                println!("{res}");
+            }
             Commands::Ask {
+                query,
                 db,
                 question,
                 baseline,
+                rig,
+                window,
+                from,
+                to,
+                list_intents,
+                no_refresh,
             } => {
+                let q = question.or(query);
+                if list_intents || q.is_none() {
+                    println!("{}", dendro_core::semantic::supported_intents());
+                    return Ok(());
+                }
+                let q = q.unwrap();
                 let baseline = baseline.as_deref().map(json_file).transpose()?;
-                println!(
-                    "{}",
-                    dendro_core::semantic::answer(&db, &question, baseline.as_ref())?
-                );
+                let scope_supplied =
+                    rig.is_some() || window.is_some() || from.is_some() || to.is_some();
+                let cached = dendro_core::semantic::cached_scope(&db);
+                let needs_refresh = !no_refresh
+                    && (scope_supplied || cached.as_ref().is_none_or(|(_, _, _, fresh)| !*fresh));
+                let mut auto_materialized = false;
+                let mut resolution_mode: Option<String> = None;
+                if needs_refresh && db.exists() {
+                    let effective_rig = if !scope_supplied {
+                        cached
+                            .as_ref()
+                            .and_then(|(r, _, _, _)| r.clone())
+                            .or_else(|| rig.clone())
+                    } else {
+                        rig.clone()
+                    };
+                    let (f, t, mode) = if !scope_supplied {
+                        if let Some((_, c_from, c_to, _)) = cached {
+                            (c_from, c_to, "cached_scope".into())
+                        } else {
+                            dendro_core::presentation::resolve_window(
+                                &db,
+                                effective_rig.as_deref(),
+                                window.as_deref(),
+                                from.as_deref(),
+                                to.as_deref(),
+                            )?
+                        }
+                    } else {
+                        dendro_core::presentation::resolve_window(
+                            &db,
+                            effective_rig.as_deref(),
+                            window.as_deref(),
+                            from.as_deref(),
+                            to.as_deref(),
+                        )?
+                    };
+                    dendro_core::semantic::refresh(&db, effective_rig.as_deref(), &f, &t)?;
+                    auto_materialized = true;
+                    resolution_mode = Some(mode);
+                }
+                let mut ans = dendro_core::semantic::answer(&db, &q, baseline.as_ref())?;
+                if auto_materialized {
+                    ans["auto_materialized"] = serde_json::json!(true);
+                    if let Some(mode) = resolution_mode {
+                        ans["window_resolution"] = serde_json::json!(mode);
+                    }
+                }
+                println!("{ans}");
             }
             Commands::InitNao { db, output } => {
                 dendro_core::semantic::init_workspace(&output, &db)?;
@@ -333,12 +503,13 @@ pub async fn run(command: Commands) -> Result<()> {
                 output,
             } => {
                 dendro_core::refuse_secret_path(&output)?;
+                let (from, to, _) = scope.resolve()?;
                 let report = dendro_core::report_json(
                     &scope.db,
                     "decisions",
                     scope.rig.as_deref(),
-                    &scope.from,
-                    &scope.to,
+                    &from,
+                    &to,
                 )?;
                 let html = dendro_core::presentation::offline_html(&report)?;
                 write_new_private_output_with(&output, html.as_bytes(), |file, data| {
@@ -346,6 +517,42 @@ pub async fn run(command: Commands) -> Result<()> {
                 })?;
                 println!(
                     "{{\"status\":\"exported\",\"format\":\"html\",\"seat_labels\":\"aliases\"}}"
+                );
+            }
+            Commands::Dashboard {
+                db,
+                rig,
+                window,
+                from,
+                to,
+                html: Some(output),
+                ..
+            } => {
+                dendro_core::refuse_secret_path(&output)?;
+                let (from, to, mode) = dendro_core::presentation::resolve_window(
+                    &db,
+                    rig.as_deref(),
+                    Some(window.as_deref().unwrap_or("all")),
+                    from.as_deref(),
+                    to.as_deref(),
+                )?;
+                let report =
+                    dendro_core::report_json(&db, "decisions", rig.as_deref(), &from, &to)?;
+                let html_str = dendro_core::presentation::offline_html(&report)?;
+                write_new_private_output_with(&output, html_str.as_bytes(), |file, data| {
+                    file.write_all(data)
+                })?;
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "status": "exported",
+                        "format": "html",
+                        "seat_labels": "aliases",
+                        "output": dendro_core::redact(&output.display().to_string()),
+                        "from": from,
+                        "to": to,
+                        "window_resolution": mode
+                    })
                 );
             }
             Commands::Portfolio {
@@ -377,6 +584,7 @@ pub async fn run(command: Commands) -> Result<()> {
                     SimulateCommand::Topology {
                         db,
                         rig,
+                        window,
                         from,
                         to,
                         scenario,
@@ -388,10 +596,13 @@ pub async fn run(command: Commands) -> Result<()> {
                         enforce_model_family_diversity,
                     },
             } => {
-                let (from, to) = match (from, to) {
-                    (Some(f), Some(t)) => (f, t),
-                    _ => dendro_core::presentation::trailing_window(1)?,
-                };
+                let (from, to, _) = dendro_core::presentation::resolve_window(
+                    &db,
+                    rig.as_deref(),
+                    Some(window.as_deref().unwrap_or("24h")),
+                    from.as_deref(),
+                    to.as_deref(),
+                )?;
                 let scenario = build_simulation_scenario(
                     scenario.as_deref(),
                     remove,
@@ -405,7 +616,7 @@ pub async fn run(command: Commands) -> Result<()> {
                     dendro_core::report_json(&db, "decisions", rig.as_deref(), &from, &to)?;
                 println!("{}", dendro_core::simulation::simulate(&report, &scenario)?);
             }
-            Commands::Ui { .. } => unreachable!(),
+            Commands::Ui { .. } | Commands::Dashboard { html: None, .. } => unreachable!(),
         }
         Ok(())
     })

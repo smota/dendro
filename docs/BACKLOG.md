@@ -132,3 +132,25 @@ Clean delivery worktrees may be removed after merge. Source history is recoverab
 | **[#26](https://github.com/smota/dendro/issues/26)** | `feat(advisory): Idle-with-Claimed-Work Detection` | Report-only anomaly finding; intervention belongs to the OpenRig watchdog (sponsor 22:54Z) | Delivered (#58) |
 | **[#28](https://github.com/smota/dendro/issues/28)** | `feat(viz): Fleet Flamegraphs & Token Flux Sankey` | Offline aliased HTML (`dendro export`) and terminal charts (`--viz`) | Delivered (#58) |
 | **[#29](https://github.com/smota/dendro/issues/29)** | `feat(ux): Hypothesis Engine & Anomaly Spotlight` | Advisory anomaly spotlights A1–A6 (`report spotlights`) | Delivered (#58) |
+
+---
+
+## 🧭 Goal 6 (v0.6.0): Operator Usability, Zero-Ceremony Dashboards & Smart Defaults
+* **Status:** Delivered in **v0.6.0** (2026-10-19)
+* **Council Governance:** Convened a 5-member multi-model Usability Council across **AGY**, **Codex**, and **Claude**:
+  1. **User Persona A — Pragmatic Solo/Small-Team Operator** (AGY `research` subagent): Diagnosed cold-start DB failures (`Error: analytics database could not be opened`), mandatory manual RFC3339 `--from`/`--to` flags, manual `dendro materialize` plumbing before `dendro ask`, and brittle 6-string matching in `dendro ask`.
+  2. **User Persona B — Engineering Lead & Multi-Rig Fleet Supervisor** (AGY `research` subagent): Diagnosed multi-step ceremony to inspect dashboards, trailing-window mismatch on historical DBs (`--window 7d` anchored to `Utc::now()` showing `100% UNKNOWN` on recorded corpora), and missing fleet status preflight.
+  3. **UX Specialist** (Codex `low` effort): Designed progressive disclosure (`dendro` -> `status`, `dendro dashboard`, `dendro ask "<question>"`), actionable error recovery hints, and in-TUI `?`/`h` keyboard help overlay.
+  4. **Information Architect** (Codex `low` effort): Unified the CLI command taxonomy and universal `--window 1h|24h|7d|30d|all` resolution anchored to recorded database timestamp bounds (`[min_ts, max_ts]`) with explicit `window_resolution` disclosure.
+  5. **Product Owner** (Claude `sonnet` `medium` effort): Scoped and prioritized the v0.6.0 release slices and non-negotiable analytical guardrails (no fabricated metrics, preserved `#![deny(unsafe_code)]`, parameterized SQL, and backward compatibility with all v0.5.0 contracts).
+
+### v0.6.0 Usability Workplan & Delivery Matrix
+
+| Slice | Title | Capabilities Delivered | Status |
+| :--- | :--- | :--- | :--- |
+| **U6.1** | `feat(cli): Zero-Config Entry & Status Preflight` | Bare `dendro` defaults to `dendro status`; reports DB readiness (`ready`, `empty`, `not_initialized`), redacted rigs/seats, `usage_rows`/`activity_rows`/`queue_rows`, rig-scoped `[min_timestamp, max_timestamp]` bounds, `semantic_fresh`, and next steps; missing DB errors include actionable `dendro run` / `dendro dashboard --auto-ingest` guidance | Delivered (v0.6.0) |
+| **U6.2** | `feat(window): Universal Smart Window Resolution` | `--window 1h\|24h\|7d\|30d\|all` across `dashboard`, `ui`, `report`, `trace`, `materialize`, `export`, `ask`, and `simulate topology`; anchors relative windows to rig-scoped DB `[min_timestamp, max_timestamp + 1s)` when data exists and discloses `window_resolution` in JSON and TUI headers | Delivered (v0.6.0) |
+| **U6.3** | `feat(dashboard): One-Command Dashboard & Auto-Ingest` | `dendro dashboard` opens the interactive TUI (or `--once` snapshot / `--html [path]` offline web bundle) over the active DB window; `--auto-ingest` on `dashboard` and `ui` automatically ingests local logs when the DB is missing or not `ready` | Delivered (v0.6.0) |
+| **U6.4** | `feat(ask): Auto-Materializing Conversational Ask & Natural Aliases` | Positional `dendro ask "<question>"` (plus `--question` compatibility), automatic `semantic::refresh` when `dendro_semantic_snapshot` is missing or stale (unless `--no-refresh`), `--list-intents`, and natural whole-phrase aliases (`"highest idle"`, `"where do tokens go?"`, `"rework"`, `"verify"`, `"trace tokens"`, `"trace handoffs"`, `"known limits"`) | Delivered (v0.6.0) |
+| **U6.5** | `feat(tui): In-App Keyboard Help Overlay` | Pressing `?` or `h` inside `dendro ui` / `dendro dashboard` opens a self-contained keyboard & panel navigation guide | Delivered (v0.6.0) |
+

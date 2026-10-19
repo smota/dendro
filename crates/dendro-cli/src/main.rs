@@ -164,6 +164,12 @@ struct ReportScope {
     db: PathBuf,
     #[arg(long)]
     rig: Option<String>,
+    #[arg(
+        long,
+        value_parser = ["1h", "24h", "7d", "30d", "all"],
+        conflicts_with_all = ["from", "to"]
+    )]
+    window: Option<String>,
     #[arg(long, default_value = "2026-10-08T00:00:00Z")]
     from: String,
     #[arg(long, default_value = "2026-10-11T00:00:00Z")]
@@ -171,13 +177,19 @@ struct ReportScope {
 }
 async fn canonical_decisions(scope: ReportScope) -> Result<serde_json::Value> {
     tokio::task::spawn_blocking(move || {
-        dendro_core::report_json(
-            &scope.db,
-            "decisions",
-            scope.rig.as_deref(),
-            &scope.from,
-            &scope.to,
-        )
+        let (from, to) = if scope.window.is_some() {
+            let (f, t, _) = dendro_core::presentation::resolve_window(
+                &scope.db,
+                scope.rig.as_deref(),
+                scope.window.as_deref(),
+                None,
+                None,
+            )?;
+            (f, t)
+        } else {
+            (scope.from, scope.to)
+        };
+        dendro_core::report_json(&scope.db, "decisions", scope.rig.as_deref(), &from, &to)
     })
     .await?
 }
@@ -212,6 +224,15 @@ fn issue_publish_args(repo: &str, body: &str) -> Result<Vec<String>> {
 enum Commands {
     #[command(flatten)]
     Extensions(extensions::Commands),
+    /// Inspect analytics database coverage, discovered local harness roots, and recommended next commands.
+    Status {
+        #[arg(long, default_value = "dendro.duckdb")]
+        db: PathBuf,
+        #[arg(long)]
+        rig: Option<String>,
+        #[arg(long, value_parser = ["text", "json"])]
+        format: Option<String>,
+    },
     /// Draft local Markdown; publish only with explicit --publish --repo.
     IssueDraft {
         #[command(flatten)]
@@ -266,6 +287,12 @@ enum Commands {
         db: PathBuf,
         #[arg(long)]
         rig: Option<String>,
+        #[arg(
+            long,
+            value_parser = ["1h", "24h", "7d", "30d", "all"],
+            conflicts_with_all = ["from", "to"]
+        )]
+        window: Option<String>,
         #[arg(long, default_value = "2026-10-08T00:00:00Z")]
         from: String,
         #[arg(long, default_value = "2026-10-11T00:00:00Z")]
@@ -289,6 +316,12 @@ enum Commands {
         metric_id: String,
         #[arg(long)]
         rig: Option<String>,
+        #[arg(
+            long,
+            value_parser = ["1h", "24h", "7d", "30d", "all"],
+            conflicts_with_all = ["from", "to"]
+        )]
+        window: Option<String>,
         #[arg(long, default_value = "2026-10-08T00:00:00Z")]
         from: String,
         #[arg(long, default_value = "2026-10-11T00:00:00Z")]
@@ -306,10 +339,71 @@ enum Commands {
     },
 }
 
+async fn run_ingest(
+    db: PathBuf,
+    root: Vec<String>,
+    frozen: bool,
+    write_manifest: Option<PathBuf>,
+    sealed: Option<PathBuf>,
+) -> Result<serde_json::Value> {
+    let mut roots = if root.is_empty() {
+        default_roots()
+    } else {
+        parse_roots(&root)?
+    };
+    for root in &mut roots {
+        if root.name == "openrig" {
+            root.path = dendro_core::absolute_openrig_root(&root.path);
+        }
+    }
+    let paths: Vec<PathBuf> = roots.iter().map(|root| root.path.clone()).collect();
+    let openrig_roots: Vec<PathBuf> = roots
+        .iter()
+        .filter(|root| root.name == "openrig")
+        .map(|root| root.path.clone())
+        .collect();
+    let db_for_align = db.clone();
+    let mut interrupt = signal(SignalKind::interrupt())?;
+    let mut terminate = signal(SignalKind::terminate())?;
+    let mut worker = tokio::task::spawn_blocking(move || {
+        dendro_core::run_locked_with_manifest(
+            &db,
+            &paths,
+            &openrig_roots,
+            write_manifest.as_deref(),
+            sealed.as_deref(),
+            |staged, key, manifest| {
+                let mut roots = roots;
+                for root in &mut roots {
+                    if root.name == "openrig" {
+                        root.path = dendro_core::align_openrig_spelling(&db_for_align, &root.path)?;
+                    }
+                }
+                dendro_connectors::ingest_staged_with_manifest(
+                    staged, &roots, frozen, key, manifest,
+                )
+            },
+        )
+    });
+    let code = tokio::select! {
+        joined = &mut worker => {
+            return joined?;
+        }
+        _ = interrupt.recv() => 130,
+        _ = terminate.recv() => 143,
+    };
+    std::process::exit(stop_cooperatively(worker, interrupt, terminate, code).await);
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
-    let cli = match Cli::try_parse() {
+    let parse_result = if std::env::args_os().len() == 1 {
+        Cli::try_parse_from(["dendro", "status"])
+    } else {
+        Cli::try_parse()
+    };
+    let cli = match parse_result {
         Ok(cli) => cli,
         Err(err) => {
             use clap::error::ErrorKind;
@@ -327,7 +421,63 @@ async fn main() -> Result<()> {
     };
 
     match cli.command {
-        Commands::Extensions(command) => extensions::run(command).await?,
+        Commands::Extensions(command) => {
+            let auto_ingest_target = match &command {
+                extensions::Commands::Ui {
+                    db,
+                    rig,
+                    auto_ingest: true,
+                    ..
+                }
+                | extensions::Commands::Dashboard {
+                    db,
+                    rig,
+                    auto_ingest: true,
+                    ..
+                } => Some((db.clone(), rig.clone())),
+                _ => None,
+            };
+            if let Some((db, rig)) = auto_ingest_target {
+                let needs_ingest = tokio::task::spawn_blocking({
+                    let db = db.clone();
+                    move || {
+                        !db.exists()
+                            || dendro_core::presentation::database_status(&db, rig.as_deref())
+                                .map(|s| s["status"] != "ready")
+                                .unwrap_or(true)
+                    }
+                })
+                .await?;
+                if needs_ingest {
+                    let _ = run_ingest(db, Vec::new(), false, None, None).await?;
+                }
+            }
+            extensions::run(command).await?;
+        }
+        Commands::Status { db, rig, format } => {
+            let roots = default_roots();
+            let status = tokio::task::spawn_blocking(move || -> Result<serde_json::Value> {
+                let mut s = dendro_core::presentation::database_status(&db, rig.as_deref())?;
+                let discovered: Vec<serde_json::Value> = roots
+                    .into_iter()
+                    .map(|r| {
+                        serde_json::json!({
+                            "name": r.name,
+                            "path": dendro_core::redact(&r.path.display().to_string()),
+                            "exists": r.path.exists()
+                        })
+                    })
+                    .collect();
+                s["discovered_sources"] = serde_json::json!(discovered);
+                Ok(s)
+            })
+            .await??;
+            if format.as_deref() == Some("json") {
+                println!("{status}");
+            } else {
+                print!("{}", dendro_core::presentation::human_status(&status));
+            }
+        }
         Commands::IssueDraft {
             scope,
             metric,
@@ -381,58 +531,9 @@ async fn main() -> Result<()> {
             write_manifest,
             sealed,
         } => {
-            let mut roots = if root.is_empty() {
-                default_roots()
-            } else {
-                parse_roots(&root)?
-            };
-            // Bind and store an absolute OpenRig path. A relative path would
-            // mean a different file after the working directory changes.
-            for root in &mut roots {
-                if root.name == "openrig" {
-                    root.path = dendro_core::absolute_openrig_root(&root.path);
-                }
-            }
-            let paths: Vec<PathBuf> = roots.iter().map(|root| root.path.clone()).collect();
-            let openrig_roots: Vec<PathBuf> = roots
-                .iter()
-                .filter(|root| root.name == "openrig")
-                .map(|root| root.path.clone())
-                .collect();
-            let db_for_align = db.clone();
-            // Listeners exist before the worker, so no signal can kill it mid-copy.
-            let mut interrupt = signal(SignalKind::interrupt())?;
-            let mut terminate = signal(SignalKind::terminate())?;
-            let mut worker = tokio::task::spawn_blocking(move || {
-                dendro_core::run_locked_with_manifest(
-                    &db,
-                    &paths,
-                    &openrig_roots,
-                    write_manifest.as_deref(),
-                    sealed.as_deref(),
-                    |staged, key, manifest| {
-                        let mut roots = roots;
-                        for root in &mut roots {
-                            if root.name == "openrig" {
-                                root.path =
-                                    dendro_core::align_openrig_spelling(&db_for_align, &root.path)?;
-                            }
-                        }
-                        dendro_connectors::ingest_staged_with_manifest(
-                            staged, &roots, frozen, key, manifest,
-                        )
-                    },
-                )
-            });
-            let code = tokio::select! {
-                joined = &mut worker => {
-                    println!("{}", joined??);
-                    return Ok(());
-                }
-                _ = interrupt.recv() => 130,
-                _ = terminate.recv() => 143,
-            };
-            std::process::exit(stop_cooperatively(worker, interrupt, terminate, code).await);
+            let summary = run_ingest(db, root, frozen, write_manifest, sealed).await?;
+            println!("{summary}");
+            return Ok(());
         }
         Commands::Report {
             kind,
@@ -442,6 +543,7 @@ async fn main() -> Result<()> {
             friction,
             db,
             rig,
+            window,
             from,
             to,
             tool_loop_failures,
@@ -484,8 +586,20 @@ async fn main() -> Result<()> {
                 anyhow::bail!("--anomaly requires report advisory");
             }
             let evaluated_kind = kind.clone();
-            let report = tokio::task::spawn_blocking(move || {
-                dendro_core::report_json_with_analysis(
+            let report = tokio::task::spawn_blocking(move || -> Result<serde_json::Value> {
+                let (from, to, mode) = if window.is_some() {
+                    let (f, t, m) = dendro_core::presentation::resolve_window(
+                        &db,
+                        rig.as_deref(),
+                        window.as_deref(),
+                        None,
+                        None,
+                    )?;
+                    (f, t, Some(m))
+                } else {
+                    (from, to, None)
+                };
+                let mut r = dendro_core::report_json_with_analysis(
                     &db,
                     &evaluated_kind,
                     rig.as_deref(),
@@ -494,7 +608,11 @@ async fn main() -> Result<()> {
                     thresholds,
                     friction_thresholds.thresholds(),
                     advisory_thresholds.options(),
-                )
+                )?;
+                if let Some(m) = mode {
+                    r["window_resolution"] = serde_json::json!(m);
+                }
+                Ok(r)
             })
             .await??;
             if viz {
@@ -542,6 +660,7 @@ async fn main() -> Result<()> {
             db,
             metric_id,
             rig,
+            window,
             from,
             to,
             tool_loop_failures,
@@ -555,8 +674,20 @@ async fn main() -> Result<()> {
                 tool_loop_window_secs,
                 handoff_loop_returns,
             };
-            let report = tokio::task::spawn_blocking(move || {
-                dendro_core::trace_json_with_analysis(
+            let report = tokio::task::spawn_blocking(move || -> Result<serde_json::Value> {
+                let (from, to, mode) = if window.is_some() {
+                    let (f, t, m) = dendro_core::presentation::resolve_window(
+                        &db,
+                        rig.as_deref(),
+                        window.as_deref(),
+                        None,
+                        None,
+                    )?;
+                    (f, t, Some(m))
+                } else {
+                    (from, to, None)
+                };
+                let mut r = dendro_core::trace_json_with_analysis(
                     &db,
                     &metric_id,
                     rig.as_deref(),
@@ -565,7 +696,11 @@ async fn main() -> Result<()> {
                     thresholds,
                     friction_thresholds.thresholds(),
                     advisory_thresholds.options(),
-                )
+                )?;
+                if let Some(m) = mode {
+                    r["window_resolution"] = serde_json::json!(m);
+                }
+                Ok(r)
             })
             .await??;
             println!("{report}");

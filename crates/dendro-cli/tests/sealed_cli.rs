@@ -134,3 +134,85 @@ fn manifest_paths_refuse_secret_shaped_values_before_creating_outputs() {
         assert!(!secret_path.exists());
     }
 }
+
+#[test]
+fn status_dashboard_and_auto_materializing_ask_work_without_ceremony() {
+    let scratch = Scratch::new();
+    let db = scratch.0.join("analytics.duckdb");
+
+    let missing_status = command()
+        .args(["status", "--db"])
+        .arg(&db)
+        .output()
+        .unwrap();
+    assert!(
+        missing_status.status.success(),
+        "{}",
+        error(&missing_status)
+    );
+    let missing_text = String::from_utf8(missing_status.stdout).unwrap();
+    assert!(missing_text.contains("NOT INITIALIZED"), "{missing_text}");
+
+    let source = scratch.0.join("claude");
+    fs::create_dir(&source).unwrap();
+    fs::write(
+        source.join("session.jsonl"),
+        "{\"type\":\"assistant\",\"sessionId\":\"cli-session\",\"timestamp\":\"2026-10-09T01:00:00Z\",\"message\":{\"id\":\"m1\",\"usage\":{\"input_tokens\":5,\"output_tokens\":1,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}\n",
+    )
+    .unwrap();
+    let root = format!("claude={}", source.display());
+    let run_out = command()
+        .args(["run", "--db"])
+        .arg(&db)
+        .args(["--root", &root])
+        .output()
+        .unwrap();
+    assert!(run_out.status.success(), "{}", error(&run_out));
+
+    let ready_status = command()
+        .args(["status", "--db"])
+        .arg(&db)
+        .output()
+        .unwrap();
+    assert!(ready_status.status.success(), "{}", error(&ready_status));
+    let ready_text = String::from_utf8(ready_status.stdout).unwrap();
+    assert!(ready_text.contains("State: READY"), "{ready_text}");
+
+    let dash_once = command()
+        .args(["dashboard", "--db"])
+        .arg(&db)
+        .arg("--once")
+        .output()
+        .unwrap();
+    assert!(dash_once.status.success(), "{}", error(&dash_once));
+    let dash_text = String::from_utf8(dash_once.stdout).unwrap();
+    assert!(dash_text.contains("Dendro local explorer"), "{dash_text}");
+
+    let html_path = scratch.0.join("dashboard.html");
+    let dash_html = command()
+        .args(["dashboard", "--db"])
+        .arg(&db)
+        .arg("--html")
+        .arg(&html_path)
+        .output()
+        .unwrap();
+    assert!(dash_html.status.success(), "{}", error(&dash_html));
+    assert!(html_path.exists());
+
+    let ask_out = command()
+        .args(["ask", "--db"])
+        .arg(&db)
+        .arg("trace tokens")
+        .output()
+        .unwrap();
+    assert!(ask_out.status.success(), "{}", error(&ask_out));
+    let ask_json: serde_json::Value = serde_json::from_slice(&ask_out.stdout).unwrap();
+    assert_eq!(ask_json["status"], "ok");
+    assert_eq!(ask_json["auto_materialized"], true);
+    assert_eq!(ask_json["window_resolution"], "recorded_bounds");
+
+    let intents_out = command().args(["ask", "--list-intents"]).output().unwrap();
+    assert!(intents_out.status.success(), "{}", error(&intents_out));
+    let intents_json: serde_json::Value = serde_json::from_slice(&intents_out.stdout).unwrap();
+    assert_eq!(intents_json["intents"].as_array().unwrap().len(), 6);
+}
