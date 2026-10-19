@@ -1,3 +1,5 @@
+#![deny(unsafe_code)]
+
 use anyhow::Result;
 use notify_debouncer_mini::{new_debouncer, DebouncedEvent};
 use std::path::PathBuf;
