@@ -183,8 +183,13 @@ impl AnalyticsStore {
 
     pub fn open_read_only(path: &Path) -> Result<Self> {
         let config = duckdb::Config::default().access_mode(duckdb::AccessMode::ReadOnly)?;
-        let conn = Connection::open_with_flags(path, config)
-            .map_err(|_| anyhow!("analytics database could not be opened"))?;
+        let conn = Connection::open_with_flags(path, config).map_err(|_| {
+            if !path.exists() {
+                anyhow!("analytics database could not be opened (not found; run 'dendro run' or 'dendro dashboard --auto-ingest' first)")
+            } else {
+                anyhow!("analytics database could not be opened")
+            }
+        })?;
         refuse_legacy(&conn)?;
         let (version, key_id): (i32, String) = conn.query_row(
             "SELECT schema_version, key_id FROM dendro_meta",

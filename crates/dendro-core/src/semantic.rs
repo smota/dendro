@@ -354,24 +354,49 @@ pub fn parse_intent(question: &str) -> Option<Intent> {
         | "compare rework"
         | "compare token burn"
         | "compare idle"
-        | "compare yield" => Some(Intent::Compare),
+        | "compare yield"
+        | "compare"
+        | "compare baseline" => Some(Intent::Compare),
         "which seat had the worst yield"
         | "which seat had worst yield"
         | "which seat had the highest idle time"
         | "which seat has highest idle"
         | "which seat has the highest idle time"
         | "rank idle"
-        | "rank yield" => Some(Intent::Rank),
-        "why did build rework go up" | "explain rework" | "explain handoffs" => {
-            Some(Intent::Explain)
+        | "rank yield"
+        | "idle"
+        | "idle time"
+        | "highest idle"
+        | "highest idle time"
+        | "most idle"
+        | "most idle seat"
+        | "where is time being wasted"
+        | "worst yield"
+        | "yield"
+        | "token burn"
+        | "where do tokens go"
+        | "where are tokens burned" => Some(Intent::Rank),
+        "why did build rework go up"
+        | "explain rework"
+        | "explain handoffs"
+        | "explain handoff friction"
+        | "rework"
+        | "handoffs"
+        | "handoff friction"
+        | "why is there rework" => Some(Intent::Explain),
+        "what changed" | "verify changes" | "verify topology change" | "verify" => {
+            Some(Intent::Verify)
         }
-        "what changed" | "verify changes" | "verify topology change" => Some(Intent::Verify),
         "trace idle"
         | "trace rework"
         | "trace tokens"
         | "trace yield"
-        | "where does idle come from" => Some(Intent::Trace),
-        "honest limits" | "what are the honest limits" => Some(Intent::HonestLimits),
+        | "where does idle come from"
+        | "provenance"
+        | "source keys" => Some(Intent::Trace),
+        "honest limits" | "what are the honest limits" | "limits" | "known limits" => {
+            Some(Intent::HonestLimits)
+        }
         _ => {
             let amount = q
                 .strip_prefix("where does ")?
@@ -381,6 +406,87 @@ pub fn parse_intent(question: &str) -> Option<Intent> {
             (amount.is_finite() && (0.0..=100.0).contains(&amount)).then_some(Intent::Trace)
         }
     }
+}
+
+/// Catalog of supported conversational intents and copy-pasteable example phrases.
+pub fn supported_intents() -> Value {
+    json!({
+        "intents": [
+            {
+                "intent": "Rank (Idle)",
+                "examples": [
+                    "Which seat had the highest idle time?",
+                    "highest idle",
+                    "where is time being wasted?"
+                ],
+                "view": "v_seat_idle_ranking"
+            },
+            {
+                "intent": "Rank (Yield / Token Burn)",
+                "examples": [
+                    "Which seat had the worst yield?",
+                    "worst yield",
+                    "where do tokens go?"
+                ],
+                "view": "v_seat_idle_ranking"
+            },
+            {
+                "intent": "Explain (Rework & Handoffs)",
+                "examples": [
+                    "Why did build rework go up?",
+                    "explain rework",
+                    "explain handoffs"
+                ],
+                "view": "v_handoff_rework_analysis"
+            },
+            {
+                "intent": "Compare (Before/After Baseline)",
+                "examples": [
+                    "Compare handoff efficiency",
+                    "compare rework",
+                    "compare token burn"
+                ],
+                "requires": "--baseline <report.json>"
+            },
+            {
+                "intent": "Verify (Topology Change)",
+                "examples": [
+                    "What changed?",
+                    "verify topology change"
+                ],
+                "requires": "--baseline <report.json>"
+            },
+            {
+                "intent": "Trace & HonestLimits",
+                "examples": [
+                    "Where does 41% idle come from?",
+                    "trace tokens",
+                    "Honest limits"
+                ],
+                "view": "dendro_semantic_provenance"
+            }
+        ]
+    })
+}
+
+/// Inspect the currently materialized semantic scope and whether it matches the live signature.
+pub fn cached_scope(db: &Path) -> Option<(Option<String>, String, String, bool)> {
+    let s = AnalyticsStore::open_read_only(db).ok()?;
+    let (report, expected, guard_fresh): (String, String, bool) = s
+        .connection()
+        .query_row(
+            "SELECT report::VARCHAR, signature, fresh FROM dendro_semantic_snapshot, dendro_semantic_guard",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .ok()?;
+    let sig_fresh = guard_fresh && signature(&s).ok().as_deref() == Some(expected.as_str());
+    let report: Value = serde_json::from_str(&report).ok()?;
+    let p = &report["payload"];
+    let rig = p["rig"].as_str().map(str::to_owned);
+    let from = p["from"].as_str()?.to_owned();
+    let to = p["to"].as_str()?.to_owned();
+    Some((rig, from, to, sig_fresh))
 }
 
 fn insufficient(reason: &str) -> Value {
@@ -420,7 +526,9 @@ pub fn answer(db: &Path, question: &str, baseline: Option<&Value>) -> Result<Val
         v
     };
     let Some(intent) = parse_intent(question) else {
-        return Ok(refusal("unsupported intent, metric, or question qualifier; select an exact report scope and use a supported phrase"));
+        let mut v = refusal("unsupported intent, metric, or question qualifier; select an exact report scope and use a supported phrase");
+        v["supported_examples"] = supported_intents()["intents"].clone();
+        return Ok(v);
     };
     let q = question.to_ascii_lowercase();
     let mut response = match intent {
@@ -440,13 +548,15 @@ pub fn answer(db: &Path, question: &str, baseline: Option<&Value>) -> Result<Val
         },
         Intent::Rank => {
             let q = question.to_ascii_lowercase();
-            let sql = if q.contains("idle") {"SELECT row_json::VARCHAR FROM v_seat_idle_ranking ORDER BY idle_with_work_secs DESC, seat_id"}
-                else if q.contains("yield") {"SELECT m1::VARCHAR FROM v_seat_idle_ranking WHERE try_cast(json_extract(m1,'$.tokens_per_closed_item') AS DOUBLE) IS NOT NULL ORDER BY try_cast(json_extract(m1,'$.tokens_per_closed_item') AS DOUBLE) DESC NULLS LAST, seat_id"}
+            let is_idle = q.contains("idle") || q.contains("wasted");
+            let is_yield = q.contains("yield") || q.contains("token") || q.contains("burn");
+            let sql = if is_idle {"SELECT row_json::VARCHAR FROM v_seat_idle_ranking ORDER BY idle_with_work_secs DESC, seat_id"}
+                else if is_yield {"SELECT m1::VARCHAR FROM v_seat_idle_ranking WHERE try_cast(json_extract(m1,'$.tokens_per_closed_item') AS DOUBLE) IS NOT NULL ORDER BY try_cast(json_extract(m1,'$.tokens_per_closed_item') AS DOUBLE) DESC NULLS LAST, seat_id"}
                 else {return Ok(refusal("rank supports idle and canonical yield only"));};
             let mut stmt=s.connection().prepare(sql)?;
             let rows=stmt.query_map([],|r|r.get::<_,Option<String>>(0))?.collect::<duckdb::Result<Vec<_>>>()?;
             let rows=rows.into_iter().flatten().map(|v|serde_json::from_str::<Value>(&v)).collect::<std::result::Result<Vec<_>,_>>()?;
-            if rows.is_empty() {refusal("no observed seats")} else {json!({"status":"ok","rows":rows,"ordering":if q.contains("idle") {"idle_with_work_secs descending"} else {"tokens_per_closed_item descending: worst observed burn per completed item"}})}
+            if rows.is_empty() {refusal("no observed seats")} else {json!({"status":"ok","rows":rows,"ordering":if is_idle {"idle_with_work_secs descending"} else {"tokens_per_closed_item descending: worst observed burn per completed item"}})}
         },
         Intent::Explain => {
             if !q.contains("rework") && !q.contains("handoff") {return Ok(refusal("explain supports recorded rework and handoff evidence only"));}

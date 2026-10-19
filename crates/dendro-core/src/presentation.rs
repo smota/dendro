@@ -338,6 +338,236 @@ pub fn trailing_window(days: i64) -> Result<(String, String)> {
     ))
 }
 
+/// Inspect an analytics database read-only and summarize recorded bounds, rigs, seats, and cache state.
+pub fn database_status(db: &std::path::Path, rig: Option<&str>) -> Result<Value> {
+    let db_display = crate::redact(&db.display().to_string());
+    if !db.exists() {
+        return Ok(json!({
+            "exists": false,
+            "db": db_display,
+            "status": "not_initialized",
+            "remediation": format!("dendro dashboard --db {} --auto-ingest", db_display),
+            "next_commands": [
+                format!("dendro run --db {}", db_display),
+                format!("dendro dashboard --db {} --auto-ingest", db_display)
+            ]
+        }));
+    }
+    let store = crate::AnalyticsStore::open_read_only(db)?;
+    let conn = store.connection();
+    let (min_ts, max_ts): (Option<String>, Option<String>) = conn.query_row(
+        "SELECT
+            strftime(MIN(ts), '%Y-%m-%dT%H:%M:%SZ'),
+            strftime(MAX(ts), '%Y-%m-%dT%H:%M:%SZ')
+         FROM (
+            SELECT ts FROM usage_facts WHERE ts IS NOT NULL
+            UNION ALL SELECT ts FROM activity_facts
+            UNION ALL SELECT ts FROM queue_facts
+            UNION ALL SELECT ts FROM tool_facts WHERE ts IS NOT NULL
+            UNION ALL SELECT created_at AS ts FROM seat_bounds WHERE created_at IS NOT NULL
+            UNION ALL SELECT stopped_at AS ts FROM seat_bounds WHERE stopped_at IS NOT NULL
+         )",
+        [],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+    let usage_rows: i64 = conn.query_row("SELECT COUNT(*) FROM usage_facts", [], |r| r.get(0))?;
+    let activity_rows: i64 =
+        conn.query_row("SELECT COUNT(*) FROM activity_facts", [], |r| r.get(0))?;
+    let queue_rows: i64 = conn.query_row("SELECT COUNT(*) FROM queue_facts", [], |r| r.get(0))?;
+    let mut rig_stmt =
+        conn.prepare("SELECT DISTINCT rig FROM identity_facts WHERE rig <> '' ORDER BY rig")?;
+    let rigs: Vec<String> = rig_stmt
+        .query_map([], |r| r.get::<_, String>(0))?
+        .collect::<duckdb::Result<Vec<_>>>()?;
+    let mut seat_stmt = conn.prepare(
+        "SELECT DISTINCT seat FROM (
+            SELECT seat FROM identity_facts WHERE seat <> ''
+            UNION SELECT seat FROM activity_facts WHERE seat <> ''
+            UNION SELECT seat FROM seat_bounds WHERE seat <> ''
+            UNION SELECT source_seat AS seat FROM queue_facts WHERE source_seat <> ''
+            UNION SELECT dest_seat AS seat FROM queue_facts WHERE dest_seat <> ''
+         ) ORDER BY seat",
+    )?;
+    let seats: Vec<String> = seat_stmt
+        .query_map([], |r| r.get::<_, String>(0))?
+        .collect::<duckdb::Result<Vec<_>>>()?;
+    drop(seat_stmt);
+    drop(rig_stmt);
+    drop(store);
+    let semantic = crate::semantic::cached_scope(db).map(|(r, f, t, fresh)| {
+        json!({
+            "rig": r,
+            "from": f,
+            "to": t,
+            "fresh": fresh
+        })
+    });
+    let semantic_fresh = semantic
+        .as_ref()
+        .and_then(|s| s["fresh"].as_bool())
+        .unwrap_or(false);
+    Ok(json!({
+        "exists": true,
+        "db": db_display,
+        "status": if min_ts.is_some() { "ready" } else { "empty" },
+        "selected_rig": rig,
+        "min_timestamp": min_ts,
+        "max_timestamp": max_ts,
+        "usage_rows": usage_rows,
+        "activity_rows": activity_rows,
+        "queue_rows": queue_rows,
+        "rigs": rigs,
+        "seats": seats,
+        "semantic_fresh": semantic_fresh,
+        "semantic_snapshot": semantic,
+        "next_commands": [
+            format!("dendro dashboard --db {}", db_display),
+            format!("dendro ask --db {} \"Which seat had the highest idle time?\"", db_display),
+            format!("dendro dashboard --db {} --html dendro-dashboard.html", db_display)
+        ]
+    }))
+}
+
+/// Resolve an explicit (`--from`/`--to`) or relative (`--window 1h|24h|7d|30d|all`) window,
+/// anchoring relative windows to the database's recorded timestamp bounds when available.
+pub fn resolve_window(
+    db: &std::path::Path,
+    rig: Option<&str>,
+    window: Option<&str>,
+    from: Option<&str>,
+    to: Option<&str>,
+) -> Result<(String, String, String)> {
+    if let (Some(f), Some(t)) = (from, to) {
+        return Ok((f.to_owned(), t.to_owned(), "explicit".into()));
+    }
+    let dur = match window.unwrap_or("all") {
+        "1h" => Some(chrono::Duration::hours(1)),
+        "24h" => Some(chrono::Duration::days(1)),
+        "7d" => Some(chrono::Duration::days(7)),
+        "30d" => Some(chrono::Duration::days(30)),
+        "all" => None,
+        _ => bail!("window must be 1h, 24h, 7d, 30d, or all"),
+    };
+    if db.exists() {
+        if let Ok(status) = database_status(db, rig) {
+            let min_dt = status["min_timestamp"]
+                .as_str()
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                .map(|d| d.with_timezone(&chrono::Utc));
+            let max_dt = status["max_timestamp"]
+                .as_str()
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                .map(|d| d.with_timezone(&chrono::Utc));
+            if let (Some(min_d), Some(max_d)) = (min_dt, max_dt) {
+                let end_d = if max_d > min_d {
+                    max_d
+                } else {
+                    min_d + chrono::Duration::seconds(1)
+                };
+                let (start_d, mode) = match dur {
+                    Some(d) => ((end_d - d).max(min_d), "anchored_to_recorded_data"),
+                    None => (min_d, "recorded_bounds"),
+                };
+                return Ok((
+                    start_d.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+                    end_d.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+                    mode.into(),
+                ));
+            }
+        }
+    }
+    let end_d = chrono::Utc::now();
+    let start_d = end_d - dur.unwrap_or_else(|| chrono::Duration::days(7));
+    Ok((
+        start_d.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        end_d.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        "trailing_utc".into(),
+    ))
+}
+
+/// Human-readable summary of `database_status`.
+pub fn human_status(status: &Value) -> String {
+    let mut out = format!(
+        "Dendro Status · db={}\n",
+        status["db"].as_str().unwrap_or("dendro.duckdb")
+    );
+    if !status["exists"].as_bool().unwrap_or(false) {
+        out.push_str("State: NOT INITIALIZED (analytics database does not exist yet)\n");
+        if let Some(sources) = status["discovered_sources"].as_array() {
+            out.push_str("Discovered local harness sources:\n");
+            for s in sources {
+                out.push_str(&format!(
+                    "  - {}: {} ({})\n",
+                    s["name"].as_str().unwrap_or("?"),
+                    s["path"].as_str().unwrap_or("?"),
+                    if s["exists"].as_bool().unwrap_or(false) {
+                        "present"
+                    } else {
+                        "missing"
+                    }
+                ));
+            }
+        }
+        out.push_str("\nQuickstart (1 command):\n");
+        for cmd in rows(&status["next_commands"]) {
+            if let Some(c) = cmd.as_str() {
+                out.push_str(&format!("  $ {c}\n"));
+            }
+        }
+        return out;
+    }
+    out.push_str(&format!(
+        "State: {} · usage={} · activity={} · queue={}\n",
+        status["status"]
+            .as_str()
+            .unwrap_or("unknown")
+            .to_uppercase(),
+        number(&status["usage_rows"]),
+        number(&status["activity_rows"]),
+        number(&status["queue_rows"])
+    ));
+    out.push_str(&format!(
+        "Recorded window: {} to {}\n",
+        status["min_timestamp"].as_str().unwrap_or("Unavailable"),
+        status["max_timestamp"].as_str().unwrap_or("Unavailable")
+    ));
+    let rigs: Vec<&str> = rows(&status["rigs"]).filter_map(|v| v.as_str()).collect();
+    let seats: Vec<&str> = rows(&status["seats"]).filter_map(|v| v.as_str()).collect();
+    out.push_str(&format!(
+        "Rigs ({}): {}\n",
+        rigs.len(),
+        if rigs.is_empty() {
+            "none".into()
+        } else {
+            rigs.join(", ")
+        }
+    ));
+    out.push_str(&format!(
+        "Seats ({}): {}\n",
+        seats.len(),
+        if seats.is_empty() {
+            "none".into()
+        } else {
+            seats.join(", ")
+        }
+    ));
+    out.push_str(&format!(
+        "Semantic (Nao) cache: {}\n",
+        if status["semantic_fresh"].as_bool().unwrap_or(false) {
+            "FRESH"
+        } else {
+            "STALE / NOT MATERIALIZED (auto-refreshed by 'dendro ask')"
+        }
+    ));
+    out.push_str("\nNext commands:\n");
+    for cmd in rows(&status["next_commands"]) {
+        if let Some(c) = cmd.as_str() {
+            out.push_str(&format!("  $ {c}\n"));
+        }
+    }
+    out
+}
+
 fn alias(value: &Value, aliases: &mut BTreeMap<String, String>) -> Value {
     let Some(s) = value.as_str().filter(|s| !s.is_empty()) else {
         return Value::Null;
@@ -673,6 +903,19 @@ fn step_ui_key(state: &mut UiState, byte: u8, report: &Value, traces: &[Value]) 
             ));
             state.escape = 0;
         }
+        b'?' | b'h' => {
+            state.detail = Some(
+                "Dendro Explorer Help\n\
+                 - Tab / Left / Right: cycle panels (Activity Ribbon, Concurrency & Tool Calls, Decision Tables)\n\
+                 - Up / Down: select seat in Activity Ribbon\n\
+                 - Enter: inspect selected seat's canonical evidence\n\
+                 - 1 / 2 / 3: inspect forensic trace (1=handoff_friction, 2=activity, 3=tokens)\n\
+                 - q / Ctrl-C: quit\n\
+                 Tab or arrows to return"
+                    .into(),
+            );
+            state.escape = 0;
+        }
         _ => state.escape = 0,
     }
     Ok(true)
@@ -811,5 +1054,47 @@ mod tests {
         assert!(!seat_detail.chars().any(|c| c != '\n' && c.is_control()));
         assert!(seat_detail.contains("\\u009b"));
         assert!(seat_detail.contains("\\u0085"));
+    }
+    #[test]
+    fn status_window_resolution_and_help_overlay_are_truthful() {
+        let missing = std::env::temp_dir().join("dendro-missing-status-test.duckdb");
+        let _ = std::fs::remove_file(&missing);
+        let status = database_status(&missing, None).unwrap();
+        assert_eq!(status["status"], "not_initialized");
+        let rendered = human_status(&status);
+        assert!(rendered.contains("State: NOT INITIALIZED"));
+        assert!(rendered.contains("dendro dashboard --db"));
+
+        let (f, t, mode) = resolve_window(
+            &missing,
+            None,
+            None,
+            Some("2026-10-08T00:00:00Z"),
+            Some("2026-10-09T00:00:00Z"),
+        )
+        .unwrap();
+        assert_eq!(f, "2026-10-08T00:00:00Z");
+        assert_eq!(t, "2026-10-09T00:00:00Z");
+        assert_eq!(mode, "explicit");
+
+        let (_, _, fallback_mode) = resolve_window(&missing, None, Some("7d"), None, None).unwrap();
+        assert_eq!(fallback_mode, "trailing_utc");
+        assert!(resolve_window(&missing, None, Some("2d"), None, None).is_err());
+
+        let r = json!({"payload":{"activity":[{"seat":"s1","observed_secs":10}]}});
+        let mut state = UiState::default();
+        assert!(step_ui_key(&mut state, b'?', &r, &[]).unwrap());
+        assert!(state
+            .detail
+            .as_deref()
+            .unwrap()
+            .contains("Dendro Explorer Help"));
+        state.detail = None;
+        assert!(step_ui_key(&mut state, b'h', &r, &[]).unwrap());
+        assert!(state
+            .detail
+            .as_deref()
+            .unwrap()
+            .contains("Dendro Explorer Help"));
     }
 }

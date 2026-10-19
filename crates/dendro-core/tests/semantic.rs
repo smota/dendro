@@ -194,3 +194,55 @@ fn no_data_does_not_become_measured_zero() -> anyhow::Result<()> {
     );
     Ok(())
 }
+#[test]
+fn natural_aliases_supported_intents_and_window_bounds_work() -> anyhow::Result<()> {
+    let f = fixture::Fixture::new(10);
+    let intents = semantic::supported_intents();
+    assert_eq!(intents["intents"].as_array().unwrap().len(), 6);
+
+    let (from, to, mode) = dendro_core::presentation::resolve_window(
+        &f.db,
+        Some("test-rig"),
+        Some("all"),
+        None,
+        None,
+    )?;
+    assert_eq!(mode, "recorded_bounds");
+    assert!(from <= to);
+
+    let (_, _, mode_7d) =
+        dendro_core::presentation::resolve_window(&f.db, Some("test-rig"), Some("7d"), None, None)?;
+    assert_eq!(mode_7d, "anchored_to_recorded_data");
+
+    semantic::refresh(&f.db, Some("test-rig"), fixture::FROM, fixture::TO)?;
+    let status = dendro_core::presentation::database_status(&f.db, Some("test-rig"))?;
+    assert_eq!(status["status"], "ready");
+    assert_eq!(status["semantic_fresh"], true);
+    assert!(status["usage_rows"].as_i64().unwrap() > 0);
+
+    assert_eq!(
+        semantic::answer(&f.db, "highest idle", None)?["status"],
+        "ok"
+    );
+    assert_eq!(
+        semantic::answer(&f.db, "where do tokens go?", None)?["ordering"],
+        "tokens_per_closed_item descending: worst observed burn per completed item"
+    );
+    assert_eq!(semantic::answer(&f.db, "rework", None)?["status"], "ok");
+    assert_eq!(
+        semantic::answer(&f.db, "verify", None)?["message"],
+        "Insufficient data: no comparison baseline"
+    );
+    assert_eq!(
+        semantic::answer(&f.db, "trace tokens", None)?["status"],
+        "ok"
+    );
+    assert_eq!(
+        semantic::answer(&f.db, "known limits", None)?["status"],
+        "insufficient_data"
+    );
+    let unknown = semantic::answer(&f.db, "invent unsupported forecast", None)?;
+    assert_eq!(unknown["status"], "insufficient_data");
+    assert!(unknown["supported_examples"].is_array());
+    Ok(())
+}
