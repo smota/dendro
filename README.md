@@ -14,6 +14,21 @@ Dendro reads authorized local harness logs and OpenRig records into embedded Duc
 
 Missing observations are not measured zero. Tokens do not establish value or causal productivity. Recorded cost and operator-supplied prices must be distinguished from one another.
 
+## Walkthrough & Real Operation (`v0.6.0`)
+
+<div align="center">
+  <a href="docs/assets/dendro-demo.mp4">
+    <img src="docs/assets/dendro-preview.gif" alt="Dendro v0.6.0 real operation walkthrough" width="900" />
+  </a>
+  <p>
+    <a href="docs/assets/dendro-demo.mp4"><strong>▶ Watch the full HD video (`docs/assets/dendro-demo.mp4`)</strong></a>
+    &nbsp;·&nbsp;
+    <a href="docs/VIDEO_WALKTHROUGH_v0.6.md"><strong>Read the scene-by-scene script & captured outputs (`docs/VIDEO_WALKTHROUGH_v0.6.md`)</strong></a>
+  </p>
+</div>
+
+The walkthrough above is recorded from real `./target/release/dendro` (`v0.6.0`) execution over a local OpenRig + Claude multi-seat dataset (`dev-build@test-rig`, `rev-review@test-rig`, `orch-arch@test-rig`), showing zero-config status preflight, the terminal activity ribbon explorer, auto-materializing conversational queries, decision tables, observational topology simulation, and one-command offline HTML dashboard export.
+
 ## Start locally
 
 Install stable Rust and Git, then:
@@ -22,27 +37,49 @@ Install stable Rust and Git, then:
 git clone https://github.com/smota/dendro.git
 cd dendro
 cargo build --release --locked
-./target/release/dendro --help
+./target/release/dendro
 ```
 
-Choose authorized source roots explicitly. Keep the output database outside those roots:
+### Zero-ceremony quickstart (`v0.6.0`)
+
+Running bare `dendro` (or `dendro status`) inspects your database readiness, discovered local harness roots, rig-scoped recorded timestamp bounds, and semantic cache freshness:
+
+```sh
+# 1. Check status, discovered local harness sources, and recorded bounds
+./target/release/dendro status --db ./dendro.duckdb
+
+# 2. Launch the interactive TUI dashboard (or --once snapshot), auto-ingesting if needed
+./target/release/dendro dashboard --db ./dendro.duckdb --auto-ingest
+
+# 3. Export the self-contained, secret-redacted, seat-aliased offline HTML dashboard
+./target/release/dendro dashboard --db ./dendro.duckdb --html ./dendro-dashboard.html
+
+# 4. Ask natural questions (auto-materializes semantic views over the active window)
+./target/release/dendro ask --db ./dendro.duckdb "highest idle"
+./target/release/dendro ask --db ./dendro.duckdb "where do tokens go?"
+./target/release/dendro ask --list-intents
+```
+
+### Explicit roots & fixed windows
+
+Choose authorized source roots explicitly and keep the output database outside those roots. You can pass `--window 1h|24h|7d|30d|all` (anchored to the database's rig-scoped recorded bounds when data exists) or explicit half-open `[from, to)` RFC3339 timestamps:
 
 ```sh
 ./target/release/dendro run --db ./dendro.duckdb \
-  --root openrig=/absolute/path/to/openrig \
+  --root openrig=/absolute/path/to/openrig.sqlite \
   --root codex=/absolute/path/to/codex
+./target/release/dendro report decisions --db ./dendro.duckdb --window 7d
 ./target/release/dendro report decisions --db ./dendro.duckdb \
   --from 2026-10-14T00:00:00Z --to 2026-10-15T00:00:00Z
 ./target/release/dendro trace --db ./dendro.duckdb \
-  --metric-id handoff_friction \
-  --from 2026-10-14T00:00:00Z --to 2026-10-15T00:00:00Z
+  --metric-id handoff_friction --window 7d
 ```
 
-Dates above are examples; choose the actual period recorded by your sources. Windows are half-open `[from, to)`. An empty report may mean absent timestamps, unsupported data, or an unobserved period. A build from source is not a measured five-minute installation guarantee.
+Dates above are examples; choose the actual period recorded by your sources or use `--window`. Windows are half-open `[from, to)`. Every relative window resolution discloses `"window_resolution"` (`"recorded_bounds"`, `"anchored_to_recorded_data"`, `"explicit"`, or `"trailing_utc"`). An empty report may mean absent timestamps, unsupported data, or an unobserved period. A build from source is not a measured five-minute installation guarantee.
 
 ## Local investigation
 
-Open [the offline explorer](site/viewer.html) and load a report or trace JSON file. The viewer aliases seat labels and displays supported numeric facts. Its synthetic demo is labelled. Aggregate concurrency counts are a distribution, not a reconstructed time series; handoff counts do not establish token transfer.
+Export a self-contained web bundle with `./target/release/dendro dashboard --html ./dendro-dashboard.html`, or open [the offline explorer](site/viewer.html) and load a report or trace JSON file. The viewer aliases seat labels and displays supported numeric facts. Its synthetic demo is labelled. Aggregate concurrency counts are a distribution, not a reconstructed time series; handoff counts do not establish token transfer.
 
 The [landing page](site/index.html) includes a scenario calculator. Its inputs are assumptions, and its formulas describe potential released capacity, not predicted savings or ROI.
 
@@ -60,11 +97,13 @@ The real-local-log performance test is explicitly ignored by default and require
 
 ## Documentation
 
-- [Operator guide](docs/adoption/README.md): source selection, reporting, privacy and reproducible replay.
+- [Operator guide](docs/adoption/README.md): zero-ceremony status/dashboard workflows, source selection, reporting, privacy and reproducible replay.
+- [CLI reference](docs/CLI_R1.md) and [Nao & local semantic queries](docs/NAO_SEMANTIC.md).
+- [v0.6.0 release notes](docs/RELEASE_NOTES_v0.6.0.md) and [real operation video script](docs/VIDEO_WALKTHROUGH_v0.6.md).
 - [Maintainer guide](docs/maintainers/README.md): workspace architecture and quality gates.
 - [Connector extension guide](docs/extensions/README.md): trait contract and runnable example.
 - [Product specification](docs/PRODUCT_SPECIFICATION.md) and [R1 acceptance contracts](docs/ACCEPTANCE_R1.md).
-- [Historical narrated walkthrough](docs/assets/dendro-demo.mp4) and [preview animation](docs/assets/dendro-preview.gif). These are presentation assets, not evidence for current CLI behavior or performance.
+- [Real operation walkthrough video](docs/assets/dendro-demo.mp4) and [preview animation](docs/assets/dendro-preview.gif).
 
 ## Privacy and license
 
