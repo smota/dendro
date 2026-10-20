@@ -25,17 +25,14 @@ impl HarnessConnector for PiConnector {
 
     fn discover_files(&self) -> Result<Vec<PathBuf>> {
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-        let agent_dir = PathBuf::from(home).join(".pi").join("agent");
-        if !agent_dir.exists() {
+        let sessions_dir = PathBuf::from(home)
+            .join(".pi")
+            .join("agent")
+            .join("sessions");
+        if !sessions_dir.exists() {
             return Ok(vec![]);
         }
-        let mut results = vec![];
-        if let Ok(entries) = std::fs::read_dir(agent_dir) {
-            for entry in entries.flatten() {
-                results.push(entry.path());
-            }
-        }
-        Ok(results)
+        Ok(crate::stream::walk_jsonl(&sessions_dir))
     }
 
     fn extract_incremental(
@@ -57,5 +54,20 @@ impl HarnessConnector for PiConnector {
         let events = Vec::new();
         let _ = watermark;
         Ok((events, new_watermark))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pi_connector_discover_files() {
+        let connector = PiConnector::new();
+        assert_eq!(connector.name(), "pi");
+        let files = connector.discover_files().unwrap();
+        for f in files {
+            assert_eq!(f.extension().and_then(|ext| ext.to_str()), Some("jsonl"));
+        }
     }
 }

@@ -33,6 +33,7 @@ fn history_path(manifest_path: &Path, digest: &str) -> Result<PathBuf> {
     }
     Ok(manifest_path
         .parent()
+        .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."))
         .join(format!(".dendro-sealed-{digest}.duckdb")))
 }
@@ -65,6 +66,7 @@ where
     protected.push(PathBuf::from(format!("{}.wal", db.display())));
     protected.push(
         db.parent()
+            .filter(|p| !p.as_os_str().is_empty())
             .unwrap_or_else(|| Path::new("."))
             .join(".dendro-output.lock"),
     );
@@ -156,7 +158,10 @@ where
             restored.checkpoint()?;
         }
         if let Some(path) = write_manifest {
-            let parent = path.parent().unwrap_or_else(|| Path::new("."));
+            let parent = path
+                .parent()
+                .filter(|p| !p.as_os_str().is_empty())
+                .unwrap_or_else(|| Path::new("."));
             fs::create_dir_all(parent)?;
             if has_history {
                 let store = AnalyticsStore::open_staged(staged)?;

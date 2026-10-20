@@ -98,7 +98,7 @@ pub fn refresh(db: &Path, rig: Option<&str>, from: &str, to: &str) -> Result<Val
     let store = AnalyticsStore::open_existing(db, &key_id)?;
     let conn = store.connection();
     // Bound derived refresh even when a future report carries a very large extension.
-    conn.execute_batch("SET memory_limit='1GB'; SET threads=1")?;
+    conn.execute_batch("SET memory_limit='4GB'; SET threads=1")?;
     conn.execute_batch("BEGIN TRANSACTION")?;
     let result = (|| {
         if signature(&store)? != before {
@@ -399,14 +399,131 @@ pub fn parse_intent(question: &str) -> Option<Intent> {
             Some(Intent::HonestLimits)
         }
         _ => {
-            let amount = q
-                .strip_prefix("where does ")?
-                .strip_suffix("% idle come from")?
-                .parse::<f64>()
-                .ok()?;
-            (amount.is_finite() && (0.0..=100.0).contains(&amount)).then_some(Intent::Trace)
+            if let Some(rest) = q.strip_prefix("where does ") {
+                if let Some(num_str) = rest.strip_suffix("% idle come from") {
+                    if let Ok(amount) = num_str.parse::<f64>() {
+                        if amount.is_finite() && (0.0..=100.0).contains(&amount) {
+                            return Some(Intent::Trace);
+                        }
+                    }
+                }
+            }
+            score_natural_intent(&q)
         }
     }
+}
+
+fn score_natural_intent(q: &str) -> Option<Intent> {
+    let words: Vec<&str> = q
+        .split(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '-')
+        .filter(|w| !w.is_empty())
+        .collect();
+    if words.is_empty() {
+        return None;
+    }
+    // Refuse queries with temporal/mission/seat qualifiers or unsupported vocabulary.
+    const UNSUPPORTED_QUALIFIERS: &[&str] = &[
+        "mission",
+        "week",
+        "month",
+        "year",
+        "yesterday",
+        "today",
+        "since",
+        "removed",
+        "drop",
+        "table",
+        "select",
+        "insert",
+        "delete",
+        "update",
+        "secrets",
+        "secret",
+        "launch",
+        "speed",
+        "forecast",
+        "predict",
+        "roi",
+        "savings",
+    ];
+    if words
+        .iter()
+        .any(|w| UNSUPPORTED_QUALIFIERS.contains(w) || w.contains('@'))
+    {
+        return None;
+    }
+    let has = |targets: &[&str]| words.iter().any(|w| targets.contains(w));
+    if has(&["honest", "limit", "limits", "limitation", "limitations"]) {
+        return Some(Intent::HonestLimits);
+    }
+    if has(&["trace", "provenance"])
+        && has(&[
+            "idle", "rework", "handoff", "handoffs", "token", "tokens", "yield", "source", "keys",
+        ])
+    {
+        return Some(Intent::Trace);
+    }
+    if has(&["compare", "comparison", "vs", "versus"])
+        && has(&[
+            "handoff",
+            "handoffs",
+            "efficiency",
+            "rework",
+            "token",
+            "tokens",
+            "burn",
+            "idle",
+            "yield",
+            "baseline",
+        ])
+    {
+        return Some(Intent::Compare);
+    }
+    if has(&["verify", "changed"]) && words.len() <= 5 {
+        return Some(Intent::Verify);
+    }
+    if has(&["explain", "why", "bouncing", "friction", "loops", "loop"])
+        && has(&[
+            "rework", "handoff", "handoffs", "friction", "bounce", "bouncing",
+        ])
+    {
+        return Some(Intent::Explain);
+    }
+    if has(&[
+        "rank", "ranking", "which", "who", "top", "worst", "highest", "most", "show", "list",
+        "where",
+    ]) && has(&[
+        "idle", "wasted", "yield", "token", "tokens", "burn", "burned", "burning",
+    ]) {
+        return Some(Intent::Rank);
+    }
+    None
+}
+
+/// Rank supported intent categories by keyword overlap with `question` for autocomplete / refusal hints.
+pub fn suggest_closest_intents(question: &str) -> Vec<Value> {
+    let q = question.to_ascii_lowercase();
+    let words: Vec<&str> = q
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|w| w.len() >= 3)
+        .collect();
+    let all = supported_intents()["intents"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    if words.is_empty() {
+        return all;
+    }
+    let mut scored: Vec<(usize, Value)> = all
+        .into_iter()
+        .map(|item| {
+            let text = item.to_string().to_ascii_lowercase();
+            let hits = words.iter().filter(|w| text.contains(*w)).count();
+            (hits, item)
+        })
+        .collect();
+    scored.sort_by_key(|a| std::cmp::Reverse(a.0));
+    scored.into_iter().map(|(_, item)| item).collect()
 }
 
 /// Catalog of supported conversational intents and copy-pasteable example phrases.
@@ -528,7 +645,7 @@ pub fn answer(db: &Path, question: &str, baseline: Option<&Value>) -> Result<Val
     };
     let Some(intent) = parse_intent(question) else {
         let mut v = refusal("unsupported intent, metric, or question qualifier; select an exact report scope and use a supported phrase");
-        v["supported_examples"] = supported_intents()["intents"].clone();
+        v["supported_examples"] = Value::Array(suggest_closest_intents(question));
         return Ok(v);
     };
     let q = question.to_ascii_lowercase();

@@ -432,6 +432,30 @@ pub fn database_status(db: &std::path::Path, rig: Option<&str>) -> Result<Value>
         .collect();
     drop(seat_stmt);
     drop(rig_stmt);
+
+    let (pi_openrig_files, pi_standalone_files): (i64, i64) = conn.query_row(
+        "SELECT
+            COUNT(CASE WHEN harness = 'pi' AND display_path NOT LIKE '%/.pi/agent/sessions%' AND display_path NOT LIKE '%\\.pi\\agent\\sessions%' THEN 1 END),
+            COUNT(CASE WHEN harness = 'pi' AND (display_path LIKE '%/.pi/agent/sessions%' OR display_path LIKE '%\\.pi\\agent\\sessions%') THEN 1 END)
+         FROM source_files",
+        duckdb::params![],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+    let (pi_linked_usage, pi_standalone_usage): (i64, i64) = conn.query_row(
+        "SELECT
+            COUNT(CASE WHEN native_session IN (SELECT native_session FROM identity_facts WHERE harness = 'pi') THEN 1 END),
+            COUNT(CASE WHEN native_session NOT IN (SELECT native_session FROM identity_facts WHERE harness = 'pi') THEN 1 END)
+         FROM usage_facts WHERE harness = 'pi'",
+        duckdb::params![],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+    let pi_breakdown = json!({
+        "openrig_files": pi_openrig_files,
+        "standalone_files": pi_standalone_files,
+        "linked_usage_rows": pi_linked_usage,
+        "standalone_usage_rows": pi_standalone_usage,
+    });
+
     drop(store);
     let semantic = crate::semantic::cached_scope(db).map(|(r, f, t, fresh)| {
         json!({
@@ -445,6 +469,7 @@ pub fn database_status(db: &std::path::Path, rig: Option<&str>) -> Result<Value>
         .as_ref()
         .and_then(|s| s["fresh"].as_bool())
         .unwrap_or(false);
+    let entity_breakdown = build_entity_breakdown(&rigs, &seats);
     Ok(json!({
         "exists": true,
         "db": db_display,
@@ -457,14 +482,98 @@ pub fn database_status(db: &std::path::Path, rig: Option<&str>) -> Result<Value>
         "queue_rows": queue_rows,
         "rigs": rigs,
         "seats": seats,
+        "entity_breakdown": entity_breakdown,
         "semantic_fresh": semantic_fresh,
         "semantic_snapshot": semantic,
+        "harnesses": {
+            "pi": pi_breakdown.clone(),
+        },
+        "pi_breakdown": pi_breakdown,
         "next_commands": [
             format!("dendro dashboard --db {}", db_display),
             format!("dendro ask --db {} \"Which seat had the highest idle time?\"", db_display),
             format!("dendro dashboard --db {} --html dendro-dashboard.html", db_display)
         ]
     }))
+}
+
+/// Classification of raw identifier strings stored in `seats` / `activity` / `queue_facts`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EntityKind {
+    AgentSeat,
+    QueueEndpoint,
+    SystemOrGate,
+    UnlinkedOrRawId,
+}
+
+/// Returns true when `id` looks like a 26-character Crockford Base32 ULID (`01...`).
+pub fn is_raw_ulid(id: &str) -> bool {
+    id.len() == 26
+        && id.starts_with("01")
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
+}
+
+/// Deterministic entity classifier separating canonical `<role>@<rig>` seats from queue endpoints,
+/// supervisory/system nodes, and unlinked/raw identifiers.
+pub fn classify_entity_id(id: &str) -> EntityKind {
+    let trimmed = id.trim();
+    if trimmed.starts_with("qitem-") {
+        return EntityKind::QueueEndpoint;
+    }
+    if trimmed.starts_with("external:")
+        || trimmed.starts_with("system:")
+        || trimmed.ends_with("@system")
+        || matches!(trimmed, "system" | "steerer" | "steer-lead")
+    {
+        return EntityKind::SystemOrGate;
+    }
+    if let Some((left, right)) = trimmed.split_once('@') {
+        if !left.is_empty()
+            && !right.is_empty()
+            && !left.starts_with("qitem-")
+            && !is_raw_ulid(right)
+        {
+            return EntityKind::AgentSeat;
+        }
+    }
+    EntityKind::UnlinkedOrRawId
+}
+
+fn build_entity_breakdown(rigs: &[String], seats: &[String]) -> Value {
+    let mut agent_seats = Vec::new();
+    let mut queue_endpoints = Vec::new();
+    let mut system_and_gates = Vec::new();
+    let mut unlinked_ids = Vec::new();
+    for s in seats {
+        match classify_entity_id(s) {
+            EntityKind::AgentSeat => agent_seats.push(s.clone()),
+            EntityKind::QueueEndpoint => queue_endpoints.push(s.clone()),
+            EntityKind::SystemOrGate => system_and_gates.push(s.clone()),
+            EntityKind::UnlinkedOrRawId => unlinked_ids.push(s.clone()),
+        }
+    }
+    let mut named_rigs = Vec::new();
+    let mut ulid_rigs = Vec::new();
+    for r in rigs {
+        if is_raw_ulid(r) {
+            ulid_rigs.push(r.clone());
+        } else {
+            named_rigs.push(r.clone());
+        }
+    }
+    json!({
+        "agent_seats": agent_seats,
+        "agent_seats_count": agent_seats.len(),
+        "queue_endpoints_count": queue_endpoints.len(),
+        "system_and_gates": system_and_gates,
+        "system_and_gates_count": system_and_gates.len(),
+        "unlinked_ids": unlinked_ids,
+        "unlinked_ids_count": unlinked_ids.len(),
+        "named_rigs": named_rigs,
+        "ulid_rigs_count": ulid_rigs.len(),
+    })
 }
 
 /// Resolve an explicit (`--from`/`--to`) or relative (`--window 1h|24h|7d|30d|all`) window,
@@ -563,6 +672,15 @@ pub fn human_status(status: &Value) -> String {
         number(&status["activity_rows"]),
         number(&status["queue_rows"])
     ));
+    if let Some(pi) = status.get("pi_breakdown").filter(|v| !v.is_null()) {
+        out.push_str(&format!(
+            "Pi sources: openrig_files={} · standalone_files={} · linked_usage={} · standalone_usage={}\n",
+            number(&pi["openrig_files"]),
+            number(&pi["standalone_files"]),
+            number(&pi["linked_usage_rows"]),
+            number(&pi["standalone_usage_rows"])
+        ));
+    }
     out.push_str(&format!(
         "Recorded window: {} to {}\n",
         status["min_timestamp"].as_str().unwrap_or("Unavailable"),
@@ -570,24 +688,78 @@ pub fn human_status(status: &Value) -> String {
     ));
     let rigs: Vec<&str> = rows(&status["rigs"]).filter_map(|v| v.as_str()).collect();
     let seats: Vec<&str> = rows(&status["seats"]).filter_map(|v| v.as_str()).collect();
-    out.push_str(&format!(
-        "Rigs ({}): {}\n",
-        rigs.len(),
-        if rigs.is_empty() {
-            "none".into()
+    if let Some(eb) = status.get("entity_breakdown").filter(|v| !v.is_null()) {
+        let named_rigs: Vec<&str> = rows(&eb["named_rigs"]).filter_map(|v| v.as_str()).collect();
+        let ulid_rigs_count = eb["ulid_rigs_count"].as_u64().unwrap_or(0);
+        if !named_rigs.is_empty() && ulid_rigs_count > 0 {
+            out.push_str(&format!(
+                "Rigs ({} named, +{} ephemeral ULID): {}\n",
+                named_rigs.len(),
+                ulid_rigs_count,
+                named_rigs.join(", ")
+            ));
         } else {
-            rigs.join(", ")
+            out.push_str(&format!(
+                "Rigs ({}): {}\n",
+                rigs.len(),
+                if rigs.is_empty() {
+                    "none".into()
+                } else {
+                    rigs.join(", ")
+                }
+            ));
         }
-    ));
-    out.push_str(&format!(
-        "Seats ({}): {}\n",
-        seats.len(),
-        if seats.is_empty() {
-            "none".into()
+        let agent_seats: Vec<&str> = rows(&eb["agent_seats"])
+            .filter_map(|v| v.as_str())
+            .collect();
+        let qitems = eb["queue_endpoints_count"].as_u64().unwrap_or(0);
+        let sys_gates = eb["system_and_gates_count"].as_u64().unwrap_or(0);
+        let unlinked = eb["unlinked_ids_count"].as_u64().unwrap_or(0);
+        if !agent_seats.is_empty() && (qitems > 0 || sys_gates > 0) {
+            out.push_str(&format!(
+                "Agent Seats ({}): {}\n",
+                agent_seats.len(),
+                agent_seats.join(", ")
+            ));
+            out.push_str(&format!(
+                "Entity hygiene: {} total IDs ({} agent seats · {} queue endpoints · {} system/gates · {} unlinked)\n",
+                seats.len(),
+                agent_seats.len(),
+                qitems,
+                sys_gates,
+                unlinked
+            ));
         } else {
-            seats.join(", ")
+            out.push_str(&format!(
+                "Seats ({}): {}\n",
+                seats.len(),
+                if seats.is_empty() {
+                    "none".into()
+                } else {
+                    seats.join(", ")
+                }
+            ));
         }
-    ));
+    } else {
+        out.push_str(&format!(
+            "Rigs ({}): {}\n",
+            rigs.len(),
+            if rigs.is_empty() {
+                "none".into()
+            } else {
+                rigs.join(", ")
+            }
+        ));
+        out.push_str(&format!(
+            "Seats ({}): {}\n",
+            seats.len(),
+            if seats.is_empty() {
+                "none".into()
+            } else {
+                seats.join(", ")
+            }
+        ));
+    }
     out.push_str(&format!(
         "Semantic (Nao) cache: {}\n",
         if status["semantic_fresh"].as_bool().unwrap_or(false) {
@@ -601,6 +773,151 @@ pub fn human_status(status: &Value) -> String {
         if let Some(c) = cmd.as_str() {
             out.push_str(&format!("  $ {c}\n"));
         }
+    }
+    out
+}
+
+/// Human-readable terminal summary of a `dendro ask` response (`semantic::answer`).
+pub fn human_ask_answer(question: &str, ans: &Value) -> String {
+    let scope = &ans["scope"];
+    let rig_str = scope["rig"]
+        .as_str()
+        .map(crate::redact)
+        .unwrap_or_else(|| "all".into());
+    let from_str = scope["from"].as_str().unwrap_or("Unavailable");
+    let to_str = scope["to"].as_str().unwrap_or("Unavailable");
+    let mut out = format!(
+        "Dendro Ask · rig={} · {} to {}\nQuestion: {}\n\n",
+        rig_str,
+        from_str,
+        to_str,
+        crate::redact(question)
+    );
+    if ans["status"] != "ok" {
+        out.push_str(&format!(
+            "Status: {}\n",
+            ans["message"].as_str().unwrap_or("Insufficient data")
+        ));
+        if let Some(examples) = ans["supported_examples"].as_array() {
+            out.push_str("\nClosest supported queries:\n");
+            for item in examples.iter().take(3) {
+                let intent_name = item["intent"].as_str().unwrap_or("Intent");
+                let phrases: Vec<&str> = rows(&item["examples"])
+                    .filter_map(|v| v.as_str())
+                    .take(2)
+                    .collect();
+                out.push_str(&format!("  • {intent_name}: {}\n", phrases.join(" | ")));
+            }
+        }
+        return out;
+    }
+    if let Some(ordering) = ans["ordering"].as_str() {
+        out.push_str(&format!("Ordering: {ordering}\n"));
+        let r_list: Vec<Vec<String>> = rows(&ans["rows"])
+            .take(15)
+            .map(|r| {
+                if r.get("idle_with_work_secs").is_some() {
+                    vec![
+                        label(&r["seat"]),
+                        number(&r["idle_with_work_secs"]),
+                        number(&r["active_secs"]),
+                        number(&r["observed_secs"]),
+                        percent(&r["ceremony_ratio"]),
+                    ]
+                } else {
+                    vec![
+                        label(&r["seat"]),
+                        number(&r["tokens_per_closed_item"]),
+                        number(&r["closed_items"]),
+                        number(&r["tokens"]),
+                    ]
+                }
+            })
+            .collect();
+        if r_list.first().is_some_and(|r| r.len() == 5) {
+            out.push_str(&table(
+                &[
+                    "Seat",
+                    "Idle w/ work s",
+                    "Running s",
+                    "Observed s",
+                    "Ceremony %",
+                ],
+                &r_list,
+                false,
+            ));
+        } else {
+            out.push_str(&table(
+                &["Seat", "Tokens / closed item", "Closed items", "Tokens"],
+                &r_list,
+                false,
+            ));
+        }
+    } else if ans.get("handoff_friction").is_some() {
+        let pairs: Vec<Vec<String>> = rows(&ans["handoff_friction"]["pairs"])
+            .take(15)
+            .map(|r| {
+                vec![
+                    label(&r["source_seat"]),
+                    label(&r["dest_seat"]),
+                    number(&r["count"]),
+                    number(&r["return_count"]),
+                    percent(&r["return_rate"]),
+                    label(&r["ring_boundary"]),
+                ]
+            })
+            .collect();
+        out.push_str(&table(
+            &[
+                "From",
+                "To",
+                "Handoffs",
+                "Returns",
+                "Return rate",
+                "Boundary",
+            ],
+            &pairs,
+            false,
+        ));
+    } else if ans.get("current").is_some() && ans.get("baseline").is_some() {
+        let cur = &ans["current"];
+        let base = &ans["baseline"];
+        let delta_rows = vec![
+            vec![
+                "M1 yield (tokens/item)".into(),
+                number(&base["m1_yield"]),
+                number(&cur["m1_yield"]),
+            ],
+            vec![
+                "M2 return rate".into(),
+                percent(&base["m2_return_rate"]),
+                percent(&cur["m2_return_rate"]),
+            ],
+            vec![
+                "M3 rework chains".into(),
+                number(&base["m3_rework_chains"]),
+                number(&cur["m3_rework_chains"]),
+            ],
+            vec![
+                "Recorded tokens".into(),
+                number(&base["tokens"]),
+                number(&cur["tokens"]),
+            ],
+        ];
+        out.push_str(&table(
+            &["Metric", "Baseline", "Current"],
+            &delta_rows,
+            false,
+        ));
+    } else if let Some(keys) = ans["source_keys"].as_array() {
+        out.push_str(&format!(
+            "Provenance source keys in scope: {}\nTrace command: {}\n",
+            keys.len(),
+            ans["trace"].as_str().unwrap_or("dendro trace")
+        ));
+    }
+    if let Some(limit) = ans["limit"].as_str() {
+        out.push_str(&format!("\nEpistemic limit: {limit}\n"));
     }
     out
 }
@@ -1133,5 +1450,152 @@ mod tests {
             .as_deref()
             .unwrap()
             .contains("Dendro Explorer Help"));
+    }
+
+    #[test]
+    fn test_pi_breakdown_and_human_status() {
+        let dir = std::env::temp_dir().join(format!(
+            "dendro-pi-breakdown-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("test.duckdb");
+        let store = crate::AnalyticsStore::open_path(&db, "key").unwrap();
+
+        // Usage facts: 1 linked (sess-openrig), 2 standalone (sess-standalone)
+        let make_usage = |key: &str, session: &str, seq: i64| crate::UsageFact {
+            source_key: key.into(),
+            generation: 1,
+            harness: "pi".into(),
+            native_session: session.into(),
+            message_id: Some(format!("m{seq}")),
+            ts: Some(chrono::Utc::now()),
+            seq,
+            input_uncached: 10,
+            output: 20,
+            cache_read: 0,
+            cache_write: 0,
+            reasoning: 0,
+            currency_total: None,
+            predecessor_source_key: None,
+            predecessor_reason: None,
+            prior_input_tokens: None,
+            prior_cached_input_tokens: None,
+            prior_cache_write_input_tokens: None,
+            prior_output_tokens: None,
+            prior_reasoning_output_tokens: None,
+        };
+
+        // OpenRig source file with 1 linked usage row
+        store
+            .commit_file_batch(
+                "src_openrig",
+                "pi",
+                "/home/user/.openrig/state/pi/s1.jsonl",
+                1,
+                0,
+                "hash1",
+                None,
+                &[make_usage("u1", "sess-openrig", 1)],
+                &[],
+            )
+            .unwrap();
+        store
+            .set_source_session("src_openrig", "sess-openrig")
+            .unwrap();
+
+        // Standalone source file (contains agent/sessions) with 2 standalone usage rows
+        store
+            .commit_file_batch(
+                "src_standalone",
+                "pi",
+                "/home/user/.pi/agent/sessions/s2.jsonl",
+                1,
+                0,
+                "hash2",
+                None,
+                &[
+                    make_usage("u2", "sess-standalone", 2),
+                    make_usage("u3", "sess-standalone", 3),
+                ],
+                &[],
+            )
+            .unwrap();
+        store
+            .set_source_session("src_standalone", "sess-standalone")
+            .unwrap();
+
+        // Identity fact linking sess-openrig
+        store
+            .insert_identity(&crate::IdentityFact {
+                source_key: "id1".into(),
+                harness: "pi".into(),
+                native_session: "sess-openrig".into(),
+                rig: "r1".into(),
+                seat: "s1".into(),
+                ts: Some(chrono::Utc::now()),
+            })
+            .unwrap();
+
+        store.checkpoint().unwrap();
+        drop(store);
+
+        let status = database_status(&db, None).unwrap();
+        assert_eq!(status["status"], "ready");
+
+        let breakdown = &status["pi_breakdown"];
+        assert_eq!(breakdown["openrig_files"], 1);
+        assert_eq!(breakdown["standalone_files"], 1);
+        assert_eq!(breakdown["linked_usage_rows"], 1);
+        assert_eq!(breakdown["standalone_usage_rows"], 2);
+
+        assert_eq!(status["harnesses"]["pi"], *breakdown);
+
+        let rendered = human_status(&status);
+        assert!(rendered.contains(
+            "Pi sources: openrig_files=1 · standalone_files=1 · linked_usage=1 · standalone_usage=2"
+        ));
+
+        assert_eq!(
+            classify_entity_id("dev-build@dendro-dev"),
+            EntityKind::AgentSeat
+        );
+        assert_eq!(
+            classify_entity_id("qitem-20261014170440-a11b2afc9ba28ec2"),
+            EntityKind::QueueEndpoint
+        );
+        assert_eq!(
+            classify_entity_id("watchdog@system"),
+            EntityKind::SystemOrGate
+        );
+        assert_eq!(
+            classify_entity_id("external:person-authorizes-push-and-pr"),
+            EntityKind::SystemOrGate
+        );
+        assert_eq!(
+            classify_entity_id("01M4EB4XC6DTG02W6TMSRR7RAE"),
+            EntityKind::UnlinkedOrRawId
+        );
+        assert!(is_raw_ulid("01M4EB4XC6DTG02W6TMSRR7RAE"));
+        assert!(!is_raw_ulid("dendro-dev"));
+
+        let ask_txt = human_ask_answer(
+            "which seat burned the most tokens?",
+            &json!({
+                "status": "ok",
+                "scope": {"rig": "r1", "from": "2026-10-01T00:00:00Z", "to": "2026-10-02T00:00:00Z"},
+                "ordering": "tokens_per_closed_item descending",
+                "rows": [{"seat": "s1@r1", "tokens_per_closed_item": 1500, "closed_items": 2, "tokens": 3000}]
+            }),
+        );
+        assert!(ask_txt.contains("Dendro Ask · rig=r1"));
+        assert!(ask_txt.contains("s1@r1"));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

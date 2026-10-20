@@ -68,6 +68,9 @@ pub enum Commands {
         from: Option<String>,
         #[arg(long, requires = "from")]
         to: Option<String>,
+        /// Output format (text or json; defaults to json for CLI contract compatibility).
+        #[arg(long, value_parser = ["text", "json"])]
+        format: Option<String>,
         /// List all supported conversational intents and example questions.
         #[arg(long)]
         list_intents: bool,
@@ -380,37 +383,9 @@ pub async fn run(command: Commands) -> Result<()> {
         _ => None,
     };
     if let Some((db, rig, window, from, to, once)) = ui_request {
-        // Signals request cooperative exit; the blocking input loop has a 100ms read timeout.
-        let mut interrupt =
-            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
-        let mut terminate =
-            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
-        let mut worker = tokio::task::spawn_blocking(move || -> Result<()> {
-            let (from, to, mode) = dendro_core::presentation::resolve_window(
-                &db,
-                rig.as_deref(),
-                window.as_deref(),
-                from.as_deref(),
-                to.as_deref(),
-            )?;
-            let mut report =
-                dendro_core::report_json(&db, "decisions", rig.as_deref(), &from, &to)?;
-            report["window_resolution"] = serde_json::json!(mode);
-            let mut traces = Vec::new();
-            if !once {
-                for id in ["handoff_friction", "activity", "tokens"] {
-                    traces.push(dendro_core::trace_json(
-                        &db,
-                        id,
-                        rig.as_deref(),
-                        &from,
-                        &to,
-                    )?);
-                }
-            }
-            dendro_core::presentation::terminal_ui(&report, &traces, once)
-        });
-        tokio::select! {r=&mut worker=>r??,_=interrupt.recv()=>{dendro_core::RUN_CANCEL.request();worker.await??;},_=terminate.recv()=>{dendro_core::RUN_CANCEL.request();worker.await??;}}
+        let watch_paths: Vec<PathBuf> =
+            crate::default_roots().into_iter().map(|r| r.path).collect();
+        crate::tui::run_interactive_or_once(db, rig, window, from, to, once, watch_paths).await?;
         return Ok(());
     }
     tokio::task::spawn_blocking(move || -> Result<()> {
@@ -433,9 +408,11 @@ pub async fn run(command: Commands) -> Result<()> {
                 window,
                 from,
                 to,
+                format,
                 list_intents,
                 no_refresh,
             } => {
+                use std::io::IsTerminal;
                 let q = question.or(query);
                 if list_intents || q.is_none() {
                     println!("{}", dendro_core::semantic::supported_intents());
@@ -491,7 +468,18 @@ pub async fn run(command: Commands) -> Result<()> {
                         ans["window_resolution"] = serde_json::json!(mode);
                     }
                 }
-                println!("{ans}");
+                let fmt = format.unwrap_or_else(|| {
+                    if std::io::stdout().is_terminal() {
+                        "text".into()
+                    } else {
+                        "json".into()
+                    }
+                });
+                if fmt == "text" {
+                    print!("{}", dendro_core::presentation::human_ask_answer(&q, &ans));
+                } else {
+                    println!("{ans}");
+                }
             }
             Commands::InitNao { db, output } => {
                 dendro_core::semantic::init_workspace(&output, &db)?;

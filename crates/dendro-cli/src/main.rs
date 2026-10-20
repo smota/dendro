@@ -1,6 +1,7 @@
 #![deny(unsafe_code)]
 
 mod extensions;
+pub mod tui;
 
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
@@ -760,7 +761,7 @@ async fn stop_cooperatively(
     }
 }
 
-fn default_roots() -> Vec<dendro_connectors::SourceRoot> {
+pub(crate) fn default_roots() -> Vec<dendro_connectors::SourceRoot> {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
     let openrig = std::env::var("OPENRIG_HOME").unwrap_or_else(|_| format!("{home}/.openrig"));
     vec![
@@ -775,6 +776,10 @@ fn default_roots() -> Vec<dendro_connectors::SourceRoot> {
         dendro_connectors::SourceRoot {
             name: "pi".into(),
             path: PathBuf::from(&openrig).join("state/pi"),
+        },
+        dendro_connectors::SourceRoot {
+            name: "pi".into(),
+            path: PathBuf::from(&home).join(".pi/agent/sessions"),
         },
         dendro_connectors::SourceRoot {
             name: "openrig".into(),
@@ -816,13 +821,11 @@ fn parse_roots(values: &[String]) -> Result<Vec<dendro_connectors::SourceRoot>> 
     dendro_core::refuse_multiple_openrig_roots(&openrig)?;
     let mut seen = Vec::new();
     roots.retain(|root| {
-        if root.name != "openrig" {
-            return true;
-        }
-        if seen.contains(&root.path) {
+        let key = (root.name.clone(), dendro_core::canonical_root(&root.path));
+        if seen.contains(&key) {
             return false;
         }
-        seen.push(root.path.clone());
+        seen.push(key);
         true
     });
     Ok(roots)
@@ -904,6 +907,51 @@ mod tests {
         assert_eq!(roots.len(), 1);
         assert!(roots[0].path.is_absolute());
         assert_eq!(roots[0].path, std::fs::canonicalize(&file).unwrap());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn default_roots_and_parse_roots_pi_dual_root() {
+        let defaults = default_roots();
+        let pi_roots: Vec<_> = defaults.iter().filter(|r| r.name == "pi").collect();
+        assert_eq!(pi_roots.len(), 2);
+        assert!(pi_roots[0].path.ends_with("state/pi"));
+        assert!(pi_roots[1].path.ends_with(".pi/agent/sessions"));
+
+        let dir = scratch("pi_roots");
+        let path1 = dir.join("openrig_state_pi");
+        let path2 = dir.join("pi_agent_sessions");
+        std::fs::create_dir_all(&path1).unwrap();
+        std::fs::create_dir_all(&path2).unwrap();
+
+        // Distinct pi roots are both kept
+        let roots = parse_roots(&[
+            format!("pi={}", path1.display()),
+            format!("pi={}", path2.display()),
+        ])
+        .unwrap();
+        let parsed_pi: Vec<_> = roots.iter().filter(|r| r.name == "pi").collect();
+        assert_eq!(parsed_pi.len(), 2);
+
+        // Identical pi roots are deduplicated
+        let path1_redundant = dir.join("sub").join("..").join("openrig_state_pi");
+        let roots_dedup = parse_roots(&[
+            format!("pi={}", path1.display()),
+            format!("pi={}", path1_redundant.display()),
+            format!("pi={}", path2.display()),
+        ])
+        .unwrap();
+        let parsed_dedup: Vec<_> = roots_dedup.iter().filter(|r| r.name == "pi").collect();
+        assert_eq!(parsed_dedup.len(), 2);
+        assert_eq!(
+            dendro_core::canonical_root(&parsed_dedup[0].path),
+            dendro_core::canonical_root(&path1)
+        );
+        assert_eq!(
+            dendro_core::canonical_root(&parsed_dedup[1].path),
+            dendro_core::canonical_root(&path2)
+        );
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -49,7 +49,10 @@ where
     // Source identity must be established before mkdir, locking, SQLite
     // preflight, key lookup or any other output/source-content effect.
     refuse_aliased_output_with_openrig(db, source_roots, openrig_roots)?;
-    let parent = db.parent().unwrap_or_else(|| Path::new("."));
+    let parent = db
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
     fs::create_dir_all(parent)?;
     let lock_path = parent.join(".dendro-output.lock");
     with_output_lock(&lock_path, || run_inner(db, openrig_roots, ingest))
@@ -81,7 +84,10 @@ where
             return Err(anyhow!("analytics key id does not match the sidecar"));
         }
     }
-    let parent = db.parent().unwrap_or_else(|| Path::new("."));
+    let parent = db
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
     // Private stage first (marker before any copy), then stale recovery under
     // the same lock, then work. The stage is removed explicitly; Drop is only
     // a fallback.
@@ -1124,6 +1130,8 @@ fn evaluate_report_snapshot(
     let mut discovered = std::collections::BTreeSet::<(String, String)>::new();
     let mut found_by =
         std::collections::BTreeMap::<(String, String), std::collections::BTreeSet<&str>>::new();
+    let mut pi_origins =
+        std::collections::BTreeMap::<String, std::collections::BTreeSet<&'static str>>::new();
     for row in &usage_all {
         let session = (row.harness.clone(), row.native_session.clone());
         found_by.entry(session.clone()).or_default().insert("usage");
@@ -1136,8 +1144,27 @@ fn evaluate_report_snapshot(
             .or_default()
             .insert("identity");
         discovered.insert(session);
+        if fact.harness == "pi" {
+            pi_origins
+                .entry(fact.native_session.clone())
+                .or_default()
+                .insert("openrig");
+        }
     }
-    for (source_id, harness, _path, _generation, native) in &sources {
+    for (source_id, harness, path, _generation, native) in &sources {
+        if harness == "pi" {
+            let session_id = native
+                .clone()
+                .unwrap_or_else(|| format!("file:{source_id}"));
+            let origin = if path.contains("/.pi/agent/sessions")
+                || path.contains("\\.pi\\agent\\sessions")
+            {
+                "pi-home"
+            } else {
+                "openrig"
+            };
+            pi_origins.entry(session_id).or_default().insert(origin);
+        }
         // An OpenRig database is a provenance row, not a harness session.
         if harness == "openrig" {
             continue;
@@ -1202,6 +1229,20 @@ fn evaluate_report_snapshot(
             row["status"] = json!(bound.status());
             row["rig"] = json!(bound.rig());
             row["seat"] = json!(bound.seat());
+            if harness == "pi" {
+                let origin_str = if let Some(origins) = pi_origins.get(native) {
+                    if origins.contains("openrig") && origins.contains("pi-home") {
+                        "both"
+                    } else if origins.contains("pi-home") {
+                        "pi-home"
+                    } else {
+                        "openrig"
+                    }
+                } else {
+                    "openrig"
+                };
+                row["pi_origin"] = json!(origin_str);
+            }
             row["period_records"] = json!(records);
             row["discovered_by"] = json!(found_by.get(&key).cloned().unwrap_or_default());
             row["untimestamped"] = json!({
@@ -4455,5 +4496,101 @@ mod tests {
         crate::storage::FRICTION_METADATA_READS.with(|n| assert_eq!(n.get(), 1));
         assert!(trace["inputs"]["handoff_friction"].is_object());
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn test_pi_origins_openrig_pi_home_both() {
+        let dir = std::env::temp_dir().join(format!(
+            "dendro-pi-origins-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("test.duckdb");
+        let store = AnalyticsStore::open_path(&db, "key").unwrap();
+
+        // 1. Session "pi-openrig-only": source path is OpenRig state, no identity
+        store
+            .commit_file_batch(
+                "s_openrig",
+                "pi",
+                "/home/user/.openrig/state/pi/session-openrig.jsonl",
+                1,
+                0,
+                "prefix1",
+                None,
+                &[],
+                &[],
+            )
+            .unwrap();
+        store
+            .set_source_session("s_openrig", "pi-openrig-only")
+            .unwrap();
+
+        // 2. Session "pi-home-only": source path is ~/.pi/agent/sessions, no OpenRig identity
+        store
+            .commit_file_batch(
+                "s_home",
+                "pi",
+                "/home/user/.pi/agent/sessions/session-home.jsonl",
+                1,
+                0,
+                "prefix2",
+                None,
+                &[],
+                &[],
+            )
+            .unwrap();
+        store.set_source_session("s_home", "pi-home-only").unwrap();
+
+        // 3. Session "pi-both": source path contains agent/sessions AND has identity fact
+        store
+            .commit_file_batch(
+                "s_both",
+                "pi",
+                "/home/user/.pi/agent/sessions/session-both.jsonl",
+                1,
+                0,
+                "prefix3",
+                None,
+                &[],
+                &[],
+            )
+            .unwrap();
+        store.set_source_session("s_both", "pi-both").unwrap();
+        store
+            .insert_identity(&crate::IdentityFact {
+                source_key: "id_both".into(),
+                harness: "pi".into(),
+                native_session: "pi-both".into(),
+                rig: "my-rig".into(),
+                seat: "my-seat".into(),
+                ts: Some(chrono::Utc::now()),
+            })
+            .unwrap();
+
+        store.checkpoint().unwrap();
+        drop(store);
+
+        let report = report_json(
+            &db,
+            "tokens",
+            None,
+            "2000-01-01T00:00:00Z",
+            "2099-01-01T00:00:00Z",
+        )
+        .unwrap();
+        let sessions = report["payload"]["sessions"].as_array().unwrap();
+        let find = |id: &str| sessions.iter().find(|s| s["session"] == id).unwrap();
+
+        assert_eq!(find("pi-openrig-only")["pi_origin"], "openrig");
+        assert_eq!(find("pi-home-only")["pi_origin"], "pi-home");
+        assert_eq!(find("pi-both")["pi_origin"], "both");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

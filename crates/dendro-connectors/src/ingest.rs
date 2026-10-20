@@ -1830,4 +1830,85 @@ mod tests {
             .iter()
             .any(|(_, skill)| skill.is_empty() || skill == "file.txt"));
     }
+
+    #[test]
+    fn dual_root_pi_ingests_both_trees_without_collision() {
+        let dir = std::env::temp_dir().join(format!(
+            "dendro-dual-pi-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let openrig_tree = dir.join("openrig").join("state").join("pi");
+        let standalone_tree = dir.join("home").join(".pi").join("agent").join("sessions");
+        std::fs::create_dir_all(&openrig_tree).unwrap();
+        std::fs::create_dir_all(&standalone_tree).unwrap();
+
+        let s1_file = openrig_tree.join("s1.jsonl");
+        let s2_file = standalone_tree.join("s2.jsonl");
+
+        let pi_header = |id: &str| {
+            format!("{{\"type\":\"session\",\"version\":3,\"id\":\"{id}\",\"timestamp\":\"2026-10-09T00:00:00Z\"}}")
+        };
+        let pi_usage = |msg: &str, input: i64| {
+            format!("{{\"type\":\"message\",\"id\":\"{msg}\",\"timestamp\":\"2026-10-09T00:00:01Z\",\"message\":{{\"role\":\"assistant\",\"usage\":{{\"input\":{input},\"output\":0,\"cacheRead\":0,\"cacheWrite\":0}}}}}}")
+        };
+
+        std::fs::write(
+            &s1_file,
+            format!(
+                "{}\n{}\n",
+                pi_header("session-openrig-1"),
+                pi_usage("m1", 42)
+            ),
+        )
+        .unwrap();
+
+        std::fs::write(
+            &s2_file,
+            format!(
+                "{}\n{}\n",
+                pi_header("session-standalone-2"),
+                pi_usage("m2", 84)
+            ),
+        )
+        .unwrap();
+
+        let db = dir.join("analytics.duckdb");
+        drop(AnalyticsStore::open_path(&db, "key").unwrap());
+        let roots = vec![
+            SourceRoot {
+                name: "pi".into(),
+                path: openrig_tree,
+            },
+            SourceRoot {
+                name: "pi".into(),
+                path: standalone_tree,
+            },
+        ];
+        let key = b"dual-root-pi-test-key";
+        let (notes, manifest) = ingest_staged_with_manifest(&db, &roots, false, key, None).unwrap();
+
+        assert_eq!(manifest.files.len(), 2);
+        assert_ne!(manifest.files[0].source_id, manifest.files[1].source_id);
+
+        let pi_notes: Vec<_> = notes.iter().filter(|n| n.starts_with("pi ")).collect();
+        assert_eq!(pi_notes.len(), 2);
+        assert!(pi_notes[0].contains("files=1 records_read=2 usage_records=1"));
+        assert!(pi_notes[1].contains("files=1 records_read=2 usage_records=1"));
+
+        let store = AnalyticsStore::open_path(&db, "key").unwrap();
+        let sources = store.load_sources().unwrap();
+        assert_eq!(sources.len(), 2);
+        assert_ne!(sources[0].0, sources[1].0);
+
+        let usage = store.load_usage().unwrap();
+        assert_eq!(usage.len(), 2);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
