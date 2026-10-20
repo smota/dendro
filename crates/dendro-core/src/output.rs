@@ -12,7 +12,7 @@ use crate::privacy::key_id;
 const MAGIC: &[u8] = b"DNDK";
 
 pub fn with_output_lock<T>(lock_path: &Path, body: impl FnOnce() -> Result<T>) -> Result<T> {
-    if let Some(parent) = lock_path.parent() {
+    if let Some(parent) = lock_path.parent().filter(|p| !p.as_os_str().is_empty()) {
         fs::create_dir_all(parent)?;
     }
     with_output_lock_metadata(lock_path, fs::symlink_metadata(lock_path), body)
@@ -103,7 +103,7 @@ pub fn load_or_create_key(path: &Path, allow_create: bool) -> Result<KeyMaterial
     if !allow_create {
         return Err(anyhow!("analytics key is missing"));
     }
-    if let Some(parent) = path.parent() {
+    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
         fs::create_dir_all(parent)?;
     }
     let mut bytes = [0u8; 32];
@@ -346,7 +346,12 @@ fn same_inode_under(root: &Path, dest_meta: &fs::Metadata) -> Result<bool> {
 }
 
 pub fn sync_dir(path: &Path) -> Result<()> {
-    File::open(path)?.sync_all()?;
+    let dir = if path.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        path
+    };
+    File::open(dir)?.sync_all()?;
     Ok(())
 }
 

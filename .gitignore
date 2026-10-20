@@ -7,8 +7,11 @@
 *.duckdb
 *.duckdb.wal
 *.duckdb.tmp
+*.duckdb.key
 dendro.duckdb*
 telemetry.duckdb*
+.dendro-output.lock
+.dendro-stage-*
 
 # SQLite temp & journal files
 *.sqlite-shm
