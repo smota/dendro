@@ -31,6 +31,36 @@ fn error(output: &Output) -> String {
 }
 
 #[test]
+fn top_level_help_lists_quickstart_shortcuts_and_report_kinds() {
+    let output = command().arg("--help").output().unwrap();
+    assert!(output.status.success(), "{}", error(&output));
+    let text = String::from_utf8(output.stdout).unwrap();
+    for needle in [
+        "Quickstart Examples",
+        "Interactive TUI Shortcuts",
+        "Report Kinds",
+        "links, activity, handoffs, tokens, decisions",
+        "status",
+        "dashboard",
+        "simulate",
+    ] {
+        assert!(text.contains(needle), "missing {needle}: {text}");
+    }
+    let status_help = command().args(["status", "--help"]).output().unwrap();
+    assert!(status_help.status.success(), "{}", error(&status_help));
+    let status_text = String::from_utf8(status_help.stdout).unwrap();
+    assert!(status_text.contains("Database & Scope"), "{status_text}");
+    let report_help = command().args(["report", "--help"]).output().unwrap();
+    assert!(report_help.status.success(), "{}", error(&report_help));
+    let report_text = String::from_utf8(report_help.stdout).unwrap();
+    assert!(report_text.contains("Friction Thresholds"), "{report_text}");
+    assert!(
+        report_text.contains("Advisory & Spotlights"),
+        "{report_text}"
+    );
+}
+
+#[test]
 fn run_help_lists_manifest_flags_and_visible_alias() {
     let output = command().args(["run", "--help"]).output().unwrap();
     assert!(output.status.success(), "{}", error(&output));

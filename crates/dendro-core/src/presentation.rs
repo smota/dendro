@@ -631,39 +631,260 @@ pub fn resolve_window(
     ))
 }
 
+fn append_discovered_sources(out: &mut String, status: &Value) {
+    out.push_str("\nDISCOVERED HARNESS SOURCES\n");
+    let Some(sources) = status.get("discovered_sources").and_then(|v| v.as_array()) else {
+        out.push_str("  (none attached)\n");
+        return;
+    };
+    if sources.is_empty() {
+        out.push_str("  (none)\n");
+        return;
+    }
+    let rendered: Vec<(String, String, String)> = sources
+        .iter()
+        .map(|s| {
+            let name = s["name"].as_str().unwrap_or("?").to_string();
+            let path = s["path"].as_str().unwrap_or("?").to_string();
+            let state = if s["exists"].as_bool().unwrap_or(false) {
+                "present"
+            } else {
+                "missing"
+            };
+            (name, state.to_string(), path)
+        })
+        .collect();
+    let name_w = rendered
+        .iter()
+        .map(|(name, _, _)| name.chars().count())
+        .max()
+        .unwrap_or(4)
+        .max(4);
+    out.push_str(&format!(
+        "  {name:<name_w$}  {state:<7}  Path\n",
+        name = "Name",
+        state = "State"
+    ));
+    for (name, state, path) in rendered {
+        out.push_str(&format!("  {name:<name_w$}  {state:<7}  {path}\n"));
+    }
+}
+
+fn group_agent_seats(agent_seats: &[&str]) -> Vec<(String, Vec<String>)> {
+    let mut grouped: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for seat in agent_seats {
+        if let Some((name, rig)) = seat.split_once('@') {
+            grouped
+                .entry(rig.to_string())
+                .or_default()
+                .push(name.to_string());
+        } else {
+            grouped
+                .entry("(unscoped)".into())
+                .or_default()
+                .push((*seat).to_string());
+        }
+    }
+    grouped.into_iter().collect()
+}
+
+fn write_rig_seat_row(out: &mut String, rig: &str, names: &[String]) {
+    let joined = names.join(", ");
+    let prefix = format!("  - {rig} ({}): ", names.len());
+    if prefix.chars().count() + joined.chars().count() <= 96 {
+        out.push_str(&prefix);
+        out.push_str(&joined);
+        out.push('\n');
+        return;
+    }
+    out.push_str(&format!("  - {rig} ({}):\n", names.len()));
+    let mut line = String::from("      ");
+    for (i, name) in names.iter().enumerate() {
+        let extra = if i == 0 {
+            name.clone()
+        } else {
+            format!(", {name}")
+        };
+        if line.chars().count() + extra.chars().count() > 96 && i > 0 {
+            out.push_str(&line);
+            out.push_str(",\n");
+            line = format!("      {name}");
+        } else {
+            line.push_str(&extra);
+        }
+    }
+    if !line.trim().is_empty() {
+        out.push_str(&line);
+        out.push('\n');
+    }
+}
+
+fn write_seat_fallback(out: &mut String, seats: &[&str]) {
+    if seats.is_empty() {
+        out.push_str("  Seats (0): none\n");
+        return;
+    }
+    if seats.len() <= 12 {
+        out.push_str(&format!(
+            "  Seats ({}): {}\n",
+            seats.len(),
+            seats.join(", ")
+        ));
+        return;
+    }
+    let sample = seats.iter().take(8).copied().collect::<Vec<_>>().join(", ");
+    out.push_str(&format!("  Seats ({}): {sample}, ...\n", seats.len()));
+}
+
+fn append_topology(out: &mut String, status: &Value) {
+    out.push_str("\nFLEET TOPOLOGY (RIGS & AGENT SEATS)\n");
+    if !status["exists"].as_bool().unwrap_or(false) {
+        out.push_str("  Unavailable until the analytics database exists.\n");
+        return;
+    }
+    let rigs: Vec<&str> = rows(&status["rigs"]).filter_map(|v| v.as_str()).collect();
+    let seats: Vec<&str> = rows(&status["seats"]).filter_map(|v| v.as_str()).collect();
+    let Some(eb) = status.get("entity_breakdown").filter(|v| !v.is_null()) else {
+        out.push_str(&format!(
+            "  Rigs ({}): {}\n",
+            rigs.len(),
+            if rigs.is_empty() {
+                "none".into()
+            } else {
+                rigs.join(", ")
+            }
+        ));
+        write_seat_fallback(out, &seats);
+        return;
+    };
+    let named_rigs: Vec<&str> = rows(&eb["named_rigs"]).filter_map(|v| v.as_str()).collect();
+    let ulid_rigs_count = eb["ulid_rigs_count"].as_u64().unwrap_or(0);
+    if !named_rigs.is_empty() && ulid_rigs_count > 0 {
+        out.push_str(&format!(
+            "  Rigs ({} named, +{} ephemeral ULID): {}\n",
+            named_rigs.len(),
+            ulid_rigs_count,
+            named_rigs.join(", ")
+        ));
+    } else {
+        out.push_str(&format!(
+            "  Rigs ({}): {}\n",
+            rigs.len(),
+            if rigs.is_empty() {
+                "none".into()
+            } else {
+                rigs.join(", ")
+            }
+        ));
+    }
+    let agent_seats: Vec<&str> = rows(&eb["agent_seats"])
+        .filter_map(|v| v.as_str())
+        .collect();
+    let qitems = eb["queue_endpoints_count"].as_u64().unwrap_or(0);
+    let sys_gates = eb["system_and_gates_count"].as_u64().unwrap_or(0);
+    let unlinked = eb["unlinked_ids_count"].as_u64().unwrap_or(0);
+    if agent_seats.is_empty() {
+        write_seat_fallback(out, &seats);
+    } else {
+        let grouped = group_agent_seats(&agent_seats);
+        for (rig, names) in &grouped {
+            write_rig_seat_row(out, rig, names);
+        }
+        let compact = agent_seats.join(", ");
+        if compact.chars().count() <= 88 {
+            out.push_str(&format!(
+                "  Agent Seats ({}): {compact}\n",
+                agent_seats.len()
+            ));
+        } else {
+            out.push_str(&format!(
+                "  Agent seats: {} across {} rigs\n",
+                agent_seats.len(),
+                grouped.len()
+            ));
+        }
+    }
+    if !agent_seats.is_empty() || qitems > 0 || sys_gates > 0 || unlinked > 0 {
+        out.push_str(&format!(
+            "  Entity hygiene: {} total IDs ({} agent seats · {} queue endpoints · {} system/gates · {} unlinked)\n",
+            seats.len(),
+            agent_seats.len(),
+            qitems,
+            sys_gates,
+            unlinked
+        ));
+    }
+}
+
+fn append_quickstart(out: &mut String, status: &Value) {
+    out.push_str("\nQUICKSTART & COMMANDS\n");
+    out.push_str("Usage: dendro <COMMAND> [OPTIONS]\n\n");
+    let body = table(
+        &["Command", "Purpose"],
+        &[
+            vec![
+                "status".into(),
+                "Inspect coverage, topology, and next commands".into(),
+            ],
+            vec![
+                "dashboard".into(),
+                "Open the 6-screen cockpit or export HTML".into(),
+            ],
+            vec!["ui".into(), "Open the cockpit on an explicit window".into()],
+            vec![
+                "ask".into(),
+                "Answer a supported plain-English question".into(),
+            ],
+            vec![
+                "run".into(),
+                "Ingest local harness roots into DuckDB".into(),
+            ],
+            vec![
+                "report".into(),
+                "Print an Operational Intelligence report".into(),
+            ],
+            vec![
+                "trace".into(),
+                "Print trace inputs for one metric id".into(),
+            ],
+            vec![
+                "simulate".into(),
+                "Run a historical topology what-if".into(),
+            ],
+        ],
+        false,
+    );
+    for line in body.lines() {
+        out.push_str("  ");
+        out.push_str(line);
+        out.push('\n');
+    }
+    out.push('\n');
+    out.push_str("Next commands:\n");
+    for cmd in rows(&status["next_commands"]) {
+        if let Some(c) = cmd.as_str() {
+            out.push_str(&format!("  $ {c}\n"));
+        }
+    }
+}
+
 /// Human-readable summary of `database_status`.
 pub fn human_status(status: &Value) -> String {
-    let mut out = format!(
-        "Dendro Status · db={}\n",
+    let mut out = String::from("=== DENDRO FLEET INTELLIGENCE ===\n");
+    out.push_str("\nDATABASE & COVERAGE\n");
+    out.push_str(&format!(
+        "  Database: {}\n",
         status["db"].as_str().unwrap_or("dendro.duckdb")
-    );
+    ));
     if !status["exists"].as_bool().unwrap_or(false) {
-        out.push_str("State: NOT INITIALIZED (analytics database does not exist yet)\n");
-        if let Some(sources) = status["discovered_sources"].as_array() {
-            out.push_str("Discovered local harness sources:\n");
-            for s in sources {
-                out.push_str(&format!(
-                    "  - {}: {} ({})\n",
-                    s["name"].as_str().unwrap_or("?"),
-                    s["path"].as_str().unwrap_or("?"),
-                    if s["exists"].as_bool().unwrap_or(false) {
-                        "present"
-                    } else {
-                        "missing"
-                    }
-                ));
-            }
-        }
-        out.push_str("\nQuickstart (1 command):\n");
-        for cmd in rows(&status["next_commands"]) {
-            if let Some(c) = cmd.as_str() {
-                out.push_str(&format!("  $ {c}\n"));
-            }
-        }
+        out.push_str("  State: NOT INITIALIZED (analytics database does not exist yet)\n");
+        append_discovered_sources(&mut out, status);
+        append_topology(&mut out, status);
+        append_quickstart(&mut out, status);
         return out;
     }
     out.push_str(&format!(
-        "State: {} · usage={} · activity={} · queue={}\n",
+        "  State: {} · usage={} · activity={} · queue={}\n",
         status["status"]
             .as_str()
             .unwrap_or("unknown")
@@ -672,9 +893,17 @@ pub fn human_status(status: &Value) -> String {
         number(&status["activity_rows"]),
         number(&status["queue_rows"])
     ));
+    if let Some(rig) = status.get("selected_rig").and_then(|v| v.as_str()) {
+        out.push_str(&format!("  Selected rig: {rig}\n"));
+    }
+    out.push_str(&format!(
+        "  Recorded window: {} to {}\n",
+        status["min_timestamp"].as_str().unwrap_or("Unavailable"),
+        status["max_timestamp"].as_str().unwrap_or("Unavailable")
+    ));
     if let Some(pi) = status.get("pi_breakdown").filter(|v| !v.is_null()) {
         out.push_str(&format!(
-            "Pi sources: openrig_files={} · standalone_files={} · linked_usage={} · standalone_usage={}\n",
+            "  Pi sources: openrig_files={} · standalone_files={} · linked_usage={} · standalone_usage={}\n",
             number(&pi["openrig_files"]),
             number(&pi["standalone_files"]),
             number(&pi["linked_usage_rows"]),
@@ -682,98 +911,16 @@ pub fn human_status(status: &Value) -> String {
         ));
     }
     out.push_str(&format!(
-        "Recorded window: {} to {}\n",
-        status["min_timestamp"].as_str().unwrap_or("Unavailable"),
-        status["max_timestamp"].as_str().unwrap_or("Unavailable")
-    ));
-    let rigs: Vec<&str> = rows(&status["rigs"]).filter_map(|v| v.as_str()).collect();
-    let seats: Vec<&str> = rows(&status["seats"]).filter_map(|v| v.as_str()).collect();
-    if let Some(eb) = status.get("entity_breakdown").filter(|v| !v.is_null()) {
-        let named_rigs: Vec<&str> = rows(&eb["named_rigs"]).filter_map(|v| v.as_str()).collect();
-        let ulid_rigs_count = eb["ulid_rigs_count"].as_u64().unwrap_or(0);
-        if !named_rigs.is_empty() && ulid_rigs_count > 0 {
-            out.push_str(&format!(
-                "Rigs ({} named, +{} ephemeral ULID): {}\n",
-                named_rigs.len(),
-                ulid_rigs_count,
-                named_rigs.join(", ")
-            ));
-        } else {
-            out.push_str(&format!(
-                "Rigs ({}): {}\n",
-                rigs.len(),
-                if rigs.is_empty() {
-                    "none".into()
-                } else {
-                    rigs.join(", ")
-                }
-            ));
-        }
-        let agent_seats: Vec<&str> = rows(&eb["agent_seats"])
-            .filter_map(|v| v.as_str())
-            .collect();
-        let qitems = eb["queue_endpoints_count"].as_u64().unwrap_or(0);
-        let sys_gates = eb["system_and_gates_count"].as_u64().unwrap_or(0);
-        let unlinked = eb["unlinked_ids_count"].as_u64().unwrap_or(0);
-        if !agent_seats.is_empty() && (qitems > 0 || sys_gates > 0) {
-            out.push_str(&format!(
-                "Agent Seats ({}): {}\n",
-                agent_seats.len(),
-                agent_seats.join(", ")
-            ));
-            out.push_str(&format!(
-                "Entity hygiene: {} total IDs ({} agent seats · {} queue endpoints · {} system/gates · {} unlinked)\n",
-                seats.len(),
-                agent_seats.len(),
-                qitems,
-                sys_gates,
-                unlinked
-            ));
-        } else {
-            out.push_str(&format!(
-                "Seats ({}): {}\n",
-                seats.len(),
-                if seats.is_empty() {
-                    "none".into()
-                } else {
-                    seats.join(", ")
-                }
-            ));
-        }
-    } else {
-        out.push_str(&format!(
-            "Rigs ({}): {}\n",
-            rigs.len(),
-            if rigs.is_empty() {
-                "none".into()
-            } else {
-                rigs.join(", ")
-            }
-        ));
-        out.push_str(&format!(
-            "Seats ({}): {}\n",
-            seats.len(),
-            if seats.is_empty() {
-                "none".into()
-            } else {
-                seats.join(", ")
-            }
-        ));
-    }
-    out.push_str(&format!(
-        "Semantic (Nao) cache: {}\n",
+        "  Semantic (Nao) cache: {}\n",
         if status["semantic_fresh"].as_bool().unwrap_or(false) {
             "FRESH"
         } else {
             "STALE / NOT MATERIALIZED (auto-refreshed by 'dendro ask')"
         }
     ));
-    out.push_str("\nNext commands:\n");
-    for cmd in rows(&status["next_commands"]) {
-        if let Some(c) = cmd.as_str() {
-            out.push_str(&format!("  $ {c}\n"));
-        }
-    }
+    append_discovered_sources(&mut out, status);
+    append_topology(&mut out, status);
+    append_quickstart(&mut out, status);
     out
 }
 
@@ -1416,7 +1563,29 @@ mod tests {
         let status = database_status(&missing, None).unwrap();
         assert_eq!(status["status"], "not_initialized");
         let rendered = human_status(&status);
+        assert!(rendered.contains("=== DENDRO FLEET INTELLIGENCE ==="));
+        assert!(rendered.contains("DATABASE & COVERAGE"));
         assert!(rendered.contains("State: NOT INITIALIZED"));
+        assert!(rendered.contains("Usage: dendro <COMMAND> [OPTIONS]"));
+        assert!(rendered.contains("QUICKSTART & COMMANDS"));
+        assert!(rendered.contains("Next commands:"));
+        for command in [
+            "status",
+            "dashboard",
+            "ui",
+            "ask",
+            "run",
+            "report",
+            "trace",
+            "simulate",
+        ] {
+            assert!(
+                rendered
+                    .lines()
+                    .any(|line| line.split_whitespace().next() == Some(command)),
+                "missing command row {command}: {rendered}"
+            );
+        }
         assert!(rendered.contains("dendro dashboard --db"));
 
         let (f, t, mode) = resolve_window(
@@ -1557,9 +1726,11 @@ mod tests {
         assert_eq!(status["harnesses"]["pi"], *breakdown);
 
         let rendered = human_status(&status);
+        assert!(rendered.contains("State: READY · usage="));
         assert!(rendered.contains(
             "Pi sources: openrig_files=1 · standalone_files=1 · linked_usage=1 · standalone_usage=2"
         ));
+        assert!(rendered.contains("Usage: dendro <COMMAND> [OPTIONS]"));
 
         assert_eq!(
             classify_entity_id("dev-build@dendro-dev"),
@@ -1597,5 +1768,80 @@ mod tests {
         assert!(ask_txt.contains("s1@r1"));
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn human_status_groups_seats_by_rig_and_keeps_compact_invariants() {
+        let mut agent_seats: Vec<String> =
+            (0..44).map(|i| format!("seat{i:02}@dendro-dev")).collect();
+        agent_seats.push("dev-qa@other-rig".into());
+        let mut seats = agent_seats.clone();
+        seats.push("qitem-20261014170440-a11b2afc9ba28ec2".into());
+        seats.push("watchdog@system".into());
+        let status = json!({
+            "exists": true,
+            "db": "dendro.duckdb",
+            "status": "ready",
+            "usage_rows": 9,
+            "activity_rows": 4,
+            "queue_rows": 2,
+            "min_timestamp": "2026-10-01T00:00:00Z",
+            "max_timestamp": "2026-10-02T00:00:00Z",
+            "rigs": ["dendro-dev", "other-rig", "01M4EB4XC6DTG02W6TMSRR7RAE"],
+            "seats": seats,
+            "entity_breakdown": {
+                "agent_seats": agent_seats,
+                "named_rigs": ["dendro-dev", "other-rig"],
+                "ulid_rigs_count": 1,
+                "queue_endpoints_count": 1,
+                "system_and_gates_count": 1,
+                "unlinked_ids_count": 0
+            },
+            "semantic_fresh": false,
+            "pi_breakdown": {
+                "openrig_files": 2,
+                "standalone_files": 3,
+                "linked_usage_rows": 4,
+                "standalone_usage_rows": 5
+            },
+            "discovered_sources": [
+                {"name": "pi", "path": "/home/user/.openrig/state/pi", "exists": true},
+                {"name": "pi", "path": "/home/user/.pi/agent/sessions", "exists": false}
+            ],
+            "next_commands": ["dendro dashboard --db dendro.duckdb"]
+        });
+        let rendered = human_status(&status);
+        assert!(rendered.contains("=== DENDRO FLEET INTELLIGENCE ==="));
+        assert!(rendered.contains("DATABASE & COVERAGE"));
+        assert!(rendered.contains("DISCOVERED HARNESS SOURCES"));
+        assert!(rendered.contains("FLEET TOPOLOGY (RIGS & AGENT SEATS)"));
+        assert!(rendered.contains("QUICKSTART & COMMANDS"));
+        assert!(rendered.contains("State: READY · usage=9 · activity=4 · queue=2"));
+        assert!(rendered.contains(
+            "Pi sources: openrig_files=2 · standalone_files=3 · linked_usage=4 · standalone_usage=5"
+        ));
+        assert!(rendered.contains("  - dendro-dev (44):"));
+        assert!(rendered.contains("  - other-rig (1): dev-qa"));
+        assert!(rendered.contains("Agent seats: 45 across 2 rigs"));
+        assert!(rendered.contains(
+            "Entity hygiene: 47 total IDs (45 agent seats · 1 queue endpoints · 1 system/gates · 0 unlinked)"
+        ));
+        assert!(rendered.contains("Rigs (2 named, +1 ephemeral ULID): dendro-dev, other-rig"));
+        assert!(!rendered
+            .lines()
+            .any(|line| line.matches("@dendro-dev").count() > 4));
+        let empty = json!({
+            "exists": true,
+            "db": "dendro.duckdb",
+            "status": "empty",
+            "usage_rows": 0,
+            "activity_rows": 0,
+            "queue_rows": 0,
+            "rigs": [],
+            "seats": [],
+            "next_commands": []
+        });
+        let empty_text = human_status(&empty);
+        assert!(empty_text.contains("State: EMPTY · usage=0 · activity=0 · queue=0"));
     }
 }

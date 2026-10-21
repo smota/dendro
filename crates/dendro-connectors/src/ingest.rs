@@ -435,6 +435,7 @@ fn read_openrig_with_source(
             row.get::<_, String>(3)?,
         ))
     })?;
+    let mut stale_activity_seqs = Vec::<i64>::new();
     for row in rows {
         dendro_core::RUN_CANCEL.check()?;
         let (seq, kind, payload, created_at) = row?;
@@ -488,8 +489,19 @@ fn read_openrig_with_source(
                 seat: dendro_core::seal_identifier(key, "seat", seat),
                 ts,
             })?;
-        } else if kind == "seat.activity_changed" {
-            let state = dendro_core::activity_state(parsed.get("state").and_then(|v| v.as_str()));
+        } else if kind == "seat.activity_changed" || kind == "agent.activity" {
+            let raw_state = parsed.get("state").and_then(|v| v.as_str()).or_else(|| {
+                parsed
+                    .get("activity")
+                    .and_then(|a| a.get("state"))
+                    .and_then(|v| v.as_str())
+            });
+            let Some(raw_state) = raw_state else {
+                if kind == "seat.activity_changed" {
+                    stale_activity_seqs.push(seq);
+                }
+                continue;
+            };
             let Some(seat) = parsed
                 .get("sessionName")
                 .and_then(|v| v.as_str())
@@ -500,19 +512,21 @@ fn read_openrig_with_source(
             let when = parsed
                 .get("at")
                 .and_then(|v| v.as_str())
-                .and_then(|text| DateTime::parse_from_rfc3339(text).ok())
-                .map(|value| value.with_timezone(&Utc))
+                .or_else(|| {
+                    parsed.get("activity").and_then(|a| {
+                        a.get("eventAt")
+                            .or_else(|| a.get("sampledAt"))
+                            .and_then(|v| v.as_str())
+                    })
+                })
+                .and_then(dendro_core::parse_utc_time)
                 .or(ts);
             let Some(when) = when else { continue };
             store.insert_activity(&ActivityFact {
-                source_key: fact_key(
-                    "events",
-                    &seq.to_string(),
-                    format!("seat.activity_changed:{seq}"),
-                )?,
+                source_key: fact_key("events", &seq.to_string(), format!("{kind}:{seq}"))?,
                 seat: dendro_core::seal_identifier(key, "seat", seat),
                 ts: when,
-                state,
+                state: raw_state.to_string(),
                 seq,
             })?;
         } else if kind == "qitem.fallback_routed" {
@@ -606,6 +620,7 @@ fn read_openrig_with_source(
             })?;
         }
     }
+    store.purge_stateless_activity(&stale_activity_seqs)?;
     lives.extend(
         seat_lives(lifecycle)
             .into_iter()

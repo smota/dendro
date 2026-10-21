@@ -995,6 +995,52 @@ impl AnalyticsStore {
         })
     }
 
+    /// Remove stateless `seat.activity_changed` notification pings.
+    /// An empty `seqs` list, or a database with no such rows, is a no-op.
+    pub fn purge_stateless_activity(&self, seqs: &[i64]) -> Result<()> {
+        if seqs.is_empty() {
+            return Ok(());
+        }
+        let existing: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM activity_facts WHERE starts_with(source_key, 'seat.activity_changed:')",
+            [],
+            |row| row.get(0),
+        )?;
+        if existing == 0 {
+            return Ok(());
+        }
+        self.canonical_write(|| {
+            self.conn.execute_batch(
+                "DROP TABLE IF EXISTS stale_activity_seqs;
+                 CREATE TEMP TABLE stale_activity_seqs (seq BIGINT)",
+            )?;
+            {
+                let mut appender = self.conn.appender("stale_activity_seqs")?;
+                for seq in seqs {
+                    appender.append_row(params![*seq])?;
+                }
+                appender.flush()?;
+            }
+            self.conn.execute_batch(
+                "DELETE FROM activity_facts
+                 WHERE starts_with(source_key, 'seat.activity_changed:')
+                   AND seq IN (SELECT seq FROM stale_activity_seqs);
+                 DELETE FROM openrig_row_records
+                 WHERE starts_with(source_key, 'seat.activity_changed:')
+                   AND EXISTS (
+                     SELECT 1 FROM stale_activity_seqs s
+                     WHERE source_key = 'seat.activity_changed:' || CAST(s.seq AS VARCHAR)
+                        OR starts_with(
+                          source_key,
+                          'seat.activity_changed:' || CAST(s.seq AS VARCHAR) || '@'
+                        )
+                   );
+                 DROP TABLE stale_activity_seqs",
+            )?;
+            Ok(())
+        })
+    }
+
     pub fn insert_queue(&self, fact: &QueueFact) -> Result<()> {
         self.canonical_write(|| {
             let qitem_redacted = redact(&fact.qitem_id);
@@ -1825,6 +1871,82 @@ mod tests {
             .as_deref()
             .unwrap_or("")
             .contains("FAKESTATE"));
+    }
+
+    #[test]
+    fn purge_stateless_activity_removes_only_listed_notification_seqs() {
+        let store = AnalyticsStore::open_in_memory("key").unwrap();
+        let ts = Utc::now();
+        for (key, state, seq) in [
+            ("seat.activity_changed:1", "unknown", 1),
+            ("seat.activity_changed:2", "running", 2),
+            ("seat.activity_changed:3@g2", "unknown", 3),
+            ("agent.activity:4", "running", 4),
+        ] {
+            store
+                .insert_activity(&ActivityFact {
+                    source_key: key.into(),
+                    seat: "seat-a".into(),
+                    ts,
+                    state: state.into(),
+                    seq,
+                })
+                .unwrap();
+        }
+        for (row_id, key) in [
+            ("1", "seat.activity_changed:1"),
+            ("2", "seat.activity_changed:2"),
+            ("3", "seat.activity_changed:3@g2"),
+            ("12", "seat.activity_changed:12"),
+        ] {
+            store
+                .conn
+                .execute(
+                    "INSERT INTO openrig_row_records VALUES ('src', 1, 'rev', 'events', ?, 'digest', 'present', ?)",
+                    params![row_id, key],
+                )
+                .unwrap();
+        }
+        store.purge_stateless_activity(&[]).unwrap();
+        assert_eq!(store.load_activity().unwrap().len(), 4);
+        store.purge_stateless_activity(&[1, 3]).unwrap();
+        let mut keys: Vec<_> = store
+            .load_activity()
+            .unwrap()
+            .into_iter()
+            .map(|row| row.source_key)
+            .collect();
+        keys.sort();
+        assert_eq!(
+            keys,
+            vec![
+                "agent.activity:4".to_string(),
+                "seat.activity_changed:2".to_string()
+            ]
+        );
+        let mut record_keys: Vec<_> = store
+            .load_openrig_row_records()
+            .unwrap()
+            .into_iter()
+            .map(|row| row.source_key)
+            .collect();
+        record_keys.sort();
+        assert_eq!(
+            record_keys,
+            vec![
+                "seat.activity_changed:12".to_string(),
+                "seat.activity_changed:2".to_string()
+            ]
+        );
+        store
+            .conn
+            .execute(
+                "DELETE FROM activity_facts WHERE starts_with(source_key, 'seat.activity_changed:')",
+                [],
+            )
+            .unwrap();
+        store.purge_stateless_activity(&[2]).unwrap();
+        assert_eq!(store.load_activity().unwrap().len(), 1);
     }
 
     #[test]

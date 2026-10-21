@@ -9,6 +9,7 @@ use std::{
 };
 
 #[derive(Args, Clone, Debug)]
+#[command(next_help_heading = "Scope")]
 pub struct Scope {
     #[arg(long, default_value = "dendro.duckdb")]
     pub db: PathBuf,
@@ -41,83 +42,8 @@ impl Scope {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Refresh the canonical, explicitly scoped Nao projection cache.
-    Materialize {
-        #[command(flatten)]
-        scope: Scope,
-    },
-    /// Answer a supported local intent (auto-materializes when stale unless --no-refresh is set).
-    Ask {
-        /// Question in plain English (may also be passed via --question).
-        query: Option<String>,
-        #[arg(long, default_value = "dendro.duckdb")]
-        db: PathBuf,
-        #[arg(long)]
-        question: Option<String>,
-        #[arg(long)]
-        baseline: Option<PathBuf>,
-        #[arg(long)]
-        rig: Option<String>,
-        #[arg(
-            long,
-            value_parser = ["1h", "24h", "7d", "30d", "all"],
-            conflicts_with_all = ["from", "to"]
-        )]
-        window: Option<String>,
-        #[arg(long, requires = "to")]
-        from: Option<String>,
-        #[arg(long, requires = "from")]
-        to: Option<String>,
-        /// Output format (text or json; defaults to json for CLI contract compatibility).
-        #[arg(long, value_parser = ["text", "json"])]
-        format: Option<String>,
-        /// List all supported conversational intents and example questions.
-        #[arg(long)]
-        list_intents: bool,
-        /// Do not auto-materialize when the semantic snapshot is missing or stale.
-        #[arg(long)]
-        no_refresh: bool,
-    },
-    /// Create a new Nao workspace; existing directories are never overwritten.
-    InitNao {
-        #[arg(long, default_value = "dendro.duckdb")]
-        db: PathBuf,
-        #[arg(long, visible_alias = "target")]
-        output: PathBuf,
-    },
-    /// Export a scrubbed, self-contained offline visualization.
-    Export {
-        #[command(flatten)]
-        scope: Scope,
-        #[arg(long,default_value="html",value_parser=["html"])]
-        format: String,
-        #[arg(long)]
-        output: PathBuf,
-    },
-    /// Explore a cached report with keyboard navigation (auto-anchors to recorded DB window).
-    Ui {
-        #[arg(long, default_value = "dendro.duckdb")]
-        db: PathBuf,
-        #[arg(long)]
-        rig: Option<String>,
-        #[arg(
-            long,
-            value_parser = ["1h", "24h", "7d", "30d", "all"],
-            conflicts_with_all = ["from", "to"],
-            help = "Window (default: 7d anchored to recorded data); conflicts with fixed --from/--to"
-        )]
-        window: Option<String>,
-        #[arg(long, requires = "to")]
-        from: Option<String>,
-        #[arg(long, requires = "from")]
-        to: Option<String>,
-        #[arg(long)]
-        once: bool,
-        /// Automatically run incremental ingestion before opening the UI if needed.
-        #[arg(long)]
-        auto_ingest: bool,
-    },
-    /// One-command interactive or HTML dashboard with automatic window discovery and optional auto-ingest.
+    /// Open the 6-screen cockpit, or export a self-contained HTML dashboard.
+    #[command(next_help_heading = "Scope")]
     Dashboard {
         #[arg(long, default_value = "dendro.duckdb")]
         db: PathBuf,
@@ -135,15 +61,80 @@ pub enum Commands {
         #[arg(long, requires = "from")]
         to: Option<String>,
         /// Export self-contained offline HTML dashboard to path (default: dendro-dashboard.html).
-        #[arg(long, num_args = 0..=1, default_missing_value = "dendro-dashboard.html")]
+        #[arg(long, num_args = 0..=1, default_missing_value = "dendro-dashboard.html", help_heading = "Cockpit")]
         html: Option<PathBuf>,
-        #[arg(long)]
+        #[arg(long, help_heading = "Cockpit")]
         once: bool,
-        /// Automatically run incremental ingestion from local harness roots before rendering.
-        #[arg(long)]
+        /// Ingest default local harness roots first when the database is missing or not ready.
+        #[arg(long, help_heading = "Cockpit")]
         auto_ingest: bool,
     },
+    /// Open the cockpit for an explicit window. Auto-anchors to recorded data.
+    #[command(next_help_heading = "Scope")]
+    Ui {
+        #[arg(long, default_value = "dendro.duckdb")]
+        db: PathBuf,
+        #[arg(long)]
+        rig: Option<String>,
+        #[arg(
+            long,
+            value_parser = ["1h", "24h", "7d", "30d", "all"],
+            conflicts_with_all = ["from", "to"],
+            help = "Window (default: 7d anchored to recorded data); conflicts with fixed --from/--to"
+        )]
+        window: Option<String>,
+        #[arg(long, requires = "to")]
+        from: Option<String>,
+        #[arg(long, requires = "from")]
+        to: Option<String>,
+        #[arg(long, help_heading = "Cockpit")]
+        once: bool,
+        /// Ingest default local harness roots first when the database is missing or not ready.
+        #[arg(long, help_heading = "Cockpit")]
+        auto_ingest: bool,
+    },
+    /// Answer a supported local question. Refreshes a stale snapshot unless --no-refresh is set.
+    #[command(next_help_heading = "Question")]
+    Ask {
+        /// Question in plain English (may also be passed via --question).
+        query: Option<String>,
+        #[arg(long)]
+        question: Option<String>,
+        #[arg(long, default_value = "dendro.duckdb", help_heading = "Scope")]
+        db: PathBuf,
+        #[arg(long, help_heading = "Scope")]
+        baseline: Option<PathBuf>,
+        #[arg(long, help_heading = "Scope")]
+        rig: Option<String>,
+        #[arg(
+            long,
+            value_parser = ["1h", "24h", "7d", "30d", "all"],
+            conflicts_with_all = ["from", "to"],
+            help_heading = "Scope"
+        )]
+        window: Option<String>,
+        #[arg(long, requires = "to", help_heading = "Scope")]
+        from: Option<String>,
+        #[arg(long, requires = "from", help_heading = "Scope")]
+        to: Option<String>,
+        /// text or json. Defaults to text on a terminal and json when stdout is not a terminal.
+        #[arg(long, value_parser = ["text", "json"], help_heading = "Output")]
+        format: Option<String>,
+        /// List supported intents and example questions. Does not need a database.
+        #[arg(long, help_heading = "Output")]
+        list_intents: bool,
+        /// Do not auto-materialize when the semantic snapshot is missing or stale.
+        #[arg(long, help_heading = "Output")]
+        no_refresh: bool,
+    },
+    /// Run a deterministic historical what-if over a canonical decisions report.
+    #[command(next_help_heading = "Analysis")]
+    Simulate {
+        #[command(subcommand)]
+        command: SimulateCommand,
+    },
     /// Aggregate explicitly mapped, independently ingested analytics databases.
+    #[command(next_help_heading = "Analysis")]
     Portfolio {
         #[arg(long, required_unless_present = "source_dir")]
         sources: Option<PathBuf>,
@@ -159,16 +150,36 @@ pub enum Commands {
         #[arg(long, default_value_t = 300)]
         pending_threshold_secs: u64,
     },
-    /// Run deterministic historical what-if simulations over canonical reports.
-    Simulate {
-        #[command(subcommand)]
-        command: SimulateCommand,
+    /// Refresh the canonical, explicitly scoped Nao projection cache.
+    #[command(next_help_heading = "Cache & Export")]
+    Materialize {
+        #[command(flatten)]
+        scope: Scope,
+    },
+    /// Export a scrubbed, self-contained offline visualization.
+    #[command(next_help_heading = "Cache & Export")]
+    Export {
+        #[command(flatten)]
+        scope: Scope,
+        #[arg(long, default_value = "html", value_parser = ["html"], help_heading = "Output")]
+        format: String,
+        #[arg(long, help_heading = "Output")]
+        output: PathBuf,
+    },
+    /// Create a new Nao workspace. Existing directories are never overwritten.
+    #[command(next_help_heading = "Cache & Export")]
+    InitNao {
+        #[arg(long, default_value = "dendro.duckdb")]
+        db: PathBuf,
+        #[arg(long, visible_alias = "target")]
+        output: PathBuf,
     },
 }
 
 #[derive(Subcommand)]
 pub enum SimulateCommand {
     /// Model historical seat removal, direct handoffs, tier multipliers, and boundary resets.
+    #[command(next_help_heading = "Scenario")]
     Topology {
         #[arg(long, default_value = "dendro.duckdb")]
         db: PathBuf,

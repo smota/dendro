@@ -2,9 +2,9 @@
 
 Dendro is a local, one-shot evidence engine. It does not need a running rig, webserver or background monitoring service to report on retained execution facts. Start with bare `./target/release/dendro` (which runs `dendro status`) or `./target/release/dendro --help` after `cargo build --release --locked`.
 
-## Zero-ceremony quickstart (`v0.6.0`)
+## Zero-ceremony quickstart (`v0.7.0`)
 
-Inspect database readiness, discovered local harness roots, and recorded timestamp bounds, or open the dashboard in one command:
+Inspect database readiness, discovered local harness roots, and recorded timestamp bounds, or open the six-screen cockpit in one command. Bare `dendro` prints the same sectioned status brief as `dendro status`: coverage, harness roots, seats grouped by rig, and a command reference.
 
 ```sh
 # Inspect status, discovered local harness roots, and recorded [min_timestamp, max_timestamp]
@@ -18,12 +18,26 @@ Inspect database readiness, discovered local harness roots, and recorded timesta
 ./target/release/dendro dashboard --db ./fleet.duckdb --html ./fleet-dashboard.html
 
 # Ask natural questions (automatically refreshes semantic views when missing or stale)
-./target/release/dendro ask --db ./fleet.duckdb "highest idle"
+./target/release/dendro ask --format text --db ./fleet.duckdb "highest idle"
 ./target/release/dendro ask --db ./fleet.duckdb "where do tokens go?"
 ./target/release/dendro ask --list-intents
 ```
 
-Inside the interactive terminal explorer (`dendro dashboard` or `dendro ui`), press `?` or `h` at any time to open the keyboard navigation help overlay.
+`dendro ask` tries an exact normalized phrase, then scores tokens against the supported intent vocabulary. A question with an unsupported qualifier (a mission, a relative date, a seat `@`, or a SQL verb) is refused and the closest intents are suggested. `--format text` prints the terminal answer. `--format json` prints the document. A terminal defaults to text; a pipe defaults to json.
+
+Inside the cockpit (`dendro dashboard` or `dendro ui`), the screens are `1` Pulse, `2` Seats & Timeline, `3` Handoffs & Flow, `4` Tokens & Cache, `5` Topology Simulator, and `6` Trace & Spotlights. Press `?` for help. `/` filters seats, `x` reveals queue endpoints and gates, `m` switches ribbon and timeline, `v` cycles the handoff heatmap, `r` cycles named rigs, `w` cycles the window, `:` asks Nao, `i` previews an issue draft, and `q` quits.
+
+## What the status brief calls a seat
+
+An agent seat is `<role>@<named-rig>`, for example `dev-build@dendro-dev`. Status groups those seats under the rig instead of printing every `seat@rig` on one line. `qitem-*` ids are queue endpoints. `external:`, `system:`, `@system`, `system`, `steerer`, and `steer-lead` are gates. Other ids, including ephemeral 26-character `01…` ULIDs, are unlinked. Named rigs are listed; ULID rigs are counted as ephemeral and are not operator rig names. Press `x` in the cockpit when you need the hidden endpoints on screen.
+
+## Pi sessions from two roots
+
+A default `dendro run` reads Pi from OpenRig (`$OPENRIG_HOME/state/pi`, otherwise `~/.openrig/state/pi`) and from standalone `~/.pi/agent/sessions`. Status reports both:
+
+`Pi sources: openrig_files=<n> · standalone_files=<n> · linked_usage=<n> · standalone_usage=<n>`
+
+Standalone usage is Pi usage whose session is not in Pi identity facts. It is recorded, and it is not a linked seat. Pass `--root pi=<path>` twice when the files live somewhere else; two different Pi paths are both ingested.
 
 ## Choose sources and a period
 

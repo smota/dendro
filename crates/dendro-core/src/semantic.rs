@@ -687,6 +687,178 @@ pub fn answer(db: &Path, question: &str, baseline: Option<&Value>) -> Result<Val
     Ok(response)
 }
 
+fn rank_from_payload(payload: &Value, question: &str) -> std::result::Result<Value, &'static str> {
+    let is_idle = question.contains("idle") || question.contains("wasted");
+    let is_yield =
+        question.contains("yield") || question.contains("token") || question.contains("burn");
+    if is_idle {
+        let mut rows = payload["activity"].as_array().cloned().unwrap_or_default();
+        rows.sort_by(|a, b| {
+            let idle = |row: &Value| {
+                row["idle_with_work_secs"]
+                    .as_f64()
+                    .unwrap_or(f64::NEG_INFINITY)
+            };
+            idle(b)
+                .partial_cmp(&idle(a))
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| {
+                    a["seat"]
+                        .as_str()
+                        .unwrap_or("")
+                        .cmp(b["seat"].as_str().unwrap_or(""))
+                })
+        });
+        if rows.is_empty() {
+            Err("no observed seats")
+        } else {
+            Ok(json!({
+                "status": "ok",
+                "rows": rows,
+                "ordering": "idle_with_work_secs descending"
+            }))
+        }
+    } else if is_yield {
+        let mut rows: Vec<Value> = payload["m1_by_seat"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|row| row["tokens_per_closed_item"].as_f64().is_some())
+            .collect();
+        rows.sort_by(|a, b| {
+            let yield_of = |row: &Value| {
+                row["tokens_per_closed_item"]
+                    .as_f64()
+                    .unwrap_or(f64::NEG_INFINITY)
+            };
+            yield_of(b)
+                .partial_cmp(&yield_of(a))
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| {
+                    a["seat"]
+                        .as_str()
+                        .unwrap_or("")
+                        .cmp(b["seat"].as_str().unwrap_or(""))
+                })
+        });
+        if rows.is_empty() {
+            Err("no observed seats")
+        } else {
+            Ok(json!({
+                "status": "ok",
+                "rows": rows,
+                "ordering": "tokens_per_closed_item descending: worst observed burn per completed item"
+            }))
+        }
+    } else {
+        Err("rank supports idle and canonical yield only")
+    }
+}
+
+/// Evaluate a supported question against an in-memory canonical report.
+/// Used when the DuckDB semantic cache is stale or locked; no database is opened.
+pub fn answer_from_report(report: &Value, question: &str, baseline: Option<&Value>) -> Value {
+    let payload = &report["payload"];
+    let scope = json!({
+        "rig": payload["rig"],
+        "from": payload["from"],
+        "to": payload["to"],
+        "definition_version": report["definition_version"]
+    });
+    let refusal = |reason: &str| {
+        let mut value = insufficient(reason);
+        value["scope"] = scope.clone();
+        value
+    };
+    let Some(intent) = parse_intent(question) else {
+        let mut value = refusal(
+            "unsupported intent, metric, or question qualifier; select an exact report scope and use a supported phrase",
+        );
+        value["supported_examples"] = Value::Array(suggest_closest_intents(question));
+        return value;
+    };
+    let q = question.to_ascii_lowercase();
+    let mut response = match intent {
+        Intent::HonestLimits => {
+            return refusal(
+                "observational facts cannot establish causation, subjective quality, or unsupported metrics",
+            )
+        }
+        Intent::Compare | Intent::Verify => {
+            let Some(baseline) = baseline else {
+                return refusal("no comparison baseline");
+            };
+            if baseline["metric"] != "decisions"
+                || baseline["definition_version"] != report["definition_version"]
+            {
+                return refusal(
+                    "baseline is not a canonical decisions report with a matching formula",
+                );
+            }
+            if baseline["payload"]["kind"] != "decisions"
+                || baseline["payload"]["from"]
+                    .as_str()
+                    .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                    .is_none()
+                || baseline["payload"]["to"]
+                    .as_str()
+                    .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                    .is_none()
+                || baseline["payload"]["handoff_friction"]["thresholds"]
+                    != payload["handoff_friction"]["thresholds"]
+                || baseline["payload"]["loop_thresholds"] != payload["loop_thresholds"]
+            {
+                return refusal("baseline scope or formula options are unavailable or incompatible");
+            }
+            if payload["usage_rows"].as_u64().unwrap_or(0) == 0
+                || baseline["payload"]["usage_rows"].as_u64().unwrap_or(0) == 0
+            {
+                return refusal("no observed usage in one comparison period");
+            }
+            json!({
+                "status": "ok",
+                "current": payload,
+                "baseline": baseline["payload"],
+                "limit": "Observed differences do not prove a topology change caused them."
+            })
+        }
+        Intent::Rank => match rank_from_payload(payload, &q) {
+            Ok(value) => value,
+            Err(reason) => return refusal(reason),
+        },
+        Intent::Explain => {
+            if !q.contains("rework") && !q.contains("handoff") {
+                return refusal("explain supports recorded rework and handoff evidence only");
+            }
+            if payload["handoff_edges"]
+                .as_array()
+                .is_none_or(|edges| edges.is_empty())
+            {
+                return refusal("no recorded handoff observations");
+            }
+            json!({
+                "status": "ok",
+                "handoff_friction": payload["handoff_friction"],
+                "m3_chains": payload["m3_chains"],
+                "limit": "Correlated transitions are evidence of recorded rework, not proof of causation."
+            })
+        }
+        Intent::Trace => {
+            let mut keys = BTreeSet::new();
+            census(payload, &mut keys);
+            json!({
+                "status": "ok",
+                "report": report,
+                "source_keys": keys,
+                "trace": "dendro trace --metric-id <canonical metric> with identical --from/--to/--rig"
+            })
+        }
+    };
+    response["scope"] = scope;
+    response
+}
+
 /// Creates a new workspace only. Never overwrites an existing directory or follows its symlink.
 pub fn init_workspace(destination: &Path, db: &Path) -> Result<()> {
     if destination
@@ -977,5 +1149,40 @@ mod tests {
         let after_schema_change = answer(&db, "Rank idle", None)?;
         assert_eq!(after_schema_change["status"], "insufficient_data");
         Ok(())
+    }
+
+    #[test]
+    fn answer_from_report_ranks_without_a_semantic_cache() {
+        let report = json!({
+            "metric": "decisions",
+            "definition_version": "acceptance-r1-a1",
+            "payload": {
+                "rig": "dendro-dev",
+                "from": "2026-10-08T00:00:00Z",
+                "to": "2026-10-09T00:00:00Z",
+                "activity": [
+                    {"seat": "rev.review@dendro-dev", "idle_with_work_secs": 10, "active_secs": 5},
+                    {"seat": "dev.build@dendro-dev", "idle_with_work_secs": 40, "active_secs": 20}
+                ],
+                "m1_by_seat": [
+                    {"seat": "dev.build@dendro-dev", "tokens": 100, "closed_items": 2, "tokens_per_closed_item": 50},
+                    {"seat": "rev.review@dendro-dev", "tokens": 90, "closed_items": 1, "tokens_per_closed_item": 90},
+                    {"seat": "orch@dendro-dev", "tokens": 10, "closed_items": 0, "tokens_per_closed_item": null}
+                ],
+                "handoff_edges": []
+            }
+        });
+        let idle = answer_from_report(&report, "highest idle", None);
+        assert_eq!(idle["status"], "ok");
+        assert_eq!(idle["rows"][0]["seat"], "dev.build@dendro-dev");
+        assert_eq!(idle["scope"]["rig"], "dendro-dev");
+        let yield_rank = answer_from_report(&report, "worst yield", None);
+        assert_eq!(yield_rank["rows"][0]["seat"], "rev.review@dendro-dev");
+        assert_eq!(yield_rank["rows"].as_array().unwrap().len(), 2);
+        let refused = answer_from_report(&report, "launch the fleet", None);
+        assert_eq!(refused["status"], "insufficient_data");
+        assert!(refused["supported_examples"].as_array().is_some());
+        let explain = answer_from_report(&report, "explain rework", None);
+        assert_eq!(explain["status"], "insufficient_data");
     }
 }

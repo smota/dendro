@@ -29,6 +29,17 @@ Missing observations are not measured zero. Tokens do not establish value or cau
 
 The walkthrough above is recorded from real `./target/release/dendro` (`v0.6.0`) execution over a local OpenRig + Claude multi-seat dataset (`dev-build@test-rig`, `rev-review@test-rig`, `orch-arch@test-rig`), showing zero-config status preflight, the terminal activity ribbon explorer, auto-materializing conversational queries, decision tables, observational topology simulation, and one-command offline HTML dashboard export.
 
+## Wave v0.7
+
+`v0.7.0` is the operator surface on top of that evidence engine. Bare `dendro` still runs `dendro status`. The text report is a sectioned fleet brief: database coverage, discovered harness roots, seats grouped by rig, and a command reference. `dendro --help` adds quickstart examples, cockpit shortcuts, and report kinds.
+
+- **Cockpit:** `dendro dashboard` and `dendro ui` open six Ratatui screens (Pulse, Seats & Timeline, Handoffs & Flow, Tokens & Cache, Topology Simulator, Trace & Spotlights) with TachyonFX transitions and an OpenTUI-style RGBA backdrop under the modals. Keys: `1`–`6`, `/`, `x`, `m`, `v`, `r`, `w`, `:`, `i`, `?`, `q`.
+- **Entity hygiene:** canonical agent seats are `<role>@<named-rig>`. `qitem-*` ids are queue endpoints. `external:`, `system:`, `@system`, `system`, `steerer`, and `steer-lead` are gates. Everything else, including 26-character `01…` ULIDs, stays unlinked. Named rigs and ephemeral ULID rigs are counted separately.
+- **Ask:** exact phrase match, then token scoring against supported intent vocabulary. Refusals suggest the closest intents. `--format text|json` selects the rendering; a terminal defaults to text and a pipe defaults to json.
+- **Pi:** default ingest reads both OpenRig `state/pi` and standalone `~/.pi/agent/sessions`. Status reports `pi_breakdown` as openrig files, standalone files, linked usage, and standalone usage.
+
+Details are in the [v0.7.0 release notes](docs/RELEASE_NOTES_v0.7.0.md).
+
 ## Start locally
 
 Install stable Rust and Git, then:
@@ -40,9 +51,9 @@ cargo build --release --locked
 ./target/release/dendro
 ```
 
-### Zero-ceremony quickstart (`v0.6.0`)
+### Zero-ceremony quickstart
 
-Running bare `dendro` (or `dendro status`) inspects your database readiness, discovered local harness roots, rig-scoped recorded timestamp bounds, and semantic cache freshness:
+Running bare `dendro` (or `dendro status`) prints the fleet brief: database readiness, discovered local harness roots, rig-scoped recorded bounds, seats grouped by rig, Pi source coverage, semantic cache freshness, and the next commands:
 
 ```sh
 # 1. Check status, discovered local harness sources, and recorded bounds
@@ -56,9 +67,11 @@ Running bare `dendro` (or `dendro status`) inspects your database readiness, dis
 
 # 4. Ask natural questions (auto-materializes semantic views over the active window)
 ./target/release/dendro ask --db ./dendro.duckdb "highest idle"
-./target/release/dendro ask --db ./dendro.duckdb "where do tokens go?"
+./target/release/dendro ask --format text --db ./dendro.duckdb "where do tokens go?"
 ./target/release/dendro ask --list-intents
 ```
+
+Inside the cockpit, press `?` for the full key list. `1` through `6` select the screens. `/` filters seats, `x` reveals queue endpoints and gates, `m` switches the seat ribbon and timeline, `v` cycles the handoff heatmap, `r` and `w` cycle rig and window, `:` asks Nao, and `i` previews an issue draft.
 
 ### Explicit roots & fixed windows
 
@@ -97,9 +110,9 @@ The real-local-log performance test is explicitly ignored by default and require
 
 ## Documentation
 
-- [Operator guide](docs/adoption/README.md): zero-ceremony status/dashboard workflows, source selection, reporting, privacy and reproducible replay.
+- [Operator guide](docs/adoption/README.md): status, cockpit, source selection, reporting, privacy and reproducible replay.
 - [CLI reference](docs/CLI_R1.md) and [Nao & local semantic queries](docs/NAO_SEMANTIC.md).
-- [v0.6.0 release notes](docs/RELEASE_NOTES_v0.6.0.md) and [real operation video script](docs/VIDEO_WALKTHROUGH_v0.6.md).
+- [v0.7.0 release notes](docs/RELEASE_NOTES_v0.7.0.md), [v0.6.0 release notes](docs/RELEASE_NOTES_v0.6.0.md), and [real operation video script](docs/VIDEO_WALKTHROUGH_v0.6.md).
 - [Maintainer guide](docs/maintainers/README.md): workspace architecture and quality gates.
 - [Connector extension guide](docs/extensions/README.md): trait contract and runnable example.
 - [Product specification](docs/PRODUCT_SPECIFICATION.md) and [R1 acceptance contracts](docs/ACCEPTANCE_R1.md).

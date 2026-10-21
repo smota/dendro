@@ -142,3 +142,73 @@ dendro simulate topology [--db <path>] [--rig <rig>] [--window 1h|24h|7d|30d|all
 - **Conditional `--auto-ingest`:** When `--auto-ingest` is passed to `dendro dashboard` or `dendro ui` and the target database does not exist or is not `ready`, Dendro runs a read-only local ingest over default harness roots before opening the dashboard.
 - **In-app TUI help (`?` / `h`):** Pressing `?` or `h` inside `dendro dashboard` or `dendro ui` opens the interactive keyboard navigation guide.
 
+## v0.7.0 Fleet brief, cockpit, and Pi coverage
+
+`v0.7.0` keeps the commands above and changes how the operator reads them.
+
+### Status brief
+
+Bare `dendro` and `dendro status` print a sectioned text report. `dendro status --format json` still prints the status document. The text report always contains:
+
+- `=== DENDRO FLEET INTELLIGENCE ===`
+- `DATABASE & COVERAGE`, including `State: NOT INITIALIZED` when the database file is absent, or one line `State: READY · usage=<n> · activity=<n> · queue=<n>` (or `State: EMPTY`) when it exists
+- `DISCOVERED HARNESS SOURCES` when the CLI attached default roots (`name`, `present`/`missing`, redacted path)
+- `FLEET TOPOLOGY (RIGS & AGENT SEATS)`
+- `QUICKSTART & COMMANDS`, including `Usage: dendro <COMMAND> [OPTIONS]`, a command table (`status`, `dashboard`, `ui`, `ask`, `run`, `report`, `trace`, `simulate`), and `Next commands:`
+
+Agent seats are grouped by rig (`- dendro-dev (8): dev-build, dev-qa, ...`). A long seat list is wrapped per rig. A short list also keeps the compact `Agent Seats (N): role@rig, ...` line. The hygiene summary is:
+
+`Entity hygiene: <total> total IDs (<agent> agent seats · <queue> queue endpoints · <gates> system/gates · <unlinked> unlinked)`
+
+Classification, shared with the cockpit filter:
+
+| Kind | Rule |
+| --- | --- |
+| Agent seat | `<role>@<rig>` when `rig` is not a raw ULID |
+| Queue endpoint | id starts with `qitem-` |
+| System or gate | `external:…`, `system:…`, `…@system`, or exactly `system`, `steerer`, `steer-lead` |
+| Unlinked id | anything else, including a 26-character Crockford ULID (`01` + 24 uppercase/digit characters) |
+
+Named rigs are listed. Ephemeral ULID rigs are counted (`Rigs (N named, +M ephemeral ULID): ...`) and are not treated as operator rig names.
+
+When Pi usage or Pi source files exist, the coverage section includes:
+
+`Pi sources: openrig_files=<n> · standalone_files=<n> · linked_usage=<n> · standalone_usage=<n>`
+
+`openrig_files` counts Pi `source_files` whose path is not under `.pi/agent/sessions`. `standalone_files` counts the complementary Pi files. `linked_usage` counts Pi `usage_facts` whose `native_session` is present in `identity_facts` for harness `pi`. `standalone_usage` counts the rest. The same object is `pi_breakdown` and `harnesses.pi` in the JSON status.
+
+### Help
+
+`dendro --help` lists commands in operator order and prints an `after_help` block: Quickstart Examples, Interactive TUI Shortcuts, Report Kinds (`links`, `activity`, `handoffs`, `tokens`, `decisions`, plus `advisory`, `anomalies`, `spotlights`), and command groups. Subcommand options use section headings (`Database & Scope`, `Ingest`, `Scope`, `Cockpit`, `Question`, `Report`, `Friction Thresholds`, `Advisory & Spotlights`, `Scenario`, `Governance`).
+
+`dendro ask --format text|json` selects the answer rendering. On a terminal the default is `text`. When stdout is not a terminal the default stays `json`, so pipes and the existing JSON contract keep working. `--list-intents` still prints the JSON intent catalog.
+
+### Cockpit
+
+`dendro dashboard` and `dendro ui` render six screens with Ratatui, TachyonFX transitions, and a Porter-Duff RGBA backdrop (OpenTUI-style) behind modals:
+
+1. Pulse
+2. Seats & Timeline
+3. Handoffs & Flow
+4. Tokens & Cache
+5. Topology Simulator
+6. Trace & Spotlights
+
+| Key | Action |
+| --- | --- |
+| `1`–`6`, Tab | Select a screen |
+| `/` | Filter canonical seats |
+| `x` | Show or hide `qitem-*` queue endpoints and system gates |
+| `m` | On Seats, toggle the 5-band ribbon and the shared-axis timeline |
+| `v` | On Handoffs, cycle the heatmap metric (return rate, count, wait median, exec median) |
+| `r` | Cycle named rigs, then all rigs |
+| `w` | Cycle `1h`, `24h`, `7d`, `30d`, `all` |
+| `:` or `a` | Ask Nao, with intent suggestions |
+| `i` | Preview a redacted issue draft |
+| `?` or `h` | Help |
+| `q` | Quit |
+
+### Dual-root Pi ingest
+
+With no `--root`, `dendro run` configures two Pi roots: `$OPENRIG_HOME/state/pi` (default `~/.openrig/state/pi`) and `~/.pi/agent/sessions`. Distinct Pi roots are both kept. Identical paths are deduplicated. A session file is still one native session (K10). Linkage to a seat still requires identity facts; standalone Pi usage stays in `standalone_usage` until it links.
+

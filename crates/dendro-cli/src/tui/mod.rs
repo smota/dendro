@@ -15,7 +15,7 @@ use futures::StreamExt;
 use ratatui::{backend::CrosstermBackend, widgets::TableState, Terminal};
 use serde_json::Value;
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     io::{self, IsTerminal},
     path::PathBuf,
     sync::Arc,
@@ -73,6 +73,13 @@ impl TabId {
 pub enum SeatViewMode {
     Bands,
     Timeline,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum SeatGroupMode {
+    #[default]
+    BySeat,
+    ByRig,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -141,14 +148,20 @@ pub struct AppState {
     pub selected_pair: usize,
     pub seat_table_state: TableState,
     pub seat_view_mode: SeatViewMode,
+    pub seat_group_mode: SeatGroupMode,
+    pub token_cursor: usize,
+    pub token_table_state: TableState,
     pub heatmap_metric: HeatmapMetric,
     pub show_all_entities: bool,
     pub filter_input_mode: bool,
     pub seat_filter: String,
     pub modal: Option<AppModal>,
     pub nao_input: String,
+    pub nao_loading: bool,
+    pub nao_selected_suggestion: usize,
     pub last_nao_answer: Option<(String, String)>,
     pub nao_modal_output: Option<(String, String)>,
+    pub sim_cursor: usize,
     pub sim_scenario: dendro_core::simulation::Scenario,
     pub sim_result: Option<Value>,
 }
@@ -183,14 +196,20 @@ impl AppState {
             selected_pair: 0,
             seat_table_state: TableState::default(),
             seat_view_mode: SeatViewMode::Bands,
+            seat_group_mode: SeatGroupMode::BySeat,
+            token_cursor: 0,
+            token_table_state: TableState::default(),
             heatmap_metric: HeatmapMetric::ReturnRate,
             show_all_entities: false,
             filter_input_mode: false,
             seat_filter: String::new(),
             modal: None,
             nao_input: String::new(),
+            nao_loading: false,
+            nao_selected_suggestion: 0,
             last_nao_answer: None,
             nao_modal_output: None,
+            sim_cursor: 0,
             sim_scenario: dendro_core::simulation::Scenario::default(),
             sim_result: None,
         }
@@ -231,12 +250,166 @@ impl AppState {
             .collect()
     }
 
+    /// Rows for the Seats tab: one row per seat, or one summed row per team/rig.
+    pub fn active_seat_rows(&self) -> Vec<Value> {
+        let rows = self.filtered_activity_rows();
+        if self.seat_group_mode == SeatGroupMode::BySeat {
+            return rows;
+        }
+        let m1_rows = self
+            .report
+            .as_ref()
+            .and_then(|report| report["payload"]["m1_by_seat"].as_array())
+            .cloned()
+            .unwrap_or_default();
+        let mut m1_by_seat: BTreeMap<String, (f64, f64, f64)> = BTreeMap::new();
+        for row in &m1_rows {
+            let Some(seat) = row["seat"].as_str() else {
+                continue;
+            };
+            let entry = m1_by_seat.entry(seat.to_owned()).or_insert((0.0, 0.0, 0.0));
+            entry.0 += json_f64(&row["tokens"]);
+            entry.1 += json_f64(&row["closed_items"]);
+            entry.2 += json_f64(&row["nonreturn_deliveries"]);
+        }
+        let mut groups: BTreeMap<String, RigAggregate> = BTreeMap::new();
+        for row in &rows {
+            let seat = row["seat"].as_str().unwrap_or("");
+            let rig = rig_of_seat(seat);
+            let group = groups.entry(rig).or_default();
+            group.seats += 1;
+            group.observed_secs += json_f64(&row["observed_secs"]);
+            group.active_secs += json_f64(&row["active_secs"]);
+            group.idle_with_work_secs += json_f64(&row["idle_with_work_secs"]);
+            group.idle_without_work_secs += json_f64(&row["idle_without_work_secs"]);
+            group.waiting_human_secs += json_f64(&row["waiting_human_secs"]);
+            group.unknown_secs += json_f64(&row["unknown_secs"]);
+            group.unparked_container_secs += json_f64(&row["unparked_container_secs"]);
+            group.leaf_stall_secs += json_f64(&row["leaf_stall_secs"]);
+            group.engineering_calls += json_f64(&row["engineering_calls"]);
+            group.ceremony_calls += json_f64(&row["ceremony_calls"]);
+            if group.seen_seats.insert(seat.to_owned()) {
+                if let Some((tokens, closed, nonreturn)) = m1_by_seat.get(seat) {
+                    group.tokens += tokens;
+                    group.closed_items += closed;
+                    group.nonreturn_deliveries += nonreturn;
+                }
+            }
+        }
+        groups
+            .into_iter()
+            .map(|(rig, group)| group.into_row(&rig))
+            .collect()
+    }
+
+    pub fn token_seat_rows(&self) -> Vec<Value> {
+        let Some(report) = &self.report else {
+            return Vec::new();
+        };
+        report["payload"]["m1_by_seat"]
+            .as_array()
+            .map(|rows| {
+                rows.iter()
+                    .filter(|row| {
+                        let seat = row["seat"].as_str().unwrap_or("");
+                        self.show_all_entities || classify_entity_id(seat) == EntityKind::AgentSeat
+                    })
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn sim_list_len(&self) -> usize {
+        4 + self.canonical_seat_names().len()
+    }
+
+    fn clamp_sim_cursor(&mut self) {
+        let max = self.sim_list_len().saturating_sub(1);
+        self.sim_cursor = self.sim_cursor.min(max);
+    }
+
     pub fn recompute_simulation(&mut self) {
         if let Some(rep) = &self.report {
             if let Ok(res) = dendro_core::simulation::simulate(rep, &self.sim_scenario) {
                 self.sim_result = Some(res);
             }
         }
+    }
+}
+
+fn json_f64(value: &Value) -> f64 {
+    value.as_f64().filter(|n| n.is_finite()).unwrap_or(0.0)
+}
+
+fn json_whole(n: f64) -> Value {
+    if n.is_finite() && n.fract() == 0.0 && (i64::MIN as f64..=i64::MAX as f64).contains(&n) {
+        Value::from(n as i64)
+    } else {
+        serde_json::Number::from_f64(n)
+            .map(Value::Number)
+            .unwrap_or(Value::Null)
+    }
+}
+
+fn rig_of_seat(seat: &str) -> String {
+    match seat.split_once('@') {
+        Some((_, rig)) if !rig.is_empty() => rig.to_string(),
+        _ => "unscoped".to_string(),
+    }
+}
+
+#[derive(Default)]
+struct RigAggregate {
+    seats: usize,
+    seen_seats: BTreeSet<String>,
+    observed_secs: f64,
+    active_secs: f64,
+    idle_with_work_secs: f64,
+    idle_without_work_secs: f64,
+    waiting_human_secs: f64,
+    unknown_secs: f64,
+    unparked_container_secs: f64,
+    leaf_stall_secs: f64,
+    engineering_calls: f64,
+    ceremony_calls: f64,
+    tokens: f64,
+    closed_items: f64,
+    nonreturn_deliveries: f64,
+}
+
+impl RigAggregate {
+    fn into_row(self, rig: &str) -> Value {
+        let calls = self.engineering_calls + self.ceremony_calls;
+        let ceremony_ratio = if calls > 0.0 {
+            self.ceremony_calls / calls
+        } else {
+            0.0
+        };
+        let tokens_per_closed_item = if self.closed_items > 0.0 {
+            json_whole(self.tokens / self.closed_items)
+        } else {
+            Value::Null
+        };
+        serde_json::json!({
+            "seat": format!("@{rig} ({} seats)", self.seats),
+            "rig": rig,
+            "observed_secs": json_whole(self.observed_secs),
+            "active_secs": json_whole(self.active_secs),
+            "idle_with_work_secs": json_whole(self.idle_with_work_secs),
+            "idle_without_work_secs": json_whole(self.idle_without_work_secs),
+            "waiting_human_secs": json_whole(self.waiting_human_secs),
+            "unknown_secs": json_whole(self.unknown_secs),
+            "unparked_container_secs": json_whole(self.unparked_container_secs),
+            "leaf_stall_secs": json_whole(self.leaf_stall_secs),
+            "engineering_calls": json_whole(self.engineering_calls),
+            "ceremony_calls": json_whole(self.ceremony_calls),
+            "ceremony_ratio": ceremony_ratio,
+            "tokens": json_whole(self.tokens),
+            "closed_items": json_whole(self.closed_items),
+            "nonreturn_deliveries": json_whole(self.nonreturn_deliveries),
+            "tokens_per_closed_item": tokens_per_closed_item,
+        })
     }
 }
 
@@ -318,43 +491,117 @@ fn spawn_trace_fetch(
 fn spawn_nao_query(
     tx: mpsc::Sender<WorkerEvent>,
     db: PathBuf,
-    rig: Option<String>,
-    from: String,
-    to: String,
+    report: Option<Arc<Value>>,
     question: String,
 ) {
     tokio::task::spawn_blocking(move || {
-        let cached = dendro_core::semantic::cached_scope(&db);
-        if cached.as_ref().is_none_or(|(_, _, _, fresh)| !*fresh)
-            && !from.is_empty()
-            && !to.is_empty()
-        {
-            let _ = dendro_core::semantic::refresh(&db, rig.as_deref(), &from, &to);
-        }
-        if let Ok(ans) = dendro_core::semantic::answer(&db, &question, None) {
-            let full_text = dendro_core::presentation::human_ask_answer(&question, &ans);
-            let summary = if ans["status"] == "ok" {
-                if let Some(first_row) = ans["rows"].as_array().and_then(|a| a.first()) {
-                    format!(
-                        "{} (top ranked in scope)",
-                        first_row["seat"].as_str().unwrap_or("ok")
-                    )
-                } else {
-                    "ok (open [:] Nao drawer for full breakdown)".into()
-                }
+        let ans = if let Some(report) = report.as_deref() {
+            dendro_core::semantic::answer_from_report(report, &question, None)
+        } else {
+            dendro_core::semantic::answer(&db, &question, None).unwrap_or_else(|err| {
+                serde_json::json!({
+                    "status": "insufficient_data",
+                    "message": format!("Insufficient data: {err}")
+                })
+            })
+        };
+        let full_text = dendro_core::presentation::human_ask_answer(&question, &ans);
+        let summary = if ans["status"] == "ok" {
+            if let Some(first_row) = ans["rows"].as_array().and_then(|a| a.first()) {
+                format!(
+                    "{} (top ranked in scope)",
+                    first_row["seat"].as_str().unwrap_or("ok")
+                )
             } else {
-                ans["message"]
-                    .as_str()
-                    .unwrap_or("insufficient_data")
-                    .to_owned()
-            };
-            let _ = tx.blocking_send(WorkerEvent::NaoAnswerReady {
-                question,
-                summary,
-                full_text,
-            });
-        }
+                "ok (open [:] Nao drawer for full breakdown)".into()
+            }
+        } else {
+            ans["message"]
+                .as_str()
+                .unwrap_or("insufficient_data")
+                .to_owned()
+        };
+        let _ = tx.blocking_send(WorkerEvent::NaoAnswerReady {
+            question,
+            summary,
+            full_text,
+        });
     });
+}
+
+fn nao_suggestion_example(state: &AppState) -> Option<String> {
+    let suggestions = dendro_core::semantic::suggest_closest_intents(&state.nao_input);
+    let index = state
+        .nao_selected_suggestion
+        .min(suggestions.len().saturating_sub(1));
+    suggestions
+        .get(index)
+        .and_then(|item| item["examples"].as_array())
+        .and_then(|examples| examples.first())
+        .and_then(|value| value.as_str())
+        .map(str::to_owned)
+}
+
+fn ensure_sim_boundary(state: &mut AppState) {
+    if state.sim_scenario.boundary.is_none() {
+        state.sim_scenario.boundary = Some(dendro_core::simulation::BoundaryModel {
+            turns: 12,
+            stale_context_tokens: 280_000,
+            clean_context_tokens: 60_000,
+            cold_boot_tokens: 25_000,
+        });
+    }
+}
+
+fn toggle_boundary_threshold(state: &mut AppState) {
+    if state.sim_scenario.boundary_reset_threshold.is_some() {
+        state.sim_scenario.boundary_reset_threshold = None;
+        state.sim_scenario.boundary = None;
+    } else {
+        state.sim_scenario.boundary_reset_threshold = Some(250_000);
+        ensure_sim_boundary(state);
+    }
+    state.recompute_simulation();
+}
+
+fn cycle_sim_seat(state: &mut AppState, seat: String) {
+    let is_removed = state.sim_scenario.remove.iter().any(|name| name == &seat);
+    let is_replacement = state.sim_scenario.replacement_seat.as_ref() == Some(&seat);
+    if is_removed {
+        state.sim_scenario.remove.retain(|name| name != &seat);
+        state.sim_scenario.replacement_seat = Some(seat);
+    } else if is_replacement {
+        state.sim_scenario.replacement_seat = None;
+    } else {
+        state.sim_scenario.remove.push(seat);
+    }
+    state.recompute_simulation();
+}
+
+fn activate_sim_cursor(state: &mut AppState) {
+    state.clamp_sim_cursor();
+    match state.sim_cursor {
+        0 => {
+            state.sim_scenario.direct_handoffs = !state.sim_scenario.direct_handoffs;
+            state.recompute_simulation();
+        }
+        1 => {
+            state.sim_scenario.enforce_model_family_diversity =
+                !state.sim_scenario.enforce_model_family_diversity;
+            state.recompute_simulation();
+        }
+        2 => toggle_boundary_threshold(state),
+        3 => {
+            state.sim_scenario = dendro_core::simulation::Scenario::default();
+            state.recompute_simulation();
+        }
+        cursor => {
+            let index = cursor - 4;
+            if let Some(seat) = state.canonical_seat_names().get(index).cloned() {
+                cycle_sim_seat(state, seat);
+            }
+        }
+    }
 }
 
 /// Entrypoint for `dendro dashboard` and `dendro ui`.
@@ -487,6 +734,7 @@ pub async fn run_interactive_or_once(
                         state.traces.insert(metric_id, tr);
                     }
                     WorkerEvent::NaoAnswerReady { question, summary, full_text } => {
+                        state.nao_loading = false;
                         state.last_nao_answer = Some((question.clone(), summary));
                         state.nao_modal_output = Some((question, full_text));
                     }
@@ -529,32 +777,47 @@ fn handle_key_event(
                 KeyCode::Esc => state.modal = None,
                 KeyCode::Backspace => {
                     state.nao_input.pop();
+                    state.nao_selected_suggestion = 0;
+                }
+                KeyCode::Up => {
+                    state.nao_selected_suggestion = state.nao_selected_suggestion.saturating_sub(1);
+                }
+                KeyCode::Down => {
+                    let count =
+                        dendro_core::semantic::suggest_closest_intents(&state.nao_input).len();
+                    if count > 0 {
+                        state.nao_selected_suggestion =
+                            (state.nao_selected_suggestion + 1).min(count - 1);
+                    }
                 }
                 KeyCode::Tab => {
-                    let sugg = dendro_core::semantic::suggest_closest_intents(&state.nao_input);
-                    if let Some(ex) = sugg
-                        .first()
-                        .and_then(|s| s["examples"].as_array())
-                        .and_then(|a| a.first())
-                        .and_then(|v| v.as_str())
-                    {
-                        state.nao_input = ex.to_owned();
+                    if let Some(example) = nao_suggestion_example(state) {
+                        state.nao_input = example;
+                        state.nao_selected_suggestion = 0;
                     }
                 }
                 KeyCode::Enter => {
-                    let q = state.nao_input.trim().to_owned();
-                    if !q.is_empty() {
+                    let mut question = state.nao_input.trim().to_owned();
+                    if question.is_empty() {
+                        if let Some(example) = nao_suggestion_example(state) {
+                            state.nao_input = example.clone();
+                            question = example;
+                        }
+                    }
+                    if !question.is_empty() {
+                        state.nao_loading = true;
                         spawn_nao_query(
                             worker_tx.clone(),
                             state.db.clone(),
-                            state.rig.clone(),
-                            state.resolved_from.clone(),
-                            state.resolved_to.clone(),
-                            q,
+                            state.report.clone(),
+                            question,
                         );
                     }
                 }
-                KeyCode::Char(c) => state.nao_input.push(c),
+                KeyCode::Char(c) => {
+                    state.nao_input.push(c);
+                    state.nao_selected_suggestion = 0;
+                }
                 _ => {}
             },
             _ => {
@@ -602,6 +865,7 @@ fn handle_key_event(
             trigger_transition(effects);
         }
         KeyCode::Char(':') | KeyCode::Char('a') => {
+            state.nao_selected_suggestion = 0;
             state.modal = Some(AppModal::NaoAsk);
             trigger_transition(effects);
         }
@@ -688,6 +952,12 @@ fn handle_key_event(
                 state.trace_scroll = state.trace_scroll.saturating_sub(3);
             } else if state.active_tab == TabId::Handoffs {
                 state.selected_pair = state.selected_pair.saturating_sub(1);
+            } else if state.active_tab == TabId::Tokens {
+                let max = state.token_seat_rows().len().saturating_sub(1);
+                state.token_cursor = state.token_cursor.min(max).saturating_sub(1);
+            } else if state.active_tab == TabId::Simulate {
+                state.clamp_sim_cursor();
+                state.sim_cursor = state.sim_cursor.saturating_sub(1);
             } else {
                 state.selected_seat = state.selected_seat.saturating_sub(1);
             }
@@ -697,6 +967,16 @@ fn handle_key_event(
                 state.trace_scroll = state.trace_scroll.saturating_add(3);
             } else if state.active_tab == TabId::Handoffs {
                 state.selected_pair = state.selected_pair.saturating_add(1);
+            } else if state.active_tab == TabId::Tokens {
+                let max = state.token_seat_rows().len().saturating_sub(1);
+                state.token_cursor = (state.token_cursor + 1).min(max);
+            } else if state.active_tab == TabId::Simulate {
+                state.clamp_sim_cursor();
+                let max = state.sim_list_len().saturating_sub(1);
+                state.sim_cursor = (state.sim_cursor + 1).min(max);
+            } else if state.active_tab == TabId::Seats {
+                let max = state.active_seat_rows().len().saturating_sub(1);
+                state.selected_seat = (state.selected_seat + 1).min(max);
             } else {
                 let max = state.filtered_activity_rows().len().saturating_sub(1);
                 state.selected_seat = (state.selected_seat + 1).min(max);
@@ -711,6 +991,18 @@ fn handle_key_event(
                 SeatViewMode::Bands => SeatViewMode::Timeline,
                 SeatViewMode::Timeline => SeatViewMode::Bands,
             };
+        }
+        KeyCode::Char('g') if state.active_tab == TabId::Seats => {
+            state.seat_group_mode = match state.seat_group_mode {
+                SeatGroupMode::BySeat => SeatGroupMode::ByRig,
+                SeatGroupMode::ByRig => SeatGroupMode::BySeat,
+            };
+            state.selected_seat = 0;
+        }
+        KeyCode::Char('s') if state.active_tab == TabId::Seats => {
+            state.active_tab = TabId::Simulate;
+            state.recompute_simulation();
+            trigger_transition(effects);
         }
         KeyCode::Char('v') if state.active_tab == TabId::Handoffs => {
             state.heatmap_metric = state.heatmap_metric.next();
@@ -783,7 +1075,7 @@ fn handle_key_event(
             }
         }
         KeyCode::Enter if state.active_tab == TabId::Seats => {
-            if let Some(row) = state.filtered_activity_rows().get(state.selected_seat) {
+            if let Some(row) = state.active_seat_rows().get(state.selected_seat) {
                 let seat = row["seat"].as_str().unwrap_or("Seat").to_owned();
                 let pretty = serde_json::to_string_pretty(row).unwrap_or_default();
                 state.modal = Some(AppModal::DetailJson(
@@ -792,33 +1084,25 @@ fn handle_key_event(
                 ));
             }
         }
-        // Simulator controls on Tab 5
-        KeyCode::Char(' ') if state.active_tab == TabId::Simulate => {
-            if let Some(seat) = state
-                .canonical_seat_names()
-                .get(state.selected_seat)
-                .cloned()
-            {
-                if let Some(pos) = state.sim_scenario.remove.iter().position(|s| s == &seat) {
-                    state.sim_scenario.remove.remove(pos);
-                } else {
-                    state.sim_scenario.remove.push(seat);
-                }
-                state.recompute_simulation();
-            }
+        KeyCode::Enter | KeyCode::Char(' ') if state.active_tab == TabId::Simulate => {
+            activate_sim_cursor(state);
         }
         KeyCode::Char('p') if state.active_tab == TabId::Simulate => {
-            if let Some(seat) = state
-                .canonical_seat_names()
-                .get(state.selected_seat)
-                .cloned()
-            {
-                if state.sim_scenario.replacement_seat.as_ref() == Some(&seat) {
-                    state.sim_scenario.replacement_seat = None;
-                } else {
-                    state.sim_scenario.replacement_seat = Some(seat);
+            state.clamp_sim_cursor();
+            if state.sim_cursor >= 4 {
+                if let Some(seat) = state
+                    .canonical_seat_names()
+                    .get(state.sim_cursor - 4)
+                    .cloned()
+                {
+                    if state.sim_scenario.replacement_seat.as_ref() == Some(&seat) {
+                        state.sim_scenario.replacement_seat = None;
+                    } else {
+                        state.sim_scenario.remove.retain(|name| name != &seat);
+                        state.sim_scenario.replacement_seat = Some(seat);
+                    }
+                    state.recompute_simulation();
                 }
-                state.recompute_simulation();
             }
         }
         KeyCode::Char('d') if state.active_tab == TabId::Simulate => {
@@ -837,6 +1121,7 @@ fn handle_key_event(
                 .unwrap_or(250_000);
             state.sim_scenario.boundary_reset_threshold =
                 Some(cur.saturating_sub(50_000).max(50_000));
+            ensure_sim_boundary(state);
             state.recompute_simulation();
         }
         KeyCode::Right if state.active_tab == TabId::Simulate => {
@@ -845,6 +1130,7 @@ fn handle_key_event(
                 .boundary_reset_threshold
                 .unwrap_or(200_000);
             state.sim_scenario.boundary_reset_threshold = Some(cur.saturating_add(50_000));
+            ensure_sim_boundary(state);
             state.recompute_simulation();
         }
         KeyCode::Char('c') if state.active_tab == TabId::Simulate => {
@@ -950,5 +1236,95 @@ mod tests {
                     .unwrap();
             }
         }
+    }
+
+    #[test]
+    fn compact_numbers_match_the_k_m_b_scale() {
+        assert_eq!(views::fmt_compact_f64(950.0), "950");
+        assert_eq!(views::fmt_compact_f64(12_400.0), "12.4k");
+        assert_eq!(views::fmt_compact_f64(113_619_968.0), "113.6M");
+        assert_eq!(views::fmt_compact_f64(4_688_911_688.0), "4.69B");
+        assert_eq!(views::fmt_share_pct(&json!(2_400.0), 100_000.0), "(2.4%)");
+    }
+
+    #[test]
+    fn positive_active_band_keeps_a_cell_and_fills_the_width() {
+        let theme = Theme { no_color: true };
+        let line = views::build_colored_band_line(
+            &json!({
+                "observed_secs": 1000,
+                "active_secs": 1,
+                "idle_with_work_secs": 0,
+                "idle_without_work_secs": 0,
+                "waiting_human_secs": 0,
+                "unknown_secs": 999
+            }),
+            28,
+            &theme,
+        );
+        let text: String = line
+            .spans
+            .iter()
+            .map(|span| span.content.to_string())
+            .collect();
+        assert!(text.starts_with('█'), "{text}");
+        assert_eq!(text.chars().count(), 28);
+    }
+
+    #[test]
+    fn rig_aggregation_sums_bands_and_matching_tokens() {
+        let mut state = AppState::new(
+            PathBuf::from("dendro.duckdb"),
+            None,
+            "7d".into(),
+            None,
+            None,
+        );
+        state.report = Some(sample_report());
+        state.seat_group_mode = SeatGroupMode::ByRig;
+        let rows = state.active_seat_rows();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["seat"], "@dendro-dev (1 seats)");
+        assert_eq!(rows[0]["active_secs"], 2400);
+        assert_eq!(rows[0]["tokens"], 80000);
+        assert_eq!(rows[0]["closed_items"], 2);
+    }
+
+    #[test]
+    fn scenario_cursor_cycles_remove_then_replace_and_enables_boundary() {
+        let mut state = AppState::new(
+            PathBuf::from("dendro.duckdb"),
+            None,
+            "7d".into(),
+            None,
+            None,
+        );
+        state.report = Some(sample_report());
+        state.sim_cursor = 4;
+        activate_sim_cursor(&mut state);
+        assert_eq!(
+            state.sim_scenario.remove,
+            vec!["dev-build@dendro-dev".to_string()]
+        );
+        assert!(state.sim_scenario.replacement_seat.is_none());
+        activate_sim_cursor(&mut state);
+        assert!(state.sim_scenario.remove.is_empty());
+        assert_eq!(
+            state.sim_scenario.replacement_seat.as_deref(),
+            Some("dev-build@dendro-dev")
+        );
+        activate_sim_cursor(&mut state);
+        assert!(state.sim_scenario.replacement_seat.is_none());
+        state.sim_cursor = 2;
+        activate_sim_cursor(&mut state);
+        assert_eq!(state.sim_scenario.boundary_reset_threshold, Some(250_000));
+        let boundary = state.sim_scenario.boundary.as_ref().unwrap();
+        assert_eq!(boundary.turns, 12);
+        assert_eq!(boundary.stale_context_tokens, 280_000);
+        assert_eq!(boundary.clean_context_tokens, 60_000);
+        assert_eq!(boundary.cold_boot_tokens, 25_000);
+        activate_sim_cursor(&mut state);
+        assert!(state.sim_scenario.boundary_reset_threshold.is_none());
+        assert!(state.sim_scenario.boundary.is_none());
     }
 }

@@ -14,16 +14,52 @@ use tokio::task::JoinHandle;
 /// How long a signalled run may take to stop its worker and remove its stage.
 const SHUTDOWN_LIMIT: Duration = Duration::from_secs(30);
 
+const AFTER_HELP: &str = "\
+Quickstart Examples:
+  dendro
+      Status report. Same as `dendro status`.
+  dendro dashboard --auto-ingest
+      Open the 6-screen cockpit. Ingest local roots when the database is missing.
+  dendro ask --format text \"highest idle\"
+      Route a supported question. Text on a terminal, json when piped or requested.
+  dendro report decisions --window 7d
+  dendro trace --metric-id handoff_friction --window 7d
+  dendro simulate topology --help
+
+Interactive TUI Shortcuts:
+  1 Pulse                  2 Seats & Timeline       3 Handoffs & Flow
+  4 Tokens & Cache         5 Topology Simulator     6 Trace & Spotlights
+  / filter seats           x show queue endpoints and system gates
+  m ribbon or timeline     v cycle the handoff heatmap metric
+  r cycle named rig        w cycle window (1h, 24h, 7d, 30d, all)
+  : ask Nao                i preview an issue draft
+  ? help                   q quit
+
+Report Kinds:
+  links, activity, handoffs, tokens, decisions
+  advisory, anomalies, spotlights
+
+Command Groups:
+  Start        status, run
+  Cockpit      dashboard, ui
+  Ask          ask
+  Reports      report, trace
+  Analysis     simulate, portfolio
+  Governance   assert, issue-draft
+  Cache        materialize, export, init-nao
+";
+
 #[derive(Parser)]
 #[command(name = "dendro")]
 #[command(about = "Dendro AI Fleet Intelligence. Operational Intelligence for seat, handoff, and token evidence. Fleet Governance stays with the operator.", long_about = None)]
-#[command(version)]
+#[command(version, after_help = AFTER_HELP)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
 }
 
 #[derive(Args, Debug)]
+#[command(next_help_heading = "Friction Thresholds")]
 struct FrictionArgs {
     #[arg(long, value_parser = parse_return_rate)]
     friction_return_rate: Option<f64>,
@@ -69,6 +105,7 @@ impl FrictionArgs {
 }
 
 #[derive(Args, Debug, Default)]
+#[command(next_help_heading = "Advisory & Spotlights")]
 struct AdvisoryArgs {
     #[arg(long)]
     advisory_container_hold_secs: Option<u64>,
@@ -223,40 +260,19 @@ fn issue_publish_args(repo: &str, body: &str) -> Result<Vec<String>> {
 
 #[derive(Subcommand)]
 enum Commands {
-    #[command(flatten)]
-    Extensions(extensions::Commands),
-    /// Inspect analytics database coverage, discovered local harness roots, and recommended next commands.
+    /// Inspect coverage, discovered harness roots, fleet topology, and next commands.
+    #[command(next_help_heading = "Database & Scope")]
     Status {
         #[arg(long, default_value = "dendro.duckdb")]
         db: PathBuf,
         #[arg(long)]
         rig: Option<String>,
+        /// Text report or the raw status document.
         #[arg(long, value_parser = ["text", "json"])]
         format: Option<String>,
     },
-    /// Draft local Markdown; publish only with explicit --publish --repo.
-    IssueDraft {
-        #[command(flatten)]
-        scope: ReportScope,
-        #[arg(long, default_value = "m3", value_parser=["m3","handoff_friction","advisory_idle_claimed","anomaly_spotlights"])]
-        metric: String,
-        #[arg(long,value_parser=parse_nonnegative)]
-        usd_per_million: Option<f64>,
-        #[arg(long, requires = "repo")]
-        publish: bool,
-        #[arg(long, requires = "publish")]
-        repo: Option<String>,
-    },
-    /// Emit an advisory CI verdict: 0 pass, 2 breach, 3 insufficient evidence.
-    Assert {
-        #[command(flatten)]
-        scope: ReportScope,
-        #[arg(long,default_value="0.15",value_parser=parse_return_rate)]
-        max_rework_rate: f64,
-        #[arg(long,default_value="0.20",value_parser=parse_return_rate)]
-        max_idle_rate: f64,
-    },
-    /// Run one-shot ingest into a local analytics database.
+    /// Ingest local harness roots into an analytics database.
+    #[command(next_help_heading = "Ingest")]
     Run {
         #[arg(short, long, default_value = "dendro.duckdb")]
         db: PathBuf,
@@ -271,7 +287,10 @@ enum Commands {
         #[arg(long, conflicts_with = "write_manifest")]
         sealed: Option<PathBuf>,
     },
-    /// Print an Operational Intelligence report as JSON.
+    #[command(flatten, next_help_heading = "Cockpit, Ask & Analysis")]
+    Extensions(extensions::Commands),
+    /// Print an Operational Intelligence report.
+    #[command(next_help_heading = "Report")]
     Report {
         kind: String,
         #[arg(long,value_parser=["json","table","markdown","ndjson"])]
@@ -310,6 +329,7 @@ enum Commands {
         advisory_thresholds: AdvisoryArgs,
     },
     /// Print the trace inputs for one metric id.
+    #[command(next_help_heading = "Trace")]
     Trace {
         #[arg(long, default_value = "dendro.duckdb")]
         db: PathBuf,
@@ -337,6 +357,30 @@ enum Commands {
         friction_thresholds: FrictionArgs,
         #[command(flatten)]
         advisory_thresholds: AdvisoryArgs,
+    },
+    /// Emit an advisory CI verdict: 0 pass, 2 breach, 3 insufficient evidence.
+    #[command(next_help_heading = "Governance")]
+    Assert {
+        #[command(flatten)]
+        scope: ReportScope,
+        #[arg(long,default_value="0.15",value_parser=parse_return_rate, help_heading = "Verdict")]
+        max_rework_rate: f64,
+        #[arg(long,default_value="0.20",value_parser=parse_return_rate, help_heading = "Verdict")]
+        max_idle_rate: f64,
+    },
+    /// Draft local Markdown. Publish only with explicit --publish --repo.
+    #[command(next_help_heading = "Governance")]
+    IssueDraft {
+        #[command(flatten)]
+        scope: ReportScope,
+        #[arg(long, default_value = "m3", value_parser=["m3","handoff_friction","advisory_idle_claimed","anomaly_spotlights"])]
+        metric: String,
+        #[arg(long,value_parser=parse_nonnegative)]
+        usd_per_million: Option<f64>,
+        #[arg(long, requires = "repo")]
+        publish: bool,
+        #[arg(long, requires = "publish")]
+        repo: Option<String>,
     },
 }
 

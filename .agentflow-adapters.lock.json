@@ -1,0 +1,346 @@
+{
+  "version": 2,
+  "namespace": "agentflow",
+  "entries": [
+    {
+      "skill": "agentflow-orchestrator",
+      "adapterName": "agentflow-orchestrator",
+      "qualifiedName": "agentflow-orchestrator",
+      "harness": "pi",
+      "source": "skills/agentflow-orchestrator/SKILL.md",
+      "target": "/home/sam/code/dendro/.pi/skills/agentflow-orchestrator/SKILL.md",
+      "status": "linked-canonical",
+      "linked": true,
+      "hash": "294ae129ec197477855dbb30e30e7e6c28fddb480e3b03f5c33927c878f823cd"
+    },
+    {
+      "skill": "agentflow-orchestrator",
+      "adapterName": "agentflow-orchestrator",
+      "qualifiedName": "agentflow-orchestrator",
+      "harness": "pi:command",
+      "source": "skills/agentflow-orchestrator/SKILL.md",
+      "target": "/home/sam/code/dendro/.pi/commands/agentflow-orchestrator.md",
+      "status": "planned",
+      "hash": "3486673c8e3e5ecaa6f0322e09eacdab6f4a052c56d5ca5ed8c9e7ff1cfa058a"
+    },
+    {
+      "skill": "agentflow-collaborator",
+      "adapterName": "agentflow-collaborator",
+      "qualifiedName": "agentflow-collaborator",
+      "harness": "pi",
+      "source": "skills/agentflow-collaborator/SKILL.md",
+      "target": "/home/sam/code/dendro/.pi/skills/agentflow-collaborator/SKILL.md",
+      "status": "linked-canonical",
+      "linked": true,
+      "hash": "3895d313da96e4c0accd29d6aeab800afaad2e407621cd9176e95465de29c75d"
+    },
+    {
+      "skill": "agentflow-collaborator",
+      "adapterName": "agentflow-collaborator",
+      "qualifiedName": "agentflow-collaborator",
+      "harness": "pi:command",
+      "source": "skills/agentflow-collaborator/SKILL.md",
+      "target": "/home/sam/code/dendro/.pi/commands/agentflow-collaborator.md",
+      "status": "planned",
+      "hash": "7302aaf99b456c8af5b151edc8a006e543eb0ca710df36985717c5f03df16530"
+    },
+    {
+      "skill": "agentflow-collaborator",
+      "adapterName": "agentflow-collaborator",
+      "qualifiedName": "agentflow-collaborator",
+      "harness": "pi",
+      "source": "skills/agentflow-collaborator/references/bounded-environments.md",
+      "target": "/home/sam/code/dendro/.pi/skills/agentflow-collaborator/references/bounded-environments.md",
+      "status": "linked-canonical",
+      "linked": true,
+      "hash": "c5228d2f9af4d0de53add5749e1404614865e1d1c1cc3fb84d2a49e5ee5cab06"
+    },
+    {
+      "skill": "agentflow-collaborator",
+      "adapterName": "agentflow-collaborator",
+      "qualifiedName": "agentflow-collaborator",
+      "harness": "pi",
+      "source": "skills/agentflow-collaborator/references/collaboration-modes.md",
+      "target": "/home/sam/code/dendro/.pi/skills/agentflow-collaborator/references/collaboration-modes.md",
+      "status": "linked-canonical",
+      "linked": true,
+      "hash": "ae01486e528c4f6446b7a697933e68c0891db08dbe524b9539c0bfad7e9fb725"
+    },
+    {
+      "skill": "agentflow-scanner",
+      "adapterName": "agentflow-scanner",
+      "qualifiedName": "agentflow-scanner",
+      "harness": "pi",
+      "source": "skills/agentflow-scanner/SKILL.md",
+      "target": "/home/sam/code/dendro/.pi/skills/agentflow-scanner/SKILL.md",
+      "status": "linked-canonical",
+      "linked": true,
+      "hash": "05489aef1fe8b4d779c9e822bddf36dcb9481beb46d40a923bb531d6aaa92f81"
+    },
+    {
+      "skill": "agentflow-scanner",
+      "adapterName": "agentflow-scanner",
+      "qualifiedName": "agentflow-scanner",
+      "harness": "pi:command",
+      "source": "skills/agentflow-scanner/SKILL.md",
+      "target": "/home/sam/code/dendro/.pi/commands/agentflow-scanner.md",
+      "status": "planned",
+      "hash": "7eede1efb1e45e2a4141651175392bbd3afd751533076c80dceae22ab197065c"
+    },
+    {
+      "skill": "agentflow-designer",
+      "adapterName": "agentflow-designer",
+      "qualifiedName": "agentflow-designer",
+      "harness": "pi",
+      "source": "skills/agentflow-designer/SKILL.md",
+      "target": "/home/sam/code/dendro/.pi/skills/agentflow-designer/SKILL.md",
+      "status": "linked-canonical",
+      "linked": true,
+      "hash": "dc820914f0ae144a27ddc846e0c792fbe2f740f7f7a91ab97d9b63db4792a004"
+    },
+    {
+      "skill": "agentflow-designer",
+      "adapterName": "agentflow-designer",
+      "qualifiedName": "agentflow-designer",
+      "harness": "pi:command",
+      "source": "skills/agentflow-designer/SKILL.md",
+      "target": "/home/sam/code/dendro/.pi/commands/agentflow-designer.md",
+      "status": "planned",
+      "hash": "9231f148772b40bcd44f4409d8eb515835b9314404e1cd0fb2e922fd7e6b309d"
+    },
+    {
+      "skill": "agentflow-designer",
+      "adapterName": "agentflow-designer",
+      "qualifiedName": "agentflow-designer",
+      "harness": "pi",
+      "source": "skills/agentflow-designer/references/definition-completeness.md",
+      "target": "/home/sam/code/dendro/.pi/skills/agentflow-designer/references/definition-completeness.md",
+      "status": "linked-canonical",
+      "linked": true,
+      "hash": "2368972dcf4f9ee36574b9a61db3f04b7fa0f929a8d87d162e32f91c05d663e6"
+    },
+    {
+      "skill": "agentflow-migrator",
+      "adapterName": "agentflow-migrator",
+      "qualifiedName": "agentflow-migrator",
+      "harness": "pi",
+      "source": "skills/agentflow-migrator/SKILL.md",
+      "target": "/home/sam/code/dendro/.pi/skills/agentflow-migrator/SKILL.md",
+      "status": "linked-canonical",
+      "linked": true,
+      "hash": "6eb0823fa1e73d2f9fcb30b13bab026968098f7d2c824d3ff2b380d6ebb406ce"
+    },
+    {
+      "skill": "agentflow-migrator",
+      "adapterName": "agentflow-migrator",
+      "qualifiedName": "agentflow-migrator",
+      "harness": "pi:command",
+      "source": "skills/agentflow-migrator/SKILL.md",
+      "target": "/home/sam/code/dendro/.pi/commands/agentflow-migrator.md",
+      "status": "planned",
+      "hash": "189af2e6333cc0998c5950f676401ef5a887169e13705be1841be42b02e15cb9"
+    },
+    {
+      "skill": "agentflow-migrator",
+      "adapterName": "agentflow-migrator",
+      "qualifiedName": "agentflow-migrator",
+      "harness": "pi",
+      "source": "skills/agentflow-migrator/references/preflight.md",
+      "target": "/home/sam/code/dendro/.pi/skills/agentflow-migrator/references/preflight.md",
+      "status": "linked-canonical",
+      "linked": true,
+      "hash": "c6068fc3984a2493c8011ec5394c76de2f692b86be1144d0a0f490342b8152dd"
+    },
+    {
+      "skill": "agentflow-auditor",
+      "adapterName": "agentflow-auditor",
+      "qualifiedName": "agentflow-auditor",
+      "harness": "pi",
+      "source": "skills/agentflow-auditor/SKILL.md",
+      "target": "/home/sam/code/dendro/.pi/skills/agentflow-auditor/SKILL.md",
+      "status": "linked-canonical",
+      "linked": true,
+      "hash": "52a5294ac51faa152ff8c5f12fe1288fdd7a3f22756bc7a595dad92ff3baea9f"
+    },
+    {
+      "skill": "agentflow-auditor",
+      "adapterName": "agentflow-auditor",
+      "qualifiedName": "agentflow-auditor",
+      "harness": "pi:command",
+      "source": "skills/agentflow-auditor/SKILL.md",
+      "target": "/home/sam/code/dendro/.pi/commands/agentflow-auditor.md",
+      "status": "planned",
+      "hash": "71f829f7c0690de7f96fc51cdad398d823d2f199eaa88c2f50302077e9270780"
+    },
+    {
+      "skill": "agentflow-auditor",
+      "adapterName": "agentflow-auditor",
+      "qualifiedName": "agentflow-auditor",
+      "harness": "pi",
+      "source": "skills/agentflow-auditor/references/workflow-compliance.md",
+      "target": "/home/sam/code/dendro/.pi/skills/agentflow-auditor/references/workflow-compliance.md",
+      "status": "linked-canonical",
+      "linked": true,
+      "hash": "61c72c28fb7bd2e09db3058870fb7e7453ce5edff4d750178d4c2053225d92fd"
+    },
+    {
+      "skill": "agentflow-steerer",
+      "adapterName": "agentflow-steerer",
+      "qualifiedName": "agentflow-steerer",
+      "harness": "pi",
+      "source": "skills/agentflow-steerer/SKILL.md",
+      "target": "/home/sam/code/dendro/.pi/skills/agentflow-steerer/SKILL.md",
+      "status": "linked-canonical",
+      "linked": true,
+      "hash": "102ce94601c182779652eec15a4519a47851db6acfb38db779afd65f4d9f6e88"
+    },
+    {
+      "skill": "agentflow-steerer",
+      "adapterName": "agentflow-steerer",
+      "qualifiedName": "agentflow-steerer",
+      "harness": "pi:command",
+      "source": "skills/agentflow-steerer/SKILL.md",
+      "target": "/home/sam/code/dendro/.pi/commands/agentflow-steerer.md",
+      "status": "planned",
+      "hash": "4f26963f5f9a1380f0cab55d701cc7eda5d97f971c171c1393d9e211c2712df0"
+    },
+    {
+      "skill": "agentflow-steerer",
+      "adapterName": "agentflow-steerer",
+      "qualifiedName": "agentflow-steerer",
+      "harness": "pi",
+      "source": "skills/agentflow-steerer/assets/steer-state.yaml",
+      "target": "/home/sam/code/dendro/.pi/skills/agentflow-steerer/assets/steer-state.yaml",
+      "status": "linked-canonical",
+      "linked": true,
+      "hash": "6cbc12d6894cd63246a57009d3cb85cf0325b05c202f7671b8fa6b8f580c43c7"
+    },
+    {
+      "skill": "agentflow-steerer",
+      "adapterName": "agentflow-steerer",
+      "qualifiedName": "agentflow-steerer",
+      "harness": "pi",
+      "source": "skills/agentflow-steerer/references/adapter-github.md",
+      "target": "/home/sam/code/dendro/.pi/skills/agentflow-steerer/references/adapter-github.md",
+      "status": "linked-canonical",
+      "linked": true,
+      "hash": "8550ba4514bb4147ab99eb757cf249a634b956ac0de8eb3f81f4cf6d3f6dacfb"
+    },
+    {
+      "skill": "agentflow-steerer",
+      "adapterName": "agentflow-steerer",
+      "qualifiedName": "agentflow-steerer",
+      "harness": "pi",
+      "source": "skills/agentflow-steerer/references/adapter-openrig.md",
+      "target": "/home/sam/code/dendro/.pi/skills/agentflow-steerer/references/adapter-openrig.md",
+      "status": "linked-canonical",
+      "linked": true,
+      "hash": "8bcbfe29e08737168ad15c0a280100291a86301ab2c80499b751670e13b583d6"
+    },
+    {
+      "skill": "agentflow-steerer",
+      "adapterName": "agentflow-steerer",
+      "qualifiedName": "agentflow-steerer",
+      "harness": "pi",
+      "source": "skills/agentflow-steerer/references/adapter-tmux.md",
+      "target": "/home/sam/code/dendro/.pi/skills/agentflow-steerer/references/adapter-tmux.md",
+      "status": "linked-canonical",
+      "linked": true,
+      "hash": "d96fdb7e0a6d4319af042cc0ae152131f5d83c6ad4d1ad05c53dcd712cc3d128"
+    },
+    {
+      "skill": "agentflow-steerer",
+      "adapterName": "agentflow-steerer",
+      "qualifiedName": "agentflow-steerer",
+      "harness": "pi",
+      "source": "skills/agentflow-steerer/references/envelope.md",
+      "target": "/home/sam/code/dendro/.pi/skills/agentflow-steerer/references/envelope.md",
+      "status": "linked-canonical",
+      "linked": true,
+      "hash": "035bcfbd827e7260faf20ed752e1974a4de16f8b140628981816048931741024"
+    },
+    {
+      "skill": "agentflow-steerer",
+      "adapterName": "agentflow-steerer",
+      "qualifiedName": "agentflow-steerer",
+      "harness": "pi",
+      "source": "skills/agentflow-steerer/references/heartbeat.md",
+      "target": "/home/sam/code/dendro/.pi/skills/agentflow-steerer/references/heartbeat.md",
+      "status": "linked-canonical",
+      "linked": true,
+      "hash": "b0cef02680516c86898a0869b3c7f4748a888cd4a8080cf90db42e143a8517fa"
+    },
+    {
+      "skill": "agentflow-steerer",
+      "adapterName": "agentflow-steerer",
+      "qualifiedName": "agentflow-steerer",
+      "harness": "pi",
+      "source": "skills/agentflow-steerer/references/seam-rules.md",
+      "target": "/home/sam/code/dendro/.pi/skills/agentflow-steerer/references/seam-rules.md",
+      "status": "linked-canonical",
+      "linked": true,
+      "hash": "f9d83f3a0ada23999436d81c9aa34ce2425b35f592f787662817e41e5e389521"
+    },
+    {
+      "skill": "agentflow-maintainer",
+      "adapterName": "agentflow-maintainer",
+      "qualifiedName": "agentflow-maintainer",
+      "harness": "pi",
+      "source": "skills/agentflow-maintainer/SKILL.md",
+      "target": "/home/sam/code/dendro/.pi/skills/agentflow-maintainer/SKILL.md",
+      "status": "linked-canonical",
+      "linked": true,
+      "hash": "8387bd852ecd6bc1c90880df0ce00ff3261146d5b842d0cdc7b62c16daea32ec"
+    },
+    {
+      "skill": "agentflow-maintainer",
+      "adapterName": "agentflow-maintainer",
+      "qualifiedName": "agentflow-maintainer",
+      "harness": "pi:command",
+      "source": "skills/agentflow-maintainer/SKILL.md",
+      "target": "/home/sam/code/dendro/.pi/commands/agentflow-maintainer.md",
+      "status": "planned",
+      "hash": "ea0183f7fcc24ee2f3bcc8114765ae3b10df384938b7b94b4a88ed66671c128b"
+    },
+    {
+      "skill": "agentflow-maintainer",
+      "adapterName": "agentflow-maintainer",
+      "qualifiedName": "agentflow-maintainer",
+      "harness": "pi:command",
+      "source": "skills/agentflow-maintainer/SKILL.md",
+      "target": "/home/sam/code/dendro/.pi/commands/agentflow/setup.md",
+      "status": "planned",
+      "hash": "0679a7dc90a3f159c4d73672dfcb38b3f0bef5d45d80fc4d13e267439046273c"
+    },
+    {
+      "skill": "agentflow-maintainer",
+      "adapterName": "agentflow-maintainer",
+      "qualifiedName": "agentflow-maintainer",
+      "harness": "pi:command",
+      "source": "skills/agentflow-maintainer/SKILL.md",
+      "target": "/home/sam/code/dendro/.pi/commands/agentflow/doctor.md",
+      "status": "planned",
+      "hash": "139000d2b48076020eb3769b06977f5279155b0b63ec84258e8aaad7df64e9c3"
+    },
+    {
+      "skill": "agentflow-maintainer",
+      "adapterName": "agentflow-maintainer",
+      "qualifiedName": "agentflow-maintainer",
+      "harness": "pi:command",
+      "source": "skills/agentflow-maintainer/SKILL.md",
+      "target": "/home/sam/code/dendro/.pi/commands/agentflow/repair.md",
+      "status": "planned",
+      "hash": "0a4f988c11fa2a999a624160ed8809de3c50b52cc50d1863c747f265a50f4d9d"
+    },
+    {
+      "skill": "agentflow-maintainer",
+      "adapterName": "agentflow-maintainer",
+      "qualifiedName": "agentflow-maintainer",
+      "harness": "pi:command",
+      "source": "skills/agentflow-maintainer/SKILL.md",
+      "target": "/home/sam/code/dendro/.pi/commands/agentflow/undo.md",
+      "status": "planned",
+      "hash": "d7ab6404e8f9b7986a8705b2aeef1dba101288d2bed30b9953a983ff160c4ae1"
+    }
+  ]
+}

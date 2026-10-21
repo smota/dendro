@@ -1,9 +1,8 @@
 //! Screen-by-screen rendering for the 6 TUI tabs and 4 Porter-Duff RGBA translucent modals.
 use crate::tui::{
     compositor::{apply_rgba_backdrop, sanitize_tui_str, Rgba, Theme},
-    AppModal, AppState, HeatmapMetric, SeatViewMode, TabId,
+    AppModal, AppState, HeatmapMetric, SeatGroupMode, SeatViewMode, TabId,
 };
-use dendro_core::presentation::{classify_entity_id, EntityKind};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
@@ -12,6 +11,7 @@ use ratatui::{
     Frame,
 };
 use serde_json::Value;
+use std::collections::BTreeMap;
 
 const BRAILLE_SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -38,6 +38,166 @@ fn fmt_pct(v: &Value) -> String {
         .filter(|n| n.is_finite())
         .map(|n| format!("{:.1}%", n * 100.0))
         .unwrap_or_else(|| "Unavailable".into())
+}
+
+pub(super) fn fmt_compact(v: &Value) -> String {
+    match v.as_f64() {
+        Some(n) if n.is_finite() => fmt_compact_f64(n),
+        _ => "Unavailable".into(),
+    }
+}
+
+pub(super) fn fmt_compact_f64(n: f64) -> String {
+    if !n.is_finite() {
+        return "Unavailable".into();
+    }
+    let sign = if n < 0.0 { "-" } else { "" };
+    let n = n.abs();
+    if n >= 1_000_000_000.0 {
+        format!("{sign}{:.2}B", n / 1_000_000_000.0)
+    } else if n >= 1_000_000.0 {
+        format!("{sign}{:.1}M", n / 1_000_000.0)
+    } else if n >= 1_000.0 {
+        format!("{sign}{:.1}k", n / 1_000.0)
+    } else if n.fract() == 0.0 {
+        format!("{sign}{n:.0}")
+    } else {
+        format!("{sign}{n:.1}")
+    }
+}
+
+pub(super) fn fmt_share_pct(part: &Value, total: f64) -> String {
+    let Some(part) = part.as_f64().filter(|n| n.is_finite()) else {
+        return "(Unavailable)".into();
+    };
+    if !total.is_finite() || total <= 0.0 {
+        return "(Unavailable)".into();
+    }
+    format!("({:.1}%)", part / total * 100.0)
+}
+
+fn fmt_delta_pct(next: f64, base: f64) -> String {
+    if !next.is_finite() || !base.is_finite() || base == 0.0 {
+        return "(Unavailable)".into();
+    }
+    format!("({:+.1}%)", (next - base) / base * 100.0)
+}
+
+fn fmt_duration(v: &Value) -> String {
+    let Some(secs) = v.as_f64().filter(|n| n.is_finite() && *n >= 0.0) else {
+        return "Unavailable".into();
+    };
+    let total = secs.round() as u64;
+    let hours = total / 3600;
+    let minutes = (total % 3600) / 60;
+    let seconds = total % 60;
+    if hours > 0 && minutes > 0 {
+        format!("{hours}h {minutes}m")
+    } else if hours > 0 {
+        format!("{hours}h")
+    } else if minutes > 0 {
+        format!("{minutes}m {seconds}s")
+    } else {
+        format!("{seconds}s")
+    }
+}
+
+fn fmt_duration_share(v: &Value, total: f64) -> String {
+    format!("{} {}", fmt_duration(v), fmt_share_pct(v, total))
+}
+
+fn value_f64(v: &Value) -> f64 {
+    v.as_f64()
+        .filter(|n| n.is_finite() && *n > 0.0)
+        .unwrap_or(0.0)
+}
+
+fn allocate_cells(weights: &[f64], width: usize, protect: impl Fn(usize) -> bool) -> Vec<usize> {
+    let len = weights.len();
+    let mut cells = vec![0usize; len];
+    if width == 0 || len == 0 {
+        return cells;
+    }
+    let total: f64 = weights.iter().copied().filter(|weight| *weight > 0.0).sum();
+    if total <= 0.0 {
+        return cells;
+    }
+    let raw: Vec<f64> = weights
+        .iter()
+        .map(|weight| {
+            if *weight > 0.0 {
+                weight / total * width as f64
+            } else {
+                0.0
+            }
+        })
+        .collect();
+    for (index, weight) in weights.iter().enumerate() {
+        if *weight > 0.0 {
+            let floor = raw[index].floor() as usize;
+            let minimum = usize::from(protect(index));
+            cells[index] = floor.max(minimum);
+        }
+    }
+    let mut sum: usize = cells.iter().sum();
+    while sum > width {
+        let candidate = (0..len).rev().find(|&index| {
+            let minimum = usize::from(weights[index] > 0.0 && protect(index));
+            cells[index] > minimum
+        });
+        let Some(index) = candidate else {
+            break;
+        };
+        cells[index] -= 1;
+        sum -= 1;
+    }
+    while sum < width {
+        let mut best: Option<(usize, f64)> = None;
+        for index in 0..len {
+            if weights[index] <= 0.0 {
+                continue;
+            }
+            let remainder = raw[index] - cells[index] as f64;
+            match best {
+                Some((_, best_remainder)) if remainder <= best_remainder => {}
+                _ => best = Some((index, remainder)),
+            }
+        }
+        let Some((index, _)) = best else {
+            break;
+        };
+        cells[index] += 1;
+        sum += 1;
+    }
+    cells
+}
+
+fn share_bar(parts: &[(f64, char, Style)], width: usize) -> Line<'static> {
+    let weights: Vec<f64> = parts.iter().map(|part| part.0).collect();
+    if weights.iter().all(|weight| *weight <= 0.0) {
+        return Line::from(Span::raw("·".repeat(width)));
+    }
+    let cells = allocate_cells(&weights, width, |_| true);
+    let mut spans = Vec::new();
+    let mut used = 0usize;
+    for (index, (_, ch, style)) in parts.iter().enumerate() {
+        let n = cells
+            .get(index)
+            .copied()
+            .unwrap_or(0)
+            .min(width.saturating_sub(used));
+        if n > 0 {
+            used += n;
+            spans.push(Span::styled(ch.to_string().repeat(n), *style));
+        }
+    }
+    if used < width {
+        spans.push(Span::raw("·".repeat(width - used)));
+    }
+    if spans.is_empty() {
+        spans.push(Span::raw("·".repeat(width)));
+    }
+    Line::from(spans)
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
@@ -229,11 +389,20 @@ fn render_pulse_tab(frame: &mut Frame, area: Rect, state: &AppState, theme: &The
         ])
         .split(v_chunks[0]);
 
+    let m1_raw = fmt_num(&p["m1_yield"]);
+    let token_raw = fmt_num(&p["tokens"]);
+    let m1_sub = format!("raw {m1_raw} · tokens / nonreturned item");
+    let token_sub = format!("raw {token_raw} · half-open [from, to)");
+    let chain_sub = format!("chains: {}", fmt_num(&p["m3_rework_chains"]));
+    let m4_sub = format!(
+        "M4: {}",
+        sanitize_tui_str(p["m4_impact"].as_str().unwrap_or("insufficient_data"))
+    );
     let kpis = [
         (
             " M1 · Yield / Item ",
-            fmt_num(&p["m1_yield"]),
-            "tokens / nonreturned item",
+            fmt_compact(&p["m1_yield"]),
+            m1_sub.as_str(),
         ),
         (
             " M2 · Return Rate ",
@@ -243,20 +412,17 @@ fn render_pulse_tab(frame: &mut Frame, area: Rect, state: &AppState, theme: &The
         (
             " M3 · Rework % ",
             fmt_pct(&p["m3_rework_proportion"]),
-            &format!("chains: {}", fmt_num(&p["m3_rework_chains"])),
+            chain_sub.as_str(),
         ),
         (
             " Recorded Tokens ",
-            fmt_num(&p["tokens"]),
-            "half-open [from, to)",
+            fmt_compact(&p["tokens"]),
+            token_sub.as_str(),
         ),
         (
             " Eff. Parallelism ",
             fmt_num(&p["fleet_concurrency"]["effective_parallelism"]),
-            &format!(
-                "M4: {}",
-                sanitize_tui_str(p["m4_impact"].as_str().unwrap_or("insufficient_data"))
-            ),
+            m4_sub.as_str(),
         ),
     ];
 
@@ -428,7 +594,7 @@ fn render_pulse_tab(frame: &mut Frame, area: Rect, state: &AppState, theme: &The
 }
 
 fn render_seats_tab(frame: &mut Frame, area: Rect, state: &mut AppState, theme: &Theme) {
-    let filtered = state.filtered_activity_rows();
+    let filtered = state.active_seat_rows();
     let chunks = if area.width >= 115 {
         Layout::default()
             .direction(Direction::Horizontal)
@@ -445,10 +611,14 @@ fn render_seats_tab(frame: &mut Frame, area: Rect, state: &mut AppState, theme: 
         SeatViewMode::Bands => "5-Band Aggregate Ribbon",
         SeatViewMode::Timeline => "Shared-Axis State Timeline",
     };
+    let group_name = match state.seat_group_mode {
+        SeatGroupMode::BySeat => "Seat",
+        SeatGroupMode::ByRig => "Team",
+    };
     let filter_badge = if state.filter_input_mode || !state.seat_filter.is_empty() {
         format!(" · Filter [/]: '{}' ", sanitize_tui_str(&state.seat_filter))
     } else {
-        " · [/] Filter  [m] Toggle Timeline  [x] Toggle qitem/non-seats ".into()
+        " · [/] Filter  [g] Team  [m] Timeline  [x] Non-seats ".into()
     };
 
     let mut table_rows = Vec::new();
@@ -499,13 +669,13 @@ fn render_seats_tab(frame: &mut Frame, area: Rect, state: &mut AppState, theme: 
         ],
     )
     .header(
-        Row::new(vec!["Seat", mode_name, "Observed"])
+        Row::new(vec![group_name, mode_name, "Observed"])
             .style(theme.accent().add_modifier(Modifier::BOLD)),
     )
     .block(
         Block::default()
             .title(format!(
-                " Seats ({}/{total_raw} shown, {hidden} hidden){filter_badge}",
+                " {group_name}s ({}/{total_raw} shown, {hidden} hidden){filter_badge}",
                 filtered.len()
             ))
             .borders(Borders::ALL)
@@ -514,46 +684,71 @@ fn render_seats_tab(frame: &mut Frame, area: Rect, state: &mut AppState, theme: 
     state.seat_table_state.select(Some(state.selected_seat));
     frame.render_stateful_widget(table, chunks[0], &mut state.seat_table_state);
 
-    // Right-hand Seat Inspector
+    // Right-hand Seat / Team Inspector
     let mut insp_lines = Vec::new();
+    let inspector_title = match state.seat_group_mode {
+        SeatGroupMode::BySeat => " Synchronized Seat Inspector ",
+        SeatGroupMode::ByRig => " Synchronized Team Inspector ",
+    };
     if let Some(r) = filtered.get(state.selected_seat) {
         let seat_name = sanitize_tui_str(r["seat"].as_str().unwrap_or("unknown"));
+        let band_total = [
+            "active_secs",
+            "idle_with_work_secs",
+            "idle_without_work_secs",
+            "waiting_human_secs",
+            "unknown_secs",
+        ]
+        .iter()
+        .map(|key| r[*key].as_f64().filter(|n| n.is_finite()).unwrap_or(0.0))
+        .sum::<f64>();
+        let observed = r["observed_secs"]
+            .as_f64()
+            .filter(|n| n.is_finite() && *n > 0.0)
+            .unwrap_or(band_total);
+        let label = match state.seat_group_mode {
+            SeatGroupMode::BySeat => "Seat",
+            SeatGroupMode::ByRig => "Team",
+        };
         insp_lines.push(Line::from(vec![
-            Span::styled("Seat: ", theme.muted()),
+            Span::styled(format!("{label}: "), theme.muted()),
             Span::styled(seat_name.clone(), theme.accent()),
         ]));
         insp_lines.push(Line::from(format!(
-            "Observed Duration: {} s",
-            fmt_num(&r["observed_secs"])
+            "Observed Duration: {}",
+            fmt_duration_share(&r["observed_secs"], observed)
         )));
         insp_lines.push(Line::from(""));
         insp_lines.push(Line::from(vec![
             Span::styled(" █ RUNNING            ", theme.band_running()),
-            Span::raw(format!("{} s", fmt_num(&r["active_secs"]))),
+            Span::raw(fmt_duration_share(&r["active_secs"], observed)),
         ]));
         insp_lines.push(Line::from(vec![
             Span::styled(" ▓ IDLE-WITH-WORK     ", theme.band_idle_with_work()),
-            Span::raw(format!("{} s", fmt_num(&r["idle_with_work_secs"]))),
+            Span::raw(fmt_duration_share(&r["idle_with_work_secs"], observed)),
         ]));
         insp_lines.push(Line::from(vec![
             Span::styled("   ├─ Container Hold  ", theme.band_container_hold()),
-            Span::raw(format!("{} s ▨", fmt_num(&r["unparked_container_secs"]))),
+            Span::raw(format!(
+                "{} ▨",
+                fmt_duration_share(&r["unparked_container_secs"], observed)
+            )),
         ]));
         insp_lines.push(Line::from(vec![
             Span::styled("   └─ True Leaf Stall ", theme.warn()),
-            Span::raw(format!("{} s", fmt_num(&r["leaf_stall_secs"]))),
+            Span::raw(fmt_duration_share(&r["leaf_stall_secs"], observed)),
         ]));
         insp_lines.push(Line::from(vec![
             Span::styled(" ░ IDLE-WITHOUT-WORK  ", theme.band_idle_no_work()),
-            Span::raw(format!("{} s", fmt_num(&r["idle_without_work_secs"]))),
+            Span::raw(fmt_duration_share(&r["idle_without_work_secs"], observed)),
         ]));
         insp_lines.push(Line::from(vec![
             Span::styled(" ▒ NEEDS-INPUT        ", theme.band_needs_input()),
-            Span::raw(format!("{} s", fmt_num(&r["waiting_human_secs"]))),
+            Span::raw(fmt_duration_share(&r["waiting_human_secs"], observed)),
         ]));
         insp_lines.push(Line::from(vec![
             Span::styled(" ? UNKNOWN            ", theme.band_unknown()),
-            Span::raw(format!("{} s", fmt_num(&r["unknown_secs"]))),
+            Span::raw(fmt_duration_share(&r["unknown_secs"], observed)),
         ]));
         insp_lines.push(Line::from(""));
         insp_lines.push(Line::from(format!(
@@ -562,21 +757,28 @@ fn render_seats_tab(frame: &mut Frame, area: Rect, state: &mut AppState, theme: 
             fmt_num(&r["ceremony_calls"]),
             fmt_pct(&r["ceremony_ratio"])
         )));
-        if let Some(rep) = &state.report {
-            if let Some(m1) = rows(&rep["payload"]["m1_by_seat"])
+        let matched = state.report.as_ref().and_then(|rep| {
+            rows(&rep["payload"]["m1_by_seat"])
                 .find(|m| m["seat"].as_str() == r["seat"].as_str())
-            {
-                insp_lines.push(Line::from(format!(
-                    "M1 Yield: {} tok/item · Closed: {} · Tokens: {}",
-                    fmt_num(&m1["tokens_per_closed_item"]),
-                    fmt_num(&m1["closed_items"]),
-                    fmt_num(&m1["tokens"])
-                )));
-            }
+                .cloned()
+        });
+        let embedded = r
+            .get("tokens")
+            .filter(|value| !value.is_null())
+            .map(|_| r.clone());
+        if let Some(m1) = matched.or(embedded) {
+            insp_lines.push(Line::from(format!(
+                "M1 Yield: {} tok/item ({}) · Closed: {} · Tokens: {} ({})",
+                fmt_compact(&m1["tokens_per_closed_item"]),
+                fmt_num(&m1["tokens_per_closed_item"]),
+                fmt_num(&m1["closed_items"]),
+                fmt_compact(&m1["tokens"]),
+                fmt_num(&m1["tokens"])
+            )));
         }
         insp_lines.push(Line::from(""));
         insp_lines.push(Line::from(Span::styled(
-            "[Enter] Inspect JSON  [s] Send to Simulator  [t] Trace",
+            "[Enter] Inspect JSON  [s] Send to Simulator  [g] Team/Rig  [t] Trace",
             theme.muted(),
         )));
     } else {
@@ -590,7 +792,7 @@ fn render_seats_tab(frame: &mut Frame, area: Rect, state: &mut AppState, theme: 
         Paragraph::new(insp_lines)
             .block(
                 Block::default()
-                    .title(" Synchronized Seat Inspector ")
+                    .title(inspector_title)
                     .borders(Borders::ALL)
                     .border_style(theme.border(false)),
             )
@@ -599,11 +801,7 @@ fn render_seats_tab(frame: &mut Frame, area: Rect, state: &mut AppState, theme: 
     );
 }
 
-fn build_colored_band_line(r: &Value, width: usize, theme: &Theme) -> Line<'static> {
-    let total = r["observed_secs"].as_f64().unwrap_or(0.0);
-    if total <= 0.0 {
-        return Line::from(Span::styled("?".repeat(width), theme.band_unknown()));
-    }
+pub(super) fn build_colored_band_line(r: &Value, width: usize, theme: &Theme) -> Line<'static> {
     let spec: [(&str, char, Style); 5] = [
         ("active_secs", '█', theme.band_running()),
         ("idle_with_work_secs", '▓', theme.band_idle_with_work()),
@@ -611,17 +809,27 @@ fn build_colored_band_line(r: &Value, width: usize, theme: &Theme) -> Line<'stat
         ("waiting_human_secs", '▒', theme.band_needs_input()),
         ("unknown_secs", '?', theme.band_unknown()),
     ];
+    let weights: Vec<f64> = spec.iter().map(|(key, _, _)| value_f64(&r[*key])).collect();
+    if width == 0 || weights.iter().all(|weight| *weight <= 0.0) {
+        return Line::from(Span::styled("?".repeat(width), theme.band_unknown()));
+    }
+    // Positive non-unknown bands keep at least one cell so active work cannot round away.
+    let cells = allocate_cells(&weights, width, |index| index < 4);
     let mut spans = Vec::new();
     let mut used = 0usize;
-    for (k, ch, st) in spec {
-        let v = r[k].as_f64().unwrap_or(0.0);
-        if v > 0.0 {
-            let n = ((v / total * width as f64).round() as usize).min(width.saturating_sub(used));
-            if n > 0 {
-                used += n;
-                spans.push(Span::styled(ch.to_string().repeat(n), st));
-            }
+    for (index, (_, ch, style)) in spec.iter().enumerate() {
+        let n = cells
+            .get(index)
+            .copied()
+            .unwrap_or(0)
+            .min(width.saturating_sub(used));
+        if n > 0 {
+            used += n;
+            spans.push(Span::styled(ch.to_string().repeat(n), *style));
         }
+    }
+    if used < width {
+        spans.push(Span::styled("?".repeat(width - used), theme.band_unknown()));
     }
     if spans.is_empty() {
         spans.push(Span::styled("?".repeat(width), theme.band_unknown()));
@@ -795,7 +1003,7 @@ fn render_handoffs_tab(frame: &mut Frame, area: Rect, state: &AppState, theme: &
     );
 }
 
-fn render_tokens_tab(frame: &mut Frame, area: Rect, state: &AppState, theme: &Theme) {
+fn render_tokens_tab(frame: &mut Frame, area: Rect, state: &mut AppState, theme: &Theme) {
     let Some(report) = &state.report else { return };
     let p = &report["payload"];
 
@@ -804,29 +1012,49 @@ fn render_tokens_tab(frame: &mut Frame, area: Rect, state: &AppState, theme: &Th
         .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
         .split(area);
 
+    let token_rows = state.token_seat_rows();
+    let token_total: f64 = token_rows.iter().map(|row| value_f64(&row["tokens"])).sum();
+    let max_token = token_rows.len().saturating_sub(1);
+    if state.token_cursor > max_token {
+        state.token_cursor = max_token;
+    }
     let mut seat_rows = Vec::new();
-    for r in rows(&p["m1_by_seat"]).take(30) {
+    for (idx, r) in token_rows.iter().enumerate() {
         let seat = sanitize_tui_str(r["seat"].as_str().unwrap_or("?"));
-        if !state.show_all_entities && classify_entity_id(&seat) != EntityKind::AgentSeat {
-            continue;
-        }
-        seat_rows.push(Row::new(vec![
-            Cell::from(seat),
-            Cell::from(fmt_num(&r["tokens"])),
-            Cell::from(fmt_num(&r["closed_items"])),
-            Cell::from(fmt_num(&r["nonreturn_deliveries"])),
-            Cell::from(fmt_num(&r["tokens_per_closed_item"])),
-        ]));
+        let style = if idx == state.token_cursor {
+            Style::default().add_modifier(Modifier::REVERSED)
+        } else {
+            Style::default()
+        };
+        let prefix = if idx == state.token_cursor {
+            "› "
+        } else {
+            "  "
+        };
+        seat_rows.push(
+            Row::new(vec![
+                Cell::from(format!("{prefix}{seat}")),
+                Cell::from(format!(
+                    "{} {}",
+                    fmt_compact(&r["tokens"]),
+                    fmt_share_pct(&r["tokens"], token_total)
+                )),
+                Cell::from(fmt_num(&r["closed_items"])),
+                Cell::from(fmt_num(&r["nonreturn_deliveries"])),
+                Cell::from(fmt_compact(&r["tokens_per_closed_item"])),
+            ])
+            .style(style),
+        );
     }
 
     let table = Table::new(
         seat_rows,
         [
-            Constraint::Length(26),
-            Constraint::Length(14),
+            Constraint::Length(28),
+            Constraint::Length(20),
             Constraint::Length(12),
             Constraint::Length(12),
-            Constraint::Length(18),
+            Constraint::Length(16),
         ],
     )
     .header(
@@ -841,64 +1069,149 @@ fn render_tokens_tab(frame: &mut Frame, area: Rect, state: &AppState, theme: &Th
     )
     .block(
         Block::default()
-            .title(" Per-Seat Token Consumption & M1 Yield ")
+            .title(" Per-Seat Token Consumption & M1 Yield  [↑/↓] ")
             .borders(Borders::ALL)
             .border_style(theme.border(true)),
     );
-    frame.render_widget(table, chunks[0]);
+    state.token_table_state.select(Some(state.token_cursor));
+    frame.render_stateful_widget(table, chunks[0], &mut state.token_table_state);
 
     let tc = &p["token_categories"];
     let ti = &p["task_intake_overhead"];
-    let right_lines = vec![
-        Line::from(Span::styled("Token Category Mix (AC6)", theme.accent())),
-        Line::from(format!(
-            " █ Input Uncached:  {}",
-            fmt_num(&tc["input_uncached"])
-        )),
-        Line::from(format!(
-            " ▓ Cache Read:      {}",
-            fmt_num(&tc["cache_read"])
-        )),
-        Line::from(format!(
-            " ▒ Cache Write:     {}",
-            fmt_num(&tc["cache_write"])
-        )),
-        Line::from(format!(" ░ Output:          {}", fmt_num(&tc["output"]))),
-        Line::from(Span::styled(
-            " (Reasoning is part of output; never double-counted)",
-            theme.muted(),
-        )),
-        Line::from(""),
-        Line::from(Span::styled(
-            "Task-Intake Classification (Analytical)",
-            theme.accent(),
-        )),
-        Line::from(format!(
-            " ● Assigned Mission:  {}",
-            fmt_num(&ti["assigned_mission_tokens"])
-        )),
-        Line::from(format!(
-            " ● Intake Overhead:   {}",
-            fmt_num(&ti["task_intake_overhead"])
-        )),
-        Line::from(format!(
-            " ▲ Ambiguous/Collide: {}",
-            fmt_num(&ti["ambiguous_tokens"])
-        )),
-        Line::from(format!(
-            " ○ Unlinked Session:  {}",
-            fmt_num(&ti["unlinked_session"])
-        )),
-        Line::from(""),
-        Line::from(Span::styled(
-            "Cross-Slice Cache Bleed & Compactions",
-            theme.accent(),
-        )),
-        Line::from(format!(
-            " Context Compaction Events: {}",
-            rows(&p["context_compactions"]["events"]).count()
-        )),
+    let category_parts = [
+        (
+            value_f64(&tc["input_uncached"]),
+            '█',
+            theme.band_running(),
+            "Input Uncached",
+            &tc["input_uncached"],
+        ),
+        (
+            value_f64(&tc["cache_read"]),
+            '▓',
+            theme.band_idle_with_work(),
+            "Cache Read",
+            &tc["cache_read"],
+        ),
+        (
+            value_f64(&tc["cache_write"]),
+            '▒',
+            theme.band_needs_input(),
+            "Cache Write",
+            &tc["cache_write"],
+        ),
+        (
+            value_f64(&tc["output"]),
+            '░',
+            theme.band_idle_no_work(),
+            "Output",
+            &tc["output"],
+        ),
     ];
+    let category_total: f64 = category_parts.iter().map(|part| part.0).sum();
+    let category_bar = share_bar(
+        &category_parts
+            .iter()
+            .map(|part| (part.0, part.1, part.2))
+            .collect::<Vec<_>>(),
+        28,
+    );
+    let intake_parts = [
+        (
+            value_f64(&ti["assigned_mission_tokens"]),
+            '█',
+            theme.band_running(),
+            "Assigned Mission",
+            &ti["assigned_mission_tokens"],
+        ),
+        (
+            value_f64(&ti["task_intake_overhead"]),
+            '▓',
+            theme.band_idle_with_work(),
+            "Intake Overhead",
+            &ti["task_intake_overhead"],
+        ),
+        (
+            value_f64(&ti["ambiguous_tokens"]),
+            '▲',
+            theme.warn(),
+            "Ambiguous/Collide",
+            &ti["ambiguous_tokens"],
+        ),
+        (
+            value_f64(&ti["unlinked_session"]),
+            '○',
+            theme.muted(),
+            "Unlinked Session",
+            &ti["unlinked_session"],
+        ),
+    ];
+    let intake_total: f64 = intake_parts.iter().map(|part| part.0).sum();
+    let intake_bar = share_bar(
+        &intake_parts
+            .iter()
+            .map(|part| (part.0, part.1, part.2))
+            .collect::<Vec<_>>(),
+        28,
+    );
+    let output_total = tc["output"]
+        .as_f64()
+        .filter(|n| n.is_finite())
+        .unwrap_or(0.0);
+    let reasoning_line = if tc["reasoning"].as_f64().is_some() {
+        format!(
+            "   Reasoning (of output): {} {}",
+            fmt_compact(&tc["reasoning"]),
+            fmt_share_pct(&tc["reasoning"], output_total)
+        )
+    } else {
+        format!(
+            "   Reasoning: {} (part of output; never double-counted)",
+            sanitize_tui_str(tc["reasoning"].as_str().unwrap_or("not recorded"))
+        )
+    };
+    let mut right_lines = vec![
+        Line::from(Span::styled("Token Category Mix (AC6)", theme.accent())),
+        category_bar,
+    ];
+    for part in &category_parts {
+        right_lines.push(Line::from(format!(
+            " {} {:<16} {} {}",
+            part.1,
+            part.3,
+            fmt_compact(part.4),
+            fmt_share_pct(part.4, category_total)
+        )));
+    }
+    right_lines.push(Line::from(reasoning_line));
+    right_lines.push(Line::from(Span::styled(
+        " (Reasoning is part of output; never double-counted)",
+        theme.muted(),
+    )));
+    right_lines.push(Line::from(""));
+    right_lines.push(Line::from(Span::styled(
+        "Task-Intake Classification (Analytical)",
+        theme.accent(),
+    )));
+    right_lines.push(intake_bar);
+    for part in &intake_parts {
+        right_lines.push(Line::from(format!(
+            " {} {:<18} {} {}",
+            part.1,
+            part.3,
+            fmt_compact(part.4),
+            fmt_share_pct(part.4, intake_total)
+        )));
+    }
+    right_lines.push(Line::from(""));
+    right_lines.push(Line::from(Span::styled(
+        "Cross-Slice Cache Bleed & Compactions",
+        theme.accent(),
+    )));
+    right_lines.push(Line::from(format!(
+        " Context Compaction Events: {}",
+        rows(&p["context_compactions"]["events"]).count()
+    )));
 
     frame.render_widget(
         Paragraph::new(right_lines)
@@ -913,28 +1226,78 @@ fn render_tokens_tab(frame: &mut Frame, area: Rect, state: &AppState, theme: &Th
     );
 }
 
-fn render_simulate_tab(frame: &mut Frame, area: Rect, state: &AppState, theme: &Theme) {
+fn token_object_total(value: &Value) -> f64 {
+    ["input_uncached", "output", "cache_read", "cache_write"]
+        .iter()
+        .map(|key| {
+            value[*key]
+                .as_f64()
+                .filter(|n| n.is_finite())
+                .unwrap_or(0.0)
+        })
+        .sum()
+}
+
+fn render_simulate_tab(frame: &mut Frame, area: Rect, state: &mut AppState, theme: &Theme) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(48), Constraint::Percentage(52)])
         .split(area);
 
     let seats = state.canonical_seat_names();
-    let mut left_lines = vec![
-        Line::from(Span::styled(
-            "Counterfactual Topology Controls (<1ms In-Memory)",
-            theme.accent(),
-        )),
-        Line::from(Span::styled(
-            "↑/↓ Select · [Space] Toggle Remove · [p] Set Replacement",
-            theme.muted(),
-        )),
-        Line::from(""),
-    ];
-
-    for (idx, s) in seats.iter().take(12).enumerate() {
-        let is_rem = state.sim_scenario.remove.contains(s);
-        let is_rep = state.sim_scenario.replacement_seat.as_ref() == Some(s);
+    let list_len = 4 + seats.len();
+    let cursor = state.sim_cursor.min(list_len.saturating_sub(1));
+    let mut rows: Vec<(String, Style)> = Vec::with_capacity(list_len);
+    let on_off = |enabled: bool| if enabled { "ON ●" } else { "OFF ○" };
+    rows.push((
+        format!(
+            "[d] Direct Leaf Handoffs          {}",
+            on_off(state.sim_scenario.direct_handoffs)
+        ),
+        if state.sim_scenario.direct_handoffs {
+            theme.band_running()
+        } else {
+            Style::default()
+        },
+    ));
+    rows.push((
+        format!(
+            "[f] Enforce 4-Eyes Model Family   {}",
+            on_off(state.sim_scenario.enforce_model_family_diversity)
+        ),
+        if state.sim_scenario.enforce_model_family_diversity {
+            theme.band_running()
+        } else {
+            Style::default()
+        },
+    ));
+    let threshold = state
+        .sim_scenario
+        .boundary_reset_threshold
+        .map(|n| fmt_compact_f64(n as f64))
+        .unwrap_or_else(|| "OFF ○".into());
+    rows.push((
+        format!("[←/→] Boundary Reset Threshold   {threshold}"),
+        if state.sim_scenario.boundary_reset_threshold.is_some() {
+            theme.accent()
+        } else {
+            Style::default()
+        },
+    ));
+    rows.push(("[c] Clear Scenario Overrides".to_string(), theme.muted()));
+    let m1_tokens: BTreeMap<&str, &Value> = state
+        .report
+        .as_ref()
+        .and_then(|report| report["payload"]["m1_by_seat"].as_array())
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|row| row["seat"].as_str().map(|seat| (seat, &row["tokens"])))
+                .collect()
+        })
+        .unwrap_or_default();
+    for seat in &seats {
+        let is_rem = state.sim_scenario.remove.iter().any(|name| name == seat);
+        let is_rep = state.sim_scenario.replacement_seat.as_ref() == Some(seat);
         let badge = if is_rem {
             "[REMOVE] "
         } else if is_rep {
@@ -942,49 +1305,52 @@ fn render_simulate_tab(frame: &mut Frame, area: Rect, state: &AppState, theme: &
         } else {
             "[      ] "
         };
-        let st = if idx == state.selected_seat {
-            Style::default().add_modifier(Modifier::REVERSED)
-        } else if is_rem {
+        let tokens = m1_tokens
+            .get(seat.as_str())
+            .map(|value| fmt_compact(value))
+            .unwrap_or_else(|| "—".into());
+        let style = if is_rem {
             theme.breach()
         } else if is_rep {
             theme.band_running()
         } else {
             Style::default()
         };
+        rows.push((
+            format!("{badge} {}  {tokens}", sanitize_tui_str(seat)),
+            style,
+        ));
+    }
+    let inner_h = chunks[0].height.saturating_sub(2) as usize;
+    let view_h = inner_h.saturating_sub(3).max(1);
+    let max_start = rows.len().saturating_sub(view_h);
+    let start = cursor
+        .saturating_sub(view_h.saturating_sub(1))
+        .min(max_start);
+    let mut left_lines = vec![
+        Line::from(Span::styled(
+            "Counterfactual Topology Controls (<1ms In-Memory)",
+            theme.accent(),
+        )),
+        Line::from(Span::styled(
+            "↑/↓ Select · [Space/Enter] Activate · [p] Replace",
+            theme.muted(),
+        )),
+        Line::from(""),
+    ];
+    for (idx, (label, style)) in rows.iter().enumerate().skip(start).take(view_h) {
+        let selected = idx == cursor;
+        let row_style = if selected {
+            style.add_modifier(Modifier::REVERSED)
+        } else {
+            *style
+        };
+        let marker = if selected { "›" } else { " " };
         left_lines.push(Line::from(Span::styled(
-            format!(" {badge} {}", sanitize_tui_str(s)),
-            st,
+            format!("{marker} {label}"),
+            row_style,
         )));
     }
-    left_lines.push(Line::from(""));
-    left_lines.push(Line::from(format!(
-        " [d] Direct Leaf Handoffs:         {}",
-        if state.sim_scenario.direct_handoffs {
-            "ON ●"
-        } else {
-            "OFF ○"
-        }
-    )));
-    left_lines.push(Line::from(format!(
-        " [f] Enforce 4-Eyes Model Family:  {}",
-        if state.sim_scenario.enforce_model_family_diversity {
-            "ON ●"
-        } else {
-            "OFF ○"
-        }
-    )));
-    left_lines.push(Line::from(format!(
-        " [←/→] Boundary Reset Threshold:   {} tokens",
-        state
-            .sim_scenario
-            .boundary_reset_threshold
-            .map(|n| n.to_string())
-            .unwrap_or_else(|| "None".into())
-    )));
-    left_lines.push(Line::from(Span::styled(
-        " [c] Clear Scenario Overrides",
-        theme.muted(),
-    )));
 
     frame.render_widget(
         Paragraph::new(left_lines)
@@ -1002,17 +1368,28 @@ fn render_simulate_tab(frame: &mut Frame, area: Rect, state: &AppState, theme: &
     let mut right_lines = Vec::new();
     if let Some(sim) = &state.sim_result {
         let status = sim["status"].as_str().unwrap_or("unknown");
+        let projected = status == "projected" || status == "ok";
         right_lines.push(Line::from(vec![
             Span::styled("Simulation Verdict: ", theme.muted()),
             Span::styled(
                 status.to_uppercase(),
-                if status == "ok" {
+                if projected {
                     theme.band_running()
                 } else {
                     theme.warn()
                 },
             ),
         ]));
+        if let Some(reasons) = sim["reasons"].as_array() {
+            for reason in reasons {
+                if let Some(text) = reason.as_str() {
+                    right_lines.push(Line::from(Span::styled(
+                        format!("Reason: {}", sanitize_tui_str(text)),
+                        theme.warn(),
+                    )));
+                }
+            }
+        }
         if let Some(reason) = sim["reason"].as_str() {
             right_lines.push(Line::from(Span::styled(
                 format!("Reason: {}", sanitize_tui_str(reason)),
@@ -1024,11 +1401,12 @@ fn render_simulate_tab(frame: &mut Frame, area: Rect, state: &AppState, theme: &
         let proj_u = sim["projection"]["input_units"].as_f64().unwrap_or(0.0);
         right_lines.push(Line::from(format!(
             "Baseline Input Units:  {}",
-            fmt_num(&sim["baseline"]["input_units"])
+            fmt_compact_f64(base_u)
         )));
         right_lines.push(Line::from(format!(
-            "Projected Input Units: {}",
-            fmt_num(&sim["projection"]["input_units"])
+            "Projected Input Units: {} {}",
+            fmt_compact_f64(proj_u),
+            fmt_delta_pct(proj_u, base_u)
         )));
         right_lines.push(Line::from(format!(
             "Reduction Ratio:       {}",
@@ -1042,26 +1420,91 @@ fn render_simulate_tab(frame: &mut Frame, area: Rect, state: &AppState, theme: &
                 Span::styled("█".repeat(filled), theme.accent()),
             ]));
         }
-        right_lines.push(Line::from(""));
-        right_lines.push(Line::from(format!(
-            "Token Conservation: conserved={} · unassigned_records={}",
-            sim["conservation"]["conserved"].as_bool().unwrap_or(false),
-            fmt_num(&sim["conservation"]["unassigned_work_records"])
-        )));
-        right_lines.push(Line::from(format!(
-            "Direct Routing Cycle Delta: {} ms",
-            fmt_num(&sim["routing"]["projected_cycle_reduction_ms"])
-        )));
+        let base_tokens = token_object_total(&sim["baseline"]["tokens"]);
+        let retained = token_object_total(&sim["conservation"]["retained_historical_tokens"]);
+        let bypassed = token_object_total(&sim["conservation"]["bypassed_coordination_tokens"]);
+        let unassigned = token_object_total(&sim["conservation"]["unassigned_work_tokens"]);
+        let share_base = if base_tokens > 0.0 {
+            base_tokens
+        } else {
+            base_u
+        };
         right_lines.push(Line::from(""));
         right_lines.push(Line::from(Span::styled(
             format!(
-                "Unit: {}",
-                sanitize_tui_str(
-                    sim["unit"]
-                        .as_str()
-                        .unwrap_or("uncached-equivalent input units (not currency)")
-                )
+                "Token Conservation: conserved={} · unassigned_records={}",
+                sim["conservation"]["conserved"].as_bool().unwrap_or(false),
+                fmt_num(&sim["conservation"]["unassigned_work_records"])
             ),
+            theme.accent(),
+        )));
+        right_lines.push(Line::from(format!(
+            "  Retained:   {} {}",
+            fmt_compact_f64(retained),
+            fmt_share_pct(&serde_json::json!(retained), share_base)
+        )));
+        right_lines.push(Line::from(format!(
+            "  Unassigned: {} {}",
+            fmt_compact_f64(unassigned),
+            fmt_share_pct(&serde_json::json!(unassigned), share_base)
+        )));
+        right_lines.push(Line::from(format!(
+            "  Bypassed:   {} {}",
+            fmt_compact_f64(bypassed),
+            fmt_share_pct(&serde_json::json!(bypassed), share_base)
+        )));
+        let boundary = &sim["boundary"];
+        let boundary_status = boundary["status"].as_str().unwrap_or("not_requested");
+        right_lines.push(Line::from(""));
+        right_lines.push(Line::from(Span::styled(
+            format!("Boundary Reset projection: {boundary_status}"),
+            theme.accent(),
+        )));
+        if boundary.get("warm_input_units").is_some() {
+            let warm = boundary["warm_input_units"].as_f64().unwrap_or(0.0);
+            let reset = boundary["boundary_input_units"].as_f64().unwrap_or(0.0);
+            right_lines.push(Line::from(format!(
+                "  Warm {} · Reset {} {} · Reduction {}",
+                fmt_compact_f64(warm),
+                fmt_compact_f64(reset),
+                fmt_delta_pct(reset, warm),
+                fmt_pct(&boundary["reduction_ratio"])
+            )));
+        } else if let Some(model) = &state.sim_scenario.boundary {
+            right_lines.push(Line::from(format!(
+                "  Assumptions: {} turns · stale {} · clean {} · cold {}",
+                model.turns,
+                fmt_compact_f64(model.stale_context_tokens as f64),
+                fmt_compact_f64(model.clean_context_tokens as f64),
+                fmt_compact_f64(model.cold_boot_tokens as f64)
+            )));
+        } else {
+            right_lines.push(Line::from(
+                "  Not requested. [←/→] or [Space] on the threshold row enables it.",
+            ));
+        }
+        if let Some(eligible) = boundary.get("eligible") {
+            right_lines.push(Line::from(format!(
+                "  Eligible at threshold: {}",
+                sanitize_tui_str(&eligible.to_string())
+            )));
+        }
+        let cycle = sim["routing"]["median_based_projected_total_cycle_reduction_ms"]
+            .as_f64()
+            .or_else(|| sim["routing"]["projected_cycle_reduction_ms"].as_f64());
+        if let Some(cycle) = cycle {
+            right_lines.push(Line::from(format!(
+                "Direct Routing Cycle Delta: {} ms",
+                fmt_compact_f64(cycle)
+            )));
+        }
+        right_lines.push(Line::from(""));
+        let unit = sim["projection"]["unit"]
+            .as_str()
+            .or_else(|| sim["unit"].as_str())
+            .unwrap_or("uncached-equivalent input units (not currency)");
+        right_lines.push(Line::from(Span::styled(
+            format!("Unit: {}", sanitize_tui_str(unit)),
             theme.muted(),
         )));
         right_lines.push(Line::from(Span::styled(
@@ -1071,6 +1514,15 @@ fn render_simulate_tab(frame: &mut Frame, area: Rect, state: &AppState, theme: &
     } else {
         right_lines.push(Line::from(Span::styled(
             "Toggle any control on the left to evaluate a counterfactual scenario.",
+            theme.muted(),
+        )));
+        right_lines.push(Line::from(""));
+        right_lines.push(Line::from(Span::styled(
+            "Token Conservation: Retained — · Unassigned — · Bypassed —",
+            theme.muted(),
+        )));
+        right_lines.push(Line::from(Span::styled(
+            "Boundary Reset projection: not requested",
             theme.muted(),
         )));
     }
@@ -1225,8 +1677,10 @@ fn render_modal(frame: &mut Frame, area: Rect, state: &AppState, modal: &AppModa
                 Line::from("  [/]                 Live fuzzy filter on canonical seats"),
                 Line::from("  [x]                 Toggle hidden qitem-* queue endpoints & system gates"),
                 Line::from("  [m]                 Toggle 5-Band Aggregate Ribbon vs Shared-Axis Timeline"),
+                Line::from("  [g]                 Toggle per-seat rows and team/rig aggregation"),
+                Line::from("  [s]                 Jump from Seats to the Topology Simulator"),
                 Line::from("  [r] / [w]           Open Rig selector / Smart Window (1h, 24h, 7d, 30d, all)"),
-                Line::from("  [:] or [a]          Open Inline Nao Semantic Drawer with autocomplete"),
+                Line::from("  [:] or [a]          Open Nao Semantic Query with autocomplete"),
                 Line::from("  [i]                 Preview redacted GitHub Issue Draft modal"),
                 Line::from("  [Esc]               Close active modal / return to screen"),
                 Line::from("  [q] / [Ctrl-C]      Exit cleanly"),
@@ -1251,39 +1705,66 @@ fn render_modal(frame: &mut Frame, area: Rect, state: &AppState, modal: &AppModa
         }
         AppModal::NaoAsk => {
             let suggestions = dendro_core::semantic::suggest_closest_intents(&state.nao_input);
+            let selected = state
+                .nao_selected_suggestion
+                .min(suggestions.len().saturating_sub(1));
             let mut lines = vec![
                 Line::from(vec![
                     Span::styled("Ask Nao > ", theme.accent()),
-                    Span::styled(sanitize_tui_str(&state.nao_input), theme.bg_base()),
+                    Span::styled(
+                        sanitize_tui_str(&state.nao_input),
+                        theme.accent().add_modifier(Modifier::BOLD),
+                    ),
                     Span::styled("█", theme.accent()),
                 ]),
                 Line::from(Span::styled(
-                    "Press [Enter] to query · [Tab] autocomplete top suggestion · [Esc] close",
+                    "Press [Enter] to query · [Tab] fill selected suggestion · [↑/↓] choose · [Esc] close",
                     theme.muted(),
                 )),
-                Line::from(""),
-                Line::from(Span::styled("Suggested Supported Intents:", theme.accent())),
             ];
-            for item in suggestions.iter().take(4) {
+            if state.nao_loading {
+                let spinner = BRAILLE_SPINNER[(state.tick_count as usize) % BRAILLE_SPINNER.len()];
+                lines.push(Line::from(Span::styled(
+                    format!(" {spinner} Querying conversational fleet intelligence..."),
+                    theme.warn().add_modifier(Modifier::BOLD),
+                )));
+            }
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "Suggested Supported Intents:",
+                theme.accent(),
+            )));
+            for (idx, item) in suggestions.iter().enumerate() {
                 let name = item["intent"].as_str().unwrap_or("Intent");
                 let ex = item["examples"]
                     .as_array()
                     .and_then(|a| a.first())
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
-                lines.push(Line::from(format!("  • {name}: \"{ex}\"")));
+                let marker = if idx == selected { "›" } else { " " };
+                let style = if idx == selected {
+                    theme.accent().add_modifier(Modifier::REVERSED)
+                } else {
+                    Style::default()
+                };
+                lines.push(Line::from(Span::styled(
+                    format!(" {marker} {name}: \"{ex}\""),
+                    style,
+                )));
             }
-            if let Some((_, full_text)) = &state.nao_modal_output {
-                lines.push(Line::from(""));
-                for l in full_text.lines().take(12) {
-                    lines.push(Line::from(sanitize_tui_str(l)));
+            if !state.nao_loading {
+                if let Some((_, full_text)) = &state.nao_modal_output {
+                    lines.push(Line::from(""));
+                    for l in full_text.lines().take(12) {
+                        lines.push(Line::from(sanitize_tui_str(l)));
+                    }
                 }
             }
             frame.render_widget(
                 Paragraph::new(lines)
                     .block(
                         Block::default()
-                            .title(" 💬 Nao Semantic Query Bar (RGBA Overlay) ")
+                            .title(" 💬 Nao Semantic Query — Conversational Fleet Intelligence ")
                             .borders(Borders::ALL)
                             .border_style(theme.border(true))
                             .style(theme.bg_base()),
