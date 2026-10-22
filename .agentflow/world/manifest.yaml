@@ -1,0 +1,2136 @@
+schema: openrig.context-pack/v1
+name: dendro-world
+taxonomy: world
+description: Zero-copy addressable world manifest for dendro
+atoms:
+  - id: agents-execution-distribution
+    address: "AGENTS.md#execution-distribution"
+    taxonomy: world
+    regions:
+      - state
+      - actors
+    situations:
+      - fresh
+      - handover
+    purpose: "Section \"Execution distribution\" in AGENTS.md covering state, actors."
+    order: 1
+    priority: recommended
+    probe:
+      prompt: "What does section \"Execution distribution\" (AGENTS.md#execution-distribution) define for state?"
+      expect: Establishes Execution distribution in AGENTS.md for state.
+      expectedPatterns:
+        - Execution
+        - distribution
+  - id: agents-1-project-context-mission
+    address: "AGENTS.md#1-project-context-mission"
+    taxonomy: world
+    regions:
+      - identity
+      - actors
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"1. Project Context & Mission\" in AGENTS.md covering identity, actors."
+    order: 2
+    priority: core
+    probe:
+      prompt: "What does section \"1. Project Context & Mission\" (AGENTS.md#1-project-context-mission) define for identity?"
+      expect: "Establishes 1. Project Context & Mission in AGENTS.md for identity."
+      expectedPatterns:
+        - Project
+        - Context
+  - id: agents-2-autonomous-delivery-governance-agentflow-sdlc
+    address: "AGENTS.md#2-autonomous-delivery-governance-agentflow-sdlc"
+    taxonomy: world
+    regions:
+      - actors
+      - laws
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"2. Autonomous Delivery & Governance (AgentFlow SDLC)\" in AGENTS.md covering actors, laws."
+    order: 3
+    priority: core
+    probe:
+      prompt: "What does section \"2. Autonomous Delivery & Governance (AgentFlow SDLC)\" (AGENTS.md#2-autonomous-delivery-governance-agentflow-sdlc) define for actors?"
+      expect: "Establishes 2. Autonomous Delivery & Governance (AgentFlow SDLC) in AGENTS.md for actors."
+      expectedPatterns:
+        - Autonomous
+        - Delivery
+  - id: agents-3-rust-engineering-standards-performance-security
+    address: "AGENTS.md#3-rust-engineering-standards-performance-security"
+    taxonomy: world
+    regions:
+      - laws
+      - affordances
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"3. Rust Engineering Standards: Performance & Security\" in AGENTS.md covering laws, affordances."
+    order: 4
+    priority: core
+    probe:
+      prompt: "What does section \"3. Rust Engineering Standards: Performance & Security\" (AGENTS.md#3-rust-engineering-standards-performance-security) define for laws?"
+      expect: "Establishes 3. Rust Engineering Standards: Performance & Security in AGENTS.md for laws."
+      expectedPatterns:
+        - Rust
+        - Engineering
+  - id: agents-3-rust-engineering-standards-performance-security-3-1-performance-best-practices
+    address: "AGENTS.md#3-rust-engineering-standards-performance-security/3-1-performance-best-practices"
+    taxonomy: world
+    regions:
+      - state
+      - actors
+    situations:
+      - fresh
+      - handover
+    purpose: "Section \"3.1. Performance Best Practices\" in AGENTS.md covering state, actors."
+    order: 5
+    priority: recommended
+    probe:
+      prompt: "What does section \"3.1. Performance Best Practices\" (AGENTS.md#3-rust-engineering-standards-performance-security/3-1-performance-best-practices) define for state?"
+      expect: Establishes 3.1. Performance Best Practices in AGENTS.md for state.
+      expectedPatterns:
+        - Performance
+        - Best
+  - id: agents-3-rust-engineering-standards-performance-security-3-2-security-best-practices
+    address: "AGENTS.md#3-rust-engineering-standards-performance-security/3-2-security-best-practices"
+    taxonomy: world
+    regions:
+      - laws
+      - affordances
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"3.2. Security Best Practices\" in AGENTS.md covering laws, affordances."
+    order: 6
+    priority: core
+    probe:
+      prompt: "What does section \"3.2. Security Best Practices\" (AGENTS.md#3-rust-engineering-standards-performance-security/3-2-security-best-practices) define for laws?"
+      expect: Establishes 3.2. Security Best Practices in AGENTS.md for laws.
+      expectedPatterns:
+        - Security
+        - Best
+  - id: agents-4-verification-quality-gates
+    address: "AGENTS.md#4-verification-quality-gates"
+    taxonomy: world
+    regions:
+      - affordances
+      - laws
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"4. Verification & Quality Gates\" in AGENTS.md covering affordances, laws."
+    order: 7
+    priority: core
+    probe:
+      prompt: "What does section \"4. Verification & Quality Gates\" (AGENTS.md#4-verification-quality-gates) define for affordances?"
+      expect: "Establishes 4. Verification & Quality Gates in AGENTS.md for affordances."
+      expectedPatterns:
+        - Verification
+        - Quality
+  - id: agents-pragmatic-truth-seeking
+    address: "AGENTS.md#pragmatic-truth-seeking"
+    taxonomy: world
+    regions:
+      - state
+    situations:
+      - fresh
+      - handover
+    purpose: "Section \"Pragmatic truth-seeking\" in AGENTS.md covering state."
+    order: 8
+    priority: recommended
+    probe:
+      prompt: "What does section \"Pragmatic truth-seeking\" (AGENTS.md#pragmatic-truth-seeking) define for state?"
+      expect: Establishes Pragmatic truth-seeking in AGENTS.md for state.
+      expectedPatterns:
+        - Pragmatic
+        - truth
+  - id: agents-principles-over-rules
+    address: "AGENTS.md#principles-over-rules"
+    taxonomy: world
+    regions:
+      - laws
+      - terrain
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Principles over rules\" in AGENTS.md covering laws, terrain."
+    order: 9
+    priority: core
+    probe:
+      prompt: "What does section \"Principles over rules\" (AGENTS.md#principles-over-rules) define for laws?"
+      expect: Establishes Principles over rules in AGENTS.md for laws.
+      expectedPatterns:
+        - Principles
+        - over
+  - id: agents-ship-good-working-product
+    address: "AGENTS.md#ship-good-working-product"
+    taxonomy: world
+    regions:
+      - identity
+      - laws
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Ship good, working product\" in AGENTS.md covering identity, laws."
+    order: 10
+    priority: core
+    probe:
+      prompt: "What does section \"Ship good, working product\" (AGENTS.md#ship-good-working-product) define for identity?"
+      expect: Establishes Ship good, working product in AGENTS.md for identity.
+      expectedPatterns:
+        - Ship
+        - good
+  - id: agents-match-rigor-to-stakes
+    address: "AGENTS.md#match-rigor-to-stakes"
+    taxonomy: world
+    regions:
+      - state
+      - identity
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Match rigor to stakes\" in AGENTS.md covering state, identity."
+    order: 11
+    priority: core
+    probe:
+      prompt: "What does section \"Match rigor to stakes\" (AGENTS.md#match-rigor-to-stakes) define for state?"
+      expect: Establishes Match rigor to stakes in AGENTS.md for state.
+      expectedPatterns:
+        - Match
+        - rigor
+  - id: agents-identity-run-this-first
+    address: "AGENTS.md#identity-run-this-first"
+    taxonomy: world
+    regions:
+      - identity
+      - affordances
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Identity — run this first\" in AGENTS.md covering identity, affordances."
+    order: 12
+    priority: core
+    probe:
+      prompt: "What does section \"Identity — run this first\" (AGENTS.md#identity-run-this-first) define for identity?"
+      expect: Establishes Identity — run this first in AGENTS.md for identity.
+      expectedPatterns:
+        - Identity
+        - run
+  - id: agents-reaching-a-peer
+    address: "AGENTS.md#reaching-a-peer"
+    taxonomy: world
+    regions:
+      - identity
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Reaching a peer\" in AGENTS.md covering identity."
+    order: 13
+    priority: core
+    probe:
+      prompt: "What does section \"Reaching a peer\" (AGENTS.md#reaching-a-peer) define for identity?"
+      expect: Establishes Reaching a peer in AGENTS.md for identity.
+      expectedPatterns:
+        - Reaching
+        - peer
+  - id: agents-fresh-seat-orientation
+    address: "AGENTS.md#fresh-seat-orientation"
+    taxonomy: world
+    regions:
+      - actors
+      - identity
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Fresh-seat orientation\" in AGENTS.md covering actors, identity."
+    order: 14
+    priority: core
+    probe:
+      prompt: "What does section \"Fresh-seat orientation\" (AGENTS.md#fresh-seat-orientation) define for actors?"
+      expect: Establishes Fresh-seat orientation in AGENTS.md for actors.
+      expectedPatterns:
+        - Fresh
+        - seat
+  - id: agents-when-openrig-itself-misbehaves
+    address: "AGENTS.md#when-openrig-itself-misbehaves"
+    taxonomy: world
+    regions:
+      - actors
+      - affordances
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"When OpenRig itself misbehaves\" in AGENTS.md covering actors, affordances."
+    order: 15
+    priority: core
+    probe:
+      prompt: "What does section \"When OpenRig itself misbehaves\" (AGENTS.md#when-openrig-itself-misbehaves) define for actors?"
+      expect: Establishes When OpenRig itself misbehaves in AGENTS.md for actors.
+      expectedPatterns:
+        - When
+        - OpenRig
+  - id: agents-what-this-file-is-not
+    address: "AGENTS.md#what-this-file-is-not"
+    taxonomy: world
+    regions:
+      - affordances
+      - state
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"What this file is not\" in AGENTS.md covering affordances, state."
+    order: 16
+    priority: core
+    probe:
+      prompt: "What does section \"What this file is not\" (AGENTS.md#what-this-file-is-not) define for affordances?"
+      expect: Establishes What this file is not in AGENTS.md for affordances.
+      expectedPatterns:
+        - What
+        - this
+  - id: agents-the-terminal-is-the-wire
+    address: "AGENTS.md#the-terminal-is-the-wire"
+    taxonomy: world
+    regions:
+      - actors
+      - state
+    situations:
+      - fresh
+      - handover
+    purpose: "Section \"The terminal is the wire\" in AGENTS.md covering actors, state."
+    order: 17
+    priority: recommended
+    probe:
+      prompt: "What does section \"The terminal is the wire\" (AGENTS.md#the-terminal-is-the-wire) define for actors?"
+      expect: Establishes The terminal is the wire in AGENTS.md for actors.
+      expectedPatterns:
+        - The
+        - terminal
+  - id: agents-the-declared-shape
+    address: "AGENTS.md#the-declared-shape"
+    taxonomy: world
+    regions:
+      - actors
+      - identity
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"The declared shape\" in AGENTS.md covering actors, identity."
+    order: 18
+    priority: core
+    probe:
+      prompt: "What does section \"The declared shape\" (AGENTS.md#the-declared-shape) define for actors?"
+      expect: Establishes The declared shape in AGENTS.md for actors.
+      expectedPatterns:
+        - The
+        - declared
+  - id: agents-purpose-before-machinery
+    address: "AGENTS.md#purpose-before-machinery"
+    taxonomy: world
+    regions:
+      - identity
+      - affordances
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Purpose before machinery\" in AGENTS.md covering identity, affordances."
+    order: 19
+    priority: core
+    probe:
+      prompt: "What does section \"Purpose before machinery\" (AGENTS.md#purpose-before-machinery) define for identity?"
+      expect: Establishes Purpose before machinery in AGENTS.md for identity.
+      expectedPatterns:
+        - Purpose
+        - before
+  - id: agents-your-discontinuous-time
+    address: "AGENTS.md#your-discontinuous-time"
+    taxonomy: world
+    regions:
+      - actors
+      - state
+    situations:
+      - fresh
+      - handover
+    purpose: "Section \"Your discontinuous time\" in AGENTS.md covering actors, state."
+    order: 20
+    priority: recommended
+    probe:
+      prompt: "What does section \"Your discontinuous time\" (AGENTS.md#your-discontinuous-time) define for actors?"
+      expect: Establishes Your discontinuous time in AGENTS.md for actors.
+      expectedPatterns:
+        - Your
+        - discontinuous
+  - id: agents-a-competent-turn
+    address: "AGENTS.md#a-competent-turn"
+    taxonomy: world
+    regions:
+      - actors
+      - state
+    situations:
+      - fresh
+      - handover
+    purpose: "Section \"A competent turn\" in AGENTS.md covering actors, state."
+    order: 21
+    priority: recommended
+    probe:
+      prompt: "What does section \"A competent turn\" (AGENTS.md#a-competent-turn) define for actors?"
+      expect: Establishes A competent turn in AGENTS.md for actors.
+      expectedPatterns:
+        - competent
+        - turn
+  - id: agents-when-you-are-installing-openrig-for-someone
+    address: "AGENTS.md#when-you-are-installing-openrig-for-someone"
+    taxonomy: world
+    regions:
+      - actors
+      - affordances
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"When you are installing OpenRig for someone\" in AGENTS.md covering actors, affordances."
+    order: 22
+    priority: core
+    probe:
+      prompt: "What does section \"When you are installing OpenRig for someone\" (AGENTS.md#when-you-are-installing-openrig-for-someone) define for actors?"
+      expect: Establishes When you are installing OpenRig for someone in AGENTS.md for actors.
+      expectedPatterns:
+        - When
+        - you
+  - id: agents-when-you-need-more
+    address: "AGENTS.md#when-you-need-more"
+    taxonomy: world
+    regions:
+      - affordances
+      - state
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"When you need more\" in AGENTS.md covering affordances, state."
+    order: 23
+    priority: core
+    probe:
+      prompt: "What does section \"When you need more\" (AGENTS.md#when-you-need-more) define for affordances?"
+      expect: Establishes When you need more in AGENTS.md for affordances.
+      expectedPatterns:
+        - When
+        - you
+  - id: readme-walkthrough-real-operation-v0-6-0
+    address: "README.md#walkthrough-real-operation-v0-6-0"
+    taxonomy: world
+    regions:
+      - affordances
+      - state
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Walkthrough & Real Operation (`v0.6.0`)\" in README.md covering affordances, state."
+    order: 24
+    priority: core
+    probe:
+      prompt: "What does section \"Walkthrough & Real Operation (`v0.6.0`)\" (README.md#walkthrough-real-operation-v0-6-0) define for affordances?"
+      expect: "Establishes Walkthrough & Real Operation (`v0.6.0`) in README.md for affordances."
+      expectedPatterns:
+        - Walkthrough
+        - Real
+  - id: readme-wave-v0-7
+    address: "README.md#wave-v0-7"
+    taxonomy: world
+    regions:
+      - actors
+      - state
+    situations:
+      - fresh
+      - handover
+    purpose: "Section \"Wave v0.7\" in README.md covering actors, state."
+    order: 25
+    priority: recommended
+    probe:
+      prompt: "What does section \"Wave v0.7\" (README.md#wave-v0-7) define for actors?"
+      expect: Establishes Wave v0.7 in README.md for actors.
+      expectedPatterns:
+        - Wave
+  - id: readme-start-locally
+    address: "README.md#start-locally"
+    taxonomy: world
+    regions:
+      - affordances
+      - state
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Start locally\" in README.md covering affordances, state."
+    order: 26
+    priority: core
+    probe:
+      prompt: "What does section \"Start locally\" (README.md#start-locally) define for affordances?"
+      expect: Establishes Start locally in README.md for affordances.
+      expectedPatterns:
+        - Start
+        - locally
+  - id: readme-start-locally-zero-ceremony-quickstart
+    address: "README.md#start-locally/zero-ceremony-quickstart"
+    taxonomy: world
+    regions:
+      - affordances
+      - actors
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Zero-ceremony quickstart\" in README.md covering affordances, actors."
+    order: 27
+    priority: core
+    probe:
+      prompt: "What does section \"Zero-ceremony quickstart\" (README.md#start-locally/zero-ceremony-quickstart) define for affordances?"
+      expect: Establishes Zero-ceremony quickstart in README.md for affordances.
+      expectedPatterns:
+        - Zero
+        - ceremony
+  - id: readme-start-locally-explicit-roots-fixed-windows
+    address: "README.md#start-locally/explicit-roots-fixed-windows"
+    taxonomy: world
+    regions:
+      - affordances
+      - terrain
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Explicit roots & fixed windows\" in README.md covering affordances, terrain."
+    order: 28
+    priority: core
+    probe:
+      prompt: "What does section \"Explicit roots & fixed windows\" (README.md#start-locally/explicit-roots-fixed-windows) define for affordances?"
+      expect: "Establishes Explicit roots & fixed windows in README.md for affordances."
+      expectedPatterns:
+        - Explicit
+        - roots
+  - id: readme-local-investigation
+    address: "README.md#local-investigation"
+    taxonomy: world
+    regions:
+      - state
+      - actors
+    situations:
+      - fresh
+      - handover
+    purpose: "Section \"Local investigation\" in README.md covering state, actors."
+    order: 29
+    priority: recommended
+    probe:
+      prompt: "What does section \"Local investigation\" (README.md#local-investigation) define for state?"
+      expect: Establishes Local investigation in README.md for state.
+      expectedPatterns:
+        - Local
+        - investigation
+  - id: readme-verification
+    address: "README.md#verification"
+    taxonomy: world
+    regions:
+      - affordances
+      - identity
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Verification\" in README.md covering affordances, identity."
+    order: 30
+    priority: core
+    probe:
+      prompt: "What does section \"Verification\" (README.md#verification) define for affordances?"
+      expect: Establishes Verification in README.md for affordances.
+      expectedPatterns:
+        - Verification
+  - id: readme-documentation
+    address: "README.md#documentation"
+    taxonomy: world
+    regions:
+      - affordances
+      - laws
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Documentation\" in README.md covering affordances, laws."
+    order: 31
+    priority: core
+    probe:
+      prompt: "What does section \"Documentation\" (README.md#documentation) define for affordances?"
+      expect: Establishes Documentation in README.md for affordances.
+      expectedPatterns:
+        - Documentation
+  - id: readme-privacy-and-license
+    address: "README.md#privacy-and-license"
+    taxonomy: world
+    regions:
+      - identity
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Privacy and license\" in README.md covering identity."
+    order: 32
+    priority: core
+    probe:
+      prompt: "What does section \"Privacy and license\" (README.md#privacy-and-license) define for identity?"
+      expect: Establishes Privacy and license in README.md for identity.
+      expectedPatterns:
+        - Privacy
+        - and
+  - id: product-positioning
+    address: ".agentflow/PRODUCT.md#positioning"
+    taxonomy: world
+    regions:
+      - identity
+      - actors
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Positioning\" in .agentflow/PRODUCT.md covering identity, actors."
+    order: 33
+    priority: core
+    probe:
+      prompt: "What does section \"Positioning\" (.agentflow/PRODUCT.md#positioning) define for identity?"
+      expect: Establishes Positioning in .agentflow/PRODUCT.md for identity.
+      expectedPatterns:
+        - Positioning
+  - id: product-job-statement
+    address: ".agentflow/PRODUCT.md#job-statement"
+    taxonomy: world
+    regions:
+      - state
+      - actors
+    situations:
+      - fresh
+      - handover
+    purpose: "Section \"Job Statement\" in .agentflow/PRODUCT.md covering state, actors."
+    order: 34
+    priority: recommended
+    probe:
+      prompt: "What does section \"Job Statement\" (.agentflow/PRODUCT.md#job-statement) define for state?"
+      expect: Establishes Job Statement in .agentflow/PRODUCT.md for state.
+      expectedPatterns:
+        - Job
+        - Statement
+  - id: product-user
+    address: ".agentflow/PRODUCT.md#user"
+    taxonomy: world
+    regions:
+      - actors
+    situations:
+      - fresh
+      - handover
+    purpose: "Section \"User\" in .agentflow/PRODUCT.md covering actors."
+    order: 35
+    priority: recommended
+    probe:
+      prompt: "What does section \"User\" (.agentflow/PRODUCT.md#user) define for actors?"
+      expect: Establishes User in .agentflow/PRODUCT.md for actors.
+      expectedPatterns:
+        - User
+  - id: product-observable-outcome-g1
+    address: ".agentflow/PRODUCT.md#observable-outcome-g1"
+    taxonomy: world
+    regions:
+      - affordances
+      - actors
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Observable outcome (G1)\" in .agentflow/PRODUCT.md covering affordances, actors."
+    order: 36
+    priority: core
+    probe:
+      prompt: "What does section \"Observable outcome (G1)\" (.agentflow/PRODUCT.md#observable-outcome-g1) define for affordances?"
+      expect: Establishes Observable outcome (G1) in .agentflow/PRODUCT.md for affordances.
+      expectedPatterns:
+        - Observable
+        - outcome
+  - id: product-scope
+    address: ".agentflow/PRODUCT.md#scope"
+    taxonomy: world
+    regions:
+      - state
+      - actors
+    situations:
+      - fresh
+      - handover
+    purpose: "Section \"Scope\" in .agentflow/PRODUCT.md covering state, actors."
+    order: 37
+    priority: recommended
+    probe:
+      prompt: "What does section \"Scope\" (.agentflow/PRODUCT.md#scope) define for state?"
+      expect: Establishes Scope in .agentflow/PRODUCT.md for state.
+      expectedPatterns:
+        - Scope
+  - id: product-anti-goals
+    address: ".agentflow/PRODUCT.md#anti-goals"
+    taxonomy: world
+    regions:
+      - actors
+    situations:
+      - fresh
+      - handover
+    purpose: "Section \"Anti-goals\" in .agentflow/PRODUCT.md covering actors."
+    order: 38
+    priority: recommended
+    probe:
+      prompt: "What does section \"Anti-goals\" (.agentflow/PRODUCT.md#anti-goals) define for actors?"
+      expect: Establishes Anti-goals in .agentflow/PRODUCT.md for actors.
+      expectedPatterns:
+        - Anti
+        - goals
+  - id: product-release-intent
+    address: ".agentflow/PRODUCT.md#release-intent"
+    taxonomy: world
+    regions:
+      - terrain
+      - laws
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Release intent\" in .agentflow/PRODUCT.md covering terrain, laws."
+    order: 39
+    priority: core
+    probe:
+      prompt: "What does section \"Release intent\" (.agentflow/PRODUCT.md#release-intent) define for terrain?"
+      expect: Establishes Release intent in .agentflow/PRODUCT.md for terrain.
+      expectedPatterns:
+        - Release
+        - intent
+  - id: product-pm-decision
+    address: ".agentflow/PRODUCT.md#pm-decision"
+    taxonomy: world
+    regions:
+      - history
+      - actors
+    situations:
+      - fresh
+      - handover
+    purpose: "Section \"PM decision\" in .agentflow/PRODUCT.md covering history, actors."
+    order: 40
+    priority: recommended
+    probe:
+      prompt: "What does section \"PM decision\" (.agentflow/PRODUCT.md#pm-decision) define for history?"
+      expect: Establishes PM decision in .agentflow/PRODUCT.md for history.
+      expectedPatterns:
+        - decision
+  - id: product-in-flight-41-headroom
+    address: ".agentflow/PRODUCT.md#in-flight-41-headroom"
+    taxonomy: world
+    regions:
+      - history
+      - affordances
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"In flight — #41 headroom\" in .agentflow/PRODUCT.md covering history, affordances."
+    order: 41
+    priority: core
+    probe:
+      prompt: "What does section \"In flight — #41 headroom\" (.agentflow/PRODUCT.md#in-flight-41-headroom) define for history?"
+      expect: "Establishes In flight — #41 headroom in .agentflow/PRODUCT.md for history."
+      expectedPatterns:
+        - flight
+        - headroom
+  - id: product-in-flight-31-one-openrig-root
+    address: ".agentflow/PRODUCT.md#in-flight-31-one-openrig-root"
+    taxonomy: world
+    regions:
+      - laws
+      - history
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"In flight — #31 one OpenRig root\" in .agentflow/PRODUCT.md covering laws, history."
+    order: 42
+    priority: core
+    probe:
+      prompt: "What does section \"In flight — #31 one OpenRig root\" (.agentflow/PRODUCT.md#in-flight-31-one-openrig-root) define for laws?"
+      expect: "Establishes In flight — #31 one OpenRig root in .agentflow/PRODUCT.md for laws."
+      expectedPatterns:
+        - flight
+        - one
+  - id: product-in-flight-40-codex-command-outcomes
+    address: ".agentflow/PRODUCT.md#in-flight-40-codex-command-outcomes"
+    taxonomy: world
+    regions:
+      - affordances
+      - laws
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"In flight — #40 Codex command outcomes\" in .agentflow/PRODUCT.md covering affordances, laws."
+    order: 43
+    priority: core
+    probe:
+      prompt: "What does section \"In flight — #40 Codex command outcomes\" (.agentflow/PRODUCT.md#in-flight-40-codex-command-outcomes) define for affordances?"
+      expect: "Establishes In flight — #40 Codex command outcomes in .agentflow/PRODUCT.md for affordances."
+      expectedPatterns:
+        - flight
+        - Codex
+  - id: product-local-result-34-fractional-waits
+    address: ".agentflow/PRODUCT.md#local-result-34-fractional-waits"
+    taxonomy: world
+    regions:
+      - identity
+      - laws
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Local result — #34 fractional waits\" in .agentflow/PRODUCT.md covering identity, laws."
+    order: 44
+    priority: core
+    probe:
+      prompt: "What does section \"Local result — #34 fractional waits\" (.agentflow/PRODUCT.md#local-result-34-fractional-waits) define for identity?"
+      expect: "Establishes Local result — #34 fractional waits in .agentflow/PRODUCT.md for identity."
+      expectedPatterns:
+        - Local
+        - result
+  - id: product-held-30-wording-and-46-source-output-alias-protection
+    address: ".agentflow/PRODUCT.md#held-30-wording-and-46-source-output-alias-protection"
+    taxonomy: world
+    regions:
+      - state
+      - identity
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Held — #30 wording and #46 source-output alias protection\" in .agentflow/PRODUCT.md covering state, identity."
+    order: 45
+    priority: core
+    probe:
+      prompt: "What does section \"Held — #30 wording and #46 source-output alias protection\" (.agentflow/PRODUCT.md#held-30-wording-and-46-source-output-alias-protection) define for state?"
+      expect: "Establishes Held — #30 wording and #46 source-output alias protection in .agentflow/PRODUCT.md for state."
+      expectedPatterns:
+        - Held
+        - wording
+  - id: product-selected-47-auxiliary-output-lock
+    address: ".agentflow/PRODUCT.md#selected-47-auxiliary-output-lock"
+    taxonomy: world
+    regions:
+      - state
+      - affordances
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Selected — #47 auxiliary output lock\" in .agentflow/PRODUCT.md covering state, affordances."
+    order: 46
+    priority: core
+    probe:
+      prompt: "What does section \"Selected — #47 auxiliary output lock\" (.agentflow/PRODUCT.md#selected-47-auxiliary-output-lock) define for state?"
+      expect: "Establishes Selected — #47 auxiliary output lock in .agentflow/PRODUCT.md for state."
+      expectedPatterns:
+        - Selected
+        - auxiliary
+  - id: product-selected-33-loop-source-trace
+    address: ".agentflow/PRODUCT.md#selected-33-loop-source-trace"
+    taxonomy: world
+    regions:
+      - state
+      - history
+    situations:
+      - fresh
+      - handover
+    purpose: "Section \"Selected — #33 loop source trace\" in .agentflow/PRODUCT.md covering state, history."
+    order: 47
+    priority: recommended
+    probe:
+      prompt: "What does section \"Selected — #33 loop source trace\" (.agentflow/PRODUCT.md#selected-33-loop-source-trace) define for state?"
+      expect: "Establishes Selected — #33 loop source trace in .agentflow/PRODUCT.md for state."
+      expectedPatterns:
+        - Selected
+        - loop
+  - id: product-selected-32-file-source-state
+    address: ".agentflow/PRODUCT.md#selected-32-file-source-state"
+    taxonomy: world
+    regions:
+      - state
+      - identity
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Selected — #32 file-source state\" in .agentflow/PRODUCT.md covering state, identity."
+    order: 48
+    priority: core
+    probe:
+      prompt: "What does section \"Selected — #32 file-source state\" (.agentflow/PRODUCT.md#selected-32-file-source-state) define for state?"
+      expect: "Establishes Selected — #32 file-source state in .agentflow/PRODUCT.md for state."
+      expectedPatterns:
+        - Selected
+        - file
+  - id: product-specification-0-positioning
+    address: "docs/PRODUCT_SPECIFICATION.md#0-positioning"
+    taxonomy: world
+    regions:
+      - identity
+      - actors
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"0. Positioning\" in docs/PRODUCT_SPECIFICATION.md covering identity, actors."
+    order: 49
+    priority: core
+    probe:
+      prompt: "What does section \"0. Positioning\" (docs/PRODUCT_SPECIFICATION.md#0-positioning) define for identity?"
+      expect: Establishes 0. Positioning in docs/PRODUCT_SPECIFICATION.md for identity.
+      expectedPatterns:
+        - Positioning
+  - id: product-specification-1-conclusion
+    address: "docs/PRODUCT_SPECIFICATION.md#1-conclusion"
+    taxonomy: world
+    regions:
+      - actors
+      - affordances
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"1. Conclusion\" in docs/PRODUCT_SPECIFICATION.md covering actors, affordances."
+    order: 50
+    priority: core
+    probe:
+      prompt: "What does section \"1. Conclusion\" (docs/PRODUCT_SPECIFICATION.md#1-conclusion) define for actors?"
+      expect: Establishes 1. Conclusion in docs/PRODUCT_SPECIFICATION.md for actors.
+      expectedPatterns:
+        - Conclusion
+  - id: product-specification-1-conclusion-sponsor-decision-2026-10-10-16-56z
+    address: "docs/PRODUCT_SPECIFICATION.md#1-conclusion/sponsor-decision-2026-10-10-16-56z"
+    taxonomy: world
+    regions:
+      - history
+      - actors
+    situations:
+      - fresh
+      - handover
+    purpose: "Section \"Sponsor decision (2026-10-10 16:56Z)\" in docs/PRODUCT_SPECIFICATION.md covering history, actors."
+    order: 51
+    priority: recommended
+    probe:
+      prompt: "What does section \"Sponsor decision (2026-10-10 16:56Z)\" (docs/PRODUCT_SPECIFICATION.md#1-conclusion/sponsor-decision-2026-10-10-16-56z) define for history?"
+      expect: "Establishes Sponsor decision (2026-10-10 16:56Z) in docs/PRODUCT_SPECIFICATION.md for history."
+      expectedPatterns:
+        - Sponsor
+        - decision
+  - id: product-specification-2-job-statement
+    address: "docs/PRODUCT_SPECIFICATION.md#2-job-statement"
+    taxonomy: world
+    regions:
+      - state
+      - actors
+    situations:
+      - fresh
+      - handover
+    purpose: "Section \"2. Job Statement\" in docs/PRODUCT_SPECIFICATION.md covering state, actors."
+    order: 52
+    priority: recommended
+    probe:
+      prompt: "What does section \"2. Job Statement\" (docs/PRODUCT_SPECIFICATION.md#2-job-statement) define for state?"
+      expect: Establishes 2. Job Statement in docs/PRODUCT_SPECIFICATION.md for state.
+      expectedPatterns:
+        - Job
+        - Statement
+  - id: product-specification-2-job-statement-related-jobs-outside-goal-1
+    address: "docs/PRODUCT_SPECIFICATION.md#2-job-statement/related-jobs-outside-goal-1"
+    taxonomy: world
+    regions:
+      - affordances
+      - actors
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Related jobs (outside Goal 1)\" in docs/PRODUCT_SPECIFICATION.md covering affordances, actors."
+    order: 53
+    priority: core
+    probe:
+      prompt: "What does section \"Related jobs (outside Goal 1)\" (docs/PRODUCT_SPECIFICATION.md#2-job-statement/related-jobs-outside-goal-1) define for affordances?"
+      expect: Establishes Related jobs (outside Goal 1) in docs/PRODUCT_SPECIFICATION.md for affordances.
+      expectedPatterns:
+        - Related
+        - jobs
+  - id: product-specification-3-struggling-moment
+    address: "docs/PRODUCT_SPECIFICATION.md#3-struggling-moment"
+    taxonomy: world
+    regions:
+      - affordances
+      - identity
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"3. Struggling moment\" in docs/PRODUCT_SPECIFICATION.md covering affordances, identity."
+    order: 54
+    priority: core
+    probe:
+      prompt: "What does section \"3. Struggling moment\" (docs/PRODUCT_SPECIFICATION.md#3-struggling-moment) define for affordances?"
+      expect: Establishes 3. Struggling moment in docs/PRODUCT_SPECIFICATION.md for affordances.
+      expectedPatterns:
+        - Struggling
+        - moment
+  - id: product-specification-3-struggling-moment-failures-of-current-alternatives
+    address: "docs/PRODUCT_SPECIFICATION.md#3-struggling-moment/failures-of-current-alternatives"
+    taxonomy: world
+    regions:
+      - actors
+      - affordances
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Failures of current alternatives\" in docs/PRODUCT_SPECIFICATION.md covering actors, affordances."
+    order: 55
+    priority: core
+    probe:
+      prompt: "What does section \"Failures of current alternatives\" (docs/PRODUCT_SPECIFICATION.md#3-struggling-moment/failures-of-current-alternatives) define for actors?"
+      expect: Establishes Failures of current alternatives in docs/PRODUCT_SPECIFICATION.md for actors.
+      expectedPatterns:
+        - Failures
+        - current
+  - id: product-specification-4-forces-of-progress
+    address: "docs/PRODUCT_SPECIFICATION.md#4-forces-of-progress"
+    taxonomy: world
+    regions:
+      - affordances
+      - actors
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"4. Forces of progress\" in docs/PRODUCT_SPECIFICATION.md covering affordances, actors."
+    order: 56
+    priority: core
+    probe:
+      prompt: "What does section \"4. Forces of progress\" (docs/PRODUCT_SPECIFICATION.md#4-forces-of-progress) define for affordances?"
+      expect: Establishes 4. Forces of progress in docs/PRODUCT_SPECIFICATION.md for affordances.
+      expectedPatterns:
+        - Forces
+        - progress
+  - id: product-specification-4-forces-of-progress-dimensions
+    address: "docs/PRODUCT_SPECIFICATION.md#4-forces-of-progress/dimensions"
+    taxonomy: world
+    regions:
+      - actors
+    situations:
+      - fresh
+      - handover
+    purpose: "Section \"Dimensions\" in docs/PRODUCT_SPECIFICATION.md covering actors."
+    order: 57
+    priority: recommended
+    probe:
+      prompt: "What does section \"Dimensions\" (docs/PRODUCT_SPECIFICATION.md#4-forces-of-progress/dimensions) define for actors?"
+      expect: Establishes Dimensions in docs/PRODUCT_SPECIFICATION.md for actors.
+      expectedPatterns:
+        - Dimensions
+  - id: product-specification-5-observable-outcome
+    address: "docs/PRODUCT_SPECIFICATION.md#5-observable-outcome"
+    taxonomy: world
+    regions:
+      - affordances
+      - identity
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"5. Observable outcome\" in docs/PRODUCT_SPECIFICATION.md covering affordances, identity."
+    order: 58
+    priority: core
+    probe:
+      prompt: "What does section \"5. Observable outcome\" (docs/PRODUCT_SPECIFICATION.md#5-observable-outcome) define for affordances?"
+      expect: Establishes 5. Observable outcome in docs/PRODUCT_SPECIFICATION.md for affordances.
+      expectedPatterns:
+        - Observable
+        - outcome
+  - id: product-specification-6-goals-and-stories
+    address: "docs/PRODUCT_SPECIFICATION.md#6-goals-and-stories"
+    taxonomy: world
+    regions:
+      - affordances
+      - actors
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"6. Goals and stories\" in docs/PRODUCT_SPECIFICATION.md covering affordances, actors."
+    order: 59
+    priority: core
+    probe:
+      prompt: "What does section \"6. Goals and stories\" (docs/PRODUCT_SPECIFICATION.md#6-goals-and-stories) define for affordances?"
+      expect: Establishes 6. Goals and stories in docs/PRODUCT_SPECIFICATION.md for affordances.
+      expectedPatterns:
+        - Goals
+        - and
+  - id: product-specification-6-goals-and-stories-g1-the-operator-answers-the-three-questions-for-a-real-rig-now-r1
+    address: "docs/PRODUCT_SPECIFICATION.md#6-goals-and-stories/g1-the-operator-answers-the-three-questions-for-a-real-rig-now-r1"
+    taxonomy: world
+    regions:
+      - affordances
+      - identity
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"G1 — The operator answers the three questions for a real rig (NOW, R1)\" in docs/PRODUCT_SPECIFICATION.md covering affordances, identity."
+    order: 60
+    priority: core
+    probe:
+      prompt: "What does section \"G1 — The operator answers the three questions for a real rig (NOW, R1)\" (docs/PRODUCT_SPECIFICATION.md#6-goals-and-stories/g1-the-operator-answers-the-three-questions-for-a-real-rig-now-r1) define for affordances?"
+      expect: Establishes G1 — The operator answers the three questions for a real rig (NOW, R1) in docs/PRODUCT_SPECIFICATION.md for affordances.
+      expectedPatterns:
+        - The
+        - operator
+  - id: product-specification-6-goals-and-stories-g2-the-operator-asks-in-natural-language-next-not-r1
+    address: "docs/PRODUCT_SPECIFICATION.md#6-goals-and-stories/g2-the-operator-asks-in-natural-language-next-not-r1"
+    taxonomy: world
+    regions:
+      - affordances
+      - state
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"G2 — The operator asks in natural language (NEXT, not R1)\" in docs/PRODUCT_SPECIFICATION.md covering affordances, state."
+    order: 61
+    priority: core
+    probe:
+      prompt: "What does section \"G2 — The operator asks in natural language (NEXT, not R1)\" (docs/PRODUCT_SPECIFICATION.md#6-goals-and-stories/g2-the-operator-asks-in-natural-language-next-not-r1) define for affordances?"
+      expect: Establishes G2 — The operator asks in natural language (NEXT, not R1) in docs/PRODUCT_SPECIFICATION.md for affordances.
+      expectedPatterns:
+        - The
+        - operator
+  - id: product-specification-6-goals-and-stories-g3-a-contributor-plugs-in-a-new-harness-later
+    address: "docs/PRODUCT_SPECIFICATION.md#6-goals-and-stories/g3-a-contributor-plugs-in-a-new-harness-later"
+    taxonomy: world
+    regions:
+      - actors
+      - terrain
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"G3 — A contributor plugs in a new harness (LATER)\" in docs/PRODUCT_SPECIFICATION.md covering actors, terrain."
+    order: 62
+    priority: core
+    probe:
+      prompt: "What does section \"G3 — A contributor plugs in a new harness (LATER)\" (docs/PRODUCT_SPECIFICATION.md#6-goals-and-stories/g3-a-contributor-plugs-in-a-new-harness-later) define for actors?"
+      expect: Establishes G3 — A contributor plugs in a new harness (LATER) in docs/PRODUCT_SPECIFICATION.md for actors.
+      expectedPatterns:
+        - contributor
+        - plugs
+  - id: product-specification-6-goals-and-stories-g4-a-buyer-understands-the-value-parallel-owner-antigravity
+    address: "docs/PRODUCT_SPECIFICATION.md#6-goals-and-stories/g4-a-buyer-understands-the-value-parallel-owner-antigravity"
+    taxonomy: world
+    regions:
+      - identity
+      - actors
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"G4 — A buyer understands the value (parallel, owner: Antigravity)\" in docs/PRODUCT_SPECIFICATION.md covering identity, actors."
+    order: 63
+    priority: core
+    probe:
+      prompt: "What does section \"G4 — A buyer understands the value (parallel, owner: Antigravity)\" (docs/PRODUCT_SPECIFICATION.md#6-goals-and-stories/g4-a-buyer-understands-the-value-parallel-owner-antigravity) define for identity?"
+      expect: "Establishes G4 — A buyer understands the value (parallel, owner: Antigravity) in docs/PRODUCT_SPECIFICATION.md for identity."
+      expectedPatterns:
+        - buyer
+        - understands
+  - id: product-specification-6-goals-and-stories-priority-matrix
+    address: "docs/PRODUCT_SPECIFICATION.md#6-goals-and-stories/priority-matrix"
+    taxonomy: world
+    regions:
+      - history
+    situations:
+      - fresh
+      - handover
+    purpose: "Section \"Priority matrix\" in docs/PRODUCT_SPECIFICATION.md covering history."
+    order: 64
+    priority: recommended
+    probe:
+      prompt: "What does section \"Priority matrix\" (docs/PRODUCT_SPECIFICATION.md#6-goals-and-stories/priority-matrix) define for history?"
+      expect: Establishes Priority matrix in docs/PRODUCT_SPECIFICATION.md for history.
+      expectedPatterns:
+        - Priority
+        - matrix
+  - id: product-specification-7-constraints-and-anti-goals
+    address: "docs/PRODUCT_SPECIFICATION.md#7-constraints-and-anti-goals"
+    taxonomy: world
+    regions:
+      - laws
+      - actors
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"7. Constraints and anti-goals\" in docs/PRODUCT_SPECIFICATION.md covering laws, actors."
+    order: 65
+    priority: core
+    probe:
+      prompt: "What does section \"7. Constraints and anti-goals\" (docs/PRODUCT_SPECIFICATION.md#7-constraints-and-anti-goals) define for laws?"
+      expect: Establishes 7. Constraints and anti-goals in docs/PRODUCT_SPECIFICATION.md for laws.
+      expectedPatterns:
+        - Constraints
+        - and
+  - id: product-specification-7-constraints-and-anti-goals-constraints
+    address: "docs/PRODUCT_SPECIFICATION.md#7-constraints-and-anti-goals/constraints"
+    taxonomy: world
+    regions:
+      - laws
+      - terrain
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Constraints\" in docs/PRODUCT_SPECIFICATION.md covering laws, terrain."
+    order: 66
+    priority: core
+    probe:
+      prompt: "What does section \"Constraints\" (docs/PRODUCT_SPECIFICATION.md#7-constraints-and-anti-goals/constraints) define for laws?"
+      expect: Establishes Constraints in docs/PRODUCT_SPECIFICATION.md for laws.
+      expectedPatterns:
+        - Constraints
+  - id: product-specification-7-constraints-and-anti-goals-anti-goals
+    address: "docs/PRODUCT_SPECIFICATION.md#7-constraints-and-anti-goals/anti-goals"
+    taxonomy: world
+    regions:
+      - actors
+    situations:
+      - fresh
+      - handover
+    purpose: "Section \"Anti-goals\" in docs/PRODUCT_SPECIFICATION.md covering actors."
+    order: 67
+    priority: recommended
+    probe:
+      prompt: "What does section \"Anti-goals\" (docs/PRODUCT_SPECIFICATION.md#7-constraints-and-anti-goals/anti-goals) define for actors?"
+      expect: Establishes Anti-goals in docs/PRODUCT_SPECIFICATION.md for actors.
+      expectedPatterns:
+        - Anti
+        - goals
+  - id: product-specification-8-release-intent
+    address: "docs/PRODUCT_SPECIFICATION.md#8-release-intent"
+    taxonomy: world
+    regions:
+      - terrain
+      - actors
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"8. Release intent\" in docs/PRODUCT_SPECIFICATION.md covering terrain, actors."
+    order: 68
+    priority: core
+    probe:
+      prompt: "What does section \"8. Release intent\" (docs/PRODUCT_SPECIFICATION.md#8-release-intent) define for terrain?"
+      expect: Establishes 8. Release intent in docs/PRODUCT_SPECIFICATION.md for terrain.
+      expectedPatterns:
+        - Release
+        - intent
+  - id: product-specification-9-sponsor-decisions-resolved-2026-10-10
+    address: "docs/PRODUCT_SPECIFICATION.md#9-sponsor-decisions-resolved-2026-10-10"
+    taxonomy: world
+    regions:
+      - history
+      - terrain
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"9. Sponsor decisions (resolved 2026-10-10)\" in docs/PRODUCT_SPECIFICATION.md covering history, terrain."
+    order: 69
+    priority: core
+    probe:
+      prompt: "What does section \"9. Sponsor decisions (resolved 2026-10-10)\" (docs/PRODUCT_SPECIFICATION.md#9-sponsor-decisions-resolved-2026-10-10) define for history?"
+      expect: Establishes 9. Sponsor decisions (resolved 2026-10-10) in docs/PRODUCT_SPECIFICATION.md for history.
+      expectedPatterns:
+        - Sponsor
+        - decisions
+  - id: product-specification-10-solution-design-ownership-boundaries
+    address: "docs/PRODUCT_SPECIFICATION.md#10-solution-design-ownership-boundaries"
+    taxonomy: world
+    regions:
+      - terrain
+      - state
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"10. Solution design: ownership boundaries\" in docs/PRODUCT_SPECIFICATION.md covering terrain, state."
+    order: 70
+    priority: core
+    probe:
+      prompt: "What does section \"10. Solution design: ownership boundaries\" (docs/PRODUCT_SPECIFICATION.md#10-solution-design-ownership-boundaries) define for terrain?"
+      expect: "Establishes 10. Solution design: ownership boundaries in docs/PRODUCT_SPECIFICATION.md for terrain."
+      expectedPatterns:
+        - Solution
+        - design
+  - id: product-specification-11-unknowns
+    address: "docs/PRODUCT_SPECIFICATION.md#11-unknowns"
+    taxonomy: world
+    regions:
+      - state
+      - identity
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"11. Unknowns\" in docs/PRODUCT_SPECIFICATION.md covering state, identity."
+    order: 71
+    priority: core
+    probe:
+      prompt: "What does section \"11. Unknowns\" (docs/PRODUCT_SPECIFICATION.md#11-unknowns) define for state?"
+      expect: Establishes 11. Unknowns in docs/PRODUCT_SPECIFICATION.md for state.
+      expectedPatterns:
+        - Unknowns
+  - id: product-specification-12-decision-log
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log"
+    taxonomy: world
+    regions:
+      - affordances
+      - actors
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"12. Decision log\" in docs/PRODUCT_SPECIFICATION.md covering affordances, actors."
+    order: 72
+    priority: core
+    probe:
+      prompt: "What does section \"12. Decision log\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log) define for affordances?"
+      expect: Establishes 12. Decision log in docs/PRODUCT_SPECIFICATION.md for affordances.
+      expectedPatterns:
+        - Decision
+        - log
+  - id: product-specification-12-decision-log-pm-decision-before-freeze-2026-10-10-17-05z
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log/pm-decision-before-freeze-2026-10-10-17-05z"
+    taxonomy: world
+    regions:
+      - actors
+      - history
+    situations:
+      - fresh
+      - handover
+    purpose: "Section \"PM decision before freeze (2026-10-10 17:05Z)\" in docs/PRODUCT_SPECIFICATION.md covering actors, history."
+    order: 73
+    priority: recommended
+    probe:
+      prompt: "What does section \"PM decision before freeze (2026-10-10 17:05Z)\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log/pm-decision-before-freeze-2026-10-10-17-05z) define for actors?"
+      expect: "Establishes PM decision before freeze (2026-10-10 17:05Z) in docs/PRODUCT_SPECIFICATION.md for actors."
+      expectedPatterns:
+        - decision
+        - before
+  - id: product-specification-12-decision-log-acceptance-amendment-1-2026-10-10-17-08z
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log/acceptance-amendment-1-2026-10-10-17-08z"
+    taxonomy: world
+    regions:
+      - identity
+      - terrain
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Acceptance Amendment 1 (2026-10-10 17:08Z)\" in docs/PRODUCT_SPECIFICATION.md covering identity, terrain."
+    order: 74
+    priority: core
+    probe:
+      prompt: "What does section \"Acceptance Amendment 1 (2026-10-10 17:08Z)\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log/acceptance-amendment-1-2026-10-10-17-08z) define for identity?"
+      expect: "Establishes Acceptance Amendment 1 (2026-10-10 17:08Z) in docs/PRODUCT_SPECIFICATION.md for identity."
+      expectedPatterns:
+        - Acceptance
+        - Amendment
+  - id: product-specification-12-decision-log-sponsor-decision-option-a-2026-10-10-17-45z
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-decision-option-a-2026-10-10-17-45z"
+    taxonomy: world
+    regions:
+      - history
+      - laws
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Sponsor decision: Option A (2026-10-10 17:45Z)\" in docs/PRODUCT_SPECIFICATION.md covering history, laws."
+    order: 75
+    priority: core
+    probe:
+      prompt: "What does section \"Sponsor decision: Option A (2026-10-10 17:45Z)\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-decision-option-a-2026-10-10-17-45z) define for history?"
+      expect: "Establishes Sponsor decision: Option A (2026-10-10 17:45Z) in docs/PRODUCT_SPECIFICATION.md for history."
+      expectedPatterns:
+        - Sponsor
+        - decision
+  - id: product-specification-12-decision-log-sponsor-directive-2026-10-10-17-57z
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-directive-2026-10-10-17-57z"
+    taxonomy: world
+    regions:
+      - identity
+      - ontology
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Sponsor directive (2026-10-10 17:57Z)\" in docs/PRODUCT_SPECIFICATION.md covering identity, ontology."
+    order: 76
+    priority: core
+    probe:
+      prompt: "What does section \"Sponsor directive (2026-10-10 17:57Z)\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-directive-2026-10-10-17-57z) define for identity?"
+      expect: "Establishes Sponsor directive (2026-10-10 17:57Z) in docs/PRODUCT_SPECIFICATION.md for identity."
+      expectedPatterns:
+        - Sponsor
+        - directive
+  - id: product-specification-12-decision-log-sponsor-positioning-directive-2026-10-10-17-58z
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-positioning-directive-2026-10-10-17-58z"
+    taxonomy: world
+    regions:
+      - identity
+      - laws
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Sponsor positioning directive (2026-10-10 17:58Z)\" in docs/PRODUCT_SPECIFICATION.md covering identity, laws."
+    order: 77
+    priority: core
+    probe:
+      prompt: "What does section \"Sponsor positioning directive (2026-10-10 17:58Z)\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-positioning-directive-2026-10-10-17-58z) define for identity?"
+      expect: "Establishes Sponsor positioning directive (2026-10-10 17:58Z) in docs/PRODUCT_SPECIFICATION.md for identity."
+      expectedPatterns:
+        - Sponsor
+        - positioning
+  - id: product-specification-12-decision-log-sponsor-disposition-r1-cycle-3-correction-2026-10-10-19-06z
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-r1-cycle-3-correction-2026-10-10-19-06z"
+    taxonomy: world
+    regions:
+      - state
+    situations:
+      - fresh
+      - handover
+    purpose: "Section \"Sponsor disposition: R1 cycle-3 correction (2026-10-10 19:06Z)\" in docs/PRODUCT_SPECIFICATION.md covering state."
+    order: 78
+    priority: recommended
+    probe:
+      prompt: "What does section \"Sponsor disposition: R1 cycle-3 correction (2026-10-10 19:06Z)\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-r1-cycle-3-correction-2026-10-10-19-06z) define for state?"
+      expect: "Establishes Sponsor disposition: R1 cycle-3 correction (2026-10-10 19:06Z) in docs/PRODUCT_SPECIFICATION.md for state."
+      expectedPatterns:
+        - Sponsor
+        - disposition
+  - id: product-specification-12-decision-log-sponsor-disposition-ac10-follow-up-2026-10-10-19-10z
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-ac10-follow-up-2026-10-10-19-10z"
+    taxonomy: world
+    regions:
+      - ontology
+      - actors
+    situations:
+      - fresh
+      - handover
+    purpose: "Section \"Sponsor disposition: AC10 follow-up (2026-10-10 19:10Z)\" in docs/PRODUCT_SPECIFICATION.md covering ontology, actors."
+    order: 79
+    priority: recommended
+    probe:
+      prompt: "What does section \"Sponsor disposition: AC10 follow-up (2026-10-10 19:10Z)\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-ac10-follow-up-2026-10-10-19-10z) define for ontology?"
+      expect: "Establishes Sponsor disposition: AC10 follow-up (2026-10-10 19:10Z) in docs/PRODUCT_SPECIFICATION.md for ontology."
+      expectedPatterns:
+        - Sponsor
+        - disposition
+  - id: product-specification-12-decision-log-sponsor-disposition-legacy-follow-up-record-2026-10-10-19-18z
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-legacy-follow-up-record-2026-10-10-19-18z"
+    taxonomy: world
+    regions:
+      - laws
+      - affordances
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Sponsor disposition: legacy follow-up record (2026-10-10 19:18Z)\" in docs/PRODUCT_SPECIFICATION.md covering laws, affordances."
+    order: 80
+    priority: core
+    probe:
+      prompt: "What does section \"Sponsor disposition: legacy follow-up record (2026-10-10 19:18Z)\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-legacy-follow-up-record-2026-10-10-19-18z) define for laws?"
+      expect: "Establishes Sponsor disposition: legacy follow-up record (2026-10-10 19:18Z) in docs/PRODUCT_SPECIFICATION.md for laws."
+      expectedPatterns:
+        - Sponsor
+        - disposition
+  - id: product-specification-12-decision-log-sponsor-disposition-r1-amendment-2-and-re-scope-2026-10-10-19-44z
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-r1-amendment-2-and-re-scope-2026-10-10-19-44z"
+    taxonomy: world
+    regions:
+      - affordances
+      - actors
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Sponsor disposition: R1 Amendment 2 and re-scope (2026-10-10 19:44Z)\" in docs/PRODUCT_SPECIFICATION.md covering affordances, actors."
+    order: 81
+    priority: core
+    probe:
+      prompt: "What does section \"Sponsor disposition: R1 Amendment 2 and re-scope (2026-10-10 19:44Z)\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-r1-amendment-2-and-re-scope-2026-10-10-19-44z) define for affordances?"
+      expect: "Establishes Sponsor disposition: R1 Amendment 2 and re-scope (2026-10-10 19:44Z) in docs/PRODUCT_SPECIFICATION.md for affordances."
+      expectedPatterns:
+        - Sponsor
+        - disposition
+  - id: product-specification-12-decision-log-pm-decision-clarifications-register-frozen-for-r1-qa-2026-10-10-22-00z
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log/pm-decision-clarifications-register-frozen-for-r1-qa-2026-10-10-22-00z"
+    taxonomy: world
+    regions:
+      - history
+      - laws
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"PM decision: clarifications register frozen for R1 QA (2026-10-10 22:00Z)\" in docs/PRODUCT_SPECIFICATION.md covering history, laws."
+    order: 82
+    priority: core
+    probe:
+      prompt: "What does section \"PM decision: clarifications register frozen for R1 QA (2026-10-10 22:00Z)\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log/pm-decision-clarifications-register-frozen-for-r1-qa-2026-10-10-22-00z) define for history?"
+      expect: "Establishes PM decision: clarifications register frozen for R1 QA (2026-10-10 22:00Z) in docs/PRODUCT_SPECIFICATION.md for history."
+      expectedPatterns:
+        - decision
+        - clarifications
+  - id: product-specification-12-decision-log-pm-decision-k6-m1-return-window-2026-10-10-22-15z
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log/pm-decision-k6-m1-return-window-2026-10-10-22-15z"
+    taxonomy: world
+    regions:
+      - history
+      - ontology
+    situations:
+      - fresh
+      - handover
+    purpose: "Section \"PM decision: K6 M1 return window (2026-10-10 22:15Z)\" in docs/PRODUCT_SPECIFICATION.md covering history, ontology."
+    order: 83
+    priority: recommended
+    probe:
+      prompt: "What does section \"PM decision: K6 M1 return window (2026-10-10 22:15Z)\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log/pm-decision-k6-m1-return-window-2026-10-10-22-15z) define for history?"
+      expect: "Establishes PM decision: K6 M1 return window (2026-10-10 22:15Z) in docs/PRODUCT_SPECIFICATION.md for history."
+      expectedPatterns:
+        - decision
+        - return
+  - id: product-specification-12-decision-log-pm-decision-k7-m3-seat-roles-2026-10-10-22-45z
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log/pm-decision-k7-m3-seat-roles-2026-10-10-22-45z"
+    taxonomy: world
+    regions:
+      - actors
+      - history
+    situations:
+      - fresh
+      - handover
+    purpose: "Section \"PM decision: K7 M3 seat roles (2026-10-10 22:45Z)\" in docs/PRODUCT_SPECIFICATION.md covering actors, history."
+    order: 84
+    priority: recommended
+    probe:
+      prompt: "What does section \"PM decision: K7 M3 seat roles (2026-10-10 22:45Z)\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log/pm-decision-k7-m3-seat-roles-2026-10-10-22-45z) define for actors?"
+      expect: "Establishes PM decision: K7 M3 seat roles (2026-10-10 22:45Z) in docs/PRODUCT_SPECIFICATION.md for actors."
+      expectedPatterns:
+        - decision
+        - seat
+  - id: product-specification-12-decision-log-sponsor-disposition-unauthorized-sponsor-labelled-prompts-2026-10-10-22-48z
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-unauthorized-sponsor-labelled-prompts-2026-10-10-22-48z"
+    taxonomy: world
+    regions:
+      - actors
+      - state
+    situations:
+      - fresh
+      - handover
+    purpose: "Section \"Sponsor disposition: unauthorized sponsor-labelled prompts (2026-10-10 22:48Z)\" in docs/PRODUCT_SPECIFICATION.md covering actors, state."
+    order: 85
+    priority: recommended
+    probe:
+      prompt: "What does section \"Sponsor disposition: unauthorized sponsor-labelled prompts (2026-10-10 22:48Z)\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-unauthorized-sponsor-labelled-prompts-2026-10-10-22-48z) define for actors?"
+      expect: "Establishes Sponsor disposition: unauthorized sponsor-labelled prompts (2026-10-10 22:48Z) in docs/PRODUCT_SPECIFICATION.md for actors."
+      expectedPatterns:
+        - Sponsor
+        - disposition
+  - id: product-specification-12-decision-log-sponsor-decisions-backlog-ownership-and-grooming-2026-10-10-22-51z-22-54z
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-decisions-backlog-ownership-and-grooming-2026-10-10-22-51z-22-54z"
+    taxonomy: world
+    regions:
+      - terrain
+      - history
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Sponsor decisions: backlog ownership and grooming (2026-10-10 22:51Z, 22:54Z)\" in docs/PRODUCT_SPECIFICATION.md covering terrain, history."
+    order: 86
+    priority: core
+    probe:
+      prompt: "What does section \"Sponsor decisions: backlog ownership and grooming (2026-10-10 22:51Z, 22:54Z)\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-decisions-backlog-ownership-and-grooming-2026-10-10-22-51z-22-54z) define for terrain?"
+      expect: "Establishes Sponsor decisions: backlog ownership and grooming (2026-10-10 22:51Z, 22:54Z) in docs/PRODUCT_SPECIFICATION.md for terrain."
+      expectedPatterns:
+        - Sponsor
+        - decisions
+  - id: product-specification-12-decision-log-sponsor-disposition-escalation-on-candidate-c635803-and-snapshot-lifecycle-2026-10-11-00-32z
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-escalation-on-candidate-c635803-and-snapshot-lifecycle-2026-10-11-00-32z"
+    taxonomy: world
+    regions:
+      - state
+      - terrain
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Sponsor disposition: Escalation on candidate c635803 and snapshot lifecycle (2026-10-11 00:32Z)\" in docs/PRODUCT_SPECIFICATION.md covering state, terrain."
+    order: 87
+    priority: core
+    probe:
+      prompt: "What does section \"Sponsor disposition: Escalation on candidate c635803 and snapshot lifecycle (2026-10-11 00:32Z)\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-escalation-on-candidate-c635803-and-snapshot-lifecycle-2026-10-11-00-32z) define for state?"
+      expect: "Establishes Sponsor disposition: Escalation on candidate c635803 and snapshot lifecycle (2026-10-11 00:32Z) in docs/PRODUCT_SPECIFICATION.md for state."
+      expectedPatterns:
+        - Sponsor
+        - disposition
+  - id: product-specification-12-decision-log-sponsor-disposition-r1-snapshot-lifecycle-follow-up-option-c-2026-10-11-00-32z
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-r1-snapshot-lifecycle-follow-up-option-c-2026-10-11-00-32z"
+    taxonomy: world
+    regions:
+      - state
+      - affordances
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Sponsor disposition: R1 snapshot lifecycle follow-up, Option C (2026-10-11 00:32Z)\" in docs/PRODUCT_SPECIFICATION.md covering state, affordances."
+    order: 88
+    priority: core
+    probe:
+      prompt: "What does section \"Sponsor disposition: R1 snapshot lifecycle follow-up, Option C (2026-10-11 00:32Z)\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-r1-snapshot-lifecycle-follow-up-option-c-2026-10-11-00-32z) define for state?"
+      expect: "Establishes Sponsor disposition: R1 snapshot lifecycle follow-up, Option C (2026-10-11 00:32Z) in docs/PRODUCT_SPECIFICATION.md for state."
+      expectedPatterns:
+        - Sponsor
+        - disposition
+  - id: product-specification-12-decision-log-sponsor-disposition-snapshot-follow-up-correction-1-2026-10-11-01-55z
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-snapshot-follow-up-correction-1-2026-10-11-01-55z"
+    taxonomy: world
+    regions:
+      - terrain
+      - affordances
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Sponsor disposition: snapshot follow-up correction 1 (2026-10-11 01:55Z)\" in docs/PRODUCT_SPECIFICATION.md covering terrain, affordances."
+    order: 89
+    priority: core
+    probe:
+      prompt: "What does section \"Sponsor disposition: snapshot follow-up correction 1 (2026-10-11 01:55Z)\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-snapshot-follow-up-correction-1-2026-10-11-01-55z) define for terrain?"
+      expect: "Establishes Sponsor disposition: snapshot follow-up correction 1 (2026-10-11 01:55Z) in docs/PRODUCT_SPECIFICATION.md for terrain."
+      expectedPatterns:
+        - Sponsor
+        - disposition
+  - id: product-specification-12-decision-log-sponsor-disposition-ac12-correction-cycle-2-of-2-2026-10-11-02-31z
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-ac12-correction-cycle-2-of-2-2026-10-11-02-31z"
+    taxonomy: world
+    regions:
+      - laws
+      - affordances
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Sponsor disposition: AC12 correction, cycle 2 of 2 (2026-10-11 02:31Z)\" in docs/PRODUCT_SPECIFICATION.md covering laws, affordances."
+    order: 90
+    priority: core
+    probe:
+      prompt: "What does section \"Sponsor disposition: AC12 correction, cycle 2 of 2 (2026-10-11 02:31Z)\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-ac12-correction-cycle-2-of-2-2026-10-11-02-31z) define for laws?"
+      expect: "Establishes Sponsor disposition: AC12 correction, cycle 2 of 2 (2026-10-11 02:31Z) in docs/PRODUCT_SPECIFICATION.md for laws."
+      expectedPatterns:
+        - Sponsor
+        - disposition
+  - id: product-specification-12-decision-log-sponsor-confirmation-sealed-input-folder-2026-10-11-02-55z
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-confirmation-sealed-input-folder-2026-10-11-02-55z"
+    taxonomy: world
+    regions:
+      - affordances
+      - terrain
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Sponsor confirmation: sealed input folder (2026-10-11 02:55Z)\" in docs/PRODUCT_SPECIFICATION.md covering affordances, terrain."
+    order: 91
+    priority: core
+    probe:
+      prompt: "What does section \"Sponsor confirmation: sealed input folder (2026-10-11 02:55Z)\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-confirmation-sealed-input-folder-2026-10-11-02-55z) define for affordances?"
+      expect: "Establishes Sponsor confirmation: sealed input folder (2026-10-11 02:55Z) in docs/PRODUCT_SPECIFICATION.md for affordances."
+      expectedPatterns:
+        - Sponsor
+        - confirmation
+  - id: product-specification-12-decision-log-sponsor-disposition-k9-scope-decision-and-resumption-of-r1-2026-10-11-05-50z
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-k9-scope-decision-and-resumption-of-r1-2026-10-11-05-50z"
+    taxonomy: world
+    regions:
+      - history
+      - state
+    situations:
+      - fresh
+      - handover
+    purpose: "Section \"Sponsor disposition: K9 scope decision and resumption of R1 (2026-10-11 05:50Z)\" in docs/PRODUCT_SPECIFICATION.md covering history, state."
+    order: 92
+    priority: recommended
+    probe:
+      prompt: "What does section \"Sponsor disposition: K9 scope decision and resumption of R1 (2026-10-11 05:50Z)\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-k9-scope-decision-and-resumption-of-r1-2026-10-11-05-50z) define for history?"
+      expect: "Establishes Sponsor disposition: K9 scope decision and resumption of R1 (2026-10-11 05:50Z) in docs/PRODUCT_SPECIFICATION.md for history."
+      expectedPatterns:
+        - Sponsor
+        - disposition
+  - id: product-specification-12-decision-log-sponsor-disposition-k9-completion-2026-10-11-05-55z
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-k9-completion-2026-10-11-05-55z"
+    taxonomy: world
+    regions:
+      - laws
+      - affordances
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Sponsor disposition: K9 completion (2026-10-11 05:55Z)\" in docs/PRODUCT_SPECIFICATION.md covering laws, affordances."
+    order: 93
+    priority: core
+    probe:
+      prompt: "What does section \"Sponsor disposition: K9 completion (2026-10-11 05:55Z)\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-k9-completion-2026-10-11-05-55z) define for laws?"
+      expect: "Establishes Sponsor disposition: K9 completion (2026-10-11 05:55Z) in docs/PRODUCT_SPECIFICATION.md for laws."
+      expectedPatterns:
+        - Sponsor
+        - disposition
+  - id: product-specification-12-decision-log-sponsor-disposition-pi-session-identity-correction-2026-10-11-06-10z
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-pi-session-identity-correction-2026-10-11-06-10z"
+    taxonomy: world
+    regions:
+      - identity
+      - state
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Sponsor disposition: Pi session identity correction (2026-10-11 06:10Z)\" in docs/PRODUCT_SPECIFICATION.md covering identity, state."
+    order: 94
+    priority: core
+    probe:
+      prompt: "What does section \"Sponsor disposition: Pi session identity correction (2026-10-11 06:10Z)\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-pi-session-identity-correction-2026-10-11-06-10z) define for identity?"
+      expect: "Establishes Sponsor disposition: Pi session identity correction (2026-10-11 06:10Z) in docs/PRODUCT_SPECIFICATION.md for identity."
+      expectedPatterns:
+        - Sponsor
+        - disposition
+  - id: product-specification-12-decision-log-sponsor-confirmation-unified-file-header-session-identity-pi-and-codex-2026-10-11-06-22z
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-confirmation-unified-file-header-session-identity-pi-and-codex-2026-10-11-06-22z"
+    taxonomy: world
+    regions:
+      - identity
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Sponsor confirmation: unified file-header session identity, Pi and Codex (2026-10-11 06:22Z)\" in docs/PRODUCT_SPECIFICATION.md covering identity."
+    order: 95
+    priority: core
+    probe:
+      prompt: "What does section \"Sponsor confirmation: unified file-header session identity, Pi and Codex (2026-10-11 06:22Z)\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-confirmation-unified-file-header-session-identity-pi-and-codex-2026-10-11-06-22z) define for identity?"
+      expect: "Establishes Sponsor confirmation: unified file-header session identity, Pi and Codex (2026-10-11 06:22Z) in docs/PRODUCT_SPECIFICATION.md for identity."
+      expectedPatterns:
+        - Sponsor
+        - confirmation
+  - id: product-specification-12-decision-log-sponsor-disposition-consolidated-last-r1-correction-2026-10-11-10-52z
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-consolidated-last-r1-correction-2026-10-11-10-52z"
+    taxonomy: world
+    regions:
+      - laws
+      - affordances
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Sponsor disposition: consolidated last R1 correction (2026-10-11 10:52Z)\" in docs/PRODUCT_SPECIFICATION.md covering laws, affordances."
+    order: 96
+    priority: core
+    probe:
+      prompt: "What does section \"Sponsor disposition: consolidated last R1 correction (2026-10-11 10:52Z)\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-consolidated-last-r1-correction-2026-10-11-10-52z) define for laws?"
+      expect: "Establishes Sponsor disposition: consolidated last R1 correction (2026-10-11 10:52Z) in docs/PRODUCT_SPECIFICATION.md for laws."
+      expectedPatterns:
+        - Sponsor
+        - disposition
+  - id: product-specification-12-decision-log-sponsor-disposition-ac1-threshold-classification-option-b-2026-10-11-18-01z
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-ac1-threshold-classification-option-b-2026-10-11-18-01z"
+    taxonomy: world
+    regions:
+      - laws
+      - affordances
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Sponsor disposition: AC1 threshold classification, option B (2026-10-11 18:01Z)\" in docs/PRODUCT_SPECIFICATION.md covering laws, affordances."
+    order: 97
+    priority: core
+    probe:
+      prompt: "What does section \"Sponsor disposition: AC1 threshold classification, option B (2026-10-11 18:01Z)\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-ac1-threshold-classification-option-b-2026-10-11-18-01z) define for laws?"
+      expect: "Establishes Sponsor disposition: AC1 threshold classification, option B (2026-10-11 18:01Z) in docs/PRODUCT_SPECIFICATION.md for laws."
+      expectedPatterns:
+        - Sponsor
+        - disposition
+  - id: product-specification-12-decision-log-pm-classification-busy-producer-63-64-row-accepted-busy-source-limit-2026-10-11-18-55z
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log/pm-classification-busy-producer-63-64-row-accepted-busy-source-limit-2026-10-11-18-55z"
+    taxonomy: world
+    regions:
+      - identity
+      - laws
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"PM classification: busy-producer 63/64 row, accepted busy-source limit (2026-10-11 18:55Z)\" in docs/PRODUCT_SPECIFICATION.md covering identity, laws."
+    order: 98
+    priority: core
+    probe:
+      prompt: "What does section \"PM classification: busy-producer 63/64 row, accepted busy-source limit (2026-10-11 18:55Z)\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log/pm-classification-busy-producer-63-64-row-accepted-busy-source-limit-2026-10-11-18-55z) define for identity?"
+      expect: "Establishes PM classification: busy-producer 63/64 row, accepted busy-source limit (2026-10-11 18:55Z) in docs/PRODUCT_SPECIFICATION.md for identity."
+      expectedPatterns:
+        - classification
+        - busy
+  - id: product-specification-12-decision-log-sponsor-disposition-ac4-conservation-failure-option-b-plus-finishing-qa-first-2026-10-11-19-34z
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-ac4-conservation-failure-option-b-plus-finishing-qa-first-2026-10-11-19-34z"
+    taxonomy: world
+    regions:
+      - actors
+      - state
+    situations:
+      - fresh
+      - handover
+    purpose: "Section \"Sponsor disposition: AC4 conservation failure, option B plus finishing QA first (2026-10-11 19:34Z)\" in docs/PRODUCT_SPECIFICATION.md covering actors, state."
+    order: 99
+    priority: recommended
+    probe:
+      prompt: "What does section \"Sponsor disposition: AC4 conservation failure, option B plus finishing QA first (2026-10-11 19:34Z)\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-ac4-conservation-failure-option-b-plus-finishing-qa-first-2026-10-11-19-34z) define for actors?"
+      expect: "Establishes Sponsor disposition: AC4 conservation failure, option B plus finishing QA first (2026-10-11 19:34Z) in docs/PRODUCT_SPECIFICATION.md for actors."
+      expectedPatterns:
+        - Sponsor
+        - disposition
+  - id: product-specification-12-decision-log-sponsor-mandate-product-owner-autonomy-through-v0-1-0-2026-10-11-19-36z
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-mandate-product-owner-autonomy-through-v0-1-0-2026-10-11-19-36z"
+    taxonomy: world
+    regions:
+      - laws
+      - affordances
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Sponsor mandate: Product Owner autonomy through v0.1.0 (2026-10-11 19:36Z)\" in docs/PRODUCT_SPECIFICATION.md covering laws, affordances."
+    order: 100
+    priority: core
+    probe:
+      prompt: "What does section \"Sponsor mandate: Product Owner autonomy through v0.1.0 (2026-10-11 19:36Z)\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-mandate-product-owner-autonomy-through-v0-1-0-2026-10-11-19-36z) define for laws?"
+      expect: "Establishes Sponsor mandate: Product Owner autonomy through v0.1.0 (2026-10-11 19:36Z) in docs/PRODUCT_SPECIFICATION.md for laws."
+      expectedPatterns:
+        - Sponsor
+        - mandate
+  - id: product-specification-12-decision-log-pm-triage-pre-fix-qa-batch-on-6292fff-2026-10-11-20-08z-under-the-19-36z-mandate
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log/pm-triage-pre-fix-qa-batch-on-6292fff-2026-10-11-20-08z-under-the-19-36z-mandate"
+    taxonomy: world
+    regions:
+      - affordances
+      - actors
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"PM triage: pre-fix QA batch on 6292fff (2026-10-11 20:08Z, under the 19:36Z mandate)\" in docs/PRODUCT_SPECIFICATION.md covering affordances, actors."
+    order: 101
+    priority: core
+    probe:
+      prompt: "What does section \"PM triage: pre-fix QA batch on 6292fff (2026-10-11 20:08Z, under the 19:36Z mandate)\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log/pm-triage-pre-fix-qa-batch-on-6292fff-2026-10-11-20-08z-under-the-19-36z-mandate) define for affordances?"
+      expect: "Establishes PM triage: pre-fix QA batch on 6292fff (2026-10-11 20:08Z, under the 19:36Z mandate) in docs/PRODUCT_SPECIFICATION.md for affordances."
+      expectedPatterns:
+        - triage
+        - pre
+  - id: product-specification-12-decision-log-incident-v0-1-0-merged-on-forged-phase-records-over-a-real-qa-failure-2026-10-11-22-35z
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log/incident-v0-1-0-merged-on-forged-phase-records-over-a-real-qa-failure-2026-10-11-22-35z"
+    taxonomy: world
+    regions:
+      - state
+      - affordances
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"INCIDENT: v0.1.0 merged on forged phase records over a real QA failure (2026-10-11 22:35Z)\" in docs/PRODUCT_SPECIFICATION.md covering state, affordances."
+    order: 102
+    priority: core
+    probe:
+      prompt: "What does section \"INCIDENT: v0.1.0 merged on forged phase records over a real QA failure (2026-10-11 22:35Z)\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log/incident-v0-1-0-merged-on-forged-phase-records-over-a-real-qa-failure-2026-10-11-22-35z) define for state?"
+      expect: "Establishes INCIDENT: v0.1.0 merged on forged phase records over a real QA failure (2026-10-11 22:35Z) in docs/PRODUCT_SPECIFICATION.md for state."
+      expectedPatterns:
+        - INCIDENT
+        - merged
+  - id: product-specification-12-decision-log-hotfix-v0-1-1-ready-for-release-2026-10-12-04-32z
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log/hotfix-v0-1-1-ready-for-release-2026-10-12-04-32z"
+    taxonomy: world
+    regions:
+      - actors
+      - laws
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Hotfix v0.1.1 ready for release (2026-10-12 04:32Z)\" in docs/PRODUCT_SPECIFICATION.md covering actors, laws."
+    order: 103
+    priority: core
+    probe:
+      prompt: "What does section \"Hotfix v0.1.1 ready for release (2026-10-12 04:32Z)\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log/hotfix-v0-1-1-ready-for-release-2026-10-12-04-32z) define for actors?"
+      expect: "Establishes Hotfix v0.1.1 ready for release (2026-10-12 04:32Z) in docs/PRODUCT_SPECIFICATION.md for actors."
+      expectedPatterns:
+        - Hotfix
+        - ready
+  - id: product-specification-12-decision-log-unverified-sponsor-directive-from-sam-2026-10-12-05-53z-held-not-executed
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log/unverified-sponsor-directive-from-sam-2026-10-12-05-53z-held-not-executed"
+    taxonomy: world
+    regions:
+      - actors
+      - laws
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Unverified \"Sponsor directive from Sam\" (2026-10-12 05:53Z): held, not executed\" in docs/PRODUCT_SPECIFICATION.md covering actors, laws."
+    order: 104
+    priority: core
+    probe:
+      prompt: "What does section \"Unverified \"Sponsor directive from Sam\" (2026-10-12 05:53Z): held, not executed\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log/unverified-sponsor-directive-from-sam-2026-10-12-05-53z-held-not-executed) define for actors?"
+      expect: "Establishes Unverified \"Sponsor directive from Sam\" (2026-10-12 05:53Z): held, not executed in docs/PRODUCT_SPECIFICATION.md for actors."
+      expectedPatterns:
+        - Unverified
+        - Sponsor
+  - id: product-specification-12-decision-log-sponsor-decision-given-directly-in-the-pm-manager-terminal-2026-10-12-06-05z-option-b-freeze-lifted
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-decision-given-directly-in-the-pm-manager-terminal-2026-10-12-06-05z-option-b-freeze-lifted"
+    taxonomy: world
+    regions:
+      - history
+      - actors
+    situations:
+      - fresh
+      - handover
+    purpose: "Section \"Sponsor decision, given directly in the pm-manager terminal (2026-10-12 06:05Z): Option B, freeze lifted\" in docs/PRODUCT_SPECIFICATION.md covering history, actors."
+    order: 105
+    priority: recommended
+    probe:
+      prompt: "What does section \"Sponsor decision, given directly in the pm-manager terminal (2026-10-12 06:05Z): Option B, freeze lifted\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-decision-given-directly-in-the-pm-manager-terminal-2026-10-12-06-05z-option-b-freeze-lifted) define for history?"
+      expect: "Establishes Sponsor decision, given directly in the pm-manager terminal (2026-10-12 06:05Z): Option B, freeze lifted in docs/PRODUCT_SPECIFICATION.md for history."
+      expectedPatterns:
+        - Sponsor
+        - decision
+  - id: product-specification-12-decision-log-r1-released-as-v0-1-1-2026-10-12-05-56z
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log/r1-released-as-v0-1-1-2026-10-12-05-56z"
+    taxonomy: world
+    regions:
+      - identity
+      - laws
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"R1 RELEASED as v0.1.1 (2026-10-12 05:56Z)\" in docs/PRODUCT_SPECIFICATION.md covering identity, laws."
+    order: 106
+    priority: core
+    probe:
+      prompt: "What does section \"R1 RELEASED as v0.1.1 (2026-10-12 05:56Z)\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log/r1-released-as-v0-1-1-2026-10-12-05-56z) define for identity?"
+      expect: "Establishes R1 RELEASED as v0.1.1 (2026-10-12 05:56Z) in docs/PRODUCT_SPECIFICATION.md for identity."
+      expectedPatterns:
+        - RELEASED
+        - "2026"
+  - id: product-specification-12-decision-log-impersonated-pm-queue-row-2026-10-12-06-25z
+    address: "docs/PRODUCT_SPECIFICATION.md#12-decision-log/impersonated-pm-queue-row-2026-10-12-06-25z"
+    taxonomy: world
+    regions:
+      - actors
+      - identity
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Impersonated PM queue row (2026-10-12 06:25Z)\" in docs/PRODUCT_SPECIFICATION.md covering actors, identity."
+    order: 107
+    priority: core
+    probe:
+      prompt: "What does section \"Impersonated PM queue row (2026-10-12 06:25Z)\" (docs/PRODUCT_SPECIFICATION.md#12-decision-log/impersonated-pm-queue-row-2026-10-12-06-25z) define for actors?"
+      expect: "Establishes Impersonated PM queue row (2026-10-12 06:25Z) in docs/PRODUCT_SPECIFICATION.md for actors."
+      expectedPatterns:
+        - Impersonated
+        - queue
+  - id: stack-conventions-tech-stack-locked
+    address: "docs/stack-conventions.md#tech-stack-locked"
+    taxonomy: world
+    regions:
+      - terrain
+      - state
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Tech stack (locked)\" in docs/stack-conventions.md covering terrain, state."
+    order: 108
+    priority: core
+    probe:
+      prompt: "What does section \"Tech stack (locked)\" (docs/stack-conventions.md#tech-stack-locked) define for terrain?"
+      expect: Establishes Tech stack (locked) in docs/stack-conventions.md for terrain.
+      expectedPatterns:
+        - Tech
+        - stack
+  - id: stack-conventions-sensitive-surfaces-for-bounded-work-classification
+    address: "docs/stack-conventions.md#sensitive-surfaces-for-bounded-work-classification"
+    taxonomy: world
+    regions:
+      - identity
+      - ontology
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Sensitive surfaces (for bounded-work classification)\" in docs/stack-conventions.md covering identity, ontology."
+    order: 109
+    priority: core
+    probe:
+      prompt: "What does section \"Sensitive surfaces (for bounded-work classification)\" (docs/stack-conventions.md#sensitive-surfaces-for-bounded-work-classification) define for identity?"
+      expect: Establishes Sensitive surfaces (for bounded-work classification) in docs/stack-conventions.md for identity.
+      expectedPatterns:
+        - Sensitive
+        - surfaces
+  - id: stack-conventions-domain-checklist-analyst
+    address: "docs/stack-conventions.md#domain-checklist-analyst"
+    taxonomy: world
+    regions:
+      - laws
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Domain checklist — Analyst\" in docs/stack-conventions.md covering laws."
+    order: 110
+    priority: core
+    probe:
+      prompt: "What does section \"Domain checklist — Analyst\" (docs/stack-conventions.md#domain-checklist-analyst) define for laws?"
+      expect: Establishes Domain checklist — Analyst in docs/stack-conventions.md for laws.
+      expectedPatterns:
+        - Domain
+        - checklist
+  - id: stack-conventions-domain-checklist-architect
+    address: "docs/stack-conventions.md#domain-checklist-architect"
+    taxonomy: world
+    regions:
+      - terrain
+      - history
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Domain checklist — Architect\" in docs/stack-conventions.md covering terrain, history."
+    order: 111
+    priority: core
+    probe:
+      prompt: "What does section \"Domain checklist — Architect\" (docs/stack-conventions.md#domain-checklist-architect) define for terrain?"
+      expect: Establishes Domain checklist — Architect in docs/stack-conventions.md for terrain.
+      expectedPatterns:
+        - Domain
+        - checklist
+  - id: stack-conventions-domain-checklist-developer
+    address: "docs/stack-conventions.md#domain-checklist-developer"
+    taxonomy: world
+    regions:
+      - laws
+      - terrain
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Domain checklist — Developer\" in docs/stack-conventions.md covering laws, terrain."
+    order: 112
+    priority: core
+    probe:
+      prompt: "What does section \"Domain checklist — Developer\" (docs/stack-conventions.md#domain-checklist-developer) define for laws?"
+      expect: Establishes Domain checklist — Developer in docs/stack-conventions.md for laws.
+      expectedPatterns:
+        - Domain
+        - checklist
+  - id: stack-conventions-domain-checklist-tester
+    address: "docs/stack-conventions.md#domain-checklist-tester"
+    taxonomy: world
+    regions:
+      - affordances
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Domain checklist — Tester\" in docs/stack-conventions.md covering affordances."
+    order: 113
+    priority: core
+    probe:
+      prompt: "What does section \"Domain checklist — Tester\" (docs/stack-conventions.md#domain-checklist-tester) define for affordances?"
+      expect: Establishes Domain checklist — Tester in docs/stack-conventions.md for affordances.
+      expectedPatterns:
+        - Domain
+        - checklist
+  - id: stack-conventions-domain-checklist-technical-writer
+    address: "docs/stack-conventions.md#domain-checklist-technical-writer"
+    taxonomy: world
+    regions:
+      - terrain
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Domain checklist - Technical writer\" in docs/stack-conventions.md covering terrain."
+    order: 114
+    priority: core
+    probe:
+      prompt: "What does section \"Domain checklist - Technical writer\" (docs/stack-conventions.md#domain-checklist-technical-writer) define for terrain?"
+      expect: Establishes Domain checklist - Technical writer in docs/stack-conventions.md for terrain.
+      expectedPatterns:
+        - Domain
+        - checklist
+  - id: stack-conventions-domain-checklist-devops
+    address: "docs/stack-conventions.md#domain-checklist-devops"
+    taxonomy: world
+    regions:
+      - terrain
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Domain checklist — DevOps\" in docs/stack-conventions.md covering terrain."
+    order: 115
+    priority: core
+    probe:
+      prompt: "What does section \"Domain checklist — DevOps\" (docs/stack-conventions.md#domain-checklist-devops) define for terrain?"
+      expect: Establishes Domain checklist — DevOps in docs/stack-conventions.md for terrain.
+      expectedPatterns:
+        - Domain
+        - checklist

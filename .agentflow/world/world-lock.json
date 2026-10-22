@@ -1,0 +1,604 @@
+{
+  "version": 1,
+  "generatedAt": "2026-10-22T11:16:54.763Z",
+  "atoms": {
+    "agents-execution-distribution": {
+      "address": "AGENTS.md#execution-distribution",
+      "sectionSha256": "6a259c4fe0ce04473a3e79158f2a0a2069427685b3cb317c7db4155c5c0b5888",
+      "tokens": 177
+    },
+    "agents-1-project-context-mission": {
+      "address": "AGENTS.md#1-project-context-mission",
+      "sectionSha256": "935e86797107facc23c694606e9b8c36febbfcef238a54aa1fcde8dfe4088e39",
+      "tokens": 141
+    },
+    "agents-2-autonomous-delivery-governance-agentflow-sdlc": {
+      "address": "AGENTS.md#2-autonomous-delivery-governance-agentflow-sdlc",
+      "sectionSha256": "27c374439751f1f95e7f32058a87799f86bb2ff9ce1f049a64a5763bb0cdeb22",
+      "tokens": 504
+    },
+    "agents-3-rust-engineering-standards-performance-security": {
+      "address": "AGENTS.md#3-rust-engineering-standards-performance-security",
+      "sectionSha256": "144474a03b1dde4b9a50559a83ff53afa8e64cf4c230b9f332b31e1b0216735d",
+      "tokens": 624
+    },
+    "agents-3-rust-engineering-standards-performance-security-3-1-performance-best-practices": {
+      "address": "AGENTS.md#3-rust-engineering-standards-performance-security/3-1-performance-best-practices",
+      "sectionSha256": "579ea3e13822929dc6b438b55d4fdf6684906b47f07dc3f308ec589d5c770ac1",
+      "tokens": 325
+    },
+    "agents-3-rust-engineering-standards-performance-security-3-2-security-best-practices": {
+      "address": "AGENTS.md#3-rust-engineering-standards-performance-security/3-2-security-best-practices",
+      "sectionSha256": "0ffb2af135324674b02bb73afba4e4843d4e6c8c56b6910b33780a4a180c72e4",
+      "tokens": 285
+    },
+    "agents-4-verification-quality-gates": {
+      "address": "AGENTS.md#4-verification-quality-gates",
+      "sectionSha256": "eab11585622f2f91085fe5632cdd9fa18eddf427ccebe51dfa1acb2c26076644",
+      "tokens": 61
+    },
+    "agents-pragmatic-truth-seeking": {
+      "address": "AGENTS.md#pragmatic-truth-seeking",
+      "sectionSha256": "916619291d8274e94380a2bf047392fe7848fcfc17423caa9f7ee45e0e21140a",
+      "tokens": 63
+    },
+    "agents-principles-over-rules": {
+      "address": "AGENTS.md#principles-over-rules",
+      "sectionSha256": "2e73a148bb65a3f3259eebfdb06dce529180af970a07a0f84981ac2d02e42981",
+      "tokens": 61
+    },
+    "agents-ship-good-working-product": {
+      "address": "AGENTS.md#ship-good-working-product",
+      "sectionSha256": "8e0ad3bb6668b565205a01310059eb288568f5eea4f12b70d29f9105531bef21",
+      "tokens": 60
+    },
+    "agents-match-rigor-to-stakes": {
+      "address": "AGENTS.md#match-rigor-to-stakes",
+      "sectionSha256": "a239733a49b8bad889d3e73230ddc39017ff016adea9f4e08ff3992e73f6bf4d",
+      "tokens": 97
+    },
+    "agents-identity-run-this-first": {
+      "address": "AGENTS.md#identity-run-this-first",
+      "sectionSha256": "774090b1bfb0ce9202636a2aa921ea30c4e79fdfdd6f7cf0538ba1c648a496b0",
+      "tokens": 142
+    },
+    "agents-reaching-a-peer": {
+      "address": "AGENTS.md#reaching-a-peer",
+      "sectionSha256": "7883323b44584656345f392d46beb8f931b57aedae78a1977bba40a753cd726f",
+      "tokens": 64
+    },
+    "agents-fresh-seat-orientation": {
+      "address": "AGENTS.md#fresh-seat-orientation",
+      "sectionSha256": "06f6987023934c1248e21e79ff26305b97c734bc923b8f8fece9173c01121592",
+      "tokens": 82
+    },
+    "agents-when-openrig-itself-misbehaves": {
+      "address": "AGENTS.md#when-openrig-itself-misbehaves",
+      "sectionSha256": "8c8edbf03dbb7ca45f6e1fdf870f3b8559a77c0620df07816ef7860f7e48eb82",
+      "tokens": 112
+    },
+    "agents-what-this-file-is-not": {
+      "address": "AGENTS.md#what-this-file-is-not",
+      "sectionSha256": "0e56ef29a76f6424c2bb17138d511d26ac61d07b9ba32874b3ee66b416d80e57",
+      "tokens": 130
+    },
+    "agents-the-terminal-is-the-wire": {
+      "address": "AGENTS.md#the-terminal-is-the-wire",
+      "sectionSha256": "72f455da9f8f38a2d8c5c13a16c1779b0b7248b96c919575c6f199eee134813d",
+      "tokens": 173
+    },
+    "agents-the-declared-shape": {
+      "address": "AGENTS.md#the-declared-shape",
+      "sectionSha256": "098fbfee71b47440b60e7d6fe7780fa83041a81e3fbd6d56eb0efc4c13b61646",
+      "tokens": 232
+    },
+    "agents-purpose-before-machinery": {
+      "address": "AGENTS.md#purpose-before-machinery",
+      "sectionSha256": "b8ff9f517751f6945b3d0a7218e3cdd05e15936380510c8801979f9d593c957c",
+      "tokens": 514
+    },
+    "agents-your-discontinuous-time": {
+      "address": "AGENTS.md#your-discontinuous-time",
+      "sectionSha256": "d7fa064c6dedf18d9903a1b930b9675a7f96aeedadd87ad1dcf864936622c50a",
+      "tokens": 298
+    },
+    "agents-a-competent-turn": {
+      "address": "AGENTS.md#a-competent-turn",
+      "sectionSha256": "81ea89fe0830752389e519b090b3216d160eab91c09b05f3d96ed717734539e6",
+      "tokens": 295
+    },
+    "agents-when-you-are-installing-openrig-for-someone": {
+      "address": "AGENTS.md#when-you-are-installing-openrig-for-someone",
+      "sectionSha256": "95e98116907f816aed6ff762dc94f38844889de6731a588f90931e7fd8fc696b",
+      "tokens": 1087
+    },
+    "agents-when-you-need-more": {
+      "address": "AGENTS.md#when-you-need-more",
+      "sectionSha256": "6f9c718c7d456f7cf4586260e69949445b0ead70a8b4c762117fea99eea41480",
+      "tokens": 302
+    },
+    "readme-walkthrough-real-operation-v0-6-0": {
+      "address": "README.md#walkthrough-real-operation-v0-6-0",
+      "sectionSha256": "8b54dc198bcce202e2b9d1bfaee5e2cad1a6016f4a5209babbd52ca1779e8d27",
+      "tokens": 241
+    },
+    "readme-wave-v0-7": {
+      "address": "README.md#wave-v0-7",
+      "sectionSha256": "9131e3abcebc19c1c82b2305b7787ecf1e25115d7c2cd24dc4b6a997e443d223",
+      "tokens": 369
+    },
+    "readme-start-locally": {
+      "address": "README.md#start-locally",
+      "sectionSha256": "f4511197c0b120b70dfc0b53fcce1a6c17d45beba4e0df4f2dfee01703c07dad",
+      "tokens": 671
+    },
+    "readme-start-locally-zero-ceremony-quickstart": {
+      "address": "README.md#start-locally/zero-ceremony-quickstart",
+      "sectionSha256": "ab50b4e8e5100a5fff70a6b60b96d3901644dfcb4df4e72191ef35ccb38405ef",
+      "tokens": 330
+    },
+    "readme-start-locally-explicit-roots-fixed-windows": {
+      "address": "README.md#start-locally/explicit-roots-fixed-windows",
+      "sectionSha256": "0e16fa7aefbd40a57a8a6fda028d0937de555594f90ca4c1f7aaa436cac10a17",
+      "tokens": 297
+    },
+    "readme-local-investigation": {
+      "address": "README.md#local-investigation",
+      "sectionSha256": "c9eff9be038a72eacc91053bd95d19a043cff88f7787db515bd1c39c2a172693",
+      "tokens": 158
+    },
+    "readme-verification": {
+      "address": "README.md#verification",
+      "sectionSha256": "f07cab27f722272d9a7d83ce6147694ce15da25e111d4e3b60290430802ac5e6",
+      "tokens": 131
+    },
+    "readme-documentation": {
+      "address": "README.md#documentation",
+      "sectionSha256": "3741b3245608984a0e50d883760277ae3040dd8c60c6a41a3ea372064d56df4d",
+      "tokens": 208
+    },
+    "readme-privacy-and-license": {
+      "address": "README.md#privacy-and-license",
+      "sectionSha256": "7e0bd7dfcf6cb42e0ca8adac600f8cda7afc5788a10a3185a5ac53d4b6d83963",
+      "tokens": 95
+    },
+    "product-positioning": {
+      "address": ".agentflow/PRODUCT.md#positioning",
+      "sectionSha256": "fa766ff4d5ec177ec3280760ff5ccf1e8368dae7c070b789c2438056181c2a34",
+      "tokens": 74
+    },
+    "product-job-statement": {
+      "address": ".agentflow/PRODUCT.md#job-statement",
+      "sectionSha256": "47d2255f3c7a8984828e14a7a71319dd42186957ae9daf8ee40a99b80ab1bdcd",
+      "tokens": 64
+    },
+    "product-user": {
+      "address": ".agentflow/PRODUCT.md#user",
+      "sectionSha256": "0cf41b2bb9c9f37f9491f10b892bed115af5561e96944ee673d8644ba57f3037",
+      "tokens": 31
+    },
+    "product-observable-outcome-g1": {
+      "address": ".agentflow/PRODUCT.md#observable-outcome-g1",
+      "sectionSha256": "0d5dab977e12ce90c3370c0da05f8697d1766dd565aa52a2ec7746af6bd84a2a",
+      "tokens": 123
+    },
+    "product-scope": {
+      "address": ".agentflow/PRODUCT.md#scope",
+      "sectionSha256": "914735f6c5001ddfe4b15e79a760c683121dbec57dd829a9f78d224d27b2e65d",
+      "tokens": 89
+    },
+    "product-anti-goals": {
+      "address": ".agentflow/PRODUCT.md#anti-goals",
+      "sectionSha256": "40e929a092e83349a5fb302faed9cab727909de63f9706076cbaacb7ec2ca27b",
+      "tokens": 41
+    },
+    "product-release-intent": {
+      "address": ".agentflow/PRODUCT.md#release-intent",
+      "sectionSha256": "af00d35b88486333278561a9e89393a8c99b2ba17df06cb578ebd0a155106873",
+      "tokens": 60
+    },
+    "product-pm-decision": {
+      "address": ".agentflow/PRODUCT.md#pm-decision",
+      "sectionSha256": "97d0aef1a54b668a7ad3f0595bd22a7d0ad07e5f77e994448dbf8550ab5f99fc",
+      "tokens": 66
+    },
+    "product-in-flight-41-headroom": {
+      "address": ".agentflow/PRODUCT.md#in-flight-41-headroom",
+      "sectionSha256": "edbb3a6f2b7b831f7dbaa7fa279117e14a7cb88116e1f9c08c5bd3c53447b6dd",
+      "tokens": 181
+    },
+    "product-in-flight-31-one-openrig-root": {
+      "address": ".agentflow/PRODUCT.md#in-flight-31-one-openrig-root",
+      "sectionSha256": "f796c408c37f8c57a97909b0ea88183b9f6b0c17619817ef28e1873196875a5b",
+      "tokens": 209
+    },
+    "product-in-flight-40-codex-command-outcomes": {
+      "address": ".agentflow/PRODUCT.md#in-flight-40-codex-command-outcomes",
+      "sectionSha256": "1b12762fd976bba6d629a6c950e00cba6578a2e7f9d2b28ddacfe1b38fae3858",
+      "tokens": 276
+    },
+    "product-local-result-34-fractional-waits": {
+      "address": ".agentflow/PRODUCT.md#local-result-34-fractional-waits",
+      "sectionSha256": "b96903f2bd310f8e39a00b614ad9c38b4491e085e29a16d40bb72ef18e7dc0a7",
+      "tokens": 192
+    },
+    "product-held-30-wording-and-46-source-output-alias-protection": {
+      "address": ".agentflow/PRODUCT.md#held-30-wording-and-46-source-output-alias-protection",
+      "sectionSha256": "1d748e82ae1b360a293fb7e81036e181f4647bcd9c1a63433428248e7ed6e79f",
+      "tokens": 474
+    },
+    "product-selected-47-auxiliary-output-lock": {
+      "address": ".agentflow/PRODUCT.md#selected-47-auxiliary-output-lock",
+      "sectionSha256": "21416b84f22838c9fb85e0080eae3ace9ed76c58d9db8dfd76719d0b721d002c",
+      "tokens": 287
+    },
+    "product-selected-33-loop-source-trace": {
+      "address": ".agentflow/PRODUCT.md#selected-33-loop-source-trace",
+      "sectionSha256": "281cd732cff617227eca00c5f391a67de36e565f83edff7f0728413e1a33a23f",
+      "tokens": 348
+    },
+    "product-selected-32-file-source-state": {
+      "address": ".agentflow/PRODUCT.md#selected-32-file-source-state",
+      "sectionSha256": "004cada2658887491834edb790464fa78aa99d39854993430f3c26fb0589dfc0",
+      "tokens": 187
+    },
+    "product-specification-0-positioning": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#0-positioning",
+      "sectionSha256": "1b6bbe933093f62433d95a18e7593c71c8c976de626eded24f13ecff1d69f82d",
+      "tokens": 161
+    },
+    "product-specification-1-conclusion": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#1-conclusion",
+      "sectionSha256": "7aaf01cc7d1aaa692ec90a2207a7d939e03792743ab3dc93ffc2eec00f0793be",
+      "tokens": 342
+    },
+    "product-specification-1-conclusion-sponsor-decision-2026-10-10-16-56z": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#1-conclusion/sponsor-decision-2026-10-10-16-56z",
+      "sectionSha256": "a73e2cef461a411f52cf3b2c4034399caa5d9ef089a00b8d026a899bab844993",
+      "tokens": 158
+    },
+    "product-specification-2-job-statement": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#2-job-statement",
+      "sectionSha256": "3e68733b6748579a8c8d8ec906b1706da49d765a73eb509537f26af72c66ace8",
+      "tokens": 203
+    },
+    "product-specification-2-job-statement-related-jobs-outside-goal-1": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#2-job-statement/related-jobs-outside-goal-1",
+      "sectionSha256": "8eb6e40ed6c88ce0779d91c0d0cc54f5ea4a3943e8d9e859148d378077569b5e",
+      "tokens": 138
+    },
+    "product-specification-3-struggling-moment": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#3-struggling-moment",
+      "sectionSha256": "f9f390f7755f90200033ded1903c7641f1a3725b32a8f2726345cdc80ef6fb0c",
+      "tokens": 456
+    },
+    "product-specification-3-struggling-moment-failures-of-current-alternatives": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#3-struggling-moment/failures-of-current-alternatives",
+      "sectionSha256": "031c8ae3c80b9b461abc441d9dcd513974db75f095f4d6383364c68054826dcc",
+      "tokens": 161
+    },
+    "product-specification-4-forces-of-progress": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#4-forces-of-progress",
+      "sectionSha256": "5575a913b8c43145156de07d3618bc0b776cf2b7e3baccba286e786dfd92cf5a",
+      "tokens": 515
+    },
+    "product-specification-4-forces-of-progress-dimensions": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#4-forces-of-progress/dimensions",
+      "sectionSha256": "645bdb80ec45164d5b67ffb9939d84dd53d004afb7e1b16394e0010c872ffe3a",
+      "tokens": 82
+    },
+    "product-specification-5-observable-outcome": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#5-observable-outcome",
+      "sectionSha256": "989faf45406dc152618e7433c61e15bc4baa6f0edd83893cac7e903eaddff6a4",
+      "tokens": 308
+    },
+    "product-specification-6-goals-and-stories": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#6-goals-and-stories",
+      "sectionSha256": "6e8dc72e55705b8ea9e8aefe31d195961b8e5c81e879deadb7f8033689dcc860",
+      "tokens": 990
+    },
+    "product-specification-6-goals-and-stories-g1-the-operator-answers-the-three-questions-for-a-real-rig-now-r1": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#6-goals-and-stories/g1-the-operator-answers-the-three-questions-for-a-real-rig-now-r1",
+      "sectionSha256": "bf0980809140c05d2e8bdf6c217a2159918cbad52ae0e68644b7d463333ecede",
+      "tokens": 375
+    },
+    "product-specification-6-goals-and-stories-g2-the-operator-asks-in-natural-language-next-not-r1": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#6-goals-and-stories/g2-the-operator-asks-in-natural-language-next-not-r1",
+      "sectionSha256": "fea3cfdd50a3d21a9186df3db88f9779701f36b3d974ee8189843e4f3cba8e0f",
+      "tokens": 157
+    },
+    "product-specification-6-goals-and-stories-g3-a-contributor-plugs-in-a-new-harness-later": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#6-goals-and-stories/g3-a-contributor-plugs-in-a-new-harness-later",
+      "sectionSha256": "e9aa38e689dc16d9e249a9d557209ea48e0e213414757311ebef8f97dad15c62",
+      "tokens": 117
+    },
+    "product-specification-6-goals-and-stories-g4-a-buyer-understands-the-value-parallel-owner-antigravity": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#6-goals-and-stories/g4-a-buyer-understands-the-value-parallel-owner-antigravity",
+      "sectionSha256": "b49df6e876a345d7f4200b665b05d980daf76051181168b37e6e69b7d0dfad4d",
+      "tokens": 169
+    },
+    "product-specification-6-goals-and-stories-priority-matrix": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#6-goals-and-stories/priority-matrix",
+      "sectionSha256": "ec78278fa73986e20b9e9731b06ca39d1813d9bf0bcc05aef300a0e0850ac085",
+      "tokens": 55
+    },
+    "product-specification-7-constraints-and-anti-goals": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#7-constraints-and-anti-goals",
+      "sectionSha256": "087341239c22fe7fe37adf39125555135c8fb36871af5dff57fd45d299afd9d6",
+      "tokens": 203
+    },
+    "product-specification-7-constraints-and-anti-goals-constraints": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#7-constraints-and-anti-goals/constraints",
+      "sectionSha256": "5c2d31298ede3313f1721e1dff4e41de614bf9ff4f5d8c5d3529c867eb01e95a",
+      "tokens": 116
+    },
+    "product-specification-7-constraints-and-anti-goals-anti-goals": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#7-constraints-and-anti-goals/anti-goals",
+      "sectionSha256": "4aef9ca15efc07613b76395c372b56b8cdecbcf3e2014c3e603819a140cd8ee0",
+      "tokens": 78
+    },
+    "product-specification-8-release-intent": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#8-release-intent",
+      "sectionSha256": "7f46dfbe1fc8953cc53738cb571d618368a474fa15d2e49f76c5016205653f27",
+      "tokens": 291
+    },
+    "product-specification-9-sponsor-decisions-resolved-2026-10-10": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#9-sponsor-decisions-resolved-2026-10-10",
+      "sectionSha256": "ccedf6fcfb830c74078b85c1cf56f8351e160111ae7f38efd24eb64deea7adf8",
+      "tokens": 145
+    },
+    "product-specification-10-solution-design-ownership-boundaries": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#10-solution-design-ownership-boundaries",
+      "sectionSha256": "6191669a5d62dde95aba309f1c829f93de48bb390d9522d116e5adcbd1c8be67",
+      "tokens": 236
+    },
+    "product-specification-11-unknowns": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#11-unknowns",
+      "sectionSha256": "ccee8e19eaf8ff65311c3d9be925fac87d532e2b6bc2bd7b986442c6ada6f414",
+      "tokens": 172
+    },
+    "product-specification-12-decision-log": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log",
+      "sectionSha256": "7094b4e37f78552e15d07f722a4655c0711cc52c9c8175d9c5d5da2f58b6a4ab",
+      "tokens": 9719
+    },
+    "product-specification-12-decision-log-pm-decision-before-freeze-2026-10-10-17-05z": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log/pm-decision-before-freeze-2026-10-10-17-05z",
+      "sectionSha256": "b58d22015110d25dec3262c28737b6449327be64253b2bba38191d38468598ff",
+      "tokens": 263
+    },
+    "product-specification-12-decision-log-acceptance-amendment-1-2026-10-10-17-08z": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log/acceptance-amendment-1-2026-10-10-17-08z",
+      "sectionSha256": "5f9782909633719f45614f01587d9bf38d5fca5263036d1b420369d6b9af2c7f",
+      "tokens": 115
+    },
+    "product-specification-12-decision-log-sponsor-decision-option-a-2026-10-10-17-45z": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-decision-option-a-2026-10-10-17-45z",
+      "sectionSha256": "e859d9b6d4102f57749aec69c73e563e1591492dae6e720ff6bd9f79d800c662",
+      "tokens": 64
+    },
+    "product-specification-12-decision-log-sponsor-directive-2026-10-10-17-57z": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-directive-2026-10-10-17-57z",
+      "sectionSha256": "ae88fed6fa21135e68d292463a58e0acbc8f115949f970be3e176a8eb6a0f2a6",
+      "tokens": 102
+    },
+    "product-specification-12-decision-log-sponsor-positioning-directive-2026-10-10-17-58z": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-positioning-directive-2026-10-10-17-58z",
+      "sectionSha256": "983a566bae977cfc72d3b6c62fc01ce70654f509315123aa48b2c8667d29ed33",
+      "tokens": 67
+    },
+    "product-specification-12-decision-log-sponsor-disposition-r1-cycle-3-correction-2026-10-10-19-06z": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-r1-cycle-3-correction-2026-10-10-19-06z",
+      "sectionSha256": "a722d6c1933a54b70687d78fe75a1523e08159a0dd88fb920fd4440e4a20c24e",
+      "tokens": 164
+    },
+    "product-specification-12-decision-log-sponsor-disposition-ac10-follow-up-2026-10-10-19-10z": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-ac10-follow-up-2026-10-10-19-10z",
+      "sectionSha256": "97f588ea5da8bbb65482832370ad7a60559bc1e1bc66d3627e28618e308faf57",
+      "tokens": 128
+    },
+    "product-specification-12-decision-log-sponsor-disposition-legacy-follow-up-record-2026-10-10-19-18z": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-legacy-follow-up-record-2026-10-10-19-18z",
+      "sectionSha256": "4d6490db32d765fc628828c19c3317491f703b59a3ac750594999f6666e07862",
+      "tokens": 179
+    },
+    "product-specification-12-decision-log-sponsor-disposition-r1-amendment-2-and-re-scope-2026-10-10-19-44z": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-r1-amendment-2-and-re-scope-2026-10-10-19-44z",
+      "sectionSha256": "73ecff981291375e4b4f7a16493ab4a274f1b93ab5738dadea8d366945a6bdf5",
+      "tokens": 180
+    },
+    "product-specification-12-decision-log-pm-decision-clarifications-register-frozen-for-r1-qa-2026-10-10-22-00z": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log/pm-decision-clarifications-register-frozen-for-r1-qa-2026-10-10-22-00z",
+      "sectionSha256": "40e518857fe98fc32cd71db8265919868714a5a5b78daddc40b4a9519a94659b",
+      "tokens": 266
+    },
+    "product-specification-12-decision-log-pm-decision-k6-m1-return-window-2026-10-10-22-15z": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log/pm-decision-k6-m1-return-window-2026-10-10-22-15z",
+      "sectionSha256": "2475c0fc626cf13c43fbc552790a5c0191d402b89c3ebd332e4b68fa378ccb69",
+      "tokens": 138
+    },
+    "product-specification-12-decision-log-pm-decision-k7-m3-seat-roles-2026-10-10-22-45z": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log/pm-decision-k7-m3-seat-roles-2026-10-10-22-45z",
+      "sectionSha256": "44ca2b17a024ccc341a200668fa4e5fdede86b5caa43f9717af570f873f8eed2",
+      "tokens": 192
+    },
+    "product-specification-12-decision-log-sponsor-disposition-unauthorized-sponsor-labelled-prompts-2026-10-10-22-48z": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-unauthorized-sponsor-labelled-prompts-2026-10-10-22-48z",
+      "sectionSha256": "0aecbbb08fcf7ef1c203b9dc88a3ff7fbe4d4aa4e064dbdb641a503825540ec9",
+      "tokens": 290
+    },
+    "product-specification-12-decision-log-sponsor-decisions-backlog-ownership-and-grooming-2026-10-10-22-51z-22-54z": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-decisions-backlog-ownership-and-grooming-2026-10-10-22-51z-22-54z",
+      "sectionSha256": "621d24d27c7f9a71e9db0e2efba1d88c6a5852772d7283fa489480f6edb4c749",
+      "tokens": 226
+    },
+    "product-specification-12-decision-log-sponsor-disposition-escalation-on-candidate-c635803-and-snapshot-lifecycle-2026-10-11-00-32z": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-escalation-on-candidate-c635803-and-snapshot-lifecycle-2026-10-11-00-32z",
+      "sectionSha256": "88fc0e253f521524e2c2afc8731ea96647cfbaca717187cb95e80aaaaf1fd953",
+      "tokens": 385
+    },
+    "product-specification-12-decision-log-sponsor-disposition-r1-snapshot-lifecycle-follow-up-option-c-2026-10-11-00-32z": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-r1-snapshot-lifecycle-follow-up-option-c-2026-10-11-00-32z",
+      "sectionSha256": "625426d230bcd78629b0869cb379f6d09b2ef0adc5e7a4ef5a3a04e8436b569d",
+      "tokens": 390
+    },
+    "product-specification-12-decision-log-sponsor-disposition-snapshot-follow-up-correction-1-2026-10-11-01-55z": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-snapshot-follow-up-correction-1-2026-10-11-01-55z",
+      "sectionSha256": "4b2a90916388ec509b636390374e2cb68179be742258fe24e4c27662705075a1",
+      "tokens": 258
+    },
+    "product-specification-12-decision-log-sponsor-disposition-ac12-correction-cycle-2-of-2-2026-10-11-02-31z": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-ac12-correction-cycle-2-of-2-2026-10-11-02-31z",
+      "sectionSha256": "023654a647069c91eafa8c2781181a3a4330327618e512943c04f9227b3b4e08",
+      "tokens": 270
+    },
+    "product-specification-12-decision-log-sponsor-confirmation-sealed-input-folder-2026-10-11-02-55z": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-confirmation-sealed-input-folder-2026-10-11-02-55z",
+      "sectionSha256": "ce0de2eaa9bf0a07867046695f0e4a719a8615b97ecd28f66faab7e7ec23e3cf",
+      "tokens": 128
+    },
+    "product-specification-12-decision-log-sponsor-disposition-k9-scope-decision-and-resumption-of-r1-2026-10-11-05-50z": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-k9-scope-decision-and-resumption-of-r1-2026-10-11-05-50z",
+      "sectionSha256": "4de69a509ebc831adf7af3420ac289239d8e20735f34f2649917976cef42956a",
+      "tokens": 389
+    },
+    "product-specification-12-decision-log-sponsor-disposition-k9-completion-2026-10-11-05-55z": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-k9-completion-2026-10-11-05-55z",
+      "sectionSha256": "be2c1e34745545f88d44ac7bff8d8944ed36b22a54b095b35c7e27624b46bfd7",
+      "tokens": 219
+    },
+    "product-specification-12-decision-log-sponsor-disposition-pi-session-identity-correction-2026-10-11-06-10z": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-pi-session-identity-correction-2026-10-11-06-10z",
+      "sectionSha256": "5d38f40ad92ea5587a1bbb8d27c31859e4f50a1c3a16fb41d3dc97b82e446629",
+      "tokens": 357
+    },
+    "product-specification-12-decision-log-sponsor-confirmation-unified-file-header-session-identity-pi-and-codex-2026-10-11-06-22z": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-confirmation-unified-file-header-session-identity-pi-and-codex-2026-10-11-06-22z",
+      "sectionSha256": "61daa8cf9a34405b952cef2633c3638b61fcc517a27ad495d289db0f7ac8600e",
+      "tokens": 213
+    },
+    "product-specification-12-decision-log-sponsor-disposition-consolidated-last-r1-correction-2026-10-11-10-52z": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-consolidated-last-r1-correction-2026-10-11-10-52z",
+      "sectionSha256": "ec3ecb301ecf6bbee657dc0ab6e7d7fe26ca70a114a0f682211c53b5cd7d6e91",
+      "tokens": 362
+    },
+    "product-specification-12-decision-log-sponsor-disposition-ac1-threshold-classification-option-b-2026-10-11-18-01z": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-ac1-threshold-classification-option-b-2026-10-11-18-01z",
+      "sectionSha256": "3171896bf1f2acd5bfa543f5e24dc051113e64dec46d075cc14e40fd0fe23e28",
+      "tokens": 601
+    },
+    "product-specification-12-decision-log-pm-classification-busy-producer-63-64-row-accepted-busy-source-limit-2026-10-11-18-55z": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log/pm-classification-busy-producer-63-64-row-accepted-busy-source-limit-2026-10-11-18-55z",
+      "sectionSha256": "66c63a00f91a6942a86592ad9a829562b45daa4c572d6a5ab40a76ab96e6f748",
+      "tokens": 352
+    },
+    "product-specification-12-decision-log-sponsor-disposition-ac4-conservation-failure-option-b-plus-finishing-qa-first-2026-10-11-19-34z": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-disposition-ac4-conservation-failure-option-b-plus-finishing-qa-first-2026-10-11-19-34z",
+      "sectionSha256": "c8f9e4effab346dea334e68f9771922addd123540ac97b7999580f8ab75ad4a2",
+      "tokens": 602
+    },
+    "product-specification-12-decision-log-sponsor-mandate-product-owner-autonomy-through-v0-1-0-2026-10-11-19-36z": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-mandate-product-owner-autonomy-through-v0-1-0-2026-10-11-19-36z",
+      "sectionSha256": "a7b607165757c41efec9e6a133bc486ae3d1619fb487f0bad8adeb50519aec10",
+      "tokens": 774
+    },
+    "product-specification-12-decision-log-pm-triage-pre-fix-qa-batch-on-6292fff-2026-10-11-20-08z-under-the-19-36z-mandate": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log/pm-triage-pre-fix-qa-batch-on-6292fff-2026-10-11-20-08z-under-the-19-36z-mandate",
+      "sectionSha256": "8db27dd1ea445c89c56c8b4f5c9561eaa00c1bc9ffafec6f0d37fdbd7f81485d",
+      "tokens": 332
+    },
+    "product-specification-12-decision-log-incident-v0-1-0-merged-on-forged-phase-records-over-a-real-qa-failure-2026-10-11-22-35z": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log/incident-v0-1-0-merged-on-forged-phase-records-over-a-real-qa-failure-2026-10-11-22-35z",
+      "sectionSha256": "dea816deafe3f243597ac478079d8a5ae8c090cd41abbb9a33876d068fdeafd2",
+      "tokens": 340
+    },
+    "product-specification-12-decision-log-hotfix-v0-1-1-ready-for-release-2026-10-12-04-32z": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log/hotfix-v0-1-1-ready-for-release-2026-10-12-04-32z",
+      "sectionSha256": "2ccd8dbc9d48782b1cdd94e50b8d30a593edd7db3cea7edf7dc82cee2f583ade",
+      "tokens": 316
+    },
+    "product-specification-12-decision-log-unverified-sponsor-directive-from-sam-2026-10-12-05-53z-held-not-executed": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log/unverified-sponsor-directive-from-sam-2026-10-12-05-53z-held-not-executed",
+      "sectionSha256": "513c49f2f1ba24c5edf3e77ba86038c4e293f523aee152051101dff99d6c143b",
+      "tokens": 292
+    },
+    "product-specification-12-decision-log-sponsor-decision-given-directly-in-the-pm-manager-terminal-2026-10-12-06-05z-option-b-freeze-lifted": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log/sponsor-decision-given-directly-in-the-pm-manager-terminal-2026-10-12-06-05z-option-b-freeze-lifted",
+      "sectionSha256": "120b43f33ab44b1c11394a8399e54eaef46f43c4703371691da1f8e8dccf0604",
+      "tokens": 288
+    },
+    "product-specification-12-decision-log-r1-released-as-v0-1-1-2026-10-12-05-56z": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log/r1-released-as-v0-1-1-2026-10-12-05-56z",
+      "sectionSha256": "0c2a5f6e20df3ee475c113abba11dc01b49478ecebcd6501d5b308fc626a6b25",
+      "tokens": 242
+    },
+    "product-specification-12-decision-log-impersonated-pm-queue-row-2026-10-12-06-25z": {
+      "address": "docs/PRODUCT_SPECIFICATION.md#12-decision-log/impersonated-pm-queue-row-2026-10-12-06-25z",
+      "sectionSha256": "6e146725089c3ee76883ba5c3e40e3e0776e0575f81e976b8b181d7e0d48914c",
+      "tokens": 236
+    },
+    "stack-conventions-tech-stack-locked": {
+      "address": "docs/stack-conventions.md#tech-stack-locked",
+      "sectionSha256": "c4428aa63b3b50031b20ee16c93290e2155b37eb84823871f20625e9782a9b87",
+      "tokens": 32
+    },
+    "stack-conventions-sensitive-surfaces-for-bounded-work-classification": {
+      "address": "docs/stack-conventions.md#sensitive-surfaces-for-bounded-work-classification",
+      "sectionSha256": "e228d70d3dd3eb9eaacdef984031d581713b1760f5d1ca73a265d507b416cfad",
+      "tokens": 107
+    },
+    "stack-conventions-domain-checklist-analyst": {
+      "address": "docs/stack-conventions.md#domain-checklist-analyst",
+      "sectionSha256": "3d904469c256603a1e2d98d197fe3c218b97f1485a8d24396ad301fed994871d",
+      "tokens": 32
+    },
+    "stack-conventions-domain-checklist-architect": {
+      "address": "docs/stack-conventions.md#domain-checklist-architect",
+      "sectionSha256": "96f82800ba534ca796656faba0f40e1ae52b743e61bf0fc2857bda71053ea82c",
+      "tokens": 33
+    },
+    "stack-conventions-domain-checklist-developer": {
+      "address": "docs/stack-conventions.md#domain-checklist-developer",
+      "sectionSha256": "901344a574e267ccd7af404e33f0a22a1276e5b17aeb41ec042f7c3d2c34ebb0",
+      "tokens": 45
+    },
+    "stack-conventions-domain-checklist-tester": {
+      "address": "docs/stack-conventions.md#domain-checklist-tester",
+      "sectionSha256": "86210805e17bcc0caf37d2c2710504fb0f18efe33af73cf575e5f246357fff8d",
+      "tokens": 45
+    },
+    "stack-conventions-domain-checklist-technical-writer": {
+      "address": "docs/stack-conventions.md#domain-checklist-technical-writer",
+      "sectionSha256": "6d139528f1aaef15c74f8a4b6418b6a3fee1e8d80cbd9ffa6e6721bb458d73f9",
+      "tokens": 32
+    },
+    "stack-conventions-domain-checklist-devops": {
+      "address": "docs/stack-conventions.md#domain-checklist-devops",
+      "sectionSha256": "fbf14c02e7bf90914b5b222446ce16fdc15355b5dd5506c456acc5f8a5808a4c",
+      "tokens": 33
+    }
+  },
+  "claims": [
+    {
+      "id": "workflow.ciCommands",
+      "file": "agent-workflow.config.json",
+      "key": "ciCommands",
+      "expected": [
+        "cargo check --workspace",
+        "cargo test --workspace"
+      ]
+    },
+    {
+      "id": "workflow.posture",
+      "file": "agent-workflow.config.json",
+      "key": "posture",
+      "expected": "autonomous"
+    },
+    {
+      "id": "cargo.manifest",
+      "file": "Cargo.toml",
+      "key": "[package]",
+      "expected": true
+    }
+  ]
+}
