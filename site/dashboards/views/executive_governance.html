@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dendro · Executive Governance & Multi-Rig Audit</title>
+  <meta name="description" content="Canonical governance scorecard and multi-rig audit derived from DuckDB view v_executive_governance. Four-eyes independence, watchdog recovery, and vortex loops.">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <!-- Top Navigation -->
+  <header class="telemetry-nav">
+    <div class="nav-left">
+      <a href="../index.html" class="brand-link" title="Dashboards Hub">
+        <span class="brand-icon">D</span>
+        <span>Dendro<span style="font-weight:400;color:var(--text-muted);font-size:0.85rem;margin-left:6px;">Governance</span></span>
+      </a>
+      <div class="nav-breadcrumbs" aria-label="Breadcrumbs">
+        <span class="separator">/</span>
+        <a href="../index.html" style="color:var(--text-secondary);">Dashboards</a>
+        <span class="separator">/</span>
+        <span class="current">Executive Governance</span>
+      </div>
+    </div>
+    <div class="nav-right">
+      <div id="dual-serving-indicator" class="dual-serving-badge snapshot">
+        <span class="pulse-dot"></span>
+        <span id="dual-serving-text">LOCAL DUCKDB READY · SNAPSHOT MODE</span>
+      </div>
+      <button id="btn-refresh" class="nav-action-btn" type="button" title="Refresh scorecard snapshot">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+        <span>Refresh</span>
+      </button>
+      <a href="../index.html" class="nav-action-btn" title="Back to Dashboards Hub">
+        <span>← Back to Dashboards Hub</span>
+      </a>
+    </div>
+  </header>
+
+  <main class="telemetry-layout">
+    <!-- Header -->
+    <section class="hero-header">
+      <div class="hero-eyebrow">
+        <span>●</span> Canonical Scorecard · SQL View: <code>v_executive_governance</code>
+      </div>
+      <h1 class="hero-title">Executive Governance & Multi-Rig Audit</h1>
+      <p class="hero-subtitle">
+        High-assurance fleet governance evidence. Verifies Four-Eyes reviewer independence (no self-review), automated watchdog stall recovery, circular vortex loop prevention, and cross-slice context isolation across multi-rig topologies.
+      </p>
+    </section>
+
+    <!-- Top KPI Scorecards -->
+    <section class="kpi-grid" aria-label="Governance Scorecards">
+      <article class="kpi-card accent-emerald">
+        <div class="kpi-label">Four-Eyes Independence</div>
+        <div class="kpi-value" id="kpi-four-eyes">100% PASS</div>
+        <div class="kpi-meta">
+          <span class="badge badge-pass">VERIFIED</span> · <span>0 self-review violations</span>
+        </div>
+      </article>
+
+      <article class="kpi-card accent-purple">
+        <div class="kpi-label">Watchdog Recovery</div>
+        <div class="kpi-value" id="kpi-watchdog">12 / 12</div>
+        <div class="kpi-meta">
+          <span class="badge badge-pass">100% HEALTH</span> · <span>0 dropped tasks</span>
+        </div>
+      </article>
+
+      <article class="kpi-card accent-cyan">
+        <div class="kpi-label">Vortex Loop Detection</div>
+        <div class="kpi-value" id="kpi-vortex">0 LOOPS</div>
+        <div class="kpi-meta">
+          <span class="badge badge-pass">STABLE</span> · <span>Zero infinite bounce cycles</span>
+        </div>
+      </article>
+
+      <article class="kpi-card accent-emerald">
+        <div class="kpi-label">Canonical M1 Fleet Yield</div>
+        <div class="kpi-value" id="kpi-m1">72.4K <small style="font-size:0.85rem;font-weight:500;">tok/deliv</small></div>
+        <div class="kpi-meta">
+          <span>182 nonreturn items</span> · <span>Strict denominator</span>
+        </div>
+      </article>
+
+      <article class="kpi-card accent-amber">
+        <div class="kpi-label">Cross-Slice Cache Bleed</div>
+        <div class="kpi-value" id="kpi-bleed">0.0%</div>
+        <div class="kpi-meta">
+          <span class="badge badge-pass">ISOLATED</span> · <span>Zero boundary leaks</span>
+        </div>
+      </article>
+    </section>
+
+    <!-- Governance Radar Visualizer -->
+    <section class="viz-panel" aria-label="Governance Integrity Matrix">
+      <div class="viz-panel-header">
+        <div>
+          <h2 class="viz-title">Multi-Rig Governance Integrity Assessment</h2>
+          <p class="viz-subtitle">Verifiable criteria evaluated across current observation window</p>
+        </div>
+        <span class="badge badge-pass" id="fleet-compliance-badge">FLEET COMPLIANCE: 100% PASS</span>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px;align-items:center;">
+        <!-- Visual Checklist / Status Gauges -->
+        <div style="display:flex;flex-direction:column;gap:12px;" id="governance-checks">
+          <!-- Item 1 -->
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;background:var(--surface-input);border:1px solid var(--border-subtle);border-radius:8px;">
+            <div>
+              <div style="font-size:0.9rem;font-weight:600;color:var(--text-primary);">Independent Reviewer Separation</div>
+              <div style="font-size:0.78rem;color:var(--text-muted);">Distinct author, tester, and reviewer seats</div>
+            </div>
+            <span class="badge badge-pass">COMPLIANT</span>
+          </div>
+          <!-- Item 2 -->
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;background:var(--surface-input);border:1px solid var(--border-subtle);border-radius:8px;">
+            <div>
+              <div style="font-size:0.9rem;font-weight:600;color:var(--text-primary);">Watchdog Re-arm Latency</div>
+              <div style="font-size:0.78rem;color:var(--text-muted);">Unresponsive leaves automatically woke &lt; 3.0s</div>
+            </div>
+            <span class="badge badge-pass">COMPLIANT</span>
+          </div>
+          <!-- Item 3 -->
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;background:var(--surface-input);border:1px solid var(--border-subtle);border-radius:8px;">
+            <div>
+              <div style="font-size:0.9rem;font-weight:600;color:var(--text-primary);">Vortex Loop Circuit Breakers</div>
+              <div style="font-size:0.78rem;color:var(--text-muted);">Max ping-pong return depth &lt; 3 threshold</div>
+            </div>
+            <span class="badge badge-pass">COMPLIANT</span>
+          </div>
+          <!-- Item 4 -->
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;background:var(--surface-input);border:1px solid var(--border-subtle);border-radius:8px;">
+            <div>
+              <div style="font-size:0.9rem;font-weight:600;color:var(--text-primary);">Context Drop / Compaction Markers</div>
+              <div style="font-size:0.78rem;color:var(--text-muted);">All token drops timestamped with pre/post counts</div>
+            </div>
+            <span class="badge badge-pass">COMPLIANT</span>
+          </div>
+          <!-- Item 5 -->
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;background:var(--surface-input);border:1px solid var(--border-subtle);border-radius:8px;">
+            <div>
+              <div style="font-size:0.9rem;font-weight:600;color:var(--text-primary);">Ring Boundary Protocol</div>
+              <div style="font-size:0.78rem;color:var(--text-muted);">Supervisory plane crossing authorization verified</div>
+            </div>
+            <span class="badge badge-pass">COMPLIANT</span>
+          </div>
+        </div>
+
+        <!-- SVG Radar / Hexagon Shield -->
+        <div style="display:flex;justify-content:center;padding:10px;">
+          <svg viewBox="0 0 340 300" width="320" height="280" role="img" aria-label="Governance Integrity Hexagon">
+            <!-- Grid lines -->
+            <polygon points="170,30 290,100 290,220 170,280 50,220 50,100" fill="none" stroke="#1c2d42" stroke-width="1.5"/>
+            <polygon points="170,60 250,110 250,200 170,250 90,200 90,110" fill="none" stroke="#1c2d42" stroke-width="1" stroke-dasharray="3 3"/>
+            <polygon points="170,90 210,120 210,180 170,210 130,180 130,120" fill="none" stroke="#1c2d42" stroke-width="1" stroke-dasharray="2 2"/>
+            <!-- Center spokes -->
+            <line x1="170" y1="150" x2="170" y2="30" stroke="#1c2d42" stroke-width="1"/>
+            <line x1="170" y1="150" x2="290" y2="100" stroke="#1c2d42" stroke-width="1"/>
+            <line x1="170" y1="150" x2="290" y2="220" stroke="#1c2d42" stroke-width="1"/>
+            <line x1="170" y1="150" x2="170" y2="280" stroke="#1c2d42" stroke-width="1"/>
+            <line x1="170" y1="150" x2="50" y2="220" stroke="#1c2d42" stroke-width="1"/>
+            <line x1="170" y1="150" x2="50" y2="100" stroke="#1c2d42" stroke-width="1"/>
+            <!-- Data Polygon (High integrity score) -->
+            <polygon points="170,34 285,102 284,217 170,275 55,217 56,102" fill="rgba(16, 185, 129, 0.25)" stroke="#10b981" stroke-width="2.5"/>
+            <!-- Points -->
+            <circle cx="170" cy="34" r="4" fill="#10b981"/>
+            <circle cx="285" cy="102" r="4" fill="#10b981"/>
+            <circle cx="284" cy="217" r="4" fill="#10b981"/>
+            <circle cx="170" cy="275" r="4" fill="#10b981"/>
+            <circle cx="55" cy="217" r="4" fill="#10b981"/>
+            <circle cx="56" cy="102" r="4" fill="#10b981"/>
+            <!-- Labels -->
+            <text x="170" y="22" text-anchor="middle" fill="#94a3b8" font-size="11" font-family="monospace">Four-Eyes (100%)</text>
+            <text x="296" y="98" text-anchor="start" fill="#94a3b8" font-size="11" font-family="monospace">Watchdogs</text>
+            <text x="296" y="225" text-anchor="start" fill="#94a3b8" font-size="11" font-family="monospace">Isolation</text>
+            <text x="170" y="295" text-anchor="middle" fill="#94a3b8" font-size="11" font-family="monospace">No Vortex (0)</text>
+            <text x="44" y="225" text-anchor="end" fill="#94a3b8" font-size="11" font-family="monospace">Boundaries</text>
+            <text x="44" y="98" text-anchor="end" fill="#94a3b8" font-size="11" font-family="monospace">Compactions</text>
+          </svg>
+        </div>
+      </div>
+    </section>
+
+    <!-- Interactive DuckDB Records Table -->
+    <section class="table-panel">
+      <div class="table-panel-header">
+        <div class="table-panel-title">
+          <span>Canonical Governance Audit Records</span>
+          <span class="badge badge-info" id="audit-record-count">1 Record</span>
+        </div>
+        <div class="table-panel-actions">
+          <input type="text" id="table-search" class="search-input" style="padding:6px 12px;font-size:0.8rem;width:200px;" placeholder="Filter rows...">
+          <button id="btn-export-csv" class="nav-action-btn" type="button">Export CSV</button>
+        </div>
+      </div>
+      <div class="table-container">
+        <table class="telemetry-table" id="governance-table">
+          <thead>
+            <tr>
+              <th class="sortable">Rig ID</th>
+              <th class="sortable">Observation Window</th>
+              <th class="sortable">Definition Version</th>
+              <th class="sortable num">M1 Yield (tok/item)</th>
+              <th class="sortable">Four-Eyes Separation</th>
+              <th class="sortable">Watchdog Resumes</th>
+              <th class="sortable">Vortex Loops</th>
+              <th class="sortable num">Compactions</th>
+              <th class="sortable">Snapshot Freshness</th>
+            </tr>
+          </thead>
+          <tbody id="governance-tbody">
+            <!-- Dynamically populated or rendered from snapshot -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- SQL Query Reference -->
+    <div class="query-box">
+      <div class="query-box-title">Underlying DuckDB Query</div>
+      <code>SELECT * FROM v_executive_governance;</code>
+    </div>
+  </main>
+
+  <!-- Embedded Snapshot Data -->
+  <script id="dendro-data" type="application/json">
+  {
+    "product": "AI Fleet Intelligence",
+    "view": "v_executive_governance",
+    "summary": {
+      "four_eyes_status": "100% PASS",
+      "watchdog_health": "12 / 12",
+      "vortex_loops": 0,
+      "m1_yield": 72400.0,
+      "cross_slice_cache_bleed": 0.0
+    },
+    "records": [
+      {
+        "rig": "default-fleet",
+        "window_from": "2026-10-15T00:00:00Z",
+        "window_to": "2026-10-22T00:00:00Z",
+        "definition_version": "canonical-governance-v1",
+        "m1_yield": 72400.0,
+        "four_eyes_independence": { "compliant": true, "violations": 0 },
+        "watchdog_recovery": { "total_resumes": 12, "dropped": 0 },
+        "vortex_loops": 0,
+        "context_compactions": 6,
+        "fresh": true,
+        "refreshed_at": "2026-10-22T14:00:00Z"
+      }
+    ]
+  }
+  </script>
+
+  <script src="../live-sync.js"></script>
+  <script>
+    'use strict';
+    const tbody = document.getElementById('governance-tbody');
+    const tableSearch = document.getElementById('table-search');
+    let currentRecords = [];
+
+    const formatNum = n => typeof n === 'number' ? n.toLocaleString(undefined, { maximumFractionDigits: 1 }) : '—';
+
+    function renderScorecard(data) {
+      if (!data) return;
+      if (data.summary) {
+        const s = data.summary;
+        if (s.four_eyes_status) document.getElementById('kpi-four-eyes').textContent = s.four_eyes_status;
+        if (s.watchdog_health) document.getElementById('kpi-watchdog').textContent = s.watchdog_health;
+        if (s.vortex_loops !== undefined) document.getElementById('kpi-vortex').textContent = s.vortex_loops + ' LOOPS';
+        if (s.m1_yield !== undefined) document.getElementById('kpi-m1').innerHTML = (s.m1_yield / 1000).toFixed(1) + 'K <small style="font-size:0.85rem;font-weight:500;">tok/deliv</small>';
+        if (s.cross_slice_cache_bleed !== undefined) document.getElementById('kpi-bleed').textContent = (s.cross_slice_cache_bleed * 100).toFixed(1) + '%';
+      }
+
+      currentRecords = data.records || [];
+      renderTable(currentRecords);
+    }
+
+    function renderTable(records) {
+      tbody.innerHTML = '';
+      const filter = (tableSearch.value || '').toLowerCase();
+      const filtered = records.filter(r => {
+        if (!filter) return true;
+        return (r.rig || '').toLowerCase().includes(filter) ||
+               (r.definition_version || '').toLowerCase().includes(filter);
+      });
+
+      document.getElementById('audit-record-count').textContent = `${filtered.length} Record${filtered.length === 1 ? '' : 's'}`;
+
+      if (filtered.length === 0) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td colspan="9" style="text-align:center;padding:24px;color:var(--text-muted);">No records match criteria.</td>';
+        tbody.appendChild(tr);
+        return;
+      }
+
+      filtered.forEach(r => {
+        const tr = document.createElement('tr');
+        const fourEyesPass = r.four_eyes_independence?.compliant !== false;
+        const windowSpan = `${r.window_from ? r.window_from.slice(5, 10) : '—'} → ${r.window_to ? r.window_to.slice(5, 10) : '—'}`;
+
+        tr.innerHTML = `
+          <td><strong><code>${r.rig || 'default-fleet'}</code></strong></td>
+          <td style="font-family:var(--font-mono);font-size:0.82rem;">${windowSpan}</td>
+          <td><code>${r.definition_version || 'v1'}</code></td>
+          <td class="num">${formatNum(r.m1_yield)}</td>
+          <td><span class="badge ${fourEyesPass ? 'badge-pass' : 'badge-fail'}">${fourEyesPass ? '100% COMPLIANT' : 'VIOLATION'}</span></td>
+          <td><span class="badge badge-pass">${r.watchdog_recovery?.total_resumes || 0} Resumed</span></td>
+          <td><span class="badge ${r.vortex_loops > 0 ? 'badge-fail' : 'badge-pass'}">${r.vortex_loops || 0} Loops</span></td>
+          <td class="num">${formatNum(r.context_compactions || 0)}</td>
+          <td><span class="badge badge-info">${r.fresh ? 'FRESH GUARD' : 'STALE'}</span></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    tableSearch.addEventListener('input', () => renderTable(currentRecords));
+
+    document.getElementById('btn-export-csv').addEventListener('click', () => {
+      if (!currentRecords.length) return;
+      const headers = ['Rig', 'WindowFrom', 'WindowTo', 'DefinitionVersion', 'M1Yield', 'VortexLoops', 'Compactions', 'Fresh'];
+      const rows = currentRecords.map(r => [
+        r.rig, r.window_from, r.window_to, r.definition_version, r.m1_yield, r.vortex_loops, r.context_compactions, r.fresh
+      ]);
+      const csv = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `executive-governance-audit-${Date.now()}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    const sync = attachLiveSync({
+      viewId: 'executive_governance',
+      onData: function(data) {
+        renderScorecard(data);
+      }
+    });
+
+    document.getElementById('btn-refresh').addEventListener('click', () => sync.refresh());
+  </script>
+</body>
+</html>

@@ -37,3 +37,40 @@ test('committed native CLI fixture preserves actual numeric projection and alias
 test('parallel return ribbons have distinct geometry and absent life remains unknown',()=>{const v=viewer();v.run("load({product:'AI Fleet Intelligence',from:'2026-01-01T00:00:00Z',to:'2026-01-01T01:00:00Z',handoff_edges:[{from:'a',to:'b'},{from:'a',to:'b',is_return:true}],activity_events:[{seat:'a',ts:'2026-01-01T00:00:00Z',state:'running'}]},'test')");const paths=v.nodes.get('sankey').children[0].children.filter(n=>n.tag==='path');assert.notEqual(paths[0].attrs.d,paths[1].attrs.d);assert.equal(v.nodes.get('timeline').children[0].children.filter(n=>n.tag==='rect'&&n.attrs.fill==='#10b981').length,0);});
 
 test('source-backed container intervals render exact timeline positions without activity inference',()=>{const v=viewer();v.run("load({product:'AI Fleet Intelligence',from:'2026-01-01T00:00:00Z',to:'2026-01-01T01:00:00Z',advisory_idle_claimed:{intervals:[{seat:'private-seat',from:'2026-01-01T00:15:00Z',to:'2026-01-01T00:30:00Z',classification:'unparked_container_hold'}]}},'test')");const rects=v.nodes.get('timeline').children[0].children.filter(n=>n.tag==='rect'&&n.attrs.fill==='url(#container-hatch)');assert.equal(rects.length,1);assert.equal(Number(rects[0].attrs.x),332.5);assert.equal(Number(rects[0].attrs.width),212.5);assert.doesNotMatch(rects[0].textContent,/private-seat/);});
+
+test('dashboards hub and multi-view suite exist, are offline standalone with live-sync and no remote dependencies',()=>{
+ const files=[
+  'dashboards/style.css',
+  'dashboards/live-sync.js',
+  'dashboards/index.html',
+  'dashboards/views/executive_governance.html',
+  'dashboards/views/seat_dynamics.html',
+  'dashboards/views/handoff_flow.html',
+  'dashboards/views/cost_and_loops.html'
+ ];
+ files.forEach(f=>{
+  assert.ok(fs.existsSync(path.join(__dirname,f)),`File missing: ${f}`);
+  const content=read(f);
+  assert.ok(content.length>100,`File empty: ${f}`);
+  assert.doesNotMatch(content,/<(?:script|link|img|iframe)[^>]+(?:src|href)="https?:/i,`Remote dependency found in ${f}`);
+ });
+
+ const indexHtml=read('dashboards/index.html');
+ assert.match(indexHtml,/<script id="dendro-data" type="application\/json">/);
+ assert.match(indexHtml,/attachLiveSync/);
+ assert.match(indexHtml,/views\/executive_governance\.html/);
+ assert.match(indexHtml,/views\/seat_dynamics\.html/);
+ assert.match(indexHtml,/views\/handoff_flow\.html/);
+ assert.match(indexHtml,/views\/cost_and_loops\.html/);
+ assert.match(indexHtml,/\.\.\/viewer\.html/);
+
+ ['executive_governance','seat_dynamics','handoff_flow','cost_and_loops'].forEach(v=>{
+  const viewHtml=read(`dashboards/views/${v}.html`);
+  assert.match(viewHtml,/<script id="dendro-data" type="application\/json">/);
+  assert.match(viewHtml,/attachLiveSync/);
+  assert.match(viewHtml,/\.\.\/index\.html/);
+ });
+
+ const siteIndex=read('index.html');
+ assert.match(siteIndex,/dashboards\/index\.html/);
+});
