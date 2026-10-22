@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Get Started with Dendro — Install &amp; Inspect Your AI Workflows</title>
+  <meta name="description" content="Install Dendro from source and inspect your local Claude Code, Codex, Gemini, Grok, Pi, or OpenRig session logs in under two minutes.">
+  <link rel="canonical" href="https://movetheneedle.info/dendro/get-started.html">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Move the Needle">
+  <meta property="og:title" content="Get Started with Dendro — Install &amp; Inspect Your AI Workflows">
+  <meta property="og:description" content="Install Dendro and turn your existing local AI coding transcripts into clear session timelines, cost breakdowns, and offline browser reports.">
+  <meta property="og:url" content="https://movetheneedle.info/dendro/get-started.html">
+  <meta property="og:image" content="https://movetheneedle.info/dendro/assets/dendro-preview.gif">
+  <meta property="og:image:alt" content="Dendro quickstart and terminal cockpit.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Get Started with Dendro — Install &amp; Inspect Your AI Workflows">
+  <meta name="twitter:description" content="Install Dendro and turn your existing local AI coding transcripts into clear session timelines and cost breakdowns.">
+  <meta name="twitter:image" content="https://movetheneedle.info/dendro/assets/dendro-preview.gif">
+  <meta name="twitter:image:alt" content="Dendro quickstart and terminal cockpit.">
+  <link rel="icon" type="image/svg+xml" href="assets/mark.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="../assets/img/move-the-needle-icon-32.png">
+  <link rel="apple-touch-icon" href="../assets/img/move-the-needle-icon-180.png">
+  <link rel="stylesheet" href="../assets/css/product.css">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","name":"Get Started with Dendro","url":"https://movetheneedle.info/dendro/get-started.html","description":"Install Dendro and inspect your local AI coding session logs.","isPartOf":{"@type":"WebSite","name":"Move the Needle","url":"https://movetheneedle.info/"}}</script>
+<!-- mtneedle:managed:start subsite-head v1 -->
+<link rel="stylesheet" href="../assets/css/umbrella.css">
+<!-- mtneedle:managed:end subsite-head -->
+</head>
+<body class="p-page theme-dendro">
+  <a class="skip" href="#main">Skip to content</a>
+<!-- mtneedle:managed:start subsite-bar v1 -->
+<nav class="mtn-umbrella" aria-label="Move the Needle">
+<div class="mtn-umbrella-inner">
+<a class="mtn-umbrella-brand" href="../" aria-label="Move the Needle home"><img src="../assets/img/move-the-needle-icon-32.png" alt="" width="20" height="20"><span>Move the Needle</span></a>
+<span class="mtn-umbrella-trail"><a href="../open-source/">Open source</a><span aria-hidden="true">/</span><span>Dendro</span></span>
+<span class="mtn-umbrella-links"><a href="../where-i-help/">Focus areas</a><a href="../how-i-work/">Approach</a><a href="../experience/">Case studies</a><a href="../thinking/">Thinking</a><a href="../about/">About</a><a class="mtn-umbrella-cta" href="../#contact">Contact</a></span>
+</div>
+</nav>
+<!-- mtneedle:managed:end subsite-bar -->
+  <header class="p-nav">
+    <div class="p-wrap p-nav-inner">
+      <a class="p-brand" href="./">
+        <img src="assets/mark.svg" alt="Dendro mark" width="38" height="38">
+        <span>Dendro<small>The Flight Recorder · v0.7.0</small></span>
+      </a>
+      <nav class="p-links" aria-label="Dendro navigation">
+        <a href="./">Overview</a>
+        <a href="how-it-works.html">How it works</a>
+        <a href="viewer.html">Fleet Explorer</a>
+        <a href="get-started.html" aria-current="page">Get started</a>
+        <a class="p-cta" href="https://github.com/smota/dendro">GitHub ↗</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="p-page-hero">
+      <div class="p-wrap">
+        <div class="p-eyebrow">Get started</div>
+        <h1>Inspect your existing AI sessions in two minutes.</h1>
+        <p class="p-lead">Dendro reads the local session logs your coding agents have already written. You don't need to configure a server, create an account, or re-run your workflows to see your first report.</p>
+      </div>
+    </section>
+
+    <section class="p-section" id="quickstart">
+      <div class="p-wrap">
+        <div class="p-grid-3">
+          <article class="p-step">
+            <span class="p-step-badge">1 · Install the CLI</span>
+            <h3>Build from source with Cargo</h3>
+            <p>Install the single Rust binary locally on Linux, macOS, or WSL2:</p>
+            <pre><code>git clone https://github.com/smota/dendro.git
+cd dendro
+cargo install --path crates/dendro-cli</code></pre>
+          </article>
+          <article class="p-step">
+            <span class="p-step-badge">2 · Open the Cockpit</span>
+            <h3>Sync your local logs and explore</h3>
+            <p>Ingest your existing agent transcripts and launch the interactive terminal cockpit:</p>
+            <pre><code># Ingest local session logs
+dendro sync
+
+# Launch the interactive TUI
+dendro tui</code></pre>
+          </article>
+          <article class="p-step">
+            <span class="p-step-badge">3 · Export or Ask</span>
+            <h3>Share a report or ask in plain English</h3>
+            <p>Generate a self-contained browser report or query your session history directly:</p>
+            <pre><code># Export an offline HTML report
+dendro loops handoffs --html report.html
+
+# Ask a question in plain English
+dendro ask "top cost by model this week"</code></pre>
+          </article>
+        </div>
+
+        <div class="p-actions" style="margin-top:2.25rem;">
+          <a class="p-btn primary" href="viewer.html">Try the browser Fleet Explorer now (no install needed) →</a>
+          <a class="p-btn" href="https://github.com/smota/dendro">Read full documentation on GitHub ↗</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="p-section alt" id="faq">
+      <div class="p-wrap">
+        <div class="p-section-head">
+          <div>
+            <div class="p-eyebrow">Frequently asked questions</div>
+            <h2>Common questions before you adopt.</h2>
+          </div>
+        </div>
+        <div class="p-faq">
+          <details open>
+            <summary>Does Dendro send any of my prompts, code, or session logs to the cloud?</summary>
+            <p>No. Everything runs locally on your machine against an embedded analytical database. Even when you export an HTML report for colleagues, Dendro strips prompts, file paths, and secrets and aliases seat names to <code>Seat 1</code>, <code>Seat 2</code>, and so on.</p>
+          </details>
+          <details>
+            <summary>Do I need to install hooks before my agents run to get value?</summary>
+            <p>No. Dendro reads the historical transcript files that Claude Code, Codex, Gemini/AGY, Grok, Pi, and OpenRig already save on your disk. You immediately get visibility over past sessions from the moment you run <code>dendro sync</code>.</p>
+          </details>
+          <details>
+            <summary>When should I use Dendro versus agent-otel-bridge?</summary>
+            <p>Use <strong>agent-otel-bridge</strong> when you want live OpenTelemetry traces and alerts streaming into Grafana, Datadog, or Honeycomb while agents are running. Use <strong>Dendro</strong> when you want deep retrospective analysis of where time, handoffs, rework, and budget went across completed sessions.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="p-footer">
+    <div class="p-wrap p-footer-inner">
+      <div><strong>Dendro</strong> · MIT License · Built by Samuel Mota (<a href="../">Move the Needle</a>)</div>
+      <div class="p-footer-links">
+        <a href="./">Overview</a>
+        <a href="how-it-works.html">How it works</a>
+        <a href="viewer.html">Fleet Explorer</a>
+        <a href="get-started.html" aria-current="page">Get started</a>
+        <a href="https://github.com/smota/dendro">GitHub ↗</a>
+      </div>
+    </div>
+  </footer>
+<!-- mtneedle:managed:start subsite-family v1 -->
+<aside class="mtn-family" aria-label="Move the Needle systems and practice">
+<div class="mtn-family-inner">
+<div class="mtn-family-intro"><a class="mtn-umbrella-brand" href="../" aria-label="Move the Needle home"><img src="../assets/img/move-the-needle-icon-32.png" alt="" width="20" height="20"><span>Move the Needle</span></a><p>Built and maintained by Samuel Mota through Move the Needle, his independent technology transformation practice.</p></div>
+<div class="mtn-family-col"><p class="mtn-family-title">Systems</p><ul><li><a href="../agent-sdlc/">AgentFlow SDLC</a></li><li><a href="../dendro/" aria-current="page">Dendro</a></li><li><a href="../agent-otel-bridge/">agent-otel-bridge</a></li><li><a href="../meshloop/">Meshloop</a></li><li><a href="../holoself/">Holoself</a></li><li><a href="../nextstep/">Nextstep</a></li><li><a href="../metaskills/">MetaSkills</a></li><li><a href="../open-source/">All open source</a></li></ul></div>
+<div class="mtn-family-col"><p class="mtn-family-title">Practice</p><ul><li><a href="../where-i-help/">Focus areas</a></li><li><a href="../how-i-work/">Approach</a></li><li><a href="../experience/">Case studies</a></li><li><a href="../thinking/">Thinking</a></li><li><a href="../about/">About</a></li><li><a href="../#contact">Contact</a></li></ul></div>
+<p class="mtn-family-legal">© Samuel Mota · <a href="https://www.linkedin.com/in/smota/?utm_source=movetheneedle.info&utm_medium=referral">LinkedIn ↗</a> · <a href="https://github.com/smota">GitHub ↗</a></p>
+</div>
+</aside>
+<!-- mtneedle:managed:end subsite-family -->
+</body>
+</html>
