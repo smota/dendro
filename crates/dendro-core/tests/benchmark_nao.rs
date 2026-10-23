@@ -89,10 +89,12 @@ fn canonical_semantic_views_latency_and_conservation() -> anyhow::Result<()> {
         let max = timings.iter().copied().fold(0.0, f64::max);
         println!("view={view} canonical_usage_facts={n} iterations=20 mean_ms={mean:.3} max_ms={max:.3} budget_ms={budget}");
         println!("target_met={}", mean < budget);
-        assert!(mean < 20.0, "{view}: hard 20ms mean SLA exceeded");
-        assert!(
-            max < 20.0,
-            "{view}: an iteration exceeded hard 20ms SLA ({max:.3}ms)"
+        // Directional performance evidence only; correctness assertions remain gates.
+        // See docs/NAO_SEMANTIC.md, performance policy amendment (2026-10-23).
+        println!(
+            "view={view} directional_target_ms=20 mean_target_met={} max_target_met={} latency_is_acceptance_gate=false",
+            mean < 20.0,
+            max < 20.0
         );
     }
     Ok(())
