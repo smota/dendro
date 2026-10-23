@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>How Dendro Works — Session Timelines, Rework Calculator &amp; Honest Boundaries</title>
+  <meta name="description" content="See how Dendro turns local AI coding transcripts into clear timeline bands, handoff maps, and rework cost estimates—without cloud uploads or vanity metrics.">
+  <link rel="canonical" href="https://movetheneedle.info/dendro/how-it-works.html">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Move the Needle">
+  <meta property="og:title" content="How Dendro Works — Session Timelines, Rework Calculator &amp; Honest Boundaries">
+  <meta property="og:description" content="Explore how Dendro reconstructs multi-agent workflows, model your team's rework cost, and inspect its evidence boundaries.">
+  <meta property="og:url" content="https://movetheneedle.info/dendro/how-it-works.html">
+  <meta property="og:image" content="https://movetheneedle.info/dendro/assets/dendro-preview.gif">
+  <meta property="og:image:alt" content="Dendro workflow analysis and rework calculator.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="How Dendro Works — Session Timelines, Rework Calculator &amp; Honest Boundaries">
+  <meta name="twitter:description" content="Explore how Dendro reconstructs multi-agent workflows, model your team's rework cost, and inspect its evidence boundaries.">
+  <meta name="twitter:image" content="https://movetheneedle.info/dendro/assets/dendro-preview.gif">
+  <meta name="twitter:image:alt" content="Dendro workflow analysis and rework calculator.">
+  <link rel="icon" type="image/svg+xml" href="assets/mark.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="../assets/img/move-the-needle-icon-32.png">
+  <link rel="apple-touch-icon" href="../assets/img/move-the-needle-icon-180.png">
+  <link rel="stylesheet" href="../assets/css/product.css">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","name":"How Dendro Works","url":"https://movetheneedle.info/dendro/how-it-works.html","description":"How Dendro turns local AI coding transcripts into timeline bands, handoff maps, and rework cost estimates.","isPartOf":{"@type":"WebSite","name":"Move the Needle","url":"https://movetheneedle.info/"}}</script>
+<!-- mtneedle:managed:start subsite-head v1 -->
+<link rel="stylesheet" href="../assets/css/umbrella.css">
+<!-- mtneedle:managed:end subsite-head -->
+</head>
+<body class="p-page theme-dendro">
+  <a class="skip" href="#main">Skip to content</a>
+<!-- mtneedle:managed:start subsite-bar v1 -->
+<nav class="mtn-umbrella" aria-label="Move the Needle">
+<div class="mtn-umbrella-inner">
+<a class="mtn-umbrella-brand" href="../" aria-label="Move the Needle home"><img src="../assets/img/move-the-needle-icon-32.png" alt="" width="20" height="20"><span>Move the Needle</span></a>
+<span class="mtn-umbrella-trail"><a href="../open-source/">Open source</a><span aria-hidden="true">/</span><span>Dendro</span></span>
+<span class="mtn-umbrella-links"><a href="../where-i-help/">Focus areas</a><a href="../how-i-work/">Approach</a><a href="../experience/">Case studies</a><a href="../thinking/">Thinking</a><a href="../about/">About</a><a class="mtn-umbrella-cta" href="../#contact">Contact</a></span>
+</div>
+</nav>
+<!-- mtneedle:managed:end subsite-bar -->
+  <header class="p-nav">
+    <div class="p-wrap p-nav-inner">
+      <a class="p-brand" href="./">
+        <img src="assets/mark.svg" alt="Dendro mark" width="38" height="38">
+        <span>Dendro<small>The Flight Recorder · v0.7.0</small></span>
+      </a>
+      <nav class="p-links" aria-label="Dendro navigation">
+        <a href="./">Overview</a>
+        <a href="how-it-works.html" aria-current="page">How it works</a>
+        <a href="viewer.html">Fleet Explorer</a>
+        <a href="get-started.html">Get started</a>
+        <a class="p-cta" href="https://github.com/smota/dendro">GitHub ↗</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="p-page-hero">
+      <div class="p-wrap">
+        <div class="p-eyebrow">How Dendro works</div>
+        <h1>From scattered local logs to clear operational answers.</h1>
+        <p class="p-lead">Every AI coding tool leaves behind local session files on your machine. Dendro reads those files incrementally, organizes them into a fast local analytical store, and lets you explore them visually or in plain English.</p>
+      </div>
+    </section>
+
+    <section class="p-section" id="pipeline">
+      <div class="p-wrap">
+        <div class="p-grid-3">
+          <article class="p-card">
+            <span class="p-num">Step 01</span>
+            <span class="p-card-kicker">Read Local Transcripts</span>
+            <h3>No agents to wrap, no servers to run</h3>
+            <p>Dendro discovers existing session transcripts from Claude Code, Codex, Gemini/AGY, Grok, Pi, and OpenRig directly on disk. It reads only new lines as sessions grow.</p>
+          </article>
+          <article class="p-card">
+            <span class="p-num">Step 02</span>
+            <span class="p-card-kicker">Reconstruct the Timeline</span>
+            <h3>Separate work, waiting, and rework</h3>
+            <p>Each session is mapped into five clear time bands—active model/tool execution, waiting on a person, waiting on a peer handoff, stalled with work waiting, or parked—plus token and cache cost.</p>
+          </article>
+          <article class="p-card">
+            <span class="p-num">Step 03</span>
+            <span class="p-card-kicker">Explore &amp; Share</span>
+            <h3>Terminal cockpit, browser report, or plain English</h3>
+            <p>Browse live in the interactive terminal cockpit, ask questions in plain English, or export a privacy-scrubbed HTML report that opens offline in any browser.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="p-section alt" id="calculator">
+      <div class="p-wrap">
+        <div class="p-section-head">
+          <div>
+            <div class="p-eyebrow">Interactive Scenario Model</div>
+            <h2>Estimate the hidden cost of multi-agent rework.</h2>
+          </div>
+          <p>When tasks bounce between roles or stall after context resets, token spend and engineering hours compound fast. Adjust the sliders below to model your team's workflow.</p>
+        </div>
+
+        <div class="dendro-calc-grid">
+          <form class="dendro-calc-form" id="calc-form" aria-label="Fleet rework scenario inputs" onsubmit="return false;">
+            <label>Active seats / agents <input id="seats" type="number" min="1" max="200" value="6"></label>
+            <label>Missions per week <input id="missions" type="number" min="1" max="2000" value="40"></label>
+            <label>Avg tokens per mission (k) <input id="tokensK" type="number" min="10" max="10000" value="450"></label>
+            <label>Current rework rate (%) <input id="reworkPercent" type="number" min="0" max="100" value="25"></label>
+            <label>Blended token cost ($ / 1M) <input id="costPerMillion" type="number" min="0.5" max="100" step="0.5" value="6"></label>
+            <label>Hours per rework loop <input id="hours" type="number" min="0.25" max="40" step="0.25" value="1.5"></label>
+            <label>Target rework reduction (%) <input id="reduction" type="number" min="0" max="100" value="35"></label>
+          </form>
+          <div class="dendro-calc-out" id="calc-out" aria-live="polite">
+            <div class="dendro-stat"><span>Returned missions / week</span><strong id="out-returned">10.0</strong></div>
+            <div class="dendro-stat"><span>Reclaimable tokens / week</span><strong id="out-tokens">1.58M</strong></div>
+            <div class="dendro-stat"><span>Weekly token spend saved</span><strong id="out-cost">$9.45</strong></div>
+            <div class="dendro-stat"><span>Engineering hours reclaimed</span><strong id="out-hours">5.25 hrs</strong></div>
+            <div class="dendro-stat"><span>Effective capacity gain</span><strong id="out-capacity">+8.8%</strong></div>
+            <p class="dendro-calc-note">This calculator models your assumptions above—it is not a benchmark guarantee. Run Dendro on your own logs to measure your actual rework rate.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="p-section" id="boundaries">
+      <div class="p-wrap">
+        <div class="p-section-head">
+          <div>
+            <div class="p-eyebrow">Honest boundaries</div>
+            <h2>What Dendro proves—and what it refuses to guess.</h2>
+          </div>
+          <p>Trustworthy engineering telemetry starts by naming what the data can and cannot support.</p>
+        </div>
+        <div class="p-table-wrap">
+          <table class="p-table">
+            <thead>
+              <tr>
+                <th scope="col">Question</th>
+                <th scope="col">What Dendro reports from local evidence</th>
+                <th scope="col">What Dendro never fabricates</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Where did the time go?</strong></td>
+                <td>Exact wall-clock breakdown across active execution, waiting on humans, waiting on peer handoffs, stalled queues, and parked time.</td>
+                <td>Subjective "developer focus" scores or surveillance keystroke tracking.</td>
+              </tr>
+              <tr>
+                <td><strong>Did the workflow converge?</strong></td>
+                <td>First-pass completions versus multi-pass return loops between seats, plus median handoff wait and execution durations.</td>
+                <td>Claims about whether the underlying product strategy or architecture was right.</td>
+              </tr>
+              <tr>
+                <td><strong>Why did token costs spike?</strong></td>
+                <td>Model-level pricing, cache read/write ratios, and context-window drops pinpointed on the session timeline.</td>
+                <td>Speculative "ROI multiplier" claims or invented "hours saved vs. a human".</td>
+              </tr>
+              <tr>
+                <td><strong>Can I share a report safely?</strong></td>
+                <td>Offline HTML viewer with automatic seat aliasing (<code>Seat 1</code>, <code>Seat 2</code>) and scrubbing of paths, prompts, and tokens.</td>
+                <td>Silent background uploads to any hosted telemetry cloud.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="p-actions">
+          <a class="p-btn primary" href="viewer.html">Inspect a live report in the Fleet Explorer →</a>
+          <a class="p-btn" href="get-started.html">Install &amp; run Dendro</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="p-footer">
+    <div class="p-wrap p-footer-inner">
+      <div><strong>Dendro</strong> · MIT License · Built by Samuel Mota (<a href="../">Move the Needle</a>)</div>
+      <div class="p-footer-links">
+        <a href="./">Overview</a>
+        <a href="how-it-works.html" aria-current="page">How it works</a>
+        <a href="viewer.html">Fleet Explorer</a>
+        <a href="get-started.html">Get started</a>
+        <a href="https://github.com/smota/dendro">GitHub ↗</a>
+      </div>
+    </div>
+  </footer>
+  <script src="app.js"></script>
+<!-- mtneedle:managed:start subsite-family v1 -->
+<aside class="mtn-family" aria-label="Move the Needle systems and practice">
+<div class="mtn-family-inner">
+<div class="mtn-family-intro"><a class="mtn-umbrella-brand" href="../" aria-label="Move the Needle home"><img src="../assets/img/move-the-needle-icon-32.png" alt="" width="20" height="20"><span>Move the Needle</span></a><p>Built and maintained by Samuel Mota through Move the Needle, his independent technology transformation practice.</p></div>
+<div class="mtn-family-col"><p class="mtn-family-title">Systems</p><ul><li><a href="../agent-sdlc/">AgentFlow SDLC</a></li><li><a href="../dendro/" aria-current="page">Dendro</a></li><li><a href="../agent-otel-bridge/">agent-otel-bridge</a></li><li><a href="../meshloop/">Meshloop</a></li><li><a href="../holoself/">Holoself</a></li><li><a href="../nextstep/">Nextstep</a></li><li><a href="../metaskills/">MetaSkills</a></li><li><a href="../open-source/">All open source</a></li></ul></div>
+<div class="mtn-family-col"><p class="mtn-family-title">Practice</p><ul><li><a href="../where-i-help/">Focus areas</a></li><li><a href="../how-i-work/">Approach</a></li><li><a href="../experience/">Case studies</a></li><li><a href="../thinking/">Thinking</a></li><li><a href="../about/">About</a></li><li><a href="../#contact">Contact</a></li></ul></div>
+<p class="mtn-family-legal">© Samuel Mota · <a href="https://www.linkedin.com/in/smota/?utm_source=movetheneedle.info&utm_medium=referral">LinkedIn ↗</a> · <a href="https://github.com/smota">GitHub ↗</a></p>
+</div>
+</aside>
+<!-- mtneedle:managed:end subsite-family -->
+</body>
+</html>

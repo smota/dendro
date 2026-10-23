@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dendro · Handoff Flow & Friction Matrix</title>
+  <meta name="description" content="Pairwise handoff analytics, rework loops, wait turnarounds, and ring boundaries derived from DuckDB view v_handoff_rework_analysis.">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <!-- Top Navigation -->
+  <header class="telemetry-nav">
+    <div class="nav-left">
+      <a href="../index.html" class="brand-link" title="Dashboards Hub">
+        <span class="brand-icon">D</span>
+        <span>Dendro<span style="font-weight:400;color:var(--text-muted);font-size:0.85rem;margin-left:6px;">Handoffs</span></span>
+      </a>
+      <div class="nav-breadcrumbs" aria-label="Breadcrumbs">
+        <span class="separator">/</span>
+        <a href="../index.html" style="color:var(--text-secondary);">Dashboards</a>
+        <span class="separator">/</span>
+        <span class="current">Handoff Flow &amp; Friction</span>
+      </div>
+    </div>
+    <div class="nav-right">
+      <div id="dual-serving-indicator" class="dual-serving-badge snapshot">
+        <span class="pulse-dot"></span>
+        <span id="dual-serving-text">LOCAL DUCKDB READY · SNAPSHOT MODE</span>
+      </div>
+      <button id="btn-refresh" class="nav-action-btn" type="button" title="Refresh handoff snapshot">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+        <span>Refresh</span>
+      </button>
+      <a href="../index.html" class="nav-action-btn" title="Back to Dashboards Hub">
+        <span>← Back to Dashboards Hub</span>
+      </a>
+    </div>
+  </header>
+
+  <main class="telemetry-layout">
+    <!-- Header -->
+    <section class="hero-header">
+      <div class="hero-eyebrow">
+        <span>●</span> Pairwise Queue Dynamics · SQL View: <code>v_handoff_rework_analysis</code>
+      </div>
+      <h1 class="hero-title">Handoff Flow &amp; Friction Matrix</h1>
+      <p class="hero-subtitle">
+        Empirical evidence of queue transition dynamics. Measures rework return loops (items returned for fix), wait turnaround delays before work pickup, and ring boundary crossings between worker seats and supervisory planes.
+      </p>
+    </section>
+
+    <!-- Top KPI Banner -->
+    <section class="kpi-grid" aria-label="Handoff Friction KPIs">
+      <article class="kpi-card accent-cyan">
+        <div class="kpi-label">Recorded Transitions</div>
+        <div class="kpi-value" id="kpi-handoffs">248</div>
+        <div class="kpi-meta">
+          <span>18 distinct pairs</span> · <span>Queue transitions</span>
+        </div>
+      </article>
+
+      <article class="kpi-card accent-amber">
+        <div class="kpi-label">Fleet Return Rate</div>
+        <div class="kpi-value" id="kpi-return-rate">12.9%</div>
+        <div class="kpi-meta">
+          <span style="color:var(--amber-friction);">32 rework returns</span> · <span>Feedback loops</span>
+        </div>
+      </article>
+
+      <article class="kpi-card accent-purple">
+        <div class="kpi-label">Median Turnaround Wait</div>
+        <div class="kpi-value" id="kpi-wait">42.5s</div>
+        <div class="kpi-meta">
+          <span>Pickup latency</span> · <span>50th percentile</span>
+        </div>
+      </article>
+
+      <article class="kpi-card accent-emerald">
+        <div class="kpi-label">Median Exec Duration</div>
+        <div class="kpi-value" id="kpi-exec">185.0s</div>
+        <div class="kpi-meta">
+          <span>Delivery turnaround</span> · <span>Active step time</span>
+        </div>
+      </article>
+
+      <article class="kpi-card accent-rose">
+        <div class="kpi-label">Boundary Crossings</div>
+        <div class="kpi-value" id="kpi-boundaries">6 Seams</div>
+        <div class="kpi-meta">
+          <span class="badge badge-info">CROSS-RIG</span> · <span>Isolated contexts</span>
+        </div>
+      </article>
+    </section>
+
+    <!-- Pairwise Friction Heatmap -->
+    <section class="viz-panel" aria-label="Pairwise Friction Matrix">
+      <div class="viz-panel-header">
+        <div>
+          <h2 class="viz-title">Pairwise Friction &amp; Return Heatmap</h2>
+          <p class="viz-subtitle">Rows indicate sender seat; columns indicate receiver. Color intensity indicates return friction rate.</p>
+        </div>
+        <div id="cell-detail-pill" class="badge badge-info" style="font-size:0.8rem;padding:4px 10px;">Hover or click a cell for pair evidence</div>
+      </div>
+
+      <div class="heatmap-container" id="heatmap-wrapper">
+        <!-- Rendered heatmap table -->
+      </div>
+    </section>
+
+    <!-- Handoff Data Table -->
+    <section class="table-panel">
+      <div class="table-panel-header">
+        <div class="table-panel-title">
+          <span>Pairwise Handoff Transitions</span>
+          <span class="badge badge-info" id="pair-count-badge">0 Pairs</span>
+        </div>
+        <div class="table-panel-actions">
+          <select id="boundary-filter" class="search-input" style="padding:6px 10px;font-size:0.8rem;width:160px;">
+            <option value="all">All Boundaries</option>
+            <option value="in_ring">In Ring (local)</option>
+            <option value="cross_rig_seam">Cross Rig Seam</option>
+            <option value="supervisory_plane">Supervisory Plane</option>
+          </select>
+          <input type="text" id="handoff-search" class="search-input" style="padding:6px 12px;font-size:0.8rem;width:180px;" placeholder="Search seat...">
+          <button id="btn-export-csv" class="nav-action-btn" type="button">Export CSV</button>
+        </div>
+      </div>
+      <div class="table-container">
+        <table class="telemetry-table" id="handoff-table">
+          <thead>
+            <tr>
+              <th class="sortable" data-col="from_seat">From Seat</th>
+              <th class="sortable" data-col="to_seat">To Seat</th>
+              <th class="sortable num" data-col="handoffs">Handoffs</th>
+              <th class="sortable num" data-col="rework_returns">Rework Returns ▾</th>
+              <th class="sortable num" data-col="return_rate">Return Rate (%)</th>
+              <th class="sortable num" data-col="wait_median_ms">Wait Median (s)</th>
+              <th class="sortable num" data-col="exec_turnaround_median_ms">Exec Median (s)</th>
+              <th class="sortable" data-col="ring_boundary">Ring Boundary</th>
+            </tr>
+          </thead>
+          <tbody id="handoff-tbody">
+            <!-- Dynamically populated rows -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- SQL Query Reference -->
+    <div class="query-box">
+      <div class="query-box-title">Underlying DuckDB Query</div>
+      <code>SELECT * FROM v_handoff_rework_analysis ORDER BY rework_returns DESC, from_seat, to_seat;</code>
+    </div>
+  </main>
+
+  <!-- Embedded Snapshot Data -->
+  <script id="dendro-data" type="application/json">
+  {
+    "product": "AI Fleet Intelligence",
+    "view": "v_handoff_rework_analysis",
+    "summary": {
+      "total_handoffs": 248,
+      "fleet_return_rate": 0.129,
+      "rework_returns": 32,
+      "wait_median_secs": 42.5,
+      "exec_median_secs": 185.0,
+      "boundary_crossings": 6
+    },
+    "pairs": [
+      {
+        "from_seat": "dev-build-1",
+        "to_seat": "dev-reviewer-1",
+        "handoffs": 64,
+        "rework_returns": 14,
+        "return_rate": 0.21875,
+        "wait_median_ms": 32000.0,
+        "exec_turnaround_median_ms": 145000.0,
+        "ring_boundary": "in_ring"
+      },
+      {
+        "from_seat": "dev-reviewer-1",
+        "to_seat": "dev-build-1",
+        "handoffs": 14,
+        "rework_returns": 0,
+        "return_rate": 0.0,
+        "wait_median_ms": 15000.0,
+        "exec_turnaround_median_ms": 95000.0,
+        "ring_boundary": "in_ring"
+      },
+      {
+        "from_seat": "dev-reviewer-1",
+        "to_seat": "dev-tester-1",
+        "handoffs": 50,
+        "rework_returns": 6,
+        "return_rate": 0.12,
+        "wait_median_ms": 45000.0,
+        "exec_turnaround_median_ms": 210000.0,
+        "ring_boundary": "in_ring"
+      },
+      {
+        "from_seat": "dev-architect-1",
+        "to_seat": "dev-build-1",
+        "handoffs": 42,
+        "rework_returns": 4,
+        "return_rate": 0.095,
+        "wait_median_ms": 68000.0,
+        "exec_turnaround_median_ms": 320000.0,
+        "ring_boundary": "in_ring"
+      },
+      {
+        "from_seat": "dev-tester-1",
+        "to_seat": "dev-build-1",
+        "handoffs": 6,
+        "rework_returns": 6,
+        "return_rate": 1.0,
+        "wait_median_ms": 18000.0,
+        "exec_turnaround_median_ms": 110000.0,
+        "ring_boundary": "in_ring"
+      },
+      {
+        "from_seat": "dev-tester-1",
+        "to_seat": "supervisory-steer",
+        "handoffs": 38,
+        "rework_returns": 2,
+        "return_rate": 0.0526,
+        "wait_median_ms": 95000.0,
+        "exec_turnaround_median_ms": 180000.0,
+        "ring_boundary": "supervisory_plane"
+      },
+      {
+        "from_seat": "supervisory-steer",
+        "to_seat": "peer-rig-orchestrator",
+        "handoffs": 6,
+        "rework_returns": 0,
+        "return_rate": 0.0,
+        "wait_median_ms": 125000.0,
+        "exec_turnaround_median_ms": 450000.0,
+        "ring_boundary": "cross_rig_seam"
+      },
+      {
+        "from_seat": "dev-build-1",
+        "to_seat": "dev-docs-1",
+        "handoffs": 28,
+        "rework_returns": 0,
+        "return_rate": 0.0,
+        "wait_median_ms": 28000.0,
+        "exec_turnaround_median_ms": 90000.0,
+        "ring_boundary": "in_ring"
+      }
+    ]
+  }
+  </script>
+
+  <script src="../live-sync.js"></script>
+  <script>
+    'use strict';
+    const tbody = document.getElementById('handoff-tbody');
+    const heatmapWrapper = document.getElementById('heatmap-wrapper');
+    const handoffSearch = document.getElementById('handoff-search');
+    const boundaryFilter = document.getElementById('boundary-filter');
+    const cellDetailPill = document.getElementById('cell-detail-pill');
+
+    let currentPairs = [];
+    let sortCol = 'rework_returns';
+    let sortAsc = false;
+
+    const formatNum = n => typeof n === 'number' ? n.toLocaleString(undefined, { maximumFractionDigits: 1 }) : '—';
+    const formatPct = n => typeof n === 'number' ? (n * 100).toFixed(1) + '%' : '—';
+    const msToSec = ms => typeof ms === 'number' ? (ms / 1000).toFixed(1) + 's' : '—';
+
+    function renderView(data) {
+      if (!data) return;
+      if (data.summary) {
+        const s = data.summary;
+        if (s.total_handoffs !== undefined) document.getElementById('kpi-handoffs').textContent = formatNum(s.total_handoffs);
+        if (s.fleet_return_rate !== undefined) document.getElementById('kpi-return-rate').textContent = (s.fleet_return_rate * 100).toFixed(1) + '%';
+        if (s.wait_median_secs !== undefined) document.getElementById('kpi-wait').textContent = s.wait_median_secs.toFixed(1) + 's';
+        if (s.exec_median_secs !== undefined) document.getElementById('kpi-exec').textContent = s.exec_median_secs.toFixed(1) + 's';
+        if (s.boundary_crossings !== undefined) document.getElementById('kpi-boundaries').textContent = s.boundary_crossings + ' Seams';
+      }
+
+      currentPairs = data.pairs || [];
+      renderHeatmap(currentPairs);
+      renderTable();
+    }
+
+    function renderHeatmap(pairs) {
+      heatmapWrapper.innerHTML = '';
+      if (!pairs.length) {
+        heatmapWrapper.innerHTML = '<p style="color:var(--text-muted);padding:16px;">No handoff evidence available.</p>';
+        return;
+      }
+
+      // Collect distinct seats
+      const seats = Array.from(new Set([
+        ...pairs.map(p => p.from_seat),
+        ...pairs.map(p => p.to_seat)
+      ])).filter(Boolean);
+
+      const table = document.createElement('table');
+      table.className = 'heatmap-table';
+
+      // Header row
+      const thead = document.createElement('tr');
+      const cornerTh = document.createElement('th');
+      cornerTh.textContent = 'From ↓ / To →';
+      thead.appendChild(cornerTh);
+
+      seats.forEach(s => {
+        const th = document.createElement('th');
+        th.textContent = s;
+        thead.appendChild(th);
+      });
+      table.appendChild(thead);
+
+      // Data rows
+      seats.forEach(from => {
+        const tr = document.createElement('tr');
+        const rowHeader = document.createElement('th');
+        rowHeader.textContent = from;
+        tr.appendChild(rowHeader);
+
+        seats.forEach(to => {
+          const td = document.createElement('td');
+          td.className = 'heatmap-cell';
+
+          if (from === to) {
+            td.textContent = '—';
+            td.style.background = '#0a0f18';
+            td.style.color = '#334155';
+          } else {
+            const edge = pairs.find(p => p.from_seat === from && p.to_seat === to);
+            if (edge) {
+              const rate = edge.return_rate || 0;
+              td.textContent = `${edge.handoffs} (${(rate * 100).toFixed(0)}%)`;
+
+              if (rate > 0.20) {
+                td.style.background = 'rgba(244, 63, 94, 0.35)';
+                td.style.color = '#fda4af';
+                td.style.border = '1px solid rgba(244, 63, 94, 0.5)';
+              } else if (rate > 0) {
+                td.style.background = 'rgba(245, 158, 11, 0.3)';
+                td.style.color = '#fde68a';
+                td.style.border = '1px solid rgba(245, 158, 11, 0.5)';
+              } else {
+                td.style.background = 'rgba(6, 182, 212, 0.15)';
+                td.style.color = '#a5f3fc';
+                td.style.border = '1px solid rgba(6, 182, 212, 0.3)';
+              }
+
+              td.title = `${from} → ${to}: ${edge.handoffs} handoffs, ${edge.rework_returns} returns (${(rate * 100).toFixed(1)}%). Wait: ${msToSec(edge.wait_median_ms)}`;
+              td.addEventListener('click', () => {
+                cellDetailPill.textContent = `${from} → ${to}: ${edge.handoffs} handoffs · ${edge.rework_returns} rework returns (${(rate*100).toFixed(1)}%) · Wait median: ${msToSec(edge.wait_median_ms)}`;
+              });
+            } else {
+              td.textContent = '·';
+              td.style.background = '#0d1522';
+              td.style.color = '#334155';
+            }
+          }
+          tr.appendChild(td);
+        });
+        table.appendChild(tr);
+      });
+
+      heatmapWrapper.appendChild(table);
+    }
+
+    function renderTable() {
+      tbody.innerHTML = '';
+      const filter = (handoffSearch.value || '').toLowerCase();
+      const bFilter = boundaryFilter.value;
+
+      let filtered = currentPairs.filter(p => {
+        const matchesSearch = !filter || (p.from_seat || '').toLowerCase().includes(filter) || (p.to_seat || '').toLowerCase().includes(filter);
+        const matchesBoundary = (bFilter === 'all' || p.ring_boundary === bFilter);
+        return matchesSearch && matchesBoundary;
+      });
+
+      filtered.sort((a, b) => {
+        let va = a[sortCol] ?? 0;
+        let vb = b[sortCol] ?? 0;
+        if (typeof va === 'string') return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+        return sortAsc ? (va - vb) : (vb - va);
+      });
+
+      document.getElementById('pair-count-badge').textContent = `${filtered.length} Pair${filtered.length === 1 ? '' : 's'}`;
+
+      if (!filtered.length) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted);">No handoff pairs match filter.</td></tr>';
+        return;
+      }
+
+      filtered.forEach(p => {
+        const tr = document.createElement('tr');
+        const ratePct = p.return_rate !== undefined ? (p.return_rate * 100).toFixed(1) + '%' : '—';
+        let boundaryBadge = 'tag-slate';
+        if (p.ring_boundary === 'cross_rig_seam') boundaryBadge = 'tag-purple';
+        else if (p.ring_boundary === 'supervisory_plane') boundaryBadge = 'tag-amber';
+        else if (p.ring_boundary === 'in_ring') boundaryBadge = 'tag-cyan';
+
+        tr.innerHTML = `
+          <td><strong><code>${p.from_seat}</code></strong></td>
+          <td><strong><code>${p.to_seat}</code></strong></td>
+          <td class="num">${formatNum(p.handoffs)}</td>
+          <td class="num" style="color:var(--rose-rework);font-weight:700;">${formatNum(p.rework_returns)}</td>
+          <td class="num" style="color:${(p.return_rate || 0) > 0.15 ? 'var(--rose-rework)' : 'var(--text-primary)'};">${ratePct}</td>
+          <td class="num">${msToSec(p.wait_median_ms)}</td>
+          <td class="num">${msToSec(p.exec_turnaround_median_ms)}</td>
+          <td><span class="view-card-tag ${boundaryBadge}">${p.ring_boundary || 'unknown'}</span></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    handoffSearch.addEventListener('input', renderTable);
+    boundaryFilter.addEventListener('change', renderTable);
+
+    document.querySelectorAll('#handoff-table th.sortable').forEach(th => {
+      th.addEventListener('click', () => {
+        const col = th.getAttribute('data-col');
+        if (sortCol === col) {
+          sortAsc = !sortAsc;
+        } else {
+          sortCol = col;
+          sortAsc = false;
+        }
+        document.querySelectorAll('#handoff-table th.sortable').forEach(h => {
+          h.textContent = h.textContent.replace(/[ ▴▾]/g, '');
+        });
+        th.textContent = `${th.textContent} ${sortAsc ? '▴' : '▾'}`;
+        renderTable();
+      });
+    });
+
+    document.getElementById('btn-export-csv').addEventListener('click', () => {
+      if (!currentPairs.length) return;
+      const headers = ['FromSeat', 'ToSeat', 'Handoffs', 'ReworkReturns', 'ReturnRate', 'WaitMedianMs', 'ExecMedianMs', 'RingBoundary'];
+      const rows = currentPairs.map(p => [
+        p.from_seat, p.to_seat, p.handoffs, p.rework_returns, p.return_rate, p.wait_median_ms, p.exec_turnaround_median_ms, p.ring_boundary
+      ]);
+      const csv = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `handoff-rework-matrix-${Date.now()}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    const sync = attachLiveSync({
+      viewId: 'handoff_flow',
+      onData: function(data) {
+        renderView(data);
+      }
+    });
+
+    document.getElementById('btn-refresh').addEventListener('click', () => sync.refresh());
+  </script>
+</body>
+</html>

@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dendro · Token Lineage & Economics</title>
+  <meta name="description" content="Four-component token accounting, prompt cache efficiency, and task-intake attribution derived from DuckDB view v_mission_token_burn.">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <!-- Top Navigation -->
+  <header class="telemetry-nav">
+    <div class="nav-left">
+      <a href="../index.html" class="brand-link" title="Dashboards Hub">
+        <span class="brand-icon">D</span>
+        <span>Dendro<span style="font-weight:400;color:var(--text-muted);font-size:0.85rem;margin-left:6px;">Economics</span></span>
+      </a>
+      <div class="nav-breadcrumbs" aria-label="Breadcrumbs">
+        <span class="separator">/</span>
+        <a href="../index.html" style="color:var(--text-secondary);">Dashboards</a>
+        <span class="separator">/</span>
+        <span class="current">Token Lineage &amp; Economics</span>
+      </div>
+    </div>
+    <div class="nav-right">
+      <div id="dual-serving-indicator" class="dual-serving-badge snapshot">
+        <span class="pulse-dot"></span>
+        <span id="dual-serving-text">LOCAL DUCKDB READY · SNAPSHOT MODE</span>
+      </div>
+      <button id="btn-refresh" class="nav-action-btn" type="button" title="Refresh economics snapshot">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+        <span>Refresh</span>
+      </button>
+      <a href="../index.html" class="nav-action-btn" title="Back to Dashboards Hub">
+        <span>← Back to Dashboards Hub</span>
+      </a>
+    </div>
+  </header>
+
+  <main class="telemetry-layout">
+    <!-- Header -->
+    <section class="hero-header">
+      <div class="hero-eyebrow">
+        <span>●</span> 4-Component Lineage · SQL View: <code>v_mission_token_burn</code>
+      </div>
+      <h1 class="hero-title">Token Lineage &amp; Economics</h1>
+      <p class="hero-subtitle">
+        Empirical token accounting across 4 distinct physical categories. Distinguishes fresh uncached inputs from prompt cache reads and cache writes, isolating analytical task-intake overhead without relying on speculative external fiat currency estimates.
+      </p>
+    </section>
+
+    <!-- Top KPI Banner -->
+    <section class="kpi-grid" aria-label="Token Economics KPIs">
+      <article class="kpi-card accent-cyan">
+        <div class="kpi-label">Total Recorded Tokens</div>
+        <div class="kpi-value" id="kpi-total-tokens">14.24M</div>
+        <div class="kpi-meta">
+          <span>Physical token units</span> · <span style="color:var(--accent-cyan);">Zero inferred currency</span>
+        </div>
+      </article>
+
+      <article class="kpi-card accent-emerald">
+        <div class="kpi-label">Cache Hit Ratio</div>
+        <div class="kpi-value" id="kpi-cache-ratio">76.8%</div>
+        <div class="kpi-meta">
+          <span style="color:var(--emerald-yield);">10.94M read</span> · <span>Prompt cache reuse</span>
+        </div>
+      </article>
+
+      <article class="kpi-card accent-purple">
+        <div class="kpi-label">Fresh Input (Uncached)</div>
+        <div class="kpi-value" id="kpi-fresh-input">1.85M</div>
+        <div class="kpi-meta">
+          <span>13.0% of total tokens</span> · <span>New prompt tokens</span>
+        </div>
+      </article>
+
+      <article class="kpi-card accent-amber">
+        <div class="kpi-label">Generated Output</div>
+        <div class="kpi-value" id="kpi-output-tokens">1.45M</div>
+        <div class="kpi-meta">
+          <span>10.2% of total tokens</span> · <span>Model reasoning/edits</span>
+        </div>
+      </article>
+
+      <article class="kpi-card accent-rose">
+        <div class="kpi-label">Task-Intake Overhead</div>
+        <div class="kpi-value" id="kpi-intake-overhead">3.8%</div>
+        <div class="kpi-meta">
+          <span class="badge badge-pass">LOW OVERHEAD</span> · <span>Ambiguous/unlinked</span>
+        </div>
+      </article>
+    </section>
+
+    <!-- Token Lineage Stacked Bands Visualizer -->
+    <section class="viz-panel" aria-label="Token Mix Breakdown">
+      <div class="viz-panel-header">
+        <div>
+          <h2 class="viz-title">4-Component Token Distribution by Seat &amp; Model</h2>
+          <p class="viz-subtitle">Fresh uncached input vs cache reads vs cache writes vs generation output</p>
+        </div>
+        <div class="activity-legend">
+          <div class="legend-item"><span class="legend-dot" style="background:var(--accent-cyan);"></span><span>Input Uncached</span></div>
+          <div class="legend-item"><span class="legend-dot" style="background:var(--emerald-yield);"></span><span>Cache Read (Saved)</span></div>
+          <div class="legend-item"><span class="legend-dot" style="background:var(--purple-protocol);"></span><span>Cache Write</span></div>
+          <div class="legend-item"><span class="legend-dot" style="background:var(--amber-friction);"></span><span>Generated Output</span></div>
+        </div>
+      </div>
+
+      <div id="token-bars-container">
+        <!-- Rendered seat token mix bars -->
+      </div>
+    </section>
+
+    <!-- Data Table -->
+    <section class="table-panel">
+      <div class="table-panel-header">
+        <div class="table-panel-title">
+          <span>Mission &amp; Seat Token Burn Records</span>
+          <span class="badge badge-info" id="record-count-badge">0 Rows</span>
+        </div>
+        <div class="table-panel-actions">
+          <input type="text" id="burn-search" class="search-input" style="padding:6px 12px;font-size:0.8rem;width:200px;" placeholder="Search seat or model...">
+          <button id="btn-export-csv" class="nav-action-btn" type="button">Export CSV</button>
+        </div>
+      </div>
+      <div class="table-container">
+        <table class="telemetry-table" id="burn-table">
+          <thead>
+            <tr>
+              <th class="sortable" data-col="seat_id">Seat ID</th>
+              <th class="sortable" data-col="model">Model Family</th>
+              <th class="sortable" data-col="effort">Effort</th>
+              <th class="sortable" data-col="attribution_bucket">Attribution Bucket</th>
+              <th class="sortable num" data-col="input_uncached">Input Uncached ▾</th>
+              <th class="sortable num" data-col="cache_read">Cache Read</th>
+              <th class="sortable num" data-col="cache_write">Cache Write</th>
+              <th class="sortable num" data-col="output">Output</th>
+              <th class="sortable num" data-col="total_tokens">Total Tokens</th>
+              <th class="sortable num" data-col="cache_ratio">Cache Ratio (%)</th>
+            </tr>
+          </thead>
+          <tbody id="burn-tbody">
+            <!-- Dynamically populated rows -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- SQL Query Reference -->
+    <div class="query-box">
+      <div class="query-box-title">Underlying DuckDB Query</div>
+      <code>SELECT * FROM v_mission_token_burn ORDER BY input_uncached DESC, seat_id;</code>
+    </div>
+  </main>
+
+  <!-- Embedded Snapshot Data -->
+  <script id="dendro-data" type="application/json">
+  {
+    "product": "AI Fleet Intelligence",
+    "view": "v_mission_token_burn",
+    "summary": {
+      "total_tokens": 14240000,
+      "cache_read_ratio": 0.7682,
+      "fresh_input_tokens": 1850000,
+      "output_tokens": 1450000,
+      "task_intake_overhead_pct": 0.038
+    },
+    "missions": [
+      {
+        "seat_id": "dev-build-1",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "attribution_bucket": "assigned_mission",
+        "missions": ["#42-cockpit", "#43-semantic"],
+        "input_uncached": 820000,
+        "cache_read": 4850000,
+        "cache_write": 250000,
+        "output": 620000
+      },
+      {
+        "seat_id": "dev-reviewer-1",
+        "model": "claude-3-7-sonnet",
+        "effort": "high",
+        "attribution_bucket": "assigned_mission",
+        "missions": ["#42-cockpit"],
+        "input_uncached": 410000,
+        "cache_read": 2940000,
+        "cache_write": 110000,
+        "output": 280000
+      },
+      {
+        "seat_id": "dev-tester-1",
+        "model": "grok-4.7-build-fast",
+        "effort": "low",
+        "attribution_bucket": "assigned_mission",
+        "missions": ["#43-semantic"],
+        "input_uncached": 280000,
+        "cache_read": 1850000,
+        "cache_write": 80000,
+        "output": 310000
+      },
+      {
+        "seat_id": "dev-architect-1",
+        "model": "claude-3-7-sonnet",
+        "effort": "high",
+        "attribution_bucket": "assigned_mission",
+        "missions": ["#40-spec"],
+        "input_uncached": 210000,
+        "cache_read": 980000,
+        "cache_write": 60000,
+        "output": 160000
+      },
+      {
+        "seat_id": "unlinked-intake",
+        "model": "gemini-3.8-flash",
+        "effort": "low",
+        "attribution_bucket": "task_intake_overhead",
+        "missions": [],
+        "input_uncached": 130000,
+        "cache_read": 320000,
+        "cache_write": 30000,
+        "output": 80000
+      }
+    ]
+  }
+  </script>
+
+  <script src="../live-sync.js"></script>
+  <script>
+    'use strict';
+    const tbody = document.getElementById('burn-tbody');
+    const tokenBarsContainer = document.getElementById('token-bars-container');
+    const burnSearch = document.getElementById('burn-search');
+
+    let currentMissions = [];
+    let sortCol = 'input_uncached';
+    let sortAsc = false;
+
+    const formatNum = n => typeof n === 'number' ? n.toLocaleString(undefined, { maximumFractionDigits: 1 }) : '—';
+    const formatShort = n => {
+      if (typeof n !== 'number') return '—';
+      if (n >= 1000000) return (n / 1000000).toFixed(2) + 'M';
+      if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+      return String(n);
+    };
+
+    function renderView(data) {
+      if (!data) return;
+      if (data.summary) {
+        const s = data.summary;
+        if (s.total_tokens !== undefined) document.getElementById('kpi-total-tokens').textContent = formatShort(s.total_tokens);
+        if (s.cache_read_ratio !== undefined) document.getElementById('kpi-cache-ratio').textContent = (s.cache_read_ratio * 100).toFixed(1) + '%';
+        if (s.fresh_input_tokens !== undefined) document.getElementById('kpi-fresh-input').textContent = formatShort(s.fresh_input_tokens);
+        if (s.output_tokens !== undefined) document.getElementById('kpi-output-tokens').textContent = formatShort(s.output_tokens);
+        if (s.task_intake_overhead_pct !== undefined) document.getElementById('kpi-intake-overhead').textContent = (s.task_intake_overhead_pct * 100).toFixed(1) + '%';
+      }
+
+      currentMissions = (data.missions || []).map(m => {
+        const total = (m.input_uncached || 0) + (m.cache_read || 0) + (m.cache_write || 0) + (m.output || 0);
+        const cacheRatio = total > 0 ? (m.cache_read || 0) / total : 0;
+        return { ...m, total_tokens: total, cache_ratio: cacheRatio };
+      });
+
+      renderBars(currentMissions);
+      renderTable();
+    }
+
+    function renderBars(missions) {
+      tokenBarsContainer.innerHTML = '';
+      if (!missions.length) {
+        tokenBarsContainer.innerHTML = '<p style="color:var(--text-muted);padding:16px;">No token lineage evidence available.</p>';
+        return;
+      }
+
+      missions.forEach(m => {
+        const total = m.total_tokens || 1;
+        const uncachedPct = ((m.input_uncached || 0) / total) * 100;
+        const readPct = ((m.cache_read || 0) / total) * 100;
+        const writePct = ((m.cache_write || 0) / total) * 100;
+        const outputPct = ((m.output || 0) / total) * 100;
+
+        const group = document.createElement('div');
+        group.className = 'activity-band-group';
+        group.innerHTML = `
+          <div class="activity-band-label">
+            <span><strong>${m.seat_id}</strong> <small style="color:var(--text-muted);">(${m.model} · ${formatShort(m.total_tokens)} tok)</small></span>
+            <span style="font-family:var(--font-mono);font-size:0.8rem;color:var(--text-secondary);">Cache Read: ${readPct.toFixed(0)}% · Uncached: ${uncachedPct.toFixed(0)}% · Output: ${outputPct.toFixed(0)}%</span>
+          </div>
+          <div class="activity-band-bar">
+            <div class="segment" style="width:${uncachedPct}%;background:var(--accent-cyan);" title="Uncached Input: ${formatNum(m.input_uncached)} (${uncachedPct.toFixed(1)}%)"></div>
+            <div class="segment" style="width:${readPct}%;background:var(--emerald-yield);" title="Cache Read: ${formatNum(m.cache_read)} (${readPct.toFixed(1)}%)"></div>
+            <div class="segment" style="width:${writePct}%;background:var(--purple-protocol);" title="Cache Write: ${formatNum(m.cache_write)} (${writePct.toFixed(1)}%)"></div>
+            <div class="segment" style="width:${outputPct}%;background:var(--amber-friction);" title="Output: ${formatNum(m.output)} (${outputPct.toFixed(1)}%)"></div>
+          </div>
+        `;
+        tokenBarsContainer.appendChild(group);
+      });
+    }
+
+    function renderTable() {
+      tbody.innerHTML = '';
+      const filter = (burnSearch.value || '').toLowerCase();
+      let filtered = currentMissions.filter(m => {
+        return (m.seat_id || '').toLowerCase().includes(filter) ||
+               (m.model || '').toLowerCase().includes(filter) ||
+               (m.attribution_bucket || '').toLowerCase().includes(filter);
+      });
+
+      filtered.sort((a, b) => {
+        let va = a[sortCol] ?? 0;
+        let vb = b[sortCol] ?? 0;
+        if (typeof va === 'string') return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+        return sortAsc ? (va - vb) : (vb - va);
+      });
+
+      document.getElementById('record-count-badge').textContent = `${filtered.length} Row${filtered.length === 1 ? '' : 's'}`;
+
+      if (!filtered.length) {
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--text-muted);">No records match filter.</td></tr>';
+        return;
+      }
+
+      filtered.forEach(m => {
+        const tr = document.createElement('tr');
+        const bucketTag = m.attribution_bucket === 'assigned_mission' ? 'tag-emerald' : 'tag-amber';
+        tr.innerHTML = `
+          <td><strong><code>${m.seat_id}</code></strong></td>
+          <td><code>${m.model || 'unknown'}</code></td>
+          <td><span style="font-size:0.8rem;color:var(--text-secondary);text-transform:uppercase;">${m.effort || '—'}</span></td>
+          <td><span class="view-card-tag ${bucketTag}">${m.attribution_bucket || 'default'}</span></td>
+          <td class="num" style="color:var(--accent-cyan);font-weight:600;">${formatNum(m.input_uncached)}</td>
+          <td class="num" style="color:var(--emerald-yield);">${formatNum(m.cache_read)}</td>
+          <td class="num" style="color:var(--purple-protocol);">${formatNum(m.cache_write)}</td>
+          <td class="num" style="color:var(--amber-friction);">${formatNum(m.output)}</td>
+          <td class="num" style="font-weight:700;">${formatNum(m.total_tokens)}</td>
+          <td class="num" style="color:var(--emerald-yield);">${(m.cache_ratio * 100).toFixed(1)}%</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    burnSearch.addEventListener('input', renderTable);
+
+    document.querySelectorAll('#burn-table th.sortable').forEach(th => {
+      th.addEventListener('click', () => {
+        const col = th.getAttribute('data-col');
+        if (sortCol === col) {
+          sortAsc = !sortAsc;
+        } else {
+          sortCol = col;
+          sortAsc = false;
+        }
+        document.querySelectorAll('#burn-table th.sortable').forEach(h => {
+          h.textContent = h.textContent.replace(/[ ▴▾]/g, '');
+        });
+        th.textContent = `${th.textContent} ${sortAsc ? '▴' : '▾'}`;
+        renderTable();
+      });
+    });
+
+    document.getElementById('btn-export-csv').addEventListener('click', () => {
+      if (!currentMissions.length) return;
+      const headers = ['SeatID', 'Model', 'Effort', 'AttributionBucket', 'InputUncached', 'CacheRead', 'CacheWrite', 'Output', 'TotalTokens', 'CacheRatioPct'];
+      const rows = currentMissions.map(m => [
+        m.seat_id, m.model, m.effort, m.attribution_bucket, m.input_uncached, m.cache_read, m.cache_write, m.output, m.total_tokens, (m.cache_ratio * 100).toFixed(1)
+      ]);
+      const csv = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `token-lineage-burn-${Date.now()}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    const sync = attachLiveSync({
+      viewId: 'cost_and_loops',
+      onData: function(data) {
+        renderView(data);
+      }
+    });
+
+    document.getElementById('btn-refresh').addEventListener('click', () => sync.refresh());
+  </script>
+</body>
+</html>

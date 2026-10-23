@@ -1,388 +1,286 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dendro — Decipher the Growth Layers of Your AI Agent Fleets</title>
-  <meta name="description" content="Local-first AI fleet intelligence, observability and correlation engine for multi-agent squads. Powered by Rust, DuckDB, and OpenRig.">
-  <link rel="stylesheet" href="styles.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Dendro — Read the Growth Rings of Your AI Workflows</title>
+  <meta name="description" content="Dendro turns local AI coding session logs into clear, honest answers about where time, handoffs, rework, and budget actually go across your engineering workflows.">
+  <link rel="canonical" href="https://movetheneedle.info/dendro/">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Move the Needle">
+  <meta property="og:title" content="Dendro — Read the Growth Rings of Your AI Workflows">
+  <meta property="og:description" content="See where time, handoffs, rework, and budget actually go across your AI coding sessions—using verifiable local evidence instead of vanity productivity claims.">
+  <meta property="og:url" content="https://movetheneedle.info/dendro/">
+  <meta property="og:image" content="https://movetheneedle.info/dendro/assets/dendro-preview.gif">
+  <meta property="og:image:alt" content="Dendro terminal cockpit and browser fleet explorer showing multi-agent session timelines, handoffs, and cost attribution.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Dendro — Read the Growth Rings of Your AI Workflows">
+  <meta name="twitter:description" content="Retrospective fleet intelligence for AI coding agents. Separate busy terminals from productive flow.">
+  <meta name="twitter:image" content="https://movetheneedle.info/dendro/assets/dendro-preview.gif">
+  <meta name="twitter:image:alt" content="Dendro terminal cockpit and browser fleet explorer showing multi-agent session timelines, handoffs, and cost attribution.">
+  <link rel="icon" type="image/svg+xml" href="assets/mark.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="../assets/img/move-the-needle-icon-32.png">
+  <link rel="apple-touch-icon" href="../assets/img/move-the-needle-icon-180.png">
+  <link rel="stylesheet" href="../assets/css/product.css">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Dendro","applicationCategory":"DeveloperApplication","operatingSystem":"Linux, macOS, Windows","softwareVersion":"0.7.0","license":"https://opensource.org/licenses/MIT","url":"https://movetheneedle.info/dendro/","codeRepository":"https://github.com/smota/dendro","author":{"@type":"Person","name":"Samuel Mota","url":"https://movetheneedle.info/about/"},"description":"Retrospective fleet intelligence and terminal cockpit that turns AI coding session logs into clear answers about time, handoffs, rework, and budget."}</script>
+<!-- mtneedle:managed:start subsite-head v1 -->
+<link rel="stylesheet" href="../assets/css/umbrella.css">
+<!-- mtneedle:managed:end subsite-head -->
 </head>
-<body>
-
-  <!-- Navigation -->
-  <header class="navbar">
-    <div class="nav-container">
-      <a href="#" class="brand">
-        <img src="assets/logo.jpg" alt="Dendro Logo" class="brand-logo">
-        <span class="brand-name">DENDRO</span>
+<body class="p-page theme-dendro">
+  <a class="skip" href="#main">Skip to content</a>
+<!-- mtneedle:managed:start subsite-bar v1 -->
+<nav class="mtn-umbrella" aria-label="Move the Needle">
+<div class="mtn-umbrella-inner">
+<a class="mtn-umbrella-brand" href="../" aria-label="Move the Needle home"><img src="../assets/img/move-the-needle-icon-32.png" alt="" width="20" height="20"><span>Move the Needle</span></a>
+<span class="mtn-umbrella-trail"><a href="../open-source/">Open source</a><span aria-hidden="true">/</span><span>Dendro</span></span>
+<span class="mtn-umbrella-links"><a href="../where-i-help/">Focus areas</a><a href="../how-i-work/">Approach</a><a href="../experience/">Case studies</a><a href="../thinking/">Thinking</a><a href="../about/">About</a><a class="mtn-umbrella-cta" href="../#contact">Contact</a></span>
+</div>
+</nav>
+<!-- mtneedle:managed:end subsite-bar -->
+  <header class="p-nav">
+    <div class="p-wrap p-nav-inner">
+      <a class="p-brand" href="./">
+        <img src="assets/mark.svg" alt="Dendro mark" width="38" height="38">
+        <span>Dendro<small>The Flight Recorder · v0.7.0</small></span>
       </a>
-      <nav class="nav-links">
-        <a href="#demo">Video Walkthrough</a>
-        <a href="#metaphor">Dendrochronology</a>
-        <a href="#layers">Core Layers</a>
-        <a href="#calculator">Waste Calculator</a>
-        <a href="#nao">Nao Analytics</a>
-        <a href="#docs">Documentation</a>
+      <nav class="p-links" aria-label="Dendro navigation">
+        <a href="./" aria-current="page">Overview</a>
+        <a href="how-it-works.html">How it works</a>
+        <a href="dashboards/index.html">Dashboards</a>
+        <a href="viewer.html">Fleet Explorer</a>
+        <a href="get-started.html">Get started</a>
+        <a class="p-cta" href="https://github.com/smota/dendro">GitHub ↗</a>
       </nav>
-      <div class="nav-actions">
-        <a href="https://github.com/smota/dendro" target="_blank" class="btn btn-secondary">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
-          GitHub
-        </a>
-        <a href="#docs" class="btn btn-primary">Get Started</a>
-      </div>
     </div>
   </header>
 
-  <!-- Hero Section -->
-  <section class="hero">
-    <div class="hero-glow hero-glow-1"></div>
-    <div class="hero-glow hero-glow-2"></div>
-    <div class="container hero-content">
-      <div class="hero-badge">
-        <span class="badge-dot"></span>
-        <span>Local-First AI Fleet Intelligence for Autonomous Agent Squads</span>
-        <span class="badge-tag">v0.1.0</span>
-      </div>
-      <h1 class="hero-title">
-        Decipher the growth layers of your <span class="gradient-text">AI agent fleets</span>.
-      </h1>
-      <p class="hero-subtitle">
-        Just as dendrochronology deciphers historical climate patterns through the concentric growth rings of ancient trees, Dendro reads retained execution evidence across your agent squads to expose observed bottlenecks, review-to-build rework, and token consumption.
-      </p>
-      <div class="hero-cta-group">
-        <a href="#demo" class="btn btn-primary btn-lg">▶ Watch Product Video</a>
-        <a href="#docs" class="btn btn-secondary btn-lg">Local Quickstart</a>
-      </div>
-
-      <!-- Narrated Video Demo Showcase -->
-      <div id="demo" class="video-showcase-card">
-        <div class="video-header">
-          <div class="video-badge"><span class="pulse-dot"></span> OFFICIAL NARRATED DEMO (1080p FULL HD)</div>
-          <span class="video-title">Dendro: Decipher the Growth Layers of Your AI Fleets</span>
-          <a href="assets/dendro-demo.mp4" download class="btn-download-video">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-            Download MP4
-          </a>
+  <main id="main">
+    <section class="p-hero">
+      <div class="p-wrap p-hero-grid">
+        <div>
+          <div class="p-eyebrow">The Flight Recorder for AI Workflows · MIT Open Source</div>
+          <h1>Read the growth rings of your AI workflows.</h1>
+          <p class="p-lead">Six open agent terminals look productive—even when four are waiting on a handoff and two are trapped in a rework loop. <strong>Dendro</strong> reads your existing local session logs afterward to show where time, handoffs, and budget actually went.</p>
+          <div class="p-actions">
+            <a class="p-btn primary" href="viewer.html">Open interactive Fleet Explorer →</a>
+            <a class="p-btn" href="how-it-works.html">How it works &amp; ROI calculator</a>
+            <a class="p-btn" href="get-started.html">Get started</a>
+          </div>
+          <div class="p-pills" aria-label="Supported AI coding tools">
+            <span class="p-pill">Claude Code</span>
+            <span class="p-pill">OpenAI Codex</span>
+            <span class="p-pill">Gemini / AGY</span>
+            <span class="p-pill">Grok CLI</span>
+            <span class="p-pill">Pi</span>
+            <span class="p-pill">OpenRig Fleets</span>
+          </div>
         </div>
-        <div class="video-container">
-          <video controls poster="assets/dendro-preview.gif" preload="metadata" style="width: 100%; border-radius: 12px; background: #000; box-shadow: 0 12px 36px rgba(0,0,0,0.6);">
+
+        <aside class="p-terminal" aria-label="Dendro growth-ring session breakdown">
+          <div class="p-terminal-bar">
+            <span class="p-dots" aria-hidden="true"><span></span><span></span><span></span></span>
+            <span class="p-terminal-title">dendro · Where did the 4-hour sprint actually go?</span>
+          </div>
+          <div class="p-terminal-body">
+            <svg viewBox="0 0 540 270" role="img" aria-label="Comparison of busy terminal time versus actual productive flow, handoff wait, and rework">
+              <rect width="540" height="270" rx="10" fill="#14110e"/>
+              <g font-family="Inter, system-ui, sans-serif">
+                <text x="20" y="30" fill="#f3ede2" font-size="13" font-weight="700">100% OF SESSION TIME ACCOUNTED FOR</text>
+                <text x="520" y="30" text-anchor="end" fill="#d4943a" font-size="11.5" font-weight="700">ZERO VANITY METRICS</text>
+
+                <text x="20" y="64" fill="#d8cfc0" font-size="12" font-weight="600">Architect Seat</text>
+                <rect x="135" y="50" width="175" height="20" rx="4" fill="#10b981"/>
+                <rect x="312" y="50" width="68" height="20" rx="4" fill="#38bdf8"/>
+                <rect x="382" y="50" width="138" height="20" rx="4" fill="#475569"/>
+
+                <text x="20" y="102" fill="#d8cfc0" font-size="12" font-weight="600">Builder Seat</text>
+                <rect x="135" y="88" width="195" height="20" rx="4" fill="#10b981"/>
+                <rect x="332" y="88" width="110" height="20" rx="4" fill="#ef4444"/>
+                <rect x="444" y="88" width="76" height="20" rx="4" fill="#f59e0b"/>
+
+                <text x="20" y="140" fill="#d8cfc0" font-size="12" font-weight="600">Reviewer Seat</text>
+                <rect x="135" y="126" width="95" height="20" rx="4" fill="#38bdf8"/>
+                <rect x="232" y="126" width="130" height="20" rx="4" fill="#10b981"/>
+                <rect x="364" y="126" width="90" height="20" rx="4" fill="#f59e0b"/>
+                <rect x="456" y="126" width="64" height="20" rx="4" fill="#475569"/>
+
+                <g font-size="11" fill="#d8cfc0" transform="translate(20, 174)">
+                  <rect x="0" y="0" width="10" height="10" rx="2" fill="#10b981"/><text x="16" y="9">Active work</text>
+                  <rect x="102" y="0" width="10" height="10" rx="2" fill="#38bdf8"/><text x="118" y="9">Waiting on you</text>
+                  <rect x="220" y="0" width="10" height="10" rx="2" fill="#f59e0b"/><text x="236" y="9">Handoff wait</text>
+                  <rect x="330" y="0" width="10" height="10" rx="2" fill="#ef4444"/><text x="346" y="9">Stalled / Rework</text>
+                  <rect x="452" y="0" width="10" height="10" rx="2" fill="#475569"/><text x="468" y="9">Parked</text>
+                </g>
+
+                <rect x="20" y="204" width="500" height="50" rx="8" fill="#1e1914" stroke="#3a2e21"/>
+                <text x="36" y="225" fill="#d4943a" font-size="11" font-weight="700">PLAIN-ENGLISH QUERY</text>
+                <text x="36" y="243" fill="#f3ede2" font-size="12.5">“Which handoff pairs caused the most rework this week?”</text>
+              </g>
+            </svg>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="p-section" id="why-care">
+      <div class="p-wrap">
+        <div class="p-section-head">
+          <div>
+            <div class="p-eyebrow">Why care</div>
+            <h2>Activity is easy to fake. Flow is what ships software.</h2>
+          </div>
+          <p>When you run coding agents across multiple terminals, worktrees, or team roles, you get megabytes of raw logs and very little clarity on what actually moved the work forward.</p>
+        </div>
+        <div class="p-grid-2">
+          <article class="p-problem-card">
+            <span class="p-card-kicker">Without Dendro · The Illusion of Busyness</span>
+            <h3>Terminals scroll fast while work quietly stalls</h3>
+            <ul class="p-list">
+              <li><strong>Hidden handoff bottlenecks:</strong> An agent finishes a task and sits idle for 45 minutes waiting for a review or human prompt, looking identical to a completed job.</li>
+              <li><strong>Ping-pong rework loops:</strong> Two roles pass the same task back and forth four times, burning token budget and context windows without converging.</li>
+              <li><strong>Unattributed spend:</strong> Cloud invoices show total token spend, but never which workflow, model choice, or context reset drove the cost.</li>
+            </ul>
+          </article>
+          <article class="p-value-card">
+            <span class="p-card-kicker">With Dendro · Retrospective Clarity</span>
+            <h3>Every session read like the rings of a tree</h3>
+            <ul class="p-list">
+              <li><strong>Complete time accounting:</strong> Every second of an agent's session is separated into active work, waiting on a human, waiting on a peer handoff, stalled with work in queue, or cleanly parked.</li>
+              <li><strong>First-pass vs. rework visibility:</strong> See immediately which tasks delivered cleanly on the first pass and where handoffs bounced backward.</li>
+              <li><strong>Local, private, zero-setup:</strong> Point Dendro at the session logs already on your disk. Nothing leaves your machine.</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="p-section alt" id="key-ideas">
+      <div class="p-wrap">
+        <div class="p-section-head">
+          <div>
+            <div class="p-eyebrow">What it brings to the table</div>
+            <h2>Three ideas that replace guesswork with evidence.</h2>
+          </div>
+          <p>Dendro is built for engineering leaders, platform architects, and developers who want honest operational feedback rather than AI hype.</p>
+        </div>
+        <div class="p-grid-3">
+          <article class="p-card">
+            <span class="p-num">01</span>
+            <span class="p-card-kicker">Busy vs. Productive</span>
+            <h3>Account for every second of the workflow</h3>
+            <p>Instead of counting raw turns or lines of code, Dendro reconstructs the true timeline of every seat—separating active model and tool work from human wait times, peer handoff delays, and stalled queues.</p>
+          </article>
+          <article class="p-card">
+            <span class="p-num">02</span>
+            <span class="p-card-kicker">The Cost of Rework</span>
+            <h3>Spot ping-pong loops and context resets</h3>
+            <p>When an agent's context window fills up and compacts, or when a reviewer rejects a change three times in a row, costs spike. Dendro highlights exactly where context drops and rework loops happen.</p>
+          </article>
+          <article class="p-card">
+            <span class="p-num">03</span>
+            <span class="p-card-kicker">Honest Boundaries</span>
+            <h3>Only what local evidence can prove</h3>
+            <p>Dendro never invents "developer hours saved" or subjective code-quality scores. Every chart—in the terminal cockpit, the offline browser explorer, or plain-English queries—is backed by local log facts.</p>
+          </article>
+        </div>
+
+        <figure class="dendro-media-frame" style="margin-top:2.5rem;">
+          <video controls preload="metadata" poster="assets/dendro-preview.gif" width="100%">
             <source src="assets/dendro-demo.mp4" type="video/mp4">
-            Your browser does not support HTML5 video playback.
+            <img src="assets/dendro-preview.gif" alt="Dendro terminal cockpit walkthrough">
           </video>
-        </div>
-        <div class="video-caption">
-          <span>⏱️ Historical walkthrough: 1m 40s • English narration • Presentation assets may show earlier CLI behavior; current commands and measured evidence take precedence.</span>
-        </div>
+          <figcaption>See Dendro in action: explore session timelines, handoff flows, and cost breakdowns in the terminal cockpit or <a href="viewer.html">try the interactive Fleet Explorer in your browser →</a></figcaption>
+        </figure>
       </div>
+    </section>
 
-      <!-- Live Terminal Simulation -->
-      <div class="terminal-card">
-        <div class="terminal-header">
-          <div class="terminal-dots">
-            <span class="dot dot-red"></span>
-            <span class="dot dot-yellow"></span>
-            <span class="dot dot-green"></span>
+    <section class="p-section" id="ecosystem">
+      <div class="p-wrap">
+        <div class="p-section-head">
+          <div>
+            <div class="p-eyebrow">Where it fits in the ecosystem</div>
+            <h2>The Flight Recorder after the flight—paired with live telemetry in flight.</h2>
           </div>
-          <span class="terminal-title">dendro report decisions --db analytics.duckdb</span>
-          <span class="terminal-badge">SYNTHETIC CLI PREVIEW</span>
+          <p>Dendro works standalone on any machine with local agent logs. When combined with the rest of the Move the Needle open-source stack, it closes the learning loop.</p>
         </div>
-        <div class="terminal-body">
-          <div class="term-line"><span class="term-prompt">$</span> dendro run --db analytics.duckdb</div>
-          <div class="term-line term-muted">▶ Ingesting local agent event streams...</div>
-          <div class="term-line term-success">✓ OpenRig Core SQLite: private staging and atomic snapshot copy completed</div>
-          <div class="term-line term-success">✓ Claude Code & Codex Harnesses: sessions sanitized and indexed</div>
-          <div class="term-line term-info">ℹ Ingested into analytics.duckdb with credential redaction enabled.</div>
-          <div class="term-line"><span class="term-prompt">$</span> dendro report decisions --db analytics.duckdb --from 2026-10-10T00:00:00Z --to 2026-10-11T00:00:00Z</div>
-          <p class="term-muted">Synthetic presentation of metric values; the CLI emits JSON.</p>
-          <div class="term-output">
-## AI Fleet Intelligence Report [2026-10-10T00:00:00Z .. 2026-10-11T00:00:00Z)
-
-### Seat Yield (M1)
-| Seat | Closed Items | Tokens / Closed Item | Returned Handoffs |
-| :--- | :--- | :--- | :--- |
-| dev-build-sr@squad-a | 18 | 42.1k tokens | 4 |
-| dev-build-jr@squad-a | 12 | 28.4k tokens | 2 |
-| dev-qa@squad-a       | 15 | 8.2k tokens  | 0 |
-
-### Handover Continuity (M2) & Rework (M3)
-- Delivered Handoffs: 34 (returned: 6, return rate: 17.6%)
-- Build Chains Evaluated: 49 (rework returns after QA/review: 14, rework proportion: 28.6%)
-- Unknown Chains: 0 | Closed Items with Insufficient History: 0
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Metaphor Section -->
-  <section id="metaphor" class="section metaphor-section">
-    <div class="container">
-      <div class="section-badge">Core Foundations</div>
-      <h2 class="section-title">What Dendrochronology Taught Us</h2>
-      <p class="section-subtitle">
-        When you core an ancient tree, every ring recounts a year: droughts produce narrow, dense rings; prosperous seasons yield wide, expansive growth layers.
-      </p>
-
-      <div class="metaphor-grid">
-        <div class="card metaphor-card">
-          <div class="metaphor-icon">🌲</div>
-          <h3>Tree Growth Rings</h3>
-          <p>Record time passage, severe storms, and seasons of stagnation without relying on the faulty memory of whoever tended the forest.</p>
-        </div>
-        <div class="card metaphor-card active-card">
-          <div class="metaphor-icon">🤖</div>
-          <h3>Agent Execution Rings</h3>
-          <p>Supported harnesses retain session, tool, and queue records on your workstation. Missing records remain unknown.</p>
-        </div>
-        <div class="card metaphor-card">
-          <div class="metaphor-icon">⚡</div>
-          <h3>The Dendro Revelation</h3>
-          <p>Dendro stitches low-level execution rings with high-level topology (Rigs, Seats, Missions) to show where seats spend time and tokens, and where handoffs return.</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- The 3 Core Observability Layers -->
-  <section id="layers" class="section rings-section">
-    <div class="container">
-      <div class="section-badge">Deep Observability</div>
-      <h2 class="section-title">The Three Critical Operational Layers</h2>
-      <p class="section-subtitle">
-        Engineered specifically to eliminate the operational blind spots that conventional APM tools ignore when managing autonomous fleets.
-      </p>
-
-      <div class="rings-grid">
-        <!-- Ring 1 -->
-        <div class="card ring-card">
-          <div class="ring-header">
-            <span class="ring-number">01</span>
-            <span class="ring-tag">Question 1</span>
-          </div>
-          <h3>Seat Dynamics & Yield Ratio</h3>
-          <p class="ring-desc">
-            "Are my seats over-provisioned? Who is actively producing vs. sitting idle while work stacks up in the queue?"
-          </p>
-          <ul class="ring-features">
-            <li><strong>5 Disjoint Activity Bands:</strong> Active, idle-with-work, idle-without-work, waiting-human, unknown.</li>
-            <li><strong>Exact Conservation Law:</strong> Mathematical certainty across the entire observation window.</li>
-            <li><strong>Work Distribution:</strong> Compare seat consumption and delivery counts without inferring business value.</li>
-          </ul>
-        </div>
-
-        <!-- Ring 2 -->
-        <div class="card ring-card highlight-ring">
-          <div class="ring-header">
-            <span class="ring-number">02</span>
-            <span class="ring-tag">Question 2</span>
-          </div>
-          <h3>Handover Flow & Build Rework</h3>
-          <p class="ring-desc">
-            "How much context is lost during handoffs? How often do review seats bounce items back to builders?"
-          </p>
-          <ul class="ring-features">
-            <li><strong>Rework Chains:</strong> Pinpoints review-to-builder returns along task item histories.</li>
-            <li><strong>Intake Token Overhead:</strong> Estimates attributable intake tokens with explicit coverage and uncertainty.</li>
-            <li><strong>Queue Wait Latency:</strong> Quantifies time lost between task creation and seat pickup.</li>
-          </ul>
-        </div>
-
-        <!-- Ring 3 -->
-        <div class="card ring-card">
-          <div class="ring-header">
-            <span class="ring-number">03</span>
-            <span class="ring-tag">Question 3</span>
-          </div>
-          <h3>Token Burn, Costs & Retry Loops</h3>
-          <p class="ring-desc">
-            "Where are tokens burning? Is an agent trapped in a repetitive, failing command loop?"
-          </p>
-          <ul class="ring-features">
-            <li><strong>Token Attribution:</strong> Compare recorded input, output and cache tokens by mission and seat.</li>
-            <li><strong>Retry Loop Detection:</strong> Surfaces repeated failing tool executions with source evidence.</li>
-            <li><strong>Token Components:</strong> Separates recorded input, output, and cache tokens; absent prices do not establish spend.</li>
-          </ul>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section id="explorer" class="section">
-    <div class="container">
-      <div class="section-badge">Explore the evidence</div>
-      <h2 class="section-title">One fleet. Three levels of detail.</h2>
-      <p class="section-subtitle">Start with seat consumption, follow handoffs, then inspect the evidence. This synthetic demo runs locally. Open your own sanitized report to explore recorded data.</p>
-      <iframe src="viewer.html" title="Interactive three-layer Dendro fleet explorer" class="fleet-explorer" loading="lazy"></iframe>
-      <p class="explorer-links"><a href="viewer.html" target="_blank" rel="noopener">Open full-screen explorer ↗</a> · <a href="viewer.html" download="dendro-explorer.html">Download offline HTML</a> · <a href="README.md">Supported data & formulas</a></p>
-    </div>
-  </section>
-
-  <!-- Fleet Rework Modeler -->
-  <section id="calculator" class="section calc-section">
-    <div class="container">
-      <div class="section-badge">Scenario Modeling</div>
-      <h2 class="section-title">Fleet Rework & Cost-of-Inaction Modeler</h2>
-      <p class="section-subtitle">
-        Model the compute expenditure consumed by verification rework loops across your agent squad. Configure your squad assumptions below.
-      </p>
-
-      <div class="calc-box">
-        <div class="calc-inputs">
-          <div class="form-group">
-            <label for="seatsInput">Autonomous seats:</label>
-            <input type="range" id="seatsInput" min="1" max="50" value="4" step="1" aria-describedby="seatsHelp">
-            <span class="range-val" id="seatsVal">4 seats</span>
-            <small id="seatsHelp">Fleet missions below are a team total; seats divide workload, not multiply it.</small>
-          </div>
-          <div class="form-group">
-            <label for="missionsInput">Fleet Missions per Month:</label>
-            <input type="range" id="missionsInput" min="5" max="100" value="25" step="5">
-            <span class="range-val" id="missionsVal">25 missions</span>
-          </div>
-          <div class="form-group">
-            <label for="tokensPerMissionInput">Average Tokens per Mission:</label>
-            <input type="range" id="tokensPerMissionInput" min="100" max="1500" value="400" step="50">
-            <span class="range-val" id="tokensPerMissionVal">400k tokens</span>
-          </div>
-          <div class="form-group">
-            <label for="reworkRateInput">Assumed Rework Proportion (M3):</label>
-            <input type="range" id="reworkRateInput" min="0" max="100" value="25" step="1">
-            <span class="range-val" id="reworkRateVal">25%</span>
-          </div>
-          <div class="form-group">
-            <label for="tokenCostInput">Blended Model Cost per 1M Tokens (USD):</label>
-            <input type="range" id="tokenCostInput" min="2" max="20" value="5" step="1">
-            <span class="range-val" id="tokenCostVal">$5 / 1M</span>
-          </div>
-          <div class="form-group">
-            <label for="hoursInput">Developer hours per returned mission:</label>
-            <input id="hoursInput" type="range" min="0" max="16" value="2" step="0.5">
-            <span class="range-val" id="hoursVal">2 hours</span>
-          </div>
-          <div class="form-group">
-            <label for="reductionInput">Assumed reduction in rework:</label>
-            <input id="reductionInput" type="range" min="0" max="100" value="20" step="1">
-            <span class="range-val" id="reductionVal">20%</span>
-          </div>
-        </div>
-
-        <div class="calc-results" aria-live="polite" aria-atomic="true">
-          <div class="res-card">
-            <span class="res-label">Hypothetical Rework Chains</span>
-            <span class="res-num" id="reworkChainsVal" title="Fleet missions × assumed rework proportion">6 chains</span>
-            <span class="res-sub">missions returned after QA/review</span>
-          </div>
-          <div class="res-card">
-            <span class="res-label">Estimated Tokens in Rework</span>
-            <span class="res-num" id="reworkTokensVal" title="Expected returned missions × average tokens per mission">2.5M tokens</span>
-            <span class="res-sub">rework loop compute volume</span>
-          </div>
-          <div class="res-card highlight-res">
-            <span class="res-label">Illustrative Cost of Rework</span>
-            <span class="res-num" id="reworkCostVal" title="Tokens in rework ÷ 1,000,000 × blended token rate">$13 USD</span>
-            <span class="res-sub">monthly compute spend in rework</span>
-          </div>
-          <div class="res-card"><span class="res-label">Potentially avoidable developer time</span><span class="res-num" id="hoursSavedVal" title="Expected returns × developer hours per return × assumed reduction">—</span><span class="res-sub">scenario assumption, not elapsed agent time</span></div>
-          <div class="res-card"><span class="res-label">Released token capacity</span><span class="res-num" id="capacityVal" title="Assumed rework proportion × assumed reduction">—</span><span class="res-sub">share of modeled fleet tokens, not a velocity prediction</span></div>
-          <p id="seatLoadVal" class="res-sub"></p>
-        </div>
-        <details class="calc-method"><summary>Formulas & assumptions</summary>
-          <p>Expected returned missions = fleet missions × rework proportion. Tokens in rework = returned missions × average tokens per mission. Cost = tokens in rework ÷ 1,000,000 × blended token rate. Avoidable developer hours = returned missions × hours per return × assumed reduction. Released token capacity = rework proportion × assumed reduction. Missions per seat = fleet missions ÷ seats.</p>
-          <p>Returned mission counts are expected values, so fractions are retained. The model assumes a returned mission consumes the same average tokens as a mission. It cannot infer actual token prices, human effort, avoidability or delivery speed. All defaults are illustrative operator assumptions.</p>
-        </details>
-        <p class="calc-disclaimer" style="text-align: center; margin-top: 1.5rem; font-size: 0.85rem; color: var(--text-muted);">
-          <em>Methodology Note: Purely illustrative scenario model based on operator inputs. Dendro diagnoses and attributes actual fleet rework from event logs; it does not claim automated savings. No benchmark return rate or velocity improvement is assumed.</em>
-        </p>
-      </div>
-    </div>
-  </section>
-
-  <!-- Conversational Analytics (Nao) -->
-  <section id="nao" class="section nao-section">
-    <div class="container">
-      <div class="section-badge">Natural Language OLAP</div>
-      <h2 class="section-title">Query Fleet Intelligence in Plain English</h2>
-      <p class="section-subtitle">
-        Native conversational integration with <strong>Nao</strong>. Powered by DuckDB semantic models without rigid dashboards.
-      </p>
-
-      <p class="calc-disclaimer">Synthetic conversation illustrating possible analytical questions; figures below are invented and are not measured results.</p>
-      <div class="nao-showcase">
-        <div class="nao-chat">
-          <div class="chat-msg user-msg">
-            <div class="msg-bubble">"Which seat had the highest idle-with-work rate in the dendro-dev rig over the last 7 days?"</div>
-          </div>
-          <div class="chat-msg bot-msg">
-            <div class="msg-bubble">
-              <p>The seat <strong>dev-build-jr</strong> recorded <strong>68.4% idle-with-work waste</strong> in <code>dendro-dev</code>. P0 build tasks completed quickly, but the downstream pipeline was blocked waiting on <code>rev-review</code> for 42 minutes.</p>
-              <div class="code-snippet">
-                <code>SELECT seat_id, round(idle_with_work_seconds * 100.0 / total_seconds, 1) as waste_pct FROM v_seat_idle_ranking WHERE rig_id = 'dendro-dev';</code>
+        <div class="p-eco-grid">
+          <a class="p-eco-card" href="../agent-otel-bridge/">
+            <div class="p-eco-head">
+              <img src="../agent-otel-bridge/assets/mark.svg" alt="agent-otel-bridge logo" width="44" height="44">
+              <div>
+                <span class="p-card-kicker">Live Partner · Watch in Flight</span>
+                <h3>agent-otel-bridge</h3>
               </div>
             </div>
-          </div>
-          <div class="chat-msg user-msg">
-            <div class="msg-bubble">"Were any repetitive tool retry loops detected today?"</div>
-          </div>
-          <div class="chat-msg bot-msg">
-            <div class="msg-bubble">
-              <p>✓ <strong>No critical loops detected.</strong> The connector resolved 2 consecutive build retries in <code>orch-arch</code>, which passed on the second turn within 0.18s.</p>
+            <p><strong>agent-otel-bridge</strong> is the live dashboard showing what your agents are doing right now in Grafana or Datadog. <strong>Dendro</strong> is the flight recorder you read afterward to understand cost, rework, and handoff flow.</p>
+          </a>
+          <a class="p-eco-card" href="../meshloop/">
+            <div class="p-eco-head">
+              <img src="../meshloop/assets/logo.svg" alt="Meshloop logo" width="44" height="44">
+              <div>
+                <span class="p-card-kicker">Execution Partner · Build in Parallel</span>
+                <h3>Meshloop</h3>
+              </div>
             </div>
-          </div>
+            <p>Run parallel coding tasks inside isolated sandboxes with <strong>Meshloop</strong>, then use <strong>Dendro</strong> to inspect how long each task took and how many repair turns were needed.</p>
+          </a>
+          <a class="p-eco-card" href="../agent-sdlc/">
+            <div class="p-eco-head">
+              <img src="../agent-sdlc/assets/agentflow-icon-192.png" alt="AgentFlow SDLC logo" width="44" height="44">
+              <div>
+                <span class="p-card-kicker">Governance Partner · Plan &amp; Accept</span>
+                <h3>AgentFlow SDLC 2.0</h3>
+              </div>
+            </div>
+            <p>Define clear engineering roles and acceptance gates with <strong>AgentFlow</strong>, and use <strong>Dendro</strong> to measure whether role handoffs are smooth or bouncing back in rework.</p>
+          </a>
         </div>
       </div>
-    </div>
-  </section>
+    </section>
+<!-- mtneedle:managed:start subsite-context v1 -->
+<section class="mtn-context" aria-labelledby="mtn-context-dendro">
+<div class="mtn-context-inner">
+<p class="mtn-context-eyebrow">Built by Samuel Mota · Move the Needle</p>
+<h2 id="mtn-context-dendro">Why Dendro exists</h2>
+<p class="mtn-context-status">Open source · MIT · v0.7.0</p>
+<div class="mtn-context-grid">
+<article><h3>Value</h3><p>See where time, handoffs, rework, and budget actually go across your AI coding sessions—using verifiable local evidence instead of vanity productivity claims.</p></article>
+<article><h3>Strategy</h3><p>Six open terminals look busy even when four agents are stalled on a handoff. Dendro turns raw session history into honest evidence of where time, budget, and rework actually go.</p></article>
+<article><h3>Technical frontier</h3><p>Reads local session transcripts across six AI coding tools to separate productive work from waiting, handoff delays, and multi-pass rework—in an interactive terminal cockpit or browser report.</p></article>
+</div>
+<div class="mtn-context-links">
+<div><p class="mtn-context-label">Related thinking</p><a href="../thinking/2026-08-18-observability-after-dashboards.html">Observability After Dashboards</a><a href="../thinking/2026-09-10-follow-the-money-the-future-of-observability.html">Follow the money - the future of observability</a></div>
+<div><p class="mtn-context-label">Where this shows up in practice</p><a href="../where-i-help/reliability/">Platforms &amp; reliability</a><p class="mtn-context-label mtn-context-gap">Better together</p><a href="../better-together/#otel-dendro">With agent-otel-bridge, and on its own</a></div>
+<div><a class="mtn-context-cta" href="../#contact">Discuss applying this with your team</a></div>
+</div>
+</div>
+</section>
+<!-- mtneedle:managed:end subsite-context -->
+  </main>
 
-  <!-- Quickstart & Docs -->
-  <section id="docs" class="section docs-section">
-    <div class="container">
-      <div class="section-badge">Developer Quickstart</div>
-      <h2 class="section-title">Open Architecture & Guides</h2>
-      <p class="section-subtitle">Everything required to install, extend, and audit your multi-agent squads.</p>
-
-      <div class="docs-grid">
-        <div class="card doc-card">
-          <h3>Adoption & Quickstart Guide</h3>
-          <p>Build the binary, select authorized sources and an observation period, then inspect local reports.</p>
-          <a href="https://github.com/smota/dendro/blob/main/docs/adoption/README.md" target="_blank" class="doc-link">View Adoption Guide →</a>
-        </div>
-        <div class="card doc-card">
-          <h3>Harness Extension Guide</h3>
-          <p>Learn how to implement the <code>HarnessConnector</code> trait to add Cursor, Windsurf, Devin, Goose, or proprietary harnesses.</p>
-          <a href="https://github.com/smota/dendro/blob/main/docs/extensions/README.md" target="_blank" class="doc-link">View Extension Guide →</a>
-        </div>
-        <div class="card doc-card">
-          <h3>Maintainer & Architecture Guide</h3>
-          <p>Safe Rust standards (<code>#![deny(unsafe_code)]</code>), zero-copy BufReader streaming, DuckDB schemas, and AgentFlow SDLC.</p>
-          <a href="https://github.com/smota/dendro/blob/main/docs/maintainers/README.md" target="_blank" class="doc-link">View Maintainer Guide →</a>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Footer -->
-  <footer class="footer">
-    <div class="container footer-content">
-      <div class="footer-brand">
-        <img src="assets/logo.jpg" alt="Dendro Logo" class="footer-logo">
-        <div>
-          <h4>DENDRO</h4>
-          <p>Decipher the growth layers of your AI agent fleets.</p>
-        </div>
-      </div>
-      <div class="footer-links">
-        <a href="https://github.com/smota/dendro" target="_blank">GitHub</a>
-        <a href="https://github.com/mvschwarz/openrig" target="_blank">OpenRig</a>
-        <a href="https://duckdb.org" target="_blank">DuckDB</a>
-        <a href="https://github.com/getnao/nao" target="_blank">Nao</a>
-      </div>
-      <div class="footer-copy">
-        <p>MIT License © 2026 smota • Target Domain: <strong>dendrorings.ai</strong></p>
+  <footer class="p-footer">
+    <div class="p-wrap p-footer-inner">
+      <div><strong>Dendro</strong> · MIT License · Built by Samuel Mota (<a href="../">Move the Needle</a>)</div>
+      <div class="p-footer-links">
+        <a href="./" aria-current="page">Overview</a>
+        <a href="how-it-works.html">How it works</a>
+        <a href="dashboards/index.html">Dashboards</a>
+        <a href="viewer.html">Fleet Explorer</a>
+        <a href="get-started.html">Get started</a>
+        <a href="https://github.com/smota/dendro">GitHub ↗</a>
       </div>
     </div>
   </footer>
-
-  <script src="app.js"></script>
+<!-- mtneedle:managed:start subsite-family v1 -->
+<aside class="mtn-family" aria-label="Move the Needle systems and practice">
+<div class="mtn-family-inner">
+<div class="mtn-family-intro"><a class="mtn-umbrella-brand" href="../" aria-label="Move the Needle home"><img src="../assets/img/move-the-needle-icon-32.png" alt="" width="20" height="20"><span>Move the Needle</span></a><p>Built and maintained by Samuel Mota through Move the Needle, his independent technology transformation practice.</p></div>
+<div class="mtn-family-col"><p class="mtn-family-title">Systems</p><ul><li><a href="../agent-sdlc/">AgentFlow SDLC</a></li><li><a href="../dendro/" aria-current="page">Dendro</a></li><li><a href="../agent-otel-bridge/">agent-otel-bridge</a></li><li><a href="../meshloop/">Meshloop</a></li><li><a href="../holoself/">Holoself</a></li><li><a href="../nextstep/">Nextstep</a></li><li><a href="../metaskills/">MetaSkills</a></li><li><a href="../open-source/">All open source</a></li></ul></div>
+<div class="mtn-family-col"><p class="mtn-family-title">Practice</p><ul><li><a href="../where-i-help/">Focus areas</a></li><li><a href="../how-i-work/">Approach</a></li><li><a href="../experience/">Case studies</a></li><li><a href="../thinking/">Thinking</a></li><li><a href="../about/">About</a></li><li><a href="../#contact">Contact</a></li></ul></div>
+<p class="mtn-family-legal">© Samuel Mota · <a href="https://www.linkedin.com/in/smota/?utm_source=movetheneedle.info&utm_medium=referral">LinkedIn ↗</a> · <a href="https://github.com/smota">GitHub ↗</a></p>
+</div>
+</aside>
+<!-- mtneedle:managed:end subsite-family -->
 </body>
 </html>

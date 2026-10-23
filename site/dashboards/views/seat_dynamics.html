@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dendro · Seat Dynamics & Idle Ranking</title>
+  <meta name="description" content="Seat activity breakdown and idle ranking from DuckDB view v_seat_idle_ranking. Active duration, idle-with-work, container holds, and ceremony ratio.">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <!-- Top Navigation -->
+  <header class="telemetry-nav">
+    <div class="nav-left">
+      <a href="../index.html" class="brand-link" title="Dashboards Hub">
+        <span class="brand-icon">D</span>
+        <span>Dendro<span style="font-weight:400;color:var(--text-muted);font-size:0.85rem;margin-left:6px;">Dynamics</span></span>
+      </a>
+      <div class="nav-breadcrumbs" aria-label="Breadcrumbs">
+        <span class="separator">/</span>
+        <a href="../index.html" style="color:var(--text-secondary);">Dashboards</a>
+        <span class="separator">/</span>
+        <span class="current">Seat Dynamics & Yield</span>
+      </div>
+    </div>
+    <div class="nav-right">
+      <div id="dual-serving-indicator" class="dual-serving-badge snapshot">
+        <span class="pulse-dot"></span>
+        <span id="dual-serving-text">LOCAL DUCKDB READY · SNAPSHOT MODE</span>
+      </div>
+      <button id="btn-refresh" class="nav-action-btn" type="button" title="Refresh seat snapshot">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+        <span>Refresh</span>
+      </button>
+      <a href="../index.html" class="nav-action-btn" title="Back to Dashboards Hub">
+        <span>← Back to Dashboards Hub</span>
+      </a>
+    </div>
+  </header>
+
+  <main class="telemetry-layout">
+    <!-- Header -->
+    <section class="hero-header">
+      <div class="hero-eyebrow">
+        <span>●</span> Seat Lifespan Breakdown · SQL View: <code>v_seat_idle_ranking</code>
+      </div>
+      <h1 class="hero-title">Seat Dynamics & Idle Ranking</h1>
+      <p class="hero-subtitle">
+        Empirical breakdown of observed seat lifespans. Distinguishes active execution from actionable idle-with-work (work was ready in queue), unparked container holds, true leaf stalls, and ceremony vs engineering tooling calls.
+      </p>
+    </section>
+
+    <!-- Top KPI Banner -->
+    <section class="kpi-grid" aria-label="Seat Dynamics KPIs">
+      <article class="kpi-card accent-emerald">
+        <div class="kpi-label">Fleet Active Time</div>
+        <div class="kpi-value" id="kpi-active-pct">68.4%</div>
+        <div class="kpi-meta">
+          <span style="color:var(--emerald-yield);">142h 20m</span> · <span>Actual running code/tools</span>
+        </div>
+      </article>
+
+      <article class="kpi-card accent-amber">
+        <div class="kpi-label">Idle With Work (Actionable)</div>
+        <div class="kpi-value" id="kpi-idle-work">14.2%</div>
+        <div class="kpi-meta">
+          <span style="color:var(--amber-friction);">29h 30m</span> · <span>Queue items pending pickup</span>
+        </div>
+      </article>
+
+      <article class="kpi-card accent-rose">
+        <div class="kpi-label">Unparked Container Holds</div>
+        <div class="kpi-value" id="kpi-holds">450s</div>
+        <div class="kpi-meta">
+          <span class="badge badge-warn">2 SEATS</span> · <span>Holding memory without work</span>
+        </div>
+      </article>
+
+      <article class="kpi-card accent-purple">
+        <div class="kpi-label">Fleet Ceremony Ratio</div>
+        <div class="kpi-value" id="kpi-ceremony">11.8%</div>
+        <div class="kpi-meta">
+          <span>Protocol &amp; status calls</span> · <span>Fleet overhead</span>
+        </div>
+      </article>
+
+      <article class="kpi-card accent-cyan">
+        <div class="kpi-label">Fleet M1 Yield</div>
+        <div class="kpi-value" id="kpi-yield">84.2K</div>
+        <div class="kpi-meta">
+          <span>Tokens / closed item</span> · <span>Nonreturned deliverables</span>
+        </div>
+      </article>
+    </section>
+
+    <!-- Activity Bands Visualizer -->
+    <section class="viz-panel" aria-label="Seat Activity Breakdown Bands">
+      <div class="viz-panel-header">
+        <div>
+          <h2 class="viz-title">Seat Activity Duration Bands</h2>
+          <p class="viz-subtitle">Aggregate observed duration per seat partitioned into discrete execution bands</p>
+        </div>
+        <div class="activity-legend">
+          <div class="legend-item"><span class="legend-dot" style="background:var(--emerald-yield);"></span><span>Active Execution</span></div>
+          <div class="legend-item"><span class="legend-dot" style="background:var(--amber-friction);"></span><span>Idle with Work</span></div>
+          <div class="legend-item"><span class="legend-dot" style="background:var(--slate-neutral);"></span><span>Idle without Work</span></div>
+          <div class="legend-item"><span class="legend-dot" style="background:repeating-linear-gradient(45deg,#27374b,#27374b 2px,#9ca3af 2px,#9ca3af 4px);"></span><span>Container Hold</span></div>
+          <div class="legend-item"><span class="legend-dot" style="background:var(--rose-rework);"></span><span>Leaf Stall</span></div>
+        </div>
+      </div>
+
+      <div id="bands-container">
+        <!-- Dynamically rendered seat bands -->
+      </div>
+    </section>
+
+    <!-- Data Table -->
+    <section class="table-panel">
+      <div class="table-panel-header">
+        <div class="table-panel-title">
+          <span>Seat Idle &amp; Yield Ranking</span>
+          <span class="badge badge-info" id="seat-count-badge">0 Seats</span>
+        </div>
+        <div class="table-panel-actions">
+          <input type="text" id="seat-search" class="search-input" style="padding:6px 12px;font-size:0.8rem;width:200px;" placeholder="Search seat...">
+          <button id="btn-export-csv" class="nav-action-btn" type="button">Export CSV</button>
+        </div>
+      </div>
+      <div class="table-container">
+        <table class="telemetry-table" id="seat-table">
+          <thead>
+            <tr>
+              <th class="sortable" data-col="seat_id">Seat ID</th>
+              <th class="sortable num" data-col="observed_secs">Observed (s)</th>
+              <th class="sortable num" data-col="active_secs">Active (s)</th>
+              <th class="sortable num" data-col="idle_with_work_secs">Idle w/ Work (s) ▾</th>
+              <th class="sortable num" data-col="idle_between_work_secs">Idle w/o Work (s)</th>
+              <th class="sortable num" data-col="unparked_container_secs">Container Hold (s)</th>
+              <th class="sortable num" data-col="leaf_stall_secs">Leaf Stall (s)</th>
+              <th class="sortable num" data-col="ceremony_ratio">Ceremony Ratio</th>
+              <th class="sortable num" data-col="m1_yield">M1 Yield (tok/item)</th>
+            </tr>
+          </thead>
+          <tbody id="seat-tbody">
+            <!-- Dynamically populated rows -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- SQL Query Reference -->
+    <div class="query-box">
+      <div class="query-box-title">Underlying DuckDB Query</div>
+      <code>SELECT * FROM v_seat_idle_ranking ORDER BY idle_with_work_secs DESC, seat_id;</code>
+    </div>
+  </main>
+
+  <!-- Embedded Snapshot Data -->
+  <script id="dendro-data" type="application/json">
+  {
+    "product": "AI Fleet Intelligence",
+    "view": "v_seat_idle_ranking",
+    "summary": {
+      "active_pct": 68.4,
+      "idle_work_pct": 14.2,
+      "unparked_holds_sec": 450,
+      "avg_ceremony_ratio": 0.118,
+      "fleet_m1_yield": 84200.0
+    },
+    "seats": [
+      {
+        "seat_id": "dev-build-1",
+        "observed_secs": 14400,
+        "active_secs": 9600,
+        "idle_with_work_secs": 2040,
+        "idle_between_work_secs": 2160,
+        "unparked_container_secs": 300,
+        "leaf_stall_secs": 300,
+        "ceremony_ratio": 0.085,
+        "m1_yield": 72500,
+        "closed_items": 12
+      },
+      {
+        "seat_id": "dev-reviewer-1",
+        "observed_secs": 14400,
+        "active_secs": 8400,
+        "idle_with_work_secs": 1680,
+        "idle_between_work_secs": 4170,
+        "unparked_container_secs": 150,
+        "leaf_stall_secs": 0,
+        "ceremony_ratio": 0.142,
+        "m1_yield": 61200,
+        "closed_items": 16
+      },
+      {
+        "seat_id": "dev-tester-1",
+        "observed_secs": 14400,
+        "active_secs": 10200,
+        "idle_with_work_secs": 1200,
+        "idle_between_work_secs": 3000,
+        "unparked_container_secs": 0,
+        "leaf_stall_secs": 0,
+        "ceremony_ratio": 0.062,
+        "m1_yield": 88000,
+        "closed_items": 8
+      },
+      {
+        "seat_id": "dev-architect-1",
+        "observed_secs": 14400,
+        "active_secs": 11400,
+        "idle_with_work_secs": 720,
+        "idle_between_work_secs": 2280,
+        "unparked_container_secs": 0,
+        "leaf_stall_secs": 0,
+        "ceremony_ratio": 0.115,
+        "m1_yield": 115000,
+        "closed_items": 5
+      },
+      {
+        "seat_id": "dev-docs-1",
+        "observed_secs": 14400,
+        "active_secs": 6800,
+        "idle_with_work_secs": 540,
+        "idle_between_work_secs": 7060,
+        "unparked_container_secs": 0,
+        "leaf_stall_secs": 0,
+        "ceremony_ratio": 0.185,
+        "m1_yield": 49000,
+        "closed_items": 9
+      }
+    ]
+  }
+  </script>
+
+  <script src="../live-sync.js"></script>
+  <script>
+    'use strict';
+    const tbody = document.getElementById('seat-tbody');
+    const bandsContainer = document.getElementById('bands-container');
+    const seatSearch = document.getElementById('seat-search');
+    let currentSeats = [];
+    let sortCol = 'idle_with_work_secs';
+    let sortAsc = false;
+
+    const formatNum = n => typeof n === 'number' ? n.toLocaleString(undefined, { maximumFractionDigits: 1 }) : '—';
+    const formatPct = n => typeof n === 'number' ? (n * 100).toFixed(1) + '%' : '—';
+
+    function renderView(data) {
+      if (!data) return;
+      if (data.summary) {
+        const s = data.summary;
+        if (s.active_pct !== undefined) document.getElementById('kpi-active-pct').textContent = s.active_pct.toFixed(1) + '%';
+        if (s.idle_work_pct !== undefined) document.getElementById('kpi-idle-work').textContent = s.idle_work_pct.toFixed(1) + '%';
+        if (s.unparked_holds_sec !== undefined) document.getElementById('kpi-holds').textContent = s.unparked_holds_sec + 's';
+        if (s.avg_ceremony_ratio !== undefined) document.getElementById('kpi-ceremony').textContent = (s.avg_ceremony_ratio * 100).toFixed(1) + '%';
+        if (s.fleet_m1_yield !== undefined) document.getElementById('kpi-yield').textContent = (s.fleet_m1_yield / 1000).toFixed(1) + 'K';
+      }
+
+      currentSeats = data.seats || [];
+      renderBands(currentSeats);
+      renderTable();
+    }
+
+    function renderBands(seats) {
+      bandsContainer.innerHTML = '';
+      if (!seats.length) {
+        bandsContainer.innerHTML = '<p style="color:var(--text-muted);padding:16px;">No seat evidence available.</p>';
+        return;
+      }
+
+      seats.forEach(seat => {
+        const total = seat.observed_secs || 1;
+        const activePct = Math.max(0, (seat.active_secs || 0) / total * 100);
+        const holdSecs = seat.unparked_container_secs || 0;
+        const idleWorkBase = seat.idle_with_work_secs || 0;
+        const idleWorkNet = Math.max(0, idleWorkBase - holdSecs);
+        const idleWorkPct = (idleWorkNet / total) * 100;
+        const holdPct = (holdSecs / total) * 100;
+        const idleNoWorkPct = Math.max(0, (seat.idle_between_work_secs || 0) / total * 100);
+        const stallPct = Math.max(0, (seat.leaf_stall_secs || 0) / total * 100);
+
+        const group = document.createElement('div');
+        group.className = 'activity-band-group';
+        group.innerHTML = `
+          <div class="activity-band-label">
+            <span><strong>${seat.seat_id}</strong> <small style="color:var(--text-muted);">(${formatNum(seat.observed_secs)}s observed)</small></span>
+            <span style="font-family:var(--font-mono);font-size:0.8rem;color:var(--text-secondary);">Active: ${activePct.toFixed(0)}% · Idle w/ Work: ${((idleWorkBase / total) * 100).toFixed(0)}%</span>
+          </div>
+          <div class="activity-band-bar">
+            <div class="segment active" style="width:${activePct}%;" title="Active: ${formatNum(seat.active_secs)}s (${activePct.toFixed(1)}%)"></div>
+            <div class="segment idle-work" style="width:${idleWorkPct}%;" title="Idle with work: ${formatNum(idleWorkNet)}s (${idleWorkPct.toFixed(1)}%)"></div>
+            <div class="segment container-hold" style="width:${holdPct}%;" title="Container hold: ${formatNum(holdSecs)}s (${holdPct.toFixed(1)}%)"></div>
+            <div class="segment stall" style="width:${stallPct}%;" title="Leaf stall: ${formatNum(seat.leaf_stall_secs)}s (${stallPct.toFixed(1)}%)"></div>
+            <div class="segment idle-nowork" style="width:${idleNoWorkPct}%;" title="Idle without work: ${formatNum(seat.idle_between_work_secs)}s (${idleNoWorkPct.toFixed(1)}%)"></div>
+          </div>
+        `;
+        bandsContainer.appendChild(group);
+      });
+    }
+
+    function renderTable() {
+      tbody.innerHTML = '';
+      const filter = (seatSearch.value || '').toLowerCase();
+      let filtered = currentSeats.filter(s => (s.seat_id || '').toLowerCase().includes(filter));
+
+      filtered.sort((a, b) => {
+        let va = a[sortCol] ?? 0;
+        let vb = b[sortCol] ?? 0;
+        if (typeof va === 'string') return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+        return sortAsc ? (va - vb) : (vb - va);
+      });
+
+      document.getElementById('seat-count-badge').textContent = `${filtered.length} Seat${filtered.length === 1 ? '' : 's'}`;
+
+      if (!filtered.length) {
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-muted);">No seats match filter.</td></tr>';
+        return;
+      }
+
+      filtered.forEach(seat => {
+        const tr = document.createElement('tr');
+        const cerPct = seat.ceremony_ratio !== undefined ? (seat.ceremony_ratio * 100).toFixed(1) + '%' : '—';
+        tr.innerHTML = `
+          <td><strong><code>${seat.seat_id}</code></strong></td>
+          <td class="num">${formatNum(seat.observed_secs)}</td>
+          <td class="num" style="color:var(--emerald-yield);">${formatNum(seat.active_secs)}</td>
+          <td class="num" style="color:var(--amber-friction);font-weight:700;">${formatNum(seat.idle_with_work_secs)}</td>
+          <td class="num" style="color:var(--text-muted);">${formatNum(seat.idle_between_work_secs)}</td>
+          <td class="num">${seat.unparked_container_secs ? `<span class="badge badge-warn">${formatNum(seat.unparked_container_secs)}s</span>` : '0'}</td>
+          <td class="num">${seat.leaf_stall_secs ? `<span class="badge badge-fail">${formatNum(seat.leaf_stall_secs)}s</span>` : '0'}</td>
+          <td class="num">${cerPct}</td>
+          <td class="num" style="color:var(--accent-cyan);font-weight:600;">${formatNum(seat.m1_yield)}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    seatSearch.addEventListener('input', renderTable);
+
+    document.querySelectorAll('#seat-table th.sortable').forEach(th => {
+      th.addEventListener('click', () => {
+        const col = th.getAttribute('data-col');
+        if (sortCol === col) {
+          sortAsc = !sortAsc;
+        } else {
+          sortCol = col;
+          sortAsc = false;
+        }
+        document.querySelectorAll('#seat-table th.sortable').forEach(h => {
+          h.textContent = h.textContent.replace(/[ ▴▾]/g, '');
+        });
+        th.textContent = `${th.textContent} ${sortAsc ? '▴' : '▾'}`;
+        renderTable();
+      });
+    });
+
+    document.getElementById('btn-export-csv').addEventListener('click', () => {
+      if (!currentSeats.length) return;
+      const headers = ['SeatID', 'ObservedSecs', 'ActiveSecs', 'IdleWithWorkSecs', 'IdleWithoutWorkSecs', 'ContainerHoldsSecs', 'LeafStallsSecs', 'CeremonyRatio', 'M1Yield'];
+      const rows = currentSeats.map(s => [
+        s.seat_id, s.observed_secs, s.active_secs, s.idle_with_work_secs, s.idle_between_work_secs, s.unparked_container_secs, s.leaf_stall_secs, s.ceremony_ratio, s.m1_yield
+      ]);
+      const csv = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `seat-dynamics-ranking-${Date.now()}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    const sync = attachLiveSync({
+      viewId: 'seat_dynamics',
+      onData: function(data) {
+        renderView(data);
+      }
+    });
+
+    document.getElementById('btn-refresh').addEventListener('click', () => sync.refresh());
+  </script>
+</body>
+</html>

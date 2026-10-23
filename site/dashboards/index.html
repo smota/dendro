@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dendro · Dashboard Entryway & Multi-View Hub</title>
+  <meta name="description" content="Local-first AI Fleet Intelligence Hub. Retrospective multi-view telemetry over seat dynamics, handoff friction, token economics, and executive governance.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Top Navigation -->
+  <header class="telemetry-nav">
+    <div class="nav-left">
+      <a href="../index.html" class="brand-link" title="Dendro Home">
+        <span class="brand-icon">D</span>
+        <span>Dendro<span style="font-weight:400;color:var(--text-muted);font-size:0.85rem;margin-left:6px;">Cockpit</span></span>
+      </a>
+      <div class="nav-breadcrumbs" aria-label="Breadcrumbs">
+        <span class="separator">/</span>
+        <span class="current">Dashboards Hub</span>
+      </div>
+    </div>
+    <div class="nav-right">
+      <div id="dual-serving-indicator" class="dual-serving-badge snapshot">
+        <span class="pulse-dot"></span>
+        <span id="dual-serving-text">LOCAL DUCKDB READY · SNAPSHOT MODE</span>
+      </div>
+      <button id="btn-refresh" class="nav-action-btn" type="button" title="Refresh local data snapshot">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+        <span>Refresh</span>
+      </button>
+      <a href="../viewer.html" class="nav-action-btn" title="Open Deep Fleet Explorer">
+        <span>Fleet Explorer ↗</span>
+      </a>
+      <a href="../index.html" class="nav-action-btn" title="Back to overview">
+        <span>Site Home</span>
+      </a>
+    </div>
+  </header>
+
+  <main class="telemetry-layout">
+    <!-- Hero Header -->
+    <section class="hero-header">
+      <div class="hero-eyebrow">
+        <span>●</span> Fleet Intelligence Telemetry · Obsidian Edition
+      </div>
+      <h1 class="hero-title">Dashboard Entryway & Multi-View Hub</h1>
+      <p class="hero-subtitle">
+        Verifiable operational telemetry derived from local DuckDB views. Explore canonical governance scorecards, seat lifespan dynamics, pairwise handoff rework friction, and four-component token lineage.
+      </p>
+    </section>
+
+    <!-- KPI Aggregate Banner -->
+    <section class="kpi-grid" aria-label="Fleet Key Performance Indicators">
+      <article class="kpi-card accent-cyan">
+        <div class="kpi-label">Total Recorded Tokens</div>
+        <div class="kpi-value" id="kpi-tokens">14.24M</div>
+        <div class="kpi-meta">
+          <span>4-component lineage</span> · <span style="color:var(--accent-cyan);">100% accounted</span>
+        </div>
+      </article>
+
+      <article class="kpi-card accent-emerald">
+        <div class="kpi-label">Active Seats in Fleet</div>
+        <div class="kpi-value" id="kpi-seats">8 Seats</div>
+        <div class="kpi-meta">
+          <span>0 unobserved lifespans</span> · <span style="color:var(--emerald-yield);">Full coverage</span>
+        </div>
+      </article>
+
+      <article class="kpi-card accent-purple">
+        <div class="kpi-label">Canonical M1 Fleet Yield</div>
+        <div class="kpi-value" id="kpi-yield">78.4K <small style="font-size:0.9rem;font-weight:500;">tok/deliv</small></div>
+        <div class="kpi-meta">
+          <span>182 nonreturned items</span> · <span style="color:var(--purple-protocol);">Strict audit</span>
+        </div>
+      </article>
+
+      <article class="kpi-card accent-amber">
+        <div class="kpi-label">Handoff Friction Rate</div>
+        <div class="kpi-value" id="kpi-friction">12.9%</div>
+        <div class="kpi-meta">
+          <span>32 rework returns</span> · <span style="color:var(--amber-friction);">18 active pairs</span>
+        </div>
+      </article>
+
+      <article class="kpi-card accent-rose">
+        <div class="kpi-label">Effective Concurrency</div>
+        <div class="kpi-value" id="kpi-concurrency">2.84x</div>
+        <div class="kpi-meta">
+          <span>6.2 peak active seats</span> · <span style="color:var(--text-secondary);">k=1..8 dist</span>
+        </div>
+      </article>
+    </section>
+
+    <!-- Filter and Search Toolbar -->
+    <section class="filter-toolbar" aria-label="Dashboard views filter">
+      <div class="search-box">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="view-search" class="search-input" placeholder="Search views by keyword (e.g. idle, token, rework, governance)..." aria-label="Search dashboard views">
+      </div>
+      <div class="filter-chips" role="tablist" aria-label="Category filter">
+        <button class="filter-chip active" data-category="all" type="button">All Views (5)</button>
+        <button class="filter-chip" data-category="governance" type="button">Governance</button>
+        <button class="filter-chip" data-category="dynamics" type="button">Seat Dynamics</button>
+        <button class="filter-chip" data-category="handoffs" type="button">Handoff Friction</button>
+        <button class="filter-chip" data-category="economics" type="button">Token Economics</button>
+        <button class="filter-chip" data-category="explorer" type="button">Fleet Canvas</button>
+      </div>
+    </section>
+
+    <!-- Dashboard Views Grid -->
+    <section id="views-container" class="views-grid" aria-label="Dashboard Views Directory">
+      <!-- 1. Executive Governance -->
+      <a href="views/executive_governance.html" class="view-card" data-category="governance" data-keywords="governance audit executive scorecard four-eyes watchdog vortex loop compliance multi-rig">
+        <div>
+          <div class="view-card-header">
+            <span class="view-card-tag tag-purple">Governance · Protocol</span>
+            <span class="view-card-sql">v_executive_governance</span>
+          </div>
+          <h2 class="view-card-title">
+            <span>Executive Governance & Multi-Rig Audit</span>
+            <span class="arrow">→</span>
+          </h2>
+          <p class="view-card-desc">
+            Canonical governance scorecard: independent Four-eyes review compliance, automated watchdog stall recoveries, vortex rework loop detection, and cross-slice cache bleed verification.
+          </p>
+        </div>
+        <div class="view-card-preview-stats">
+          <div class="preview-stat">
+            <span class="preview-stat-label">Four-Eyes</span>
+            <span class="preview-stat-value" style="color:var(--emerald-yield);">100% Pass</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">Vortex Loops</span>
+            <span class="preview-stat-value" style="color:var(--emerald-yield);">0 Loops</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">Watchdog</span>
+            <span class="preview-stat-value" style="color:var(--purple-protocol);">12 Resumes</span>
+          </div>
+        </div>
+      </a>
+
+      <!-- 2. Seat Dynamics & Yield -->
+      <a href="views/seat_dynamics.html" class="view-card" data-category="dynamics" data-keywords="seat dynamics idle ranking ceremony ratio active unparked container hold leaf stall engineering yield">
+        <div>
+          <div class="view-card-header">
+            <span class="view-card-tag tag-emerald">Dynamics · Seat Audit</span>
+            <span class="view-card-sql">v_seat_idle_ranking</span>
+          </div>
+          <h2 class="view-card-title">
+            <span>Seat Dynamics & Idle Ranking</span>
+            <span class="arrow">→</span>
+          </h2>
+          <p class="view-card-desc">
+            Complete seat activity breakdown: observed lifespan partitioned into active execution, idle-with-work, unparked container holds, true leaf stalls, and ceremony vs engineering call overhead.
+          </p>
+        </div>
+        <div class="view-card-preview-stats">
+          <div class="preview-stat">
+            <span class="preview-stat-label">Top Idle</span>
+            <span class="preview-stat-value" style="color:var(--amber-friction);">Seat 1 (34m)</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">Avg Ceremony</span>
+            <span class="preview-stat-value" style="color:var(--accent-cyan);">11.8%</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">Active Ratio</span>
+            <span class="preview-stat-value" style="color:var(--emerald-yield);">68.4%</span>
+          </div>
+        </div>
+      </a>
+
+      <!-- 3. Handoff Flow & Friction -->
+      <a href="views/handoff_flow.html" class="view-card" data-category="handoffs" data-keywords="handoff flow friction rework return rate queue wait turnaround pairwise matrix ring boundary">
+        <div>
+          <div class="view-card-header">
+            <span class="view-card-tag tag-amber">Handoffs · Friction</span>
+            <span class="view-card-sql">v_handoff_rework_analysis</span>
+          </div>
+          <h2 class="view-card-title">
+            <span>Handoff Flow & Friction Matrix</span>
+            <span class="arrow">→</span>
+          </h2>
+          <p class="view-card-desc">
+            Pairwise queue handoff analytics: rework return rates, median turnaround wait times, execution durations, and cross-rig supervisory plane boundary classifications.
+          </p>
+        </div>
+        <div class="view-card-preview-stats">
+          <div class="preview-stat">
+            <span class="preview-stat-label">Pairwise Edges</span>
+            <span class="preview-stat-value">18 Pairs</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">Return Rate</span>
+            <span class="preview-stat-value" style="color:var(--amber-friction);">12.9%</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">Wait Median</span>
+            <span class="preview-stat-value" style="color:var(--accent-cyan);">42.5s</span>
+          </div>
+        </div>
+      </a>
+
+      <!-- 4. Token Lineage & Economics -->
+      <a href="views/cost_and_loops.html" class="view-card" data-category="economics" data-keywords="token lineage economics cost burn 4-component cache read write input uncached output task intake">
+        <div>
+          <div class="view-card-header">
+            <span class="view-card-tag tag-cyan">Economics · Lineage</span>
+            <span class="view-card-sql">v_mission_token_burn</span>
+          </div>
+          <h2 class="view-card-title">
+            <span>Token Lineage & Economics</span>
+            <span class="arrow">→</span>
+          </h2>
+          <p class="view-card-desc">
+            Four-component token accounting (input uncached, cache read, cache write, output), prompt cache hit efficiency, and analytical task-intake classification without synthetic currency assumptions.
+          </p>
+        </div>
+        <div class="view-card-preview-stats">
+          <div class="preview-stat">
+            <span class="preview-stat-label">Cache Hit</span>
+            <span class="preview-stat-value" style="color:var(--emerald-yield);">76.8%</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">Intake Ovhd</span>
+            <span class="preview-stat-value" style="color:var(--accent-cyan);">3.8%</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">Total Burn</span>
+            <span class="preview-stat-value">14.24M</span>
+          </div>
+        </div>
+      </a>
+
+      <!-- 5. Deep Fleet Explorer -->
+      <a href="../viewer.html" class="view-card" data-category="explorer" data-keywords="fleet explorer sankey timeline heatmap canvas offline interactive trace context compactions">
+        <div>
+          <div class="view-card-header">
+            <span class="view-card-tag tag-slate">Explorer · Canvas</span>
+            <span class="view-card-sql">Offline Standalone Canvas</span>
+          </div>
+          <h2 class="view-card-title">
+            <span>Deep Fleet Explorer & Sankey</span>
+            <span class="arrow">↗</span>
+          </h2>
+          <p class="view-card-desc">
+            Offline interactive visualizer: multi-seat shared activity timeline, dynamic Sankey handoff ribbons, 30×30 pair friction heatmap, and scrubbed seat evidence inspector.
+          </p>
+        </div>
+        <div class="view-card-preview-stats">
+          <div class="preview-stat">
+            <span class="preview-stat-label">Mode</span>
+            <span class="preview-stat-value" style="color:var(--accent-cyan);">Zero Server</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">Sankey Ribbons</span>
+            <span class="preview-stat-value">Interactive</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">Privacy</span>
+            <span class="preview-stat-value" style="color:var(--emerald-yield);">Scrubbed</span>
+          </div>
+        </div>
+      </a>
+    </section>
+
+    <!-- Empty State for Search Filter -->
+    <div id="no-views-msg" style="display:none;padding:40px;text-align:center;color:var(--text-muted);background:var(--surface-card);border:1px dashed var(--border-subtle);border-radius:12px;">
+      <p style="font-size:1.1rem;margin-bottom:6px;">No dashboard views match your search criteria.</p>
+      <p style="font-size:0.85rem;">Try clearing the search query or selecting "All Views".</p>
+    </div>
+  </main>
+
+  <!-- Embedded Snapshot Data -->
+  <script id="dendro-data" type="application/json">
+  {
+    "product": "AI Fleet Intelligence",
+    "version": "0.7.0",
+    "mode": "snapshot",
+    "kpis": {
+      "total_tokens": 14240000,
+      "active_seats": 8,
+      "m1_yield": 78241.75,
+      "handoff_friction_rate": 0.129,
+      "rework_returns": 32,
+      "effective_concurrency": 2.84
+    }
+  }
+  </script>
+
+  <script src="live-sync.js"></script>
+  <script>
+    'use strict';
+    // Interactive search and category filtering
+    const searchInput = document.getElementById('view-search');
+    const categoryChips = document.querySelectorAll('.filter-chip');
+    const viewCards = document.querySelectorAll('.view-card');
+    const noViewsMsg = document.getElementById('no-views-msg');
+    let activeCategory = 'all';
+
+    function filterCards() {
+      const q = (searchInput.value || '').toLowerCase().trim();
+      let visibleCount = 0;
+
+      viewCards.forEach(card => {
+        const cat = card.getAttribute('data-category');
+        const kw = card.getAttribute('data-keywords') || '';
+        const title = card.querySelector('.view-card-title')?.textContent.toLowerCase() || '';
+        const desc = card.querySelector('.view-card-desc')?.textContent.toLowerCase() || '';
+
+        const matchesCat = (activeCategory === 'all' || cat === activeCategory);
+        const matchesQuery = !q || kw.includes(q) || title.includes(q) || desc.includes(q);
+
+        if (matchesCat && matchesQuery) {
+          card.style.display = 'flex';
+          visibleCount++;
+        } else {
+          card.style.display = 'none';
+        }
+      });
+
+      if (noViewsMsg) {
+        noViewsMsg.style.display = visibleCount === 0 ? 'block' : 'none';
+      }
+    }
+
+    searchInput.addEventListener('input', filterCards);
+
+    categoryChips.forEach(chip => {
+      chip.addEventListener('click', () => {
+        categoryChips.forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        activeCategory = chip.getAttribute('data-category') || 'all';
+        filterCards();
+      });
+    });
+
+    // Formatting helpers
+    const formatNumber = num => typeof num === 'number' ? num.toLocaleString(undefined, { maximumFractionDigits: 1 }) : '—';
+
+    function updateKPIs(data) {
+      if (!data || !data.kpis) return;
+      const k = data.kpis;
+      if (k.total_tokens !== undefined) {
+        document.getElementById('kpi-tokens').textContent = (k.total_tokens / 1000000).toFixed(2) + 'M';
+      }
+      if (k.active_seats !== undefined) {
+        document.getElementById('kpi-seats').textContent = k.active_seats + ' Seats';
+      }
+      if (k.m1_yield !== undefined) {
+        document.getElementById('kpi-yield').innerHTML = (k.m1_yield / 1000).toFixed(1) + 'K <small style="font-size:0.9rem;font-weight:500;">tok/deliv</small>';
+      }
+      if (k.handoff_friction_rate !== undefined) {
+        document.getElementById('kpi-friction').textContent = (k.handoff_friction_rate * 100).toFixed(1) + '%';
+      }
+      if (k.effective_concurrency !== undefined) {
+        document.getElementById('kpi-concurrency').textContent = k.effective_concurrency.toFixed(2) + 'x';
+      }
+    }
+
+    // Connect Live Sync Hook
+    const sync = attachLiveSync({
+      viewId: 'hub',
+      badgeId: 'dual-serving-indicator',
+      badgeTextId: 'dual-serving-text',
+      onData: function(data, source) {
+        updateKPIs(data);
+      }
+    });
+
+    document.getElementById('btn-refresh').addEventListener('click', () => {
+      sync.refresh();
+    });
+  </script>
+</body>
+</html>
