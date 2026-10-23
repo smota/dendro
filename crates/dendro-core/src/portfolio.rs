@@ -1,5 +1,4 @@
 //! Read-only portfolio aggregation over independently ingested analytics outputs.
-use crate::AnalyticsStore;
 use anyhow::{ensure, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -122,7 +121,8 @@ pub fn portfolio_json(sources: &[PortfolioSource], from: &str, to: &str) -> Resu
         }
         let source_id = opaque(database.as_os_str().as_encoded_bytes());
         selected_rigs.insert(source_id.clone(), source.rigs.iter().cloned().collect());
-        let store = AnalyticsStore::open_read_only(&database)?;
+        let request = crate::presentation::ReadRequest::open(&database)?;
+        let store = request.open_store()?;
         let (source_identity, source_roles, retained_sources, queue) =
             store.read_snapshot(|store| {
                 Ok((
@@ -172,7 +172,8 @@ pub fn portfolio_json(sources: &[PortfolioSource], from: &str, to: &str) -> Resu
         }
         drop(store);
         // Unscoped edges exactly once per database, so per-rig views cannot duplicate seams.
-        let unscoped = crate::report_json(&database, "decisions", None, from, to)?;
+        let unscoped =
+            crate::pipeline::report_json_physical(request.database(), "decisions", None, from, to)?;
         for edge in unscoped["payload"]["ring_boundaries"]["edges"]
             .as_array()
             .into_iter()
@@ -181,7 +182,13 @@ pub fn portfolio_json(sources: &[PortfolioSource], from: &str, to: &str) -> Resu
             all_edges.push((source_id.clone(), edge.clone()));
         }
         for rig in &source.rigs {
-            let canonical = crate::report_json(&database, "decisions", Some(rig), from, to)?;
+            let canonical = crate::pipeline::report_json_physical(
+                request.database(),
+                "decisions",
+                Some(rig),
+                from,
+                to,
+            )?;
             let payload = &canonical["payload"];
             rows.push(json!({"source_id":source_id,"rig":identifier(rig),"status":if payload["usage_rows"].as_u64().unwrap_or(0)>0 {"ok"} else {"no_data"},
                 "tokens":payload["tokens"], "ceremony_ratio":payload["tool_categories"]["ceremony_ratio"],

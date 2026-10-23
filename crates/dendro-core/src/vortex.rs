@@ -1334,12 +1334,16 @@ mod tests {
         drop(store);
         let from = at(0).to_rfc3339();
         let to = at(100).to_rfc3339();
-        let report = crate::report_json(&path, "handoffs", None, &from, &to).unwrap();
-        let decisions = crate::report_json(&path, "decisions", None, &from, &to).unwrap();
-        let trace = crate::trace_json(&path, "handoff_friction", None, &from, &to).unwrap();
+        let report =
+            crate::pipeline::report_json_physical(&path, "handoffs", None, &from, &to).unwrap();
+        let decisions =
+            crate::pipeline::report_json_physical(&path, "decisions", None, &from, &to).unwrap();
+        let trace =
+            crate::pipeline::trace_json_physical(&path, "handoff_friction", None, &from, &to)
+                .unwrap();
         assert_eq!(report["payload"]["handoff_friction"], trace["value"]);
         assert_eq!(decisions["payload"]["handoff_friction"], trace["value"]);
-        let mut customized = crate::report_json_with_options(
+        let mut customized = crate::pipeline::report_json_with_analysis_physical(
             &path,
             "handoffs",
             None,
@@ -1350,6 +1354,7 @@ mod tests {
                 return_rate: 0.3,
                 ..FrictionThresholds::default()
             },
+            crate::advisory::AdvisoryOptions::default(),
         )
         .unwrap();
         let mut original = report;
@@ -1408,12 +1413,15 @@ mod tests {
         drop(store);
         let from = at(0).to_rfc3339();
         let to = at(100).to_rfc3339();
-        let report = crate::report_json(&path, "handoffs", None, &from, &to).unwrap_err();
+        let report =
+            crate::pipeline::report_json_physical(&path, "handoffs", None, &from, &to).unwrap_err();
         assert_eq!(
             report.to_string(),
             "invalid or overflowing persisted token totals"
         );
-        let trace = crate::trace_json(&path, "handoff_friction", None, &from, &to).unwrap_err();
+        let trace =
+            crate::pipeline::trace_json_physical(&path, "handoff_friction", None, &from, &to)
+                .unwrap_err();
         assert_eq!(
             trace.to_string(),
             "invalid or overflowing persisted token totals"

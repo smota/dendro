@@ -1,0 +1,760 @@
+{
+  "schema": "dendro.oracle.expected-value-pack/v1",
+  "acceptanceState": "draft_pending_claude_review",
+  "frozen": false,
+  "vectors": [
+    {
+      "vectorID": "v080.dg.ACC.straddle-no-timestamp",
+      "pack": "accounting",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "WINDOW",
+      "inputOrigin": "design_example",
+      "inputs": {
+        "amount": "100/1",
+        "evidenceInterval": "[0,10)",
+        "query": "[0,5)",
+        "attributionTimestamp": null,
+        "kind": "atomic usage"
+      },
+      "expected": {
+        "status": "partial",
+        "reasons": [
+          "straddle_unsplit"
+        ],
+        "values": {
+          "included": {
+            "rational": null,
+            "unit": "token",
+            "sourceLiteral": "no amount included"
+          },
+          "excluded": {
+            "rational": "100/1",
+            "unit": "token",
+            "sourceLiteral": "100"
+          }
+        }
+      },
+      "forbidden": [
+        {
+          "rational": "50/1"
+        },
+        {
+          "rational": "0/1",
+          "as": "measured_usage"
+        }
+      ],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 115,
+          "symbol": "example100",
+          "section": "4. Accounting, time, cost and outcomes"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 108,
+          "symbol": "H3",
+          "section": "Final Grok audit receipt and bounded repair disposition"
+        }
+      ],
+      "derivation": "Without an attribution timestamp, a straddling interval is excluded entirely. Half of 100 is 50 and is forbidden. A measured zero is also forbidden; the source amount stays 100 in the excluded count.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.ACC.timestamp-inside",
+      "pack": "accounting",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "WINDOW",
+      "inputOrigin": "design_example",
+      "inputs": {
+        "amount": "100/1",
+        "query": "[0,5)",
+        "attributionTimestamp": "4/1"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "timestamp_in_half_open_window"
+        ],
+        "values": {
+          "included": {
+            "rational": "100/1",
+            "unit": "token",
+            "sourceLiteral": "100"
+          }
+        },
+        "uncertainty": "exact_for_observed"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 115,
+          "symbol": "timestamp4",
+          "section": "4. Accounting, time, cost and outcomes"
+        }
+      ],
+      "derivation": "Timestamp 4 is in [0,5). The whole 100 is included. It is not prorated.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.ACC.timestamp-outside",
+      "pack": "accounting",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "WINDOW",
+      "inputOrigin": "design_example",
+      "inputs": {
+        "amount": "100/1",
+        "query": "[0,5)",
+        "attributionTimestamp": "5/1",
+        "evidenceInterval": "[0,5)"
+      },
+      "expected": {
+        "status": "partial",
+        "reasons": [
+          "timestamp_outside_half_open",
+          "no_interval_fallback"
+        ],
+        "values": {
+          "included": {
+            "rational": null,
+            "unit": "token",
+            "sourceLiteral": "excludes"
+          },
+          "excluded": {
+            "rational": "100/1",
+            "unit": "token",
+            "sourceLiteral": "100"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 115,
+          "symbol": "timestamp5",
+          "section": "4. Accounting, time, cost and outcomes"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 137,
+          "symbol": "editorial clarification",
+          "section": "Scoped closure re-review receipt"
+        }
+      ],
+      "derivation": "Timestamp 5 is not in [0,5). The interval is fully contained, and that fact is ignored because a timestamp exists. The whole 100 is excluded.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.ACC.fully-contained",
+      "pack": "accounting",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "WINDOW",
+      "inputOrigin": "rule_application",
+      "inputs": {
+        "amount": "100/1",
+        "evidenceInterval": "[0,5)",
+        "query": "[0,10)",
+        "attributionTimestamp": null
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "fully_contained_interval"
+        ],
+        "values": {
+          "included": {
+            "rational": "100/1",
+            "unit": "token",
+            "sourceLiteral": "100"
+          }
+        },
+        "uncertainty": "exact_for_observed"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 115,
+          "symbol": "fully-contained",
+          "section": "4. Accounting, time, cost and outcomes"
+        }
+      ],
+      "derivation": "Only when no attribution timestamp exists may a fully contained evidence interval include the whole amount.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.ACC.unknown-time",
+      "pack": "accounting",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "WINDOW",
+      "inputOrigin": "rule_application",
+      "inputs": {
+        "amount": "100/1",
+        "eventTime": null,
+        "evidenceInterval": null,
+        "query": "[0,10)"
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "unknown_time_absent_interval"
+        ],
+        "values": {
+          "included": {
+            "rational": null,
+            "unit": "token",
+            "sourceLiteral": "cannot be guessed"
+          }
+        }
+      },
+      "forbidden": [
+        {
+          "rational": "100/1",
+          "as": "guessed_into_window"
+        },
+        {
+          "rational": "0/1",
+          "as": "measured_usage"
+        }
+      ],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 115,
+          "symbol": "unknown event time",
+          "section": "4. Accounting, time, cost and outcomes"
+        }
+      ],
+      "derivation": "Unknown event time and an absent interval cannot be placed in a window.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.ACC.currency-not-prorated",
+      "pack": "accounting",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "WINDOW",
+      "inputOrigin": "rule_application",
+      "inputs": {
+        "amount": "2/100 USD",
+        "evidenceInterval": "[0,10)",
+        "query": "[0,5)",
+        "attributionTimestamp": null,
+        "kind": "currency"
+      },
+      "expected": {
+        "status": "partial",
+        "reasons": [
+          "straddle_unsplit"
+        ],
+        "values": {
+          "included": {
+            "rational": null,
+            "unit": "USD",
+            "sourceLiteral": "excluded"
+          },
+          "excluded": {
+            "rational": "1/50",
+            "unit": "USD",
+            "sourceLiteral": "0.02"
+          }
+        }
+      },
+      "forbidden": [
+        {
+          "rational": "1/100"
+        }
+      ],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 115,
+          "symbol": "currency observations",
+          "section": "4. Accounting, time, cost and outcomes"
+        }
+      ],
+      "derivation": "Currency is atomic. Half of 2/100 would be 1/100 and is forbidden. The source amount is excluded whole.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.ACC.wall-le-summed",
+      "pack": "accounting",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "PROPERTY",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "cases": [
+          "F01 10<=20",
+          "F02 abut 12<=12",
+          "F02 overlap 12<=13"
+        ]
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "wall_le_summed"
+        ],
+        "values": {
+          "predicate": {
+            "literal": "wall <= summed"
+          },
+          "equalityPermitted": {
+            "boolean": true,
+            "sourceLiteral": "abut wall=sum"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 67,
+          "symbol": "wall<=summed",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 115,
+          "symbol": "wall",
+          "section": "4. Accounting, time, cost and outcomes"
+        }
+      ],
+      "derivation": "Interval union length is at most the sum of segment lengths. Equality holds for the half-open abutment.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.ACC.residual-conservation",
+      "pack": "accounting",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "PROPERTY",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "cases": [
+          "F04 600+300+100=1000",
+          "F04 25+40+35=100"
+        ]
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "allocations_plus_residual_equal_direct"
+        ],
+        "values": {
+          "holds": {
+            "boolean": true,
+            "sourceLiteral": "equal the original exact amount"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 113,
+          "symbol": "allocations plus residual",
+          "section": "4. Accounting, time, cost and outcomes"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 67,
+          "symbol": "allocations+residual",
+          "section": "Frozen negative and numeric fixtures"
+        }
+      ],
+      "derivation": "Both stated partial allocations conserve the original amount exactly. No display rounding is required.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.ACC.inclusive-nonadditive",
+      "pack": "accounting",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "PROPERTY",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "case": "F03"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "nonadditive_roots"
+        ],
+        "values": {
+          "sumOfRootInclusivesForbiddenAsFleet": {
+            "rational": "5/1",
+            "unit": "token",
+            "sourceLiteral": "5"
+          },
+          "fleet": {
+            "rational": "4/1",
+            "unit": "token",
+            "sourceLiteral": "4"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 113,
+          "symbol": "nonadditive",
+          "section": "4. Accounting, time, cost and outcomes"
+        }
+      ],
+      "derivation": "inclusive(A)+inclusive(B)+direct(P) = 2+2+1 = 5, which double-counts D. Fleet stays 4.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.ACC.overflow-u64",
+      "pack": "accounting",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "PROPERTY",
+      "inputOrigin": "rule_application",
+      "inputs": {
+        "count": "18446744073709551615/1 + 1/1"
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "checked_u64_overflow"
+        ],
+        "values": {
+          "result": {
+            "rational": null,
+            "unit": "count",
+            "sourceLiteral": "overflow refusal"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 28,
+          "symbol": "checked u64",
+          "section": "2. Normative records, keys and constraints"
+        }
+      ],
+      "derivation": "Counts use checked u64. 2^64-1 plus 1 overflows and is refused. The threshold is the definition of u64, not a fixture measurement.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.ACC.currency-overflow-threshold",
+      "pack": "accounting",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "PROPERTY",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "operation": "currency checked arithmetic overflow"
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "overflow_refusal"
+        ],
+        "values": {
+          "result": {
+            "rational": null,
+            "unit": "currency",
+            "sourceLiteral": "refused"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 28,
+          "symbol": "overflow refusal",
+          "section": "2. Normative records, keys and constraints"
+        }
+      ],
+      "derivation": "Overflow refuses the operation. The numeric ceiling is not stated.",
+      "unresolved": [
+        "No maximum currency coefficient is defined."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.ACC.display-not-canonical",
+      "pack": "accounting",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "PROPERTY",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "canonical": "6/1000 USD",
+        "isoScale": 2
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "canonical_digest_never_rounds"
+        ],
+        "values": {
+          "canonical": {
+            "rational": "3/500",
+            "unit": "USD",
+            "sourceLiteral": "0.006"
+          }
+        }
+      },
+      "forbidden": [
+        {
+          "rational": "1/100",
+          "as": "canonical"
+        },
+        {
+          "rational": "0/1",
+          "as": "canonical"
+        }
+      ],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 28,
+          "symbol": "half-even",
+          "section": "2. Normative records, keys and constraints"
+        }
+      ],
+      "derivation": "Only display rounds, and only to a declared scale. The canonical digest of 0.006 stays 6/1000.",
+      "unresolved": [
+        "Display half-even requires a declared scale. No display scale is declared for this fixture, so the display string is unresolved."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.ACC.hypotheses-excluded",
+      "pack": "accounting",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "PROPERTY",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "change": "narrative hypothesis text only"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "digest_excludes_narrative"
+        ],
+        "values": {
+          "canonicalDigestChanges": {
+            "boolean": false,
+            "sourceLiteral": "excluding narrative"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 161,
+          "symbol": "canonical answer digest",
+          "section": "6. Human and agent journeys"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 67,
+          "symbol": "hypotheses excluded",
+          "section": "Frozen negative and numeric fixtures"
+        }
+      ],
+      "derivation": "The canonical digest covers typed values, status, snapshot, scope, population, versions, coverage, and evidence. Hypothesis prose is outside it.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.ACC.acceptance-not-completeness",
+      "pack": "accounting",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "PROPERTY",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "parserAccepted": "40 rejected companion case uses rejected_n",
+        "expectedPopulation": null
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "no_fabricated_completeness"
+        ],
+        "values": {
+          "completenessPercentage": {
+            "rational": null,
+            "unit": "1",
+            "sourceLiteral": "not emitted"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 80,
+          "symbol": "acceptance fraction",
+          "section": "2. Normative records, keys and constraints"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 67,
+          "symbol": "parser acceptance",
+          "section": "Frozen negative and numeric fixtures"
+        }
+      ],
+      "derivation": "Parse acceptance is not global sensor completeness. Without a known expected denominator, no percentage is emitted.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.ACC.decode-bound",
+      "pack": "accounting",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "PROPERTY",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "history": "1000000 facts",
+        "append": 1000
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "bounded_decode"
+        ],
+        "values": {
+          "decodedUpperBound": {
+            "literal": "1000 + explicitly bounded context carryover"
+          },
+          "prefixIoSeparate": {
+            "boolean": true,
+            "sourceLiteral": "prefix bytes reported separately"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 211,
+          "symbol": "1000 records",
+          "section": "8. Migration, operating systems and validation"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 67,
+          "symbol": "bounded decode",
+          "section": "Frozen negative and numeric fixtures"
+        }
+      ],
+      "derivation": "An append of 1000 records decodes at most 1000 plus an explicitly bounded carryover. Prefix-verification I/O is separate and is not claimed as O(delta) total I/O. Carryover's number is undefined.",
+      "unresolved": [
+        "The numeric carryover maximum is not stated."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.ACC.incomplete-lower-bound",
+      "pack": "accounting",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "PROPERTY",
+      "inputOrigin": "rule_application",
+      "inputs": {
+        "observedNonnegativeDedup": "4/1",
+        "lineage": "incomplete",
+        "sign": "nonnegative"
+      },
+      "expected": {
+        "status": "partial",
+        "reasons": [
+          "observed_lower_bound"
+        ],
+        "values": {
+          "lowerBound": {
+            "rational": "4/1",
+            "unit": "token",
+            "sourceLiteral": "4"
+          }
+        },
+        "uncertainty": "observed_lower_bound"
+      },
+      "forbidden": [
+        {
+          "id": "promote-lower-bound-to-exact-fleet-total"
+        }
+      ],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 113,
+          "symbol": "lower bound",
+          "section": "4. Accounting, time, cost and outcomes"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 16,
+          "symbol": "P1 incomplete",
+          "section": "Findings and adjudication"
+        }
+      ],
+      "derivation": "A nonnegative deduplicated incomplete lineage may be labeled an observed lower bound. The input 4 is this vector's observed union, matching the F03 direct sum only as a rule illustration of that rule, not as F03's fleet. If the facts are not nonnegative or not deduplicated, the total is refused instead; that predicate is part of the expected status.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    }
+  ]
+}

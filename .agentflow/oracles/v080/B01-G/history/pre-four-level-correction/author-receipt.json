@@ -1,0 +1,131 @@
+{
+  "schema": "dendro.grok-oracle-author-receipt/v1",
+  "status": "reworked_ready_for_claude_not_accepted",
+  "expectation_id": "B01-G-A1",
+  "authored_at": "2026-10-23T02:57:59.1801603Z",
+  "author": {
+    "provider": "xai",
+    "role": "original independent grok oracle author",
+    "identity_basis": "dispatcher-observed",
+    "author_native_session_id": "01a1669a-7075-7a81-bf1a-4ddff4bb5262",
+    "parent_observed_unique_creation_timestamp_matching_launch": true,
+    "creation_timestamp_value": null,
+    "raw_authored_log": "grok-profile-oracle-events.jsonl",
+    "native_session_files_read": false,
+    "not_an_invented_role": true
+  },
+  "owned_outputs": {
+    "grok-authored.json": {
+      "path": ".agentflow/oracles/v080/B01-G/grok-authored.json",
+      "sha256": "253d51c5994142f8eb3b9539337fc03041e6e2eae0e1d1a314c1a4fd0d12609f",
+      "case_count": 20
+    },
+    "author-receipt.json": {
+      "path": ".agentflow/oracles/v080/B01-G/author-receipt.json",
+      "sha256": null,
+      "self_digest": "detached"
+    }
+  },
+  "pre_rework_copies": {
+    "directory": ".agentflow/oracles/v080/B01-G/history/pre-oracle-rework",
+    "grok-authored.json_sha256": "f5a21567f195e469aa5498950aff600f81d63ee5eb9ad12ac6b5069464437465",
+    "author-receipt.json_sha256": "2870c8b5dd6c9d5c2f0486987e7bfb8171e8f1374e13677df2d5d125adc7e597"
+  },
+  "acceptance": {
+    "ready_for_claude": true,
+    "accepted": false,
+    "parser_product_written": false,
+    "adapter_acceptance": false,
+    "profile_or_checklist_edited": false,
+    "admission_json_written": false
+  },
+  "sha256_recomputed": {
+    ".agentflow/runs/v080/schemas/grok-profile/profile.json": "1a3864a8b0390125c460643d2cf01bbb44fd2b5cb29720aee9a8b0ff7dafbabc",
+    ".agentflow/runs/v080/schemas/grok-profile/BUILDER-CONTRACT.txt": "53fc6fe7a29738804bd2bbdf95a5907f0ca2c39d1e8499e655d291f5af9cdad4",
+    ".agentflow/runs/v080/schemas/grok-profile/review-adjudication.json": "e92548478ebec3c727286b3a00d107841b774b03e05fab39f6577af0c8066b3b",
+    ".agentflow/runs/v080/schemas/grok-profile/CONTROLLED-REVIEW.md": "c6240242da4ee406f9dd7cb4cfe890c22758c7324c8e022814f2699109112d66",
+    ".agentflow/runs/v080/schemas/grok-profile/controlled-sanitized-authentic.json": "5939054579d2d9a61b1b17439d57c06bb9b09b6bed9946dfba157993204a5c6b",
+    ".agentflow/runs/v080/schemas/grok-profile/controlled-provenance.json": "40b630eac06cc3e4645d3eddec342ddf0015a2f7029fadd3d878e03e6f64a940",
+    ".agentflow/runs/v080/schemas/grok-profile/controlled-producer-receipt.json": "80a7fc7875ab1d64893652138c5b9bcdf3076b6a10f9a838da4d4d2e32e506bd",
+    ".agentflow/runs/v080/schemas/grok-profile/provenance.json": "ef5d4de904892c1cb4479d74e068e582a907478ffc71f1bc648b39dfda195a91",
+    ".agentflow/runs/v080/schemas/grok-profile/sanitized-authentic.json": "e3f56c510c8c2eb05d370b6858f787cebe7108fdef59502d844fd243ca236e7e",
+    ".agentflow/runs/v080/schemas/grok-profile/review-01.json": "ae5a41dc2a836f682dd4d4b71abc99e97a5521c2de010e49fb455efc7a057c91",
+    "C:\\Users\\samue\\AppData\\Local\\Temp\\dendro-v080-implementation\\claude-grok-profile-review.json": "ae5a41dc2a836f682dd4d4b71abc99e97a5521c2de010e49fb455efc7a057c91"
+  },
+  "hash_notes": {
+    "controlled_fixture_matches_stated_sha256": true,
+    "producer_receipt_matches_controlled_provenance_claim": true,
+    "controlled_provenance_matches_supplemental_provenance_claim": true,
+    "current_profile_matches_supplemental_provenance_safe_outputs": true,
+    "review_01_matches_claude_result_file": true,
+    "adjudication_recorded_earlier_profile_sha256": "a3f2f09822571b0212716193bca546c037aba27bab64d02b0971c6ad8470a626",
+    "adjudication_recorded_earlier_provenance_sha256": "d8bd5ea9e92795f932818fa14c7c213c632e11821bd138054f8161efa21cfa57",
+    "those_adjudication_digests_are_not_the_current_files": true,
+    "raw_native_usage_summary_events_not_rehashed": true
+  },
+  "specimens": {
+    "controlled": {
+      "fixture_sha256": "5939054579d2d9a61b1b17439d57c06bb9b09b6bed9946dfba157993204a5c6b",
+      "source_session_authorized": "febeb74f-54be-4d5a-aa86-94920d6f94f1",
+      "pseudonym": "grok-session-B",
+      "producer_version": "grok 1.0.52 (0920c8169e27) [alpha]",
+      "binary_sha256_before_and_after": "47a5becb08dd0e51f34b60b34eb866086af7f392666f821b350a45f6736ed0cb",
+      "binary_unchanged": true,
+      "turn_exits": [0, 0],
+      "raw_usage_sha256_recorded": "db0417984e17106b878bace5ed6230444f9ed99634e2e6cba2864b8af78aaaa6",
+      "session_components": {
+        "inputTokens": 44719,
+        "outputTokens": 83,
+        "cachedReadTokens": 23936,
+        "cacheCreationTokens": 0,
+        "reasoningTokens": 71,
+        "totalTokens": 44802,
+        "modelCalls": 2,
+        "costUsdTicks": 183708800,
+        "turnCount_metadata": 2
+      }
+    },
+    "supplemental": {
+      "fixture_sha256": "e3f56c510c8c2eb05d370b6858f787cebe7108fdef59502d844fd243ca236e7e",
+      "fixture_bytes_unchanged": true,
+      "source_session_authorized": "b51ad78c-d506-4ec8-a9d1-d6a886059a37",
+      "pseudonym": "grok-session-A",
+      "producer_version": "unknown",
+      "session_components": {
+        "inputTokens": 67941,
+        "outputTokens": 22418,
+        "cachedReadTokens": 25856,
+        "cacheCreationTokens": 0,
+        "reasoningTokens": 18195,
+        "totalTokens": 90359,
+        "modelCalls": 2,
+        "costUsdTicks": 787460400,
+        "turnCount_metadata": 2
+      }
+    }
+  },
+  "review_fixes_applied": [
+    "B01-G-05 specifies session totals: once-counted 67941 emits one fact plus diagnostic duplicate_source_row; twice-counted 93877 is rollup_conflict",
+    "B01-G-05, B01-G-06, and B01-G-07 use one coverage value and one code, with canonical value null where partial",
+    "B01-G-03 lists 16 turn facts and 8 session facts with model label and grain",
+    "B01-G-02 states emitted sum equals the chosen grain and labels the 3-row and 5-row forbidden sums",
+    "B01-G-13 sends schema mismatch to source_schema_not_admitted and in-schema index problems to ambiguous_turn_index",
+    "B01-G-06 sets truncated event linkage to coverage partial and distinguishes a live partial JSONL line from a finished-session malformation",
+    "B01-G-04 stays a negative join test with no refusal code",
+    "New codes used: rollup_conflict, malformed_source_document, invalid_counter_value, source_identity_mismatch, unadmitted_model_breakdown; duplicate_source_row is diagnostic only",
+    "B01-G-15 and B01-G-16 add the controlled digest, producer binding, and recomputed counters without moving the supplemental numbers"
+  ],
+  "unresolved_for_claude": [
+    "B01-G-A1 is not accepted. admission.json is still absent, and the frozen checklist was not edited.",
+    "CORE-PROVENANCE-01 is required for the production key. This oracle forbids the pseudonym and the bare UUID and does not invent the namespace literal.",
+    "Author creation-timestamp value was not copied. The dispatcher observation is recorded as a match, not as a timestamp.",
+    "Raw usage, summary, and events bytes were not opened, so their recorded hashes were not recomputed.",
+    "Discarded-event histograms are provenance counts. They do not admit tool or phase semantics.",
+    "costUsdTicks has no unit. Cache-read inclusion, reasoning inclusion, and modelCalls grain stay unknown. Reported cache-creation 0 does not prove that no cache write occurred.",
+    "grok-4.7, grok-4.7-build, and the controlled requested model grok-4.7 are separate labels. No alias is admitted.",
+    "The +1 map applies only to fixture digests e3f56c510c8c2eb05d370b6858f787cebe7108fdef59502d844fd243ca236e7e and 5939054579d2d9a61b1b17439d57c06bb9b09b6bed9946dfba157993204a5c6b.",
+    "Producer 1.0.52 (0920c8169e27) [alpha] applies only to the controlled fixture. The supplemental writer remains unknown.",
+    "duplicate_source_row is listed in profile.refusal_codes and described as a diagnostic. The oracle treats it as a diagnostic. The profile list was not edited.",
+    "Adjudication digests a3f2f09822571b0212716193bca546c037aba27bab64d02b0971c6ad8470a626 and d8bd5ea9e92795f932818fa14c7c213c632e11821bd138054f8161efa21cfa57 are earlier than the current profile and provenance."
+  ]
+}

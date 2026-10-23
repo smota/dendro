@@ -726,10 +726,14 @@ mod tests {
         let before = std::fs::read(&path).unwrap();
         let from = at(0).to_rfc3339();
         let to = at(100).to_rfc3339();
-        let report = crate::report_json(&path, "advisory", None, &from, &to).unwrap();
-        let trace = crate::trace_json(&path, "advisory_idle_claimed", None, &from, &to).unwrap();
+        let report =
+            crate::pipeline::report_json_physical(&path, "advisory", None, &from, &to).unwrap();
+        let trace =
+            crate::pipeline::trace_json_physical(&path, "advisory_idle_claimed", None, &from, &to)
+                .unwrap();
         assert_eq!(report["payload"]["advisory_idle_claimed"], trace["value"]);
-        let anomalies = crate::report_json(&path, "anomalies", None, &from, &to).unwrap();
+        let anomalies =
+            crate::pipeline::report_json_physical(&path, "anomalies", None, &from, &to).unwrap();
         assert_eq!(
             anomalies["payload"]["anomaly_spotlights"]["detectors"]
                 .as_array()
@@ -832,7 +836,7 @@ mod tests {
             .unwrap();
         store.checkpoint().unwrap();
         drop(store);
-        let r = crate::report_json_with_analysis(
+        let r = crate::pipeline::report_json_with_analysis_physical(
             &path,
             "advisory",
             None,

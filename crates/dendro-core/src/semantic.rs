@@ -1,5 +1,5 @@
 //! Scoped, explicitly refreshed projections of the canonical report. No alternate metric engine.
-use crate::{pipeline::report_json, storage::AnalyticsStore};
+use crate::{pipeline::report_json_physical as report_json, storage::AnalyticsStore};
 use anyhow::{anyhow, bail, Context, Result};
 use duckdb::params;
 use serde_json::{json, Value};
@@ -86,6 +86,53 @@ fn signature(store: &AnalyticsStore) -> Result<String> {
 /// Refresh the four views for exactly this report scope. Source readers close before writes.
 /// A concurrent source update aborts rather than labelling an inconsistent snapshot as current.
 pub fn refresh(db: &Path, rig: Option<&str>, from: &str, to: &str) -> Result<Value> {
+    let request = crate::presentation::ReadRequest::open(db)?;
+    refresh_request(&request, rig, from, to).map(|(receipt, _)| receipt)
+}
+
+/// Return new custody after immutable staged semantic publication for composite ask.
+pub fn refresh_request(
+    request: &crate::presentation::ReadRequest,
+    rig: Option<&str>,
+    from: &str,
+    to: &str,
+) -> Result<(Value, Option<crate::presentation::ReadRequest>)> {
+    #[cfg(windows)]
+    {
+        let adopted;
+        let selected = if let Some(selected) = request.selected() {
+            selected
+        } else if request.is_legacy() {
+            adopted = crate::selection_binding::adopt_legacy(
+                request.logical(),
+                &crate::platform_v1::StorageRootChoice::Explicit(
+                    request
+                        .logical()
+                        .parent()
+                        .ok_or_else(|| anyhow!("legacy database has no parent"))?
+                        .to_path_buf(),
+                ),
+            )?;
+            &adopted
+        } else {
+            bail!("semantic_uninitialized: initialize the database with dendro run first");
+        };
+        let mut receipt = Value::Null;
+        let refreshed = crate::selection_binding::mutate_selected(selected, |staged, _key| {
+            receipt = refresh_physical(staged, rig, from, to)?;
+            Ok(())
+        })?;
+        receipt["analytics_selection_sha256"] = json!(hex::encode(refreshed.selection().sha256));
+        Ok((
+            receipt,
+            Some(crate::presentation::ReadRequest::from_selected(refreshed)),
+        ))
+    }
+    #[cfg(not(windows))]
+    Ok((refresh_physical(request.database(), rig, from, to)?, None))
+}
+
+fn refresh_physical(db: &Path, rig: Option<&str>, from: &str, to: &str) -> Result<Value> {
     crate::pipeline::refuse_secret_path(db)?;
     let before = {
         let s = AnalyticsStore::open_read_only(db)?;
@@ -589,6 +636,12 @@ pub fn supported_intents() -> Value {
 
 /// Inspect the currently materialized semantic scope and whether it matches the live signature.
 pub fn cached_scope(db: &Path) -> Option<(Option<String>, String, String, bool)> {
+    let request = crate::presentation::ReadRequest::open(db).ok()?;
+    cached_scope_physical(request.database())
+}
+
+/// Physical read: caller retains selection custody.
+pub fn cached_scope_physical(db: &Path) -> Option<(Option<String>, String, String, bool)> {
     let s = AnalyticsStore::open_read_only(db).ok()?;
     let (report, expected, guard_fresh): (String, String, bool) = s
         .connection()
@@ -613,6 +666,12 @@ fn insufficient(reason: &str) -> Value {
 /// Scoped, local read-only answers. Baseline must be a canonical report with the same
 /// definition version and explicitly recorded scope; causation is never inferred from a before/after observation.
 pub fn answer(db: &Path, question: &str, baseline: Option<&Value>) -> Result<Value> {
+    let request = crate::presentation::ReadRequest::open(db)?;
+    answer_physical(request.database(), question, baseline)
+}
+
+/// Physical read: caller retains selection custody.
+pub fn answer_physical(db: &Path, question: &str, baseline: Option<&Value>) -> Result<Value> {
     let s = AnalyticsStore::open_read_only(db)?;
     s.connection().execute_batch("BEGIN TRANSACTION")?;
     let report: String = match s.connection().query_row(
@@ -861,6 +920,18 @@ pub fn answer_from_report(report: &Value, question: &str, baseline: Option<&Valu
 
 /// Creates a new workspace only. Never overwrites an existing directory or follows its symlink.
 pub fn init_workspace(destination: &Path, db: &Path) -> Result<()> {
+    #[cfg(windows)]
+    {
+        let _ = (destination, db);
+        bail!("nao_exact_workspace_path_unproved: Windows requires init_workspace_with_receipt (or dendro init-nao), which returns the actual unique private workspace path");
+    }
+    #[cfg(not(windows))]
+    init_workspace_with_receipt(destination, db).map(|_| ())
+}
+
+/// Create an external-consumer workspace and return its explicit snapshot provenance.
+pub fn init_workspace_with_receipt(destination: &Path, db: &Path) -> Result<Value> {
+    crate::pipeline::refuse_secret_path(destination)?;
     if destination
         .components()
         .any(|c| matches!(c, Component::ParentDir))
@@ -882,41 +953,126 @@ pub fn init_workspace(destination: &Path, db: &Path) -> Result<()> {
     let name = destination
         .file_name()
         .ok_or_else(|| anyhow!("workspace must name a new directory"))?;
-    let target = canonical_parent.join(name);
-    let database = fs::canonicalize(db)?;
-    crate::pipeline::refuse_secret_path(&database)?;
+    let requested_target = canonical_parent.join(name);
+    match fs::symlink_metadata(&requested_target) {
+        Ok(_) => bail!("workspace must name a new directory"),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    let request = crate::presentation::ReadRequest::open(db)?;
+    #[cfg(windows)]
+    let request = if request.is_legacy() {
+        let selected = crate::selection_binding::adopt_legacy(
+            request.logical(),
+            &crate::platform_v1::StorageRootChoice::Explicit(
+                request
+                    .logical()
+                    .parent()
+                    .ok_or_else(|| anyhow!("legacy database has no parent"))?
+                    .to_path_buf(),
+            ),
+        )?;
+        crate::presentation::ReadRequest::from_selected(selected)
+    } else {
+        request
+    };
+    if !request.initialized() {
+        bail!("nao_uninitialized: initialize and materialize the database first");
+    }
+    #[cfg(windows)]
+    let parent_root = crate::platform_v1::open_existing_private_root(&canonical_parent)?;
+    #[cfg(windows)]
+    let workspace_root =
+        crate::platform_v1::create_unique_private_directory(&parent_root, "nao-workspace-")?;
+    #[cfg(windows)]
+    let target = workspace_root.path().to_path_buf();
+    #[cfg(not(windows))]
+    let target = requested_target.clone();
+    #[cfg(not(windows))]
     fs::create_dir(&target).context("workspace must be a new directory")?;
-    let result = (|| -> Result<()> {
+    let result = (|| -> Result<Value> {
+        #[cfg(windows)]
+        let database = {
+            let snapshot = target.join("analytics.duckdb");
+            crate::lifecycle::private_copy(request.database(), &snapshot, &crate::RUN_CANCEL)?;
+            // Verify the copied DB opens read-only before exposing a consumer configuration.
+            let _store = AnalyticsStore::open_read_only(&snapshot)?;
+            snapshot
+        };
+        #[cfg(not(windows))]
+        let database = fs::canonicalize(request.database())?;
+        crate::pipeline::refuse_secret_path(&database)?;
         let config = include_str!("../../../templates/nao/nao_config.yaml")
+            .replace("\r\n", "\n")
             .replace("\"dendro.duckdb\"", &serde_json::to_string(&database)?);
-        fs::write(target.join("nao_config.yaml"), config)?;
-        fs::write(
-            target.join("semantic_models.yaml"),
-            include_str!("../../../templates/nao/semantic_models.yaml"),
+        #[cfg(windows)]
+        let config = {
+            format!("# Dedicated private snapshot of one selected version; does not follow later publications.\n# Re-run init-nao into a new workspace to refresh. Local-file connections are read-only in the pinned Nao DuckDBConfig.connect.\n{config}").replace("    type: duckdb\n", "    type: duckdb\n    read_only: true\n")
+        };
+        write_workspace_file(&target.join("nao_config.yaml"), config.as_bytes())?;
+        write_workspace_file(
+            &target.join("semantic_models.yaml"),
+            include_bytes!("../../../templates/nao/semantic_models.yaml"),
         )?;
-        fs::write(
-            target.join("RULES.md"),
-            include_str!("../../../templates/nao/prompts.md"),
+        let rules = include_str!("../../../templates/nao/prompts.md").to_owned();
+        #[cfg(windows)]
+        let rules = format!("{rules}\nThis workspace queries a dedicated private, version-scoped database snapshot in read-only mode. It does not follow later Dendro publications. To refresh, run dendro init-nao into a new workspace; never replace the snapshot in place.\n");
+        write_workspace_file(&target.join("RULES.md"), rules.as_bytes())?;
+        #[cfg(not(windows))]
+        {
+            crate::lifecycle::create_private_dir(&target.join("semantics"))?;
+            write_workspace_file(&target.join("semantics/dendro.md"), rules.as_bytes())?;
+        }
+        write_workspace_file(&target.join("prompts.md"), rules.as_bytes())?;
+        #[cfg(windows)]
+        write_workspace_file(&target.join("semantics-dendro.md"), rules.as_bytes())?;
+        let metadata = json!({"path":database,"read_only":true});
+        #[cfg(windows)]
+        let metadata = {
+            let mut metadata = metadata;
+            let selected = request
+                .selected()
+                .ok_or_else(|| anyhow!("nao_selected_snapshot_required"))?;
+            metadata["scope"] = json!("immutable_version_snapshot");
+            metadata["workspace"] = json!(target);
+            metadata["context_files"] = json!([
+                "RULES.md",
+                "prompts.md",
+                "semantic_models.yaml",
+                "semantics-dendro.md"
+            ]);
+            metadata["integration_status"] = json!("snapshot_created_runtime_integration_pending");
+            metadata["semantic_context_status"] = json!("unsupported_exact_semantics_directory; intended semantics/dendro.md artifact preserved as top-level semantics-dendro.md; automatic Nao consumption of this alternate path is not verified");
+            metadata["limitations"] = json!(["Windows admitted native API cannot create the exact semantics/ child directory; generated semantic prose is preserved in semantics-dendro.md", "Nao runtime consumption and full T19 acceptance are pending; this is a snapshot scaffold, not a ready integration"]);
+            metadata["requested_workspace"] = json!(requested_target);
+            metadata["workspace_allocation"] = json!(
+                "unique_private_sibling; use the returned workspace path, not requested_workspace"
+            );
+            metadata["analytics_selection_sha256"] =
+                json!(hex::encode(selected.selection().sha256));
+            metadata["refresh"] = json!("run dendro init-nao into a new workspace; this snapshot does not follow later publications");
+            metadata
+        };
+        write_workspace_file(
+            &target.join("database.json"),
+            &serde_json::to_vec_pretty(&metadata)?,
         )?;
-        fs::create_dir(target.join("semantics"))?;
-        fs::write(
-            target.join("semantics/dendro.md"),
-            include_str!("../../../templates/nao/prompts.md"),
-        )?;
-        fs::write(
-            target.join("prompts.md"),
-            include_str!("../../../templates/nao/prompts.md"),
-        )?;
-        fs::write(
-            target.join("database.json"),
-            serde_json::to_vec_pretty(&json!({"path":database,"read_only":true}))?,
-        )?;
-        Ok(())
+        Ok(metadata)
     })();
+    #[cfg(windows)]
+    drop(workspace_root);
     if result.is_err() {
         let _ = fs::remove_dir_all(&target);
     }
     result
+}
+
+fn write_workspace_file(path: &Path, bytes: &[u8]) -> Result<()> {
+    use std::io::Write;
+    let mut file = crate::lifecycle::create_private_file(path)?;
+    file.write_all(bytes)?;
+    file.sync_all()?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1094,13 +1250,22 @@ mod tests {
                 let _ = std::fs::remove_dir_all(&self.0);
             }
         }
+        #[cfg(windows)]
+        let private = crate::platform_v1::create_user_private_root_with_choice(
+            "dendro-semantic-test-",
+            &crate::platform_v1::StorageRootChoice::UserProfile,
+        )?;
+        #[cfg(windows)]
+        let directory = Directory(private.path().to_path_buf());
+        #[cfg(not(windows))]
         let directory = Directory(std::env::current_dir()?.join("target/semantic-tests").join(
             format!("legacy-{}-{}", std::process::id(), rand::random::<u64>()),
         ));
         std::fs::create_dir_all(&directory.0)?;
         let db = directory.0.join("legacy.duckdb");
+        let key = crate::output::load_or_create_key(&directory.0.join("legacy.duckdb.key"), true)?;
         {
-            let store = AnalyticsStore::open_path(&db, "legacy")?;
+            let store = AnalyticsStore::open_path(&db, &key.id)?;
             let ts = chrono::DateTime::parse_from_rfc3339("2026-10-01T00:05:00Z")?
                 .with_timezone(&chrono::Utc);
             store.insert_activity(&ActivityFact {
@@ -1124,9 +1289,9 @@ mod tests {
         let answered = answer(&db, "Rank idle", None)?;
         assert_eq!(answered["status"], "ok");
 
-        // Recreating and then dropping the optional table invalidates the snapshot cleanly.
-        {
-            let store = AnalyticsStore::open_existing(&db, "legacy")?;
+        // An owned candidate schema change invalidates derived state without changing an immutable selection.
+        let change_schema = |path: &Path| -> Result<()> {
+            let store = AnalyticsStore::open_existing(path, &key.id)?;
             store.connection().execute_batch(
                 "CREATE TABLE file_source_baselines (
                     source_id VARCHAR NOT NULL,
@@ -1145,7 +1310,17 @@ mod tests {
                 )",
             )?;
             store.checkpoint()?;
+            Ok(())
+        };
+        #[cfg(windows)]
+        {
+            let request = crate::presentation::ReadRequest::open(&db)?;
+            crate::selection_binding::mutate_selected(request.selected().unwrap(), |staged, _| {
+                change_schema(staged)
+            })?;
         }
+        #[cfg(not(windows))]
+        change_schema(&db)?;
         let after_schema_change = answer(&db, "Rank idle", None)?;
         assert_eq!(after_schema_change["status"], "insufficient_data");
         Ok(())

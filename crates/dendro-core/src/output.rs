@@ -1,9 +1,13 @@
-use std::fs::{self, File, OpenOptions};
+#[cfg(unix)]
+use std::fs::OpenOptions;
+use std::fs::{self, File};
 use std::io::{Read, Write};
+#[cfg(unix)]
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Result};
+#[cfg(unix)]
 use fd_lock::RwLock;
 use rand::RngCore;
 
@@ -11,6 +15,7 @@ use crate::privacy::key_id;
 
 const MAGIC: &[u8] = b"DNDK";
 
+#[cfg(unix)]
 pub fn with_output_lock<T>(lock_path: &Path, body: impl FnOnce() -> Result<T>) -> Result<T> {
     if let Some(parent) = lock_path.parent().filter(|p| !p.as_os_str().is_empty()) {
         fs::create_dir_all(parent)?;
@@ -20,6 +25,7 @@ pub fn with_output_lock<T>(lock_path: &Path, body: impl FnOnce() -> Result<T>) -
 
 // Consume the actual lstat result separately from output effects. Tests can
 // supply IO errors at this boundary without a production fault switch.
+#[cfg(unix)]
 fn with_output_lock_metadata<T>(
     lock_path: &Path,
     metadata: std::io::Result<fs::Metadata>,
@@ -63,6 +69,7 @@ fn with_output_lock_metadata<T>(
     with_locked_output(guard, lock_path, body)
 }
 
+#[cfg(unix)]
 fn validate_lock_identity(
     held: &fs::Metadata,
     named: &fs::Metadata,
@@ -80,6 +87,7 @@ fn validate_lock_identity(
     Ok(())
 }
 
+#[cfg(unix)]
 fn with_locked_output<T>(
     guard: fd_lock::RwLockWriteGuard<'_, File>,
     lock_path: &Path,
@@ -96,6 +104,7 @@ pub struct KeyMaterial {
     pub bytes: [u8; 32],
 }
 
+#[cfg(unix)]
 pub fn load_or_create_key(path: &Path, allow_create: bool) -> Result<KeyMaterial> {
     if path.exists() {
         return read_key(path);
@@ -124,6 +133,7 @@ pub fn load_or_create_key(path: &Path, allow_create: bool) -> Result<KeyMaterial
     Ok(KeyMaterial { id, bytes })
 }
 
+#[cfg(unix)]
 pub fn read_key(path: &Path) -> Result<KeyMaterial> {
     let meta = fs::symlink_metadata(path)?;
     if !meta.file_type().is_file() {
@@ -133,6 +143,19 @@ pub fn read_key(path: &Path) -> Result<KeyMaterial> {
         return Err(anyhow!("analytics key permissions are too open"));
     }
     let mut file = File::open(path)?;
+    let held = file.metadata()?;
+    use std::os::unix::fs::MetadataExt;
+    if !held.is_file()
+        || held.nlink() != 1
+        || held.permissions().mode() & 0o077 != 0
+        || !same_inode(&meta, &held)
+    {
+        return Err(anyhow!("analytics key identity or permissions are unsafe"));
+    }
+    decode_key(&mut file)
+}
+
+pub(crate) fn decode_key(file: &mut File) -> Result<KeyMaterial> {
     let mut body = Vec::new();
     file.read_to_end(&mut body)?;
     if body.len() < 4 + 4 + 32 + 32 || &body[..4] != MAGIC {
@@ -156,6 +179,7 @@ pub fn refuse_aliased_output(dest: &Path, source_roots: &[PathBuf]) -> Result<()
 
 /// Typed OpenRig roots protect their selected main and associated sidecar names.
 /// This is a static namespace check, not protection against concurrent replacement.
+#[cfg(unix)]
 pub fn refuse_aliased_output_with_openrig(
     dest: &Path,
     source_roots: &[PathBuf],
@@ -243,6 +267,7 @@ fn metadata_if_present(path: &Path) -> Result<Option<fs::Metadata>> {
 /// Resolve existing physical components, retaining absent ordinary components.
 /// Canceling an absent component resumes physical resolution, rather than
 /// treating the rest of the path as a blindly normalized lexical suffix.
+#[cfg(unix)]
 fn resolve_identity_path(path: &Path, refuse_final_symlink: bool) -> Result<PathBuf> {
     use std::path::Component;
     let absolute = if path.is_absolute() {
@@ -311,11 +336,13 @@ fn wal_sibling(dest: &Path) -> PathBuf {
     PathBuf::from(name)
 }
 
+#[cfg(unix)]
 fn same_inode(left: &fs::Metadata, right: &fs::Metadata) -> bool {
     use std::os::unix::fs::MetadataExt;
     left.dev() == right.dev() && left.ino() == right.ino()
 }
 
+#[cfg(unix)]
 fn same_inode_under(root: &Path, dest_meta: &fs::Metadata) -> Result<bool> {
     use std::collections::HashSet;
     use std::os::unix::fs::MetadataExt;
@@ -345,6 +372,7 @@ fn same_inode_under(root: &Path, dest_meta: &fs::Metadata) -> Result<bool> {
     Ok(false)
 }
 
+#[cfg(unix)]
 pub fn sync_dir(path: &Path) -> Result<()> {
     let dir = if path.as_os_str().is_empty() {
         Path::new(".")
@@ -355,11 +383,308 @@ pub fn sync_dir(path: &Path) -> Result<()> {
     Ok(())
 }
 
+#[cfg(windows)]
+fn private_parent(
+    path: &Path,
+) -> Result<(
+    crate::platform_v1::PrivateRoot,
+    crate::platform_v1::ChildName,
+)> {
+    use crate::platform_v1::{self as platform, PlatformError};
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let name = platform::parse_child_os(
+        path.file_name()
+            .ok_or_else(|| anyhow!("private output requires a file name"))?,
+        platform::NativePlatform::Windows,
+    )
+    .map_err(PlatformError::Rejected)?;
+    Ok((platform::open_existing_private_root(parent)?, name))
+}
+
+#[cfg(windows)]
+pub fn with_output_lock<T>(lock_path: &Path, body: impl FnOnce() -> Result<T>) -> Result<T> {
+    use crate::platform_v1::{self as platform, ObjectKind, PlatformError};
+    let (root, name) = private_parent(lock_path)?;
+    // Only a genuine absence permits creation. The metadata-only observation
+    // rejects source hard links before any writable private-file open.
+    let before = match fs::symlink_metadata(lock_path) {
+        Ok(_) => {
+            let meta = platform::reopen_metadata(lock_path)?;
+            if meta.reparse || meta.kind != ObjectKind::RegularFile || meta.links != 1 {
+                return Err(anyhow!("output lock identity is unsafe"));
+            }
+            Some(meta.identity)
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
+        Err(err) => return Err(err.into()),
+    };
+    let verified = if before.is_some() {
+        platform::open_existing_private_file(&root, &name)?
+    } else {
+        match root.create_file(&name) {
+            Ok(file) => file,
+            Err(PlatformError::Rejected(verdict)) if verdict.code == "exclusive_create_exists" => {
+                // A concurrent creator won. Verify its held object before use.
+                platform::open_existing_private_file(&root, &name)?
+            }
+            Err(err) => return Err(err.into()),
+        }
+    };
+    let expected = verified.canonical_identity()?;
+    if before.is_some_and(|id| id != expected.identity()) {
+        return Err(anyhow!("output lock identity is unsafe"));
+    }
+    // The platform owns a process-local exclusion token and the native lock,
+    // rechecks named-versus-held identity under exclusion, and holds both over body.
+    platform::with_exclusive_lock(&root, &name, &expected, |_| Ok(body()))?
+}
+
+#[cfg(windows)]
+pub fn load_or_create_key(path: &Path, allow_create: bool) -> Result<KeyMaterial> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => return read_key(path),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => return Err(err.into()),
+    }
+    if !allow_create {
+        return Err(anyhow!("analytics key is missing"));
+    }
+    let (root, name) = private_parent(path)?;
+    // Exclusive creation with the private ACL from inception. Existing key
+    // collisions are errors, never permission repair or a silent rekey.
+    let mut file = root.create_file(&name)?;
+    let mut bytes = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut bytes);
+    let id = key_id(&bytes);
+    file.file_mut().write_all(MAGIC)?;
+    file.file_mut().write_all(&1u32.to_le_bytes())?;
+    file.file_mut().write_all(id.as_bytes())?;
+    file.file_mut().write_all(&bytes)?;
+    file.file().sync_all()?;
+    Ok(KeyMaterial { id, bytes })
+}
+
+#[cfg(windows)]
+pub fn read_key(path: &Path) -> Result<KeyMaterial> {
+    let (root, name) = private_parent(path)?;
+    // The actual held handle's owner/DACL, type, links and full identity have
+    // been verified before any key bytes are read.
+    let mut file = crate::platform_v1::open_existing_private_file(&root, &name)?;
+    decode_key(file.file_mut())
+}
+
+#[cfg(windows)]
+fn windows_metadata_if_present(
+    path: &Path,
+) -> Result<Option<crate::platform_v1::ObservedMetadata>> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => {
+            let meta = crate::platform_v1::reopen_metadata(path)?;
+            if meta.reparse || meta.kind == crate::platform_v1::ObjectKind::Reparse {
+                return Err(anyhow!("refusing reparse analytics/source path"));
+            }
+            Ok(Some(meta))
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(err.into()),
+    }
+}
+
+#[cfg(windows)]
+fn resolve_identity_path(path: &Path, _refuse_final_symlink: bool) -> Result<PathBuf> {
+    use std::path::Component;
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()?.join(path)
+    };
+    let mut resolved = PathBuf::new();
+    let mut missing = 0usize;
+    for component in absolute.components() {
+        match component {
+            Component::Prefix(_) | Component::RootDir => resolved.push(component.as_os_str()),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if missing == 0
+                    && !windows_metadata_if_present(&resolved)?
+                        .is_some_and(|meta| meta.kind == crate::platform_v1::ObjectKind::Directory)
+                {
+                    return Err(identity_error());
+                }
+                if !resolved.pop() {
+                    return Err(identity_error());
+                }
+                missing = missing.saturating_sub(1);
+            }
+            Component::Normal(name) => {
+                crate::platform_v1::parse_child_os(
+                    name,
+                    crate::platform_v1::NativePlatform::Windows,
+                )
+                .map_err(crate::platform_v1::PlatformError::Rejected)?;
+                if missing == 0
+                    && !windows_metadata_if_present(&resolved)?
+                        .is_some_and(|meta| meta.kind == crate::platform_v1::ObjectKind::Directory)
+                {
+                    return Err(identity_error());
+                }
+                resolved.push(name);
+                if missing > 0 {
+                    missing += 1;
+                    continue;
+                }
+                match windows_metadata_if_present(&resolved)? {
+                    Some(_) => resolved = fs::canonicalize(&resolved)?,
+                    None => missing = 1,
+                }
+            }
+        }
+    }
+    Ok(resolved)
+}
+
+#[cfg(windows)]
+pub fn refuse_aliased_output_with_openrig(
+    dest: &Path,
+    source_roots: &[PathBuf],
+    openrig_roots: &[PathBuf],
+) -> Result<()> {
+    use crate::platform_v1::{self as platform, ObjectKind};
+    let resolved_dest = resolve_identity_path(dest, true)?;
+    let dest_meta = windows_metadata_if_present(&resolved_dest)?;
+    for root in source_roots {
+        let root = resolve_identity_path(root, false)?;
+        let Some(meta) = windows_metadata_if_present(&root)? else {
+            continue;
+        };
+        if meta.kind == ObjectKind::Directory {
+            // Compare ancestor identity too: case/short-name spellings are not
+            // independent output namespaces even when textual prefixes differ.
+            for ancestor in resolved_dest.ancestors() {
+                if windows_metadata_if_present(ancestor)?
+                    .is_some_and(|a| a.identity == meta.identity)
+                {
+                    return Err(anyhow!("refusing analytics output inside a source root"));
+                }
+            }
+            if let Some(dest) = &dest_meta {
+                if platform::source_tree_contains_identity(&root, &dest.identity)? {
+                    return Err(alias_error());
+                }
+            }
+        } else if meta.kind == ObjectKind::RegularFile {
+            if dest_meta
+                .as_ref()
+                .is_some_and(|dest| dest.identity == meta.identity)
+            {
+                return Err(alias_error());
+            }
+        } else {
+            return Err(identity_error());
+        }
+    }
+    for root in openrig_roots {
+        for suffix in ["", "-wal", "-shm"] {
+            let mut name = root.as_os_str().to_os_string();
+            name.push(suffix);
+            let protected = resolve_identity_path(Path::new(&name), false)?;
+            let source_meta = windows_metadata_if_present(&protected)?;
+            if let (Some(dest), Some(source)) = (&dest_meta, &source_meta) {
+                if dest.identity == source.identity {
+                    return Err(alias_error());
+                }
+            } else if dest_meta.is_none()
+                && source_meta.is_none()
+                && same_absent_windows_name(&resolved_dest, &protected)?
+            {
+                return Err(alias_error());
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn same_absent_windows_name(left: &Path, right: &Path) -> Result<bool> {
+    let (Some(left_parent), Some(right_parent)) = (left.parent(), right.parent()) else {
+        return Err(identity_error());
+    };
+    let (Some(left_meta), Some(right_meta)) = (
+        windows_metadata_if_present(left_parent)?,
+        windows_metadata_if_present(right_parent)?,
+    ) else {
+        // Missing directories still form a protected namespace. Exact spelling
+        // and ASCII case pairs can be compared; uncertain Unicode pairs refuse.
+        let mut left_parts = left.components();
+        let mut right_parts = right.components();
+        loop {
+            match (left_parts.next(), right_parts.next()) {
+                (None, None) => return Ok(true),
+                (Some(a), Some(b)) => {
+                    if a == b {
+                        continue;
+                    }
+                    let (Some(a), Some(b)) = (a.as_os_str().to_str(), b.as_os_str().to_str())
+                    else {
+                        return Err(identity_error());
+                    };
+                    if !a.is_ascii() || !b.is_ascii() {
+                        return Err(anyhow!(
+                            "Windows absent-name Unicode equality is not admitted"
+                        ));
+                    }
+                    if !a.eq_ignore_ascii_case(b) {
+                        return Ok(false);
+                    }
+                }
+                _ => return Ok(false),
+            }
+        }
+    };
+    if left_meta.identity != right_meta.identity {
+        return Ok(false);
+    }
+    let left_name = left
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(identity_error)?;
+    let right_name = right
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(identity_error)?;
+    if left_name == right_name {
+        return Ok(true);
+    }
+    if !left_name.is_ascii() || !right_name.is_ascii() {
+        return Err(anyhow!(
+            "Windows absent-name Unicode equality is not admitted"
+        ));
+    }
+    // ASCII has identical ordinal case pairs. Parent identity handles case,
+    // Unicode, and short-name aliases in the existing ancestry losslessly.
+    Ok(left_name.eq_ignore_ascii_case(right_name))
+}
+
+#[cfg(windows)]
+pub fn sync_dir(path: &Path) -> Result<()> {
+    crate::platform_v1::sync_directory(if path.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        path
+    })?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use std::os::unix::fs::symlink;
 
+    #[cfg(unix)]
     #[test]
     fn key_is_created_once_and_reused() {
         let dir = std::env::temp_dir().join(format!("dendro-key-{}", std::process::id()));
@@ -381,6 +706,7 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    #[cfg(unix)]
     #[test]
     fn symlink_output_is_refused() {
         let dir = std::env::temp_dir().join(format!("dendro-link-{}", std::process::id()));
@@ -446,6 +772,7 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
 
+    #[cfg(unix)]
     #[test]
     fn absent_component_cancellation_resumes_physical_parent_resolution() {
         let dir = fixture("resume");
@@ -468,6 +795,7 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
 
+    #[cfg(unix)]
     #[test]
     fn effective_final_symlinks_refuse_before_following_any_target() {
         let dir = fixture("final");
@@ -493,6 +821,7 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
 
+    #[cfg(unix)]
     #[test]
     fn directory_walk_checks_arbitrary_files_and_skips_symlink_trees() {
         let dir = fixture("walk");
@@ -527,6 +856,7 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
 
+    #[cfg(unix)]
     #[test]
     fn unresolved_intermediate_paths_refuse_with_fixed_sanitized_error() {
         let dir = fixture("uncertain");
@@ -549,6 +879,7 @@ mod tests {
         refuse_aliased_output(&dir.join("safe-out"), &[dir.join("missing-source")]).unwrap();
         fs::remove_dir_all(dir).unwrap();
     }
+    #[cfg(unix)]
     #[test]
     fn lock_metadata_errors_never_create_open_lock_or_invoke_body() {
         let dir = fixture("lock-errors");
@@ -580,6 +911,7 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
 
+    #[cfg(unix)]
     #[test]
     fn lock_not_found_creators_converge_and_reuse_without_truncation_or_chmod() {
         use std::os::unix::fs::MetadataExt;
@@ -609,6 +941,7 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
 
+    #[cfg(unix)]
     #[test]
     fn multiply_linked_lock_refuses_before_permission_open_and_body() {
         let dir = fixture("lock-multilink");
@@ -624,6 +957,7 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
 
+    #[cfg(unix)]
     #[test]
     fn lock_identity_validation_rejects_type_link_and_named_snapshot_mismatch() {
         let dir = fixture("lock-invariants");
@@ -658,6 +992,7 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
 
+    #[cfg(unix)]
     #[test]
     fn preexisting_snapshot_mismatch_refuses_before_trying_busy_lock() {
         let dir = fixture("lock-before-flock");
@@ -678,6 +1013,7 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
 
+    #[cfg(unix)]
     #[test]
     fn postlock_mismatch_excludes_body_and_releases_original_guard() {
         let dir = fixture("lock-after-flock");
@@ -702,6 +1038,7 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
 
+    #[cfg(unix)]
     #[test]
     fn guard_excludes_other_descriptors_through_body_and_releases_on_body_error() {
         let dir = fixture("lock-lifetime");
@@ -722,5 +1059,177 @@ mod tests {
             .expect("body error releases exclusion");
         drop(released);
         fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::*;
+    use crate::platform_v1::{self as platform, StorageRootChoice};
+
+    fn fixture(label: &str) -> platform::PrivateRoot {
+        platform::create_user_private_root_with_choice(
+            &format!("dendro-output-{label}"),
+            &StorageRootChoice::UserProfile,
+        )
+        .expect("native Windows private fixture must be admitted")
+    }
+
+    fn cleanup(root: platform::PrivateRoot) {
+        let path = root.path().to_path_buf();
+        drop(root);
+        fs::remove_dir(path).unwrap();
+    }
+
+    #[test]
+    fn native_key_is_exclusive_private_and_reused() {
+        let root = fixture("key");
+        let path = root.path().join("analytics.key");
+        let key = load_or_create_key(&path, true).unwrap();
+        let loaded = load_or_create_key(&path, false).unwrap();
+        assert_eq!(loaded.id, key.id);
+        assert_eq!(loaded.bytes, key.bytes);
+        let name =
+            platform::parse_child_name("analytics.key", platform::NativePlatform::Windows).unwrap();
+        let held = platform::open_existing_private_file(&root, &name).unwrap();
+        assert!(root.create_file(&name).is_err());
+        assert_eq!(held.metadata().links, 1);
+        assert!(matches!(
+            held.metadata().identity,
+            platform::FileIdentity::WindowsFileId128 { .. }
+        ));
+        drop(held);
+        fs::remove_file(path).unwrap();
+        cleanup(root);
+    }
+
+    #[test]
+    fn native_key_missing_and_invalid_existing_do_not_rekey() {
+        let root = fixture("invalid-key");
+        let path = root.path().join("missing.key");
+        assert!(load_or_create_key(&path, false).is_err());
+        assert!(!path.exists());
+        let name =
+            platform::parse_child_name("missing.key", platform::NativePlatform::Windows).unwrap();
+        let mut invalid = root.create_file(&name).unwrap();
+        invalid.file_mut().write_all(b"invalid key bytes").unwrap();
+        drop(invalid);
+        assert!(load_or_create_key(&path, true).is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"invalid key bytes");
+        fs::remove_file(path).unwrap();
+        cleanup(root);
+    }
+
+    #[test]
+    fn native_lock_excludes_reentrant_work_and_releases_on_body_error() {
+        let root = fixture("lock");
+        let path = root.path().join("output.lock");
+        let error = with_output_lock(&path, || -> Result<()> {
+            assert!(with_output_lock(&path, || Ok(())).is_err());
+            Err(anyhow!("synthetic body failure"))
+        })
+        .unwrap_err();
+        assert_eq!(error.to_string(), "synthetic body failure");
+        with_output_lock(&path, || Ok(())).unwrap();
+        fs::remove_file(path).unwrap();
+        cleanup(root);
+    }
+
+    #[test]
+    fn native_hardlink_lock_and_key_refuse_without_source_changes() {
+        let root = fixture("hardlink");
+        let source = root.path().join("source");
+        let name = platform::parse_child_name("source", platform::NativePlatform::Windows).unwrap();
+        let mut held = root.create_file(&name).unwrap();
+        held.file_mut().write_all(b"unchanged source").unwrap();
+        drop(held);
+        let lock = root.path().join("output.lock");
+        fs::hard_link(&source, &lock).unwrap();
+        assert!(
+            with_output_lock(&lock, || -> Result<()> { panic!("hardlink lock body") }).is_err()
+        );
+        assert!(read_key(&source).is_err());
+        assert_eq!(fs::read(&source).unwrap(), b"unchanged source");
+        fs::remove_file(lock).unwrap();
+        fs::remove_file(source).unwrap();
+        cleanup(root);
+    }
+
+    #[test]
+    fn native_source_aliases_and_inside_source_outputs_are_refused() {
+        let root = fixture("aliases");
+        let source = root.path().join("source.bin");
+        let alias = root.path().join("alias.bin");
+        let independent = root.path().join("independent.bin");
+        fs::write(&source, b"source unchanged").unwrap();
+        fs::hard_link(&source, &alias).unwrap();
+        fs::write(&independent, b"source unchanged").unwrap();
+        assert!(refuse_aliased_output(&alias, std::slice::from_ref(&source)).is_err());
+        refuse_aliased_output(&independent, std::slice::from_ref(&source)).unwrap();
+        assert!(refuse_aliased_output(
+            &root.path().join("absent/deep/output"),
+            &[root.path().to_path_buf()]
+        )
+        .is_err());
+        assert!(!root.path().join("absent").exists());
+        for path in [source, alias, independent] {
+            fs::remove_file(path).unwrap();
+        }
+        cleanup(root);
+    }
+
+    #[test]
+    fn native_directory_walk_detects_full_identity_hardlinks() {
+        let source_root = fixture("walk-source");
+        let output_root = fixture("walk-output");
+        let source = source_root.path().join("arbitrary.bin");
+        let alias = output_root.path().join("alias");
+        fs::write(&source, b"source unchanged").unwrap();
+        fs::hard_link(&source, &alias).unwrap();
+        assert!(refuse_aliased_output(&alias, &[source_root.path().to_path_buf()]).is_err());
+        assert_eq!(fs::read(&source).unwrap(), b"source unchanged");
+        fs::remove_file(alias).unwrap();
+        fs::remove_file(source).unwrap();
+        cleanup(source_root);
+        cleanup(output_root);
+    }
+
+    #[test]
+    fn native_openrig_sidecar_namespace_protects_absent_names() {
+        let root = fixture("sidecars");
+        let source = root.path().join("source.sqlite");
+        fs::write(&source, b"source unchanged").unwrap();
+        for suffix in ["-wal", "-shm"] {
+            let sidecar = PathBuf::from(format!("{}{suffix}", source.display()));
+            assert!(refuse_aliased_output_with_openrig(
+                &sidecar,
+                std::slice::from_ref(&source),
+                std::slice::from_ref(&source)
+            )
+            .is_err());
+            assert!(!sidecar.exists());
+            let case_alias = root.path().join(format!("SOURCE.SQLITE{suffix}"));
+            assert!(refuse_aliased_output_with_openrig(
+                &case_alias,
+                std::slice::from_ref(&source),
+                std::slice::from_ref(&source)
+            )
+            .is_err());
+            assert!(!case_alias.exists());
+        }
+        for unsafe_name in [
+            "source.sqlite-wal.",
+            "source.sqlite-shm ",
+            "source.sqlite-wal::$DATA",
+        ] {
+            assert!(refuse_aliased_output_with_openrig(
+                &root.path().join(unsafe_name),
+                std::slice::from_ref(&source),
+                std::slice::from_ref(&source)
+            )
+            .is_err());
+        }
+        fs::remove_file(source).unwrap();
+        cleanup(root);
     }
 }

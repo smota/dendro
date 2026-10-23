@@ -1,0 +1,40 @@
+{
+  "schema": "dendro.oracle.draft-manifest/v1",
+  "acceptanceState": "draft_pending_claude_review",
+  "frozen": false,
+  "requiresClaudeReviewBeforeFreeze": true,
+  "author": {
+    "role": "independent expected-value author",
+    "providerFamily": "xai",
+    "sessionPreambleModel": "Grok 4.7",
+    "modelEnvVar": null,
+    "GROK_AGENT": "1",
+    "GROK_SESSION_ID": "01a16629-3fec-7cd2-a48b-ef28915ee843",
+    "distinctWorkerRunId": null,
+    "launchReceipt": null,
+    "host": "Microsoft Windows NT 10.0.26300.0",
+    "shell": "pwsh 7.6.5",
+    "foreignCodexSessionIdObservedNotAuthor": "01a1650f-8575-7063-9296-f72c08de5175"
+  },
+  "inputs": {
+    ".agentflow/proposals/next-version-2026-10-22/DESIGN.md": "7f6ca2da4ea5b4c7e6d78b565c3857a5e716a277c0dfec7abe37f40eb729f638",
+    ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md": "f0e3cbf6f3359a14f9816e509e38498fd5fc7bd2853778628cb6e0e2a1dd9a0f",
+    ".agentflow/proposals/next-version-2026-10-22/tasks.json": "b2433989ee71c654eeaf9b739ed427930c337732032aabac19e5facf17804d87"
+  },
+  "vectorCount": 175,
+  "packCounts": {
+    "f-fixtures": 93,
+    "domain": 24,
+    "accounting": 16,
+    "security": 10,
+    "native-platform": 9,
+    "insight": 23
+  },
+  "notProduced": [
+    "schema-3 golden database bytes: table layout is not in the three inputs",
+    "benchmark runner, corpus, seeds, and measured baseline receipts",
+    "frozen oracle under .agentflow/oracles/v080/T02 or any non-draft path",
+    "ETW provider/event identifier oracle: not pinned",
+    "implementation code"
+  ]
+}

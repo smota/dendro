@@ -1,4 +1,6 @@
-use std::fs::{self, File};
+use std::fs;
+#[cfg(unix)]
+use std::fs::File;
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Result};
@@ -7,9 +9,9 @@ use serde_json::{json, Value};
 use crate::facts::{SeatBound, SkillFact};
 use crate::lifecycle;
 use crate::metrics::{self, LoopThresholds, SessionBinding, Window};
-use crate::output::{
-    self, load_or_create_key, refuse_aliased_output_with_openrig, with_output_lock,
-};
+use crate::output::refuse_aliased_output_with_openrig;
+#[cfg(unix)]
+use crate::output::{self, load_or_create_key, with_output_lock};
 use crate::privacy::{contains_secret, opaque_id, redact};
 use crate::storage::AnalyticsStore;
 
@@ -49,15 +51,30 @@ where
     // Source identity must be established before mkdir, locking, SQLite
     // preflight, key lookup or any other output/source-content effect.
     refuse_aliased_output_with_openrig(db, source_roots, openrig_roots)?;
+    #[cfg(windows)]
+    {
+        crate::selection_binding::run_locked_with_selection(
+            db,
+            &crate::platform_v1::StorageRootChoice::LocalAppData,
+            source_roots,
+            openrig_roots,
+            ingest,
+        )
+    }
+    #[cfg(not(windows))]
     let parent = db
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
-    fs::create_dir_all(parent)?;
-    let lock_path = parent.join(".dendro-output.lock");
-    with_output_lock(&lock_path, || run_inner(db, openrig_roots, ingest))
+    #[cfg(not(windows))]
+    {
+        fs::create_dir_all(parent)?;
+        let lock_path = parent.join(".dendro-output.lock");
+        with_output_lock(&lock_path, || run_inner(db, openrig_roots, ingest))
+    }
 }
 
+#[cfg(unix)]
 fn run_inner<F>(db: &Path, openrig_roots: &[PathBuf], ingest: F) -> Result<Value>
 where
     F: FnOnce(&Path, &[u8]) -> Result<Vec<String>>,
@@ -68,13 +85,8 @@ where
         refuse_bound_openrig_root(db, openrig_roots)?;
     }
     output::refuse_existing_output_wal(db)?;
-    let before = fs::symlink_metadata(db).ok();
-    if before
-        .as_ref()
-        .is_some_and(|meta| meta.file_type().is_symlink())
-    {
-        return Err(anyhow!("refusing symlink analytics output"));
-    }
+    let before = output_identity_if_present(db)?;
+
     let key_path = PathBuf::from(format!("{}.key", db.display()));
     let creating = !db.exists();
     let key = load_or_create_key(&key_path, creating || key_path.exists())?;
@@ -108,27 +120,23 @@ where
         let staged_store = AnalyticsStore::open_staged(&staged)?;
         staged_store.checkpoint()?;
         drop(staged_store);
-        File::open(&staged)?.sync_all()?;
+        sync_staged_output(&stage)?;
         cancel.check()?;
         stage.check_anchor()?;
-        let after = fs::symlink_metadata(db).ok();
-        if after
-            .as_ref()
-            .is_some_and(|meta| meta.file_type().is_symlink())
-        {
-            return Err(anyhow!("refusing symlink analytics output"));
-        }
+        let after = output_identity_if_present(db)?;
         if let (Some(left), Some(right)) = (&before, &after) {
-            use std::os::unix::fs::MetadataExt;
-            if left.ino() != right.ino() || left.dev() != right.dev() {
+            if left != right {
                 return Err(anyhow!("analytics output identity changed during ingest"));
             }
         }
         if before.is_none() && after.is_some() {
             return Err(anyhow!("analytics output appeared during ingest"));
         }
+        if before.is_some() && after.is_none() {
+            return Err(anyhow!("analytics output disappeared during ingest"));
+        }
         // Publication: after this rename the output is the new complete db.
-        fs::rename(&staged, db)?;
+        publish_staged_output(&staged, db)?;
         if let Some(parent) = db.parent() {
             output::sync_dir(parent)?;
         }
@@ -148,6 +156,54 @@ where
         "sources": notes,
         "staging": recovered,
     }))
+}
+
+#[cfg(unix)]
+pub(crate) fn sync_staged_output(stage: &lifecycle::Stage) -> Result<()> {
+    File::open(stage.path().join("analytics.duckdb"))?.sync_all()?;
+    Ok(())
+}
+
+#[cfg(windows)]
+pub(crate) fn sync_staged_output(stage: &lifecycle::Stage) -> Result<()> {
+    use crate::platform_v1::{self as platform, NativePlatform};
+    stage.check_anchor()?;
+    let root = platform::open_existing_private_root(stage.path())?;
+    let name = platform::parse_child_name("analytics.duckdb", NativePlatform::Windows)
+        .map_err(platform::PlatformError::Rejected)?;
+    // Admission checks the private regular file before a verified handle is
+    // reopened with write access, which Windows FlushFileBuffers requires.
+    let file = platform::open_existing_private_file(&root, &name)?;
+    file.file().sync_all()?;
+    root.check_anchor()?;
+    stage.check_anchor()?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn publish_staged_output(staged: &Path, db: &Path) -> Result<()> {
+    fs::rename(staged, db)?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn output_identity_if_present(path: &Path) -> Result<Option<crate::platform_v1::FileIdentity>> {
+    let meta = match fs::symlink_metadata(path) {
+        Ok(meta) => meta,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(err.into()),
+    };
+    if meta.file_type().is_symlink() {
+        return Err(anyhow!("refusing symlink analytics output"));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        Ok(Some(crate::platform_v1::FileIdentity::Unix {
+            device: meta.dev(),
+            inode: meta.ino(),
+        }))
+    }
 }
 
 pub fn trace_tokens(store: &AnalyticsStore, window: Window) -> Result<Value> {
@@ -334,7 +390,7 @@ pub fn align_openrig_spelling(db: &Path, incoming: &Path) -> Result<PathBuf> {
     Ok(incoming_abs)
 }
 
-fn refuse_bound_openrig_root(db: &Path, incoming: &[PathBuf]) -> Result<()> {
+pub(crate) fn refuse_bound_openrig_root(db: &Path, incoming: &[PathBuf]) -> Result<()> {
     let bound = bound_openrig_roots(db)?;
     if bound.len() > 1 {
         return Err(anyhow!(
@@ -437,10 +493,75 @@ pub fn report_json_with_analysis(
     friction: crate::FrictionThresholds,
     advisory: crate::advisory::AdvisoryOptions,
 ) -> Result<Value> {
+    #[cfg(windows)]
+    {
+        use crate::selection_binding::{resolve_logical_db, SelectedDb};
+        match resolve_logical_db(db, &crate::platform_v1::StorageRootChoice::LocalAppData)? {
+            SelectedDb::Selected(selected) => report_json_with_analysis_physical(
+                &selected.database,
+                kind,
+                rig,
+                from,
+                to,
+                thresholds,
+                friction,
+                advisory,
+            ),
+            SelectedDb::Legacy(legacy) => report_json_with_analysis_physical(
+                &legacy.database,
+                kind,
+                rig,
+                from,
+                to,
+                thresholds,
+                friction,
+                advisory,
+            ),
+            SelectedDb::Uninitialized => Err(anyhow!("analytics database is uninitialized")),
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        report_json_with_analysis_physical(db, kind, rig, from, to, thresholds, friction, advisory)
+    }
+}
+
+/// Physical read for callers that retain the selected version's custody for
+/// the complete composite request. It does not resolve a logical DB leaf.
+#[allow(clippy::too_many_arguments)]
+pub fn report_json_with_analysis_physical(
+    db: &Path,
+    kind: &str,
+    rig: Option<&str>,
+    from: &str,
+    to: &str,
+    thresholds: LoopThresholds,
+    friction: crate::FrictionThresholds,
+    advisory: crate::advisory::AdvisoryOptions,
+) -> Result<Value> {
     Ok(evaluate_report(
         db, kind, rig, from, to, false, thresholds, friction, &advisory, None,
     )?
     .report)
+}
+
+pub fn report_json_physical(
+    db: &Path,
+    kind: &str,
+    rig: Option<&str>,
+    from: &str,
+    to: &str,
+) -> Result<Value> {
+    report_json_with_analysis_physical(
+        db,
+        kind,
+        rig,
+        from,
+        to,
+        LoopThresholds::default(),
+        crate::FrictionThresholds::default(),
+        crate::advisory::AdvisoryOptions::default(),
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1899,6 +2020,25 @@ pub fn trace_json(
     trace_json_with_thresholds(db, metric_id, rig, from, to, LoopThresholds::default())
 }
 
+pub fn trace_json_physical(
+    db: &Path,
+    metric_id: &str,
+    rig: Option<&str>,
+    from: &str,
+    to: &str,
+) -> Result<Value> {
+    trace_json_with_analysis_physical(
+        db,
+        metric_id,
+        rig,
+        from,
+        to,
+        LoopThresholds::default(),
+        crate::FrictionThresholds::default(),
+        crate::advisory::AdvisoryOptions::default(),
+    )
+}
+
 pub fn trace_json_with_thresholds(
     db: &Path,
     metric_id: &str,
@@ -1942,6 +2082,53 @@ pub fn trace_json_with_options(
 
 #[allow(clippy::too_many_arguments)]
 pub fn trace_json_with_analysis(
+    db: &Path,
+    metric_id: &str,
+    rig: Option<&str>,
+    from: &str,
+    to: &str,
+    thresholds: LoopThresholds,
+    friction: crate::FrictionThresholds,
+    advisory: crate::advisory::AdvisoryOptions,
+) -> Result<Value> {
+    #[cfg(windows)]
+    {
+        use crate::selection_binding::{resolve_logical_db, SelectedDb};
+        match resolve_logical_db(db, &crate::platform_v1::StorageRootChoice::LocalAppData)? {
+            SelectedDb::Selected(selected) => trace_json_with_analysis_physical(
+                &selected.database,
+                metric_id,
+                rig,
+                from,
+                to,
+                thresholds,
+                friction,
+                advisory,
+            ),
+            SelectedDb::Legacy(legacy) => trace_json_with_analysis_physical(
+                &legacy.database,
+                metric_id,
+                rig,
+                from,
+                to,
+                thresholds,
+                friction,
+                advisory,
+            ),
+            SelectedDb::Uninitialized => Err(anyhow!("analytics database is uninitialized")),
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        trace_json_with_analysis_physical(
+            db, metric_id, rig, from, to, thresholds, friction, advisory,
+        )
+    }
+}
+
+/// Physical trace read; caller must retain selected custody until it returns.
+#[allow(clippy::too_many_arguments)]
+pub fn trace_json_with_analysis_physical(
     db: &Path,
     metric_id: &str,
     rig: Option<&str>,
@@ -2145,6 +2332,70 @@ pub fn trace_json_with_analysis(
 mod tests {
     use super::*;
     use crate::AnalyticsStore;
+
+    // These pre-selection fixtures deliberately create physical DuckDB files to
+    // exercise report arithmetic. Windows logical-selection behavior has its
+    // own admitted-root integration tests in windows_selection.rs.
+    #[cfg(windows)]
+    fn report_json(
+        db: &Path,
+        kind: &str,
+        rig: Option<&str>,
+        from: &str,
+        to: &str,
+    ) -> Result<Value> {
+        super::report_json_physical(db, kind, rig, from, to)
+    }
+    #[cfg(windows)]
+    fn trace_json(
+        db: &Path,
+        metric: &str,
+        rig: Option<&str>,
+        from: &str,
+        to: &str,
+    ) -> Result<Value> {
+        super::trace_json_physical(db, metric, rig, from, to)
+    }
+    #[cfg(windows)]
+    fn report_json_with_thresholds(
+        db: &Path,
+        kind: &str,
+        rig: Option<&str>,
+        from: &str,
+        to: &str,
+        thresholds: LoopThresholds,
+    ) -> Result<Value> {
+        super::report_json_with_analysis_physical(
+            db,
+            kind,
+            rig,
+            from,
+            to,
+            thresholds,
+            crate::FrictionThresholds::default(),
+            crate::advisory::AdvisoryOptions::default(),
+        )
+    }
+    #[cfg(windows)]
+    fn trace_json_with_thresholds(
+        db: &Path,
+        metric: &str,
+        rig: Option<&str>,
+        from: &str,
+        to: &str,
+        thresholds: LoopThresholds,
+    ) -> Result<Value> {
+        super::trace_json_with_analysis_physical(
+            db,
+            metric,
+            rig,
+            from,
+            to,
+            thresholds,
+            crate::FrictionThresholds::default(),
+            crate::advisory::AdvisoryOptions::default(),
+        )
+    }
 
     #[test]
     fn compaction_depth_and_bleed_roundtrip_reports_traces_and_rig_scope() {
@@ -3208,17 +3459,30 @@ mod tests {
     }
 
     fn scratch(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "dendro-s31-{name}-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos()
-        ));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
+        #[cfg(windows)]
+        {
+            crate::platform_v1::create_user_private_root_with_choice(
+                &format!("dendro-s31-{name}-"),
+                &crate::platform_v1::StorageRootChoice::UserProfile,
+            )
+            .unwrap()
+            .path()
+            .to_path_buf()
+        }
+        #[cfg(not(windows))]
+        {
+            let dir = std::env::temp_dir().join(format!(
+                "dendro-s31-{name}-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos()
+            ));
+            let _ = fs::remove_dir_all(&dir);
+            fs::create_dir_all(&dir).unwrap();
+            dir
+        }
     }
 
     fn touch(path: &Path) {
@@ -3300,6 +3564,7 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_different_bound_root_is_refused_and_the_same_file_is_not() {
         let dir = scratch("bound");
@@ -3358,6 +3623,15 @@ mod tests {
 
     #[test]
     fn a_run_without_openrig_still_runs_and_a_mixed_database_is_refused() {
+        #[cfg(windows)]
+        let fixture_root = crate::platform_v1::create_user_private_root_with_choice(
+            "dendro-pipeline-run-",
+            &crate::platform_v1::StorageRootChoice::UserProfile,
+        )
+        .expect("explicit UserProfile pipeline run fixture");
+        #[cfg(windows)]
+        let dir = fixture_root.path().to_path_buf();
+        #[cfg(not(windows))]
         let dir = scratch("mixed");
         let claude = dir.join("claude");
         fs::create_dir_all(&claude).unwrap();
@@ -3401,12 +3675,15 @@ mod tests {
             },
         )
         .unwrap_err();
-        assert!(err.to_string().contains("refusing second OpenRig root"));
+        assert!(
+            err.to_string().contains("refusing second OpenRig root"),
+            "{err:#}"
+        );
         assert!(err.to_string().contains(&first.display().to_string()));
         assert!(err.to_string().contains(&second.display().to_string()));
         assert!(!called);
         assert_eq!(fs::read(&mixed).unwrap(), before);
-        assert!(report_json(
+        assert!(super::report_json(
             &mixed,
             "decisions",
             None,
@@ -3419,12 +3696,28 @@ mod tests {
 
     #[test]
     fn a_relative_binding_stays_the_same_file_after_the_working_directory_changes() {
+        #[cfg(windows)]
+        let fixture_root = crate::platform_v1::create_user_private_root_with_choice(
+            "dendro-pipeline-binding-",
+            &crate::platform_v1::StorageRootChoice::UserProfile,
+        )
+        .expect("explicit UserProfile pipeline binding fixture");
+        #[cfg(windows)]
+        let dir = fixture_root.path().to_path_buf();
+        #[cfg(not(windows))]
         let dir = scratch("cwd");
         let nested = dir.join("nested");
         fs::create_dir_all(&nested).unwrap();
         let file = nested.join("openrig.sqlite");
         touch(&file);
         let previous = std::env::current_dir().unwrap();
+        struct RestoreCwd(PathBuf);
+        impl Drop for RestoreCwd {
+            fn drop(&mut self) {
+                std::env::set_current_dir(&self.0).expect("restore test working directory");
+            }
+        }
+        let _restore = RestoreCwd(previous.clone());
         std::env::set_current_dir(&dir).unwrap();
         let relative = PathBuf::from("nested/openrig.sqlite");
         let absolute = absolute_openrig_root(&relative);
@@ -3460,6 +3753,19 @@ mod tests {
         assert!(message.contains(&absolute.display().to_string()));
         assert!(message.contains("refused"));
         assert!(message.contains(&other.display().to_string()));
+        #[cfg(windows)]
+        let selected = match crate::selection_binding::resolve_logical_db(
+            &db,
+            &crate::platform_v1::StorageRootChoice::UserProfile,
+        )
+        .unwrap()
+        {
+            crate::selection_binding::SelectedDb::Selected(read) => read,
+            _ => panic!("expected selected database"),
+        };
+        #[cfg(windows)]
+        let store = AnalyticsStore::open_read_only_selected(&selected).unwrap();
+        #[cfg(not(windows))]
         let store = AnalyticsStore::open_read_only(&db).unwrap();
         let stored = store
             .load_sources()
@@ -3594,6 +3900,7 @@ mod tests {
             })
             .unwrap();
         store.checkpoint().unwrap();
+        drop(store);
 
         let (from, to) = ("2026-10-09T00:00:00Z", "2026-10-09T04:00:00Z");
 
@@ -3610,6 +3917,7 @@ mod tests {
         assert_eq!(trace_empty["value"], crate::m4_impact());
         assert!(trace_empty["inputs"].get("m4_skill_exposure").is_none());
 
+        let store = AnalyticsStore::open_path(&db, "kid").unwrap();
         // 2. Insert skills:
         // - OpenRig loaded skills for dev.build (invoked: false)
         store
@@ -3693,6 +4001,7 @@ mod tests {
             })
             .unwrap();
         store.checkpoint().unwrap();
+        drop(store);
 
         // 3. Evaluate report with skills
         let report_populated = report_json(&db, "decisions", None, from, to).unwrap();
@@ -4019,6 +4328,7 @@ mod tests {
             })
             .unwrap();
         store.checkpoint().unwrap();
+        drop(store);
 
         let report = report_json(
             &db,
@@ -4150,6 +4460,7 @@ mod tests {
             .unwrap();
 
         store.checkpoint().unwrap();
+        drop(store);
 
         let from = "2026-10-09T00:00:00Z";
         let to = "2026-10-09T04:00:00Z";
@@ -4392,6 +4703,7 @@ mod tests {
             .unwrap();
 
         store.checkpoint().unwrap();
+        drop(store);
 
         // 4. Test report activity
         let rep_act = report_json(&db, "activity", None, &from_str, &to_str).unwrap();
@@ -4592,5 +4904,47 @@ mod tests {
         assert_eq!(find("pi-both")["pi_origin"], "both");
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(all(test, windows))]
+mod windows_publication_tests {
+    use super::*;
+
+    #[test]
+    fn staged_flush_uses_verified_writable_handle_and_refuses_hardlinks() {
+        use crate::platform_v1::{self as platform, StorageRootChoice};
+        use std::io::Write;
+        let root = platform::create_user_private_root_with_choice(
+            "dendro-pipeline-flush-",
+            &StorageRootChoice::UserProfile,
+        )
+        .unwrap();
+        let stage = lifecycle::Stage::create(root.path()).unwrap();
+        let path = stage.path().join("analytics.duckdb");
+        let mut file = lifecycle::create_private_file(&path).unwrap();
+        file.write_all(b"closed staged candidate").unwrap();
+        drop(file);
+        sync_staged_output(&stage).expect("native verified writable staged flush");
+        let alias = root.path().join("foreign-alias.duckdb");
+        fs::hard_link(&path, &alias).unwrap();
+        assert!(
+            sync_staged_output(&stage).is_err(),
+            "multiply linked stage cannot acquire a flush handle"
+        );
+        assert_eq!(fs::read(&alias).unwrap(), b"closed staged candidate");
+        fs::remove_file(alias).unwrap();
+        stage.finish().unwrap();
+        let cleanup = root.path().to_path_buf();
+        drop(root);
+        fs::remove_dir(cleanup).unwrap();
+    }
+
+    #[test]
+    fn no_argument_publication_probe_never_selects_data() {
+        let error = crate::platform_v1::publish_selection_manifest().unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("atomic_existing_manifest_replace_unproved"));
     }
 }

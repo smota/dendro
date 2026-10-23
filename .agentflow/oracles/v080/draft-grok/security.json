@@ -1,0 +1,462 @@
+{
+  "schema": "dendro.oracle.expected-value-pack/v1",
+  "acceptanceState": "draft_pending_claude_review",
+  "frozen": false,
+  "vectors": [
+    {
+      "vectorID": "v080.dg.SEC.no-inheritance",
+      "pack": "security",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "SEC",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "parentGrant": "present",
+        "childGrant": "absent"
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "no_parent_to_child_authority"
+        ],
+        "values": {
+          "childAuthorityInherited": {
+            "boolean": false,
+            "sourceLiteral": "no inheritance"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 54,
+          "symbol": "SecurityEvidence",
+          "section": "2. Normative records, keys and constraints"
+        }
+      ],
+      "derivation": "Security evidence does not inherit parent authority onto a child.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.SEC.query-surface",
+      "pack": "security",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "SEC",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "connection": "answer query"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "read_only_allowlist"
+        ],
+        "values": {
+          "externalAccess": {
+            "boolean": false,
+            "sourceLiteral": "disabled"
+          },
+          "attach": {
+            "boolean": false,
+            "sourceLiteral": "prohibit"
+          },
+          "copy": {
+            "boolean": false,
+            "sourceLiteral": "prohibit"
+          },
+          "fileUrlNetworkReaders": {
+            "boolean": false,
+            "sourceLiteral": "prohibit"
+          },
+          "dynamicSqlFromAnswerPath": {
+            "boolean": false,
+            "sourceLiteral": "prohibit"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 172,
+          "symbol": "answer-query",
+          "section": "7. Security and privacy boundaries"
+        }
+      ],
+      "derivation": "Answer-query connections are read-only. ATTACH, COPY, file, URL, and network readers, and dynamic SQL, are prohibited.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.SEC.incident",
+      "pack": "security",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "SEC",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "event": "privacy incident"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "provenance_scoped_remediation"
+        ],
+        "values": {
+          "affectedIngestExportStopped": {
+            "boolean": true,
+            "sourceLiteral": "stops affected"
+          },
+          "automaticBroadDeletion": {
+            "boolean": false,
+            "sourceLiteral": "no automatic broad deletion"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 174,
+          "symbol": "privacy incident",
+          "section": "7. Security and privacy boundaries"
+        }
+      ],
+      "derivation": "An incident stops affected ingest and export and quarantines outputs. It does not automatically delete broadly, including backups and key copies.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.SEC.signature",
+      "pack": "security",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "SEC",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "signature": "absent"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "unverified_distinct"
+        ],
+        "values": {
+          "trust": {
+            "literal": "unverified"
+          },
+          "impliesFabrication": {
+            "boolean": false,
+            "sourceLiteral": "without implying fabrication"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 174,
+          "symbol": "absent signature",
+          "section": "7. Security and privacy boundaries"
+        }
+      ],
+      "derivation": "An absent signature stays unverified. Unverified is not a finding that the bytes were fabricated.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.SEC.signed-assertion",
+      "pack": "security",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "SEC",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "producerAssertion": "signed",
+        "verificationMechanismRan": false
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "unverified_until_mechanism"
+        ],
+        "values": {
+          "verified": {
+            "boolean": false,
+            "sourceLiteral": "stay unverified"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 174,
+          "symbol": "signed producer assertions",
+          "section": "7. Security and privacy boundaries"
+        }
+      ],
+      "derivation": "A signed assertion stays unverified unless the configured verification mechanism actually verifies it. No key-provisioning system is implied.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.SEC.osc-and-html",
+      "pack": "security",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "SEC",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "controls": [
+          "C0",
+          "C1",
+          "ANSI",
+          "OSC52"
+        ],
+        "html": true
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "strip_controls",
+          "html_escape",
+          "strict_csp"
+        ],
+        "values": {
+          "controlsRemainActive": {
+            "boolean": false,
+            "sourceLiteral": "strip"
+          },
+          "inlineScriptFromSource": {
+            "boolean": false,
+            "sourceLiteral": "never construct"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 172,
+          "symbol": "OSC52",
+          "section": "7. Security and privacy boundaries"
+        }
+      ],
+      "derivation": "C0, C1, ANSI, and OSC sequences, including clipboard OSC52, are stripped from labels and errors. HTML is escaped and CSP forbids inline executable script built from source content.",
+      "unresolved": [
+        "Exact HTML entity table is unspecified."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.SEC.ingest-readonly",
+      "pack": "security",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "SEC",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "sourceRoot": "admitted"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "read_only_contained"
+        ],
+        "values": {
+          "sourceMutation": {
+            "boolean": false,
+            "sourceLiteral": "read-only"
+          },
+          "symlinkCycleChecked": {
+            "boolean": true,
+            "sourceLiteral": "cycle checks"
+          },
+          "rawPathRetained": {
+            "boolean": false,
+            "sourceLiteral": "no raw path"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 172,
+          "symbol": "source ingest",
+          "section": "7. Security and privacy boundaries"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 174,
+          "symbol": "project before persistence",
+          "section": "7. Security and privacy boundaries"
+        }
+      ],
+      "derivation": "Ingest is read-only and root-contained. Raw paths, transcripts, argv, payloads, and secrets are not retained.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.SEC.watcher",
+      "pack": "security",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "SEC",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "roots": "admitted read-only"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "debounce"
+        ],
+        "values": {
+          "debounce": {
+            "rational": "1500/1",
+            "unit": "ms",
+            "sourceLiteral": "1500ms"
+          },
+          "watchBeyondAdmittedRoots": {
+            "boolean": false,
+            "sourceLiteral": "only admitted roots"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 172,
+          "symbol": "1500ms",
+          "section": "7. Security and privacy boundaries"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 113,
+          "symbol": "watcher",
+          "section": "Final Grok audit receipt and bounded repair disposition"
+        }
+      ],
+      "derivation": "Watcher debounce is 1500 ms. Only admitted read-only source roots are watched.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.SEC.unsafe-policy",
+      "pack": "security",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "SEC",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "currentPolicy": "deny(unsafe_code)"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "no_silent_policy_migration"
+        ],
+        "values": {
+          "migratedToForbid": {
+            "boolean": false,
+            "sourceLiteral": "no unjustified policy migration to forbid"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 113,
+          "symbol": "deny(unsafe_code)",
+          "section": "Final Grok audit receipt and bounded repair disposition"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 195,
+          "symbol": "deny(unsafe_code)",
+          "section": "Mandatory native Windows and Linux delivery"
+        }
+      ],
+      "derivation": "The workspace deny(unsafe_code) policy stays. A blanket change to forbid is not authorized. Audited exceptions remain subject to the existing exception authority.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.SEC.canary-classes",
+      "pack": "security",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "SEC",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "classes": [
+          "PEM",
+          "JWT body",
+          "argv",
+          "environ",
+          "raw path",
+          "transcript"
+        ]
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "absent_from_retained"
+        ],
+        "values": {
+          "presentInDecodedDbSidecarsExports": {
+            "boolean": false,
+            "sourceLiteral": "absent"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 174,
+          "symbol": "no auth files",
+          "section": "7. Security and privacy boundaries"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/tasks.json",
+          "line": 1884,
+          "symbol": "T13-A2",
+          "section": "T13"
+        }
+      ],
+      "derivation": "Those classes are not stored or exported. Exact canary bytes are not defined, so the expectation is class absence.",
+      "unresolved": [
+        "No concrete canary byte string is specified in the sources."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    }
+  ]
+}

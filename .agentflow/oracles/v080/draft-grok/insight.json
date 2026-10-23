@@ -1,0 +1,1198 @@
+{
+  "schema": "dendro.oracle.expected-value-pack/v1",
+  "acceptanceState": "draft_pending_claude_review",
+  "frozen": false,
+  "vectors": [
+    {
+      "vectorID": "v080.dg.I01.invocations",
+      "pack": "insight",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "I01",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "measure": "model.invocations",
+        "version": "1.0.0",
+        "answerVersion": "1.0.0",
+        "revisionPolicy": "corrections_at_cutoff_v1",
+        "formula": "count distinct evidenced call IDs"
+      },
+      "expected": {
+        "status": "not_observable",
+        "reasons": [
+          "no_admitted_call_facts"
+        ],
+        "values": {
+          "invocations": {
+            "rational": null,
+            "unit": "count",
+            "sourceLiteral": "not_observable"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 133,
+          "symbol": "I01",
+          "section": "5. Insight registry and shared answers"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/tasks.json",
+          "line": 2101,
+          "symbol": "I01-I21",
+          "section": "T16"
+        }
+      ],
+      "derivation": "I01 model.invocations version 1.0.0. count distinct evidenced call IDs Numeric fields are copied from the linked fixture rules; missing numbers stay unresolved.",
+      "unresolved": [
+        "Usage-only rows are a different population.",
+        "No fixture states a call-id count."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.I02.direct",
+      "pack": "insight",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "I02",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "measure": "model.tokens.direct",
+        "version": "1.0.0",
+        "answerVersion": "1.0.0",
+        "revisionPolicy": "corrections_at_cutoff_v1",
+        "formula": "sum disjoint components; cache ratio-of-sums 91/110; invocation mean 1/2"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "separate_submeasures"
+        ],
+        "values": {
+          "ratioOfSums": {
+            "rational": "91/110",
+            "unit": "1",
+            "sourceLiteral": "91/110"
+          },
+          "invocationMean": {
+            "rational": "1/2",
+            "unit": "1",
+            "sourceLiteral": "0.5"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 134,
+          "symbol": "I02",
+          "section": "5. Insight registry and shared answers"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/tasks.json",
+          "line": 2101,
+          "symbol": "I01-I21",
+          "section": "T16"
+        }
+      ],
+      "derivation": "I02 model.tokens.direct version 1.0.0. sum disjoint components; cache ratio-of-sums 91/110; invocation mean 1/2 Numeric fields are copied from the linked fixture rules; missing numbers stay unresolved.",
+      "unresolved": [
+        "Unknown inclusion refuses the cache rate and keeps components."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.I03.inclusive",
+      "pack": "insight",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "I03",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "measure": "model.tokens.inclusive",
+        "version": "1.0.0",
+        "answerVersion": "1.0.0",
+        "revisionPolicy": "corrections_at_cutoff_v1",
+        "formula": "sum of reachable observation union"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "nonadditive"
+        ],
+        "values": {
+          "fleet": {
+            "rational": "4/1",
+            "unit": "token",
+            "sourceLiteral": "4"
+          },
+          "forbiddenCallerRollup": {
+            "rational": "5/1",
+            "unit": "token",
+            "sourceLiteral": "5"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 135,
+          "symbol": "I03",
+          "section": "5. Insight registry and shared answers"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/tasks.json",
+          "line": 2101,
+          "symbol": "I01-I21",
+          "section": "T16"
+        }
+      ],
+      "derivation": "I03 model.tokens.inclusive version 1.0.0. sum of reachable observation union Numeric fields are copied from the linked fixture rules; missing numbers stay unresolved.",
+      "unresolved": [
+        "Ambiguous duplicates refuse a canonical total."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.I04.cost",
+      "pack": "insight",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "I04",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "measure": "model.cost",
+        "version": "1.0.0",
+        "answerVersion": "1.0.0",
+        "revisionPolicy": "corrections_at_cutoff_v1",
+        "formula": "observed currency separate from priced estimate"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "observed_and_estimate_separate"
+        ],
+        "values": {
+          "observed": {
+            "rational": "1/50",
+            "unit": "USD",
+            "sourceLiteral": "0.02"
+          },
+          "estimateWithoutCard": {
+            "rational": null,
+            "unit": "USD",
+            "sourceLiteral": "null"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 136,
+          "symbol": "I04",
+          "section": "5. Insight registry and shared answers"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/tasks.json",
+          "line": 2101,
+          "symbol": "I01-I21",
+          "section": "T16"
+        }
+      ],
+      "derivation": "I04 model.cost version 1.0.0. observed currency separate from priced estimate Numeric fields are copied from the linked fixture rules; missing numbers stay unresolved.",
+      "unresolved": [],
+      "disputedDefinition": true,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.I05.configuration_divergence",
+      "pack": "insight",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "I05",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "measure": "model.configuration_divergence",
+        "version": "1.0.0",
+        "answerVersion": "1.0.0",
+        "revisionPolicy": "corrections_at_cutoff_v1",
+        "formula": "differing paired bindings over paired bindings"
+      },
+      "expected": {
+        "status": "not_observable",
+        "reasons": [
+          "missing_paired_population"
+        ],
+        "values": {
+          "ratio": {
+            "rational": null,
+            "unit": "1",
+            "sourceLiteral": "not_observable"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 137,
+          "symbol": "I05",
+          "section": "5. Insight registry and shared answers"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/tasks.json",
+          "line": 2101,
+          "symbol": "I01-I21",
+          "section": "T16"
+        }
+      ],
+      "derivation": "I05 model.configuration_divergence version 1.0.0. differing paired bindings over paired bindings Numeric fields are copied from the linked fixture rules; missing numbers stay unresolved.",
+      "unresolved": [
+        "No numeric divergence fixture. Unknown desired or observed are excluded and counted. No violation claim."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.I06.capability_funnel",
+      "pack": "insight",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "I06",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "measure": "harness.capability_funnel",
+        "version": "1.0.0",
+        "answerVersion": "1.0.0",
+        "revisionPolicy": "corrections_at_cutoff_v1",
+        "formula": "loaded, invoked, and invoked-loaded intersection / loaded"
+      },
+      "expected": {
+        "status": "unresolved_definition",
+        "reasons": [
+          "zero_loaded_versus_absent_loaded"
+        ],
+        "values": {
+          "completeScanEligibleCount": {
+            "rational": "0/1",
+            "unit": "count",
+            "sourceLiteral": "0"
+          },
+          "rate": {
+            "rational": null,
+            "unit": "1",
+            "sourceLiteral": "unresolved"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 138,
+          "symbol": "I06",
+          "section": "5. Insight registry and shared answers"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/tasks.json",
+          "line": 2101,
+          "symbol": "I01-I21",
+          "section": "T16"
+        }
+      ],
+      "derivation": "I06 harness.capability_funnel version 1.0.0. loaded, invoked, and invoked-loaded intersection / loaded Numeric fields are copied from the linked fixture rules; missing numbers stay unresolved.",
+      "unresolved": [
+        "Absent loaded evidence refuses the rate.",
+        "A complete scan of zero eligible tools is observed zero, not absent evidence. The rate at denominator 0 is not given a number."
+      ],
+      "disputedDefinition": true,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.I07.context_pressure",
+      "pack": "insight",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "I07",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "measure": "harness.context_pressure",
+        "version": "1.0.0",
+        "answerVersion": "1.0.0",
+        "revisionPolicy": "corrections_at_cutoff_v1",
+        "formula": "context-used / context-limit at invocation"
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "missing_limit"
+        ],
+        "values": {
+          "ratio": {
+            "rational": null,
+            "unit": "1",
+            "sourceLiteral": "refuses"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 139,
+          "symbol": "I07",
+          "section": "5. Insight registry and shared answers"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/tasks.json",
+          "line": 2101,
+          "symbol": "I01-I21",
+          "section": "T16"
+        }
+      ],
+      "derivation": "I07 harness.context_pressure version 1.0.0. context-used / context-limit at invocation Numeric fields are copied from the linked fixture rules; missing numbers stay unresolved.",
+      "unresolved": [
+        "No numeric context fixture. Prompt tokens alone do not substitute for context-used."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.I08.action_failure",
+      "pack": "insight",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "I08",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "measure": "harness.action_failure",
+        "version": "1.0.0",
+        "answerVersion": "1.0.0",
+        "revisionPolicy": "corrections_at_cutoff_v1",
+        "formula": "failed terminal actions / terminal actions"
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "zero_denominator"
+        ],
+        "values": {
+          "ratio": {
+            "rational": null,
+            "unit": "1",
+            "sourceLiteral": "null/refused"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 140,
+          "symbol": "I08",
+          "section": "5. Insight registry and shared answers"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/tasks.json",
+          "line": 2101,
+          "symbol": "I01-I21",
+          "section": "T16"
+        }
+      ],
+      "derivation": "I08 harness.action_failure version 1.0.0. failed terminal actions / terminal actions Numeric fields are copied from the linked fixture rules; missing numbers stay unresolved.",
+      "unresolved": [
+        "No numeric action fixture. Unknown terminal status is excluded with a count. Incomplete capture is partial."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.I09.lineage_shape",
+      "pack": "insight",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "I09",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "measure": "work.lineage_shape",
+        "version": "1.0.0",
+        "answerVersion": "1.0.0",
+        "revisionPolicy": "corrections_at_cutoff_v1",
+        "formula": "counts per edge kind and multi-caller nodes"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "evidenced_edges_only"
+        ],
+        "values": {
+          "diamondSpawns": {
+            "rational": "2/1",
+            "unit": "count",
+            "sourceLiteral": "2"
+          },
+          "diamondDelegates": {
+            "rational": "2/1",
+            "unit": "count",
+            "sourceLiteral": "2"
+          },
+          "multiCallerNodes": {
+            "rational": "1/1",
+            "unit": "count",
+            "sourceLiteral": "1"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 141,
+          "symbol": "I09",
+          "section": "5. Insight registry and shared answers"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/tasks.json",
+          "line": 2101,
+          "symbol": "I01-I21",
+          "section": "T16"
+        }
+      ],
+      "derivation": "I09 work.lineage_shape version 1.0.0. counts per edge kind and multi-caller nodes Numeric fields are copied from the linked fixture rules; missing numbers stay unresolved.",
+      "unresolved": [
+        "Unlinked-worker count is not stated.",
+        "Spawn cycle refuses the inclusive fold."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.I10.duration",
+      "pack": "insight",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "I10",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "measure": "work.duration",
+        "version": "1.0.0",
+        "answerVersion": "1.0.0",
+        "revisionPolicy": "corrections_at_cutoff_v1",
+        "formula": "wall union, summed attempt-seconds, summed/wall"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "half_open_same_clock"
+        ],
+        "values": {
+          "wall": {
+            "rational": "10/1",
+            "unit": "s",
+            "sourceLiteral": "10"
+          },
+          "summed": {
+            "rational": "20/1",
+            "unit": "attempt-seconds",
+            "sourceLiteral": "20"
+          },
+          "ratio": {
+            "rational": "2/1",
+            "unit": "1",
+            "sourceLiteral": "2"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 142,
+          "symbol": "I10",
+          "section": "5. Insight registry and shared answers"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/tasks.json",
+          "line": 2101,
+          "symbol": "I01-I21",
+          "section": "T16"
+        }
+      ],
+      "derivation": "I10 work.duration version 1.0.0. wall union, summed attempt-seconds, summed/wall Numeric fields are copied from the linked fixture rules; missing numbers stay unresolved.",
+      "unresolved": [
+        "wall = 0 refuses the concurrency ratio. No separate zero-wall numeric sample is stated beyond the rule."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.I11.shared_allocation",
+      "pack": "insight",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "I11",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "measure": "work.shared_allocation",
+        "version": "1.0.0",
+        "answerVersion": "1.0.0",
+        "revisionPolicy": "corrections_at_cutoff_v1",
+        "formula": "shared, weighted beneficiaries, residual"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "residual_explicit"
+        ],
+        "values": {
+          "sharedUnallocated": {
+            "rational": "1000/1",
+            "unit": "token",
+            "sourceLiteral": "1000"
+          },
+          "allocated": {
+            "literal": "600/1 + 300/1 + residual 100/1"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 143,
+          "symbol": "I11",
+          "section": "5. Insight registry and shared answers"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/tasks.json",
+          "line": 2101,
+          "symbol": "I01-I21",
+          "section": "T16"
+        }
+      ],
+      "derivation": "I11 work.shared_allocation version 1.0.0. shared, weighted beneficiaries, residual Numeric fields are copied from the linked fixture rules; missing numbers stay unresolved.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.I12.queue_wait",
+      "pack": "insight",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "I12",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "measure": "coord.queue_wait",
+        "version": "1.0.0",
+        "answerVersion": "1.0.0",
+        "revisionPolicy": "corrections_at_cutoff_v1",
+        "formula": "sum or median of ready-to-start, separately wall union"
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "missing_ready_or_start"
+        ],
+        "values": {
+          "wait": {
+            "rational": null,
+            "unit": "s",
+            "sourceLiteral": "refuses affected intervals"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 144,
+          "symbol": "I12",
+          "section": "5. Insight registry and shared answers"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/tasks.json",
+          "line": 2101,
+          "symbol": "I01-I21",
+          "section": "T16"
+        }
+      ],
+      "derivation": "I12 coord.queue_wait version 1.0.0. sum or median of ready-to-start, separately wall union Numeric fields are copied from the linked fixture rules; missing numbers stay unresolved.",
+      "unresolved": [
+        "No numeric ready/start fixture.",
+        "Message silence is not zero wait."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.I13.placement",
+      "pack": "insight",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "I13",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "measure": "environment.placement",
+        "version": "1.0.0",
+        "answerVersion": "1.0.0",
+        "revisionPolicy": "corrections_at_cutoff_v1",
+        "formula": "distinct incarnations and placements by locus"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "identity_required"
+        ],
+        "values": {
+          "instances": {
+            "rational": "2/1",
+            "unit": "count",
+            "sourceLiteral": "2"
+          },
+          "labelMerge": {
+            "boolean": false,
+            "sourceLiteral": "no"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 145,
+          "symbol": "I13",
+          "section": "5. Insight registry and shared answers"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/tasks.json",
+          "line": 2101,
+          "symbol": "I01-I21",
+          "section": "T16"
+        }
+      ],
+      "derivation": "I13 environment.placement version 1.0.0. distinct incarnations and placements by locus Numeric fields are copied from the linked fixture rules; missing numbers stay unresolved.",
+      "unresolved": [
+        "Placement count and same-label rebuild count are not uniquely defined by two incarnations."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.I14.resources",
+      "pack": "insight",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "I14",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "measure": "environment.resources",
+        "version": "1.0.0",
+        "answerVersion": "1.0.0",
+        "revisionPolicy": "corrections_at_cutoff_v1",
+        "formula": "CPU deltas and max sampled RSS"
+      },
+      "expected": {
+        "status": "noncomparable",
+        "reasons": [
+          "rss_is_not_windows_working_set"
+        ],
+        "values": {
+          "windowsWorkingSetUsedAsRss": {
+            "boolean": false,
+            "sourceLiteral": "distinct"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 146,
+          "symbol": "I14",
+          "section": "5. Insight registry and shared answers"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/tasks.json",
+          "line": 2101,
+          "symbol": "I01-I21",
+          "section": "T16"
+        }
+      ],
+      "derivation": "I14 environment.resources version 1.0.0. CPU deltas and max sampled RSS Numeric fields are copied from the linked fixture rules; missing numbers stay unresolved.",
+      "unresolved": [
+        "No numeric RSS sample is in the fixtures.",
+        "Counter-reset samples are excluded. Sampled RSS is not true all-time peak."
+      ],
+      "disputedDefinition": true,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.I15.effects",
+      "pack": "insight",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "I15",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "measure": "environment.effects",
+        "version": "1.0.0",
+        "answerVersion": "1.0.0",
+        "revisionPolicy": "corrections_at_cutoff_v1",
+        "formula": "normalized syscall counts by operation and resource class"
+      },
+      "expected": {
+        "status": "not_observable",
+        "reasons": [
+          "no_trace"
+        ],
+        "values": {
+          "effectCount": {
+            "rational": null,
+            "unit": "count",
+            "sourceLiteral": "null"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 147,
+          "symbol": "I15",
+          "section": "5. Insight registry and shared answers"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/tasks.json",
+          "line": 2101,
+          "symbol": "I01-I21",
+          "section": "T16"
+        }
+      ],
+      "derivation": "I15 environment.effects version 1.0.0. normalized syscall counts by operation and resource class Numeric fields are copied from the linked fixture rules; missing numbers stay unresolved.",
+      "unresolved": [
+        "ETW is not syscall parity. Unmatched call result is unknown, not success."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.I16.isolation",
+      "pack": "insight",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "I16",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "measure": "security.isolation",
+        "version": "1.0.0",
+        "answerVersion": "1.0.0",
+        "revisionPolicy": "corrections_at_cutoff_v1",
+        "formula": "paired declared/configured/tested comparisons"
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "insufficient"
+        ],
+        "values": {
+          "effectiveIsolation": {
+            "literal": "unknown"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 148,
+          "symbol": "I16",
+          "section": "5. Insight registry and shared answers"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/tasks.json",
+          "line": 2101,
+          "symbol": "I01-I21",
+          "section": "T16"
+        }
+      ],
+      "derivation": "I16 security.isolation version 1.0.0. paired declared/configured/tested comparisons Numeric fields are copied from the linked fixture rules; missing numbers stay unresolved.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.I17.authority",
+      "pack": "insight",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "I17",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "measure": "security.authority",
+        "version": "1.0.0",
+        "answerVersion": "1.0.0",
+        "revisionPolicy": "corrections_at_cutoff_v1",
+        "formula": "consistent/mismatch/insufficient by explicit rule"
+      },
+      "expected": {
+        "status": "not_assessed",
+        "reasons": [
+          "no_applicable_policy"
+        ],
+        "values": {
+          "violationCount": {
+            "rational": null,
+            "unit": "count",
+            "sourceLiteral": "null"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 149,
+          "symbol": "I17",
+          "section": "5. Insight registry and shared answers"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/tasks.json",
+          "line": 2101,
+          "symbol": "I01-I21",
+          "section": "T16"
+        }
+      ],
+      "derivation": "I17 security.authority version 1.0.0. consistent/mismatch/insufficient by explicit rule Numeric fields are copied from the linked fixture rules; missing numbers stay unresolved.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.I18.source",
+      "pack": "insight",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "I18",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "measure": "coverage.source",
+        "version": "1.0.0",
+        "answerVersion": "1.0.0",
+        "revisionPolicy": "corrections_at_cutoff_v1",
+        "formula": "accepted/rejected/unprojected; completeness only with expected population"
+      },
+      "expected": {
+        "status": "partial",
+        "reasons": [
+          "rejected_n"
+        ],
+        "values": {
+          "rejectedN": {
+            "rational": "40/1",
+            "unit": "count",
+            "sourceLiteral": "40"
+          },
+          "completeness": {
+            "rational": null,
+            "unit": "1",
+            "sourceLiteral": "not emitted"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 150,
+          "symbol": "I18",
+          "section": "5. Insight registry and shared answers"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/tasks.json",
+          "line": 2101,
+          "symbol": "I01-I21",
+          "section": "T16"
+        }
+      ],
+      "derivation": "I18 coverage.source version 1.0.0. accepted/rejected/unprojected; completeness only with expected population Numeric fields are copied from the linked fixture rules; missing numbers stay unresolved.",
+      "unresolved": [
+        "AGY unavailable is not zero facts."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.I19.acceptance",
+      "pack": "insight",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "I19",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "measure": "outcome.acceptance",
+        "version": "1.0.0",
+        "answerVersion": "1.0.0",
+        "revisionPolicy": "corrections_at_cutoff_v1",
+        "formula": "currently accepted eligible work / rule-eligible evaluated work"
+      },
+      "expected": {
+        "status": "unknown",
+        "reasons": [
+          "acceptance_absent"
+        ],
+        "values": {
+          "initialAcceptance": {
+            "rational": null,
+            "unit": "1",
+            "sourceLiteral": "unknown"
+          },
+          "attemptSuccessSeparate": {
+            "rational": "1/1",
+            "unit": "count",
+            "sourceLiteral": "1"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 151,
+          "symbol": "I19",
+          "section": "5. Insight registry and shared answers"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/tasks.json",
+          "line": 2101,
+          "symbol": "I01-I21",
+          "section": "T16"
+        }
+      ],
+      "derivation": "I19 outcome.acceptance version 1.0.0. currently accepted eligible work / rule-eligible evaluated work Numeric fields are copied from the linked fixture rules; missing numbers stay unresolved.",
+      "unresolved": [
+        "No acceptance rule in the initial F14 state means the acceptance measure is not_observable if no rule exists. The fixture's later accepted and revoked cutoffs are separate vectors."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.I20.resource_efficiency",
+      "pack": "insight",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "I20",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "measure": "outcome.resource_efficiency",
+        "version": "1.0.0",
+        "answerVersion": "1.0.0",
+        "revisionPolicy": "corrections_at_cutoff_v1",
+        "formula": "matched cost / accepted work; separate mean of per-work ratios"
+      },
+      "expected": {
+        "status": "unresolved_definition",
+        "reasons": [
+          "attempt_success_is_not_accepted_work"
+        ],
+        "values": {
+          "fromF10": {
+            "rational": null,
+            "unit": "USD/accepted",
+            "sourceLiteral": "not bound"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 152,
+          "symbol": "I20",
+          "section": "5. Insight registry and shared answers"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/tasks.json",
+          "line": 2101,
+          "symbol": "I01-I21",
+          "section": "T16"
+        }
+      ],
+      "derivation": "I20 outcome.resource_efficiency version 1.0.0. matched cost / accepted work; separate mean of per-work ratios Numeric fields are copied from the linked fixture rules; missing numbers stay unresolved.",
+      "unresolved": [
+        "Zero accepted work refuses with null and no infinity.",
+        "F10's 15 and 10 bind attempt success, not accepted work."
+      ],
+      "disputedDefinition": true,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.I21.descriptive",
+      "pack": "insight",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "I21",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "measure": "comparison.descriptive",
+        "version": "1.0.0",
+        "answerVersion": "1.0.0",
+        "revisionPolicy": "corrections_at_cutoff_v1",
+        "formula": "stratified difference of same-version measures"
+      },
+      "expected": {
+        "status": "noncomparable",
+        "reasons": [
+          "biased_or_unmatched_selection"
+        ],
+        "values": {
+          "winner": {
+            "rational": null,
+            "unit": null,
+            "sourceLiteral": "none"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 153,
+          "symbol": "I21",
+          "section": "5. Insight registry and shared answers"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/tasks.json",
+          "line": 2101,
+          "symbol": "I01-I21",
+          "section": "T16"
+        }
+      ],
+      "derivation": "I21 comparison.descriptive version 1.0.0. stratified difference of same-version measures Numeric fields are copied from the linked fixture rules; missing numbers stay unresolved.",
+      "unresolved": [
+        "No numeric comparable cohort is stated. Raw table is allowed without ranking."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.I10.wall-zero-refuses-ratio",
+      "pack": "insight",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "I10",
+      "inputOrigin": "rule_application",
+      "inputs": {
+        "wall": "0/1",
+        "summed": "0/1"
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "wall_zero"
+        ],
+        "values": {
+          "concurrencyRatio": {
+            "rational": null,
+            "unit": "1",
+            "sourceLiteral": "refuses"
+          }
+        }
+      },
+      "forbidden": [
+        {
+          "id": "infinity"
+        },
+        {
+          "id": "nan"
+        }
+      ],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 142,
+          "symbol": "I10",
+          "section": "5. Insight registry and shared answers"
+        }
+      ],
+      "derivation": "A zero wall refuses the summed/wall concurrency ratio. The 0/0 case is not defined as 1.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.I20.zero-accepted",
+      "pack": "insight",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "I20",
+      "inputOrigin": "rule_application",
+      "inputs": {
+        "acceptedWork": "0/1",
+        "cost": "10/1"
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "zero_accepted"
+        ],
+        "values": {
+          "efficiency": {
+            "rational": null,
+            "unit": "currency/work",
+            "sourceLiteral": "null"
+          }
+        }
+      },
+      "forbidden": [
+        {
+          "id": "infinity"
+        }
+      ],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 152,
+          "symbol": "I20",
+          "section": "5. Insight registry and shared answers"
+        }
+      ],
+      "derivation": "Zero accepted work yields null, not infinity. The cost 10 is retained at its own grain and is not the efficiency.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    }
+  ]
+}

@@ -1,0 +1,5077 @@
+{
+  "schema": "dendro.oracle.expected-value-pack/v1",
+  "acceptanceState": "draft_pending_claude_review",
+  "frozen": false,
+  "vectors": [
+    {
+      "vectorID": "v080.dg.F01.wall-sum-concurrency",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F01",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "segments": [
+          {
+            "id": "A",
+            "interval": "[0,10)"
+          },
+          {
+            "id": "B",
+            "interval": "[0,10)"
+          }
+        ],
+        "unit": "s",
+        "clock": "same"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "half_open_union",
+          "distinct_attempt_segments"
+        ],
+        "values": {
+          "wall": {
+            "rational": "10/1",
+            "unit": "s",
+            "sourceLiteral": "10"
+          },
+          "summedAttempt": {
+            "rational": "20/1",
+            "unit": "attempt-seconds",
+            "sourceLiteral": "20"
+          },
+          "meanConcurrency": {
+            "rational": "2/1",
+            "unit": "1",
+            "sourceLiteral": "2"
+          }
+        },
+        "uncertainty": "exact_for_observed",
+        "measure": "I10",
+        "measureVersion": "1.0.0"
+      },
+      "forbidden": [
+        {
+          "id": "summed-from-depth",
+          "rational": null
+        }
+      ],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 36,
+          "symbol": "F01",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 115,
+          "symbol": "wall-union",
+          "section": "4. Accounting, time, cost and outcomes"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 142,
+          "symbol": "I10",
+          "section": "5. Insight registry and shared answers"
+        }
+      ],
+      "derivation": "Union length of two identical [0,10) segments is 10. Sum of lengths is 20. Mean concurrency = summed/wall = 20/10 = 2/1. Fixture states seconds; storage microseconds are a unit conversion and are not substituted for the fixture values.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F02.abut",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F02",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "A": "[0,10)",
+        "B": "[10,12)",
+        "unit": "s"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "half_open_abut_not_overlap"
+        ],
+        "values": {
+          "wall": {
+            "rational": "12/1",
+            "unit": "s",
+            "sourceLiteral": "12"
+          },
+          "summedAttempt": {
+            "rational": "12/1",
+            "unit": "attempt-seconds",
+            "sourceLiteral": "12"
+          }
+        },
+        "uncertainty": "exact_for_observed"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 37,
+          "symbol": "F02",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 115,
+          "symbol": "abut",
+          "section": "4. Accounting, time, cost and outcomes"
+        }
+      ],
+      "derivation": "Lengths 10 and 2. Half-open abutment shares no positive-duration point. Union length 12. Sum 12.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F02.overlap",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F02",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "A": "[0,10)",
+        "B": "[9,12)",
+        "unit": "s"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "overlap_union"
+        ],
+        "values": {
+          "wall": {
+            "rational": "12/1",
+            "unit": "s",
+            "sourceLiteral": "12"
+          },
+          "summedAttempt": {
+            "rational": "13/1",
+            "unit": "attempt-seconds",
+            "sourceLiteral": "13"
+          },
+          "intersection": {
+            "rational": "1/1",
+            "unit": "s",
+            "sourceLiteral": null
+          }
+        },
+        "uncertainty": "exact_for_observed"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 37,
+          "symbol": "F02",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 115,
+          "symbol": "overlap",
+          "section": "4. Accounting, time, cost and outcomes"
+        }
+      ],
+      "derivation": "Lengths 10 and 3. Intersection [9,10) has length 1. Union [0,12) has length 12. Sum 13. Intersection length is derived, not a separate fixture literal.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F03.diamond-inclusive",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F03",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "directTokens": {
+          "P": "1/1",
+          "A": "1/1",
+          "B": "1/1",
+          "D": "1/1"
+        },
+        "edges": [
+          "spawn P->A",
+          "spawn P->B",
+          "delegate_existing A->D",
+          "delegate_existing B->D"
+        ],
+        "constraint": "D has at most one separate spawn origin; that origin is not an extra fleet token in this fixture"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "set_union_once",
+          "inclusive_nonadditive"
+        ],
+        "values": {
+          "fleetDirect": {
+            "rational": "4/1",
+            "unit": "token",
+            "sourceLiteral": "4"
+          },
+          "inclusiveP": {
+            "rational": "4/1",
+            "unit": "token",
+            "sourceLiteral": "4"
+          },
+          "inclusiveA": {
+            "rational": "2/1",
+            "unit": "token",
+            "sourceLiteral": "2"
+          },
+          "inclusiveB": {
+            "rational": "2/1",
+            "unit": "token",
+            "sourceLiteral": "2"
+          }
+        },
+        "uncertainty": "exact_for_observed"
+      },
+      "forbidden": [
+        {
+          "id": "caller-rollup",
+          "rational": "5/1",
+          "reason": "double_counts_D"
+        }
+      ],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 38,
+          "symbol": "F03",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 76,
+          "symbol": "diamond",
+          "section": "Closed WorkEdge contract (relationship-contract-v1)"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 113,
+          "symbol": "inclusive",
+          "section": "4. Accounting, time, cost and outcomes"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 135,
+          "symbol": "I03",
+          "section": "5. Insight registry and shared answers"
+        }
+      ],
+      "derivation": "Four direct observations of 1. Inclusive follows only spawn and delegate_existing targets. P reaches A, B, and D once. A reaches D. B reaches D. 1+1+1+1 counted twice at D is the forbidden 5.",
+      "unresolved": [
+        "inclusive(D): fixture does not state D's outgoing spawn/delegate edges",
+        "token amount, if any, on D's separate spawn origin: fleet is stated as 4, so no fifth token is part of this fixture"
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F04.shared-unallocated",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F04",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "worker": "W",
+        "tokens": "1000/1",
+        "callers": 2,
+        "allocationPolicy": null
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "no_allocation_policy"
+        ],
+        "values": {
+          "shared": {
+            "rational": "1000/1",
+            "unit": "token",
+            "sourceLiteral": "1000"
+          }
+        },
+        "uncertainty": "exact_for_observed",
+        "callerOwnedTotals": {
+          "status": "unknown",
+          "value": null
+        }
+      },
+      "forbidden": [
+        {
+          "id": "split-without-weights"
+        }
+      ],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 39,
+          "symbol": "F04",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 113,
+          "symbol": "shared-worker",
+          "section": "4. Accounting, time, cost and outcomes"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 143,
+          "symbol": "I11",
+          "section": "5. Insight registry and shared answers"
+        }
+      ],
+      "derivation": "Absent weights leave the whole 1000 in the shared bucket. Caller-owned totals are unknown. Direct usage is not deleted.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F04.weights-3-5-and-3-10",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F04",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "amount": "1000/1",
+        "weightLiterals": [
+          ".6",
+          ".3"
+        ],
+        "canonicalWeightsReduced": [
+          "3/5",
+          "3/10"
+        ]
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "weight_sum_le_one",
+          "residual_explicit"
+        ],
+        "values": {
+          "beneficiary0": {
+            "rational": "600/1",
+            "unit": "token",
+            "sourceLiteral": "600"
+          },
+          "beneficiary1": {
+            "rational": "300/1",
+            "unit": "token",
+            "sourceLiteral": "300"
+          },
+          "residual": {
+            "rational": "100/1",
+            "unit": "token",
+            "sourceLiteral": "100"
+          },
+          "conservation": {
+            "rational": "1000/1",
+            "unit": "token",
+            "sourceLiteral": "1000"
+          }
+        },
+        "uncertainty": "allocated"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 39,
+          "symbol": "F04",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 28,
+          "symbol": "reduced-ratios",
+          "section": "2. Normative records, keys and constraints"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 113,
+          "symbol": "weights",
+          "section": "4. Accounting, time, cost and outcomes"
+        }
+      ],
+      "derivation": "Reduced ratio .6 = 3/5 and .3 = 3/10. Products with 1000 are 600 and 300. Residual 1000-900 = 100. Sum of weights 9/10 <= 1. Power-of-ten forms 6/10 and 3/10 are recorded as a representation dispute; they yield the same products.",
+      "unresolved": [],
+      "disputedDefinition": true,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F04.weights-7-10-4-10-reject",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F04",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "amount": "1000/1",
+        "weights": [
+          "7/10",
+          "4/10"
+        ]
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "weight_sum_exceeds_one"
+        ],
+        "values": {
+          "weightSum": {
+            "rational": "11/10",
+            "unit": "1",
+            "sourceLiteral": ".7+.4"
+          },
+          "directRetained": {
+            "rational": "1000/1",
+            "unit": "token",
+            "sourceLiteral": "1000"
+          }
+        }
+      },
+      "forbidden": [
+        {
+          "id": "allocated-sum",
+          "reason": "weights_rejected"
+        }
+      ],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 39,
+          "symbol": "F04",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 143,
+          "symbol": "I11",
+          "section": "5. Insight registry and shared answers"
+        }
+      ],
+      "derivation": "7/10+4/10 = 11/10 > 1. Allocation is rejected. Direct 1000 remains.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F04.partial-25-40",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F04",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "amount": "100/1",
+        "weights": [
+          "25/100",
+          "40/100"
+        ],
+        "omittedCallers": true
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "partial_claimants",
+          "residual_not_assigned_to_omitted"
+        ],
+        "values": {
+          "beneficiary0": {
+            "rational": "25/1",
+            "unit": "token",
+            "sourceLiteral": "25"
+          },
+          "beneficiary1": {
+            "rational": "40/1",
+            "unit": "token",
+            "sourceLiteral": "40"
+          },
+          "residual": {
+            "rational": "35/1",
+            "unit": "token",
+            "sourceLiteral": "35"
+          },
+          "weightSum": {
+            "rational": "13/20",
+            "unit": "1",
+            "sourceLiteral": "65/100"
+          }
+        },
+        "uncertainty": "allocated"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 39,
+          "symbol": "F04",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 113,
+          "symbol": "partial-allocation",
+          "section": "4. Accounting, time, cost and outcomes"
+        }
+      ],
+      "derivation": "25/100*100 = 25 and 40/100*100 = 40. Residual 100-65 = 35. Omitted callers stay omitted. Reduced weights 1/4 and 2/5 give the same amounts.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F04.partial-70-50-reject",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F04",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "amount": "100/1",
+        "weights": [
+          "70/100",
+          "50/100"
+        ]
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "weight_sum_exceeds_one"
+        ],
+        "values": {
+          "weightSum": {
+            "rational": "6/5",
+            "unit": "1",
+            "sourceLiteral": "120/100"
+          },
+          "directRetained": {
+            "rational": "100/1",
+            "unit": "token",
+            "sourceLiteral": "100"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 39,
+          "symbol": "F04",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 113,
+          "symbol": "sum-weights",
+          "section": "4. Accounting, time, cost and outcomes"
+        }
+      ],
+      "derivation": "70/100+50/100 = 6/5 > 1. Reject allocation. Direct 100 remains.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F05.outliving-child",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F05",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "parent": "[0,5)",
+        "child": "[4,20)",
+        "childTokens": "100/1",
+        "unit": "s"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "child_may_outlive_parent"
+        ],
+        "values": {
+          "parentWall": {
+            "rational": "5/1",
+            "unit": "s",
+            "sourceLiteral": "5"
+          },
+          "lineageCloseWall": {
+            "rational": "20/1",
+            "unit": "s",
+            "sourceLiteral": "20"
+          },
+          "inclusiveTokens": {
+            "rational": "100/1",
+            "unit": "token",
+            "sourceLiteral": "100"
+          },
+          "descendantOutlived": {
+            "boolean": true,
+            "sourceLiteral": "true"
+          }
+        },
+        "uncertainty": "exact_for_observed"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 40,
+          "symbol": "F05",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 115,
+          "symbol": "lineage-close",
+          "section": "4. Accounting, time, cost and outcomes"
+        }
+      ],
+      "derivation": "Parent length is 5. Union of [0,5) and [4,20) is [0,20), length 20. Child end 20 is after parent end 5, so descendant_outlived is true. The fixture states inclusive tokens 100 together with child tokens 100.",
+      "unresolved": [
+        "parent direct token amount is not stated. Conservation parentDirect+childDirect = inclusive is therefore not checked. Do not assume parent direct is 0."
+      ],
+      "disputedDefinition": true,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F06.exact-pair",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F06",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "rows": [
+          {
+            "amount": "100/1",
+            "equivalence": "exact"
+          },
+          {
+            "amount": "100/1",
+            "equivalence": "exact"
+          }
+        ]
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "exact_equivalence_only"
+        ],
+        "values": {
+          "canonical": {
+            "rational": "100/1",
+            "unit": "token",
+            "sourceLiteral": "100"
+          },
+          "duplicateRows": {
+            "rational": "1/1",
+            "unit": "count",
+            "sourceLiteral": "1"
+          }
+        },
+        "uncertainty": "exact_for_observed"
+      },
+      "forbidden": [
+        {
+          "id": "sum-both-rows",
+          "rational": "200/1"
+        }
+      ],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 41,
+          "symbol": "F06",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 109,
+          "symbol": "exact-equivalence",
+          "section": "4. Accounting, time, cost and outcomes"
+        }
+      ],
+      "derivation": "Exact evidenced equivalence collapses the pair to canonical 100. One row is the duplicate. 200 is not the canonical amount.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F06.ambiguous-fleet",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F06",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "exactCanonical": "100/1",
+        "third": {
+          "amount": "100/1",
+          "overlap": "possible_unproved"
+        }
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "ambiguous_overlap"
+        ],
+        "values": {
+          "thirdRetained": {
+            "rational": "100/1",
+            "unit": "token",
+            "sourceLiteral": "100"
+          },
+          "fleetCanonicalSum": {
+            "rational": null,
+            "unit": "token",
+            "sourceLiteral": "refused"
+          }
+        }
+      },
+      "forbidden": [
+        {
+          "rational": "200/1"
+        },
+        {
+          "rational": "300/1"
+        }
+      ],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 41,
+          "symbol": "F06",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 109,
+          "symbol": "overlap-refuses-fleet",
+          "section": "4. Accounting, time, cost and outcomes"
+        }
+      ],
+      "derivation": "The third row stays a separate source observation of 100. A fleet total that adds it to the canonical 100 is refused. Source-grain amounts stay 100, 100, and 100. No claimed canonical sum is emitted.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F06.values-40-25",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F06",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "sameCallCandidateAmounts": [
+          "40/1",
+          "25/1"
+        ],
+        "exactHashEquivalence": false
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "unresolved_overlap_conflict"
+        ],
+        "values": {
+          "canonicalPick": {
+            "rational": null,
+            "unit": "token",
+            "sourceLiteral": "none"
+          }
+        }
+      },
+      "forbidden": [
+        {
+          "rational": "40/1",
+          "as": "silent_canonical"
+        },
+        {
+          "rational": "25/1",
+          "as": "silent_canonical"
+        },
+        {
+          "rational": "65/1",
+          "as": "canonical_sum"
+        },
+        {
+          "rational": "15/1",
+          "as": "difference"
+        }
+      ],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 41,
+          "symbol": "F06",
+          "section": "Frozen negative and numeric fixtures"
+        }
+      ],
+      "derivation": "40 and 25 are not exact-hash equivalents. Neither value nor their sum or difference is a canonical resolution.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F07.distinct-authorities",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F07",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "requestNativeId": "r1",
+        "authorities": [
+          {
+            "tokens": "100/1"
+          },
+          {
+            "tokens": "200/1"
+          }
+        ],
+        "otherOverlapEvidence": false
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "provider_key_includes_authority"
+        ],
+        "values": {
+          "directTotal": {
+            "rational": "300/1",
+            "unit": "token",
+            "sourceLiteral": "300"
+          },
+          "distinctIds": {
+            "boolean": true,
+            "sourceLiteral": "distinct"
+          },
+          "mergedByBareRequestId": {
+            "boolean": false,
+            "sourceLiteral": "never"
+          }
+        },
+        "uncertainty": "exact_for_observed"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 42,
+          "symbol": "F07",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 109,
+          "symbol": "provider-request-keys",
+          "section": "4. Accounting, time, cost and outcomes"
+        }
+      ],
+      "derivation": "100+200 = 300. Keys are (authority, source instance/incarnation, native id). The shared bare id r1 does not merge them. The 300 holds only because this input has no other overlap evidence.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F08.included-cache-total",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F08",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "input": "100/1",
+        "cacheRead": "40/1",
+        "cacheReadFlag": "included_in(input)",
+        "output": "20/1"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "do_not_add_included_component"
+        ],
+        "values": {
+          "derivedTotal": {
+            "rational": "120/1",
+            "unit": "token",
+            "sourceLiteral": "120"
+          }
+        },
+        "uncertainty": "exact_for_observed"
+      },
+      "forbidden": [
+        {
+          "rational": "160/1"
+        }
+      ],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 43,
+          "symbol": "F08",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 111,
+          "symbol": "total-120-not-160",
+          "section": "4. Accounting, time, cost and outcomes"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 134,
+          "symbol": "I02",
+          "section": "5. Insight registry and shared answers"
+        }
+      ],
+      "derivation": "Input 100 already includes cache-read 40. Derived total is input 100 plus output 20 = 120. Adding cache-read again yields the forbidden 160.",
+      "unresolved": [
+        "exclusive input-uncached complement 60 is a partition consequence, not a required fixture output"
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F08.unknown-inclusion",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F08",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "componentsRetained": true,
+        "inclusion": "unknown"
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "unknown_component_inclusion"
+        ],
+        "values": {
+          "derivedTotal": {
+            "rational": null,
+            "unit": "token",
+            "sourceLiteral": "null"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 43,
+          "symbol": "F08",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 111,
+          "symbol": "unknown-inclusion",
+          "section": "4. Accounting, time, cost and outcomes"
+        }
+      ],
+      "derivation": "Unknown inclusion refuses a derived total and keeps the component values. No numeric total is invented.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F08.literal-reported-total",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F08",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "literalReportedTotal": "120/1",
+        "grain": "source",
+        "inclusion": "unknown"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "definition_unknown"
+        ],
+        "values": {
+          "literalReportedTotal": {
+            "rational": "120/1",
+            "unit": "token",
+            "sourceLiteral": "120"
+          }
+        },
+        "uncertainty": "unknown",
+        "definition": "definition_unknown"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 43,
+          "symbol": "F08",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 111,
+          "symbol": "literal-total",
+          "section": "4. Accounting, time, cost and outcomes"
+        }
+      ],
+      "derivation": "A literal source-reported 120 stays displayable at source grain when component inclusion is unknown. It is not promoted to a derived compatible total.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F08.modern-plus-legacy",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F08",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "modernObservedInput": "100/1",
+        "legacyInputInclusion": "unknown"
+      },
+      "expected": {
+        "status": "partial",
+        "reasons": [
+          "observed_subset_only"
+        ],
+        "values": {
+          "observedSubset": {
+            "rational": "100/1",
+            "unit": "token",
+            "sourceLiteral": "100"
+          },
+          "fullInputTotal": {
+            "rational": null,
+            "unit": "token",
+            "sourceLiteral": "unknown"
+          }
+        },
+        "uncertainty": "observed_lower_bound"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 43,
+          "symbol": "F08",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 111,
+          "symbol": "modern-plus-legacy",
+          "section": "4. Accounting, time, cost and outcomes"
+        }
+      ],
+      "derivation": "The modern observed input 100 is a valid subset. The full input total stays unknown.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F09.delta-same-counter",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F09",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "counter": "same_proved",
+        "readings": [
+          "100/1",
+          "150/1"
+        ],
+        "semantics": "cumulative"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "same_counter_delta"
+        ],
+        "values": {
+          "delta": {
+            "rational": "50/1",
+            "unit": "token",
+            "sourceLiteral": "50"
+          }
+        },
+        "uncertainty": "exact_for_observed"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 44,
+          "symbol": "F09",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 111,
+          "symbol": "delta-50",
+          "section": "4. Accounting, time, cost and outcomes"
+        }
+      ],
+      "derivation": "150-100 = 50 for one proved counter, incarnation, and component semantics.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F09.first-sample",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F09",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "firstCumulative": "100/1",
+        "sinceZeroAttested": false
+      },
+      "expected": {
+        "status": "partial",
+        "reasons": [
+          "baseline_unknown"
+        ],
+        "values": {
+          "cumulativeRetained": {
+            "rational": "100/1",
+            "unit": "token",
+            "sourceLiteral": "100"
+          },
+          "incrementalDelta": {
+            "rational": null,
+            "unit": "token",
+            "sourceLiteral": "unknown"
+          }
+        },
+        "uncertainty": "unknown"
+      },
+      "forbidden": [
+        {
+          "rational": "100/1",
+          "as": "incremental_consumption"
+        }
+      ],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 44,
+          "symbol": "F09",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 111,
+          "symbol": "first-reading",
+          "section": "4. Accounting, time, cost and outcomes"
+        }
+      ],
+      "derivation": "The first cumulative reading 100 is retained. Its incremental baseline is unknown unless since-zero or reset initialization is attested. Do not invent consumption 100.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F09.reset-since-zero",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F09",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "resetReading": "20/1",
+        "sinceZeroResetSemantics": true
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "since_zero_reset"
+        ],
+        "values": {
+          "counted": {
+            "rational": "20/1",
+            "unit": "token",
+            "sourceLiteral": "20"
+          }
+        },
+        "uncertainty": "exact_for_observed"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 44,
+          "symbol": "F09",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 111,
+          "symbol": "reset",
+          "section": "4. Accounting, time, cost and outcomes"
+        }
+      ],
+      "derivation": "Under source since-zero reset semantics the reading 20 is counted. This does not apply to a bare decrease.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F09.reset-without-since-zero",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F09",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "reading": "20/1",
+        "sinceZeroResetSemantics": false,
+        "resetEvidence": false
+      },
+      "expected": {
+        "status": "partial",
+        "reasons": [
+          "baseline_without_since_zero"
+        ],
+        "values": {
+          "baseline": {
+            "rational": "20/1",
+            "unit": "token",
+            "sourceLiteral": "20"
+          },
+          "firstDelta": {
+            "rational": null,
+            "unit": "token",
+            "sourceLiteral": "unknown"
+          }
+        },
+        "uncertainty": "unknown"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 44,
+          "symbol": "F09",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 111,
+          "symbol": "reset-evidence",
+          "section": "4. Accounting, time, cost and outcomes"
+        }
+      ],
+      "derivation": "Without since-zero reset semantics the value 20 is a baseline and the first delta is unknown.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F09.decrease-only",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F09",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "pattern": "counter decrease with no reset/incarnation evidence",
+        "forbiddenDeltaLiteral": "-130"
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "decrease_without_reset",
+          "conflict_or_unknown"
+        ],
+        "values": {
+          "delta": {
+            "rational": null,
+            "unit": "token",
+            "sourceLiteral": "unknown"
+          },
+          "automaticReset": {
+            "boolean": false,
+            "sourceLiteral": "never"
+          }
+        }
+      },
+      "forbidden": [
+        {
+          "rational": "-130/1"
+        },
+        {
+          "id": "automatic-reset"
+        }
+      ],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 44,
+          "symbol": "F09",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 111,
+          "symbol": "decrease-alone",
+          "section": "4. Accounting, time, cost and outcomes"
+        }
+      ],
+      "derivation": "A decrease alone is conflict/unknown. It is not a reset and not a negative delta. The stated forbidden figure is -130.",
+      "unresolved": [
+        "The row forbids output -130 and does not state the decrease's two endpoints as an input pair. 150 then 20 is a reconstruction that produces -130, not a source-literal input."
+      ],
+      "disputedDefinition": true,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F09.generation-not-reset",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F09",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "event": "new_file_generation_only",
+        "resetEvidence": false
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "generation_does_not_prove_reset"
+        ],
+        "values": {
+          "resetInferred": {
+            "boolean": false,
+            "sourceLiteral": "not proved"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 111,
+          "symbol": "new-file-generation",
+          "section": "4. Accounting, time, cost and outcomes"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 44,
+          "symbol": "F09",
+          "section": "Frozen negative and numeric fixtures"
+        }
+      ],
+      "derivation": "DESIGN states that a new-file generation alone does not prove a counter reset.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F10.ratio-of-sums",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F10",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "costs": [
+          "10/1",
+          "10/1",
+          "10/1"
+        ],
+        "successes": [
+          "1/1",
+          "0/1",
+          "1/1"
+        ],
+        "currencyCode": "USD",
+        "currencyCodeNote": "$ in DESIGN section 4; bare numbers in F10"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "ratio_of_sums"
+        ],
+        "values": {
+          "costPerSuccess": {
+            "rational": "15/1",
+            "unit": "USD/success",
+            "sourceLiteral": "15"
+          },
+          "numerator": {
+            "rational": "30/1",
+            "unit": "USD",
+            "sourceLiteral": "30"
+          },
+          "denominator": {
+            "rational": "2/1",
+            "unit": "success",
+            "sourceLiteral": "2"
+          }
+        },
+        "uncertainty": "exact_for_observed"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 45,
+          "symbol": "F10",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 119,
+          "symbol": "30/2=15",
+          "section": "4. Accounting, time, cost and outcomes"
+        }
+      ],
+      "derivation": "Sum of costs 30 over sum of successes 2 is 15/1. The USD code identifies DESIGN's dollar sign; the numeric ratio does not depend on that label.",
+      "unresolved": [],
+      "disputedDefinition": true,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F10.named-mean",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F10",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "successfulAttemptCosts": [
+          "10/1",
+          "10/1"
+        ],
+        "failedAttemptExcluded": "10/1"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "named_mean_of_successful_attempts"
+        ],
+        "values": {
+          "mean": {
+            "rational": "10/1",
+            "unit": "USD/successful-attempt",
+            "sourceLiteral": "10"
+          },
+          "undefinedAllAttemptRatioCount": {
+            "rational": "1/1",
+            "unit": "count",
+            "sourceLiteral": "1"
+          }
+        },
+        "uncertainty": "exact_for_observed"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 45,
+          "symbol": "F10",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 119,
+          "symbol": "mean-10",
+          "section": "4. Accounting, time, cost and outcomes"
+        }
+      ],
+      "derivation": "Mean of the two successful attempt costs is (10+10)/2 = 10. The failed attempt makes one all-attempt ratio undefined. That term is counted, not averaged in.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F10.cache-ratio-of-sums",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F10",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "invocations": [
+          {
+            "cacheRead": "90/1",
+            "input": "100/1"
+          },
+          {
+            "cacheRead": "1/1",
+            "input": "10/1"
+          }
+        ]
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "sum_raw_counts_before_reduce"
+        ],
+        "values": {
+          "ratio": {
+            "rational": "91/110",
+            "unit": "1",
+            "sourceLiteral": "91/110"
+          }
+        },
+        "uncertainty": "exact_for_observed",
+        "measure": "cache_read.fraction_of_input",
+        "measureVersion": "1.0.0"
+      },
+      "forbidden": [
+        {
+          "id": "mean-of-reduced-ratios-used-as-ratio-of-sums",
+          "rational": "1/2"
+        }
+      ],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 45,
+          "symbol": "F10",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 134,
+          "symbol": "91/110",
+          "section": "5. Insight registry and shared answers"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 133,
+          "symbol": "raw-counts",
+          "section": "Scoped closure re-review receipt"
+        }
+      ],
+      "derivation": "(90+1)/(100+10) = 91/110. gcd(91,110)=1. Do not average the per-invocation ratios and call that this measure.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F10.cache-invocation-mean",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F10",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "positiveDenominatorFractions": [
+          "90/100",
+          "1/10"
+        ]
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "named_mean_of_invocation_fractions"
+        ],
+        "values": {
+          "mean": {
+            "rational": "1/2",
+            "unit": "1",
+            "sourceLiteral": "0.5"
+          }
+        },
+        "uncertainty": "exact_for_observed",
+        "measure": "cache_read.mean_invocation_fraction",
+        "measureVersion": "1.0.0"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 45,
+          "symbol": "F10",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 134,
+          "symbol": "0.5",
+          "section": "5. Insight registry and shared answers"
+        }
+      ],
+      "derivation": "(90/100 + 1/10)/2 = (9/10 + 1/10)/2 = 1/2. The fixture literal 0.5 is the same rational. Reduced form is 1/2.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F10.mean-absent-invocation-grain",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F10",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "invocationGrain": false
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "absent_invocation_grain"
+        ],
+        "values": {
+          "mean": {
+            "rational": null,
+            "unit": "1",
+            "sourceLiteral": "refused"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 45,
+          "symbol": "F10",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 134,
+          "symbol": "I02-mean",
+          "section": "5. Insight registry and shared answers"
+        }
+      ],
+      "derivation": "The named invocation mean requires evidenced invocation grain. Ratio-of-sums can still be a different measure when its own inputs exist.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F10.ratio-19-40",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F10",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "numerator": "19/1",
+        "denominator": "40/1"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "exact_reduced_ratio"
+        ],
+        "values": {
+          "ratio": {
+            "rational": "19/40",
+            "unit": "1",
+            "sourceLiteral": "19/40=.475"
+          },
+          "decimalEquality": {
+            "rational": "19/40",
+            "unit": "1",
+            "sourceLiteral": ".475"
+          }
+        },
+        "uncertainty": "exact_for_observed"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 45,
+          "symbol": "F10",
+          "section": "Frozen negative and numeric fixtures"
+        }
+      ],
+      "derivation": "19/40 = 475/1000 = .475 exactly. Canonical ratio remains the reduced 19/40, not a currency power-of-ten scale.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F10.ratio-11-16",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F10",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "numerator": "11/1",
+        "denominator": "16/1"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "exact_reduced_ratio"
+        ],
+        "values": {
+          "ratio": {
+            "rational": "11/16",
+            "unit": "1",
+            "sourceLiteral": "11/16=.6875"
+          },
+          "decimalEquality": {
+            "rational": "11/16",
+            "unit": "1",
+            "sourceLiteral": ".6875"
+          }
+        },
+        "uncertainty": "exact_for_observed"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 45,
+          "symbol": "F10",
+          "section": "Frozen negative and numeric fixtures"
+        }
+      ],
+      "derivation": "11/16 = 6875/10000 = .6875 exactly. Reduced form is already 11/16.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F10.zero-denominator",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F10",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "aggregateDenominator": "0/1"
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "zero_aggregate_denominator"
+        ],
+        "values": {
+          "ratio": {
+            "rational": null,
+            "unit": "1",
+            "sourceLiteral": "refused"
+          }
+        }
+      },
+      "forbidden": [
+        {
+          "id": "infinity"
+        }
+      ],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 45,
+          "symbol": "F10",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 119,
+          "symbol": "zero-denominator",
+          "section": "4. Accounting, time, cost and outcomes"
+        }
+      ],
+      "derivation": "A zero aggregate denominator refuses the ratio. No infinity is emitted.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F11.observed-no-card",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F11",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "observed": {
+          "coefficient": "2",
+          "denominator": "100",
+          "currency": "USD"
+        },
+        "rateCard": null
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "observed_currency_survives"
+        ],
+        "values": {
+          "observedCanonical": {
+            "rational": "1/50",
+            "unit": "USD",
+            "sourceLiteral": "0.02"
+          },
+          "estimate": {
+            "rational": null,
+            "unit": "USD",
+            "sourceLiteral": "null"
+          }
+        },
+        "uncertainty": "exact_for_observed",
+        "estimateStatus": "refused",
+        "estimateReason": "rate_card_absent"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 46,
+          "symbol": "F11",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 28,
+          "symbol": "power-of-ten",
+          "section": "2. Normative records, keys and constraints"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 117,
+          "symbol": "observed-without-card",
+          "section": "4. Accounting, time, cost and outcomes"
+        }
+      ],
+      "derivation": "0.02 has minimal power-of-ten denominator 100 and coefficient 2. gcd reduction to 1/50 is a different representation and is not the decimal canonical form. The estimate is null because the rate card is absent.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F11.estimate-with-card",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F11",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "inputTokens": "1000/1",
+        "inputPricePerMillion": "2/1 USD",
+        "outputTokens": "500/1",
+        "outputPricePerMillion": "8/1 USD"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "component_price"
+        ],
+        "values": {
+          "estimate": {
+            "rational": "3/500",
+            "unit": "USD",
+            "sourceLiteral": "0.006"
+          }
+        },
+        "uncertainty": "exact_for_observed"
+      },
+      "forbidden": [
+        {
+          "rational": "1/100",
+          "as": "iso_scale_2"
+        },
+        {
+          "rational": "0/1",
+          "as": "iso_scale_2"
+        }
+      ],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 46,
+          "symbol": "F11",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 117,
+          "symbol": "0.006",
+          "section": "4. Accounting, time, cost and outcomes"
+        }
+      ],
+      "derivation": "1000*(2/1000000)+500*(8/1000000) = 2000/1000000+4000/1000000 = 6000/1000000. Stripping trailing zeros yields 6/1000. Do not force ISO scale 2.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F11.partition-no-sum",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F11",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "facts": [
+          {
+            "label": "observed",
+            "amount": "150/1",
+            "currency": "USD"
+          },
+          {
+            "label": "observed",
+            "amount": "200/1",
+            "currency": "EUR"
+          },
+          {
+            "label": "estimated",
+            "amount": "6/1",
+            "currency": "USD",
+            "card": "cardv3"
+          },
+          {
+            "label": "subscription",
+            "amount": "2000/1",
+            "currency": "USD"
+          }
+        ]
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "four_labeled_facts",
+          "no_fx",
+          "no_observed_plus_estimated"
+        ],
+        "values": {
+          "factCount": {
+            "rational": "4/1",
+            "unit": "count",
+            "sourceLiteral": "4"
+          },
+          "fxSum": {
+            "rational": null,
+            "unit": "mixed",
+            "sourceLiteral": "refused"
+          },
+          "observedPlusEstimated": {
+            "rational": null,
+            "unit": "USD",
+            "sourceLiteral": "refused"
+          }
+        }
+      },
+      "forbidden": [
+        {
+          "rational": "156/1"
+        },
+        {
+          "rational": "2150/1"
+        },
+        {
+          "rational": "350/1",
+          "note": "USD150+EUR200"
+        }
+      ],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 46,
+          "symbol": "F11",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 117,
+          "symbol": "do-not-add",
+          "section": "4. Accounting, time, cost and outcomes"
+        }
+      ],
+      "derivation": "The four amounts stay on their own labels. No dated FX policy is in the fixture. Observed, estimated, and subscription amounts are not added.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F11.canonical-equality",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F11",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "left": "USD 10/100",
+        "right": "USD 1/10",
+        "zeroForms": [
+          "0",
+          "0.0",
+          "0/100"
+        ]
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "strip_trailing_decimal_zeros",
+          "zero_is_0_1"
+        ],
+        "values": {
+          "leftCanonical": {
+            "rational": "1/10",
+            "unit": "USD",
+            "sourceLiteral": "1/10"
+          },
+          "rightCanonical": {
+            "rational": "1/10",
+            "unit": "USD",
+            "sourceLiteral": "1/10"
+          },
+          "equal": {
+            "boolean": true,
+            "sourceLiteral": "USD10/100==USD1/10"
+          },
+          "zeroCanonical": {
+            "rational": "0/1",
+            "unit": "USD",
+            "sourceLiteral": "0/1"
+          }
+        },
+        "uncertainty": "exact_for_observed"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 46,
+          "symbol": "F11",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 28,
+          "symbol": "USD10/100",
+          "section": "2. Normative records, keys and constraints"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 109,
+          "symbol": "H4",
+          "section": "Final Grok audit receipt and bounded repair disposition"
+        }
+      ],
+      "derivation": "10/100 = 0.10 strips to 0.1 = 1/10. USD 1/10 is already canonical. Any zero amount canonicalizes to 0/1. Sign would belong only to the numerator; this input is nonnegative.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F11.same-revision-idempotent",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F11",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "sameKey": true,
+        "sameRevision": true,
+        "canonicalAmount": "1/10",
+        "contentAfterNormalization": "identical"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "idempotent_same_revision_and_digest"
+        ],
+        "values": {
+          "conflict": {
+            "boolean": false,
+            "sourceLiteral": "idempotent"
+          },
+          "duplicateEmitted": {
+            "boolean": false,
+            "sourceLiteral": "idempotent"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 46,
+          "symbol": "F11",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 78,
+          "symbol": "idempotent",
+          "section": "2. Normative records, keys and constraints"
+        }
+      ],
+      "derivation": "The same source key and revision with the same canonical amount is one idempotent fact. Same revision with different canonical content would be conflict; that contrasting case is DOM.revision-conflict.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F12.agy-unavailable",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F12",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "source": "AGY",
+        "log": "unavailable"
+      },
+      "expected": {
+        "status": "not_observable",
+        "reasons": [
+          "log_unavailable"
+        ],
+        "values": {
+          "value": {
+            "rational": null,
+            "unit": null,
+            "sourceLiteral": "null"
+          }
+        }
+      },
+      "forbidden": [
+        {
+          "rational": "0/1",
+          "as": "measured_zero"
+        }
+      ],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 47,
+          "symbol": "F12",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 80,
+          "symbol": "missing-source",
+          "section": "2. Normative records, keys and constraints"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 150,
+          "symbol": "I18",
+          "section": "5. Insight registry and shared answers"
+        }
+      ],
+      "derivation": "An unavailable AGY log is not_observable and null. It is not a measured zero.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F12.complete-zero-eligible",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F12",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "scan": "complete",
+        "eligibleTools": 0,
+        "source": "elsewhere_not_AGY"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "complete_scan_observed_zero"
+        ],
+        "values": {
+          "eligible": {
+            "rational": "0/1",
+            "unit": "count",
+            "sourceLiteral": "0"
+          }
+        },
+        "uncertainty": "exact_for_observed"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 47,
+          "symbol": "F12",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 80,
+          "symbol": "observed-zero",
+          "section": "2. Normative records, keys and constraints"
+        }
+      ],
+      "derivation": "A completed scan with no eligible facts may yield observed zero. This is a different source from the unavailable AGY log.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F12.forty-rejects",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F12",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "rejected": "40/1"
+      },
+      "expected": {
+        "status": "partial",
+        "reasons": [
+          "rejected_records"
+        ],
+        "values": {
+          "rejectedN": {
+            "rational": "40/1",
+            "unit": "count",
+            "sourceLiteral": "40"
+          }
+        },
+        "uncertainty": "exact_for_observed"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 47,
+          "symbol": "F12",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 80,
+          "symbol": "no-fabricated-percentage",
+          "section": "2. Normative records, keys and constraints"
+        }
+      ],
+      "derivation": "Forty rejects make coverage partial with rejected_n 40. Acceptance fraction is not sensor completeness.",
+      "unresolved": [
+        "accepted count, expected population, and completeness percentage are not in the fixture. No percentage is emitted."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F13.policy-absent",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F13",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "policy": "absent",
+        "effect": "observed",
+        "grant": "absent"
+      },
+      "expected": {
+        "status": "not_assessed",
+        "reasons": [
+          "policy_absent",
+          "missing_grant_evidence"
+        ],
+        "values": {
+          "policyState": {
+            "literal": "NOT_ASSESSED"
+          },
+          "violationCount": {
+            "rational": null,
+            "unit": "count",
+            "sourceLiteral": "null"
+          },
+          "isViolation": {
+            "boolean": false,
+            "sourceLiteral": "not violation"
+          }
+        }
+      },
+      "forbidden": [
+        {
+          "rational": "0/1",
+          "as": "violation_count"
+        },
+        {
+          "rational": "1/1",
+          "as": "invented_violation"
+        }
+      ],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 48,
+          "symbol": "F13",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 149,
+          "symbol": "I17",
+          "section": "5. Insight registry and shared answers"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 13,
+          "symbol": "P0-no-policy",
+          "section": "Findings and adjudication"
+        }
+      ],
+      "derivation": "No applicable policy is NOT_ASSESSED. Violation count is null, not zero. A missing grant is missing evidence, not a violation, even if an effect was observed.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F13.explicit-rule",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F13",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "rule": "explicit_prohibiting",
+        "requiredEvidence": "present"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "rule_specific_violation_possible"
+        ],
+        "values": {
+          "violationEstablished": {
+            "boolean": true,
+            "sourceLiteral": "can establish"
+          },
+          "violationCount": {
+            "rational": null,
+            "unit": "count",
+            "sourceLiteral": "unspecified"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 48,
+          "symbol": "F13",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 149,
+          "symbol": "I17-violation",
+          "section": "5. Insight registry and shared answers"
+        }
+      ],
+      "derivation": "An explicit prohibiting rule plus its required evidence can establish a rule-specific violation. The count is not given, so it stays unresolved rather than defaulting to 1.",
+      "unresolved": [
+        "No numeric violation count is defined for the positive case."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F14.attempt-success",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F14",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "attemptResult": "succeeded"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "attempt_success_is_not_acceptance"
+        ],
+        "values": {
+          "attemptSuccess": {
+            "rational": "1/1",
+            "unit": "count",
+            "sourceLiteral": "1"
+          }
+        },
+        "uncertainty": "exact_for_observed"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 49,
+          "symbol": "F14",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 119,
+          "symbol": "attempt-not-acceptance",
+          "section": "4. Accounting, time, cost and outcomes"
+        }
+      ],
+      "derivation": "The succeeded attempt contributes attempt-success count 1. That number is not a work-acceptance bit.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F14.acceptance-initial",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F14",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "work": "completed",
+        "acceptanceReceipt": "absent",
+        "cutoff": "initial"
+      },
+      "expected": {
+        "status": "unknown",
+        "reasons": [
+          "acceptance_absent",
+          "not_recorded"
+        ],
+        "values": {
+          "workAcceptance": {
+            "rational": null,
+            "unit": "bool",
+            "sourceLiteral": "unknown"
+          }
+        }
+      },
+      "forbidden": [
+        {
+          "id": "treat-completion-as-acceptance"
+        },
+        {
+          "id": "treat-attempt-success-as-acceptance"
+        }
+      ],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 49,
+          "symbol": "F14",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 119,
+          "symbol": "acceptance-unknown",
+          "section": "4. Accounting, time, cost and outcomes"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 151,
+          "symbol": "I19",
+          "section": "5. Insight registry and shared answers"
+        }
+      ],
+      "derivation": "Completion without an acceptance receipt is unknown / not_recorded. Missing receipt is not nonacceptance unless a closed-world ruleset says so, and none is supplied here.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F14.acceptance-later",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F14",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "cutoff": "later",
+        "transitionIngestedByCutoff": "accepted"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "corrections_at_cutoff_v1"
+        ],
+        "values": {
+          "currentTransition": {
+            "literal": "accepted"
+          }
+        },
+        "uncertainty": "exact_for_observed"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 49,
+          "symbol": "F14",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 78,
+          "symbol": "cutoff",
+          "section": "2. Normative records, keys and constraints"
+        }
+      ],
+      "derivation": "At the later cutoff the ingested transition is accepted. No calendar timestamp is stated.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F14.acceptance-revoked",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F14",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "cutoff": "newest",
+        "transitionIngestedByCutoff": "revoked"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "revocation_is_separate"
+        ],
+        "values": {
+          "currentTransition": {
+            "literal": "revoked"
+          },
+          "currentlyAccepted": {
+            "boolean": false,
+            "sourceLiteral": "revoked"
+          }
+        },
+        "uncertainty": "exact_for_observed"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 49,
+          "symbol": "F14",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 119,
+          "symbol": "revoked",
+          "section": "4. Accounting, time, cost and outcomes"
+        }
+      ],
+      "derivation": "The newest cutoff applies revocation. The earlier accepted answer remains reproducible at its own cutoff.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F14.no-merged-transition",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F14",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "transitions": [
+          "completed",
+          "attempt_succeeded",
+          "accepted",
+          "revoked"
+        ]
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "no_merged_transition"
+        ],
+        "values": {
+          "mergedTransition": {
+            "rational": null,
+            "unit": null,
+            "sourceLiteral": "not invented"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 49,
+          "symbol": "F14",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 55,
+          "symbol": "OutcomeEvidence",
+          "section": "2. Normative records, keys and constraints"
+        }
+      ],
+      "derivation": "Completion, attempt success, acceptance, and revocation stay separate transitions. They are not collapsed into one state.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F15.invalid-interval",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F15",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "order": "end_before_start"
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "invalid_interval_conflict"
+        ],
+        "values": {
+          "duration": {
+            "rational": null,
+            "unit": null,
+            "sourceLiteral": "never zero"
+          }
+        }
+      },
+      "forbidden": [
+        {
+          "rational": "0/1"
+        }
+      ],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 50,
+          "symbol": "F15",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 115,
+          "symbol": "end<start",
+          "section": "4. Accounting, time, cost and outcomes"
+        }
+      ],
+      "derivation": "End before start is conflict. Duration is not clamped to zero.",
+      "unresolved": [
+        "Numeric endpoints are not stated."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F15.right-censored",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F15",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "segmentStart": "5/1",
+        "cutoff": "10/1",
+        "liveness": "ingested ongoing evidence covers cutoff",
+        "knowledgeCutoffIncludesLiveness": true
+      },
+      "expected": {
+        "status": "partial",
+        "reasons": [
+          "right_censored",
+          "liveness_covers_cutoff"
+        ],
+        "values": {
+          "witnessedOngoingContribution": {
+            "rational": "5/1",
+            "unit": "source-unit",
+            "sourceLiteral": "5"
+          },
+          "completedDuration": {
+            "rational": null,
+            "unit": "source-unit",
+            "sourceLiteral": "unknown"
+          }
+        },
+        "uncertainty": "observed_lower_bound"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 50,
+          "symbol": "F15",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 115,
+          "symbol": "right-censored",
+          "section": "4. Accounting, time, cost and outcomes"
+        }
+      ],
+      "derivation": "The fixture states contribution 5 for start 5 and cutoff 10. That matches half-open length 10-5 = 5 in the fixture's own unit. Completed duration stays unknown. The unit name is not stated, so it is recorded as source-unit, not converted.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F15.lone-start",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F15",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "start": "present",
+        "stop": "missing",
+        "livenessCoveringCutoff": false
+      },
+      "expected": {
+        "status": "partial",
+        "reasons": [
+          "missing_end"
+        ],
+        "values": {
+          "completedDuration": {
+            "rational": null,
+            "unit": null,
+            "sourceLiteral": "unknown"
+          }
+        }
+      },
+      "forbidden": [
+        {
+          "rational": "5/1",
+          "as": "automatic_duration"
+        }
+      ],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 50,
+          "symbol": "F15",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 115,
+          "symbol": "lone-start",
+          "section": "4. Accounting, time, cost and outcomes"
+        }
+      ],
+      "derivation": "A lone start does not prove survival to a cutoff. Completed duration is unknown and is not automatically 5.",
+      "unresolved": [
+        "Supported observed extent if any: no number is given."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F15.late-liveness",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F15",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "livenessIngestedAfter": "sealed knowledge cutoff"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "no_future_leak"
+        ],
+        "values": {
+          "sealedAnswerChanged": {
+            "boolean": false,
+            "sourceLiteral": "cannot affect prior answer"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 50,
+          "symbol": "F15",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 78,
+          "symbol": "event-tomorrow",
+          "section": "2. Normative records, keys and constraints"
+        }
+      ],
+      "derivation": "Liveness ingested after a sealed cutoff does not change that cutoff's answer. Raw timing evidence is retained for later cutoffs.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F15.cross-clock",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F15",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "clocks": "cross-source unknown",
+        "errorBounds": "insufficient to order"
+      },
+      "expected": {
+        "status": "unknown",
+        "reasons": [
+          "incomparable_clock"
+        ],
+        "values": {
+          "causalOrder": {
+            "rational": null,
+            "unit": null,
+            "sourceLiteral": "ambiguous"
+          },
+          "evidencePreserved": {
+            "boolean": true,
+            "sourceLiteral": "raw timing protected"
+          }
+        },
+        "uncertainty": "unknown"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 50,
+          "symbol": "F15",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 63,
+          "symbol": "uncertain-order",
+          "section": "Closed WorkEdge contract (relationship-contract-v1)"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/tasks.json",
+          "line": 820,
+          "symbol": "T02-A1",
+          "section": "T02"
+        }
+      ],
+      "derivation": "Unknown cross-clock order stays ambiguous. No causal order is invented. Evidence is preserved.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F16.incarnations",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F16",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "label": "box",
+        "incarnations": [
+          "E1",
+          "E2"
+        ],
+        "loci": [
+          "harness_host",
+          "tool_server",
+          "effect_locus"
+        ]
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "no_label_merge",
+          "loci_distinct"
+        ],
+        "values": {
+          "environmentInstances": {
+            "rational": "2/1",
+            "unit": "count",
+            "sourceLiteral": "2"
+          },
+          "labelMerge": {
+            "boolean": false,
+            "sourceLiteral": "no label merge"
+          },
+          "locusCoalesce": {
+            "boolean": false,
+            "sourceLiteral": "loci remain distinct"
+          }
+        },
+        "uncertainty": "exact_for_observed"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 51,
+          "symbol": "F16",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 145,
+          "symbol": "I13",
+          "section": "5. Insight registry and shared answers"
+        }
+      ],
+      "derivation": "Same label with incarnations E1 and E2 is two environment instances. Host, tool, and effect loci are not coalesced from the label.",
+      "unresolved": [
+        "Placement-interval count is not stated. Do not emit 3 or 6 as a required count."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F17.isolation",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F17",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "declaredIsolated": true,
+        "evidence": "namespace metadata only"
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "comparison_insufficient"
+        ],
+        "values": {
+          "effectiveIsolation": {
+            "literal": "unknown"
+          },
+          "verifiedEffective": {
+            "boolean": false,
+            "sourceLiteral": "not verified_effective"
+          },
+          "configurationIsVerification": {
+            "boolean": false,
+            "sourceLiteral": "not verified_effective"
+          }
+        },
+        "uncertainty": "unknown"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 52,
+          "symbol": "F17",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 148,
+          "symbol": "I16",
+          "section": "5. Insight registry and shared answers"
+        }
+      ],
+      "derivation": "A declaration plus namespace metadata does not reach verified_effective. The comparison is insufficient and effective isolation is unknown.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F18.no-trace",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F18",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "toolStatus": "succeeded",
+        "syscallTrace": "absent"
+      },
+      "expected": {
+        "status": "not_observable",
+        "reasons": [
+          "trace_absent"
+        ],
+        "values": {
+          "toolSuccessCounted": {
+            "rational": "1/1",
+            "unit": "count",
+            "sourceLiteral": "1"
+          },
+          "effectCount": {
+            "rational": null,
+            "unit": "count",
+            "sourceLiteral": "null"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 53,
+          "symbol": "F18",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 49,
+          "symbol": "tool-success",
+          "section": "2. Normative records, keys and constraints"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 147,
+          "symbol": "I15",
+          "section": "5. Insight registry and shared answers"
+        }
+      ],
+      "derivation": "Tool success is counted at action grain. Effect count is null and not_observable. Tool success does not prove a syscall effect.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F18.read-failure",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F18",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "traceRead": "failed"
+      },
+      "expected": {
+        "status": "not_observable",
+        "reasons": [
+          "read_failure_not_zero"
+        ],
+        "values": {
+          "effectCount": {
+            "rational": null,
+            "unit": "count",
+            "sourceLiteral": "not zero"
+          }
+        }
+      },
+      "forbidden": [
+        {
+          "rational": "0/1"
+        }
+      ],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 53,
+          "symbol": "F18",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 150,
+          "symbol": "failed-read",
+          "section": "5. Insight registry and shared answers"
+        }
+      ],
+      "derivation": "A trace read failure is not an observed zero effect count.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F19.inert-label",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F19",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "labelClasses": [
+          "HTML",
+          "ANSI",
+          "text: ignore policy"
+        ],
+        "transientArgs": "secret canaries",
+        "exactBytes": null
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "inert_label",
+          "canary_absent"
+        ],
+        "values": {
+          "answerIdsChanged": {
+            "boolean": false,
+            "sourceLiteral": "unchanged"
+          },
+          "answerStatusChanged": {
+            "boolean": false,
+            "sourceLiteral": "unchanged"
+          },
+          "answerNumbersChanged": {
+            "boolean": false,
+            "sourceLiteral": "unchanged"
+          },
+          "canaryInRetainedDecodedArtifacts": {
+            "boolean": false,
+            "sourceLiteral": "no canary"
+          },
+          "labelExecutable": {
+            "boolean": false,
+            "sourceLiteral": "escaped/inert"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 54,
+          "symbol": "F19",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 172,
+          "symbol": "strip-and-escape",
+          "section": "7. Security and privacy boundaries"
+        }
+      ],
+      "derivation": "Controls and ANSI/OSC sequences are stripped, HTML is escaped, and the label cannot act as an instruction. Answer identifiers, status, and numbers stay unchanged. Canaries from transient args are absent from decoded retained artifacts. The exact escaped spelling is not defined.",
+      "unresolved": [
+        "Exact source bytes are not in the fixture.",
+        "HTML entity spelling is not specified.",
+        "Which canary strings must be absent is class-level only."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F20.grok-blocked",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F20",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "grokRoot": "exists",
+        "schemaSpecimen": "absent"
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "schema_specimen_absent"
+        ],
+        "values": {
+          "nativeAdmission": {
+            "literal": "blocked"
+          },
+          "deliveredParserClaim": {
+            "boolean": false,
+            "sourceLiteral": "no delivered-parser claim"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 55,
+          "symbol": "F20",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 93,
+          "symbol": "Grok native",
+          "section": "3. Capture and sensor admission"
+        }
+      ],
+      "derivation": "A present Grok root without a pinned schema specimen blocks native admission. Presence is not a parser.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F20.agy-two-rows",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F20",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "export": "dendro.agy.export/v1",
+        "usageRows": 2,
+        "nativeAgySpecimen": "absent"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "export_contract_not_native_format"
+        ],
+        "values": {
+          "usageObservations": {
+            "rational": "2/1",
+            "unit": "count",
+            "sourceLiteral": "2"
+          },
+          "nativeAgyStatus": {
+            "literal": "unadmitted"
+          }
+        },
+        "uncertainty": "exact_for_observed"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 55,
+          "symbol": "F20",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 94,
+          "symbol": "AGY export",
+          "section": "3. Capture and sensor admission"
+        }
+      ],
+      "derivation": "A valid AGY export with two usage rows yields two observations. Native AGY remains unadmitted. The blocked Grok parser does not zero this export result.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F21.noncomparable",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F21",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "cohorts": [
+          "M1 long tasks",
+          "M2 short tasks"
+        ],
+        "coverage": "different",
+        "population": "different"
+      },
+      "expected": {
+        "status": "noncomparable",
+        "reasons": [
+          "different_coverage_and_population"
+        ],
+        "values": {
+          "winner": {
+            "rational": null,
+            "unit": null,
+            "sourceLiteral": "none"
+          },
+          "causalClaim": {
+            "boolean": false,
+            "sourceLiteral": "no causal claim"
+          },
+          "rawDescriptiveTable": {
+            "literal": "allowed_with_exclusions"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 56,
+          "symbol": "F21",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 153,
+          "symbol": "I21",
+          "section": "5. Insight registry and shared answers"
+        }
+      ],
+      "derivation": "Different coverage and population make the comparison noncomparable. No model wins and no causal claim is emitted. Raw values would be allowed, but none are specified.",
+      "unresolved": [
+        "Raw descriptive numbers for M1 and M2 are not in the fixture."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F22.day2",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F22",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "original": {
+          "amount": "100/1",
+          "ingested": "day1"
+        },
+        "correction": {
+          "amount": "80/1",
+          "ingested": "day3"
+        },
+        "retraction": {
+          "ingested": "day4"
+        },
+        "knowledgeCutoff": "day2",
+        "revisionPolicy": "corrections_at_cutoff_v1"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "corrections_at_cutoff_v1"
+        ],
+        "values": {
+          "activeFact": {
+            "rational": "100/1",
+            "unit": "source-amount",
+            "sourceLiteral": "100"
+          }
+        },
+        "uncertainty": "exact_for_observed"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 57,
+          "symbol": "F22",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 78,
+          "symbol": "F22",
+          "section": "2. Normative records, keys and constraints"
+        }
+      ],
+      "derivation": "At day2 only the original ingestion is visible. Active amount is 100.",
+      "unresolved": [
+        "Calendar dates, time zones, and event window are not specified. Day labels are ordered day1 < day2 < day3 < day4 only."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F22.day3",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F22",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "knowledgeCutoff": "day3",
+        "revisionPolicy": "corrections_at_cutoff_v1"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "correction_visible"
+        ],
+        "values": {
+          "activeFact": {
+            "rational": "80/1",
+            "unit": "source-amount",
+            "sourceLiteral": "80"
+          }
+        },
+        "uncertainty": "exact_for_observed"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 57,
+          "symbol": "F22",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 78,
+          "symbol": "corrections",
+          "section": "2. Normative records, keys and constraints"
+        }
+      ],
+      "derivation": "The correction ingested on day3 supersedes 100 with 80. The day4 retraction is not yet visible.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F22.day4",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F22",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "knowledgeCutoff": "day4",
+        "revisionPolicy": "corrections_at_cutoff_v1"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "retracted"
+        ],
+        "values": {
+          "activeFact": {
+            "rational": null,
+            "unit": "source-amount",
+            "sourceLiteral": "no active fact"
+          },
+          "auditHistoryRetained": {
+            "boolean": true,
+            "sourceLiteral": "retained"
+          }
+        },
+        "uncertainty": "exact_for_observed"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 57,
+          "symbol": "F22",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 78,
+          "symbol": "retractions",
+          "section": "2. Normative records, keys and constraints"
+        }
+      ],
+      "derivation": "At day4 the retraction removes the active fact. Original, correction, and retraction remain in audit history.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F22.sole-policy",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F22",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "requestedPolicies": [
+          "corrections_at_cutoff_v1"
+        ]
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "sole_v1_policy"
+        ],
+        "values": {
+          "revisionPolicy": {
+            "literal": "corrections_at_cutoff_v1"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 78,
+          "symbol": "sole-policy",
+          "section": "2. Normative records, keys and constraints"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 113,
+          "symbol": "medium-F22",
+          "section": "Final Grok audit receipt and bounded repair disposition"
+        }
+      ],
+      "derivation": "The only v1 revision policy is corrections_at_cutoff_v1. Answer inputs are event window, knowledge cutoff, and that policy.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F23.spawn-cycle",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F23",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "edges": [
+          "spawn A->B",
+          "spawn B->A"
+        ],
+        "directAfterCorrection": {
+          "A": "10/1",
+          "B": "4/1"
+        },
+        "correction": "B 10 -> 4"
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "cycle_quarantine"
+        ],
+        "values": {
+          "inclusiveFold": {
+            "rational": null,
+            "unit": "token",
+            "sourceLiteral": "quarantined"
+          },
+          "directRetained": {
+            "rational": "14/1",
+            "unit": "token",
+            "sourceLiteral": "14"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 58,
+          "symbol": "F23",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 76,
+          "symbol": "cyclic-closure",
+          "section": "Closed WorkEdge contract (relationship-contract-v1)"
+        }
+      ],
+      "derivation": "A spawn cycle quarantines the inclusive fold. Direct observations survive. After B is corrected from 10 to 4, direct sum is 10+4 = 14. The pre-correction inclusive sum is not emitted.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F23.valid-spawn-ab",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F23",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "edges": [
+          "spawn A->B"
+        ],
+        "direct": {
+          "A": "10/1",
+          "B": "4/1"
+        },
+        "cycle": false
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "acyclic_spawn"
+        ],
+        "values": {
+          "fleetDirect": {
+            "rational": "14/1",
+            "unit": "token",
+            "sourceLiteral": "14"
+          },
+          "inclusiveA": {
+            "rational": "14/1",
+            "unit": "token",
+            "sourceLiteral": "14"
+          },
+          "inclusiveB": {
+            "rational": "4/1",
+            "unit": "token",
+            "sourceLiteral": "4"
+          }
+        },
+        "uncertainty": "exact_for_observed"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 58,
+          "symbol": "F23",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 76,
+          "symbol": "Inclusive(v)",
+          "section": "Closed WorkEdge contract (relationship-contract-v1)"
+        }
+      ],
+      "derivation": "Valid A spawns B. Fleet direct is 10+4 = 14. Inclusive(A) is 14. Inclusive(B) is B's direct 4.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F23.message-loop-valid",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F23",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "edges": [
+          "message or handoff A->B",
+          "message or handoff B->A"
+        ]
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "interaction_cycle_legal"
+        ],
+        "values": {
+          "inclusiveExpandedByMessageOrHandoff": {
+            "boolean": false,
+            "sourceLiteral": "does not expand"
+          },
+          "quarantineBecauseInteractionCycle": {
+            "boolean": false,
+            "sourceLiteral": "valid"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 58,
+          "symbol": "F23",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 69,
+          "symbol": "handoff",
+          "section": "Closed WorkEdge contract (relationship-contract-v1)"
+        }
+      ],
+      "derivation": "A message or handoff loop may revisit participants and does not quarantine the spawn DAG. Those edges do not expand inclusive closure.",
+      "unresolved": [
+        "Token amounts for the message/handoff loop are not separately stated. Do not copy inclusive(A)=14 from the spawn chain."
+      ],
+      "disputedDefinition": true,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F23.return-no-caller-import",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F23",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "edge": "return child -> caller"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "return_does_not_expand_inclusive"
+        ],
+        "values": {
+          "callerSessionImportedIntoChildClosure": {
+            "boolean": false,
+            "sourceLiteral": "no return edge pulls caller session"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 58,
+          "symbol": "F23",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 70,
+          "symbol": "return",
+          "section": "Closed WorkEdge contract (relationship-contract-v1)"
+        }
+      ],
+      "derivation": "A return edge does not pull the caller session into the child inclusive closure.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F24.unknown-major",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F24",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "schemaMajor": "unknown"
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "unsupported_schema"
+        ],
+        "values": {
+          "projection": {
+            "literal": "quarantined"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 59,
+          "symbol": "F24",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 84,
+          "symbol": "unknown-major",
+          "section": "3. Capture and sensor admission"
+        }
+      ],
+      "derivation": "An unknown schema major stops projection for that source and quarantines it. Other admitted sources may continue.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F24.agy-line-limit",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F24",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "adapter": "AGY export",
+        "line": "> 1 MiB",
+        "admittedBatchMax": 128
+      },
+      "expected": {
+        "status": "partial",
+        "reasons": [
+          "over_adapter_bound",
+          "quarantined"
+        ],
+        "values": {
+          "recordAccepted": {
+            "boolean": false,
+            "sourceLiteral": "quarantined"
+          },
+          "silentZero": {
+            "boolean": false,
+            "sourceLiteral": "never silently zero"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 59,
+          "symbol": "F24",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 101,
+          "symbol": "1 MiB",
+          "section": "3. Capture and sensor admission"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 107,
+          "symbol": "H2",
+          "section": "Final Grok audit receipt and bounded repair disposition"
+        }
+      ],
+      "derivation": "AGY lines over 1 MiB are quarantined with partial coverage. The record is not valid and is not a silent zero.",
+      "unresolved": [
+        "Whether 1 MiB is 1000^2 or 1024^2 bytes is not defined. A length greater than both is unambiguously over the stated bound; the fixture says > 1 MiB without a byte count."
+      ],
+      "disputedDefinition": true,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F24.global-ceiling",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F24",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "encodedLogicalRecord": "> 8 MiB",
+        "orNestingDepth": "> 64",
+        "orDecodedBatch": "> 1024"
+      },
+      "expected": {
+        "status": "partial",
+        "reasons": [
+          "global_hostile_ceiling"
+        ],
+        "values": {
+          "acceptedAsValid": {
+            "boolean": false,
+            "sourceLiteral": "quarantined"
+          },
+          "depthMax": {
+            "rational": "64/1",
+            "unit": "count",
+            "sourceLiteral": "64"
+          },
+          "batchMax": {
+            "rational": "1024/1",
+            "unit": "count",
+            "sourceLiteral": "1024"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 59,
+          "symbol": "F24",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 84,
+          "symbol": "8 MiB",
+          "section": "3. Capture and sensor admission"
+        }
+      ],
+      "derivation": "The global ceiling is 8 MiB encoded bytes per logical input record, nesting depth 64, and 1024 decoded records per batch. A descriptor may only tighten these. Oversize or overdeep input is quarantined with partial coverage. Larger appends stream as successive bounded batches.",
+      "unresolved": [
+        "8 MiB byte base 1000 vs 1024 is not defined."
+      ],
+      "disputedDefinition": true,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F24.native-1-5-mib",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F24",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "nativeRecord": "1.5 MiB",
+        "descriptorAdmitsThatSize": false
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "not_presumed_valid"
+        ],
+        "values": {
+          "automaticallyValid": {
+            "boolean": false,
+            "sourceLiteral": "not automatically valid"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 59,
+          "symbol": "F24",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 84,
+          "symbol": "1.5MiB",
+          "section": "3. Capture and sensor admission"
+        }
+      ],
+      "derivation": "A 1.5 MiB native record is admissible only if its real pinned descriptor admits that size. This proposal makes no such format claim.",
+      "unresolved": [
+        "No pinned native schema in these sources admits 1.5 MiB. Byte base of MiB is undefined. 1.5 MiB is below 8 MiB under both common bases, so the global ceiling alone does not decide it."
+      ],
+      "disputedDefinition": true,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F24.pid-reuse",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F24",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "pid": "reused",
+        "creationMarker": "changed or unknown"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "pid_alone_insufficient"
+        ],
+        "values": {
+          "sameProcessIdentity": {
+            "boolean": false,
+            "sourceLiteral": "new process identity"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 59,
+          "symbol": "F24",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 52,
+          "symbol": "process identity",
+          "section": "2. Normative records, keys and constraints"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 103,
+          "symbol": "start ticks",
+          "section": "3. Capture and sensor admission"
+        }
+      ],
+      "derivation": "Process identity includes a platform creation marker. A reused PID is a new identity when the creation marker differs. Linux start_ticks must not be invented for a Windows observation.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F24.missing-privacy-key",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F24",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "privacyKey": "missing"
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "missing_privacy_key"
+        ],
+        "values": {
+          "privateOperations": {
+            "literal": "blocked"
+          },
+          "plaintextFallback": {
+            "boolean": false,
+            "sourceLiteral": "no plaintext"
+          },
+          "silentRekey": {
+            "boolean": false,
+            "sourceLiteral": "no rekey"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 59,
+          "symbol": "F24",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 174,
+          "symbol": "missing-key",
+          "section": "7. Security and privacy boundaries"
+        }
+      ],
+      "derivation": "A missing privacy key blocks private operations. It does not fall back to plaintext or silently rekey.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F25.windows-aliases",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F25",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "os": "native Windows",
+        "mechanisms": [
+          "junction",
+          "reparse",
+          "hardlink",
+          "case-sensitive directory",
+          "UTF-16",
+          "shortname",
+          "UNC",
+          "device",
+          "alternate stream",
+          "long path"
+        ]
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "containment_invariant"
+        ],
+        "values": {
+          "containmentHolds": {
+            "boolean": true,
+            "sourceLiteral": "same containment invariants"
+          },
+          "lowercasePathShortcutSufficient": {
+            "boolean": false,
+            "sourceLiteral": "no lowercase-path shortcut"
+          },
+          "cfgMayDisableDefense": {
+            "boolean": false,
+            "sourceLiteral": "no cfg-disabled defense"
+          },
+          "unsupportedSemantics": {
+            "literal": "refuse_safely"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 61,
+          "symbol": "F25",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 186,
+          "symbol": "Windows filesystem",
+          "section": "Mandatory native Windows and Linux delivery"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/tasks.json",
+          "line": 997,
+          "symbol": "T24-A2",
+          "section": "T24"
+        }
+      ],
+      "derivation": "Windows alias classes keep the same containment and private-source invariants. Lowercase-only comparison and a cfg-disabled defense are not compliance. Unsupported semantics fail closed.",
+      "unresolved": [
+        "Per-mechanism allow versus deny policy is required to exist and is not chosen in the proposal text. Do not mark a specific alias type as universally accepted."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F25.linux-aliases",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F25",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "os": "native Linux",
+        "mechanisms": [
+          "symlink",
+          "inode alias",
+          "hardlink",
+          "lock alias",
+          "concurrent replacement"
+        ]
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "containment_invariant"
+        ],
+        "values": {
+          "containmentHolds": {
+            "boolean": true,
+            "sourceLiteral": "same containment invariants"
+          },
+          "lowercasePathShortcutSufficient": {
+            "boolean": false,
+            "sourceLiteral": "no lowercase-path shortcut"
+          },
+          "cfgMayDisableDefense": {
+            "boolean": false,
+            "sourceLiteral": "no cfg-disabled defense"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 61,
+          "symbol": "F25",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 186,
+          "symbol": "Linux inode",
+          "section": "Mandatory native Windows and Linux delivery"
+        }
+      ],
+      "derivation": "Linux symlink and inode aliases are held to the same containment invariants. Identity is inode/device, not a lowercased path string.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F26.sharing-violation",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F26",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "os": "native Windows",
+        "event": "sharing violation or open handle during DB pointer swap"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "old_pointer_preserved"
+        ],
+        "values": {
+          "oldPointerIntact": {
+            "boolean": true,
+            "sourceLiteral": "old pointer remains intact"
+          },
+          "forcedDbDeletion": {
+            "boolean": false,
+            "sourceLiteral": "no forced DB deletion"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 62,
+          "symbol": "F26",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 188,
+          "symbol": "sharing violation",
+          "section": "Mandatory native Windows and Linux delivery"
+        }
+      ],
+      "derivation": "A sharing violation preserves the old pointer. The live database is not deleted to force a rename.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F26.crash-both-os",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F26",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "oses": [
+          "native Windows",
+          "native Linux"
+        ],
+        "event": "concurrent locks and crash"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "crash_release_keeps_state"
+        ],
+        "values": {
+          "snapshotRollbackReceipt": {
+            "literal": "required"
+          },
+          "lockReleasedOnCrash": {
+            "boolean": true,
+            "sourceLiteral": "lock crash-release"
+          },
+          "stateDeletedOnCrash": {
+            "boolean": false,
+            "sourceLiteral": "without deleting state"
+          },
+          "ownerPrivateAclOrModeVerified": {
+            "boolean": true,
+            "sourceLiteral": "verified"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 62,
+          "symbol": "F26",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 187,
+          "symbol": "locks",
+          "section": "Mandatory native Windows and Linux delivery"
+        }
+      ],
+      "derivation": "Both OSes require a consistent snapshot or rollback receipt, lock release on crash without deleting state, and verified owner-private ACL or mode.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F26.pointer-file",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F26",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "pointerKind": "regular manifest file"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "pointer_not_directory_or_junction"
+        ],
+        "values": {
+          "directoryPointerAcceptable": {
+            "boolean": false,
+            "sourceLiteral": "never replacement of a directory or junction"
+          },
+          "sameVolume": {
+            "literal": "atomic regular-file replacement after verified closed snapshot"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 188,
+          "symbol": "manifest file",
+          "section": "Mandatory native Windows and Linux delivery"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 163,
+          "symbol": "concern 9",
+          "section": "Dual-native scoped review"
+        }
+      ],
+      "derivation": "The consumer pointer is a regular manifest file. Same-volume replacement is atomic only after a verified closed private snapshot.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F26.cross-volume",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F26",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "move": "cross-volume",
+        "interruption": "during destination staging"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "old_pointer_on_interrupted_copy"
+        ],
+        "values": {
+          "oldPointerIntact": {
+            "boolean": true,
+            "sourceLiteral": "preserves old pointer"
+          },
+          "liveDbBlindCopy": {
+            "boolean": false,
+            "sourceLiteral": "never copied as a migration shortcut"
+          },
+          "incompleteStaging": {
+            "literal": "quarantined"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 188,
+          "symbol": "cross-volume",
+          "section": "Mandatory native Windows and Linux delivery"
+        }
+      ],
+      "derivation": "Cross-volume migration first builds a verified closed immutable staged copy, then replaces that volume's pointer. An interrupted copy keeps the old pointer.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F27.pid-creation-time",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F27",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "os": "native Windows",
+        "pid": "reused",
+        "creationTime": "changed"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "creation_time_identity"
+        ],
+        "values": {
+          "sameProcessIdentity": {
+            "boolean": false,
+            "sourceLiteral": "distinct process identities"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 63,
+          "symbol": "F27",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 190,
+          "symbol": "creation time",
+          "section": "Mandatory native Windows and Linux delivery"
+        }
+      ],
+      "derivation": "Windows identity is (host incarnation, PID, creation time) plus a held handle. A changed creation time is a different process even when the PID repeats.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F27.inaccessible-token",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F27",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "token": "inaccessible"
+      },
+      "expected": {
+        "status": "partial",
+        "reasons": [
+          "unknown_denied_fields"
+        ],
+        "values": {
+          "deniedFields": {
+            "literal": "unknown"
+          },
+          "fabricatedToken": {
+            "boolean": false,
+            "sourceLiteral": "unknown denied fields"
+          }
+        },
+        "uncertainty": "unknown"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 63,
+          "symbol": "F27",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 190,
+          "symbol": "token",
+          "section": "Mandatory native Windows and Linux delivery"
+        }
+      ],
+      "derivation": "An inaccessible token yields unknown denied fields. Those fields are not fabricated. Token or job configuration is not universal isolation.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F27.bounds",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F27",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "actor": "standard user",
+        "metrics": [
+          "CPU",
+          "user time",
+          "kernel time",
+          "sampled working set"
+        ]
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "bounded_standard_user"
+        ],
+        "values": {
+          "samplePeriod": {
+            "rational": "1/1",
+            "unit": "s",
+            "sourceLiteral": "1s"
+          },
+          "maxProcesses": {
+            "rational": "64/1",
+            "unit": "count",
+            "sourceLiteral": "64"
+          },
+          "maxSamples": {
+            "rational": "600/1",
+            "unit": "count",
+            "sourceLiteral": "600"
+          },
+          "elevatedGlobalDiscovery": {
+            "boolean": false,
+            "sourceLiteral": "no elevated/global discovery"
+          }
+        },
+        "uncertainty": "exact_for_observed"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 63,
+          "symbol": "F27",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 96,
+          "symbol": "Windows collector bounds",
+          "section": "3. Capture and sensor admission"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 98,
+          "symbol": "Linux bounds",
+          "section": "3. Capture and sensor admission"
+        }
+      ],
+      "derivation": "Both scoped collectors use a 1 second sample period, at most 64 bound processes, and at most 600 samples. Observations are standard-user and bounded. No measured sample value is invented.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F27.working-set-not-rss",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F27",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "windowsMetric": "sampled working set",
+        "linuxMetric": "sampled RSS"
+      },
+      "expected": {
+        "status": "noncomparable",
+        "reasons": [
+          "distinct_metric_semantics"
+        ],
+        "values": {
+          "workingSetEqualsRss": {
+            "boolean": false,
+            "sourceLiteral": "never false equality"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 63,
+          "symbol": "F27",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 190,
+          "symbol": "RSS versus working set",
+          "section": "Mandatory native Windows and Linux delivery"
+        }
+      ],
+      "derivation": "Windows working set and Linux RSS are different metrics. Equality is not inferred from either sample.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F27.no-start-ticks-fabrication",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F27",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "os": "native Windows",
+        "missingField": "Linux start_ticks"
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "no_cross_os_identity_fabrication"
+        ],
+        "values": {
+          "fabricatedStartTicks": {
+            "boolean": false,
+            "sourceLiteral": "no Linux start_ticks fabrication"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 63,
+          "symbol": "F27",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 190,
+          "symbol": "start_ticks",
+          "section": "Mandatory native Windows and Linux delivery"
+        }
+      ],
+      "derivation": "Windows identity uses creation time. A Linux start_ticks value is not synthesized to fill that field.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F28.coverage",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F28",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "trace": "genuine pinned Windows ETW controlled trace",
+        "loss": true,
+        "unknownEvent": true,
+        "pidAmbiguity": true
+      },
+      "expected": {
+        "status": "partial",
+        "reasons": [
+          "loss_and_unknown_explicit"
+        ],
+        "values": {
+          "safeClassesEmittedForEvidencedEvents": {
+            "boolean": true,
+            "sourceLiteral": "evidenced safe classes"
+          },
+          "unknownOrLostCoverageExplicit": {
+            "boolean": true,
+            "sourceLiteral": "explicit"
+          },
+          "unmatchedResult": {
+            "literal": "unknown_not_success"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 64,
+          "symbol": "F28",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 97,
+          "symbol": "ETW",
+          "section": "3. Capture and sensor admission"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 147,
+          "symbol": "I15",
+          "section": "5. Insight registry and shared answers"
+        }
+      ],
+      "derivation": "A genuine pinned trace yields evidenced operation, status, and resource-class facts. Loss, unknown events, and PID ambiguity stay explicit. An unmatched call has unknown result, not success.",
+      "unresolved": [
+        "Provider id, event ids, opcodes, versions, and clock conversion are not pinned in DESIGN, ADVERSARIAL, or tasks.json. They wait on B01."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F28.no-raw-no-parity",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F28",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "rawPathCanary": "present in producer trace"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "projection_before_retention"
+        ],
+        "values": {
+          "rawRetained": {
+            "boolean": false,
+            "sourceLiteral": "no raw retention"
+          },
+          "allSyscallClaim": {
+            "boolean": false,
+            "sourceLiteral": "no all-syscall claim"
+          },
+          "canaryRetained": {
+            "boolean": false,
+            "sourceLiteral": "raw path canary excluded"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 64,
+          "symbol": "F28",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 193,
+          "symbol": "raw paths",
+          "section": "Mandatory native Windows and Linux delivery"
+        }
+      ],
+      "derivation": "Raw paths, argv, and payloads stay outside retained facts. ETW coverage is not all-syscall parity. The canary must not appear in retained artifacts. The canary's exact bytes are not specified.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F28.assertions-separate",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F28",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "selfReportedApplicationEvent": true,
+        "kernelObserved": false
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "assertion_not_kernel_effect"
+        ],
+        "values": {
+          "treatedAsKernelEffect": {
+            "boolean": false,
+            "sourceLiteral": "source assertions separate"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 64,
+          "symbol": "F28",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 193,
+          "symbol": "self-reported",
+          "section": "Mandatory native Windows and Linux delivery"
+        }
+      ],
+      "derivation": "Self-reported application events remain producer assertions. They do not count as kernel-observed filesystem or network effects.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F29.both-lanes",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F29",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "windows": "x86_64-pc-windows-msvc native runner",
+        "linux": "x86_64-unknown-linux-gnu native runner"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "both_lanes_required"
+        ],
+        "values": {
+          "windowsLaneRequired": {
+            "boolean": true,
+            "sourceLiteral": "native Windows"
+          },
+          "linuxLaneRequired": {
+            "boolean": true,
+            "sourceLiteral": "native Linux"
+          },
+          "oneLaneSufficient": {
+            "boolean": false,
+            "sourceLiteral": "both"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 65,
+          "symbol": "F29",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 182,
+          "symbol": "targets",
+          "section": "Mandatory native Windows and Linux delivery"
+        }
+      ],
+      "derivation": "Release requires both named native targets. This vector states the requirement. It does not record a pass.",
+      "unresolved": [
+        "No native lane was executed for this proposal. Pass/fail receipts do not exist."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F29.wsl-not-substitute",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F29",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "evidence": "WSL-only"
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "wsl_cannot_satisfy_windows"
+        ],
+        "values": {
+          "satisfiesWindowsNative": {
+            "boolean": false,
+            "sourceLiteral": "cannot satisfy Windows"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 65,
+          "symbol": "F29",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 22,
+          "symbol": "user correction",
+          "section": "1. Baseline and scope"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 182,
+          "symbol": "WSL2",
+          "section": "Mandatory native Windows and Linux delivery"
+        }
+      ],
+      "derivation": "WSL is optional and cannot satisfy the native Windows lane or replace native Linux.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F29.crosscompile-not-native",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F29",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "evidence": "crosscompile-only"
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "crosscompile_only"
+        ],
+        "values": {
+          "satisfiesNativeLane": {
+            "boolean": false,
+            "sourceLiteral": "cannot satisfy"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 65,
+          "symbol": "F29",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 182,
+          "symbol": "not cross-compile-only",
+          "section": "Mandatory native Windows and Linux delivery"
+        }
+      ],
+      "derivation": "A cross-compiled executable does not satisfy either native lane.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F29.digest-binding",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F29",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "receipt": "repeated T23"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "digest_binding_required"
+        ],
+        "values": {
+          "exactVersionAndPackageDigestsRequired": {
+            "boolean": true,
+            "sourceLiteral": "exact version/package digests"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 65,
+          "symbol": "F29",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/tasks.json",
+          "line": 2681,
+          "symbol": "T23",
+          "section": "T23"
+        }
+      ],
+      "derivation": "Repeated T23 receipts bind exact version and package digests. Those digests are not invented here.",
+      "unresolved": [
+        "Package digests are unknown until T23 produces them."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.F29.release-blocked-if-lane-missing",
+      "pack": "f-fixtures",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "F29",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "missingLane": "either native Windows or native Linux"
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "release_blocked"
+        ],
+        "values": {
+          "releaseStatus": {
+            "literal": "blocked"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 65,
+          "symbol": "F29",
+          "section": "Frozen negative and numeric fixtures"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 182,
+          "symbol": "release blocking",
+          "section": "Mandatory native Windows and Linux delivery"
+        }
+      ],
+      "derivation": "If either actual native lane is absent, release is blocked. Import-only evidence does not waive the lane.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    }
+  ]
+}

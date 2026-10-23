@@ -1591,15 +1591,14 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let database = dir.join("analytics.duckdb");
-        let store = AnalyticsStore::open_path(&database, "key").unwrap();
         let baseline = |harness: &str| -> (String, String, String) {
-            store.checkpoint().unwrap();
             duckdb::Connection::open(&database).unwrap().query_row(
                 "SELECT latest_association, last_stable_size, latest_attempt_at FROM file_source_baselines WHERE source_id = ?",
                 [harness], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             ).unwrap()
         };
         for harness in ["claude", "pi", "codex"] {
+            let store = AnalyticsStore::open_path(&database, "key").unwrap();
             let path = dir.join(format!("{harness}.jsonl"));
             let header = match harness {
                 "pi" => r#"{"type":"session","id":"session"}"#,
@@ -1608,27 +1607,30 @@ mod tests {
             };
             fs::write(&path, format!("{header}\n{{\"partial\":")).unwrap();
             ingest_jsonl(&store, harness, harness, &path).unwrap();
+            let offset = store.source_state(harness).unwrap().unwrap().1;
+            store.checkpoint().unwrap();
+            drop(store);
             let before = baseline(harness);
             assert_eq!(before.0, "verified", "{harness}");
             assert_eq!(before.1, fs::metadata(&path).unwrap().len().to_string());
-            assert!(
-                before.1.parse::<i64>().unwrap() > store.source_state(harness).unwrap().unwrap().1
-            );
+            assert!(before.1.parse::<i64>().unwrap() > offset);
             fs::OpenOptions::new()
                 .append(true)
                 .open(&path)
                 .unwrap()
                 .write_all(b"42")
                 .unwrap();
+            let store = AnalyticsStore::open_path(&database, "key").unwrap();
             let stats = ingest_jsonl_with_key(&store, harness, harness, &path, None).unwrap();
             assert_eq!(stats.records_read, 0);
+            store.checkpoint().unwrap();
+            drop(store);
             let after = baseline(harness);
             assert_eq!(after.0, "verified");
             assert_eq!(after.1, fs::metadata(&path).unwrap().len().to_string());
             assert_ne!(after.1, before.1);
             assert_ne!(after.2, before.2);
         }
-        drop(store);
         fs::remove_dir_all(dir).unwrap();
     }
 
@@ -2984,20 +2986,31 @@ mod tests {
         assert_eq!(store.load_codex_observations().unwrap().len(), 1);
         assert!(store.load_source_coverage().unwrap()[0].complete);
         let wal = dir.join("analytics.duckdb.wal");
+        assert!(
+            fs::metadata(&wal).unwrap().len() > 0,
+            "nonvacuous pre-checkpoint WAL"
+        );
+        // Native DuckDB holds its WAL exclusively on Windows. Live WAL byte
+        // visibility is unverified there; decoded and closed-database scans
+        // below remain required. Unix also inspects the live WAL bytes.
+        #[cfg(not(windows))]
         let bytes = fs::read(&wal).unwrap();
+        #[cfg(not(windows))]
         assert!(!bytes.is_empty(), "nonvacuous pre-checkpoint WAL");
-        for needle in [
+        let needles = [
             "sk-FAKE40A",
             "CONTENT40_ARGS",
             "CONTENT40_STDOUT",
             "CONTENT40_STDERR",
             "CONTENT40_PROMPT",
             "CONTENT40_EXTRA",
-        ] {
+        ];
+        for needle in needles {
             assert!(
                 !store.contains_text(needle).unwrap(),
                 "decoded physical text scan"
             );
+            #[cfg(not(windows))]
             assert!(
                 !String::from_utf8_lossy(&bytes).contains(needle),
                 "WAL canary"
@@ -3005,6 +3018,13 @@ mod tests {
         }
         assert_eq!(fs::read_to_string(&path).unwrap(), raw, "source custody");
         drop(store);
+        let persisted = fs::read(&db).unwrap();
+        for needle in needles {
+            assert!(
+                !String::from_utf8_lossy(&persisted).contains(needle),
+                "closed database canary"
+            );
+        }
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -3070,7 +3090,17 @@ mod tests {
 
     #[test]
     fn source_identity_activity_and_warning_paths_drop_credential_text() {
+        #[cfg(windows)]
+        let fixture_root = dendro_core::platform_v1::create_user_private_root_with_choice(
+            "dendro-ingest-fixture-",
+            &dendro_core::platform_v1::StorageRootChoice::UserProfile,
+        )
+        .expect("explicit UserProfile staged ingest fixture");
+        #[cfg(windows)]
+        let dir = fixture_root.path().to_path_buf();
+        #[cfg(not(windows))]
         let dir = std::env::temp_dir().join(format!("dendro-source-cols-{}", std::process::id()));
+        #[cfg(not(windows))]
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let secret_dir = dir.join("sk-ant-ZZZPATH");
@@ -3204,7 +3234,17 @@ mod tests {
 
     #[test]
     fn source_message_closure_and_mission_drop_credential_text() {
+        #[cfg(windows)]
+        let fixture_root = dendro_core::platform_v1::create_user_private_root_with_choice(
+            "dendro-ingest-fixture-",
+            &dendro_core::platform_v1::StorageRootChoice::UserProfile,
+        )
+        .expect("explicit UserProfile staged ingest fixture");
+        #[cfg(windows)]
+        let dir = fixture_root.path().to_path_buf();
+        #[cfg(not(windows))]
         let dir = std::env::temp_dir().join(format!("dendro-source-msg-{}", std::process::id()));
+        #[cfg(not(windows))]
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let claude = dir.join("claude");
@@ -3449,7 +3489,17 @@ mod tests {
 
     #[test]
     fn source_hash_counter_snapshot_and_warning_reason_are_not_raw_secrets() {
+        #[cfg(windows)]
+        let fixture_root = dendro_core::platform_v1::create_user_private_root_with_choice(
+            "dendro-ingest-fixture-",
+            &dendro_core::platform_v1::StorageRootChoice::UserProfile,
+        )
+        .expect("explicit UserProfile staged ingest fixture");
+        #[cfg(windows)]
+        let dir = fixture_root.path().to_path_buf();
+        #[cfg(not(windows))]
         let dir = std::env::temp_dir().join(format!("dendro-source-rest-{}", std::process::id()));
+        #[cfg(not(windows))]
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let codex = dir.join("codex");
@@ -3788,7 +3838,17 @@ mod tests {
 
     #[test]
     fn frozen_sqlite_copy_preserves_source_hashes_and_reads_wal() {
+        #[cfg(windows)]
+        let root = dendro_core::platform_v1::create_user_private_root_with_choice(
+            "dendro-frozen-",
+            &dendro_core::platform_v1::StorageRootChoice::UserProfile,
+        )
+        .expect("explicit UserProfile frozen snapshot fixture");
+        #[cfg(windows)]
+        let dir = root.path().to_path_buf();
+        #[cfg(not(windows))]
         let dir = std::env::temp_dir().join(format!("dendro-frozen-{}", std::process::id()));
+        #[cfg(not(windows))]
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let db_path = dir.join("src.sqlite");
@@ -3800,6 +3860,9 @@ mod tests {
         conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")
             .unwrap();
         conn.execute("INSERT INTO t VALUES (2)", []).unwrap();
+        #[cfg(windows)]
+        let snap = dir.join(dendro_core::lifecycle::SNAPSHOT_DIR);
+        #[cfg(not(windows))]
         let snap = dir.join("snap");
         let copied = crate::snapshot::snapshot_sqlite(&db_path, &snap, &dendro_core::Cancel::new())
             .unwrap()

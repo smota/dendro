@@ -4,9 +4,65 @@ use dendro_core::{report_json, semantic};
 use duckdb::Connection;
 use serde_json::Value;
 
+fn fixture(facts: usize) -> fixture::Fixture {
+    let original = fixture::Fixture::new(facts);
+    #[cfg(not(windows))]
+    {
+        original
+    }
+    #[cfg(windows)]
+    {
+        let root = dendro_core::platform_v1::create_user_private_root_with_choice(
+            "dendro-semantic-integration-",
+            &dendro_core::platform_v1::StorageRootChoice::UserProfile,
+        )
+        .unwrap();
+        let db = root.path().join("analytics.duckdb");
+        dendro_core::lifecycle::private_copy(&original.db, &db, &dendro_core::RUN_CANCEL).unwrap();
+        let key = dendro_core::output::load_or_create_key(
+            &root.path().join("analytics.duckdb.key"),
+            true,
+        )
+        .unwrap();
+        let conn = Connection::open(&db).unwrap();
+        conn.execute("UPDATE dendro_meta SET key_id=?", duckdb::params![key.id])
+            .unwrap();
+        conn.execute_batch("CHECKPOINT").unwrap();
+        drop(conn);
+        fixture::Fixture {
+            dir: root.path().to_path_buf(),
+            db,
+        }
+    }
+}
+
+fn read_fixture(
+    db: &std::path::Path,
+) -> anyhow::Result<(dendro_core::presentation::ReadRequest, Connection)> {
+    let request = dendro_core::presentation::ReadRequest::open(db)?;
+    let config = duckdb::Config::default().access_mode(duckdb::AccessMode::ReadOnly)?;
+    let connection = Connection::open_with_flags(request.database(), config)?;
+    Ok((request, connection))
+}
+
+fn mutate_fixture(
+    db: &std::path::Path,
+    mutate: impl FnOnce(&std::path::Path) -> anyhow::Result<()>,
+) -> anyhow::Result<()> {
+    #[cfg(windows)]
+    {
+        let request = dendro_core::presentation::ReadRequest::open(db)?;
+        if let Some(selected) = request.selected() {
+            dendro_core::selection_binding::mutate_selected(selected, |staged, _| mutate(staged))?;
+            return Ok(());
+        }
+    }
+    mutate(db)
+}
+
 #[test]
 fn exact_canonical_parity_refusals_and_source_updates() -> anyhow::Result<()> {
-    let f = fixture::Fixture::new(20);
+    let f = fixture(20);
     let report = report_json(
         &f.db,
         "decisions",
@@ -15,7 +71,7 @@ fn exact_canonical_parity_refusals_and_source_updates() -> anyhow::Result<()> {
         fixture::TO,
     )?;
     semantic::refresh(&f.db, Some("test-rig"), fixture::FROM, fixture::TO)?;
-    let c = Connection::open(&f.db)?;
+    let (_read, c) = read_fixture(&f.db)?;
     let payload: String = c.query_row(
         "SELECT row_json::VARCHAR FROM v_executive_governance",
         [],
@@ -120,11 +176,14 @@ fn exact_canonical_parity_refusals_and_source_updates() -> anyhow::Result<()> {
         .as_str()
         .unwrap()
         .contains("not proof"));
-    let c = Connection::open(&f.db)?;
-    // In-place edits with unchanged row count and unchanged source keys must invalidate the cache.
-    c.execute_batch("UPDATE usage_facts SET output_tokens=99 WHERE source_key='file:0:1'")?;
-    // Direct SQL is outside supported writer invalidation; local preflight below catches it.
-    drop(c);
+    mutate_fixture(&f.db, |path| {
+        let c = Connection::open(path)?;
+        // Equal row count/source keys must still invalidate the semantic signature.
+        c.execute_batch(
+            "UPDATE usage_facts SET output_tokens=99 WHERE source_key='file:0:1'; CHECKPOINT",
+        )?;
+        Ok(())
+    })?;
     assert_eq!(
         semantic::answer(&f.db, "Trace idle", None)?["status"],
         "insufficient_data"
@@ -134,14 +193,18 @@ fn exact_canonical_parity_refusals_and_source_updates() -> anyhow::Result<()> {
         semantic::answer(&f.db, "Trace idle", None)?["report"]["payload"]["tokens"],
         20 * 26 + 92
     );
-    let store = dendro_core::AnalyticsStore::open_existing(&f.db, "fixture")?;
-    store.record_usage_models(&[(
-        "file:0:1".into(),
-        Some("different-family".into()),
-        Some("low".into()),
-    )])?;
-    drop(store);
-    let c = Connection::open(&f.db)?;
+    mutate_fixture(&f.db, |path| {
+        let key_id = dendro_core::AnalyticsStore::open_read_only(path)?.key_id;
+        let store = dendro_core::AnalyticsStore::open_existing(path, &key_id)?;
+        store.record_usage_models(&[(
+            "file:0:1".into(),
+            Some("different-family".into()),
+            Some("low".into()),
+        )])?;
+        store.checkpoint()?;
+        Ok(())
+    })?;
+    let (_read, c) = read_fixture(&f.db)?;
     assert!(c
         .query_row(
             "SELECT row_json::VARCHAR FROM v_executive_governance",
@@ -154,16 +217,55 @@ fn exact_canonical_parity_refusals_and_source_updates() -> anyhow::Result<()> {
 }
 #[test]
 fn workspace_is_new_only_and_contains_real_configuration() -> anyhow::Result<()> {
-    let f = fixture::Fixture::new(0);
-    let path = f.dir.join("nao");
-    semantic::init_workspace(&path, &f.db)?;
+    let f = fixture(0);
+    let requested = f.dir.join("nao");
+    #[cfg(windows)]
+    let receipt = {
+        assert!(semantic::init_workspace(&requested, &f.db)
+            .unwrap_err()
+            .to_string()
+            .contains("nao_exact_workspace_path_unproved"));
+        semantic::init_workspace_with_receipt(&requested, &f.db)?
+    };
+    #[cfg(windows)]
+    let path = std::path::PathBuf::from(receipt["workspace"].as_str().unwrap());
+    #[cfg(not(windows))]
+    let path = {
+        semantic::init_workspace(&requested, &f.db)?;
+        requested
+    };
     assert!(std::fs::read_to_string(path.join("nao_config.yaml"))?.contains("v_mission_token_burn"));
     let config = std::fs::read_to_string(path.join("nao_config.yaml"))?;
     assert!(config.contains("project_name: dendro"));
     assert!(config.contains("allow_listed_only: true"));
+    #[cfg(not(windows))]
     assert!(config.contains(&f.db.canonicalize()?.display().to_string()));
+    #[cfg(windows)]
+    {
+        assert!(config.contains(&serde_json::to_string(&receipt["path"].as_str().unwrap())?));
+        assert_eq!(receipt["read_only"], true);
+        assert_eq!(
+            receipt["integration_status"],
+            "snapshot_created_runtime_integration_pending"
+        );
+        assert!(receipt["analytics_selection_sha256"]
+            .as_str()
+            .is_some_and(|v| v.len() == 64));
+        assert!(config.contains("read_only: true"));
+        assert_ne!(path, requested);
+        assert!(!requested.exists());
+        assert!(path.join("semantics-dendro.md").is_file());
+        assert!(!path.join("semantics").exists());
+        assert!(receipt["semantic_context_status"]
+            .as_str()
+            .unwrap()
+            .contains("not verified"));
+    }
     assert!(path.join("RULES.md").exists());
+    #[cfg(not(windows))]
     assert!(path.join("semantics/dendro.md").exists());
+    #[cfg(windows)]
+    assert!(semantic::init_workspace_with_receipt(&path, &f.db).is_err());
     assert!(semantic::init_workspace(&path, &f.db).is_err());
     assert!(semantic::init_workspace(&f.dir.join("../bad"), &f.db).is_err());
     #[cfg(unix)]
@@ -176,9 +278,9 @@ fn workspace_is_new_only_and_contains_real_configuration() -> anyhow::Result<()>
 }
 #[test]
 fn no_data_does_not_become_measured_zero() -> anyhow::Result<()> {
-    let f = fixture::Fixture::new(0);
+    let f = fixture(0);
     semantic::refresh(&f.db, Some("missing-rig"), fixture::FROM, fixture::TO)?;
-    let c = Connection::open(&f.db)?;
+    let (_read, c) = read_fixture(&f.db)?;
     let n: i64 = c.query_row("SELECT count(*) FROM v_mission_token_burn", [], |r| {
         r.get(0)
     })?;
@@ -196,7 +298,7 @@ fn no_data_does_not_become_measured_zero() -> anyhow::Result<()> {
 }
 #[test]
 fn natural_aliases_supported_intents_and_window_bounds_work() -> anyhow::Result<()> {
-    let f = fixture::Fixture::new(10);
+    let f = fixture(10);
     let intents = semantic::supported_intents();
     assert_eq!(intents["intents"].as_array().unwrap().len(), 6);
 

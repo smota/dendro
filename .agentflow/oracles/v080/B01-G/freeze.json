@@ -1,0 +1,79 @@
+{
+  "schema": "dendro.grok-structural-oracle-freeze/v1",
+  "frozen_at": "2026-10-23T04:17:42.451863+00:00",
+  "status": "accepted_expected_oracle_only_profile_admission_pending",
+  "artifact": ".agentflow/oracles/v080/B01-G/frozen.json",
+  "sha256": "a78d49225ce3ea6e6eb28b7a969edfd2fd7fb01cafb7a7b0593dac7c3df4bde4",
+  "authored_bytes_preserved": true,
+  "case_count": 20,
+  "acceptance_ref_map": {
+    "B01-G-A1": [
+      "B01-G-01",
+      "B01-G-02",
+      "B01-G-03",
+      "B01-G-04",
+      "B01-G-05",
+      "B01-G-06",
+      "B01-G-07",
+      "B01-G-08",
+      "B01-G-09",
+      "B01-G-10",
+      "B01-G-11",
+      "B01-G-12",
+      "B01-G-13",
+      "B01-G-14",
+      "B01-G-15",
+      "B01-G-16",
+      "B01-G-17",
+      "B01-G-18",
+      "B01-G-19",
+      "B01-G-20"
+    ]
+  },
+  "original_author": {
+    "provider": "xai",
+    "native_session_id": "01a1669a-7075-7a81-bf1a-4ddff4bb5262",
+    "receipt": "author-receipt.json",
+    "receipt_sha256": "f9be487d4c67e4480ccbd418b8edfcd4a2bcd6c32c8cf03328977649b4ac7b2b"
+  },
+  "calculation_evidence": {
+    "artifact": "evidence/four-level-sums.json",
+    "sha256": "eb2d640787a048ec88979f489a94495e56e89578d45ab90c2e0623ec865ee78f"
+  },
+  "independent_review": {
+    "schema": "dendro.independent-oracle-review/v1",
+    "recorded_at": "2026-10-23T04:17:42.451863+00:00",
+    "native_session_id": "01a166f3-e6c7-7c40-ab42-8181cc46af85",
+    "provider": "openai",
+    "model_requested": "gpt-6-astra",
+    "effort_requested": "medium",
+    "actual_model_effort": "not independently observed by curator",
+    "verdict": "accept_for_oracle_freeze_only",
+    "review_text": "review-03-codex.txt",
+    "review_text_sha256": "1b951157981944df6f13a4fef0bfa7ee83a5241b957567655166dd3b11ae7a45",
+    "authority": ".agentflow/runs/v080/admission/bounded-platform-resumption.json",
+    "temporary_route": true,
+    "saved_distribution_defaults_changed": false,
+    "scope": "20 expected cases only; no profile/parser/product/native adapter or implementation acceptance",
+    "original_author_session": "01a1669a-7075-7a81-bf1a-4ddff4bb5262",
+    "reviewer_disjoint_from_original_author": true
+  },
+  "bound_profile_sha256": "1a3864a8b0390125c460643d2cf01bbb44fd2b5cb29720aee9a8b0ff7dafbabc",
+  "bound_fixtures": {
+    "sanitized-authentic.json": "e3f56c510c8c2eb05d370b6858f787cebe7108fdef59502d844fd243ca236e7e",
+    "controlled-sanitized-authentic.json": "5939054579d2d9a61b1b17439d57c06bb9b09b6bed9946dfba157993204a5c6b"
+  },
+  "arithmetic_history": {
+    "original_Claude_review": "The original Claude profile/oracle critique incorrectly stated that adding turn counters, per-turn modelUsage, session counters and session modelUsage yields5x session. Original report preserved.",
+    "fresh_Codex_rejection": "Fresh independent Codex rejected that arithmetic; these four groups each aggregate to one session total, hence4x.",
+    "original_author_correction": "Original Grok author changed only intended four-level blocks B01-G-02/16, preserving history,3x expectations and16turn/8session componentfactcounts.",
+    "final_review": "Same fresh Codex reviewer independently recomputed both fixtures and accepted corrected20case oracle only."
+  },
+  "not_granted": [
+    "Source profile admission; freshGrok profile review pending",
+    "Parser/native adapter/product acceptance",
+    "Local Windows migration construction admission; correction review pending",
+    "T24/fullrelease/nativeLinux acceptance"
+  ],
+  "curator_expected_edits": false
+}

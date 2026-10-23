@@ -1,0 +1,70 @@
+{
+  "schema": "dendro.benchmark-oracle-freeze/v1",
+  "frozen_at": "2026-10-23T01:36:23.673581+00:00",
+  "status": "accepted_expected_protocol_and_corpus_only_not_product_acceptance",
+  "artifact": ".agentflow/oracles/v080/T02-runner/frozen.json",
+  "sha256": "ed9f6f0b9e8fbd0919c50793a2088f6599a639d7f77bd41d5a141a92a5d13ad8",
+  "case_counts": {
+    "measurement_correctness": 54,
+    "failure_semantics": 35,
+    "total": 89
+  },
+  "author": {
+    "provider": "xai",
+    "session_id": "4248b221-fc34-42a2-b6d4-f119218fd295",
+    "requested_model": "grok-4.7",
+    "observed_usage_model_keys": [
+      "grok-4.7-build"
+    ],
+    "execution": "synchronous native CLI resumed original author, exit0; no tools or subagents"
+  },
+  "review": {
+    "provider": "anthropic",
+    "session_id": "09c506dc-5e3f-4e21-9f64-7eaf2640052d",
+    "scope": "Corrected protocol reviewed; one contradiction and five gaps resolved by original-author final patch plus independent corpus verification. No subsequent entire-packet or product approval claimed.",
+    "report_sha256": "b510a24583bf3f6d65f03a625a81d3cf6a58ac9a3c045f243d3f74fdcfacfb4c"
+  },
+  "provenance": {
+    "draft-independent-original.json": "5ee0bea4f51b74e6a8c7c442667c3dc996e1114f05cc9c6959e29609c562a268",
+    "author-corrections.json": "90aef9d49b5586485d5d17c21417a4583d82d2daecb0e57409c607b11618dc0b",
+    "draft-corrected.json": "774f22822ae5e1b2c0e1434ee7e9ef873dc825dbe3c5e298e308aff820e38964",
+    "author-final-response.json": "13839a32271da13626feffe7f21a65a035527764a63816f3d9311df70b3c8837",
+    "author-final-patch.json": "93fa1664f3323048eda450e74fa0675b871ee4a57d0203b692364ac43db62595",
+    "record-key-table.json": "a541bfb6e189b84cc92ca5207fc53283090d29ad398834c3b9109782fcb1bf32",
+    "native_final_result": "3ae9cc758d52d845bb84a26e026cf8d43ada2cb6cb5b2f2198bdc3506993b24b",
+    "native_launch_receipt": "f600d5120de4382c9c6f5b0469ebff88022b378c90bd471cf6896f60759aa871"
+  },
+  "golden_micro": {
+    "path": ".agentflow/oracles/v080/T02-runner/golden-micro.jsonl",
+    "sha256": "a56bd9f760544c5426cbebf09d748512d6aaffd84d79b1469a961294f2451d88",
+    "bytes": 12541,
+    "lines": 82,
+    "encoding": "UTF8 no BOM, sorted keys compact JSON, LF including final line",
+    "independent_verification": ".agentflow/runs/v080/oracle-curation/benchmark-final-author-validation.json"
+  },
+  "adjudication": {
+    "unknown_vs_false": "Author changed absent descendant process_budget_pass to null; aggregate false carries blocked_unmeasured reason.",
+    "schema_vs_measurement": "Wrong response counts/bindings schema_mismatch5; invalid elapsed measurement blocked6 under explicit precedence.",
+    "invalid_elapsed": "Diagnostic only, does not override status; zero precedes missing warm population in its case.",
+    "parser_binding_and_phase": "Parser-only fixture labeled; two real binding mismatch cases added; phase harness-owned.",
+    "golden_corpus": "Author key table and exact82 records independently reconstructed; detached digest supplies canonical bytes without circular selfhash.",
+    "full_acceptance": "Validated per-run reports required; invalid-run sibling blocks; no bypass.",
+    "minor_protocol": "Inclusive budgets, measured-only throughput sum, small VmHWM sampled maximum and escaped descendant collector proof explicit."
+  },
+  "curation": {
+    "worker": "/root/finalize_plan",
+    "expected_values_edited_on_curator_authority": false,
+    "first_author_patch_ops": 50,
+    "final_author_patch_ops": 27,
+    "all_patch_operations_applied_once_in_order": true,
+    "golden_values_authored_by": "original independent Grok author",
+    "golden_serialization_and_math_verified_by": "Codex curator independent table reconstruction"
+  },
+  "remaining_gates": [
+    "Builder must implement and verify runner/parser and corpus against this distinct authored oracle.",
+    "Sampled polling interval remains implementation-declared; sampled maximum never represented as reliable peak.",
+    "Actual candidate binding and native Windows AND native Linux reports required for measured acceptance.",
+    "v070 preport compile/probe failure remains not_measurable_preport; no invented comparable baseline.",
+    "No product or benchmark tests/measures run by this curation."
+  ]
+}

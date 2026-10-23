@@ -1,0 +1,503 @@
+{
+  "schema": "dendro.grok-structural-profile-oracle/v1",
+  "status": "independently_authored_not_accepted_not_frozen",
+  "expectation_id": "B01-G-A1",
+  "author": {
+    "provider": "xai",
+    "role": "independent grok oracle author",
+    "product_parser_builder": false,
+    "acceptance_authority": false,
+    "author_native_session_recorded": false
+  },
+  "authored_at": "2026-10-23T02:35:36.7986725Z",
+  "binds": {
+    "fixture": ".agentflow/runs/v080/schemas/grok-profile/sanitized-authentic.json",
+    "fixture_sha256": "e3f56c510c8c2eb05d370b6858f787cebe7108fdef59502d844fd243ca236e7e",
+    "profile": ".agentflow/runs/v080/schemas/grok-profile/profile.json",
+    "profile_sha256": "efa0a7a0c69e586bb2ad0350fb1cc016270a2ce6f841c19d1b8297c7ccca4cfb",
+    "profile_id": "grok-native-1.0.52-observed-v1",
+    "provenance": ".agentflow/runs/v080/schemas/grok-profile/provenance.json",
+    "provenance_sha256": "27db1d32b4dd6d00031f8647643e9c210a09b8a174d78e58b72f81a706e08beb",
+    "draft_expected": ".agentflow/oracles/v080/B01-G/draft-expected.json",
+    "draft_expected_sha256": "020380a0a8e0fd588e5034a0a4d7b082276475092a56ec3d0f67f1cb3640130e",
+    "draft_expected_authority": "non_authoritative_proposal"
+  },
+  "specimen_identity": {
+    "provenance_source_session_authorized": "b51ad78c-d506-4ec8-a9d1-d6a886059a37",
+    "fixture_session_id": "grok-session-A",
+    "raw_session_id_present_in_fixture": false,
+    "agent_id": "grok-agent-A",
+    "attempt_id": "grok-attempt-A",
+    "identities_are_separate": true
+  },
+  "model_evidence_in_fixture": {
+    "usage_primaryModelId": "grok-4.7-build",
+    "usage_modelUsage_key": "grok-4.7-build",
+    "event_model_id": "grok-4.7",
+    "summary_current_model_id": "grok-4.7",
+    "labels_differ": true,
+    "effective_equivalence": "unknown"
+  },
+  "version_evidence": {
+    "present_in_sanitized_fixture": {
+      "events.schema_version": "1.0",
+      "summary.chat_format_version": 1,
+      "wrapper_schema": "dendro.sanitized-authentic-grok-specimen/v1"
+    },
+    "profile_asserted_not_in_fixture": {
+      "client_version_observed": "1.0.52",
+      "event_schema_version": "1.0",
+      "summary_chat_format_version": 1
+    },
+    "absence_of_client_version_string_in_fixture_is_not_a_version_refusal": true
+  },
+  "author_arithmetic": {
+    "verified_from_fixture": true,
+    "turns_sum_to_session_for": [
+      "inputTokens",
+      "outputTokens",
+      "cachedReadTokens",
+      "cacheCreationTokens",
+      "reasoningTokens",
+      "totalTokens",
+      "modelCalls",
+      "costUsdTicks"
+    ],
+    "each_modelUsage_row_equals_its_parent_for_those_counters": true,
+    "totalTokens_equals_input_plus_output_on_session_and_both_turns": true,
+    "that_equality_does_not_prove_reasoning_exclusion": true,
+    "cache_read_less_or_equal_input_on_every_row_does_not_prove_subset": true,
+    "reasoning_less_or_equal_output_on_every_row_does_not_prove_inclusion": true,
+    "json_duplicate_keys_in_fixture": false,
+    "json_non_integer_counters_in_fixture": false
+  },
+  "rules": {
+    "storage": "nonnegative JSON integer; preserve exact value including observed zero",
+    "missing_component": "unknown; never substitute 0",
+    "grain": "Choose usage turn rows or the session rollup. Nested modelUsage restates its parent row. Never add session, turns, and modelUsage together.",
+    "dedup": "One admitted snapshot emits at most one fact per pseudonymous session plus usage turnNumber plus counter component. An identical reingest adds nothing. A later changed snapshot is a revision, not prior plus new.",
+    "index": "In this specimen only, usage.turnNumber = events.turn_number + 1. Do not join on bare equal integers. Do not treat the two-row bijection as a universal Grok rule.",
+    "money": "Keep costUsdTicks. Do not convert. The Usd letters in the field name are not an admitted unit or scale.",
+    "no_tool_capability_invented": true,
+    "parser_acceptance": false,
+    "adapter_acceptance": false,
+    "checklist_status_unchanged": "blocked_out_of_core_scope_until_actual_specimen"
+  },
+  "cases": [
+    {
+      "id": "B01-G-01",
+      "title": "Observed 0-based event index to 1-based usage index, this specimen only",
+      "input": {
+        "fixture_sha256": "e3f56c510c8c2eb05d370b6858f787cebe7108fdef59502d844fd243ca236e7e",
+        "profile_id": "grok-native-1.0.52-observed-v1"
+      },
+      "expected": {
+        "event_turn_numbers": [0, 1],
+        "usage_turn_numbers": [1, 2],
+        "normalized_pairs": [[0, 1], [1, 2]],
+        "pair_means": "event_turn_number, usage_turnNumber",
+        "order_utc": [
+          "2026-10-23T00:43:50.374Z",
+          "2026-10-23T00:47:11.345907200+00:00",
+          "2026-10-23T00:49:54.567Z",
+          "2026-10-23T00:51:17.756945900+00:00"
+        ],
+        "order_means": "event0 start < usage turn 1 endedAt < event1 start < usage turn 2 endedAt",
+        "bijection_holds_for_this_specimen": true,
+        "universal_grok_index_rule": false,
+        "basis": "explicit admitted profile plus this two-row chronology"
+      }
+    },
+    {
+      "id": "B01-G-02",
+      "title": "Lossless source counters; session and modelUsage equal turn sums and are not extra facts",
+      "input": {
+        "fixture_sha256": "e3f56c510c8c2eb05d370b6858f787cebe7108fdef59502d844fd243ca236e7e"
+      },
+      "expected": {
+        "unknown_zero_substitution": false,
+        "turns": [
+          {
+            "turnNumber": 1,
+            "endedAt": "2026-10-23T00:47:11.345907200+00:00",
+            "inputTokens": 25936,
+            "outputTokens": 15817,
+            "cachedReadTokens": 0,
+            "cacheCreationTokens": 0,
+            "reasoningTokens": 12158,
+            "totalTokens": 41753,
+            "modelCalls": 1,
+            "costUsdTicks": 499031600,
+            "turnCount": 1,
+            "primaryModelId": "grok-4.7-build",
+            "modelUsage_equals_parent": true
+          },
+          {
+            "turnNumber": 2,
+            "endedAt": "2026-10-23T00:51:17.756945900+00:00",
+            "inputTokens": 42005,
+            "outputTokens": 6601,
+            "cachedReadTokens": 25856,
+            "cacheCreationTokens": 0,
+            "reasoningTokens": 6037,
+            "totalTokens": 48606,
+            "modelCalls": 1,
+            "costUsdTicks": 288428800,
+            "turnCount": 1,
+            "primaryModelId": "grok-4.7-build",
+            "modelUsage_equals_parent": true
+          }
+        ],
+        "session_rollup_equals_turn_sums": {
+          "inputTokens": 67941,
+          "outputTokens": 22418,
+          "cachedReadTokens": 25856,
+          "cacheCreationTokens": 0,
+          "reasoningTokens": 18195,
+          "totalTokens": 90359,
+          "modelCalls": 2,
+          "costUsdTicks": 787460400,
+          "turnCount": 2,
+          "primaryModelId": "grok-4.7-build",
+          "modelUsage_equals_parent": true,
+          "updatedAt": "2026-10-23T00:51:17.756945900+00:00"
+        },
+        "chosen_grain": "turns_or_session_not_both",
+        "count_rollups_as_additional_usage": false,
+        "forbidden_if_turns_plus_session_plus_modelUsage": {
+          "inputTokens": 203823,
+          "outputTokens": 67254,
+          "cachedReadTokens": 77568,
+          "cacheCreationTokens": 0,
+          "reasoningTokens": 54585,
+          "totalTokens": 271077,
+          "modelCalls": 6,
+          "costUsdTicks": 2362381200
+        },
+        "forbidden_turnCount_if_turn_fields_added_to_session": 4
+      }
+    },
+    {
+      "id": "B01-G-03",
+      "title": "Same-snapshot dedup is idempotent; a changed snapshot is a revision",
+      "input": {
+        "fixture_sha256": "e3f56c510c8c2eb05d370b6858f787cebe7108fdef59502d844fd243ca236e7e",
+        "same_snapshot_ingested_twice": true
+      },
+      "expected": {
+        "usage_turn_fact_identities": ["grok-session-A", 1, "grok-session-A", 2],
+        "additional_facts_from_second_identical_ingest": 0,
+        "duplicate_rollup_facts": 0,
+        "same_fact_reingest": "idempotent",
+        "if_grain_turns": "still 2 turn rows per component",
+        "if_grain_session": "still 1 session row per component",
+        "correction_of_changed_snapshot": "revision_not_prior_plus_new"
+      }
+    },
+    {
+      "id": "B01-G-04",
+      "title": "Bare equal turn integers do not join",
+      "input": {
+        "synthetic": true,
+        "join_key": "equal integer",
+        "event_turn_number": 1,
+        "usage_turnNumber": 1
+      },
+      "expected": {
+        "pair_event1_with_usage1": false,
+        "specimen_pair_for_event_1": 2,
+        "specimen_pair_for_usage_1": 0,
+        "blind_join": false,
+        "authentic_specimen_is_ambiguous": false,
+        "admitted_refusal_code": null,
+        "behavior_label": "bare_equal_integers_are_different_namespaces"
+      }
+    },
+    {
+      "id": "B01-G-05",
+      "title": "Duplicate indices",
+      "input": {
+        "synthetic": true,
+        "scenarios": [
+          {
+            "name": "duplicate_event_index",
+            "event_turns": [0, 0],
+            "usage_turns": [1, 2]
+          },
+          {
+            "name": "duplicate_usage_turnNumber_same_counters",
+            "usage_turnNumber": 1,
+            "rows": 2,
+            "counters": "identical"
+          },
+          {
+            "name": "duplicate_usage_turnNumber_different_counters",
+            "usage_turnNumber": 1,
+            "rows": 2,
+            "counters": "differ"
+          }
+        ]
+      },
+      "expected": {
+        "duplicate_event_index": {
+          "blind_join": false,
+          "coverage": "partial_or_ambiguous",
+          "reason": "ambiguous_turn_index"
+        },
+        "duplicate_usage_same_counters": {
+          "emitted_facts_for_that_turn_and_component": 1,
+          "sum_the_duplicate_rows": false
+        },
+        "duplicate_usage_different_counters": {
+          "sum_the_rows": false,
+          "pick_a_silent_winner": false,
+          "coverage": "partial_or_ambiguous",
+          "reason": "ambiguous_turn_index"
+        }
+      }
+    },
+    {
+      "id": "B01-G-06",
+      "title": "Missing component and truncated event linkage",
+      "input": {
+        "synthetic": true,
+        "scenarios": [
+          {
+            "name": "present_zero_and_absent_component",
+            "cacheCreationTokens": 0,
+            "reasoningTokens": "key_absent",
+            "contextCapacity": "key_absent"
+          },
+          {
+            "name": "events_truncated_to_first_start",
+            "events_turn_numbers": [0],
+            "usage_turns": "both authentic rows intact and consistent with session"
+          },
+          {
+            "name": "incomplete_json",
+            "document": "truncated mid-value"
+          }
+        ]
+      },
+      "expected": {
+        "present_zero_and_absent_component": {
+          "cacheCreationTokens": 0,
+          "reasoningTokens": "unknown",
+          "contextCapacity": "unknown",
+          "substitute_missing_with_zero": false
+        },
+        "events_truncated_to_first_start": {
+          "apply_profile_index_normalization": false,
+          "invent_missing_event": false,
+          "attach_event_0_to_both_usage_turns": false,
+          "drop_or_zero_usage_turn_2": false,
+          "usage_counters": "retained_without_event_join",
+          "reason": "ambiguous_turn_index"
+        },
+        "incomplete_json": {
+          "emit_partial_counters": false,
+          "coverage": "refusal"
+        }
+      }
+    },
+    {
+      "id": "B01-G-07",
+      "title": "Conflicting session and turn rollups",
+      "input": {
+        "synthetic": true,
+        "session_inputTokens": 67941,
+        "turn_inputTokens": [25936, 42006],
+        "turn_sum_inputTokens": 67942
+      },
+      "expected": {
+        "reconciled_canonical_inputTokens": null,
+        "silently_prefer_session": false,
+        "silently_prefer_turn_sum": false,
+        "add_session_and_turns": false,
+        "preserve_both_source_assertions": true,
+        "coverage": "partial_or_refusal",
+        "admitted_refusal_code": null
+      }
+    },
+    {
+      "id": "B01-G-08",
+      "title": "costUsdTicks scale is unknown",
+      "input": {
+        "fixture_sha256": "e3f56c510c8c2eb05d370b6858f787cebe7108fdef59502d844fd243ca236e7e",
+        "scale_evidence": null
+      },
+      "expected": {
+        "preserve_integers": {
+          "session": 787460400,
+          "turn_1": 499031600,
+          "turn_2": 288428800
+        },
+        "turn_ticks_sum_to_session": true,
+        "canonical_money": null,
+        "currency_unit": null,
+        "status": "refused",
+        "reason": "unknown_monetary_scale",
+        "divide_by_guessed_factor": false,
+        "field_name_usd_is_not_a_unit_admission": true
+      }
+    },
+    {
+      "id": "B01-G-09",
+      "title": "Cache counters stay source integers; fraction refused",
+      "input": {
+        "fixture_sha256": "e3f56c510c8c2eb05d370b6858f787cebe7108fdef59502d844fd243ca236e7e",
+        "inclusion_semantics": null
+      },
+      "expected": {
+        "cachedReadTokens": {
+          "turn_1": 0,
+          "turn_2": 25856,
+          "session": 25856
+        },
+        "cacheCreationTokens": {
+          "turn_1": 0,
+          "turn_2": 0,
+          "session": 0,
+          "observed_zero_not_missing": true
+        },
+        "cache_read_le_input_on_every_row": true,
+        "that_inequality_admits_subset_inclusion": false,
+        "cache_fraction": null,
+        "reason": "unknown_cache_accounting_inclusion"
+      }
+    },
+    {
+      "id": "B01-G-10",
+      "title": "Reasoning counters stay source integers; output plus reasoning refused",
+      "input": {
+        "fixture_sha256": "e3f56c510c8c2eb05d370b6858f787cebe7108fdef59502d844fd243ca236e7e",
+        "inclusion_semantics": null
+      },
+      "expected": {
+        "reasoningTokens": {
+          "turn_1": 12158,
+          "turn_2": 6037,
+          "session": 18195
+        },
+        "outputTokens": {
+          "turn_1": 15817,
+          "turn_2": 6601,
+          "session": 22418
+        },
+        "add_output_and_reasoning_as_total": false,
+        "forbidden_output_plus_reasoning_session": 40613,
+        "observed_totalTokens_equals_input_plus_output": {
+          "turn_1": 41753,
+          "turn_2": 48606,
+          "session": 90359
+        },
+        "reasoning_le_output_on_every_row": true,
+        "equality_and_inequality_admit_inclusion_or_exclusion": false,
+        "conserved_canonical_total": "unknown",
+        "source_counters_retained": true,
+        "reason": "unknown_reasoning_inclusion",
+        "universal_component_rule": false
+      }
+    },
+    {
+      "id": "B01-G-11",
+      "title": "modelCalls is a source counter, not proved invocation grain",
+      "input": {
+        "fixture_sha256": "e3f56c510c8c2eb05d370b6858f787cebe7108fdef59502d844fd243ca236e7e"
+      },
+      "expected": {
+        "modelCalls": {
+          "turn_1": 1,
+          "turn_2": 1,
+          "session": 2
+        },
+        "request_invocation_count": "unknown",
+        "per_invocation_cache_mean": null,
+        "divide_any_counter_by_modelCalls": false,
+        "reason": "invocation_grain_unproven"
+      }
+    },
+    {
+      "id": "B01-G-12",
+      "title": "Separate model labels, declaration-only yolo, no message role or tool capability",
+      "input": {
+        "fixture_sha256": "e3f56c510c8c2eb05d370b6858f787cebe7108fdef59502d844fd243ca236e7e"
+      },
+      "expected": {
+        "model_labels": {
+          "usage": "grok-4.7-build",
+          "events_and_summary": "grok-4.7",
+          "treatment": "retain_as_differing_source_assertions"
+        },
+        "effective_model_equivalence": "unknown",
+        "summary": {
+          "reasoning_effort": "medium",
+          "session_kind": "headless",
+          "chat_format_version": 1,
+          "created_at": "2026-10-23T00:43:50.063722800Z",
+          "updated_at": "2026-10-23T00:51:19.465812500Z"
+        },
+        "summary_timestamps_are_not_turn_bounds": true,
+        "yolo_mode": true,
+        "yolo_treatment": "declared_boolean_only",
+        "effective_isolation": "not_observed",
+        "operator_approval": "unknown",
+        "identities": {
+          "session": "grok-session-A",
+          "agent": "grok-agent-A",
+          "attempt": "grok-attempt-A"
+        },
+        "conversation_message_count": {
+          "event_turn_0": 3,
+          "event_turn_1": 7,
+          "proves_user_message_role": false,
+          "delta_is_a_role_fact": false
+        },
+        "first_user_message_or_tools_or_outcome": {
+          "derivable": false,
+          "value": "unknown"
+        },
+        "loaded_capability_inventory_environment_capacity": "unknown",
+        "human_acceptance": "unknown"
+      }
+    },
+    {
+      "id": "B01-G-13",
+      "title": "Unadmitted schema or index profile is refused",
+      "input": {
+        "synthetic": true,
+        "examples": [
+          {"event_schema_version": "future-unadmitted"},
+          {"event_schema_version": "2.0"},
+          {"chat_format_version": 2},
+          {"reordered_or_new_index_scheme": true}
+        ]
+      },
+      "expected": {
+        "parser_acceptance": false,
+        "reason": "source_schema_not_admitted",
+        "this_profile_fixture_fields_that_match": {
+          "event_schema_version": "1.0",
+          "chat_format_version": 1
+        },
+        "client_version_1_0_52_is_inside_sanitized_fixture": false,
+        "broad_version_compatibility": false
+      }
+    },
+    {
+      "id": "B01-G-14",
+      "title": "Start-to-end timestamps are a source interval, not execution or invocation time",
+      "input": {
+        "fixture_sha256": "e3f56c510c8c2eb05d370b6858f787cebe7108fdef59502d844fd243ca236e7e"
+      },
+      "expected": {
+        "use_as_cpu_or_active_execution_time": false,
+        "use_as_request_invocation_duration": false,
+        "required_duration_milliseconds": null,
+        "ordering_evidence_remains": "B01-G-01"
+      }
+    }
+  ],
+  "case_count": 14,
+  "scope": "Structural expectations for one sanitized specimen. Semantic scale, inclusion, and grain stay refused. No parser and no native adapter acceptance."
+}

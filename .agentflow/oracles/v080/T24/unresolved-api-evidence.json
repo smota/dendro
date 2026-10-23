@@ -1,0 +1,260 @@
+{
+  "schema": "dendro.platform-oracle-evidence-gaps/v1",
+  "task": "T24",
+  "status": "normative_oracle_frozen_actual_API_native_evidence_pending",
+  "observed_spike_proven": [
+    "Atomic safe private current-user+SYSTEM directory/file creation and held-handle identity/linkcount/readback on native Windows",
+    "Existing creation and broad/untrusted ancestor refusal"
+  ],
+  "gaps": [
+    {
+      "id": "owner_control_readback",
+      "fact": "Spike did not expose/prove safe held-handle ownerSID/protected-control readback.",
+      "required": "Actual safe held-handle owner/control/ACE verification and explicit owner-role policy; unreadable control refuses. Standard ancestry policy evaluates replacement rights separately.",
+      "cases": [
+        "T24-03",
+        "T24-04",
+        "T24-05",
+        "T24-06",
+        "T24-07",
+        "T24-43",
+        "T24-44",
+        "T24-47"
+      ]
+    },
+    {
+      "id": "ancestor_race_pinning",
+      "fact": "Spike root ancestry check pathname based; race-pinning unproven.",
+      "required": "Held-root/ancestor identity and replacement-race proof; unsupported roots fail closed.",
+      "cases": [
+        "T24-14",
+        "T24-15",
+        "T24-21",
+        "T24-22"
+      ]
+    },
+    {
+      "id": "cross_user_denial",
+      "fact": "Actual cross-user denial not run in spike.",
+      "required": "Privileged unit tests prove policy checker only; actual OS access denial needs authorized unprivileged principal/fixture or blocked/not_run evidence, never a fake pass.",
+      "cases": [
+        "T24-05",
+        "T24-09"
+      ]
+    },
+    {
+      "id": "platform_path_policy",
+      "fact": "Actual shortname/UNC/device/ADS/case-sensitive/longpath safe API policy not demonstrated.",
+      "required": "Baseline refusals plus admitted-mechanism tests, never universal-allow lexical rules.",
+      "cases": [
+        "T24-17",
+        "T24-18",
+        "T24-19",
+        "T24-20"
+      ]
+    },
+    {
+      "id": "native_atomic_file_replace",
+      "fact": "Regular pointer-file replacement/sharing/crash and crossvolume staging not proven by creation spike.",
+      "required": "Admitted single atomic regular-file primitive, flush/durability method, self-validating manifest/torn refusal and referenced snapshot retention; crash receipts on recovery.",
+      "cases": [
+        "T24-26",
+        "T24-27",
+        "T24-28",
+        "T24-29",
+        "T24-31",
+        "T24-32",
+        "T24-52"
+      ]
+    },
+    {
+      "id": "source_snapshot_consistency",
+      "fact": "Private file creation is not a DuckDB/SQLite consistent snapshot proof.",
+      "required": "Actual SQLite existing protocol readmark/lock behavior admitted; no DDL/checkpoint/journal mode or missing source sidecar creation. DuckDB external writer blocks live crossprocess read. Snapshot/privacy verification separate.",
+      "cases": [
+        "T24-30",
+        "T24-33",
+        "T24-34"
+      ]
+    },
+    {
+      "id": "cancel_and_lock_lifecycle",
+      "fact": "Cancellation, crash lock release and unknown-writer custody not exercised by spike.",
+      "required": "Owned synthetic process native cancellation/exit and interprocess contention tests.",
+      "cases": [
+        "T24-23",
+        "T24-24",
+        "T24-35",
+        "T24-36",
+        "T24-37"
+      ]
+    },
+    {
+      "id": "native_Linux_receipt",
+      "fact": "Windows spike gives no Linux execution evidence.",
+      "required": "Actual native Linux execution for all applicable cases; policy-checker output distinct from physical unprivileged denial. No WSL substitution for mandatory native lanes.",
+      "cases": [
+        "T24-01",
+        "T24-02",
+        "T24-08",
+        "T24-09",
+        "T24-10",
+        "T24-11",
+        "T24-12",
+        "T24-13",
+        "T24-15",
+        "T24-16",
+        "T24-21",
+        "T24-22",
+        "T24-23",
+        "T24-24",
+        "T24-25",
+        "T24-26",
+        "T24-28",
+        "T24-29",
+        "T24-30",
+        "T24-31",
+        "T24-32",
+        "T24-33",
+        "T24-34",
+        "T24-35",
+        "T24-36",
+        "T24-37",
+        "T24-39",
+        "T24-40",
+        "T24-41",
+        "T24-42",
+        "T24-45",
+        "T24-46",
+        "T24-47",
+        "T24-48",
+        "T24-50",
+        "T24-51",
+        "T24-52"
+      ]
+    },
+    {
+      "id": "held_native_alias_roles",
+      "fact": "Creation spike does not prove alias detection across protected role paths/shortnames and private regular-file hardlinks.",
+      "required": "Actual held object identity under admitted filesystem profile; include manifest/staging/lock roles. NTFS baseline permitted; ReFS128bit proof or explicit refusal.",
+      "cases": [
+        "T24-11",
+        "T24-12",
+        "T24-13",
+        "T24-17",
+        "T24-25"
+      ]
+    },
+    {
+      "id": "native_root_and_name_resolution",
+      "fact": "Standard profile/home/TEMP/root redirect and lossless names require explicit native policy.",
+      "required": "No universal TEMP/link rejection; admitted root resolve/pin and effective-token default root logic; foreignHOME never silently adopted.",
+      "cases": [
+        "T24-10",
+        "T24-16",
+        "T24-18",
+        "T24-20",
+        "T24-22",
+        "T24-38",
+        "T24-39",
+        "T24-40",
+        "T24-44",
+        "T24-45",
+        "T24-46",
+        "T24-49",
+        "T24-50",
+        "T24-51"
+      ]
+    },
+    {
+      "id": "library_sidecar_and_lock_protocol",
+      "fact": "Spike has not proved library reopen/sidecar/spill protection or sameprocess/inheritance/unlink lock semantics.",
+      "required": "Pinned private parent, declared/effective permission policy and post-open identity proof; no threaded process-global umask mutation. Native lock protocol tested including unrelated descriptor close.",
+      "cases": [
+        "T24-07",
+        "T24-09",
+        "T24-23",
+        "T24-24",
+        "T24-35",
+        "T24-36",
+        "T24-47",
+        "T24-48"
+      ]
+    },
+    {
+      "id": "native_Windows_complete_acceptance",
+      "fact": "Bounded creation spike is not complete native T24 acceptance.",
+      "required": "Execute relevant Windows cases under correct privilege evidence scope; all unresolved security API proof remains explicit and affected operations fail closed.",
+      "cases": [
+        "T24-01",
+        "T24-02",
+        "T24-03",
+        "T24-04",
+        "T24-05",
+        "T24-06",
+        "T24-07",
+        "T24-10",
+        "T24-11",
+        "T24-12",
+        "T24-13",
+        "T24-14",
+        "T24-16",
+        "T24-17",
+        "T24-18",
+        "T24-19",
+        "T24-20",
+        "T24-21",
+        "T24-22",
+        "T24-23",
+        "T24-24",
+        "T24-25",
+        "T24-26",
+        "T24-27",
+        "T24-28",
+        "T24-29",
+        "T24-30",
+        "T24-31",
+        "T24-32",
+        "T24-33",
+        "T24-34",
+        "T24-35",
+        "T24-36",
+        "T24-37",
+        "T24-38",
+        "T24-40",
+        "T24-41",
+        "T24-42",
+        "T24-43",
+        "T24-44",
+        "T24-46",
+        "T24-47",
+        "T24-48",
+        "T24-49",
+        "T24-50",
+        "T24-52"
+      ]
+    },
+    {
+      "id": "partial_artifact_handoff",
+      "fact": "Reviewed interface or policy checker is not final native acceptance.",
+      "required": "Bind exact interface/native proof digest and exclusive lease handoff; Linux/API proof holds remain, never mark full T24/G02 passed.",
+      "cases": [
+        "T24-01",
+        "T24-02",
+        "T24-28",
+        "T24-37",
+        "T24-41",
+        "T24-42"
+      ]
+    }
+  ],
+  "builder_api_contract": "Safe dependency choices/admitted exceptions are B02 artifacts; oracle intentionally does not dictate unproven wrapper names or weaken deny(unsafe_code).",
+  "expected_values_changed_from_builder_output": false,
+  "actual_security_blockers": [
+    "Held-owner/control validation safe API not proven: no private operation acceptance by assumption.",
+    "Replacement-right/ancestor pinning races not proven: affected untrusted roots refuse.",
+    "Native atomic pointer/durability/DB consistency and sidecar privacy not proven by creation spike.",
+    "Sameprocess/native lock ownership semantics and safe cancellation not proven; do not equate lock acquisition with prior process death."
+  ],
+  "not_a_global_build_hold": "These actual proof gaps gate affected private/native acceptance and final release; reviewed scoped interface construction can proceed and supported safe operations remain available."
+}

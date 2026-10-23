@@ -2,11 +2,10 @@
 use dendro_core::portfolio::{portfolio_json, portfolio_ndjson, portfolio_table, PortfolioSource};
 use dendro_core::{AnalyticsStore, IdentityFact, QueueFact, QueueItemMeta, UsageFact};
 use serde_json::json;
-use std::{
-    fs,
-    path::PathBuf,
-    sync::atomic::{AtomicU64, Ordering},
-};
+#[cfg(not(windows))]
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::{fs, path::PathBuf};
+#[cfg(not(windows))]
 static NEXT: AtomicU64 = AtomicU64::new(0);
 const FROM: &str = "2026-01-01T00:00:00Z";
 const TO: &str = "2026-01-01T01:00:00Z";
@@ -15,16 +14,30 @@ struct Fixture {
 }
 impl Fixture {
     fn new() -> Self {
-        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../target/portfolio-fixtures")
-            .join(format!(
-                "{}-{}",
-                std::process::id(),
-                NEXT.fetch_add(1, Ordering::Relaxed)
-            ));
-        fs::create_dir_all(&dir).unwrap();
-        Self {
-            dir: dir.canonicalize().unwrap(),
+        #[cfg(windows)]
+        {
+            let root = dendro_core::platform_v1::create_user_private_root_with_choice(
+                ".dendro-portfolio-fixture-",
+                &dendro_core::platform_v1::StorageRootChoice::UserProfile,
+            )
+            .expect("explicit USERPROFILE private fixture root");
+            Self {
+                dir: root.path().to_path_buf(),
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../target/portfolio-fixtures")
+                .join(format!(
+                    "{}-{}",
+                    std::process::id(),
+                    NEXT.fetch_add(1, Ordering::Relaxed)
+                ));
+            fs::create_dir_all(&dir).unwrap();
+            Self {
+                dir: dir.canonicalize().unwrap(),
+            }
         }
     }
 }
@@ -648,7 +661,25 @@ fn dangling_symlink_hold_dir_is_refused() {
     let db = f.dir.join("a.duckdb");
     drop(AnalyticsStore::open_path(&db, "test").unwrap());
     let dangling = f.dir.join("dangling-holds");
-    std::os::unix::fs::symlink(f.dir.join("missing-target"), &dangling).unwrap();
+    let target = f.dir.join("missing-target");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&target, &dangling).unwrap();
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        fs::create_dir(&target).unwrap();
+        let status = std::process::Command::new("cmd")
+            .arg("/C")
+            .raw_arg(format!(
+                "mklink /J \"{}\" \"{}\"",
+                dangling.display(),
+                target.display()
+            ))
+            .status()
+            .expect("create native Windows junction");
+        assert!(status.success(), "junction creation failed: {status}");
+        fs::remove_dir(&target).unwrap();
+    }
     let mut mapping = source(db, &["worker"]);
     mapping.hold_dir = Some(dangling);
     let err = portfolio_json(&[mapping], FROM, TO).unwrap_err();

@@ -120,23 +120,36 @@ impl AnalyticsStore {
         rows: &[OpenRigRow],
         source_path: &std::path::Path,
     ) -> Result<OpenRigIngest> {
+        use sha2::{Digest, Sha256};
         let mut rows = rows.to_vec();
-        #[cfg(unix)]
-        {
-            use sha2::{Digest, Sha256};
-            use std::os::unix::fs::MetadataExt;
-            let metadata = std::fs::metadata(source_path)?;
-            let mut digest = Sha256::new();
-            digest.update(metadata.dev().to_be_bytes());
-            digest.update(metadata.ino().to_be_bytes());
-            rows.push(OpenRigRow {
-                table_name: "source_identity".into(),
-                row_id: "file".into(),
-                row_digest: hex::encode(digest.finalize()),
-            });
+        let file = std::fs::File::open(source_path)?;
+        let metadata = crate::file_metadata::held_source_metadata(&file)
+            .map_err(|reason| anyhow!("source metadata unavailable: {reason}"))?;
+        let identity = crate::file_metadata::reported_identity(&metadata)
+            .map_err(|reason| anyhow!("source identity unavailable: {reason}"))?;
+        let mut digest = Sha256::new();
+        match identity {
+            crate::platform_v1::FileIdentity::Unix { device, inode } => {
+                digest.update(device.to_be_bytes());
+                digest.update(inode.to_be_bytes());
+            }
+            crate::platform_v1::FileIdentity::WindowsFileId128 {
+                volume_serial_64,
+                file_id,
+            } => {
+                digest.update(b"windows-file-id-128\0");
+                digest.update(volume_serial_64.to_be_bytes());
+                digest.update(file_id);
+            }
+            crate::platform_v1::FileIdentity::WindowsByHandle64 { .. } => {
+                return Err(anyhow!("source identity is too narrow"));
+            }
         }
-        #[cfg(not(unix))]
-        let _ = source_path;
+        rows.push(OpenRigRow {
+            table_name: "source_identity".into(),
+            row_id: "file".into(),
+            row_digest: hex::encode(digest.finalize()),
+        });
         self.begin_openrig_ingest(source_id, revision, &rows)
     }
 
@@ -604,19 +617,57 @@ mod tests {
             2
         );
     }
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     #[test]
     fn replacing_inode_with_reused_identical_keys_starts_a_new_generation() {
         let store = AnalyticsStore::open_in_memory("key").unwrap();
+        #[cfg(windows)]
+        let root = crate::platform_v1::create_user_private_root_with_choice(
+            "dendro-openrig-identity-",
+            &crate::platform_v1::StorageRootChoice::UserProfile,
+        )
+        .expect("explicit UserProfile identity fixture");
+        #[cfg(windows)]
+        let dir = root.path().to_path_buf();
+        #[cfg(unix)]
         let dir =
             std::env::temp_dir().join(format!("dendro-openrig-identity-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("openrig.sqlite");
+        assert!(store
+            .begin_openrig_ingest_with_identity("source", "missing", &[], &path)
+            .is_err());
+        assert!(store.load_openrig_row_records().unwrap().is_empty());
         std::fs::write(&path, b"old").unwrap();
         let rows = [row("events", "1", "same")];
         store
             .begin_openrig_ingest_with_identity("source", "rev1", &rows, &path)
             .unwrap();
+        #[cfg(windows)]
+        {
+            use sha2::{Digest, Sha256};
+            let metadata =
+                crate::file_metadata::held_source_metadata(&std::fs::File::open(&path).unwrap())
+                    .unwrap();
+            let crate::platform_v1::FileIdentity::WindowsFileId128 {
+                volume_serial_64,
+                file_id,
+            } = crate::file_metadata::reported_identity(&metadata).unwrap()
+            else {
+                panic!("full Windows identity required")
+            };
+            let mut expected = Sha256::new();
+            expected.update(b"windows-file-id-128\0");
+            expected.update(volume_serial_64.to_be_bytes());
+            expected.update(file_id);
+            let records = store.load_openrig_row_records().unwrap();
+            let identity = records
+                .iter()
+                .find(|row| row.table_name == "source_identity")
+                .unwrap();
+            assert_eq!(identity.row_digest, hex::encode(expected.finalize()));
+            assert_eq!(identity.row_state, "present");
+        }
         let key = store
             .qualify_openrig_fact("source", "events", "1", "events:1")
             .unwrap();
@@ -644,6 +695,8 @@ mod tests {
                 .row_state,
             "superseded"
         );
+        #[cfg(windows)]
+        drop(root);
         std::fs::remove_dir_all(dir).unwrap();
     }
     #[test]

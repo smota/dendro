@@ -2,6 +2,8 @@
 resolver = "2"
 members = [
     "crates/dendro-core",
+    "crates/dendro-platform-policy",
+    "crates/dendro-windows-private-io",
     "crates/dendro-connectors",
     "crates/dendro-resolver",
     "crates/dendro-watcher",

@@ -1,0 +1,1587 @@
+{
+  "schema": "dendro.platform-contract-oracle/v1",
+  "version": "1.0.0",
+  "task": "T24",
+  "status": "frozen_normative_oracles_after_Claude_scoped_review_and_lead_adjudication",
+  "author": {
+    "provider": "openai",
+    "worker": "/root/finalize_plan",
+    "role": "independent expected-value author only; forbidden to implement T24"
+  },
+  "intended_builder": "distinct native Grok worker",
+  "inputs": {
+    "DESIGN.md": "7f6ca2da4ea5b4c7e6d78b565c3857a5e716a277c0dfec7abe37f40eb729f638",
+    "tasks.json": "b2433989ee71c654eeaf9b739ed427930c337732032aabac19e5facf17804d87",
+    "safe-windows-spike.json": "592006b611b61ade5265d5435810619082c06c5582b8a1ed834f74cc64a71a54"
+  },
+  "input_scope": "Only approved DESIGN/T24 task and observed safe Windows spike receipt; no future T24 builder implementation read.",
+  "source_definitions": [
+    {
+      "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+      "lines": "180-205",
+      "symbols": [
+        "Private filesystem/output identity",
+        "Permissions and locks",
+        "DB lifecycle and consumer selection",
+        "Native roots and watcher"
+      ]
+    },
+    {
+      "file": ".agentflow/proposals/next-version-2026-10-22/tasks.json",
+      "symbol": "T24-A1/A2/A3"
+    },
+    {
+      "file": ".agentflow/runs/v080/platform/safe-windows-spike.json",
+      "symbol": "proven/gaps"
+    }
+  ],
+  "case_count": 52,
+  "cases": [
+    {
+      "id": "T24-01",
+      "native_platforms": [
+        "windows",
+        "linux"
+      ],
+      "acceptance": "A2",
+      "scenario": "Atomic new private directory and file",
+      "synthetic_inputs": {
+        "target": "new local supported filesystem path",
+        "root_ancestry": "held/pinned trusted",
+        "owner": "current user",
+        "effective_permissions": "only admitted owner/host administrator trust principals",
+        "creation": "exclusive atomic",
+        "source_output_alias": false
+      },
+      "expected": {
+        "result": "allow",
+        "reason": "New private objects only after identity/permission/containment verified",
+        "preserve": [
+          "source bytes unchanged",
+          "private key never exported"
+        ],
+        "forbid": [
+          "permissive intermediate creation",
+          "chmod/ACL mutation of existing source"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-02",
+      "native_platforms": [
+        "windows",
+        "linux"
+      ],
+      "acceptance": "A2",
+      "scenario": "Exclusive create encounters existing entry",
+      "synthetic_inputs": {
+        "target_exists": true,
+        "entry_kind": [
+          "regular file",
+          "directory",
+          "symlink/reparse"
+        ]
+      },
+      "expected": {
+        "result": "refuse",
+        "reason": "Do not follow/truncate/overwrite an existing private target",
+        "preserve": [
+          "existing object bytes/identity/permissions"
+        ],
+        "forbid": [
+          "open-with-truncate fallback"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-03",
+      "native_platforms": [
+        "windows"
+      ],
+      "acceptance": "A2",
+      "scenario": "Private directory protected DACL with owner+SYSTEM only",
+      "synthetic_inputs": {
+        "owner_sid": "current user SID",
+        "dacl_protected": true,
+        "allow_sids": [
+          "current user SID",
+          "local SYSTEM SID"
+        ],
+        "untrusted_allow_aces": [],
+        "held_readback": "verified"
+      },
+      "expected": {
+        "result": "allow",
+        "reason": "A stricter subset of the approved trust allow-list is private",
+        "preserve": [
+          "held object identity"
+        ],
+        "forbid": [
+          "requiring Administrators grant when absent"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-04",
+      "native_platforms": [
+        "windows"
+      ],
+      "acceptance": "A2",
+      "scenario": "Protected DACL includes built-in Administrators",
+      "synthetic_inputs": {
+        "owner_sid": "current user SID",
+        "dacl_protected": true,
+        "allow_sids": [
+          "current user SID",
+          "local SYSTEM SID",
+          "built-in Administrators SID"
+        ],
+        "trust_basis": "host administration explicitly disclosed"
+      },
+      "expected": {
+        "result": "allow",
+        "reason": "Approved host-administrator trust is disclosed, not administrator resistance",
+        "preserve": [],
+        "forbid": [
+          "accepting arbitrary display group named Administrators",
+          "claim host admin cannot access"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-05",
+      "native_platforms": [
+        "windows"
+      ],
+      "acceptance": "A2",
+      "scenario": "Untrusted effective or inherited allow ACE",
+      "synthetic_inputs": {
+        "private_object_allow_ace_sids": [
+          "Everyone",
+          "Authenticated Users",
+          "Users",
+          "ALL APPLICATION PACKAGES",
+          "untrusted named SID"
+        ],
+        "explicit_or_inherited": true,
+        "inherit_only_template_exceptions": "Only CREATOR OWNER/OWNER RIGHTS placeholders admitted for trusted owner inheritance, never foreign effective grants",
+        "deny_ace_present": true,
+        "readonly_attribute": true
+      },
+      "expected": {
+        "result": "deny",
+        "reason": "Mechanical private-object allow-ACE policy rejects any nontrusted grant; deny ACE cannot cancel it. Ancestor replacement-right policy is separate.",
+        "preserve": [
+          "existing object ACL unchanged until separately authorized remediation"
+        ],
+        "forbid": [
+          "Readonly attribute as privacy proof",
+          "Deny ACE offsets untrusted allow",
+          "Requiring every ancestor allow ACE be private"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-06",
+      "native_platforms": [
+        "windows"
+      ],
+      "acceptance": "A2",
+      "scenario": "Foreign or unverifiable owner/control",
+      "synthetic_inputs": {
+        "variants": {
+          "verified_foreign_owner": "SID outside current user and explicitly admitted SYSTEM/Admin owner role",
+          "unverifiable_owner": "held owner SID/control unavailable"
+        }
+      },
+      "expected": {
+        "result": "refuse",
+        "reason": "Unverifiable owner/control refuses; verified foreign owner denies. Trusted owner roles are evaluated under explicit policy, never silently ignored.",
+        "preserve": [
+          "safe reason/coverage unknown"
+        ],
+        "forbid": [
+          "assume process creator implies verified owner forever"
+        ],
+        "per_variant_results": {
+          "verified_foreign_owner": "deny",
+          "unverifiable_owner": "refuse"
+        }
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-07",
+      "native_platforms": [
+        "windows"
+      ],
+      "acceptance": "A2",
+      "scenario": "Child file inherits only trusted protected-parent grants",
+      "synthetic_inputs": {
+        "parent_held_identity": "stable",
+        "parent_dacl_protected": true,
+        "parent_owner": "verified current user",
+        "file_owner": "verified current user",
+        "file_effective_grants": [
+          "owner",
+          "SYSTEM"
+        ],
+        "file_dacl_protected": false,
+        "ancestor_replacement_proof": "verified"
+      },
+      "expected": {
+        "result": "allow",
+        "reason": "Effective private inherited child grants are valid under pinned protected parent",
+        "preserve": [
+          "distinguish effective permission proof from protected-control flag"
+        ],
+        "forbid": [
+          "claim each file has protected DACL when it does not"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-08",
+      "native_platforms": [
+        "linux"
+      ],
+      "acceptance": "A2",
+      "scenario": "Private Unix UID/mode/ACL verified",
+      "synthetic_inputs": {
+        "uid": "current effective user",
+        "directory_mode": "0700",
+        "file_mode": "0600",
+        "extended_acl_foreign_access": false,
+        "root_ancestry": "pinned"
+      },
+      "expected": {
+        "result": "allow",
+        "reason": "Owner-private native Linux objects",
+        "preserve": [
+          "source unchanged"
+        ],
+        "forbid": []
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-09",
+      "native_platforms": [
+        "linux"
+      ],
+      "acceptance": "A2",
+      "scenario": "Foreign UID or effective group/other/ACL private access",
+      "synthetic_inputs": {
+        "variants": [
+          "foreign owner outside admitted admin trust",
+          "foreign effective group/other/ACL access through admitted ancestry"
+        ],
+        "private_object": true,
+        "declared_leaf_mode_policy": "recorded and enforced",
+        "parent_protection_insufficient": true
+      },
+      "expected": {
+        "result": "deny",
+        "reason": "Deny foreign ownership/effective access or violation of declared mode policy. Literal library leaf bits alone under an effective private parent are assessed by T24-47, not blanket-denied.",
+        "preserve": [
+          "Original bytes/permissions",
+          "Separate readonly input policy"
+        ],
+        "forbid": [
+          "Warning-only continuation",
+          "Process-global umask changes in threaded runtime"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-10",
+      "native_platforms": [
+        "windows",
+        "linux"
+      ],
+      "acceptance": "A2",
+      "scenario": "Authorized readonly source is not private output",
+      "synthetic_inputs": {
+        "source_permission": "readable under explicit source authorization, may be shared",
+        "destination_private_checks": "verified",
+        "source_mutations_allowed": false
+      },
+      "expected": {
+        "result": "allow",
+        "reason": "Source permission policy distinct from private retained state",
+        "preserve": [
+          "Source application data/main/WAL bytes and source permissions",
+          "Only explicitly admitted SQLite lock/read-mark protocol activity may affect existing SHM; no application mutation"
+        ],
+        "forbid": [
+          "DDL/schema/journal-mode/checkpoint writes",
+          "Create missing producer WAL/SHM",
+          "ACL/chmod source to force output policy"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-11",
+      "native_platforms": [
+        "windows",
+        "linux"
+      ],
+      "acceptance": "A2",
+      "scenario": "Identical held file identity via different paths",
+      "synthetic_inputs": {
+        "windows_identity_profile": "baseline admitted NTFS volume+stable file identity; if admitting ReFS require128bit FILE_ID_INFO or refuse unadmitted FS",
+        "linux_identity": [
+          "device",
+          "inode"
+        ],
+        "different_paths": true,
+        "same_object": true,
+        "roles": [
+          "source",
+          "output",
+          "key",
+          "lock",
+          "pointer/manifest",
+          "staging"
+        ]
+      },
+      "expected": {
+        "result": "deny",
+        "reason": "Same held native file object cannot cross protected roles. Never claim64bit file index universally unique across filesystems.",
+        "preserve": [
+          "source unchanged"
+        ],
+        "forbid": [
+          "hashing pathname as file identity"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-12",
+      "native_platforms": [
+        "windows",
+        "linux"
+      ],
+      "acceptance": "A2",
+      "scenario": "Private file multiple hardlinks",
+      "synthetic_inputs": {
+        "object_kind": "regular file",
+        "held_identity": "verified",
+        "link_count": 2,
+        "roles": [
+          "output",
+          "key",
+          "lock",
+          "pointer/manifest",
+          "staging"
+        ]
+      },
+      "expected": {
+        "result": "deny",
+        "reason": "Multiple hardlinks invalidate independently private regular file; directory link counts are not this predicate.",
+        "preserve": [
+          "linked object unchanged"
+        ],
+        "forbid": [
+          "truncate/create-through-alias"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-13",
+      "native_platforms": [
+        "windows",
+        "linux"
+      ],
+      "acceptance": "A2",
+      "scenario": "Unrelated source and output names resolve same object",
+      "synthetic_inputs": {
+        "path_strings_equal": false,
+        "held_ids_equal": true
+      },
+      "expected": {
+        "result": "deny",
+        "reason": "Different lexical paths do not establish separate objects",
+        "preserve": [
+          "source bytes"
+        ],
+        "forbid": [
+          "path-only inequality acceptance"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-14",
+      "native_platforms": [
+        "windows"
+      ],
+      "acceptance": "A2",
+      "scenario": "Junction/reparse escapes authorized root",
+      "synthetic_inputs": {
+        "authorized_root": "C:/synthetic/root",
+        "resolved_target": "C:/synthetic/outside",
+        "component_reparse": true
+      },
+      "expected": {
+        "result": "deny",
+        "reason": "Root escape or unsupported reparse traversal",
+        "preserve": [
+          "no outside reads/writes"
+        ],
+        "forbid": [
+          "follow then assert path prefix"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-15",
+      "native_platforms": [
+        "linux"
+      ],
+      "acceptance": "A2",
+      "scenario": "Symlink escape or cycle",
+      "synthetic_inputs": {
+        "variants": [
+          "symlink to outside root",
+          "cyclic symlinks"
+        ],
+        "root_containment": "not proven"
+      },
+      "expected": {
+        "result": "deny",
+        "reason": "Containment/cycle defense fails closed",
+        "preserve": [
+          "outside objects untouched"
+        ],
+        "forbid": [
+          "infinite traversal"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-16",
+      "native_platforms": [
+        "windows",
+        "linux"
+      ],
+      "acceptance": "A2",
+      "scenario": "In-root link traversal policy not admitted",
+      "synthetic_inputs": {
+        "component_link": true,
+        "target_looks_inside": true,
+        "handle_pinning_and_explicit_link_policy": "absent"
+      },
+      "expected": {
+        "result": "refuse",
+        "reason": "Do not universal-allow links from apparent containment",
+        "preserve": [
+          "unresolved support explicit"
+        ],
+        "forbid": [
+          "inventing safe traversal proof"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-17",
+      "native_platforms": [
+        "windows"
+      ],
+      "acceptance": "A2",
+      "scenario": "Shortname same-object alias",
+      "synthetic_inputs": {
+        "long_name": "C:/synthetic/LongName/data",
+        "short_name": "C:/synthetic/LONGNA~1/data",
+        "held_volume_file_ids": "equal",
+        "roles": [
+          "source",
+          "output"
+        ]
+      },
+      "expected": {
+        "result": "deny",
+        "reason": "Shortname spelling must not bypass alias protection",
+        "preserve": [
+          "source unchanged"
+        ],
+        "forbid": []
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-18",
+      "native_platforms": [
+        "windows"
+      ],
+      "acceptance": "A2",
+      "scenario": "UNC/device/alternate stream without explicit admission",
+      "synthetic_inputs": {
+        "variants": [
+          "UNC share or verbatim UNC without admission",
+          "Win32 device namespace",
+          "GLOBALROOT",
+          "device object",
+          "volume-GUID namespace without admission",
+          "mapped remote volume"
+        ],
+        "local_drive_verbatim_prefix": "not a device rejection by syntax alone; evaluated T24-20",
+        "extra_semantics_admitted": false,
+        "additional_variant": "alternate data stream target without explicit admission"
+      },
+      "expected": {
+        "result": "refuse",
+        "reason": "Unadmitted remote/device/stream/volume semantics refuse. Local drive verbatim file prefix is valid only after supported-volume/containment identity checks.",
+        "preserve": [
+          "normal local private state unchanged"
+        ],
+        "forbid": [
+          "Treat all verbatim paths as devices",
+          "Accept mapped network volume because drive letter looks local"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-19",
+      "native_platforms": [
+        "windows"
+      ],
+      "acceptance": "A2",
+      "scenario": "Case-sensitive directory identity",
+      "synthetic_inputs": {
+        "directory_case_sensitive": true,
+        "entries": [
+          "a",
+          "A"
+        ],
+        "held_file_ids": "distinct",
+        "both_under_held_authorized_root": true,
+        "other_private_checks": "verified"
+      },
+      "expected": {
+        "result": "allow",
+        "reason": "Distinct proven objects stay distinct; no lowercase identity collapse",
+        "preserve": [
+          "exact native spelling/identity"
+        ],
+        "forbid": [
+          "lowercase-prefix containment"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-20",
+      "native_platforms": [
+        "windows"
+      ],
+      "acceptance": "A2",
+      "scenario": "Long UTF16/nonASCII legal path",
+      "synthetic_inputs": {
+        "native_path": "legal long Unicode path including local-drive verbatim prefix",
+        "conversion": "lossless",
+        "filesystem_profile": "admitted local NTFS",
+        "identity_containment_permissions": "verified"
+      },
+      "expected": {
+        "result": "allow",
+        "reason": "Local-drive verbatim file path can preserve long native names; distinct from device/GLOBALROOT/UNC namespaces.",
+        "preserve": [
+          "Lossless path and held identity"
+        ],
+        "forbid": [
+          "Lossy character replacement",
+          "Universal unsupported-filesystem identity claim"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-21",
+      "native_platforms": [
+        "windows",
+        "linux"
+      ],
+      "acceptance": "A2",
+      "scenario": "Concurrent path replacement during containment/open",
+      "synthetic_inputs": {
+        "before_id": "authorized inside root",
+        "after_path_target": "foreign or outside",
+        "pinning_or_identity_recheck": "fails"
+      },
+      "expected": {
+        "result": "deny",
+        "reason": "Race cannot use stale path-only authorization",
+        "preserve": [
+          "source/outside objects unchanged"
+        ],
+        "forbid": [
+          "open new target under old proof"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-22",
+      "native_platforms": [
+        "windows",
+        "linux"
+      ],
+      "acceptance": "A2",
+      "scenario": "Untrusted replaceable ancestor",
+      "synthetic_inputs": {
+        "leaf_permissions": "private",
+        "ancestor_replacement_rights": "foreign DELETE on component, FILE_DELETE_CHILD on parent, WRITE_DAC/WRITE_OWNER, or untrusted owner; Linux untrusted replacement-capable owner or writable parent without adequate sticky/pinned protection",
+        "root_handle_pinning_proof": "absent",
+        "shared_TEMP_examples": [
+          "C:/Windows/Temp",
+          "C:/Temp",
+          "nonexclusive /tmp"
+        ],
+        "per_user_TEMP": "assess actual ancestry; not rejected merely for Temp name"
+      },
+      "expected": {
+        "result": "refuse",
+        "reason": "Replacement-capable untrusted ancestry without proof refuses. Read/create-child rights alone are not replacement rights.",
+        "preserve": [
+          "No private object published under unverified ancestry"
+        ],
+        "forbid": [
+          "Blanket per-user TEMP refusal",
+          "Blanket acceptance because leaf DACL private",
+          "Every ancestor must have private ACL"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-23",
+      "native_platforms": [
+        "windows",
+        "linux"
+      ],
+      "acceptance": "A2",
+      "scenario": "Interprocess lock contention",
+      "synthetic_inputs": {
+        "same_private_lock_identity": true,
+        "processA_holds_exclusive": true,
+        "processB_attempts": true
+      },
+      "expected": {
+        "result": "refuse",
+        "reason": "Second writer cannot concurrently acquire exclusive lock",
+        "preserve": [
+          "first holder ownership",
+          "DB bytes"
+        ],
+        "forbid": [
+          "steal/delete lock to proceed"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-24",
+      "native_platforms": [
+        "windows",
+        "linux"
+      ],
+      "acceptance": "A2",
+      "scenario": "Lock holder exits/crashes",
+      "synthetic_inputs": {
+        "previous_process_exit": "unknown/not required",
+        "native_exclusive_lock_acquisition": "succeeded",
+        "held_lock_identity": "current canonical private lock file",
+        "writer_protocol": "every write requires held exclusive lock; no inherited lock handle"
+      },
+      "expected": {
+        "result": "allow",
+        "reason": "Successful native lock acquisition proves no conflicting held lock, not prior process death. Begin only with current identity/protocol checks; historical custody remains separate.",
+        "preserve": [
+          "Existing state/history",
+          "No claim previous process terminated"
+        ],
+        "forbid": [
+          "Delete DB or reset custody",
+          "Infer process death from lock acquisition"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-25",
+      "native_platforms": [
+        "windows",
+        "linux"
+      ],
+      "acceptance": "A2",
+      "scenario": "Lock path aliases source/key/output",
+      "synthetic_inputs": {
+        "lock_handle_identity_matches": [
+          "source",
+          "key",
+          "output",
+          "pointer/manifest",
+          "staging"
+        ]
+      },
+      "expected": {
+        "result": "deny",
+        "reason": "Lock alias defense covers every protected role before locking.",
+        "preserve": [
+          "all original bytes"
+        ],
+        "forbid": [
+          "create/truncate source as lockfile"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-26",
+      "native_platforms": [
+        "windows",
+        "linux"
+      ],
+      "acceptance": "A3",
+      "scenario": "Closed consistent snapshot and regular pointer promotion",
+      "synthetic_inputs": {
+        "old_selection": "v3 immutable private directory",
+        "new_selection": "verified immutable private directory",
+        "main_WAL": "consistent verified snapshot",
+        "owned_writers_stopped": true,
+        "Dendro_handles_closed": true,
+        "pointer_kind": "regular manifest file",
+        "pointer_and_stage_same_volume": true
+      },
+      "expected": {
+        "result": "allow",
+        "reason": "Atomic same-volume regular-file manifest replacement selects verified target",
+        "preserve": [
+          "old snapshot retained",
+          "pointer references exact directory identity/digest"
+        ],
+        "forbid": [
+          "directory/junction replacement as pointer",
+          "old binary reading schema4"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-27",
+      "native_platforms": [
+        "windows"
+      ],
+      "acceptance": "A3",
+      "scenario": "Open-handle sharing violation",
+      "synthetic_inputs": {
+        "regular_pointer_replace": "transient sharing violation",
+        "retry_budget": "finite admitted bound",
+        "after_budget": "still sharing violation",
+        "new_snapshot": "verified"
+      },
+      "expected": {
+        "result": "refuse",
+        "reason": "Bounded retry permitted; persistent sharing failure keeps old pointer and refuses without deleting live state.",
+        "preserve": [
+          "old manifest bytes and DB",
+          "private staged candidate"
+        ],
+        "forbid": [
+          "delete old pointer/liveDB then retry rename"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-28",
+      "native_platforms": [
+        "windows",
+        "linux"
+      ],
+      "acceptance": "A3",
+      "scenario": "Directory/junction/symlink pointer object",
+      "synthetic_inputs": {
+        "pointer_kind": [
+          "directory",
+          "junction",
+          "symlink"
+        ]
+      },
+      "expected": {
+        "result": "deny",
+        "reason": "Consumer pointer must be regular manifest file",
+        "preserve": [
+          "existing selection"
+        ],
+        "forbid": [
+          "platform-specific directory replace shortcut"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-29",
+      "native_platforms": [
+        "windows",
+        "linux"
+      ],
+      "acceptance": "A3",
+      "scenario": "Crossvolume closed immutable staging",
+      "synthetic_inputs": {
+        "source_DB": "closed consistent private immutable snapshot",
+        "destination_copy": "complete identity/digest/integrity/private permissions verified",
+        "pointer": "regular file on destination volume",
+        "source_to_destination_same_volume": false
+      },
+      "expected": {
+        "result": "allow",
+        "reason": "Copy immutable snapshot first; replace destination-local pointer only",
+        "preserve": [
+          "old source and rollback snapshot"
+        ],
+        "forbid": [
+          "crossvolume liveDB rename/copy-as-atomic-swap"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-30",
+      "native_platforms": [
+        "windows",
+        "linux"
+      ],
+      "acceptance": "A3",
+      "scenario": "Live DB/WAL copied without coherent snapshot",
+      "synthetic_inputs": {
+        "writer_active": true,
+        "main_WAL_consistency_receipt": false,
+        "destination_copy_bytes": "present"
+      },
+      "expected": {
+        "result": "refuse",
+        "reason": "Byte copy is not database snapshot proof",
+        "preserve": [
+          "old pointer",
+          "source SHM and data unchanged"
+        ],
+        "forbid": [
+          "accept matching file sizes as consistency"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-31",
+      "native_platforms": [
+        "windows",
+        "linux"
+      ],
+      "acceptance": "A3",
+      "scenario": "Crash/cancellation before pointer replacement",
+      "synthetic_inputs": {
+        "destination_copy": "partial or unverified",
+        "old_pointer": "complete regular manifest",
+        "stop_kind": "hard crash before promotion",
+        "recovery_scan": "next start"
+      },
+      "expected": {
+        "result": "refuse",
+        "reason": "Old manifest remains selected; orphan/incomplete-stage receipt is produced by recovery scan on next start, not at crash time.",
+        "preserve": [
+          "Old pointer/DB",
+          "Private orphan stage until authorized disposition"
+        ],
+        "forbid": [
+          "Expect crashed process to write receipt",
+          "Publish unverified staging"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-32",
+      "native_platforms": [
+        "windows",
+        "linux"
+      ],
+      "acceptance": "A3",
+      "scenario": "Atomic replace crash boundary",
+      "synthetic_inputs": {
+        "verified_snapshot": true,
+        "new_manifest_contents": "length/digest checked and durable before replace",
+        "replacement": "single admitted same-volume atomic regular-file primitive",
+        "directory_durability": "performed where method requires including Linux directory entry",
+        "injected_stop": "native replace/crash boundary"
+      },
+      "expected": {
+        "result": "allow",
+        "reason": "Recovery accepts only old or new complete self-validating manifest; torn/zero-length/missing unverified selection explicitly refuses. No universal power-loss guarantee.",
+        "preserve": [
+          "Complete validated selected snapshot or explicit recovery hold"
+        ],
+        "forbid": [
+          "Torn manifest acceptance",
+          "Multi-step delete/rename called atomic",
+          "Assume write syscall implies durable content"
+        ],
+        "invalid_manifest_result": "refuse"
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-33",
+      "native_platforms": [
+        "windows",
+        "linux"
+      ],
+      "acceptance": "A3",
+      "scenario": "Consistent source snapshot reader cannot mutate source",
+      "synthetic_inputs": {
+        "source_engine": "SQLite WAL",
+        "existing_WAL_SHM": "present",
+        "coherent_read_protocol": "admitted",
+        "source_open": "read-only application data",
+        "protocol_SHM_lock_readmark_activity": "explicitly authorized",
+        "private_destination": "verified"
+      },
+      "expected": {
+        "result": "allow",
+        "reason": "SQLite protocol lock/read-mark activity in existing SHM is distinct from forbidden application-data mutations. No new source sidecars/checkpoint/DDL/journal mode writes.",
+        "preserve": [
+          "Source application data/main/WAL contents and permissions",
+          "Producer protocol consistency"
+        ],
+        "forbid": [
+          "Create missing producer WAL/SHM",
+          "Checkpoint/WAL truncate/DDL/journal mode change",
+          "Claim SHM bytes always unchanged"
+        ],
+        "variants": {
+          "source_OS_write_denied": "byte-level source preservation applies; use only a compatible admitted coherent read/snapshot method or refuse",
+          "DuckDB_active_external_writer": "refuse live cross-process read without supported coherent access; do not blindcopy"
+        }
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-34",
+      "native_platforms": [
+        "windows",
+        "linux"
+      ],
+      "acceptance": "A3",
+      "scenario": "Repeated snapshot verification failure",
+      "synthetic_inputs": {
+        "source_changes_during_copy": true,
+        "bounded_retry_budget_exhausted": true
+      },
+      "expected": {
+        "result": "refuse",
+        "reason": "Finite failure report, never indefinite copy loop",
+        "preserve": [
+          "old selection",
+          "no source mutations"
+        ],
+        "forbid": [
+          "publish last unverified attempt"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-35",
+      "native_platforms": [
+        "windows",
+        "linux"
+      ],
+      "acceptance": "A1",
+      "scenario": "Graceful cancellation of owned work",
+      "synthetic_inputs": {
+        "operation": "owned worker doing staging I/O",
+        "cancel_requested": true,
+        "publication_not_started": true,
+        "owned_worker_completion": "confirmed"
+      },
+      "expected": {
+        "result": "cancelled",
+        "reason": "Cancellation ends bounded work and prevents publication",
+        "preserve": [
+          "Old pointer/source application data",
+          "Graceful cancellation private-stage receipt",
+          "Locks/owned handles released after operation confirms cancellation"
+        ],
+        "forbid": [
+          "Require inline receipt after hard crash",
+          "Detached writer publishes after cancel",
+          "Terminate unrelated process"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-36",
+      "native_platforms": [
+        "windows",
+        "linux"
+      ],
+      "acceptance": "A1",
+      "scenario": "Cancel outcome unknown",
+      "synthetic_inputs": {
+        "cancel_requested": true,
+        "lock_still_held_or_cancel_in_flight": true,
+        "writer_protocol_bound_to_same_held_lock": "not yet revalidated",
+        "termination_confirmed": false
+      },
+      "expected": {
+        "result": "refuse",
+        "reason": "Unknown cancellation/held lock cannot transfer active writer role. If native lock later acquired and protocol/identity verified, T24-24 permits safe new lock holder without claiming old process death.",
+        "preserve": [
+          "current custody/hold",
+          "old selection"
+        ],
+        "forbid": [
+          "heartbeat silence equals termination",
+          "immediate replacement writer"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-37",
+      "native_platforms": [
+        "windows",
+        "linux"
+      ],
+      "acceptance": "A1",
+      "scenario": "Foreign process cancel target",
+      "synthetic_inputs": {
+        "process_owned_by_this_operation": false,
+        "explicit_termination_authority": false
+      },
+      "expected": {
+        "result": "deny",
+        "reason": "No authority to terminate unrelated process",
+        "preserve": [
+          "foreign process untouched"
+        ],
+        "forbid": [
+          "kill by reused PID"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-38",
+      "native_platforms": [
+        "windows"
+      ],
+      "acceptance": "A1",
+      "scenario": "Native root discovery without HOME",
+      "synthetic_inputs": {
+        "HOME": "absent or foreign GitBash/MSYS home",
+        "native_local_application_data_root": "available absolute local Windows profile path",
+        "roaming_or_redirected_UNC": "not this scenario; T24-18 refuses absent admission",
+        "root_private_validation": "verified",
+        "explicit_override": null
+      },
+      "expected": {
+        "result": "allow",
+        "reason": "Native verified local application-data root wins over absent/foreign HOME; explicit override has separate authorization.",
+        "preserve": [
+          "native path/provenance"
+        ],
+        "forbid": [
+          "Fallback current directory",
+          "HOME from foreign tool namespace overrides native root",
+          "WSL invocation for discovery"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-39",
+      "native_platforms": [
+        "linux"
+      ],
+      "acceptance": "A1",
+      "scenario": "Native Linux default/explicit root",
+      "synthetic_inputs": {
+        "native_user_or_appdata_root": "available absolute Linux path",
+        "explicit_override": "optional authorized path resolved and contained",
+        "private_validation": "verified"
+      },
+      "expected": {
+        "result": "allow",
+        "reason": "Use native admitted root/override after validation",
+        "preserve": [
+          "exact resolved root"
+        ],
+        "forbid": [
+          "hidden global package/data fallback"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-40",
+      "native_platforms": [
+        "windows",
+        "linux"
+      ],
+      "acceptance": "A1",
+      "scenario": "No trustworthy default root",
+      "synthetic_inputs": {
+        "native_root": "unavailable/relative/unvalidated",
+        "explicit_authorized_override": null
+      },
+      "expected": {
+        "result": "refuse",
+        "reason": "Missing user root cannot silently become dot",
+        "preserve": [
+          "no files created in cwd"
+        ],
+        "forbid": [
+          "HOME fallback dot"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-41",
+      "native_platforms": [
+        "windows",
+        "linux"
+      ],
+      "acceptance": "A1",
+      "scenario": "Crosscompile/WSL-only proof",
+      "synthetic_inputs": {
+        "native_windows_execution": false,
+        "native_linux_execution": true,
+        "Windows_artifact": "crosscompiled or WSL-hosted only",
+        "privileged_denial_tests": "root/elevated process may bypass OS denial"
+      },
+      "expected": {
+        "result": "refuse",
+        "reason": "Native lane not satisfied by crosscompile/WSL. Privileged runs can validate policy-checker refusal but cannot establish actual unprivileged OS access denial.",
+        "preserve": [
+          "Separate policy-check result and physical denial evidence"
+        ],
+        "forbid": [
+          "Claim Windows native acceptance",
+          "Count privileged bypass as OS denial proof"
+        ],
+        "privileged_OS_denial_evidence": "blocked/not_run unless actual unprivileged isolated principal exercised"
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-42",
+      "native_platforms": [
+        "windows",
+        "linux"
+      ],
+      "acceptance": "A1",
+      "scenario": "Core artifact handoff with final native receipts incomplete",
+      "synthetic_inputs": {
+        "reviewed_interface_digest": "present",
+        "available_Windows_native_receipt": "present",
+        "Linux_native_receipt": "pending",
+        "target_task": "local Windows storage/adapter construction",
+        "single_writer_handoff": "recorded"
+      },
+      "expected": {
+        "result": "allow",
+        "reason": "Reviewed partial artifact permits scoped construction only",
+        "preserve": [
+          "T24/G02 native Linux acceptance hold"
+        ],
+        "forbid": [
+          "mark full T24 accepted",
+          "drop Linux release gate"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic allow/deny/refuse contract independent of builder API/error wording."
+    },
+    {
+      "id": "T24-43",
+      "native_platforms": [
+        "windows"
+      ],
+      "acceptance": "A2",
+      "scenario": "Admitted trusted administrator/SYSTEM owner role",
+      "synthetic_inputs": {
+        "owner_sid": [
+          "current token user",
+          "LocalSystem",
+          "built-in Administrators"
+        ],
+        "effective_token_role": "actually verified corresponding ordinary/admin/SYSTEM role",
+        "configured_trust_policy": "explicit host-admin trust",
+        "private_allow_aces": "only trusted SIDs",
+        "held_owner_control_readback": "verified"
+      },
+      "expected": {
+        "result": "allow",
+        "reason": "Trust is concrete owner-role policy matched by SID, not ignoring foreign ownership.",
+        "preserve": [],
+        "forbid": [
+          "Trust arbitrary foreign owner",
+          "Grant elevation to make test pass",
+          "Claim resistance to trusted host admin"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic contract, API wording independent"
+    },
+    {
+      "id": "T24-44",
+      "native_platforms": [
+        "windows"
+      ],
+      "acceptance": "A2",
+      "scenario": "Standard profile ancestry and per-user TEMP",
+      "synthetic_inputs": {
+        "ancestors": [
+          "local disk root where Users create directories",
+          "Users parent readable",
+          "owned profile",
+          "LocalAppData",
+          "optional per-user Temp"
+        ],
+        "untrusted_replacement_rights": false,
+        "admitted_root_identity": "held/pinned",
+        "private_leaf_policy": "verified"
+      },
+      "expected": {
+        "result": "allow",
+        "reason": "Read/create-child ancestor rights alone do not replace established pinned private root.",
+        "preserve": [],
+        "forbid": [
+          "All ancestor ACLs private",
+          "Allow untrusted delete/writeDAC/writeOwner replacement"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic contract, API wording independent"
+    },
+    {
+      "id": "T24-45",
+      "native_platforms": [
+        "linux"
+      ],
+      "acceptance": "A2",
+      "scenario": "Normal root-owned ancestry and exclusive sticky-temp root",
+      "synthetic_inputs": {
+        "ordinary_variant": [
+          "root0755",
+          "home-parent0755",
+          "user-home0755 or0750",
+          "private child0700"
+        ],
+        "sticky_temp_variant": "exclusive child0700 with verified owner and held fd under sticky /tmp",
+        "admitted_ancestry_policy": "pinned and replacement protection verified"
+      },
+      "expected": {
+        "result": "allow",
+        "reason": "Nonprivate readable ancestors are legitimate; private root ownership and replacement protection must be proved.",
+        "preserve": [],
+        "forbid": [
+          "Universal /tmp permission",
+          "Foreign-owned private leaf",
+          "Treat read access as replacement authority"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic contract, API wording independent"
+    },
+    {
+      "id": "T24-46",
+      "native_platforms": [
+        "windows",
+        "linux"
+      ],
+      "acceptance": "A2",
+      "scenario": "Link above authorized root",
+      "synthetic_inputs": {
+        "ancestor_link": "exists above selected root",
+        "explicit_link_policy": "admitted",
+        "resolution": "once at admission",
+        "resolved_root": "authorized verified native identity",
+        "root_and_required_ancestry_pinning": "proved"
+      },
+      "expected": {
+        "result": "allow",
+        "reason": "Resolve/pin only under admitted policy; absent policy/proof refuses rather than universal allowance.",
+        "preserve": [],
+        "forbid": [
+          "Follow arbitrary ancestor links on every reopen",
+          "Use old lexical path proof after replacement"
+        ],
+        "without_policy_or_pinning": "refuse"
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic contract, API wording independent"
+    },
+    {
+      "id": "T24-47",
+      "native_platforms": [
+        "windows",
+        "linux"
+      ],
+      "acceptance": "A3",
+      "scenario": "Library-created sidecar/spill privacy",
+      "synthetic_inputs": {
+        "library_reopens_by_path": true,
+        "DB_WAL_journal_SHM_tmp": "inside pinned private retained root",
+        "owner_identity": "verified against declared owner-role policy",
+        "identity_recheck_after_open": true,
+        "effective_foreign_access": false,
+        "declared_leaf_mode_policy": "explicit; owner-mode-strict OR admitted effective-private-parent library policy",
+        "library_temp_directory": "inside private root",
+        "library_file_mode0644_variant": "allowed only if declared library policy and effective-private-parent guarantees actually hold"
+      },
+      "expected": {
+        "result": "allow",
+        "reason": "Safe private parent, library configuration and verified sidecars may establish privacy without mutating process-global umask.",
+        "preserve": [],
+        "forbid": [
+          "Process-global umask mutation in threaded runtime",
+          "Temp/spill or sidecar outside private root",
+          "Ignore violated declared mode policy",
+          "Change source sidecar permissions"
+        ],
+        "unsafe_sidecar_or_outside_temp": "deny/refuse affected operation, no silent fallback"
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic contract, API wording independent"
+    },
+    {
+      "id": "T24-48",
+      "native_platforms": [
+        "windows",
+        "linux"
+      ],
+      "acceptance": "A2",
+      "scenario": "Native lock ownership/inheritance/unlink semantics",
+      "synthetic_inputs": {
+        "variants": [
+          "same-process second acquisition",
+          "unrelated fd to same file closes",
+          "child handle inheritance",
+          "lockfile unlink/recreate identity race"
+        ],
+        "writer_protocol": "one exclusive holder per native file identity",
+        "lock_handle": "non-inheritable"
+      },
+      "expected": {
+        "result": "refuse",
+        "reason": "Second same-process ownership refuses; unrelated close must not drop lock; no inherited lock; no unlink/recreate divergent holders.",
+        "preserve": [
+          "One lock authority and stable canonical held identity"
+        ],
+        "forbid": [
+          "Assume all POSIX flock/fcntl APIs share semantics",
+          "Unlink lockfile to release",
+          "Two holders on different recreated inodes"
+        ],
+        "variant_outcomes": {
+          "same_process_second_acquire": "refuse",
+          "close_unrelated_fd": "first holder remains effective",
+          "child_inheritance": "disabled or explicitly closed before independent writer",
+          "unlinked_or_replaced_path": "refuse new holder until canonical identity reconciled"
+        }
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic contract, API wording independent"
+    },
+    {
+      "id": "T24-49",
+      "native_platforms": [
+        "windows"
+      ],
+      "acceptance": "A2",
+      "scenario": "Native special names and volume type",
+      "synthetic_inputs": {
+        "variants": [
+          "NUL/CON/COM1.txt",
+          "trailing dot/space alias",
+          "mapped network drive",
+          "subst local drive"
+        ],
+        "native_volume_type": "must be checked not inferred from letter",
+        "extra_namespace_policy": "not admitted"
+      },
+      "expected": {
+        "result": "refuse",
+        "reason": "Reserved/normalization aliases and unadmitted remote volumes refuse; subst may proceed only under verified same supported local handle identity.",
+        "preserve": [],
+        "forbid": [
+          "Drive letter proves local volume",
+          "Lossy stripping of trailing chars"
+        ],
+        "verified_local_subst_under_policy": "allow after native identity/containment/permission proof"
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic contract, API wording independent"
+    },
+    {
+      "id": "T24-50",
+      "native_platforms": [
+        "windows",
+        "linux"
+      ],
+      "acceptance": "A2",
+      "scenario": "Non-roundtrip native names",
+      "synthetic_inputs": {
+        "Windows_variant": "unpaired UTF16 surrogate",
+        "Linux_variant": "nonUTF8 native path bytes",
+        "persisted_identity": "native lossless representation or explicit unsupported"
+      },
+      "expected": {
+        "result": "refuse",
+        "reason": "If lossless representation/support absent, refuse; supported lossless native handling may proceed under same security checks.",
+        "preserve": [],
+        "forbid": [
+          "Replacement characters in persisted path identity",
+          "Silent dropped name bytes"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic contract, API wording independent"
+    },
+    {
+      "id": "T24-51",
+      "native_platforms": [
+        "linux"
+      ],
+      "acceptance": "A1",
+      "scenario": "Privileged default root versus foreign HOME",
+      "synthetic_inputs": {
+        "effective_uid": 0,
+        "HOME": "another user home",
+        "explicit_authorized_override": null
+      },
+      "expected": {
+        "result": "refuse",
+        "reason": "Do not create root-owned default state in foreign HOME; actual root own /root can be admitted under explicit privileged trust.",
+        "preserve": [],
+        "forbid": [
+          "Effective root silently adopts foreign environment home"
+        ],
+        "verified_root_own_home": "allow subject to declared root/admin trust and private checks"
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic contract, API wording independent"
+    },
+    {
+      "id": "T24-52",
+      "native_platforms": [
+        "windows",
+        "linux"
+      ],
+      "acceptance": "A3",
+      "scenario": "Retained referenced snapshot cleanup",
+      "synthetic_inputs": {
+        "candidate_snapshot_referenced_by": [
+          "current manifest",
+          "rollback manifest",
+          "live reader"
+        ],
+        "retention_authority": "no explicit decision to drop reference and dispose"
+      },
+      "expected": {
+        "result": "deny",
+        "reason": "Never delete referenced snapshots; keep retained data until actual authorized unreference/retention decision.",
+        "preserve": [
+          "Live/current/rollback referenced snapshots"
+        ],
+        "forbid": [
+          "Linux unlink-open-file capability implies cleanup authority",
+          "Automatic broad deletion on failed canary"
+        ]
+      },
+      "execution": "not_run",
+      "oracle_grain": "Semantic contract, API wording independent"
+    }
+  ],
+  "test_contract": "Grouped synthetic scenarios cover normative mechanisms without asserting implementation APIs. Instantiate actual native fixtures when admitted. Fixture inability/permission failure is blocked/not_run, never passing native proof. Error spelling may map to stable equivalent product codes; semantic allow/deny/refuse and preserved objects are binding.",
+  "no_new_authority": "No hostwide tracing, cross-user privilege grants, source ACL mutation or production data operations authorized by these fixtures.",
+  "final_acceptance": "Both native OS executions and relevant exact input/output/test receipts required; scoped partial artifact handoff is not full T24/product acceptance.",
+  "product_tests_run": false,
+  "review": {
+    "actual_session_id": "9043b2ce-135e-460c-a112-448e4931e6a5",
+    "provider": "anthropic",
+    "model": "claude-opus-5-5",
+    "report_sha256": "a29e760da25255b41a5691f92c992fa5f1a1023e301a4b787c6492ec1d245e1a",
+    "scope": "Independent oracle review; requested concrete corrections adjudicated, no native implementation/API approval."
+  },
+  "policy_profiles": {
+    "private_owner": "current user by default; verified corresponding SYSTEM/admin role only under explicit disclosed host-admin policy, never arbitrary foreign owner",
+    "private_ACE": "Mechanical trusted allow-list; narrow inherit-only owner placeholders only when trusted-owner substitution proven; deny ACE does not offset foreign allow",
+    "ancestor": "Assess replacement-capable rights and admitted root pinning, not private ACL on every ancestor",
+    "Linux_leaf": "Declared leaf mode policy + effective access under protected parent; library-managed files require verified privacy/configuration, no global runtime umask mutation",
+    "Windows_filesystem": "Baseline supported NTFS profile with stable held identity; ReFS requires full128bit file ID proof or explicit unadmitted-FS refusal",
+    "source_SQLite": "No application data/schema/checkpoint/journal-mode or missing sidecar creation; only admitted existing lock/readmark protocol activity, source-wide byte-preservation not falsely claimed",
+    "lock": "Acquire proves no conflicting held lock, never earlier process death; writer protocol/identity required; OS lock not invented historical custody",
+    "crash": "Inline receipt only graceful stop; hard-crash orphan receipt during next-start recovery"
+  }
+}

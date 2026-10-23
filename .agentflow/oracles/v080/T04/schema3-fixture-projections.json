@@ -1,0 +1,577 @@
+{
+  "schema": "dendro.schema3-fixture-recipe/v1",
+  "status": "review_ready_SQL_recipe_not_physical_DuckDB_fixture",
+  "sql_path": ".agentflow/oracles/v080/T04/schema3-fixture.sql",
+  "sql_sha256": "a3d489511393771f8991666012f0872db234f9844dbbdd0eafe405130f4b761b",
+  "key_recipe": {
+    "synthetic_only": true,
+    "bytes_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "key_id": "630dcd2966c4336691125448bbb25b4f",
+    "sidecar_encoding": "DNDK ASCII + little-endian u32 1 +32 ASCII key_id +32 test bytes, total72 bytes",
+    "key_bytes_sha256": "630dcd2966c4336691125448bbb25b4ff412a49c732db2c8abc1b8581bd710dd",
+    "owner_key_used": false
+  },
+  "projections": {
+    "dendro_meta": {
+      "columns": [
+        "schema_version",
+        "key_id"
+      ],
+      "rows": [
+        [
+          3,
+          "630dcd2966c4336691125448bbb25b4f"
+        ]
+      ],
+      "row_order": "compare multiset; each table has explicit full columns; source_key rows also unique",
+      "expected_row_count": 1
+    },
+    "source_files": {
+      "columns": [
+        "source_id",
+        "harness",
+        "display_path",
+        "generation",
+        "byte_offset",
+        "prefix_sha256",
+        "native_session"
+      ],
+      "rows": [
+        [
+          "src-A",
+          "codex",
+          "synthetic-source-A",
+          2,
+          512,
+          "1111111111111111111111111111111111111111111111111111111111111111",
+          "native-A"
+        ]
+      ],
+      "row_order": "compare multiset; each table has explicit full columns; source_key rows also unique",
+      "expected_row_count": 1
+    },
+    "codex_counters": {
+      "columns": [
+        "source_id",
+        "generation",
+        "input_tokens",
+        "cached_input_tokens",
+        "cache_write_input_tokens",
+        "output_tokens",
+        "reasoning_output_tokens"
+      ],
+      "rows": [
+        [
+          "src-A",
+          2,
+          100,
+          10,
+          0,
+          4,
+          0
+        ]
+      ],
+      "row_order": "compare multiset; each table has explicit full columns; source_key rows also unique",
+      "expected_row_count": 1
+    },
+    "usage_facts": {
+      "columns": [
+        "source_key",
+        "harness",
+        "native_session",
+        "message_id",
+        "ts",
+        "seq",
+        "input_uncached",
+        "output_tokens",
+        "cache_read",
+        "cache_write",
+        "reasoning",
+        "currency_total",
+        "generation",
+        "source_id",
+        "predecessor_source_key",
+        "predecessor_reason",
+        "prior_input_tokens",
+        "prior_cached_input_tokens",
+        "prior_cache_write_input_tokens",
+        "prior_output_tokens",
+        "prior_reasoning_output_tokens",
+        "model",
+        "effort"
+      ],
+      "rows": [
+        [
+          "usage-0",
+          "codex",
+          "native-A",
+          null,
+          null,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          null,
+          2,
+          "src-A",
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          "usage-1",
+          "codex",
+          "native-A",
+          "m1",
+          "2026-10-22 00:00:00",
+          1,
+          90,
+          4,
+          10,
+          0,
+          0,
+          0.0,
+          2,
+          "src-A",
+          "usage-0",
+          "counter_delta",
+          0,
+          0,
+          0,
+          0,
+          0,
+          null,
+          null
+        ],
+        [
+          "usage-2",
+          "codex",
+          "native-A",
+          "m2",
+          "2026-10-22 00:00:00",
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0.1,
+          2,
+          "src-A",
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        [
+          "usage-3",
+          "codex",
+          "native-A",
+          "m3",
+          "2026-10-22 00:00:00",
+          3,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1e-320,
+          2,
+          "src-A",
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ]
+      ],
+      "row_order": "compare multiset; each table has explicit full columns; source_key rows also unique",
+      "expected_row_count": 4
+    },
+    "tool_facts": {
+      "columns": [
+        "source_key",
+        "harness",
+        "native_session",
+        "ts",
+        "seq",
+        "tool_name",
+        "fingerprint",
+        "failed",
+        "structured_write",
+        "generation",
+        "source_id",
+        "category"
+      ],
+      "rows": [
+        [
+          "tool-A",
+          "codex",
+          "native-A",
+          "2026-10-22 00:00:00",
+          5,
+          "CommandExecution",
+          "synthetic-fingerprint",
+          null,
+          false,
+          2,
+          "src-A",
+          "other"
+        ]
+      ],
+      "row_order": "compare multiset; each table has explicit full columns; source_key rows also unique",
+      "expected_row_count": 1
+    },
+    "identity_facts": {
+      "columns": [
+        "source_key",
+        "harness",
+        "native_session",
+        "rig",
+        "seat",
+        "ts"
+      ],
+      "rows": [
+        [
+          "identity-A",
+          "codex",
+          "native-A",
+          "rig-A",
+          "seat-A",
+          null
+        ]
+      ],
+      "row_order": "compare multiset; each table has explicit full columns; source_key rows also unique",
+      "expected_row_count": 1
+    },
+    "activity_facts": {
+      "columns": [
+        "source_key",
+        "seat",
+        "ts",
+        "state",
+        "seq"
+      ],
+      "rows": [
+        [
+          "activity-A",
+          "seat-A",
+          "2026-10-22 00:00:00",
+          "working",
+          1
+        ]
+      ],
+      "row_order": "compare multiset; each table has explicit full columns; source_key rows also unique",
+      "expected_row_count": 1
+    },
+    "queue_facts": {
+      "columns": [
+        "source_key",
+        "transition_id",
+        "qitem_id",
+        "ts",
+        "state",
+        "source_seat",
+        "dest_seat",
+        "closure_reason",
+        "closure_target",
+        "chain_id",
+        "missions",
+        "is_recovery",
+        "recovery_reason",
+        "last_nudge_result",
+        "issue_tags",
+        "phase_tags",
+        "parent_qitem_id"
+      ],
+      "rows": [
+        [
+          "queue-A",
+          17,
+          "q17",
+          "2026-10-22 00:00:01",
+          "closed",
+          "seat-A",
+          "seat-B",
+          "completed",
+          null,
+          "chain-A",
+          "[\"mission-A\"]",
+          false,
+          null,
+          null,
+          "[]",
+          "[\"build\"]",
+          null
+        ]
+      ],
+      "row_order": "compare multiset; each table has explicit full columns; source_key rows also unique",
+      "expected_row_count": 1
+    },
+    "skill_facts": {
+      "columns": [
+        "source_key",
+        "seat",
+        "skill",
+        "invoked"
+      ],
+      "rows": [
+        [
+          "skill-A",
+          "seat-A",
+          "synthetic-skill",
+          false
+        ]
+      ],
+      "row_order": "compare multiset; each table has explicit full columns; source_key rows also unique",
+      "expected_row_count": 1
+    },
+    "seat_bounds": {
+      "columns": [
+        "seat",
+        "created_at",
+        "stopped_at"
+      ],
+      "rows": [
+        [
+          "seat-A",
+          "2026-10-22 00:00:00",
+          null
+        ]
+      ],
+      "row_order": "compare multiset; each table has explicit full columns; source_key rows also unique",
+      "expected_row_count": 1
+    },
+    "seat_roles": {
+      "columns": [
+        "seat",
+        "role",
+        "evidence"
+      ],
+      "rows": [
+        [
+          "seat-A",
+          "builder",
+          "synthetic-configured-role"
+        ]
+      ],
+      "row_order": "compare multiset; each table has explicit full columns; source_key rows also unique",
+      "expected_row_count": 1
+    },
+    "warnings": {
+      "columns": [
+        "path",
+        "line_no",
+        "reason"
+      ],
+      "rows": [
+        [
+          "synthetic-source-A",
+          null,
+          "synthetic-warning"
+        ]
+      ],
+      "row_order": "compare multiset; each table has explicit full columns; source_key rows also unique",
+      "expected_row_count": 1
+    },
+    "destination_snapshots": {
+      "columns": [
+        "source_key",
+        "qitem_id",
+        "destination",
+        "snapshot_cutoff",
+        "reroute_marked",
+        "missions"
+      ],
+      "rows": [
+        [
+          "destination-A",
+          "q17",
+          "seat-B",
+          "2026-10-22 00:00:01",
+          false,
+          "[\"mission-A\"]"
+        ]
+      ],
+      "row_order": "compare multiset; each table has explicit full columns; source_key rows also unique",
+      "expected_row_count": 1
+    },
+    "file_source_baselines": {
+      "columns": [
+        "source_id",
+        "generation",
+        "metadata_version",
+        "latest_association",
+        "latest_attempt_at",
+        "last_stable_observed_at",
+        "last_stable_type",
+        "last_stable_device",
+        "last_stable_inode",
+        "last_stable_size",
+        "last_stable_mtime_ns",
+        "association_reason"
+      ],
+      "rows": [
+        [
+          "src-A",
+          2,
+          1,
+          "stable",
+          "2026-10-22 00:00:01",
+          "2026-10-22 00:00:00",
+          "regular",
+          "7",
+          "19",
+          "512",
+          "1792627200000000000",
+          "synthetic-stable"
+        ]
+      ],
+      "row_order": "compare multiset; each table has explicit full columns; source_key rows also unique",
+      "expected_row_count": 1
+    },
+    "openrig_row_records": {
+      "columns": [
+        "source_id",
+        "generation",
+        "producing_revision",
+        "table_name",
+        "row_id",
+        "row_digest",
+        "row_state",
+        "source_key"
+      ],
+      "rows": [
+        [
+          "rig-source",
+          2,
+          "r2",
+          "queue_items",
+          "17",
+          "2222222222222222222222222222222222222222222222222222222222222222",
+          "present",
+          "queue-A"
+        ]
+      ],
+      "row_order": "compare multiset; each table has explicit full columns; source_key rows also unique",
+      "expected_row_count": 1
+    },
+    "mutable_source_disclosures": {
+      "columns": [
+        "qitem_id",
+        "seat",
+        "reason"
+      ],
+      "rows": [
+        [
+          "q17",
+          "seat-B",
+          "synthetic-destination-change"
+        ]
+      ],
+      "row_order": "compare multiset; each table has explicit full columns; source_key rows also unique",
+      "expected_row_count": 1
+    },
+    "dendro_semantic_state": {
+      "columns": [
+        "id",
+        "dirty"
+      ],
+      "rows": [
+        [
+          1,
+          true
+        ]
+      ],
+      "expected_row_count": 1,
+      "classification": "derived cache seed, can be rebuilt; not canonical historical evidence"
+    }
+  },
+  "canonical_expected_counts": {
+    "dendro_meta": 1,
+    "source_files": 1,
+    "codex_counters": 1,
+    "usage_facts": 4,
+    "tool_facts": 1,
+    "identity_facts": 1,
+    "activity_facts": 1,
+    "queue_facts": 1,
+    "skill_facts": 1,
+    "seat_bounds": 1,
+    "seat_roles": 1,
+    "warnings": 1,
+    "destination_snapshots": 1,
+    "file_source_baselines": 1,
+    "openrig_row_records": 1,
+    "mutable_source_disclosures": 1
+  },
+  "currency_precision_policy": {
+    "policy": "Retain legacy currency_total as stored DOUBLE in preserved legacy storage/compatibility projection; tag precision legacy_binary64_approximate. Do not silently cast/round to decimal, zero, NULL, or exact observed canonical currency. Missing currency unit cannot be invented. Legacy amount remains available as legacy evidence, excluded/refused where exact canonical money is required.",
+    "known_values": [
+      {
+        "source_key": "usage-0",
+        "kind": "missing",
+        "big_endian_ieee754_hex": null
+      },
+      {
+        "source_key": "usage-1",
+        "kind": "finite_binary64",
+        "big_endian_ieee754_hex": "0000000000000000"
+      },
+      {
+        "source_key": "usage-2",
+        "kind": "finite_binary64",
+        "big_endian_ieee754_hex": "3fb999999999999a"
+      },
+      {
+        "source_key": "usage-3",
+        "kind": "finite_binary64",
+        "big_endian_ieee754_hex": "00000000000007e8"
+      }
+    ],
+    "nonfinite_extension": {
+      "sql": "INSERT INTO usage_facts SELECT 'usage-nan', harness,native_session,message_id,ts,seq,input_uncached,output_tokens,cache_read,cache_write,reasoning,CAST('NaN' AS DOUBLE),generation,source_id,predecessor_source_key,predecessor_reason,prior_input_tokens,prior_cached_input_tokens,prior_cache_write_input_tokens,prior_output_tokens,prior_reasoning_output_tokens,model,effort FROM usage_facts WHERE source_key='usage-0';",
+      "expected": "NaN stays retained legacy nonfinite, never canonical currency/0/NULL; no finite aggregate claims; actual engine NaN representation captured before migration, no promised universal NaN payload bit pattern",
+      "other_values": [
+        "positive infinity",
+        "negative infinity",
+        "negative zero"
+      ],
+      "engine_receipt_required": "DuckDB-native classification, original finite bits and negative-zero sign comparison; SQLite cannot verify these semantics",
+      "sql_path": "schema3-currency-extension.sql",
+      "sql_sha256": "cdc5a1837fb9fc384cbef4245d64595279e2b67b827902c0125c069b1a2d45c0"
+    }
+  },
+  "validation": {
+    "actual_source_DDL_extracted": true,
+    "all_insert_columns_equal_actual_table_columns": true,
+    "sqlite_in_memory_recipe_and_rows": "passed syntax/column/value/projection consistency only; not DuckDB or native platform proof",
+    "duckdb_python_available": false,
+    "global_install_or_full_baseline_compile": false,
+    "physical_fixture_created": false,
+    "actual_DuckDB_recipe_execution_required": true
+  },
+  "source_digests": {
+    "crates/dendro-core/src/storage.rs": "40ae2fca5eba94e9987763f6683eafdad30ea5d33ce52fb30b1411d8dcb4632a",
+    "crates/dendro-core/src/openrig_provenance.rs": "c3c25bca4116e692c87504369174a379303990cc2c66c0edcc833c4537413679",
+    "crates/dendro-core/src/privacy.rs": "a7890f41c6e31bf646765c9b5df099a93d9b29ce2ffee9a42b1537edf6ed250e",
+    "crates/dendro-core/src/output.rs": "62f4e49737dbeb138d1dc399b3a3627b22d06c085a504fdbfc01727dbe17e667"
+  }
+}

@@ -1,0 +1,23 @@
+[package]
+name = "dendro-windows-private-io"
+version.workspace = true
+edition = "2021"
+rust-version = "1.98"
+publish = false
+
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+dendro-platform-policy = { path = "../dendro-platform-policy" }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "=0.61.2", features = ["Wdk_Storage_FileSystem", "Wdk_Foundation", "Win32_Security_Authorization", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Threading", "Win32_Foundation"] }
+windows-namespace-request-sys = "=0.2.1"
+win-custody = "=0.1.1"
+winapi-util = "=0.1.11"
+
+[target.'cfg(windows)'.dev-dependencies]
+bound-platform = "=0.2.1"
+
+

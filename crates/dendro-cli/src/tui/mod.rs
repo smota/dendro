@@ -116,8 +116,22 @@ pub enum WorkerEvent {
         to: String,
         mode: String,
     },
-    ReportReady(Arc<Value>),
-    TraceReady(String, Value),
+    ReportReady {
+        report: Arc<Value>,
+        request: Arc<dendro_core::presentation::ReadRequest>,
+        status: Value,
+        from: String,
+        to: String,
+        mode: String,
+    },
+    TraceReady {
+        metric_id: String,
+        trace: Value,
+        request: Arc<dendro_core::presentation::ReadRequest>,
+        rig: Option<String>,
+        from: String,
+        to: String,
+    },
     NaoAnswerReady {
         question: String,
         summary: String,
@@ -128,6 +142,7 @@ pub enum WorkerEvent {
 
 pub struct AppState {
     pub db: PathBuf,
+    read_request: Option<Arc<dendro_core::presentation::ReadRequest>>,
     pub rig: Option<String>,
     pub window: String,
     pub fixed_from: Option<String>,
@@ -176,6 +191,7 @@ impl AppState {
     ) -> Self {
         Self {
             db,
+            read_request: None,
             rig,
             window,
             fixed_from,
@@ -413,77 +429,117 @@ impl RigAggregate {
     }
 }
 
-/// RAII Guard ensuring raw mode and alternate screen are always restored on exit or panic.
-struct TerminalGuard;
+/// Restores the terminal on return, error, panic unwind, and cancellation.
+/// `process::exit` skips destructors, so callers restore before any exit that
+/// can run while this guard is armed. A failed alternate-screen switch restores
+/// raw mode before the error returns.
+struct TerminalGuard {
+    restored: bool,
+}
 
 impl TerminalGuard {
     fn enter() -> Result<Self> {
         enable_raw_mode()?;
-        execute!(io::stdout(), EnterAlternateScreen)?;
-        Ok(Self)
+        let mut guard = Self { restored: false };
+        if let Err(err) = execute!(io::stdout(), EnterAlternateScreen) {
+            guard.restore();
+            return Err(err.into());
+        }
+        Ok(guard)
+    }
+
+    fn restore(&mut self) {
+        if self.restored {
+            return;
+        }
+        self.restored = true;
+        let _ = disable_raw_mode();
+        let _ = execute!(io::stdout(), LeaveAlternateScreen);
     }
 }
 
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
-        let _ = disable_raw_mode();
-        let _ = execute!(io::stdout(), LeaveAlternateScreen);
+        self.restore();
     }
 }
 
 fn spawn_hydration(
     tx: mpsc::Sender<WorkerEvent>,
     db: PathBuf,
+    cached: Option<Arc<dendro_core::presentation::ReadRequest>>,
     rig: Option<String>,
     window: String,
     fixed_from: Option<String>,
     fixed_to: Option<String>,
 ) {
     tokio::task::spawn_blocking(move || {
-        let status = dendro_core::presentation::database_status(&db, rig.as_deref())
-            .unwrap_or_else(|_| serde_json::json!({"status": "unavailable"}));
-        let (from, to, mode) = dendro_core::presentation::resolve_window(
-            &db,
-            rig.as_deref(),
-            Some(window.as_str()),
-            fixed_from.as_deref(),
-            fixed_to.as_deref(),
-        )
-        .unwrap_or_else(|_| {
-            (
-                "2026-10-08T00:00:00Z".into(),
-                "2026-10-11T00:00:00Z".into(),
-                "fallback".into(),
-            )
-        });
-        let _ = tx.blocking_send(WorkerEvent::StatusReady {
-            status,
-            from: from.clone(),
-            to: to.clone(),
-            mode: mode.clone(),
-        });
-        if let Ok(mut rep) = dendro_core::report_json(&db, "decisions", rig.as_deref(), &from, &to)
-        {
-            rep["window_resolution"] = serde_json::json!(mode);
-            let _ = tx.blocking_send(WorkerEvent::ReportReady(Arc::new(rep)));
+        let result = (|| -> Result<()> {
+            let request = match cached {
+                Some(request) if request.is_current()? => request,
+                _ => Arc::new(dendro_core::presentation::ReadRequest::open(&db)?),
+            };
+            let status = request.status(rig.as_deref())?;
+            let (from, to, mode) = request.window(
+                rig.as_deref(),
+                Some(&window),
+                fixed_from.as_deref(),
+                fixed_to.as_deref(),
+            )?;
+            let mut report = dendro_core::pipeline::report_json_physical(
+                request.database(),
+                "decisions",
+                rig.as_deref(),
+                &from,
+                &to,
+            )?;
+            report["window_resolution"] = serde_json::json!(mode.clone());
+            let _ = tx.blocking_send(WorkerEvent::ReportReady {
+                report: Arc::new(report),
+                request,
+                status,
+                from,
+                to,
+                mode,
+            });
+            Ok(())
+        })();
+        if let Err(error) = result {
+            let _ = tx.blocking_send(WorkerEvent::StatusReady { status: serde_json::json!({"status":"unavailable", "error": dendro_core::redact(&error.to_string())}), from: String::new(), to: String::new(), mode: "unavailable".into() });
         }
     });
 }
 
 fn spawn_trace_fetch(
     tx: mpsc::Sender<WorkerEvent>,
-    db: PathBuf,
+    request: Option<Arc<dendro_core::presentation::ReadRequest>>,
     rig: Option<String>,
     from: String,
     to: String,
     metric_id: String,
 ) {
+    let Some(request) = request else {
+        return;
+    };
     if from.is_empty() || to.is_empty() {
         return;
     }
     tokio::task::spawn_blocking(move || {
-        if let Ok(tr) = dendro_core::trace_json(&db, &metric_id, rig.as_deref(), &from, &to) {
-            let _ = tx.blocking_send(WorkerEvent::TraceReady(metric_id, tr));
+        if let Ok(trace) = dendro_core::pipeline::trace_json_physical(
+            request.database(),
+            &metric_id,
+            rig.as_deref(),
+            &from,
+            &to,
+        ) {
+            let _ = tx.blocking_send(WorkerEvent::TraceReady {
+                metric_id,
+                trace,
+                request,
+                rig,
+                from,
+                to,
+            });
         }
     });
 }
@@ -618,34 +674,30 @@ pub async fn run_interactive_or_once(
 ) -> Result<()> {
     let win_str = window.unwrap_or_else(|| "all".into());
     if once || !io::stdin().is_terminal() || !io::stdout().is_terminal() {
-        let (f, t, mode) = tokio::task::spawn_blocking({
-            let db = db.clone();
-            let rig = rig.clone();
-            let win_str = win_str.clone();
-            let from = from.clone();
-            let to = to.clone();
-            move || -> Result<(String, String, String)> {
-                dendro_core::presentation::resolve_window(
-                    &db,
-                    rig.as_deref(),
-                    Some(win_str.as_str()),
-                    from.as_deref(),
-                    to.as_deref(),
-                )
-            }
-        })
-        .await??;
         let report = tokio::task::spawn_blocking(move || -> Result<Value> {
-            let mut r = dendro_core::report_json(&db, "decisions", rig.as_deref(), &f, &t)?;
-            r["window_resolution"] = serde_json::json!(mode);
-            Ok(r)
+            let request = dendro_core::presentation::ReadRequest::open(&db)?;
+            let (from, to, mode) = request.window(
+                rig.as_deref(),
+                Some(&win_str),
+                from.as_deref(),
+                to.as_deref(),
+            )?;
+            let mut report = dendro_core::pipeline::report_json_physical(
+                request.database(),
+                "decisions",
+                rig.as_deref(),
+                &from,
+                &to,
+            )?;
+            report["window_resolution"] = serde_json::json!(mode);
+            Ok(report)
         })
         .await??;
         dendro_core::presentation::terminal_ui(&report, &[], true)?;
         return Ok(());
     }
 
-    let _guard = TerminalGuard::enter()?;
+    let mut guard = TerminalGuard::enter()?;
     let backend = CrosstermBackend::new(io::stdout());
     let mut terminal = Terminal::new(backend)?;
     let theme = Theme::detect();
@@ -663,6 +715,7 @@ pub async fn run_interactive_or_once(
     spawn_hydration(
         worker_tx.clone(),
         state.db.clone(),
+        state.read_request.clone(),
         state.rig.clone(),
         state.window.clone(),
         state.fixed_from.clone(),
@@ -692,8 +745,7 @@ pub async fn run_interactive_or_once(
     let mut reader = EventStream::new();
     let mut tick = tokio::time::interval(Duration::from_millis(50));
     let mut last_frame = Instant::now();
-    let mut interrupt = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
-    let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+    let mut shutdown = crate::ShutdownEvents::new()?;
 
     loop {
         let elapsed = last_frame.elapsed();
@@ -708,8 +760,12 @@ pub async fn run_interactive_or_once(
         })?;
 
         tokio::select! {
-            _ = interrupt.recv() => break,
-            _ = terminate.recv() => break,
+            _cause = shutdown.next() => {
+                // Native console/signal event. Restore before the function
+                // returns; do not describe a Windows event as a Unix signal.
+                dendro_core::RUN_CANCEL.request();
+                break;
+            }
             _ = tick.tick() => {
                 state.tick_count = state.tick_count.wrapping_add(1);
             }
@@ -720,18 +776,29 @@ pub async fn run_interactive_or_once(
                         state.resolved_from = from;
                         state.resolved_to = to;
                         state.window_mode = Some(mode);
-                        state.loading_stage = Some("[2/2] Evaluating canonical decision metrics...".into());
+                        state.loading_stage = None;
+                        state.report = None;
+                        state.read_request = None;
+                        state.traces.clear();
                     }
-                    WorkerEvent::ReportReady(rep) => {
-                        state.report = Some(rep);
+                    WorkerEvent::ReportReady { report, request, status, from, to, mode } => {
+                        state.traces.clear();
+                        state.read_request = Some(request);
+                        state.report = Some(report);
+                        state.status = Some(status);
+                        state.resolved_from = from;
+                        state.resolved_to = to;
+                        state.window_mode = Some(mode);
                         state.loading_stage = None;
                         state.recompute_simulation();
                         if !theme.no_color {
                             effects.add_effect(fx::coalesce((250, Interpolation::SineOut)));
                         }
                     }
-                    WorkerEvent::TraceReady(metric_id, tr) => {
-                        state.traces.insert(metric_id, tr);
+                    WorkerEvent::TraceReady { metric_id, trace, request, rig, from, to } => {
+                        if state.read_request.as_ref().is_some_and(|current| Arc::ptr_eq(current, &request)) && state.rig == rig && state.resolved_from == from && state.resolved_to == to {
+                            state.traces.insert(metric_id, trace);
+                        }
                     }
                     WorkerEvent::NaoAnswerReady { question, summary, full_text } => {
                         state.nao_loading = false;
@@ -749,6 +816,7 @@ pub async fn run_interactive_or_once(
                         continue;
                     }
                     if handle_key_event(&mut state, key, &worker_tx, &mut effects, &theme) {
+                        dendro_core::RUN_CANCEL.request();
                         break;
                     }
                 }
@@ -756,6 +824,7 @@ pub async fn run_interactive_or_once(
         }
     }
 
+    guard.restore();
     Ok(())
 }
 
@@ -880,7 +949,7 @@ fn handle_key_event(
             {
                 spawn_trace_fetch(
                     worker_tx.clone(),
-                    state.db.clone(),
+                    state.read_request.clone(),
                     state.rig.clone(),
                     state.resolved_from.clone(),
                     state.resolved_to.clone(),
@@ -919,7 +988,7 @@ fn handle_key_event(
             if !state.traces.contains_key(&state.active_trace_metric) {
                 spawn_trace_fetch(
                     worker_tx.clone(),
-                    state.db.clone(),
+                    state.read_request.clone(),
                     state.rig.clone(),
                     state.resolved_from.clone(),
                     state.resolved_to.clone(),
@@ -939,7 +1008,7 @@ fn handle_key_event(
             if !state.traces.contains_key(m) {
                 spawn_trace_fetch(
                     worker_tx.clone(),
-                    state.db.clone(),
+                    state.read_request.clone(),
                     state.rig.clone(),
                     state.resolved_from.clone(),
                     state.resolved_to.clone(),
@@ -1022,6 +1091,7 @@ fn handle_key_event(
             spawn_hydration(
                 worker_tx.clone(),
                 state.db.clone(),
+                state.read_request.clone(),
                 state.rig.clone(),
                 state.window.clone(),
                 None,
@@ -1054,6 +1124,7 @@ fn handle_key_event(
                 spawn_hydration(
                     worker_tx.clone(),
                     state.db.clone(),
+                    state.read_request.clone(),
                     state.rig.clone(),
                     state.window.clone(),
                     state.fixed_from.clone(),

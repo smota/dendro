@@ -1,0 +1,1249 @@
+{
+  "schema": "dendro.oracle.expected-value-pack/v1",
+  "acceptanceState": "draft_pending_claude_review",
+  "frozen": false,
+  "vectors": [
+    {
+      "vectorID": "v080.dg.DOM.unknown-enum",
+      "pack": "domain",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "DOM",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "closedSets": {
+          "trustLabel": [
+            "verified_signature",
+            "authenticated_transport",
+            "unverified"
+          ],
+          "participantKind": [
+            "agent",
+            "human",
+            "service",
+            "unknown"
+          ],
+          "attemptResult": [
+            "succeeded",
+            "failed",
+            "cancelled",
+            "unknown"
+          ],
+          "bindingKind": [
+            "model",
+            "effort",
+            "harness",
+            "context",
+            "desired_config",
+            "observed_config"
+          ],
+          "messageDirection": [
+            "inbound",
+            "outbound",
+            "internal",
+            "unknown"
+          ],
+          "messageRole": [
+            "user",
+            "assistant",
+            "system",
+            "developer",
+            "tool",
+            "unknown"
+          ],
+          "modality": [
+            "text",
+            "image",
+            "audio",
+            "video",
+            "structured",
+            "unknown"
+          ],
+          "assignmentRole": [
+            "caller",
+            "executor",
+            "reviewer",
+            "observer",
+            "unknown"
+          ],
+          "workEdgeKind": [
+            "spawn",
+            "delegate_existing",
+            "handoff",
+            "return",
+            "join",
+            "retry",
+            "resume",
+            "dependency"
+          ],
+          "workEdgeStatus": [
+            "evidenced",
+            "conflict",
+            "absent",
+            "truncated"
+          ],
+          "capabilityKind": [
+            "primitive",
+            "command",
+            "skill",
+            "tool",
+            "hook",
+            "profile"
+          ],
+          "capabilityStage": [
+            "defined",
+            "available",
+            "loaded"
+          ],
+          "capabilityScope": [
+            "production",
+            "synthetic",
+            "unknown"
+          ],
+          "actionStatus": [
+            "attempted",
+            "succeeded",
+            "failed",
+            "unknown"
+          ],
+          "environmentKind": [
+            "host",
+            "vm",
+            "container",
+            "process_scope",
+            "remote"
+          ],
+          "locus": [
+            "harness_host",
+            "tool_server",
+            "effect_locus"
+          ],
+          "environmentObservationKind": [
+            "metadata",
+            "resource",
+            "process",
+            "syscall"
+          ],
+          "isolationDimension": [
+            "namespace",
+            "cgroup",
+            "filesystem",
+            "network",
+            "identity"
+          ],
+          "isolationStage": [
+            "declared",
+            "observed_configuration",
+            "verified_effective"
+          ],
+          "securityLayer": [
+            "policy",
+            "grant",
+            "approval",
+            "attempt",
+            "effective_authority",
+            "effect"
+          ],
+          "outcomeTransition": [
+            "completed",
+            "reviewed",
+            "accepted",
+            "rejected",
+            "merged",
+            "revoked",
+            "superseded"
+          ],
+          "coverageDiscovery": [
+            "present",
+            "absent",
+            "unauthorized",
+            "unknown"
+          ],
+          "coverageRead": [
+            "complete",
+            "partial",
+            "failed",
+            "not_attempted"
+          ],
+          "coverageProjection": [
+            "supported",
+            "unsupported_schema",
+            "recognized_unprojected"
+          ],
+          "answerStatus": [
+            "supported",
+            "partial",
+            "refused",
+            "not_observable",
+            "noncomparable",
+            "threshold_exceeded"
+          ],
+          "inclusionFlag": [
+            "exclusive",
+            "included_in(component)",
+            "unknown"
+          ]
+        },
+        "sampleUnknown": "attemptResult=maybe"
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "unknown_enum_quarantined"
+        ],
+        "values": {
+          "mappedToSuccess": {
+            "boolean": false,
+            "sourceLiteral": "never mapped to success"
+          },
+          "quarantineCountIncremented": {
+            "boolean": true,
+            "sourceLiteral": "quarantined with counts"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 28,
+          "symbol": "unknown enum",
+          "section": "2. Normative records, keys and constraints"
+        }
+      ],
+      "derivation": "Unknown enum values are quarantined with counts. They are not coerced to a success member. The closed sets are the members named in DESIGN section 2 and the answer status list in section 5.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.DOM.no-shared-sentinel",
+      "pack": "domain",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "DOM",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "claudeSessionId": "missing",
+        "files": 2
+      },
+      "expected": {
+        "status": "unknown",
+        "reasons": [
+          "source_scoped_unresolved_identity"
+        ],
+        "values": {
+          "sharedSentinel": {
+            "boolean": false,
+            "sourceLiteral": "never shared sentinel"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 88,
+          "symbol": "missing session ID",
+          "section": "3. Capture and sensor admission"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/tasks.json",
+          "line": 902,
+          "symbol": "T03-A1",
+          "section": "T03"
+        }
+      ],
+      "derivation": "A missing session id is source-scoped unresolved identity. Two such files do not share a sentinel identity.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.DOM.first-user",
+      "pack": "domain",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "DOM",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "sourceSequenceProvesFirst": false,
+        "body": "absent"
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "partial_capture_cannot_manufacture_first"
+        ],
+        "values": {
+          "firstUserMessage": {
+            "boolean": false,
+            "sourceLiteral": "only when source sequence proves it"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 41,
+          "symbol": "MessageObservation",
+          "section": "2. Normative records, keys and constraints"
+        }
+      ],
+      "derivation": "First-user message exists only when source sequence proves it. No body is stored to fill the gap.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.DOM.capability-stages",
+      "pack": "domain",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "DOM",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "observedStage": "available",
+        "loadedObservation": false,
+        "textMention": true
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "stage_non_inference"
+        ],
+        "values": {
+          "loadedInferredFromAvailable": {
+            "boolean": false,
+            "sourceLiteral": "availability does not imply loading"
+          },
+          "loadedInferredFromMention": {
+            "boolean": false,
+            "sourceLiteral": "mention is not loaded"
+          },
+          "versionInferred": {
+            "boolean": false,
+            "sourceLiteral": "version-unknown"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 48,
+          "symbol": "CapabilityState",
+          "section": "2. Normative records, keys and constraints"
+        }
+      ],
+      "derivation": "Defined, available, and loaded require separate observations. A text mention is not loaded evidence. An absent source version stays version-unknown.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.DOM.topology-failure",
+      "pack": "domain",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "DOM",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "openRigRead": "failed"
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "source_failed"
+        ],
+        "values": {
+          "emptyTopology": {
+            "boolean": false,
+            "sourceLiteral": "DB failure != empty topology"
+          }
+        }
+      },
+      "forbidden": [
+        {
+          "rational": "0/1",
+          "as": "rig_count"
+        }
+      ],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 91,
+          "symbol": "OpenRig",
+          "section": "3. Capture and sensor admission"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 25,
+          "symbol": "topology",
+          "section": "Findings and adjudication"
+        }
+      ],
+      "derivation": "A database read failure is source_failed. It is not an observed empty topology and not zero rigs.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.DOM.same-bytes-new-generation",
+      "pack": "domain",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "DOM",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "bytes": "identical",
+        "generations": [
+          1,
+          2
+        ],
+        "explicitEquivalenceEvidence": false
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "generation_not_automatic_equivalence"
+        ],
+        "values": {
+          "crossGenerationEquivalent": {
+            "boolean": false,
+            "sourceLiteral": "do not automatically establish"
+          },
+          "predecessorEvidenceRetained": {
+            "boolean": true,
+            "sourceLiteral": "retains predecessor evidence"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 30,
+          "symbol": "source_key",
+          "section": "2. Normative records, keys and constraints"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md",
+          "line": 139,
+          "symbol": "same source bytes",
+          "section": "Scoped closure re-review receipt"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/tasks.json",
+          "line": 820,
+          "symbol": "T02-A1",
+          "section": "T02"
+        }
+      ],
+      "derivation": "The same bytes in a replaced file do not automatically equate facts across source generations. Predecessor evidence stays. Equivalence needs explicit evidence.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.DOM.cross-clock-spawn",
+      "pack": "domain",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "DOM",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "edge": "spawn",
+        "creatorClock": "C1",
+        "childClock": "C2",
+        "comparable": false,
+        "sourceLocalSequence": null
+      },
+      "expected": {
+        "status": "unknown",
+        "reasons": [
+          "no_invented_causal_order"
+        ],
+        "values": {
+          "creatorNoLaterThanChild": {
+            "literal": "not_asserted"
+          },
+          "evidencePreserved": {
+            "boolean": true,
+            "sourceLiteral": "preserve evidence"
+          },
+          "edgeDeleted": {
+            "boolean": false,
+            "sourceLiteral": "preserve evidence"
+          }
+        },
+        "uncertainty": "unknown"
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 67,
+          "symbol": "spawn comparable",
+          "section": "Closed WorkEdge contract (relationship-contract-v1)"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 63,
+          "symbol": "uncertain order",
+          "section": "Closed WorkEdge contract (relationship-contract-v1)"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/tasks.json",
+          "line": 820,
+          "symbol": "T02-A1",
+          "section": "T02"
+        }
+      ],
+      "derivation": "The creator-not-later-than-child check applies when the clocks are comparable. Incomparable clocks do not produce a causal order and do not delete the evidence.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.DOM.option-absent",
+      "pack": "domain",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "DOM",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "field": "Option empty"
+      },
+      "expected": {
+        "status": "unknown",
+        "reasons": [
+          "option_means_absent"
+        ],
+        "values": {
+          "filledWithDisplaySentinel": {
+            "boolean": false,
+            "sourceLiteral": "cannot be filled with display-name sentinels"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 28,
+          "symbol": "Option",
+          "section": "2. Normative records, keys and constraints"
+        }
+      ],
+      "derivation": "Option means evidence absent. An explicit unsupported reason belongs in Coverage, not in a display-name sentinel.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.DOM.openrig-name",
+      "pack": "domain",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "DOM",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "displayName": "same string as another rig"
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "name_not_identity"
+        ],
+        "values": {
+          "identityOrAuthorityConferred": {
+            "boolean": false,
+            "sourceLiteral": "names cannot confer identity or authority"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 59,
+          "symbol": "OpenRig names",
+          "section": "2. Normative records, keys and constraints"
+        }
+      ],
+      "derivation": "OpenRig names do not confer identity or authority. Collisions stay typed and visible.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.DOM.child-differs",
+      "pack": "domain",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "DOM",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "childModel": "different",
+        "childHarness": "different",
+        "childEnvironment": "different"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "child_may_differ"
+        ],
+        "values": {
+          "forcedEqualToCaller": {
+            "boolean": false,
+            "sourceLiteral": "may differ"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 59,
+          "symbol": "child lifetime",
+          "section": "2. Normative records, keys and constraints"
+        }
+      ],
+      "derivation": "Child lifetime, model, harness, and environment may differ from the caller. Equality is not filled in.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.DOM.revision-conflict",
+      "pack": "domain",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "DOM",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "sameRevision": true,
+        "canonicalContent": "different"
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "same_revision_different_content"
+        ],
+        "values": {
+          "conflict": {
+            "boolean": true,
+            "sourceLiteral": "conflict"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 78,
+          "symbol": "conflict",
+          "section": "2. Normative records, keys and constraints"
+        }
+      ],
+      "derivation": "Same revision with different canonical content is conflict. Same revision and digest is idempotent, covered by F11.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.DOM.answer-triple",
+      "pack": "domain",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "DOM",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "required": [
+          "event_window",
+          "knowledge_cutoff",
+          "revision_policy"
+        ]
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "answer_parameters"
+        ],
+        "values": {
+          "soleV1Policy": {
+            "literal": "corrections_at_cutoff_v1"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 78,
+          "symbol": "answer parameters",
+          "section": "2. Normative records, keys and constraints"
+        }
+      ],
+      "derivation": "An answer takes event window, knowledge cutoff, and revision policy. Only corrections_at_cutoff_v1 is defined for v1.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.DOM.migration-without-logs",
+      "pack": "domain",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "DOM",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "originalSourceLogs": "absent",
+        "schema": "3 to 4"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "migration_without_logs"
+        ],
+        "values": {
+          "oldSnapshotPreserved": {
+            "boolean": true,
+            "sourceLiteral": "byte-for-byte"
+          },
+          "newFields": {
+            "literal": "unknown"
+          },
+          "historyFabricated": {
+            "boolean": false,
+            "sourceLiteral": "never required to fabricate history"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 178,
+          "symbol": "migration",
+          "section": "8. Migration, operating systems and validation"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/tasks.json",
+          "line": 1091,
+          "symbol": "T04-A1",
+          "section": "T04"
+        }
+      ],
+      "derivation": "Migration uses a private staged copy and must succeed with original logs absent. Legacy facts remain. New fields stay unknown. No golden schema-3 byte image is derivable from these sources.",
+      "unresolved": [
+        "Schema-3 table layout and golden database bytes are not in the three source files."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.DOM.old-binary-refuses-schema4",
+      "pack": "domain",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "DOM",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "binary": "old",
+        "schema": 4
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "version_guard"
+        ],
+        "values": {
+          "cleanRefusal": {
+            "boolean": true,
+            "sourceLiteral": "refuse schema 4 cleanly"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 178,
+          "symbol": "old binary",
+          "section": "8. Migration, operating systems and validation"
+        }
+      ],
+      "derivation": "The old binary refuses schema 4. It does not ignore new tables.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.DOM.interrupted-pointer",
+      "pack": "domain",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "DOM",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "migration": "interrupted"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "old_pointer_intact"
+        ],
+        "values": {
+          "selectedSchema": {
+            "literal": "schema3 pointer retained"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 178,
+          "symbol": "interrupted",
+          "section": "8. Migration, operating systems and validation"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/tasks.json",
+          "line": 1096,
+          "symbol": "T04-A2",
+          "section": "T04"
+        }
+      ],
+      "derivation": "An interrupted switch leaves the old pointer intact.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.DOM.rollback-loss-receipt",
+      "pack": "domain",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "DOM",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "after": "schema4-only ingest",
+        "action": "snapshot rollback to schema3",
+        "originalSources": "not replayable"
+      },
+      "expected": {
+        "status": "partial",
+        "reasons": [
+          "loss_receipt_required"
+        ],
+        "values": {
+          "newFactsIncluded": {
+            "boolean": false,
+            "sourceLiteral": "excludes those facts"
+          },
+          "automaticBroadDeletion": {
+            "boolean": false,
+            "sourceLiteral": "preserve failed schema4 privately"
+          },
+          "receiptFields": {
+            "literal": "watermark/cutoff, excluded counts/windows, replay availability, unresolved loss"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 178,
+          "symbol": "loss receipt",
+          "section": "8. Migration, operating systems and validation"
+        }
+      ],
+      "derivation": "Schema-3 rollback after schema-4-only ingest excludes those facts unless sources remain replayable. A loss receipt is required. Counts are not invented. Failed schema 4 is preserved privately.",
+      "unresolved": [
+        "Excluded counts and windows have no numeric fixture."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.DOM.workedge-spawn",
+      "pack": "domain",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "WORKEDGE",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "kind": "spawn",
+        "contract": "relationship-contract-v1"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "workedge_closed_contract"
+        ],
+        "values": {
+          "eligibleForInclusiveClosure": {
+            "boolean": true,
+            "sourceLiteral": "one evidenced creator; creator not later than child when comparable; conflicting creators are conflict"
+          },
+          "missingEndpoint": {
+            "literal": "unresolved_not_inferred_root"
+          },
+          "absentOrTruncatedOrConflictReachable": {
+            "boolean": false,
+            "sourceLiteral": "ineligible for reachability"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 67,
+          "symbol": "spawn",
+          "section": "Closed WorkEdge contract (relationship-contract-v1)"
+        }
+      ],
+      "derivation": "one evidenced creator; creator not later than child when comparable; conflicting creators are conflict Endpoints are typed. Bare display labels are not endpoints. Uncertain cross-source order does not assert causality.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.DOM.workedge-delegate-existing",
+      "pack": "domain",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "WORKEDGE",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "kind": "delegate_existing",
+        "contract": "relationship-contract-v1"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "workedge_closed_contract"
+        ],
+        "values": {
+          "eligibleForInclusiveClosure": {
+            "boolean": true,
+            "sourceLiteral": "many callers and workers; target assignment only; execution may outlive caller"
+          },
+          "missingEndpoint": {
+            "literal": "unresolved_not_inferred_root"
+          },
+          "absentOrTruncatedOrConflictReachable": {
+            "boolean": false,
+            "sourceLiteral": "ineligible for reachability"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 68,
+          "symbol": "delegate_existing",
+          "section": "Closed WorkEdge contract (relationship-contract-v1)"
+        }
+      ],
+      "derivation": "many callers and workers; target assignment only; execution may outlive caller Endpoints are typed. Bare display labels are not endpoints. Uncertain cross-source order does not assert causality.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.DOM.workedge-handoff",
+      "pack": "domain",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "WORKEDGE",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "kind": "handoff",
+        "contract": "relationship-contract-v1"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "workedge_closed_contract"
+        ],
+        "values": {
+          "eligibleForInclusiveClosure": {
+            "boolean": false,
+            "sourceLiteral": "history may revisit participants; no inclusive expansion"
+          },
+          "missingEndpoint": {
+            "literal": "unresolved_not_inferred_root"
+          },
+          "absentOrTruncatedOrConflictReachable": {
+            "boolean": false,
+            "sourceLiteral": "ineligible for reachability"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 69,
+          "symbol": "handoff",
+          "section": "Closed WorkEdge contract (relationship-contract-v1)"
+        }
+      ],
+      "derivation": "history may revisit participants; no inclusive expansion Endpoints are typed. Bare display labels are not endpoints. Uncertain cross-source order does not assert causality.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.DOM.workedge-return",
+      "pack": "domain",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "WORKEDGE",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "kind": "return",
+        "contract": "relationship-contract-v1"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "workedge_closed_contract"
+        ],
+        "values": {
+          "eligibleForInclusiveClosure": {
+            "boolean": false,
+            "sourceLiteral": "interaction cycles legal; never expands inclusive closure back to caller"
+          },
+          "missingEndpoint": {
+            "literal": "unresolved_not_inferred_root"
+          },
+          "absentOrTruncatedOrConflictReachable": {
+            "boolean": false,
+            "sourceLiteral": "ineligible for reachability"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 70,
+          "symbol": "return",
+          "section": "Closed WorkEdge contract (relationship-contract-v1)"
+        }
+      ],
+      "derivation": "interaction cycles legal; never expands inclusive closure back to caller Endpoints are typed. Bare display labels are not endpoints. Uncertain cross-source order does not assert causality.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.DOM.workedge-join",
+      "pack": "domain",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "WORKEDGE",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "kind": "join",
+        "contract": "relationship-contract-v1"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "workedge_closed_contract"
+        ],
+        "values": {
+          "eligibleForInclusiveClosure": {
+            "boolean": false,
+            "sourceLiteral": "no ownership or descendant expansion"
+          },
+          "missingEndpoint": {
+            "literal": "unresolved_not_inferred_root"
+          },
+          "absentOrTruncatedOrConflictReachable": {
+            "boolean": false,
+            "sourceLiteral": "ineligible for reachability"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 71,
+          "symbol": "join",
+          "section": "Closed WorkEdge contract (relationship-contract-v1)"
+        }
+      ],
+      "derivation": "no ownership or descendant expansion Endpoints are typed. Bare display labels are not endpoints. Uncertain cross-source order does not assert causality.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.DOM.workedge-retry",
+      "pack": "domain",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "WORKEDGE",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "kind": "retry",
+        "contract": "relationship-contract-v1"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "workedge_closed_contract"
+        ],
+        "values": {
+          "eligibleForInclusiveClosure": {
+            "boolean": false,
+            "sourceLiteral": "distinct later attempt; acyclic succession; no descendant closure"
+          },
+          "missingEndpoint": {
+            "literal": "unresolved_not_inferred_root"
+          },
+          "absentOrTruncatedOrConflictReachable": {
+            "boolean": false,
+            "sourceLiteral": "ineligible for reachability"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 72,
+          "symbol": "retry",
+          "section": "Closed WorkEdge contract (relationship-contract-v1)"
+        }
+      ],
+      "derivation": "distinct later attempt; acyclic succession; no descendant closure Endpoints are typed. Bare display labels are not endpoints. Uncertain cross-source order does not assert causality.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.DOM.workedge-resume",
+      "pack": "domain",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "WORKEDGE",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "kind": "resume",
+        "contract": "relationship-contract-v1"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "workedge_closed_contract"
+        ],
+        "values": {
+          "eligibleForInclusiveClosure": {
+            "boolean": false,
+            "sourceLiteral": "same attempt only if continuation proved; otherwise unresolved, not a fabricated retry"
+          },
+          "missingEndpoint": {
+            "literal": "unresolved_not_inferred_root"
+          },
+          "absentOrTruncatedOrConflictReachable": {
+            "boolean": false,
+            "sourceLiteral": "ineligible for reachability"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 73,
+          "symbol": "resume",
+          "section": "Closed WorkEdge contract (relationship-contract-v1)"
+        }
+      ],
+      "derivation": "same attempt only if continuation proved; otherwise unresolved, not a fabricated retry Endpoints are typed. Bare display labels are not endpoints. Uncertain cross-source order does not assert causality.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.DOM.workedge-dependency",
+      "pack": "domain",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "WORKEDGE",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "kind": "dependency",
+        "contract": "relationship-contract-v1"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "workedge_closed_contract"
+        ],
+        "values": {
+          "eligibleForInclusiveClosure": {
+            "boolean": false,
+            "sourceLiteral": "acyclic work dependency; never cost reachability or proof of completion"
+          },
+          "missingEndpoint": {
+            "literal": "unresolved_not_inferred_root"
+          },
+          "absentOrTruncatedOrConflictReachable": {
+            "boolean": false,
+            "sourceLiteral": "ineligible for reachability"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 74,
+          "symbol": "dependency",
+          "section": "Closed WorkEdge contract (relationship-contract-v1)"
+        }
+      ],
+      "derivation": "acyclic work dependency; never cost reachability or proof of completion Endpoints are typed. Bare display labels are not endpoints. Uncertain cross-source order does not assert causality.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    }
+  ]
+}

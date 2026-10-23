@@ -335,10 +335,42 @@ fn ingest_openrig(
     let result = store.with_openrig_fact_batch(|| {
         read_openrig_with_source(store, &snapshot.path, key, lives, Some(&source_id))
     });
-    let removed = std::fs::remove_dir_all(&snap_dir);
+    let removed = remove_snapshot_copy(stage_dir, &snapshot.path);
     let count = result?;
     removed.map_err(|_| anyhow::anyhow!("snapshot cleanup failed"))?;
     Ok((count, snapshot, prepared.cutoff, provenance.changed))
+}
+
+/// Cleanup accepts only a snapshot-role direct child of the current stage.
+/// The snapshot allocator may return a unique leaf, so the requested name is
+/// never used to guess which directory contains the accepted copy.
+fn remove_snapshot_copy(stage_dir: &Path, copy_path: &Path) -> Result<()> {
+    let stage_dir = std::path::absolute(stage_dir)?;
+    let copy_path = std::path::absolute(copy_path)?;
+    let snapshot_dir = copy_path
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("snapshot directory unavailable"))?;
+    let name = snapshot_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("");
+    let snapshot_role = name == dendro_core::lifecycle::SNAPSHOT_DIR
+        || name.strip_prefix("snapshot-").is_some_and(|suffix| {
+            suffix.len() == 16
+                && suffix
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        });
+    if snapshot_dir.parent() != Some(stage_dir.as_path())
+        || copy_path.file_name() != Some(std::ffi::OsStr::new(crate::snapshot::SNAPSHOT_MAIN))
+        || !snapshot_role
+    {
+        return Err(anyhow::anyhow!(
+            "snapshot cleanup path is outside the allocated stage role"
+        ));
+    }
+    std::fs::remove_dir_all(snapshot_dir)?;
+    Ok(())
 }
 
 fn read_openrig_with_source(
@@ -1224,6 +1256,30 @@ fn normalize_harness(key: &[u8], runtime: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn snapshot_cleanup_rejects_foreign_stage_and_non_role_paths() {
+        let dir =
+            std::env::temp_dir().join(format!("dendro-cleanup-containment-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let stage = dir.join("stage");
+        let foreign = dir.join("foreign").join("snapshot-0123456789abcdef");
+        let unrelated = stage.join("unrelated");
+        std::fs::create_dir_all(&foreign).unwrap();
+        std::fs::create_dir_all(&unrelated).unwrap();
+        let foreign_copy = foreign.join(crate::snapshot::SNAPSHOT_MAIN);
+        let unrelated_copy = unrelated.join(crate::snapshot::SNAPSHOT_MAIN);
+        std::fs::write(&foreign_copy, b"foreign evidence").unwrap();
+        std::fs::write(&unrelated_copy, b"unrelated evidence").unwrap();
+        assert!(super::remove_snapshot_copy(&stage, &foreign_copy).is_err());
+        assert!(super::remove_snapshot_copy(&stage, &unrelated_copy).is_err());
+        assert_eq!(std::fs::read(&foreign_copy).unwrap(), b"foreign evidence");
+        assert_eq!(
+            std::fs::read(&unrelated_copy).unwrap(),
+            b"unrelated evidence"
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
     use super::*;
     use chrono::TimeZone;
 
@@ -1488,7 +1544,17 @@ mod tests {
 
     #[test]
     fn openrig_roots_do_not_erase_each_others_lives() {
+        #[cfg(windows)]
+        let fixture_root = dendro_core::platform_v1::create_user_private_root_with_choice(
+            "dendro-ingest-fixture-",
+            &dendro_core::platform_v1::StorageRootChoice::UserProfile,
+        )
+        .expect("explicit UserProfile staged ingest fixture");
+        #[cfg(windows)]
+        let dir = fixture_root.path().to_path_buf();
+        #[cfg(not(windows))]
         let dir = std::env::temp_dir().join(format!("dendro-roots-{}", std::process::id()));
+        #[cfg(not(windows))]
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let db = dir.join("analytics.duckdb");
@@ -1499,6 +1565,14 @@ mod tests {
         ];
         let key = b"roots-test-key";
         ingest_staged(&db, &roots, false, key).unwrap();
+        assert!(
+            std::fs::read_dir(&dir).unwrap().all(|entry| !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with("snapshot")),
+            "actual allocated snapshots were removed"
+        );
         assert_eq!(stored_seats(&db), vec!["seat-a", "seat-b"]);
         // A second run rebuilds the same lives, without duplicates.
         ingest_staged(&db, &roots, false, key).unwrap();
@@ -1521,7 +1595,17 @@ mod tests {
 
     #[test]
     fn k5_reroute_marks_and_unclaim_reach_the_k2_report() {
+        #[cfg(windows)]
+        let fixture_root = dendro_core::platform_v1::create_user_private_root_with_choice(
+            "dendro-ingest-fixture-",
+            &dendro_core::platform_v1::StorageRootChoice::UserProfile,
+        )
+        .expect("explicit UserProfile staged ingest fixture");
+        #[cfg(windows)]
+        let dir = fixture_root.path().to_path_buf();
+        #[cfg(not(windows))]
         let dir = std::env::temp_dir().join(format!("dendro-k5-{}", std::process::id()));
+        #[cfg(not(windows))]
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("openrig.sqlite");

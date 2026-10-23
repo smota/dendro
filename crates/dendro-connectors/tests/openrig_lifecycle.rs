@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use dendro_connectors::{ingest_staged, SourceRoot};
-use dendro_core::{report_json, run_locked_with_openrig, AnalyticsStore};
+use dendro_core::{report_json, run_locked_with_openrig};
 use rusqlite::{params, Connection};
 use serde_json::{json, Value};
 
@@ -76,7 +76,10 @@ fn activity(db: &Path) -> Value {
         .clone()
 }
 fn lives(db: &Path) -> Value {
-    let store = AnalyticsStore::open_read_only(db).unwrap();
+    let store = dendro_core::presentation::ReadRequest::open(db)
+        .unwrap()
+        .open_store()
+        .unwrap();
     let mut rows = store.load_seat_bounds().unwrap();
     rows.sort_by(|a, b| a.seat.cmp(&b.seat));
     json!(rows)
@@ -84,6 +87,17 @@ fn lives(db: &Path) -> Value {
 
 #[test]
 fn replaced_source_lifetimes_survive_identical_third_ingest_and_later_append() {
+    #[cfg(windows)]
+    let root = dendro_core::platform_v1::create_user_private_root_with_choice(
+        "dendro-lifecycle-",
+        &dendro_core::platform_v1::StorageRootChoice::UserProfile,
+    )
+    .unwrap();
+    #[cfg(windows)]
+    let dir = root.path().to_path_buf();
+    #[cfg(windows)]
+    drop(root);
+    #[cfg(not(windows))]
     let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/issue-13-tests")
         .join(format!("lifecycle-{}", std::process::id()));

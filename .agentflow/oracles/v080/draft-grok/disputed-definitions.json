@@ -1,0 +1,367 @@
+{
+  "schema": "dendro.oracle.disputed-definitions/v1",
+  "acceptanceState": "draft_pending_claude_review",
+  "items": [
+    {
+      "vectorID": "v080.dg.F03.diamond-inclusive",
+      "disputedDefinition": false,
+      "unresolved": [
+        "inclusive(D): fixture does not state D's outgoing spawn/delegate edges",
+        "token amount, if any, on D's separate spawn origin: fleet is stated as 4, so no fifth token is part of this fixture"
+      ]
+    },
+    {
+      "vectorID": "v080.dg.F04.weights-3-5-and-3-10",
+      "disputedDefinition": true,
+      "unresolved": []
+    },
+    {
+      "vectorID": "v080.dg.F05.outliving-child",
+      "disputedDefinition": true,
+      "unresolved": [
+        "parent direct token amount is not stated. Conservation parentDirect+childDirect = inclusive is therefore not checked. Do not assume parent direct is 0."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.F08.included-cache-total",
+      "disputedDefinition": false,
+      "unresolved": [
+        "exclusive input-uncached complement 60 is a partition consequence, not a required fixture output"
+      ]
+    },
+    {
+      "vectorID": "v080.dg.F09.decrease-only",
+      "disputedDefinition": true,
+      "unresolved": [
+        "The row forbids output -130 and does not state the decrease's two endpoints as an input pair. 150 then 20 is a reconstruction that produces -130, not a source-literal input."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.F10.ratio-of-sums",
+      "disputedDefinition": true,
+      "unresolved": []
+    },
+    {
+      "vectorID": "v080.dg.F12.forty-rejects",
+      "disputedDefinition": false,
+      "unresolved": [
+        "accepted count, expected population, and completeness percentage are not in the fixture. No percentage is emitted."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.F13.explicit-rule",
+      "disputedDefinition": false,
+      "unresolved": [
+        "No numeric violation count is defined for the positive case."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.F15.invalid-interval",
+      "disputedDefinition": false,
+      "unresolved": [
+        "Numeric endpoints are not stated."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.F15.lone-start",
+      "disputedDefinition": false,
+      "unresolved": [
+        "Supported observed extent if any: no number is given."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.F16.incarnations",
+      "disputedDefinition": false,
+      "unresolved": [
+        "Placement-interval count is not stated. Do not emit 3 or 6 as a required count."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.F19.inert-label",
+      "disputedDefinition": false,
+      "unresolved": [
+        "Exact source bytes are not in the fixture.",
+        "HTML entity spelling is not specified.",
+        "Which canary strings must be absent is class-level only."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.F21.noncomparable",
+      "disputedDefinition": false,
+      "unresolved": [
+        "Raw descriptive numbers for M1 and M2 are not in the fixture."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.F22.day2",
+      "disputedDefinition": false,
+      "unresolved": [
+        "Calendar dates, time zones, and event window are not specified. Day labels are ordered day1 < day2 < day3 < day4 only."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.F23.message-loop-valid",
+      "disputedDefinition": true,
+      "unresolved": [
+        "Token amounts for the message/handoff loop are not separately stated. Do not copy inclusive(A)=14 from the spawn chain."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.F24.agy-line-limit",
+      "disputedDefinition": true,
+      "unresolved": [
+        "Whether 1 MiB is 1000^2 or 1024^2 bytes is not defined. A length greater than both is unambiguously over the stated bound; the fixture says > 1 MiB without a byte count."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.F24.global-ceiling",
+      "disputedDefinition": true,
+      "unresolved": [
+        "8 MiB byte base 1000 vs 1024 is not defined."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.F24.native-1-5-mib",
+      "disputedDefinition": true,
+      "unresolved": [
+        "No pinned native schema in these sources admits 1.5 MiB. Byte base of MiB is undefined. 1.5 MiB is below 8 MiB under both common bases, so the global ceiling alone does not decide it."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.F25.windows-aliases",
+      "disputedDefinition": false,
+      "unresolved": [
+        "Per-mechanism allow versus deny policy is required to exist and is not chosen in the proposal text. Do not mark a specific alias type as universally accepted."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.F28.coverage",
+      "disputedDefinition": false,
+      "unresolved": [
+        "Provider id, event ids, opcodes, versions, and clock conversion are not pinned in DESIGN, ADVERSARIAL, or tasks.json. They wait on B01."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.F29.both-lanes",
+      "disputedDefinition": false,
+      "unresolved": [
+        "No native lane was executed for this proposal. Pass/fail receipts do not exist."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.F29.digest-binding",
+      "disputedDefinition": false,
+      "unresolved": [
+        "Package digests are unknown until T23 produces them."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.DOM.migration-without-logs",
+      "disputedDefinition": false,
+      "unresolved": [
+        "Schema-3 table layout and golden database bytes are not in the three source files."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.DOM.rollback-loss-receipt",
+      "disputedDefinition": false,
+      "unresolved": [
+        "Excluded counts and windows have no numeric fixture."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.ACC.currency-overflow-threshold",
+      "disputedDefinition": false,
+      "unresolved": [
+        "No maximum currency coefficient is defined."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.ACC.display-not-canonical",
+      "disputedDefinition": false,
+      "unresolved": [
+        "Display half-even requires a declared scale. No display scale is declared for this fixture, so the display string is unresolved."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.ACC.decode-bound",
+      "disputedDefinition": false,
+      "unresolved": [
+        "The numeric carryover maximum is not stated."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.SEC.osc-and-html",
+      "disputedDefinition": false,
+      "unresolved": [
+        "Exact HTML entity table is unspecified."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.SEC.canary-classes",
+      "disputedDefinition": false,
+      "unresolved": [
+        "No concrete canary byte string is specified in the sources."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.NAT.targets",
+      "disputedDefinition": false,
+      "unresolved": [
+        "Minimum OS, SDK, and compiler versions are not claimed tested. B02 must freeze them from evidence."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.NAT.etw-strace-grains",
+      "disputedDefinition": false,
+      "unresolved": [
+        "The strace grammar and the ETW event profile are not pinned in these three files."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.NAT.macos",
+      "disputedDefinition": false,
+      "unresolved": [
+        "Whether an existing macOS lane is present is not decided by these three files."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.NAT.budgets-unmeasured",
+      "disputedDefinition": true,
+      "unresolved": [
+        "MiB and GiB byte bases are not defined.",
+        "No baseline receipt exists in the sources."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.I01.invocations",
+      "disputedDefinition": false,
+      "unresolved": [
+        "Usage-only rows are a different population.",
+        "No fixture states a call-id count."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.I02.direct",
+      "disputedDefinition": false,
+      "unresolved": [
+        "Unknown inclusion refuses the cache rate and keeps components."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.I03.inclusive",
+      "disputedDefinition": false,
+      "unresolved": [
+        "Ambiguous duplicates refuse a canonical total."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.I04.cost",
+      "disputedDefinition": true,
+      "unresolved": []
+    },
+    {
+      "vectorID": "v080.dg.I05.configuration_divergence",
+      "disputedDefinition": false,
+      "unresolved": [
+        "No numeric divergence fixture. Unknown desired or observed are excluded and counted. No violation claim."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.I06.capability_funnel",
+      "disputedDefinition": true,
+      "unresolved": [
+        "Absent loaded evidence refuses the rate.",
+        "A complete scan of zero eligible tools is observed zero, not absent evidence. The rate at denominator 0 is not given a number."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.I07.context_pressure",
+      "disputedDefinition": false,
+      "unresolved": [
+        "No numeric context fixture. Prompt tokens alone do not substitute for context-used."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.I08.action_failure",
+      "disputedDefinition": false,
+      "unresolved": [
+        "No numeric action fixture. Unknown terminal status is excluded with a count. Incomplete capture is partial."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.I09.lineage_shape",
+      "disputedDefinition": false,
+      "unresolved": [
+        "Unlinked-worker count is not stated.",
+        "Spawn cycle refuses the inclusive fold."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.I10.duration",
+      "disputedDefinition": false,
+      "unresolved": [
+        "wall = 0 refuses the concurrency ratio. No separate zero-wall numeric sample is stated beyond the rule."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.I12.queue_wait",
+      "disputedDefinition": false,
+      "unresolved": [
+        "No numeric ready/start fixture.",
+        "Message silence is not zero wait."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.I13.placement",
+      "disputedDefinition": false,
+      "unresolved": [
+        "Placement count and same-label rebuild count are not uniquely defined by two incarnations."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.I14.resources",
+      "disputedDefinition": true,
+      "unresolved": [
+        "No numeric RSS sample is in the fixtures.",
+        "Counter-reset samples are excluded. Sampled RSS is not true all-time peak."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.I15.effects",
+      "disputedDefinition": false,
+      "unresolved": [
+        "ETW is not syscall parity. Unmatched call result is unknown, not success."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.I18.source",
+      "disputedDefinition": false,
+      "unresolved": [
+        "AGY unavailable is not zero facts."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.I19.acceptance",
+      "disputedDefinition": false,
+      "unresolved": [
+        "No acceptance rule in the initial F14 state means the acceptance measure is not_observable if no rule exists. The fixture's later accepted and revoked cutoffs are separate vectors."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.I20.resource_efficiency",
+      "disputedDefinition": true,
+      "unresolved": [
+        "Zero accepted work refuses with null and no infinity.",
+        "F10's 15 and 10 bind attempt success, not accepted work."
+      ]
+    },
+    {
+      "vectorID": "v080.dg.I21.descriptive",
+      "disputedDefinition": false,
+      "unresolved": [
+        "No numeric comparable cohort is stated. Raw table is allowed without ranking."
+      ]
+    }
+  ]
+}

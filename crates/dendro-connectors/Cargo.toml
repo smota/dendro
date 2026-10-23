@@ -23,3 +23,7 @@ duckdb.workspace = true
 [[example]]
 name = "custom_connector"
 path = "../../examples/custom_connector.rs"
+
+[[example]]
+name = "capture_v1"
+path = "../../examples/capture-v1/main.rs"

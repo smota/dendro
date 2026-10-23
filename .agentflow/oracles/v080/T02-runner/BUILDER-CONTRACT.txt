@@ -1,0 +1,5 @@
+T02-runner frozen independent expected protocol: frozen.json
+SHA256 63252603ac39789bfab0a6c93a4372215284c3220fdef5cd47d3a0a456f7908e
+89 cases:54 correctness +35 failure. Golden micro:82 lines,12541 bytes, SHA256 a56bd9f760544c5426cbebf09d748512d6aaffd84d79b1469a961294f2451d88.
+Use record-key-table.json for deterministic corpus. Preserve unknown null, failure precedence, harness phase and binding, independent UI traces, sampled vs reliable memory labels, and actual descendant proof. Native Windows AND native Linux are required for final measurement acceptance. See freeze.json for exact provenance/adjudication. No product acceptance or comparable v070 baseline inferred.
+Original-author amendment: unmeasured large sampled peak budget_pass=null; absent decode bound_pass=null. No other semantic change. Builder must refresh oracle binding and validation receipt.

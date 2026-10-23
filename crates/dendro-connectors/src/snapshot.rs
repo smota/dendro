@@ -13,11 +13,12 @@
 
 use std::fs::{self, File};
 use std::io::Read;
-use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use anyhow::{anyhow, Result};
+use dendro_core::file_metadata::{held_source_metadata, reported_identity, FileMetadata};
+use dendro_core::platform_v1::FileIdentity;
 use dendro_core::{lifecycle, Cancel};
 use rusqlite::OpenFlags;
 use sha2::{Digest, Sha256};
@@ -29,8 +30,8 @@ const SNAPSHOT_WAL: &str = "openrig.sqlite-wal";
 /// What a file looked like at one instant: identity, size, mtime.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct FileState {
-    dev: u64,
-    ino: u64,
+    dev: String,
+    ino: String,
     size: u64,
     mtime_ns: i128,
 }
@@ -42,35 +43,44 @@ struct SourceState {
     wal: Option<(FileState, Vec<u8>)>,
 }
 
-fn file_state(path: &Path) -> std::io::Result<Option<FileState>> {
-    match fs::metadata(path) {
-        Ok(meta) => Ok(Some(FileState {
-            dev: meta.dev(),
-            ino: meta.ino(),
-            size: meta.size(),
-            mtime_ns: meta.mtime() as i128 * 1_000_000_000 + meta.mtime_nsec() as i128,
-        })),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(error),
-    }
+fn held_state(file: &File) -> Result<FileState> {
+    let meta = held_source_metadata(file)
+        .map_err(|reason| anyhow!("source metadata unavailable: {reason}"))?;
+    state_from_metadata(meta)
 }
 
-fn wal_header(path: &Path) -> std::io::Result<Vec<u8>> {
+fn state_from_metadata(meta: FileMetadata) -> Result<FileState> {
+    reported_identity(&meta).map_err(|reason| anyhow!("source identity unavailable: {reason}"))?;
+    Ok(FileState {
+        dev: meta.device,
+        ino: meta.inode,
+        size: meta.size.parse()?,
+        mtime_ns: meta.mtime_ns.parse()?,
+    })
+}
+
+fn observe_file(path: &Path, read_header: bool) -> Result<Option<(FileState, Vec<u8>)>> {
+    let file = match File::open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    let before = held_state(&file)?;
     let mut header = Vec::with_capacity(32);
-    File::open(path)?.take(32).read_to_end(&mut header)?;
-    Ok(header)
+    if read_header {
+        (&file).take(32).read_to_end(&mut header)?;
+    }
+    if held_state(&file)? != before {
+        return Err(anyhow!("source changed during metadata observation"));
+    }
+    Ok(Some((before, header)))
 }
 
 fn observe(main: &Path, wal: &Path) -> Result<SourceState> {
-    let main_state = file_state(main)?.ok_or_else(|| anyhow!("the OpenRig source is missing"))?;
-    let wal_state = match file_state(wal)? {
-        Some(state) => match wal_header(wal) {
-            Ok(header) => Some((state, header)),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
-            Err(error) => return Err(error.into()),
-        },
-        None => None,
-    };
+    let main_state = observe_file(main, false)?
+        .ok_or_else(|| anyhow!("the OpenRig source is missing"))?
+        .0;
+    let wal_state = observe_file(wal, true)?;
     Ok(SourceState {
         main: main_state,
         wal: wal_state,
@@ -109,6 +119,37 @@ fn revision(state: &SourceState) -> String {
     hex::encode(hash.finalize())
 }
 
+fn hash_identity(hash: &mut Sha256, state: &FileState) -> Result<()> {
+    let metadata = FileMetadata {
+        r#type: "regular".into(),
+        device: state.dev.clone(),
+        inode: state.ino.clone(),
+        size: state.size.to_string(),
+        mtime_ns: state.mtime_ns.to_string(),
+    };
+    match reported_identity(&metadata)
+        .map_err(|reason| anyhow!("source identity unavailable: {reason}"))?
+    {
+        FileIdentity::Unix { device, inode } => {
+            // Preserve the existing Linux source-identity digest encoding.
+            hash.update(device.to_be_bytes());
+            hash.update(inode.to_be_bytes());
+        }
+        FileIdentity::WindowsFileId128 {
+            volume_serial_64,
+            file_id,
+        } => {
+            hash.update(b"windows-file-id-128\0");
+            hash.update(volume_serial_64.to_be_bytes());
+            hash.update(file_id);
+        }
+        FileIdentity::WindowsByHandle64 { .. } => {
+            return Err(anyhow!("source identity is too narrow"))
+        }
+    }
+    Ok(())
+}
+
 /// Removes every file a previous attempt left in the private snapshot directory.
 fn clear(dir: &Path) -> Result<()> {
     for entry in fs::read_dir(dir)? {
@@ -125,7 +166,8 @@ fn quick_check(path: &Path) -> Result<bool> {
     Ok(result == "ok")
 }
 
-/// Takes a coherent private copy of `source` into `dir` (created 0700).
+/// Takes a coherent private copy of `source` into a private directory allocated
+/// for `dir`. The returned path identifies the actual directory on Windows.
 pub fn snapshot_sqlite(source: &Path, dir: &Path, cancel: &Cancel) -> Result<Snapshot> {
     snapshot_with(source, dir, cancel, MAX_ATTEMPTS, |_| {})
 }
@@ -139,13 +181,13 @@ pub(crate) fn snapshot_with(
     max_attempts: u32,
     mut between: impl FnMut(u32),
 ) -> Result<Snapshot> {
-    lifecycle::create_private_dir(dir)?;
+    let dir = lifecycle::create_private_snapshot_dir(dir)?;
     let source_wal = PathBuf::from(format!("{}-wal", source.display()));
     let main_copy = dir.join(SNAPSHOT_MAIN);
     let wal_copy = dir.join(SNAPSHOT_WAL);
     for attempt in 1..=max_attempts {
         cancel.check()?;
-        clear(dir)?;
+        clear(&dir)?;
         let started = Instant::now();
         let before = observe(source, &source_wal)?;
         // WAL first: a checkpoint between the two copies leaves its frames in
@@ -182,8 +224,7 @@ pub(crate) fn snapshot_with(
             continue;
         }
         let mut identity = Sha256::new();
-        identity.update(before.main.dev.to_be_bytes());
-        identity.update(before.main.ino.to_be_bytes());
+        hash_identity(&mut identity, &before.main)?;
         return Ok(Snapshot {
             source_identity_sha256: hex::encode(identity.finalize()),
             path: main_copy,
@@ -195,7 +236,7 @@ pub(crate) fn snapshot_with(
             check_ms: checked.elapsed().as_millis(),
         });
     }
-    clear(dir)?;
+    clear(&dir)?;
     Err(anyhow!(
         "the OpenRig source changed during each of {max_attempts} snapshot attempts; nothing was ingested. Retry in a moment, or retry when the rig is quieter."
     ))
@@ -205,6 +246,53 @@ pub(crate) fn snapshot_with(
 mod tests {
     use super::*;
 
+    #[cfg(windows)]
+    struct Scratch(Option<dendro_core::platform_v1::PrivateRoot>);
+
+    #[cfg(windows)]
+    impl std::ops::Deref for Scratch {
+        type Target = Path;
+        fn deref(&self) -> &Path {
+            self.0.as_ref().unwrap().path()
+        }
+    }
+
+    #[cfg(windows)]
+    impl AsRef<Path> for Scratch {
+        fn as_ref(&self) -> &Path {
+            self.0.as_ref().unwrap().path()
+        }
+    }
+
+    #[cfg(windows)]
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let root = self.0.take().unwrap();
+            let path = root.path().to_path_buf();
+            drop(root);
+            if let Err(error) = fs::remove_dir_all(path) {
+                assert_eq!(
+                    error.kind(),
+                    std::io::ErrorKind::NotFound,
+                    "remove owned snapshot fixture after releasing handles: {error}"
+                );
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    fn scratch(name: &str) -> Scratch {
+        use dendro_core::platform_v1::{create_user_private_root_with_choice, StorageRootChoice};
+        Scratch(Some(
+            create_user_private_root_with_choice(
+                &format!("dendro-snapshot-{name}-"),
+                &StorageRootChoice::UserProfile,
+            )
+            .expect("explicit UserProfile admitted snapshot fixture"),
+        ))
+    }
+
+    #[cfg(not(windows))]
     fn scratch(name: &str) -> PathBuf {
         let dir =
             std::env::temp_dir().join(format!("dendro-snapshot-{name}-{}", std::process::id()));
@@ -244,7 +332,8 @@ mod tests {
         let (source, _writer) = wal_source(&dir);
         let shm = PathBuf::from(format!("{}-shm", source.display()));
         let shm_before = fs::read(&shm).unwrap();
-        let snapshot = snapshot_sqlite(&source, &dir.join("snap"), &Cancel::new()).unwrap();
+        let snapshot =
+            snapshot_sqlite(&source, &dir.join(lifecycle::SNAPSHOT_DIR), &Cancel::new()).unwrap();
         assert_eq!(snapshot.attempts, 1);
         assert!(
             snapshot.wal_bytes.unwrap() > 0,
@@ -261,6 +350,16 @@ mod tests {
             "the source -shm is untouched"
         );
         assert_eq!(snapshot.revision.len(), 64);
+        #[cfg(windows)]
+        {
+            let source_state = observe_file(&source, false).unwrap().unwrap().0;
+            assert!(source_state.dev.starts_with("w128:"));
+            assert_eq!(source_state.ino.len(), "w128:".len() + 32);
+            let actual_dir = snapshot.path.parent().unwrap();
+            assert_ne!(actual_dir, dir.join(lifecycle::SNAPSHOT_DIR));
+            dendro_core::platform_v1::open_existing_private_root(actual_dir)
+                .expect("native protected snapshot directory admitted");
+        }
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -272,7 +371,8 @@ mod tests {
         conn.execute_batch("CREATE TABLE t(id INTEGER PRIMARY KEY); INSERT INTO t VALUES (1);")
             .unwrap();
         drop(conn);
-        let snapshot = snapshot_sqlite(&path, &dir.join("snap"), &Cancel::new()).unwrap();
+        let snapshot =
+            snapshot_sqlite(&path, &dir.join(lifecycle::SNAPSHOT_DIR), &Cancel::new()).unwrap();
         assert_eq!(snapshot.wal_bytes, None);
         assert!(!PathBuf::from(format!("{}-wal", path.display())).exists());
         assert!(!PathBuf::from(format!("{}-shm", path.display())).exists());
@@ -287,25 +387,24 @@ mod tests {
         let wal = PathBuf::from(format!("{}-wal", source.display()));
         // Attempt 1: a new commit (WAL size and mtime change). Attempt 2: a
         // TRUNCATE checkpoint (WAL header and size change). Attempt 3: stable.
-        let snapshot =
-            snapshot_with(
-                &source,
-                &dir.join("snap"),
-                &Cancel::new(),
-                5,
-                |attempt| match attempt {
-                    1 => {
-                        writer.execute("INSERT INTO t VALUES (3)", []).unwrap();
-                    }
-                    2 => {
-                        writer
-                            .execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")
-                            .unwrap();
-                    }
-                    _ => {}
-                },
-            )
-            .unwrap();
+        let snapshot = snapshot_with(
+            &source,
+            &dir.join(lifecycle::SNAPSHOT_DIR),
+            &Cancel::new(),
+            5,
+            |attempt| match attempt {
+                1 => {
+                    writer.execute("INSERT INTO t VALUES (3)", []).unwrap();
+                }
+                2 => {
+                    writer
+                        .execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")
+                        .unwrap();
+                }
+                _ => {}
+            },
+        )
+        .unwrap();
         assert_eq!(snapshot.attempts, 3);
         assert_eq!(
             ids(&snapshot.path),
@@ -326,16 +425,22 @@ mod tests {
         drop(conn);
         let spare = dir.join("spare.sqlite");
         fs::copy(&path, &spare).unwrap();
-        let snapshot = snapshot_with(&path, &dir.join("snap"), &Cancel::new(), 5, |attempt| {
-            if attempt == 1 {
-                // Same bytes, new inode: a replaced file.
-                fs::rename(&spare, &path).unwrap();
-            }
-            if attempt == 2 {
-                // A WAL appears.
-                fs::write(PathBuf::from(format!("{}-wal", path.display())), b"").unwrap();
-            }
-        })
+        let snapshot = snapshot_with(
+            &path,
+            &dir.join(lifecycle::SNAPSHOT_DIR),
+            &Cancel::new(),
+            5,
+            |attempt| {
+                if attempt == 1 {
+                    // Same bytes, new inode: a replaced file.
+                    fs::rename(&spare, &path).unwrap();
+                }
+                if attempt == 2 {
+                    // A WAL appears.
+                    fs::write(PathBuf::from(format!("{}-wal", path.display())), b"").unwrap();
+                }
+            },
+        )
         .unwrap();
         assert_eq!(snapshot.attempts, 3);
         let _ = fs::remove_dir_all(&dir);
@@ -346,10 +451,16 @@ mod tests {
         let dir = scratch("exhaust");
         let (source, writer) = wal_source(&dir);
         let mut next = 10;
-        let error = snapshot_with(&source, &dir.join("snap"), &Cancel::new(), 3, |_| {
-            next += 1;
-            writer.execute("INSERT INTO t VALUES (?)", [next]).unwrap();
-        })
+        let error = snapshot_with(
+            &source,
+            &dir.join(lifecycle::SNAPSHOT_DIR),
+            &Cancel::new(),
+            3,
+            |_| {
+                next += 1;
+                writer.execute("INSERT INTO t VALUES (?)", [next]).unwrap();
+            },
+        )
         .unwrap_err()
         .to_string();
         assert_eq!(
@@ -361,7 +472,20 @@ mod tests {
             "no path in the message"
         );
         assert_eq!(
-            fs::read_dir(dir.join("snap")).unwrap().count(),
+            fs::read_dir(
+                fs::read_dir(&dir)
+                    .unwrap()
+                    .map(|entry| entry.unwrap().path())
+                    .find(|path| {
+                        path.file_name()
+                            .unwrap()
+                            .to_string_lossy()
+                            .starts_with("snapshot")
+                    })
+                    .expect("allocated snapshot directory"),
+            )
+            .unwrap()
+            .count(),
             0,
             "no partial copy kept"
         );
@@ -374,8 +498,79 @@ mod tests {
         let (source, _writer) = wal_source(&dir);
         let cancel = Cancel::new();
         cancel.request();
-        let error = snapshot_sqlite(&source, &dir.join("snap"), &cancel).unwrap_err();
+        let error =
+            snapshot_sqlite(&source, &dir.join(lifecycle::SNAPSHOT_DIR), &cancel).unwrap_err();
         assert!(error.downcast_ref::<dendro_core::Interrupted>().is_some());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn windows_identity_keeps_high_64_bits_in_revision_and_identity_digest() {
+        let metadata = FileMetadata {
+            r#type: "regular".into(),
+            device: "w128:18446744073709551615".into(),
+            inode: "w128:01000000000000000000000000000000".into(),
+            size: "7".into(),
+            mtime_ns: "42".into(),
+        };
+        let first = state_from_metadata(metadata.clone()).unwrap();
+        let mut changed = metadata;
+        changed.inode = "w128:01000000000000000000000000000080".into();
+        let second = state_from_metadata(changed).unwrap();
+        let digest = |state: &FileState| {
+            let mut hash = Sha256::new();
+            hash_identity(&mut hash, state).unwrap();
+            hex::encode(hash.finalize())
+        };
+        assert_ne!(digest(&first), digest(&second));
+        assert_ne!(
+            revision(&SourceState {
+                main: first,
+                wal: None
+            }),
+            revision(&SourceState {
+                main: second,
+                wal: None
+            }),
+        );
+    }
+
+    #[test]
+    fn unix_revision_and_identity_digest_preserve_existing_encoding() {
+        let state = FileState {
+            dev: "1".into(),
+            ino: "2".into(),
+            size: 3,
+            mtime_ns: -4,
+        };
+        assert_eq!(
+            revision(&SourceState {
+                main: state.clone(),
+                wal: None
+            }),
+            hex::encode(Sha256::digest(b"main 1 2 3 -4\n")),
+        );
+        let mut actual = Sha256::new();
+        hash_identity(&mut actual, &state).unwrap();
+        let mut expected = Sha256::new();
+        expected.update(1_u64.to_be_bytes());
+        expected.update(2_u64.to_be_bytes());
+        assert_eq!(actual.finalize(), expected.finalize());
+    }
+
+    #[test]
+    fn unknown_or_nonregular_metadata_is_an_error_not_absence() {
+        let dir = scratch("unknown");
+        assert!(observe_file(&dir, true).is_err());
+        assert_eq!(observe_file(&dir.join("missing"), true).unwrap(), None);
+        let unusable = FileMetadata {
+            r#type: "regular".into(),
+            device: "w128:1".into(),
+            inode: "w128:00000000000000000000000000000000".into(),
+            size: "0".into(),
+            mtime_ns: "0".into(),
+        };
+        assert!(state_from_metadata(unusable).is_err());
         let _ = fs::remove_dir_all(&dir);
     }
 }

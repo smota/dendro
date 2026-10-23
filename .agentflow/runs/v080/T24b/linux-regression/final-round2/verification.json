@@ -1,0 +1,14 @@
+{
+  "manifest_files": 233,
+  "hash_mismatches": [],
+  "extra_snapshot_files": [],
+  "reported_summary_count": 33,
+  "reported_execution_passed_failed_ignored": [
+    514,
+    0,
+    1
+  ],
+  "nested_cancellation_subprocess_passes": 1,
+  "top_level_unique_passed": 513,
+  "native_linux_release_acceptance": false
+}

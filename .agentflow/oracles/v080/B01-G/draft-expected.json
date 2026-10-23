@@ -1,0 +1,212 @@
+{
+  "schema": "dendro.grok-structural-profile-oracle/v1",
+  "status": "review_ready_not_frozen",
+  "author_worker": "/root/finalize_plan",
+  "independent_of_future_parser_builder": true,
+  "fixture_sha256": "e3f56c510c8c2eb05d370b6858f787cebe7108fdef59502d844fd243ca236e7e",
+  "profile_sha256": "efa0a7a0c69e586bb2ad0350fb1cc016270a2ce6f841c19d1b8297c7ccca4cfb",
+  "cases": [
+    {
+      "id": "B01-G-01",
+      "input": {
+        "fixture": "sanitized-authentic.json"
+      },
+      "expected": {
+        "usage_turns": 2,
+        "source_turn_indices": [
+          1,
+          2
+        ],
+        "event_indices": [
+          0,
+          1
+        ],
+        "normalized_pairs": [
+          [
+            0,
+            1
+          ],
+          [
+            1,
+            2
+          ]
+        ],
+        "normalized_pairs_basis": "explicit observed profile, not generic allGrokassumption"
+      }
+    },
+    {
+      "id": "B01-G-02",
+      "input": {
+        "fixture": "sanitized-authentic.json",
+        "query": "source counters"
+      },
+      "expected": {
+        "session": {
+          "inputTokens": 67941,
+          "outputTokens": 22418,
+          "cachedReadTokens": 25856,
+          "cacheCreationTokens": 0,
+          "reasoningTokens": 18195,
+          "totalTokens": 90359,
+          "modelCalls": 2,
+          "costUsdTicks": 787460400,
+          "turnCount": 2
+        },
+        "turn_count": 2,
+        "unknown_zero_substitution": false
+      }
+    },
+    {
+      "id": "B01-G-03",
+      "input": {
+        "fixture": "sanitized-authentic.json",
+        "selection": "turns+session+modelUsage"
+      },
+      "expected": {
+        "inputTokens": 67941,
+        "outputTokens": 22418,
+        "cachedReadTokens": 25856,
+        "reasoningTokens": 18195,
+        "count_rollups_as_additional_usage": false
+      }
+    },
+    {
+      "id": "B01-G-04",
+      "input": {
+        "costUsdTicks": 787460400,
+        "scale_evidence": null
+      },
+      "expected": {
+        "canonical_money": null,
+        "status": "refused",
+        "reason": "unknown_monetary_scale",
+        "divide_by_guessed_factor": false
+      }
+    },
+    {
+      "id": "B01-G-05",
+      "input": {
+        "inputTokens": 67941,
+        "cachedReadTokens": 25856,
+        "inclusion_semantics": null
+      },
+      "expected": {
+        "cache_fraction": null,
+        "per_invocation_mean": null,
+        "reason": [
+          "unknown_cache_accounting_inclusion",
+          "invocation_grain_unproven"
+        ]
+      }
+    },
+    {
+      "id": "B01-G-06",
+      "input": {
+        "outputTokens": 22418,
+        "reasoningTokens": 18195,
+        "inclusion_semantics": null
+      },
+      "expected": {
+        "add_output_and_reasoning_as_total": false,
+        "conserved_canonical_total": "unknown",
+        "source_counters_retained": true
+      }
+    },
+    {
+      "id": "B01-G-07",
+      "input": {
+        "cacheCreationTokens": 0,
+        "missing_field": "contextCapacity"
+      },
+      "expected": {
+        "cacheCreationTokens": 0,
+        "contextCapacity": "unknown"
+      }
+    },
+    {
+      "id": "B01-G-08",
+      "input": {
+        "usage_model": "grok-4.7-build",
+        "event_model": "grok-4.7",
+        "declared_yolo_mode": true
+      },
+      "expected": {
+        "model_labels": "retain_as_differing_source_assertions",
+        "effective_isolation": "not_observed",
+        "operator_approval": "unknown"
+      }
+    },
+    {
+      "id": "B01-G-09",
+      "input": {
+        "same_snapshot_ingested_twice": true
+      },
+      "expected": {
+        "new_turn_observation_identities": 2,
+        "duplicate_rollup_observations": 0,
+        "same_fact_reingest": "idempotent",
+        "correction_of_changed_snapshot": "requires revision policy not additive prior+new"
+      }
+    },
+    {
+      "id": "B01-G-10",
+      "input": {
+        "event_turns": [
+          0,
+          0
+        ],
+        "usage_turns": [
+          1,
+          2
+        ]
+      },
+      "expected": {
+        "blind_join": false,
+        "coverage": "partial_or_ambiguous",
+        "reason": "ambiguous_turn_index"
+      }
+    },
+    {
+      "id": "B01-G-11",
+      "input": {
+        "event_schema_version": "future-unadmitted"
+      },
+      "expected": {
+        "parser_acceptance": false,
+        "reason": "source_schema_not_admitted"
+      }
+    },
+    {
+      "id": "B01-G-12",
+      "input": {
+        "fixture": "sanitized-authentic.json",
+        "query": "first_user_message_or_tools_or_outcome"
+      },
+      "expected": {
+        "derivable": false,
+        "value": "unknown",
+        "message_count_as_user_message": false
+      }
+    }
+  ],
+  "A1": [
+    "B01-G-01",
+    "B01-G-02",
+    "B01-G-03",
+    "B01-G-04",
+    "B01-G-05",
+    "B01-G-06",
+    "B01-G-07",
+    "B01-G-08",
+    "B01-G-09",
+    "B01-G-10",
+    "B01-G-11",
+    "B01-G-12"
+  ],
+  "scope": "Structurally genuine native fixture with explicit semantic unknowns; no native reader/product acceptance",
+  "review_needed": [
+    "Approve exact allowlisted projection and two-index observed mapping scope",
+    "Confirm whether canonical source-named counters can remain partial unknown inclusion with safe coverage/refusal; no invented cost conversion",
+    "Require external genuine source evidence before admitting monetary scale/cache/reasoning inclusion or invocation grain"
+  ]
+}

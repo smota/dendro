@@ -6,6 +6,9 @@ use std::path::{Path, PathBuf};
 pub struct GrokConnector;
 
 impl GrokConnector {
+    pub const fn availability(&self) -> crate::capture_registry_v1::Availability {
+        crate::capture_registry_v1::Availability::ParserPending
+    }
     pub fn new() -> Self {
         Self
     }
@@ -43,19 +46,7 @@ impl HarnessConnector for GrokConnector {
         path: &Path,
         watermark: Option<&Watermark>,
     ) -> Result<(Vec<CanonicalEvent>, Watermark)> {
-        let metadata = std::fs::metadata(path)?;
-        let last_modified = metadata
-            .modified()?
-            .duration_since(std::time::UNIX_EPOCH)?
-            .as_secs();
-        let new_watermark = Watermark {
-            file_path: path.to_string_lossy().to_string(),
-            byte_offset: metadata.len(),
-            last_modified,
-            session_id: None,
-        };
-        let events = Vec::new();
-        let _ = watermark;
-        Ok((events, new_watermark))
+        let _ = (path, watermark);
+        anyhow::bail!("source_not_admitted")
     }
 }

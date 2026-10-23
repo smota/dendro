@@ -1,0 +1,718 @@
+{
+  "schema": "dendro.grok-structural-profile-oracle/v1",
+  "status": "reworked_ready_for_claude_not_accepted_not_frozen",
+  "expectation_id": "B01-G-A1",
+  "author": {
+    "provider": "xai",
+    "role": "original independent grok oracle author",
+    "author_native_session_id": "01a1669a-7075-7a81-bf1a-4ddff4bb5262",
+    "identity_basis": "dispatcher-observed",
+    "parent_observed_unique_creation_timestamp_matching_launch": true,
+    "creation_timestamp_value_recorded_here": false,
+    "raw_authored_log": "grok-profile-oracle-events.jsonl",
+    "native_session_files_read": false,
+    "product_parser_builder": false,
+    "acceptance_authority": false
+  },
+  "authored_at": "2026-10-23T02:57:59.1801603Z",
+  "pre_rework": {
+    "directory": ".agentflow/oracles/v080/B01-G/history/pre-oracle-rework",
+    "grok-authored.json_sha256": "f5a21567f195e469aa5498950aff600f81d63ee5eb9ad12ac6b5069464437465",
+    "author-receipt.json_sha256": "2870c8b5dd6c9d5c2f0486987e7bfb8171e8f1374e13677df2d5d125adc7e597"
+  },
+  "binds": {
+    "profile_id": "grok-native-controlled-1.0.52-fixtures-v2",
+    "profile_sha256": "1a3864a8b0390125c460643d2cf01bbb44fd2b5cb29720aee9a8b0ff7dafbabc",
+    "primary_fixture": "controlled-sanitized-authentic.json",
+    "primary_fixture_sha256": "5939054579d2d9a61b1b17439d57c06bb9b09b6bed9946dfba157993204a5c6b",
+    "primary_provenance_sha256": "40b630eac06cc3e4645d3eddec342ddf0015a2f7029fadd3d878e03e6f64a940",
+    "primary_producer_receipt_sha256": "80a7fc7875ab1d64893652138c5b9bcdf3076b6a10f9a838da4d4d2e32e506bd",
+    "supplemental_fixture": "sanitized-authentic.json",
+    "supplemental_fixture_sha256": "e3f56c510c8c2eb05d370b6858f787cebe7108fdef59502d844fd243ca236e7e",
+    "supplemental_provenance_sha256": "ef5d4de904892c1cb4479d74e068e582a907478ffc71f1bc648b39dfda195a91",
+    "review_sha256": "ae5a41dc2a836f682dd4d4b71abc99e97a5521c2de010e49fb455efc7a057c91",
+    "adjudication_sha256": "e92548478ebec3c727286b3a00d107841b774b03e05fab39f6577af0c8066b3b"
+  },
+  "rules": {
+    "components": [
+      "inputTokens",
+      "outputTokens",
+      "cachedReadTokens",
+      "cacheCreationTokens",
+      "reasoningTokens",
+      "totalTokens",
+      "modelCalls",
+      "costUsdTicks"
+    ],
+    "turnCount": "structural metadata, not one of the 8 usage components",
+    "storage": "Lexical JSON integers only, parsed without float, inclusive range 0..18446744073709551615",
+    "grain": "Emit turns (2 x 8 = 16 component facts) or session (8 component facts). Nested modelUsage and the other rollup are reconciliation only.",
+    "emitted_sum": "Equals the chosen grain only",
+    "logical_fact_key": [
+      "source_namespace",
+      "CORE-PROVENANCE-01 source session key",
+      "usage model label",
+      "grain",
+      "usage turnNumber when grain is turn",
+      "component"
+    ],
+    "fixture_pseudonym_and_bare_uuid_are_not_production_keys": true,
+    "index_map": "usage.turnNumber = event.turn_number + 1 only for the two bound fixture digests, each reviewed separately",
+    "usage_without_join": "Admitted source-named usage counters remain when the event join is unknown",
+    "money_cache_reasoning_invocation": "Source integers retained. No unit, inclusion, alias, fraction, or invocation mean.",
+    "parser_acceptance": false,
+    "adapter_acceptance": false
+  },
+  "cases": [
+    {
+      "id": "B01-G-01",
+      "title": "Supplemental fixture index map, digest-bound, writer unknown",
+      "input": {
+        "fixture_sha256": "e3f56c510c8c2eb05d370b6858f787cebe7108fdef59502d844fd243ca236e7e"
+      },
+      "expected": {
+        "producer_version": "unknown",
+        "event_turn_numbers": [0, 1],
+        "usage_turn_numbers": [1, 2],
+        "normalized_pairs": [[0, 1], [1, 2]],
+        "parsed_instant_order": [
+          "2026-10-23T00:43:50.374Z",
+          "2026-10-23T00:47:11.345907200+00:00",
+          "2026-10-23T00:49:54.567Z",
+          "2026-10-23T00:51:17.756945900+00:00"
+        ],
+        "order_means": "event0 start < usage turn 1 end < event1 start < usage turn 2 end",
+        "comparison": "parsed instants, source fractional digits retained",
+        "clock_basis": "same host clock assumed for these co-located files; accuracy not established",
+        "applies_to_other_digests": false,
+        "export_tool_version_1_0_52_proves_this_writer": false
+      }
+    },
+    {
+      "id": "B01-G-02",
+      "title": "Supplemental counters and chosen-grain sums",
+      "input": {
+        "fixture_sha256": "e3f56c510c8c2eb05d370b6858f787cebe7108fdef59502d844fd243ca236e7e"
+      },
+      "expected": {
+        "turns": [
+          {
+            "turnNumber": 1,
+            "inputTokens": 25936,
+            "outputTokens": 15817,
+            "cachedReadTokens": 0,
+            "cacheCreationTokens": 0,
+            "reasoningTokens": 12158,
+            "totalTokens": 41753,
+            "modelCalls": 1,
+            "costUsdTicks": 499031600,
+            "turnCount_metadata": 1,
+            "modelUsage_equals_parent": true
+          },
+          {
+            "turnNumber": 2,
+            "inputTokens": 42005,
+            "outputTokens": 6601,
+            "cachedReadTokens": 25856,
+            "cacheCreationTokens": 0,
+            "reasoningTokens": 6037,
+            "totalTokens": 48606,
+            "modelCalls": 1,
+            "costUsdTicks": 288428800,
+            "turnCount_metadata": 1,
+            "modelUsage_equals_parent": true
+          }
+        ],
+        "session_equals_turn_component_sums": {
+          "inputTokens": 67941,
+          "outputTokens": 22418,
+          "cachedReadTokens": 25856,
+          "cacheCreationTokens": 0,
+          "reasoningTokens": 18195,
+          "totalTokens": 90359,
+          "modelCalls": 2,
+          "costUsdTicks": 787460400
+        },
+        "session_turnCount_metadata": 2,
+        "session_modelUsage_equals_parent": true,
+        "turn_grain_component_facts": 16,
+        "session_grain_component_facts": 8,
+        "emitted_component_sum": "chosen grain value only",
+        "forbidden_labeled_sums": {
+          "turns_plus_session_plus_session_modelUsage": {
+            "rows": ["usage.turns", "usage.session", "usage.session.modelUsage"],
+            "inputTokens": 203823,
+            "outputTokens": 67254,
+            "cachedReadTokens": 77568,
+            "cacheCreationTokens": 0,
+            "reasoningTokens": 54585,
+            "totalTokens": 271077,
+            "modelCalls": 6,
+            "costUsdTicks": 2362381200
+          },
+          "turns_plus_both_turn_modelUsage_plus_session_plus_session_modelUsage": {
+            "rows": ["usage.turns", "usage.turns[].modelUsage", "usage.session", "usage.session.modelUsage"],
+            "inputTokens": 339705,
+            "outputTokens": 112090,
+            "cachedReadTokens": 129280,
+            "cacheCreationTokens": 0,
+            "reasoningTokens": 90975,
+            "totalTokens": 451795,
+            "modelCalls": 10,
+            "costUsdTicks": 3937302000
+          },
+          "turnCount_metadata_1_plus_1_plus_session_2": 4
+        }
+      }
+    },
+    {
+      "id": "B01-G-03",
+      "title": "Fact-key shape and identical-snapshot idempotence",
+      "input": {
+        "fixture_sha256": "e3f56c510c8c2eb05d370b6858f787cebe7108fdef59502d844fd243ca236e7e",
+        "same_raw_usage_sha256_ingested_twice": "50d80f4bcaf673280dc33010f9f6c6c7f75dd9cad5b180476e306fbab709835c"
+      },
+      "expected": {
+        "production_key_prefix": {
+          "construction": "CORE-PROVENANCE-01",
+          "fields": ["source_namespace", "source_session_key"],
+          "fixture_pseudonym_forbidden_as_key": "grok-session-A",
+          "bare_uuid_forbidden_as_key": "b51ad78c-d506-4ec8-a9d1-d6a886059a37",
+          "this_oracle_does_not_assign_a_literal_namespace_string": true
+        },
+        "usage_model_label": "grok-4.7-build",
+        "turn_grain_facts": [
+          ["grok-4.7-build", "turn", 1, "inputTokens"],
+          ["grok-4.7-build", "turn", 1, "outputTokens"],
+          ["grok-4.7-build", "turn", 1, "cachedReadTokens"],
+          ["grok-4.7-build", "turn", 1, "cacheCreationTokens"],
+          ["grok-4.7-build", "turn", 1, "reasoningTokens"],
+          ["grok-4.7-build", "turn", 1, "totalTokens"],
+          ["grok-4.7-build", "turn", 1, "modelCalls"],
+          ["grok-4.7-build", "turn", 1, "costUsdTicks"],
+          ["grok-4.7-build", "turn", 2, "inputTokens"],
+          ["grok-4.7-build", "turn", 2, "outputTokens"],
+          ["grok-4.7-build", "turn", 2, "cachedReadTokens"],
+          ["grok-4.7-build", "turn", 2, "cacheCreationTokens"],
+          ["grok-4.7-build", "turn", 2, "reasoningTokens"],
+          ["grok-4.7-build", "turn", 2, "totalTokens"],
+          ["grok-4.7-build", "turn", 2, "modelCalls"],
+          ["grok-4.7-build", "turn", 2, "costUsdTicks"]
+        ],
+        "session_grain_facts": [
+          ["grok-4.7-build", "session", "inputTokens"],
+          ["grok-4.7-build", "session", "outputTokens"],
+          ["grok-4.7-build", "session", "cachedReadTokens"],
+          ["grok-4.7-build", "session", "cacheCreationTokens"],
+          ["grok-4.7-build", "session", "reasoningTokens"],
+          ["grok-4.7-build", "session", "totalTokens"],
+          ["grok-4.7-build", "session", "modelCalls"],
+          ["grok-4.7-build", "session", "costUsdTicks"]
+        ],
+        "turn_fact_count": 16,
+        "session_fact_count": 8,
+        "additional_facts_on_same_digest": 0,
+        "snapshot_version_key_includes_raw_usage_sha256": "50d80f4bcaf673280dc33010f9f6c6c7f75dd9cad5b180476e306fbab709835c"
+      }
+    },
+    {
+      "id": "B01-G-04",
+      "title": "Negative join: bare equal integers are the wrong namespace",
+      "input": {
+        "fixture_sha256s": [
+          "e3f56c510c8c2eb05d370b6858f787cebe7108fdef59502d844fd243ca236e7e",
+          "5939054579d2d9a61b1b17439d57c06bb9b09b6bed9946dfba157993204a5c6b"
+        ],
+        "event_turn_number": 1,
+        "usage_turnNumber": 1
+      },
+      "expected": {
+        "pair_event_1_with_usage_1": false,
+        "pair_event_1_with_usage_2": true,
+        "pair_usage_1_with_event_0": true,
+        "refusal_code": null,
+        "authentic_specimens_are_ambiguous": false,
+        "widens_map_beyond_these_two_digests": false
+      }
+    },
+    {
+      "id": "B01-G-05",
+      "title": "Duplicate rows have one outcome each",
+      "input": {
+        "synthetic": true
+      },
+      "expected": {
+        "duplicate_event_index": {
+          "event_turns": [0, 0],
+          "usage_turns": [1, 2],
+          "schema_version": "1.0",
+          "coverage": "partial",
+          "code": "ambiguous_turn_index",
+          "canonical_joined_value": null,
+          "usage_counters_retained": true
+        },
+        "exact_duplicate_turn_and_session_matches_once": {
+          "turn_1_inputTokens_rows": [25936, 25936],
+          "turn_2_inputTokens": 42005,
+          "once_counted_sum": 67941,
+          "session_inputTokens": 67941,
+          "emitted_facts_for_turn_1_inputTokens": 1,
+          "diagnostic": "duplicate_source_row",
+          "diagnostic_is_refusal": false,
+          "coverage": "admitted"
+        },
+        "exact_duplicate_turn_and_session_matches_twice": {
+          "turn_1_inputTokens_rows": [25936, 25936],
+          "turn_2_inputTokens": 42005,
+          "twice_counted_sum": 93877,
+          "session_inputTokens": 93877,
+          "coverage": "partial",
+          "code": "rollup_conflict",
+          "canonical_value": null,
+          "retain_both_source_alternatives": true
+        },
+        "same_turnNumber_different_counters": {
+          "turn_1_inputTokens_rows": [25936, 25937],
+          "coverage": "partial",
+          "code": "rollup_conflict",
+          "canonical_value": null,
+          "sum_the_rows": false,
+          "retain_both_source_alternatives": true
+        }
+      }
+    },
+    {
+      "id": "B01-G-06",
+      "title": "Missing component, whole-document failure, and live JSONL watermark",
+      "input": {
+        "synthetic": true
+      },
+      "expected": {
+        "present_zero_absent_component": {
+          "cacheCreationTokens": 0,
+          "cacheCreation_does_not_prove_no_cache_write": true,
+          "reasoningTokens": "unknown",
+          "substitute_missing_with_zero": false,
+          "coverage": "partial"
+        },
+        "truncated_usage_or_summary_document": {
+          "coverage": "refusal",
+          "code": "malformed_source_document",
+          "emit_partial_counters": false
+        },
+        "duplicate_json_key": {
+          "coverage": "refusal",
+          "code": "malformed_source_document"
+        },
+        "schema_1_0_events_missing_second_start": {
+          "coverage": "partial",
+          "code": "ambiguous_turn_index",
+          "canonical_joined_value": null,
+          "invent_event": false,
+          "usage_counters_retained": true
+        },
+        "live_events_partial_final_line": {
+          "is_error": false,
+          "coverage": "partial",
+          "refusal_code": null,
+          "consume_through": "last complete newline",
+          "watermark": "last complete newline",
+          "advance_past_partial_bytes": false
+        },
+        "malformed_complete_event_line": {
+          "coverage": "refusal",
+          "code": "malformed_source_document",
+          "skip_line": false
+        },
+        "finished_session_partial_final_line": {
+          "coverage": "refusal",
+          "code": "malformed_source_document",
+          "turn_ended_alone_proves_finished": false
+        }
+      }
+    },
+    {
+      "id": "B01-G-07",
+      "title": "Session and turn rollup conflict",
+      "input": {
+        "synthetic": true,
+        "session_inputTokens": 67941,
+        "turn_inputTokens": [25936, 42006],
+        "turn_sum_inputTokens": 67942
+      },
+      "expected": {
+        "coverage": "partial",
+        "code": "rollup_conflict",
+        "canonical_inputTokens": null,
+        "retained_alternatives": [67941, 67942],
+        "silently_prefer_either": false,
+        "add_them": false
+      }
+    },
+    {
+      "id": "B01-G-08",
+      "title": "Supplemental cost ticks stay unscaled",
+      "input": {
+        "fixture_sha256": "e3f56c510c8c2eb05d370b6858f787cebe7108fdef59502d844fd243ca236e7e",
+        "scale_evidence": null
+      },
+      "expected": {
+        "costUsdTicks": {
+          "turn_1": 499031600,
+          "turn_2": 288428800,
+          "session": 787460400
+        },
+        "canonical_money": null,
+        "currency_unit": null,
+        "coverage": "partial",
+        "code": "unknown_monetary_scale",
+        "divide_by_guessed_factor": false
+      }
+    },
+    {
+      "id": "B01-G-09",
+      "title": "Supplemental cache integers; reported zero is not proof of no writes",
+      "input": {
+        "fixture_sha256": "e3f56c510c8c2eb05d370b6858f787cebe7108fdef59502d844fd243ca236e7e"
+      },
+      "expected": {
+        "cachedReadTokens": {"turn_1": 0, "turn_2": 25856, "session": 25856},
+        "cacheCreationTokens": {"turn_1": 0, "turn_2": 0, "session": 0},
+        "observed_zero_not_missing": true,
+        "does_not_prove_no_cache_write": true,
+        "cache_fraction": null,
+        "cache_write_or_efficiency_figure": null,
+        "cache_read_le_input_admits_subset": false,
+        "coverage": "partial",
+        "code": "unknown_cache_accounting_inclusion"
+      }
+    },
+    {
+      "id": "B01-G-10",
+      "title": "Supplemental reasoning integers; output plus reasoning refused",
+      "input": {
+        "fixture_sha256": "e3f56c510c8c2eb05d370b6858f787cebe7108fdef59502d844fd243ca236e7e"
+      },
+      "expected": {
+        "reasoningTokens": {"turn_1": 12158, "turn_2": 6037, "session": 18195},
+        "output_plus_reasoning_session": 40613,
+        "emit_output_plus_reasoning": false,
+        "totalTokens_equals_input_plus_output": {"turn_1": 41753, "turn_2": 48606, "session": 90359},
+        "that_equality_decides_inclusion": false,
+        "reasoning_le_output_decides_inclusion": false,
+        "coverage": "partial",
+        "code": "unknown_reasoning_inclusion"
+      }
+    },
+    {
+      "id": "B01-G-11",
+      "title": "modelCalls is not invocation grain",
+      "input": {
+        "fixture_sha256s": [
+          "e3f56c510c8c2eb05d370b6858f787cebe7108fdef59502d844fd243ca236e7e",
+          "5939054579d2d9a61b1b17439d57c06bb9b09b6bed9946dfba157993204a5c6b"
+        ]
+      },
+      "expected": {
+        "supplemental_modelCalls": {"turn_1": 1, "turn_2": 1, "session": 2},
+        "controlled_modelCalls": {"turn_1": 1, "turn_2": 1, "session": 2},
+        "request_invocation_count": "unknown",
+        "per_invocation_mean": null,
+        "divide_any_counter_by_modelCalls": false,
+        "coverage": "partial",
+        "code": "invocation_grain_unproven"
+      }
+    },
+    {
+      "id": "B01-G-12",
+      "title": "Labels stay separate; session-end declarations are not turn usage",
+      "input": {
+        "supplemental_fixture_sha256": "e3f56c510c8c2eb05d370b6858f787cebe7108fdef59502d844fd243ca236e7e",
+        "controlled_fixture_sha256": "5939054579d2d9a61b1b17439d57c06bb9b09b6bed9946dfba157993204a5c6b"
+      },
+      "expected": {
+        "usage_fact_model_label": "grok-4.7-build",
+        "event_model_label": "grok-4.7",
+        "summary_current_model_id": "grok-4.7",
+        "summary_reasoning_effort": "medium",
+        "attribute_summary_model_or_effort_to_turns": false,
+        "vendor_catalog_or_canonical_alias": null,
+        "equate_grok_4_7_with_grok_4_7_build": false,
+        "yolo_mode": true,
+        "yolo_is_declaration_only": true,
+        "effective_isolation": "not_observed",
+        "operator_approval": "unknown",
+        "supplemental_message_counts": {"event_0": 3, "event_1": 7},
+        "controlled_message_counts": {"event_0": 3, "event_1": 7},
+        "message_count_proves_user_role": false,
+        "tools_effects_outcomes_grants": "unknown",
+        "pseudonym_linkable_from_local_provenance": true,
+        "pseudonym_is_anonymization": false,
+        "supplemental_discarded_event_counts_are_not_semantic_admission": {
+          "turn_started": 2,
+          "phase_changed": 5768,
+          "event_complete_line_count": 5784
+        }
+      }
+    },
+    {
+      "id": "B01-G-13",
+      "title": "Schema mismatch and in-schema index problems use different codes",
+      "input": {
+        "synthetic": true
+      },
+      "expected": {
+        "schema_mismatch_or_missing_version": {
+          "examples": ["future-unadmitted", "2.0", {"chat_format_version": 2}, "missing schema_version"],
+          "coverage": "refusal",
+          "code": "source_schema_not_admitted"
+        },
+        "reordered_or_conflicting_index_inside_schema_1_0": {
+          "coverage": "partial",
+          "code": "ambiguous_turn_index",
+          "canonical_joined_value": null,
+          "code_is_not": "source_schema_not_admitted"
+        },
+        "fixture_fields_that_match_this_profile": {
+          "event_schema_version": "1.0",
+          "chat_format_version": 1
+        },
+        "schema_admission_proves_writer_version_of_future_logs": false
+      }
+    },
+    {
+      "id": "B01-G-14",
+      "title": "Timestamps compare as exact instants and are not execution time",
+      "input": {
+        "controlled_fixture_sha256": "5939054579d2d9a61b1b17439d57c06bb9b09b6bed9946dfba157993204a5c6b"
+      },
+      "expected": {
+        "compare_strings": false,
+        "truncate_fractional_digits": false,
+        "use_binary_float": false,
+        "event0_fractional_digits": 3,
+        "usage_end_fractional_digits": 9,
+        "required_duration_milliseconds": null,
+        "use_as_cpu_or_invocation_duration": false,
+        "same_host_clock_assumed": true,
+        "cross_host_comparability": false,
+        "unparseable_timestamp_blocks_index_normalization": {
+          "coverage": "partial",
+          "code": "ambiguous_turn_index"
+        }
+      }
+    },
+    {
+      "id": "B01-G-15",
+      "title": "Controlled fixture is version-pinned; the map is not widened",
+      "input": {
+        "fixture_sha256": "5939054579d2d9a61b1b17439d57c06bb9b09b6bed9946dfba157993204a5c6b",
+        "producer_receipt_sha256": "80a7fc7875ab1d64893652138c5b9bcdf3076b6a10f9a838da4d4d2e32e506bd",
+        "provenance_sha256": "40b630eac06cc3e4645d3eddec342ddf0015a2f7029fadd3d878e03e6f64a940"
+      },
+      "expected": {
+        "source_session_authorized": "febeb74f-54be-4d5a-aa86-94920d6f94f1",
+        "fixture_pseudonym": "grok-session-B",
+        "pseudonym_is_production_key": false,
+        "version_before": "grok 1.0.52 (0920c8169e27) [alpha]",
+        "version_after": "grok 1.0.52 (0920c8169e27) [alpha]",
+        "binary_sha256_before": "47a5becb08dd0e51f34b60b34eb866086af7f392666f821b350a45f6736ed0cb",
+        "binary_sha256_after": "47a5becb08dd0e51f34b60b34eb866086af7f392666f821b350a45f6736ed0cb",
+        "binary_unchanged": true,
+        "turn_exits": [0, 0],
+        "requested_model": "grok-4.7",
+        "requested_model_equals_usage_label": false,
+        "usage_label": "grok-4.7-build",
+        "normalized_pairs": [[0, 1], [1, 2]],
+        "parsed_instant_order": [
+          "2026-10-23T02:49:12.4010069Z",
+          "2026-10-23T02:49:12.898800700Z",
+          "2026-10-23T02:49:13.247Z",
+          "2026-10-23T02:49:17.068341500+00:00",
+          "2026-10-23T02:49:19.700Z",
+          "2026-10-23T02:49:23.047247800+00:00",
+          "2026-10-23T02:49:24.751466500Z",
+          "2026-10-23T02:49:25.3342343Z"
+        ],
+        "order_relation": "dispatch start < summary created < event0 < usage1 end < event1 < usage2 end = usage updatedAt < summary updated < dispatch finish",
+        "apply_this_producer_version_to_supplemental_fixture": false,
+        "apply_this_index_map_to_any_unlisted_digest": false,
+        "provenance_turn_started_count": 2,
+        "event_kind_counts_admit_discarded_semantics": false,
+        "raw_usage_sha256": "db0417984e17106b878bace5ed6230444f9ed99634e2e6cba2864b8af78aaaa6"
+      }
+    },
+    {
+      "id": "B01-G-16",
+      "title": "Controlled fixture exact component math",
+      "input": {
+        "fixture_sha256": "5939054579d2d9a61b1b17439d57c06bb9b09b6bed9946dfba157993204a5c6b"
+      },
+      "expected": {
+        "turns": [
+          {
+            "turnNumber": 1,
+            "inputTokens": 22316,
+            "outputTokens": 41,
+            "cachedReadTokens": 1664,
+            "cacheCreationTokens": 0,
+            "reasoningTokens": 35,
+            "totalTokens": 22357,
+            "modelCalls": 1,
+            "costUsdTicks": 144098800,
+            "turnCount_metadata": 1,
+            "modelUsage_equals_parent": true
+          },
+          {
+            "turnNumber": 2,
+            "inputTokens": 22403,
+            "outputTokens": 42,
+            "cachedReadTokens": 22272,
+            "cacheCreationTokens": 0,
+            "reasoningTokens": 36,
+            "totalTokens": 22445,
+            "modelCalls": 1,
+            "costUsdTicks": 39610000,
+            "turnCount_metadata": 1,
+            "modelUsage_equals_parent": true
+          }
+        ],
+        "session_equals_turn_component_sums": {
+          "inputTokens": 44719,
+          "outputTokens": 83,
+          "cachedReadTokens": 23936,
+          "cacheCreationTokens": 0,
+          "reasoningTokens": 71,
+          "totalTokens": 44802,
+          "modelCalls": 2,
+          "costUsdTicks": 183708800
+        },
+        "session_turnCount_metadata": 2,
+        "session_modelUsage_equals_parent": true,
+        "totalTokens_equals_input_plus_output": true,
+        "that_equality_decides_cache_or_reasoning_inclusion": false,
+        "turn_grain_component_facts": 16,
+        "session_grain_component_facts": 8,
+        "emitted_component_sum": "chosen grain value only",
+        "output_plus_reasoning_session_not_emitted": 154,
+        "cache_creation_zero_does_not_prove_no_cache_write": true,
+        "cost_unit": null,
+        "forbidden_labeled_sums": {
+          "turns_plus_session_plus_session_modelUsage": {
+            "inputTokens": 134157,
+            "outputTokens": 249,
+            "cachedReadTokens": 71808,
+            "reasoningTokens": 213,
+            "totalTokens": 134406,
+            "modelCalls": 6,
+            "costUsdTicks": 551126400
+          },
+          "five_row_construction": {
+            "rows": ["usage.turns", "usage.turns[].modelUsage", "usage.session", "usage.session.modelUsage"],
+            "inputTokens": 223595,
+            "outputTokens": 415,
+            "cachedReadTokens": 119680,
+            "reasoningTokens": 355,
+            "totalTokens": 224010,
+            "modelCalls": 10,
+            "costUsdTicks": 918544000
+          }
+        }
+      }
+    },
+    {
+      "id": "B01-G-17",
+      "title": "Cross-file session identity",
+      "input": {
+        "controlled_fixture_sha256": "5939054579d2d9a61b1b17439d57c06bb9b09b6bed9946dfba157993204a5c6b",
+        "supplemental_fixture_sha256": "e3f56c510c8c2eb05d370b6858f787cebe7108fdef59502d844fd243ca236e7e"
+      },
+      "expected": {
+        "controlled_usage_sessionId_equals_both_event_session_ids": "grok-session-B",
+        "supplemental_usage_sessionId_equals_both_event_session_ids": "grok-session-A",
+        "agent_and_attempt_are_session_equivalence": false,
+        "controlled_distinct_ids": {"agent": "grok-agent-B", "attempt": "grok-attempt-B"},
+        "supplemental_distinct_ids": {"agent": "grok-agent-A", "attempt": "grok-attempt-A"},
+        "on_session_id_mismatch": {
+          "coverage": "partial",
+          "code": "source_identity_mismatch",
+          "canonical_joined_value": null,
+          "retain_admissible_usage_counters_without_join": true
+        }
+      }
+    },
+    {
+      "id": "B01-G-18",
+      "title": "Non-lexical or out-of-range counters",
+      "input": {
+        "synthetic": true,
+        "rejected_examples": [-1, 1.0, "1e3", "67941", true, 18446744073709551616],
+        "accepted_range_endpoints": [0, 18446744073709551615]
+      },
+      "expected": {
+        "coverage": "refusal",
+        "code": "invalid_counter_value",
+        "parse_with_float": false,
+        "coerce_string_or_bool": false,
+        "endpoints_are_in_range": true,
+        "fixture_counters_are_in_range_integers": true
+      }
+    },
+    {
+      "id": "B01-G-19",
+      "title": "Model breakdown other than the one admitted key",
+      "input": {
+        "synthetic": true,
+        "admitted_shape": {
+          "primaryModelId": "grok-4.7-build",
+          "modelUsage_keys": ["grok-4.7-build"]
+        }
+      },
+      "expected": {
+        "several_keys_or_key_differs_from_primaryModelId": {
+          "coverage": "partial",
+          "code": "unadmitted_model_breakdown",
+          "canonical_mapped_value": null,
+          "preserve_source_values": true,
+          "silent_sum": false
+        },
+        "map_labels_through_vendor_catalog": false
+      }
+    },
+    {
+      "id": "B01-G-20",
+      "title": "Snapshot revision uses digest and parsed updatedAt",
+      "input": {
+        "supplemental_raw_usage_sha256": "50d80f4bcaf673280dc33010f9f6c6c7f75dd9cad5b180476e306fbab709835c",
+        "supplemental_updatedAt": "2026-10-23T00:51:17.756945900+00:00",
+        "controlled_source_session": "febeb74f-54be-4d5a-aa86-94920d6f94f1",
+        "controlled_updatedAt": "2026-10-23T02:49:23.047247800+00:00"
+      },
+      "expected": {
+        "same_digest_any_replay_time": {
+          "additional_facts": 0
+        },
+        "different_digest_same_updatedAt": {
+          "coverage": "partial",
+          "code": "rollup_conflict",
+          "canonical_value": null
+        },
+        "different_digest_earlier_updatedAt": {
+          "example": "2026-10-23T00:51:17.756945800+00:00",
+          "coverage": "partial",
+          "code": "rollup_conflict",
+          "canonical_value": null
+        },
+        "different_digest_strictly_later_updatedAt": {
+          "example": "2026-10-23T00:51:17.756946000+00:00",
+          "action": "revision_not_prior_plus_new",
+          "preserve_first_ingest_receipt": true,
+          "backdate": false
+        },
+        "controlled_session_revises_supplemental_session": false
+      }
+    }
+  ],
+  "case_count": 20,
+  "scope": "Two sanitized fixtures. Producer 1.0.52 is bound only to the controlled digest. Supplemental writer remains unknown. No parser, adapter, or checklist acceptance."
+}
