@@ -10,8 +10,8 @@ Validation on the implementation source:
 - Capture SDK received independent scoped acceptance.
 
 Known open findings:
-- Independent storage-consumer review remains blocked: recovery scans at most 4096 retained stage directories and journals. Accumulated publication history can exhaust that bound and prevent post-crash recovery. Replace the lifetime scan dependency with validated direct journal lookup or safe retirement.
-- The controlled performance run failed the unchanged 20 ms maximum: 20.339 ms. Incidental full-suite passes do not supersede this result.
+- Independent storage-consumer review remains blocked (F1, correctness): recovery scans at most 4096 retained stage directories and journals. Accumulated publication history can exhaust that bound and prevent post-crash recovery. Replace the lifetime scan dependency with validated direct journal lookup or safe retirement.
+- The controlled performance run measured a 20.339 ms maximum, failing its historical 20 ms criterion. Incidental full-suite passes do not supersede this evidence. Under the user-approved [performance policy and implemented gate amendment](../NAO_SEMANTIC.md#performance-policy-amendment-2026-10-23), 20 ms is now a directional target, not release acceptance; its suitability as an operator requirement is unvalidated. The canonical semantic-view benchmark now reports nonfatal mean/maximum target outcomes, superseding its historical latency assertions while retaining all correctness checks. Other benchmark gates, historical results and frozen oracles remain unchanged.
 - Smaller recovery findings remain: displaced-binding reporting, interruption during torn-binding repair, orphan-cutoff guidance, provenance wording, and typed no-op outcomes need follow-up.
 - Linux shared selection, native Linux release certification, historical-binary migration validation, full Nao integration, and the remaining adapter/environment/security/insight/UI/release tasks are not accepted as complete.
 
