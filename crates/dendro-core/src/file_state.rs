@@ -1,9 +1,10 @@
 //! Trace-only file provenance captured in the analytics snapshot. Observation is
 //! deliberately a second phase, after the read connection has been dropped.
 use crate::file_metadata::{
-    lexical_reason, observe_path, safe_identity, FileMetadata, PathObservation,
+    lexical_reason, observe_path, reported_identity, safe_identity, FileMetadata, PathObservation,
 };
 use crate::metrics::{binding_of, SessionBinding};
+use crate::platform_v1::WINDOWS_IDENTITY_LIMITATION;
 use crate::{AnalyticsStore, SourceCoverage, UsageFact};
 use anyhow::Result;
 use duckdb::{params, Connection};
@@ -148,8 +149,7 @@ impl Baselines {
             };
             let valid_meta = metadata.as_ref().is_none_or(|m| {
                 m.r#type == "regular"
-                    && unsigned(&m.device)
-                    && unsigned(&m.inode)
+                    && reported_identity(m).is_ok()
                     && unsigned(&m.size)
                     && signed(&m.mtime_ns)
             });
@@ -482,8 +482,24 @@ impl Captured {
             if e.context.is_some() {
                 limits.insert("identity_unavailable");
             }
-            if observed.reason == "unsupported_platform" {
-                limits.insert("unsupported_platform");
+            if matches!(
+                observed.reason,
+                "unsupported_platform"
+                    | "unsupported_filesystem"
+                    | "unadmitted_namespace"
+                    | "windows_by_handle_64_not_admitted"
+                    | "identity_unusable"
+                    | "windows_reserved_name"
+                    | "windows_name_alias"
+            ) {
+                limits.insert(observed.reason);
+            }
+            if observed
+                .metadata
+                .as_ref()
+                .is_some_and(|metadata| metadata.device.starts_with("w128:"))
+            {
+                limits.insert(WINDOWS_IDENTITY_LIMITATION);
             }
             let b = &e.baseline;
             match b.status {
@@ -523,7 +539,7 @@ impl Captured {
             } else {
                 "present"
             };
-            entries.push(json!({"file_state_ref":format!("f{i}"),"source_id":e.source_id,"harness":e.harness,"generation":e.generation,"display_path":display_path,"latest_recorded_generation":e.latest,"generation_state":generation_state,"path_state":observed.path_state,"metadata_comparison":comparison,"state":state,"observation":{"method":"metadata_only","checked_at":observed.checked_at,"reason":observed.reason,"metadata":observed.metadata,"comparison_basis":BASIS,"limitations":limits,"scope":if e.eligible {"in_scope"}else{"out_of_scope"},"baseline_status":b.status,"latest_ingest_attempt_at":b.attempt},"baseline":baseline,"unavailable_context":e.context}));
+            entries.push(json!({"file_state_ref":format!("f{i}"),"source_id":e.source_id,"harness":e.harness,"generation":e.generation,"display_path":display_path,"latest_recorded_generation":e.latest,"generation_state":generation_state,"path_state":observed.path_state,"metadata_comparison":comparison,"state":state,"observation":{"method":"metadata_only","check_class":"source_input","checked_at":observed.checked_at,"reason":observed.reason,"metadata":observed.metadata,"comparison_basis":BASIS,"limitations":limits,"scope":if e.eligible {"in_scope"}else{"out_of_scope"},"baseline_status":b.status,"latest_ingest_attempt_at":b.attempt},"baseline":baseline,"unavailable_context":e.context}));
         }
         for (row, entry) in rows
             .as_array_mut()
@@ -551,6 +567,15 @@ impl Captured {
             }
         }
         json!(entries)
+    }
+}
+
+#[cfg(test)]
+fn synthetic_path(name: &str) -> String {
+    if cfg!(windows) {
+        format!(r"C:\synthetic\{name}")
+    } else {
+        format!("/synthetic/{name}")
     }
 }
 
@@ -642,13 +667,58 @@ mod tests {
     }
 
     #[test]
+    fn windows_128_baseline_is_distinct_from_truncated_or_zero_identity() {
+        let full = "w128:0102030405060708090a0b0c0d0e0f10";
+        for (device, inode, expected) in [
+            ("w128:7", full, "available"),
+            ("w128:01", full, "invalid"),
+            ("w128:7", "w128:0102030405060708090a0b0c0d0e0f1", "invalid"),
+            ("w128:7", "w128:00000000000000000000000000000000", "invalid"),
+            ("w128:7", "11", "invalid"),
+            ("7", full, "invalid"),
+            ("w128:7", "w128:0102030405060708090A0B0C0D0E0F10", "invalid"),
+        ] {
+            let store = AnalyticsStore::open_in_memory("kid").unwrap();
+            let conn = store.connection();
+            conn.execute(
+                "INSERT INTO file_source_baselines VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                params![
+                    "S",
+                    1,
+                    1,
+                    "verified",
+                    "2026-10-15T00:00:00Z",
+                    "2026-10-15T00:00:00Z",
+                    "regular",
+                    device,
+                    inode,
+                    "100",
+                    "-1",
+                    "verified"
+                ],
+            )
+            .unwrap();
+            let loaded = Baselines::load(conn).unwrap().get(Some("S"), Some(1));
+            assert_eq!(loaded.status, expected, "{device} {inode}");
+            if expected == "available" {
+                let metadata = loaded.metadata.unwrap();
+                assert_eq!(metadata.device, device);
+                assert_eq!(metadata.inode, inode);
+                assert!(reported_identity(&metadata).is_ok());
+            }
+        }
+    }
+
+    #[test]
     fn scope_and_lexical_policy_precede_cache_with_per_generation_comparison() {
         let mut entries = Vec::new();
+        let file = synthetic_path("file");
+        let auth = synthetic_path("auth.json");
         for (generation, eligible, path) in [
-            (1, true, "/synthetic/file"),
-            (2, false, "/synthetic/file"),
-            (3, true, "/synthetic/file"),
-            (4, true, "/synthetic/auth.json"),
+            (1, true, file.as_str()),
+            (2, false, file.as_str()),
+            (3, true, file.as_str()),
+            (4, true, auth.as_str()),
         ] {
             entries.push(Entry {
                 source_id: Some("S".into()),
@@ -678,7 +748,7 @@ mod tests {
         let mut calls = 0;
         let states = capture.annotate_with(&mut rows, &mut loops, |path| {
             calls += 1;
-            assert_eq!(path, Path::new("/synthetic/file"));
+            assert_eq!(path, Path::new(&file));
             PathObservation {
                 path_state: "present",
                 reason: "regular_file",
@@ -700,6 +770,7 @@ mod tests {
             states[2]["observation"]["checked_at"]
         );
         assert_eq!(states[3]["observation"]["reason"], "credential_path");
+        assert_eq!(states[0]["observation"]["check_class"], "source_input");
         assert!(states[3]["display_path"].is_null());
         assert_eq!(
             loops["sources"][0]["limitations"].as_array().unwrap().len(),
@@ -783,7 +854,7 @@ mod census_tests {
                 params![
                     id,
                     h,
-                    format!("/synthetic/{id}.jsonl"),
+                    synthetic_path(&format!("{id}.jsonl")),
                     g,
                     0,
                     "prefix",
@@ -879,15 +950,15 @@ mod census_tests {
         assert_eq!(entries[4]["unavailable_context"], "loop-observation:o1");
         assert_eq!(entries[3]["observation"]["reason"], "out_of_scope");
         assert_eq!(entries[0]["generation_state"], "superseded");
-        assert_eq!(entries[0]["display_path"], "/synthetic/A.jsonl");
+        assert_eq!(entries[0]["display_path"], synthetic_path("A.jsonl"));
         assert_eq!(rows[0]["file_state_ref"], "f0");
         assert_eq!(rows[1]["file_state_ref"], "f1");
         assert_eq!(loops["sources"][0]["file_state_ref"], "f2");
-        assert!(!paths.contains(&Path::new("/synthetic/X.jsonl").to_owned()));
+        assert!(!paths.contains(&std::path::PathBuf::from(synthetic_path("X.jsonl"))));
         assert_eq!(
             paths
                 .iter()
-                .filter(|p| p.as_path() == Path::new("/synthetic/A.jsonl"))
+                .filter(|p| p.as_path() == Path::new(&synthetic_path("A.jsonl")))
                 .count(),
             1
         );
@@ -915,9 +986,14 @@ mod unavailable_coverage_tests {
     #[test]
     fn unavailable_coverage_is_not_reenumerated_as_a_current_source() {
         let store = AnalyticsStore::open_in_memory("kid").unwrap();
-        source(&store, "A\t[redacted]", "claude", "/synthetic/A.jsonl");
-        source(&store, "B\t[redacted]", "pi", "/synthetic/B.jsonl");
-        source(&store, "C", "codex", "/synthetic/C.jsonl");
+        source(
+            &store,
+            "A\t[redacted]",
+            "claude",
+            &synthetic_path("A.jsonl"),
+        );
+        source(&store, "B\t[redacted]", "pi", &synthetic_path("B.jsonl"));
+        source(&store, "C", "codex", &synthetic_path("C.jsonl"));
         let sources = store.load_sources().unwrap();
         let coverage = store.load_source_coverage().unwrap();
         let mut loops = json!({"sources":[loop_source("A\t[redacted]","s0","claude"),loop_source("B\t[redacted]","s1","pi")],"observations":[]});
@@ -940,7 +1016,7 @@ mod unavailable_coverage_tests {
         assert_eq!(captured.entries[2].source_id.as_deref(), Some("C"));
         let mut calls = 0;
         captured.annotate_with(&mut json!([]), &mut loops, |path| {
-            assert_eq!(path, Path::new("/synthetic/C.jsonl"));
+            assert_eq!(path, Path::new(&synthetic_path("C.jsonl")));
             calls += 1;
             PathObservation {
                 path_state: "gone",
@@ -958,7 +1034,7 @@ mod unavailable_coverage_tests {
     #[test]
     fn conflicting_coverage_preserves_distinct_usage_and_observation_contexts() {
         let store = AnalyticsStore::open_in_memory("kid").unwrap();
-        source(&store, "S", "claude", "/synthetic/S.jsonl");
+        source(&store, "S", "claude", &synthetic_path("S.jsonl"));
         store.connection().execute("INSERT INTO usage_facts (source_key,harness,native_session,ts,seq,input_uncached,output_tokens,cache_read,cache_write,reasoning,generation,source_id) VALUES ('opaque','pi','session',TIMESTAMP '2026-10-15 00:00:00',0,0,0,0,0,0,1,'S')",[]).unwrap();
         let usage = store.load_usage().unwrap();
         let sources = store.load_sources().unwrap();

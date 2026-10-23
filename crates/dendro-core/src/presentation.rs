@@ -3,6 +3,107 @@ use anyhow::{bail, Result};
 use serde_json::{json, Map, Value};
 use std::collections::BTreeMap;
 
+/// A single logical request; keeps the selected immutable version pinned across all reads.
+pub struct ReadRequest {
+    logical: std::path::PathBuf,
+    database: std::path::PathBuf,
+    initialized: bool,
+    #[cfg(windows)]
+    selected: Option<crate::selection_binding::SelectedRead>,
+    #[cfg(windows)]
+    legacy: Option<Box<crate::selection_binding::LegacyRead>>,
+}
+impl ReadRequest {
+    pub fn open(db: &std::path::Path) -> Result<Self> {
+        crate::refuse_secret_path(db)?;
+        #[cfg(windows)]
+        {
+            use crate::selection_binding::{resolve_logical_db, SelectedDb};
+            let resolved =
+                resolve_logical_db(db, &crate::platform_v1::StorageRootChoice::LocalAppData)?;
+            match resolved {
+                SelectedDb::Uninitialized => Ok(Self {
+                    logical: db.into(),
+                    database: db.into(),
+                    initialized: false,
+                    selected: None,
+                    legacy: None,
+                }),
+                SelectedDb::Legacy(legacy) => Ok(Self {
+                    logical: legacy.logical.clone(),
+                    initialized: true,
+                    database: legacy.database.clone(),
+                    selected: None,
+                    legacy: Some(legacy),
+                }),
+                SelectedDb::Selected(selected) => Ok(Self::from_selected(*selected)),
+            }
+        }
+        #[cfg(not(windows))]
+        Ok(Self {
+            logical: db.into(),
+            database: db.into(),
+            initialized: db.exists(),
+        })
+    }
+    #[cfg(windows)]
+    pub fn from_selected(selected: crate::selection_binding::SelectedRead) -> Self {
+        Self {
+            logical: selected.logical.clone(),
+            database: selected.database.clone(),
+            initialized: true,
+            selected: Some(selected),
+            legacy: None,
+        }
+    }
+    pub fn logical(&self) -> &std::path::Path {
+        &self.logical
+    }
+    /// Borrow the physical DB only while this request retains selection custody.
+    pub fn database(&self) -> &std::path::Path {
+        &self.database
+    }
+    pub fn initialized(&self) -> bool {
+        self.initialized
+    }
+    /// Cheap pointer check; immutable bundle bytes were verified when this request opened.
+    pub fn is_current(&self) -> Result<bool> {
+        #[cfg(windows)]
+        if let Some(selected) = self.selected() {
+            return selected.is_current();
+        }
+        Ok(false)
+    }
+    #[cfg(windows)]
+    pub fn selected(&self) -> Option<&crate::selection_binding::SelectedRead> {
+        self.selected.as_ref()
+    }
+    #[cfg(windows)]
+    pub fn is_legacy(&self) -> bool {
+        self.legacy.is_some()
+    }
+
+    pub fn open_store(&self) -> Result<crate::AnalyticsStore> {
+        #[cfg(windows)]
+        if let Some(selected) = self.selected() {
+            return crate::AnalyticsStore::open_read_only_selected(selected);
+        }
+        crate::AnalyticsStore::open_read_only(self.database())
+    }
+    pub fn status(&self, rig: Option<&str>) -> Result<Value> {
+        database_status_request(self, rig)
+    }
+    pub fn window(
+        &self,
+        rig: Option<&str>,
+        window: Option<&str>,
+        from: Option<&str>,
+        to: Option<&str>,
+    ) -> Result<(String, String, String)> {
+        resolve_window_request(self, rig, window, from, to)
+    }
+}
+
 fn rows(v: &Value) -> impl Iterator<Item = &Value> {
     v.as_array().into_iter().flatten()
 }
@@ -349,8 +450,12 @@ pub fn trailing_window(days: i64) -> Result<(String, String)> {
 
 /// Inspect an analytics database read-only and summarize recorded bounds, rigs, seats, and cache state.
 pub fn database_status(db: &std::path::Path, rig: Option<&str>) -> Result<Value> {
-    let db_display = crate::redact(&db.display().to_string());
-    if !db.exists() {
+    ReadRequest::open(db)?.status(rig)
+}
+
+fn database_status_request(request: &ReadRequest, rig: Option<&str>) -> Result<Value> {
+    let db_display = crate::redact(&request.logical().display().to_string());
+    if !request.initialized() {
         return Ok(json!({
             "exists": false,
             "db": db_display,
@@ -362,7 +467,7 @@ pub fn database_status(db: &std::path::Path, rig: Option<&str>) -> Result<Value>
             ]
         }));
     }
-    let store = crate::AnalyticsStore::open_read_only(db)?;
+    let store = request.open_store()?;
     let conn = store.connection();
     let (min_ts, max_ts): (Option<String>, Option<String>) = if let Some(r) = rig {
         conn.query_row(
@@ -457,14 +562,15 @@ pub fn database_status(db: &std::path::Path, rig: Option<&str>) -> Result<Value>
     });
 
     drop(store);
-    let semantic = crate::semantic::cached_scope(db).map(|(r, f, t, fresh)| {
-        json!({
-            "rig": r.map(|v| crate::redact(&v)),
-            "from": f,
-            "to": t,
-            "fresh": fresh
-        })
-    });
+    let semantic =
+        crate::semantic::cached_scope_physical(request.database()).map(|(r, f, t, fresh)| {
+            json!({
+                "rig": r.map(|v| crate::redact(&v)),
+                "from": f,
+                "to": t,
+                "fresh": fresh
+            })
+        });
     let semantic_fresh = semantic
         .as_ref()
         .and_then(|s| s["fresh"].as_bool())
@@ -587,6 +693,16 @@ pub fn resolve_window(
     from: Option<&str>,
     to: Option<&str>,
 ) -> Result<(String, String, String)> {
+    ReadRequest::open(db)?.window(rig, window, from, to)
+}
+
+fn resolve_window_request(
+    request: &ReadRequest,
+    rig: Option<&str>,
+    window: Option<&str>,
+    from: Option<&str>,
+    to: Option<&str>,
+) -> Result<(String, String, String)> {
     if let (Some(f), Some(t)) = (from, to) {
         return Ok((f.to_owned(), t.to_owned(), "explicit".into()));
     }
@@ -598,8 +714,12 @@ pub fn resolve_window(
         "all" => None,
         _ => bail!("window must be 1h, 24h, 7d, 30d, or all"),
     };
-    if db.exists() {
-        if let Ok(status) = database_status(db, rig) {
+    if request.initialized() {
+        #[cfg(windows)]
+        let status = Some(request.status(rig)?);
+        #[cfg(not(windows))]
+        let status = request.status(rig).ok();
+        if let Some(status) = status {
             let min_dt = status["min_timestamp"]
                 .as_str()
                 .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
@@ -1558,6 +1678,15 @@ mod tests {
     }
     #[test]
     fn status_window_resolution_and_help_overlay_are_truthful() {
+        #[cfg(windows)]
+        let private = crate::platform_v1::create_user_private_root_with_choice(
+            "dendro-status-test-",
+            &crate::platform_v1::StorageRootChoice::UserProfile,
+        )
+        .unwrap();
+        #[cfg(windows)]
+        let missing = private.path().join("missing.duckdb");
+        #[cfg(not(windows))]
         let missing = std::env::temp_dir().join("dendro-missing-status-test.duckdb");
         let _ = std::fs::remove_file(&missing);
         let status = database_status(&missing, None).unwrap();
@@ -1623,6 +1752,15 @@ mod tests {
 
     #[test]
     fn test_pi_breakdown_and_human_status() {
+        #[cfg(windows)]
+        let private = crate::platform_v1::create_user_private_root_with_choice(
+            "dendro-pi-test-",
+            &crate::platform_v1::StorageRootChoice::UserProfile,
+        )
+        .unwrap();
+        #[cfg(windows)]
+        let dir = private.path().to_path_buf();
+        #[cfg(not(windows))]
         let dir = std::env::temp_dir().join(format!(
             "dendro-pi-breakdown-{}-{}",
             std::process::id(),
@@ -1631,8 +1769,11 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        #[cfg(not(windows))]
+        {
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+        }
         let db = dir.join("test.duckdb");
         let store = crate::AnalyticsStore::open_path(&db, "key").unwrap();
 

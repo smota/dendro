@@ -1,0 +1,19 @@
+{
+  "schema": "dendro.combined-windows-verification/v1",
+  "verified_at": "2026-10-23T09:15:25.5128709Z",
+  "source_files": 215,
+  "source_drift": false,
+  "protected_unrelated_files_unchanged": true,
+  "check": "pass",
+  "test": "pass",
+  "clippy": "pass",
+  "fmt": "pass",
+  "test_summaries": 33,
+  "successful_test_executions": 548,
+  "test_failures": 0,
+  "ignored": 1,
+  "nested_summary": "Includes one repeated cancellation subprocess pass; unique count is executions minus1",
+  "independent_consumer_acceptance": "blocked F1; see consumer-review/parked-after-round2.json",
+  "controlled_performance_acceptance": "failed max20.339ms against20ms, not erased by fullsuitepass",
+  "full_version_complete": false
+}

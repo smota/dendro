@@ -30,6 +30,19 @@ fn rule(seat: &str, uncached: f64, cache: f64) -> TierRule {
 #[test]
 fn canonical_real_report_has_exact_baseline_and_deterministic_default() -> anyhow::Result<()> {
     let f = fixture::Fixture::new(30);
+    #[cfg(windows)]
+    let f = {
+        let root = dendro_core::platform_v1::create_user_private_root_with_choice(
+            "dendro-simulation-",
+            &dendro_core::platform_v1::StorageRootChoice::UserProfile,
+        )?;
+        let db = root.path().join("analytics.duckdb");
+        dendro_core::lifecycle::private_copy(&f.db, &db, &dendro_core::RUN_CANCEL)?;
+        fixture::Fixture {
+            dir: root.path().to_path_buf(),
+            db,
+        }
+    };
     let r = report_json(
         &f.db,
         "decisions",

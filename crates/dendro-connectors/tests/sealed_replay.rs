@@ -9,6 +9,11 @@ use dendro_core::{report_json, run_locked_with_manifest, CutoffManifest};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
+fn database_bytes(db: &Path) -> Vec<u8> {
+    let request = dendro_core::presentation::ReadRequest::open(db).unwrap();
+    fs::read(request.database()).unwrap()
+}
+
 const FROM: &str = "2026-10-09T00:00:00Z";
 const TO: &str = "2026-10-10T00:00:00Z";
 static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -16,6 +21,20 @@ static NEXT: AtomicU64 = AtomicU64::new(0);
 struct Scratch(PathBuf);
 impl Scratch {
     fn new() -> Self {
+        #[cfg(windows)]
+        let root = dendro_core::platform_v1::create_user_private_root_with_choice(
+            &format!(
+                "dendro-integration-{}-",
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ),
+            &dendro_core::platform_v1::StorageRootChoice::UserProfile,
+        )
+        .unwrap();
+        #[cfg(windows)]
+        let path = root.path().to_path_buf();
+        #[cfg(windows)]
+        drop(root);
+        #[cfg(not(windows))]
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../target/issue-13-tests")
             .join(format!(
@@ -205,7 +224,7 @@ fn sealed_file_mismatches_leave_published_database_bytes_untouched() {
         let db = scratch.0.join("analytics.duckdb");
         let manifest_path = scratch.0.join("cutoff.json");
         run(&db, &roots, Some(&manifest_path), None).unwrap();
-        let baseline = fs::read(&db).unwrap();
+        let baseline = database_bytes(&db);
         let manifest: CutoffManifest =
             serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
         let id = &manifest
@@ -243,7 +262,7 @@ fn sealed_file_mismatches_leave_published_database_bytes_untouched() {
             "reason missing: {error}"
         );
         assert_eq!(
-            fs::read(&db).unwrap(),
+            database_bytes(&db),
             baseline,
             "published DB changed after {mutation}"
         );
@@ -338,7 +357,7 @@ fn sealed_replay_keeps_history_present_when_manifest_was_written() {
         .join(format!(".dendro-sealed-{digest}.duckdb"));
     let historical = fs::read(&companion).unwrap();
     assert_eq!(hex::encode(Sha256::digest(&historical)), digest);
-    let published = fs::read(&db).unwrap();
+    let published = database_bytes(&db);
     for missing in [false, true] {
         if missing {
             fs::remove_file(&companion).unwrap();
@@ -352,7 +371,7 @@ fn sealed_replay_keeps_history_present_when_manifest_was_written() {
             .to_string();
         assert!(error.contains("mismatch"), "{error}");
         assert!(error.contains("history"), "{error}");
-        assert_eq!(fs::read(&db).unwrap(), published);
+        assert_eq!(database_bytes(&db), published);
         fs::write(&companion, &historical).unwrap();
     }
 }

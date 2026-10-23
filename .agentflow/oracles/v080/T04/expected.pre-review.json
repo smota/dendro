@@ -1,0 +1,679 @@
+{
+  "schema": "dendro.migration-oracle-draft/v1",
+  "status": "review_ready_independent_vectors_and_concrete_SQL_recipe_not_frozen",
+  "author": {
+    "worker": "/root/finalize_plan",
+    "provider_family": "openai",
+    "role": "independent T04 oracle author; must never build T04"
+  },
+  "authored_at": "2026-10-23T01:38:13.447685+00:00",
+  "source_digests": {
+    ".agentflow/proposals/next-version-2026-10-22/DESIGN.md": "7f6ca2da4ea5b4c7e6d78b565c3857a5e716a277c0dfec7abe37f40eb729f638",
+    ".agentflow/proposals/next-version-2026-10-22/tasks.json": "4bc79593d3b8f280e53a19fed2e9e87d47cd7f7849d317a1d9a90baa2a3d88cf",
+    "crates/dendro-core/src/storage.rs": "40ae2fca5eba94e9987763f6683eafdad30ea5d33ce52fb30b1411d8dcb4632a",
+    "crates/dendro-core/src/facts.rs": "0bb9ebdb1b2e24cb3b234164db032cedea9c0e0027e332c5f2c264f5a3f689e5",
+    "crates/dendro-core/src/output.rs": "62f4e49737dbeb138d1dc399b3a3627b22d06c085a504fdbfc01727dbe17e667",
+    "crates/dendro-core/src/openrig_provenance.rs": "c3c25bca4116e692c87504369174a379303990cc2c66c0edcc833c4537413679",
+    "crates/dendro-core/src/lifecycle.rs": "4f94fc98980948c2063d883ae388d719fed60a8815b024f69de03e5892d78b07"
+  },
+  "source_facts": [
+    "facts.rs:4 SCHEMA_VERSION=3",
+    "storage.rs:214-347 actual schema3 tables and supplemental state",
+    "storage.rs:140-150 rejects mismatched privacy key",
+    "openrig_provenance.rs:11-19 source generations and producing revisions",
+    "DESIGN.md:178 migration/rollback normative;188 immutable bundle regular manifest publication",
+    "Existing migration_v4 module is an admission seam, not implemented migrator; no future implementation read."
+  ],
+  "fixture_recipe": {
+    "id": "S3-minimal",
+    "sql": "schema3-fixture.sql",
+    "projections": "schema3-fixture-projections.json",
+    "logs_present": false,
+    "physical_fixture_created": false,
+    "engine_execution": "still required; standard-library SQLite verified declared SQL columns and values only",
+    "key": "explicit synthetic72-byte sidecar recipe; no actual owner key"
+  },
+  "cases": [
+    {
+      "id": "T04-01",
+      "name": "schema3_no_logs",
+      "acceptance_refs": [
+        "A1"
+      ],
+      "input": {
+        "source_schema": 3,
+        "key": "matching_private_sidecar",
+        "logs_present": false,
+        "fixture": "S3-minimal"
+      },
+      "expected": {
+        "migration": "succeeds_on_admitted_platform",
+        "source_db_and_key_and_sidecars": "byte_for_byte_unchanged",
+        "target_schema": 4,
+        "legacy_counts_and_values": "preserved",
+        "new_relationships": "unknown",
+        "source_replay_required": false
+      }
+    },
+    {
+      "id": "T04-02",
+      "name": "legacy_grain_and_unknowns",
+      "acceptance_refs": [
+        "A1"
+      ],
+      "input": {
+        "legacy_usage_rows": 2,
+        "message_id": [
+          null,
+          "m1"
+        ],
+        "ts": [
+          null,
+          "2026-10-22T00:00:00Z"
+        ],
+        "input_uncached": [
+          0,
+          90
+        ],
+        "cache_read": [
+          0,
+          10
+        ],
+        "output_tokens": [
+          0,
+          4
+        ],
+        "currency_total": [
+          null,
+          0.0
+        ],
+        "fixture_subset": [
+          "usage-0",
+          "usage-1"
+        ]
+      },
+      "expected": {
+        "usage_row_count": 2,
+        "input_uncached_sum": 90,
+        "cache_read_sum": 10,
+        "output_sum": 4,
+        "null_vs_zero": "preserved",
+        "new_invocation_membership": "unknown",
+        "context_capacity": "unknown",
+        "acceptance": "unknown",
+        "spawn_edges": 0,
+        "zero_proves_missing_field": false
+      }
+    },
+    {
+      "id": "T04-03",
+      "name": "key_missing",
+      "acceptance_refs": [
+        "A1"
+      ],
+      "input": {
+        "source_schema": 3,
+        "key_sidecar": "absent"
+      },
+      "expected": {
+        "result": "refuse",
+        "silent_rekey": false,
+        "plaintext_fallback": false,
+        "pointer_changed": false,
+        "source_mutated": false
+      }
+    },
+    {
+      "id": "T04-04",
+      "name": "key_mismatch",
+      "acceptance_refs": [
+        "A1"
+      ],
+      "input": {
+        "db_key_id": "key-A",
+        "sidecar_key_id": "key-B"
+      },
+      "expected": {
+        "result": "refuse",
+        "pointer_changed": false,
+        "source_mutated": false
+      }
+    },
+    {
+      "id": "T04-05",
+      "name": "provenance_and_watermarks",
+      "acceptance_refs": [
+        "A1"
+      ],
+      "input": {
+        "source_state": {
+          "source_id": "src-A",
+          "generation": 2,
+          "byte_offset": 512,
+          "prefix_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        "codex_counters": {
+          "input_tokens": 100,
+          "cached_input_tokens": 10,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 4,
+          "reasoning_output_tokens": 0
+        },
+        "openrig_row": {
+          "source_id": "rig-source",
+          "generation": 2,
+          "producing_revision": "r2",
+          "table_name": "queue_items",
+          "row_id": "17",
+          "row_state": "present",
+          "source_key": "q17"
+        }
+      },
+      "expected": {
+        "all_supplied_values": "retained_exactly",
+        "counter_reset": false,
+        "producing_revision_rewritten": false,
+        "original_logs_needed": false
+      }
+    },
+    {
+      "id": "T04-06",
+      "name": "legacy_tables_views",
+      "acceptance_refs": [
+        "A1"
+      ],
+      "input": {
+        "tables": [
+          "usage_facts",
+          "tool_facts",
+          "identity_facts",
+          "activity_facts",
+          "queue_facts",
+          "skill_facts",
+          "seat_bounds",
+          "seat_roles",
+          "destination_snapshots",
+          "file_source_baselines",
+          "openrig_row_records",
+          "mutable_source_disclosures"
+        ],
+        "values": "S3-minimal fixture rows"
+      },
+      "expected": {
+        "legacy_grain_results": "same rows and nulls through declared compatibility views",
+        "new_precision_claim": "none",
+        "destructive_legacy_drop": false
+      }
+    },
+    {
+      "id": "T04-07",
+      "name": "repeat_migration",
+      "acceptance_refs": [
+        "A2"
+      ],
+      "input": {
+        "operation": "same immutable source identity/digest and same target contract twice"
+      },
+      "expected": {
+        "logical_target_facts": "one migrated set",
+        "duplicate_rows": 0,
+        "source_unchanged": true,
+        "completed_target": "reused_after_validation_or_new_equivalent_private_stage",
+        "consumer_pointer": "only selects validated target"
+      }
+    },
+    {
+      "id": "T04-08",
+      "name": "unsupported_source",
+      "acceptance_refs": [
+        "A2"
+      ],
+      "input": {
+        "source_schema": [
+          2,
+          5
+        ]
+      },
+      "expected": {
+        "result": "refuse_unsupported_schema",
+        "source_mutated": false,
+        "pointer_changed": false
+      }
+    },
+    {
+      "id": "T04-09",
+      "name": "integrity_or_checksum_failure",
+      "acceptance_refs": [
+        "A2"
+      ],
+      "input": {
+        "failure": [
+          "staged_integrity_check",
+          "source_checksum_mismatch",
+          "sidecar_version_mismatch"
+        ]
+      },
+      "expected": {
+        "result": "refuse",
+        "consumer_pointer": "old_schema3",
+        "staging": "private_quarantine",
+        "source_unchanged": true
+      }
+    },
+    {
+      "id": "T04-10",
+      "name": "old_binary_refusal",
+      "acceptance_refs": [
+        "A2"
+      ],
+      "input": {
+        "binary": "pinned v0.7.0 schema3",
+        "target_db_schema": 4
+      },
+      "expected": {
+        "open_result": "clean unsupported-version refusal",
+        "migration_by_old_binary": false,
+        "schema4_canonical_rows": "unchanged",
+        "assertion_scope": "canonical DB content, no unsupported claim about engine incidental read metadata"
+      }
+    },
+    {
+      "id": "T04-11",
+      "name": "interrupt_stage_created",
+      "acceptance_refs": [
+        "A2"
+      ],
+      "input": {
+        "interrupt": "stage_created",
+        "consumer_before": "schema3",
+        "failure_kind": "process_crash"
+      },
+      "expected": {
+        "consumer_after_restart": "schema3",
+        "old_snapshot_key_sidecars": "unchanged",
+        "incomplete_target": "never_selected",
+        "recovery": "private_stage_inspect_or_quarantine_no_live_delete"
+      }
+    },
+    {
+      "id": "T04-12",
+      "name": "interrupt_partial_data_copy",
+      "acceptance_refs": [
+        "A2"
+      ],
+      "input": {
+        "interrupt": "partial_data_copy",
+        "consumer_before": "schema3",
+        "failure_kind": "process_crash"
+      },
+      "expected": {
+        "consumer_after_restart": "schema3",
+        "old_snapshot_key_sidecars": "unchanged",
+        "incomplete_target": "never_selected",
+        "recovery": "private_stage_inspect_or_quarantine_no_live_delete"
+      }
+    },
+    {
+      "id": "T04-13",
+      "name": "interrupt_before_transaction_commit",
+      "acceptance_refs": [
+        "A2"
+      ],
+      "input": {
+        "interrupt": "before_transaction_commit",
+        "consumer_before": "schema3",
+        "failure_kind": "process_crash"
+      },
+      "expected": {
+        "consumer_after_restart": "schema3",
+        "old_snapshot_key_sidecars": "unchanged",
+        "incomplete_target": "never_selected",
+        "recovery": "private_stage_inspect_or_quarantine_no_live_delete"
+      }
+    },
+    {
+      "id": "T04-14",
+      "name": "interrupt_after_transaction_commit_before_integrity",
+      "acceptance_refs": [
+        "A2"
+      ],
+      "input": {
+        "interrupt": "after_transaction_commit_before_integrity",
+        "consumer_before": "schema3",
+        "failure_kind": "process_crash"
+      },
+      "expected": {
+        "consumer_after_restart": "schema3",
+        "old_snapshot_key_sidecars": "unchanged",
+        "incomplete_target": "never_selected",
+        "recovery": "private_stage_inspect_or_quarantine_no_live_delete"
+      }
+    },
+    {
+      "id": "T04-15",
+      "name": "interrupt_after_integrity_before_manifest_replace",
+      "acceptance_refs": [
+        "A2"
+      ],
+      "input": {
+        "interrupt": "after_integrity_before_manifest_replace",
+        "consumer_before": "schema3",
+        "failure_kind": "process_crash"
+      },
+      "expected": {
+        "consumer_after_restart": "schema3",
+        "old_snapshot_key_sidecars": "unchanged",
+        "incomplete_target": "never_selected",
+        "recovery": "private_stage_inspect_or_quarantine_no_live_delete"
+      }
+    },
+    {
+      "id": "T04-16",
+      "name": "atomic_manifest_interrupt",
+      "acceptance_refs": [
+        "A2"
+      ],
+      "input": {
+        "interrupt": "during_same_volume_regular_manifest_atomic_replace",
+        "durability": "T24 admitted primitives"
+      },
+      "expected": {
+        "after_restart": "valid old or valid accepted new manifest; corrupt/torn manifest refuses",
+        "partial_db_selected": false,
+        "directory_or_junction_replace": false,
+        "unverified_copy_selected": false
+      }
+    },
+    {
+      "id": "T04-17",
+      "name": "windows_sharing_violation",
+      "acceptance_refs": [
+        "A2"
+      ],
+      "input": {
+        "os": "native_windows",
+        "failure": "manifest replacement sharing violation"
+      },
+      "expected": {
+        "consumer_pointer": "old_schema3",
+        "delete_live_db_to_force_rename": false,
+        "target": "retained_private",
+        "result": "explicit_failure"
+      }
+    },
+    {
+      "id": "T04-18",
+      "name": "cross_volume_staging",
+      "acceptance_refs": [
+        "A2"
+      ],
+      "input": {
+        "source_volume": "A",
+        "destination_volume": "B",
+        "interrupt": "copy_incomplete"
+      },
+      "expected": {
+        "consumer_pointer": "old",
+        "stage": "private_unselected",
+        "cross_volume_atomic_rename_assumed": false,
+        "publication_prerequisite": "closed consistent verified immutable destination copy then same-volume manifest replace"
+      }
+    },
+    {
+      "id": "T04-19",
+      "name": "rollback_no_new_data_no_logs",
+      "acceptance_refs": [
+        "A1",
+        "A2"
+      ],
+      "input": {
+        "schema4_only_facts": 0,
+        "logs_present": false,
+        "writer_state": "stopped",
+        "preserved_schema3_binary_db_key_sidecars": "valid"
+      },
+      "expected": {
+        "selected_bundle": "preserved_schema3",
+        "source_replay_needed": false,
+        "failed_schema4": "preserved_private",
+        "destructive_downmigration": false
+      }
+    },
+    {
+      "id": "T04-20",
+      "name": "rollback_v4_only_loss_receipt",
+      "acceptance_refs": [
+        "A1",
+        "A2"
+      ],
+      "input": {
+        "last_common_watermark": 512,
+        "last_common_cutoff": "2026-10-22T00:00:00Z",
+        "v4_only_facts": [
+          {
+            "id": "v4-A",
+            "ts": "2026-10-22T00:00:01Z"
+          },
+          {
+            "id": "v4-B",
+            "ts": "2026-10-22T00:00:03Z"
+          }
+        ],
+        "logs_present": false
+      },
+      "expected": {
+        "rollback_snapshot": "available",
+        "excluded_fact_count": 2,
+        "excluded_windows": [
+          [
+            "2026-10-22T00:00:01Z",
+            "2026-10-22T00:00:03Z"
+          ]
+        ],
+        "replay_available": false,
+        "full_continuity_claim": false,
+        "receipt_requires": [
+          "last_common_watermark",
+          "last_common_cutoff",
+          "excluded_counts",
+          "excluded_time_windows",
+          "replay_availability",
+          "unresolved_loss"
+        ],
+        "failed_v4_retained_private": true
+      }
+    },
+    {
+      "id": "T04-21",
+      "name": "revision_cutoff_reproducible",
+      "acceptance_refs": [
+        "A2"
+      ],
+      "input": {
+        "schema4_revisions": [
+          {
+            "fact": "U",
+            "revision": 1,
+            "ingested": 10,
+            "quantity": 5
+          },
+          {
+            "fact": "U",
+            "revision": 2,
+            "ingested": 20,
+            "quantity": 7
+          },
+          {
+            "fact": "U",
+            "revision": 3,
+            "ingested": 30,
+            "retracted": true
+          }
+        ],
+        "query_ingestion_cutoffs": [
+          15,
+          25,
+          35
+        ]
+      },
+      "expected": {
+        "values": [
+          5,
+          7,
+          null
+        ],
+        "states": [
+          "present",
+          "present",
+          "retracted"
+        ],
+        "revision_history_count": 3,
+        "earlier_cutoff_mutated": false,
+        "legacy_migration_synthesizes_history": false
+      }
+    },
+    {
+      "id": "T04-22",
+      "name": "live_writer_or_inconsistent_wal",
+      "acceptance_refs": [
+        "A1",
+        "A2"
+      ],
+      "input": {
+        "condition": [
+          "uncontrolled_live_writer",
+          "unverified_main_WAL_consistency"
+        ]
+      },
+      "expected": {
+        "snapshot": "refuse_without_admitted_consistency_mechanism",
+        "blind_copy": false,
+        "consumer_pointer_changed": false
+      }
+    },
+    {
+      "id": "T04-23",
+      "name": "legacy_binary64_preserved",
+      "acceptance_refs": [
+        "A1"
+      ],
+      "input": {
+        "fixture": "S3-minimal",
+        "source_keys": [
+          "usage-0",
+          "usage-1",
+          "usage-2",
+          "usage-3"
+        ]
+      },
+      "expected": {
+        "legacy_currency_bits": [
+          null,
+          "0000000000000000",
+          "3fb999999999999a",
+          "00000000000007e8"
+        ],
+        "currency_precision": "legacy_binary64_approximate",
+        "exact_canonical_currency_eligibility": false,
+        "unit_invented": false,
+        "legacy_values_discarded": false
+      }
+    },
+    {
+      "id": "T04-24",
+      "name": "legacy_nonfinite_and_signedzero_extension",
+      "acceptance_refs": [
+        "A1"
+      ],
+      "input": {
+        "extension": "DuckDB CAST NaN,+Infinity,-Infinity,-0.0 prior to migrate; capture original classifications/sign"
+      },
+      "expected": {
+        "legacy_values_retained": true,
+        "NaN_is_NULL": false,
+        "infinity_is_zero": false,
+        "signed_zero_preserved_as_stored": true,
+        "canonical_exact_money": "not_eligible",
+        "finite_aggregate_from_nonfinite": "refuse",
+        "NaN_payload_bits": "compare only engine admitted representable contract; not universal payload encoding claim"
+      }
+    }
+  ],
+  "A1": [
+    "T04-01",
+    "T04-02",
+    "T04-03",
+    "T04-04",
+    "T04-05",
+    "T04-06",
+    "T04-19",
+    "T04-20",
+    "T04-22",
+    "T04-23",
+    "T04-24"
+  ],
+  "A2": [
+    "T04-07",
+    "T04-08",
+    "T04-09",
+    "T04-10",
+    "T04-11",
+    "T04-12",
+    "T04-13",
+    "T04-14",
+    "T04-15",
+    "T04-16",
+    "T04-17",
+    "T04-18",
+    "T04-19",
+    "T04-20",
+    "T04-21",
+    "T04-22"
+  ],
+  "unresolved_before_builder_acceptance": [
+    "Reviewed platform interface plus relevant native receipt and serialized storage lease handoff required before constructing migration implementation.",
+    "Review crash fault hook mapping/durability proof against admitted platform API; logical points are normative not invented function names.",
+    "Run old binary/version refusal on actual staged fixture; no fabricated run evidence.",
+    "Independent review of concrete SQL/projections/legacy precision policy before freeze; execute actual DuckDB recipe and capture native fixture bundle digests before migration acceptance.",
+    "Compatibility view names, canonical legacy precision metadata representation and typed error names remain builder mapping decisions reviewed against these semantics; no invented API promised."
+  ],
+  "product_code_written": false,
+  "native_tests_run": false,
+  "currency_precision_policy": {
+    "policy": "Retain legacy currency_total as stored DOUBLE in preserved legacy storage/compatibility projection; tag precision legacy_binary64_approximate. Do not silently cast/round to decimal, zero, NULL, or exact observed canonical currency. Missing currency unit cannot be invented. Legacy amount remains available as legacy evidence, excluded/refused where exact canonical money is required.",
+    "known_values": [
+      {
+        "source_key": "usage-0",
+        "kind": "missing",
+        "big_endian_ieee754_hex": null
+      },
+      {
+        "source_key": "usage-1",
+        "kind": "finite_binary64",
+        "big_endian_ieee754_hex": "0000000000000000"
+      },
+      {
+        "source_key": "usage-2",
+        "kind": "finite_binary64",
+        "big_endian_ieee754_hex": "3fb999999999999a"
+      },
+      {
+        "source_key": "usage-3",
+        "kind": "finite_binary64",
+        "big_endian_ieee754_hex": "00000000000007e8"
+      }
+    ],
+    "nonfinite_extension": {
+      "sql": "INSERT INTO usage_facts SELECT 'usage-nan', harness,native_session,message_id,ts,seq,input_uncached,output_tokens,cache_read,cache_write,reasoning,CAST('NaN' AS DOUBLE),generation,source_id,predecessor_source_key,predecessor_reason,prior_input_tokens,prior_cached_input_tokens,prior_cache_write_input_tokens,prior_output_tokens,prior_reasoning_output_tokens,model,effort FROM usage_facts WHERE source_key='usage-0';",
+      "expected": "NaN stays retained legacy nonfinite, never canonical currency/0/NULL; no finite aggregate claims; actual engine NaN representation captured before migration, no promised universal NaN payload bit pattern",
+      "other_values": [
+        "positive infinity",
+        "negative infinity",
+        "negative zero"
+      ],
+      "engine_receipt_required": "DuckDB-native classification, original finite bits and negative-zero sign comparison; SQLite cannot verify these semantics",
+      "sql_path": "schema3-currency-extension.sql",
+      "sql_sha256": "cdc5a1837fb9fc384cbef4245d64595279e2b67b827902c0125c069b1a2d45c0"
+    }
+  }
+}

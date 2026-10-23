@@ -1,0 +1,3867 @@
+{
+  "schema_version": "dendro.proposal.tasks/v1",
+  "status": "implementation_authorized_bootstrap_in_progress",
+  "baseline": {
+    "sha": "6b755135f95e497071790e8e5e358995a8244a18",
+    "version": "0.7.0",
+    "schema": 3
+  },
+  "target": {
+    "version": "0.8.0",
+    "schema": 4,
+    "domain_contract": "1.0.0",
+    "answer_contract": "1.0.0",
+    "contribution_contract": "1.0.0",
+    "executed": false
+  },
+  "max_parallel_workers": 3,
+  "roles": {
+    "lead": {
+      "runtime": "codex exec",
+      "model": "gpt-6.1-sol",
+      "effort": "medium",
+      "provider_family": "openai",
+      "role": "lead architect and decision-packet integrator"
+    },
+    "delivery": {
+      "runtime": "grok --single",
+      "model": "grok-4.7",
+      "effort": "medium",
+      "provider_family": "xai",
+      "role": "extensive bounded builders"
+    },
+    "independent_review": {
+      "runtime": "claude -p",
+      "model": "claude-opus-5-5",
+      "effort": "medium",
+      "provider_family": "anthropic",
+      "role": "review only; initial skeleton critique completed and adjudicated, finalized packet acceptance not claimed"
+    },
+    "oracle_policy": "Distinct worker identity per artifact for curator, expected-value author, builder and reviewer. Owner family differs oracle/reviewer; no Claude authorship. Curator writes sealed independent submissions without changing values. Bootstrap exception B00/B01/T02 uses reviewed proposal checklist digest, all later tasks require T02 and own frozen oracle. Cross-task provider-family equality is not self-review; distinct execution/artifact-authorship ledger and independent implementation oracle govern. Evidence curation is not expected-value authorship.",
+    "agy_workers": "none",
+    "routing_authority": "User-explicit task scope only; saved distribution unchanged.",
+    "path_lock_policy": "Task-exclusive paths except global standing integration-owner paths: Codex alone writes; requests are not leases. Serialize standing-owner substeps globally with fence/expiry, max three workers including substeps; task DAG cannot waive single writer.",
+    "retry_policy": "Transient retries 30s/60s maximum two; initial candidate plus maximum two independently reviewed rework rounds.",
+    "shared_file_leases": [
+      {
+        "path": "Cargo.toml",
+        "standing_owner": "Codex integration worker",
+        "provider_family": "openai",
+        "rule": "Exclusive global standing lease; substeps in T03 skeleton, T05 connector skeleton, T12-T19 bounded requests, T18 integration, T23 version/revalidation. Never concurrent. Grok independent oracle and fresh Claude review for integration artifact. T24 requests early portable OS dependency/wiring patches; T25/T26 request collector/event slots; no concurrent shared edits."
+      },
+      {
+        "path": "Cargo.lock",
+        "standing_owner": "Codex integration worker",
+        "provider_family": "openai",
+        "rule": "Exclusive global standing lease; substeps in T03 skeleton, T05 connector skeleton, T12-T19 bounded requests, T18 integration, T23 version/revalidation. Never concurrent. Grok independent oracle and fresh Claude review for integration artifact. T24 requests early portable OS dependency/wiring patches; T25/T26 request collector/event slots; no concurrent shared edits."
+      },
+      {
+        "path": "crates/dendro-core/src/lib.rs",
+        "standing_owner": "Codex integration worker",
+        "provider_family": "openai",
+        "rule": "Exclusive global standing lease; substeps in T03 skeleton, T05 connector skeleton, T12-T19 bounded requests, T18 integration, T23 version/revalidation. Never concurrent. Grok independent oracle and fresh Claude review for integration artifact. T24 requests early portable OS dependency/wiring patches; T25/T26 request collector/event slots; no concurrent shared edits."
+      },
+      {
+        "path": "crates/dendro-connectors/src/lib.rs",
+        "standing_owner": "Codex integration worker",
+        "provider_family": "openai",
+        "rule": "Exclusive global standing lease; substeps in T03 skeleton, T05 connector skeleton, T12-T19 bounded requests, T18 integration, T23 version/revalidation. Never concurrent. Grok independent oracle and fresh Claude review for integration artifact. T24 requests early portable OS dependency/wiring patches; T25/T26 request collector/event slots; no concurrent shared edits."
+      },
+      {
+        "path": "crates/dendro-connectors/src/capture_registry_v1/**",
+        "standing_owner": "Codex integration worker",
+        "provider_family": "openai",
+        "rule": "Exclusive global standing lease; substeps in T03 skeleton, T05 connector skeleton, T12-T19 bounded requests, T18 integration, T23 version/revalidation. Never concurrent. Grok independent oracle and fresh Claude review for integration artifact. T24 requests early portable OS dependency/wiring patches; T25/T26 request collector/event slots; no concurrent shared edits."
+      },
+      {
+        "path": "crates/dendro-core/src/insight_v1/registry.rs",
+        "standing_owner": "Codex integration worker",
+        "provider_family": "openai",
+        "rule": "Standing Codex exclusive global lease: T15 contract/example registration; T16 exactly I01-I21/version1.0.0 and named submeasures, before acceptance. T18 is capture-only with no insight-registry write. Grok oracle and fresh Claude review bind every integration artifact."
+      },
+      {
+        "path": "crates/dendro-core/Cargo.toml",
+        "standing_owner": "Codex integration worker",
+        "provider_family": "openai",
+        "rule": "Native target dependency/feature edits requested by T24 and later tasks; only standing Codex writes under global fenced single-writer lease, independently reviewed receipt before consumption. No Grok direct manifest writes."
+      },
+      {
+        "path": "crates/dendro-connectors/Cargo.toml",
+        "standing_owner": "Codex integration worker",
+        "provider_family": "openai",
+        "rule": "Native target dependency/feature edits requested by T24 and later tasks; only standing Codex writes under global fenced single-writer lease, independently reviewed receipt before consumption. No Grok direct manifest writes."
+      },
+      {
+        "path": "crates/dendro-resolver/Cargo.toml",
+        "standing_owner": "Codex integration worker",
+        "provider_family": "openai",
+        "rule": "Native target dependency/feature edits requested by T24 and later tasks; only standing Codex writes under global fenced single-writer lease, independently reviewed receipt before consumption. No Grok direct manifest writes."
+      },
+      {
+        "path": "crates/dendro-watcher/Cargo.toml",
+        "standing_owner": "Codex integration worker",
+        "provider_family": "openai",
+        "rule": "Native target dependency/feature edits requested by T24 and later tasks; only standing Codex writes under global fenced single-writer lease, independently reviewed receipt before consumption. No Grok direct manifest writes."
+      },
+      {
+        "path": "crates/dendro-cli/Cargo.toml",
+        "standing_owner": "Codex integration worker",
+        "provider_family": "openai",
+        "rule": "Native target dependency/feature edits requested by T24 and later tasks; only standing Codex writes under global fenced single-writer lease, independently reviewed receipt before consumption. No Grok direct manifest writes."
+      }
+    ],
+    "worker_identity_schema": {
+      "key": "native_client_session_id when exposed; otherwise unique_worker_run_id plus factual dispatcher launch receipt",
+      "receipt_fields": [
+        "pid when exposed by launched CLI",
+        "process start time",
+        "sanitized executable/arguments",
+        "input/output/authorship digests"
+      ],
+      "unavailable_session": "Mark native_session_id unavailable, never fabricate. Native CLI subprocess launch requires actual launch receipt; harness-managed bounded worker records actual harness task/dispatcher receipt with unavailable PID/session explicitly.",
+      "account_policy": "Same subscription/account permitted; execution/artifact-authorship disjointness required."
+    },
+    "direct_path_control": {
+      "scope": "current authorized direct local implementation",
+      "mechanism": "Explicit task paths, fenced local single-writer lease records and immutable authorship/action ledger; no pretend OpenRig seat.",
+      "oracle_protection": ".agentflow/oracles/v080/** only designated independent expected-value author/curator; builders forbidden to edit expected values including new plan oracle paths.",
+      "governance_hold": "Canonical seat manifest restoration remains separate policy-owner hold, not a blocker on authorized direct local product/bootstrap task leases.",
+      "sequential_handoffs": "T03/T05 module skeletons and T24 output/snapshot paths transfer only at reviewed artifact/acceptance handoff to named later task; shared Cargo/lib/registry paths always standing Codex owner."
+    }
+  },
+  "requirements": [
+    {
+      "id": "R01",
+      "description": "Governance, baseline, task-scoped routes, custody and safe admission",
+      "task_ids": [
+        "B00",
+        "T23"
+      ],
+      "acceptance_ids": [
+        "B00-A1",
+        "B00-A2",
+        "T23-A1",
+        "T23-A2"
+      ]
+    },
+    {
+      "id": "R02",
+      "description": "Source schema discovery, bounded privacy-safe specimens and explicit support matrix",
+      "task_ids": [
+        "B01-core",
+        "T05",
+        "T18",
+        "B01-G",
+        "B01-S",
+        "B01-W"
+      ],
+      "acceptance_ids": [
+        "B01-core-A1",
+        "B01-core-A3",
+        "T05-A1",
+        "T05-A2",
+        "T18-A1",
+        "T18-A2",
+        "B01-G-A1",
+        "B01-S-A1",
+        "B01-W-A1"
+      ]
+    },
+    {
+      "id": "R03",
+      "description": "Four-domain typed identities, provenance, revisions and generic/OpenRig compatibility",
+      "task_ids": [
+        "T03",
+        "T12"
+      ],
+      "acceptance_ids": [
+        "T03-A1",
+        "T03-A2",
+        "T12-A1",
+        "T12-A2"
+      ]
+    },
+    {
+      "id": "R04",
+      "description": "Schema4 staged migration, legacy unknowns and no-log rollback with privacy keys",
+      "task_ids": [
+        "T04",
+        "T21"
+      ],
+      "acceptance_ids": [
+        "T04-A1",
+        "T04-A2",
+        "T21-A1",
+        "T21-A2"
+      ]
+    },
+    {
+      "id": "R05",
+      "description": "Native Claude Codex Pi usable capture and honest record-kind coverage",
+      "task_ids": [
+        "T06",
+        "T18"
+      ],
+      "acceptance_ids": [
+        "T06-A1",
+        "T06-A2",
+        "T18-A1",
+        "T18-A2"
+      ]
+    },
+    {
+      "id": "R06",
+      "description": "Cursor Windsurf Goose Devin real export readers and retained limitations",
+      "task_ids": [
+        "T07",
+        "T18"
+      ],
+      "acceptance_ids": [
+        "T07-A1",
+        "T07-A2",
+        "T18-A1",
+        "T18-A2"
+      ]
+    },
+    {
+      "id": "R07",
+      "description": "Genuine specimen-backed native Grok parser, not root/trait-only support",
+      "task_ids": [
+        "B01-core",
+        "T08",
+        "T18",
+        "B01-G",
+        "B01-S",
+        "B01-W"
+      ],
+      "acceptance_ids": [
+        "B01-core-A1",
+        "B01-core-A3",
+        "T08-A1",
+        "T08-A2",
+        "T18-A1",
+        "T18-A2",
+        "B01-G-A1",
+        "B01-S-A1",
+        "B01-W-A1"
+      ]
+    },
+    {
+      "id": "R08",
+      "description": "Versioned bounded AGY export adapter, no AGY workers or invented native format",
+      "task_ids": [
+        "T09",
+        "T18"
+      ],
+      "acceptance_ids": [
+        "T09-A1",
+        "T09-A2",
+        "T18-A1",
+        "T18-A2"
+      ]
+    },
+    {
+      "id": "R09",
+      "description": "Actual platform-neutral environment import AND native Windows/Linux scoped resource/process collectors",
+      "task_ids": [
+        "T10",
+        "T18",
+        "T25"
+      ],
+      "acceptance_ids": [
+        "T10-A1",
+        "T10-A2",
+        "T18-A1",
+        "T18-A2",
+        "T25-A1",
+        "T25-A2"
+      ]
+    },
+    {
+      "id": "R10",
+      "description": "Pinned real Linux syscall and Windows event/effect import, genuine controlled-process paths",
+      "task_ids": [
+        "T11",
+        "T18",
+        "T26"
+      ],
+      "acceptance_ids": [
+        "T11-A1",
+        "T11-A2",
+        "T18-A1",
+        "T18-A2",
+        "T26-A1",
+        "T26-A2",
+        "T26-A3"
+      ]
+    },
+    {
+      "id": "R11",
+      "description": "Subagent multi-caller lineage, continuation/retry, outliving children and native semantics",
+      "task_ids": [
+        "T12",
+        "T14"
+      ],
+      "acceptance_ids": [
+        "T12-A1",
+        "T12-A2",
+        "T14-A1",
+        "T14-A2"
+      ]
+    },
+    {
+      "id": "R12",
+      "description": "Direct/inclusive/shared/allocation conservation and exact identity dedup",
+      "task_ids": [
+        "T14"
+      ],
+      "acceptance_ids": [
+        "T14-A1",
+        "T14-A2"
+      ]
+    },
+    {
+      "id": "R13",
+      "description": "Half-open wall/summed/censored time, clocks, cost and component accounting",
+      "task_ids": [
+        "T14"
+      ],
+      "acceptance_ids": [
+        "T14-A1",
+        "T14-A2"
+      ]
+    },
+    {
+      "id": "R14",
+      "description": "Security policy/grant/approval/attempt/authority/effect, isolation and no false violations",
+      "task_ids": [
+        "T13",
+        "T16"
+      ],
+      "acceptance_ids": [
+        "T13-A1",
+        "T13-A2",
+        "T16-A1",
+        "T16-A2"
+      ]
+    },
+    {
+      "id": "R15",
+      "description": "Dendro source safety, allowlisting, privacy, inert input and trust boundaries",
+      "task_ids": [
+        "T05",
+        "T13",
+        "T20"
+      ],
+      "acceptance_ids": [
+        "T05-A1",
+        "T05-A2",
+        "T13-A1",
+        "T13-A2",
+        "T20-A1",
+        "T20-A2"
+      ]
+    },
+    {
+      "id": "R16",
+      "description": "Measure/analyzer/answer contracts, contributions and deterministic 21-insight pack",
+      "task_ids": [
+        "T15",
+        "T16"
+      ],
+      "acceptance_ids": [
+        "T15-A1",
+        "T15-A2",
+        "T16-A1",
+        "T16-A2"
+      ]
+    },
+    {
+      "id": "R17",
+      "description": "Outcome rules distinguish attempt success from work acceptance/review/merge/revocation",
+      "task_ids": [
+        "T12",
+        "T16"
+      ],
+      "acceptance_ids": [
+        "T12-A1",
+        "T12-A2",
+        "T16-A1",
+        "T16-A2"
+      ]
+    },
+    {
+      "id": "R18",
+      "description": "Progressive human/agent CLI TUI dashboard Nao journeys and no-provider fallback",
+      "task_ids": [
+        "T17",
+        "T19"
+      ],
+      "acceptance_ids": [
+        "T17-A1",
+        "T17-A2",
+        "T19-A1",
+        "T19-A2"
+      ]
+    },
+    {
+      "id": "R19",
+      "description": "Scientific assumptions, named ratios, comparison refusals and immutable numeric claims",
+      "task_ids": [
+        "T14",
+        "T15",
+        "T16",
+        "T19"
+      ],
+      "acceptance_ids": [
+        "T14-A1",
+        "T14-A2",
+        "T15-A1",
+        "T15-A2",
+        "T16-A1",
+        "T16-A2",
+        "T19-A1",
+        "T19-A2"
+      ]
+    },
+    {
+      "id": "R20",
+      "description": "Independent numeric/negative oracles, hostile conformance and positive captured paths",
+      "task_ids": [
+        "T02",
+        "T20",
+        "T02-runner",
+        "T02-baseline"
+      ],
+      "acceptance_ids": [
+        "T02-A1",
+        "T02-A2",
+        "T20-A1",
+        "T20-A2",
+        "T02-runner-A1",
+        "T02-runner-A2",
+        "T02-baseline-A1",
+        "T02-baseline-A2"
+      ]
+    },
+    {
+      "id": "R21",
+      "description": "Native Windows AND Linux fixed-budget execution and preserved established macOS support; WSL optional",
+      "task_ids": [
+        "B00",
+        "T22",
+        "B02",
+        "T27",
+        "T02-runner",
+        "T02-baseline"
+      ],
+      "acceptance_ids": [
+        "B00-A1",
+        "B00-A2",
+        "T22-A1",
+        "T22-A2",
+        "B02-A1",
+        "T27-A1",
+        "T27-A2",
+        "T27-A3",
+        "T02-runner-A1",
+        "T02-runner-A2",
+        "T02-baseline-A1",
+        "T02-baseline-A2"
+      ]
+    },
+    {
+      "id": "R22",
+      "description": "Autonomous handoff/locks/retry/rework/checkpoints and distinct adoption/publication gates",
+      "task_ids": [
+        "B00",
+        "T21",
+        "T23"
+      ],
+      "acceptance_ids": [
+        "B00-A1",
+        "B00-A2",
+        "T21-A1",
+        "T21-A2",
+        "T23-A1",
+        "T23-A2"
+      ]
+    },
+    {
+      "id": "R23",
+      "description": "Safe message metadata and first-user ordering; typed capability definitions/stages/profiles and source/production unknown",
+      "task_ids": [
+        "T03",
+        "T05",
+        "T06"
+      ],
+      "acceptance_ids": [
+        "T03-A1",
+        "T03-A2",
+        "T05-A2",
+        "T06-A1"
+      ]
+    },
+    {
+      "id": "R24",
+      "description": "Third-party source and insight SDK/docs, runnable examples and conformance without semantic core edits",
+      "task_ids": [
+        "T05",
+        "T15",
+        "T20"
+      ],
+      "acceptance_ids": [
+        "T05-A2",
+        "T15-A2",
+        "T20-A1"
+      ]
+    },
+    {
+      "id": "R25",
+      "description": "Mandatory Windows/Linux native portability, equivalent private filesystem/locking/path/DB safety",
+      "task_ids": [
+        "B02",
+        "T24",
+        "T21"
+      ],
+      "acceptance_ids": [
+        "B02-A1",
+        "B02-A2",
+        "T24-A1",
+        "T24-A2",
+        "T24-A3",
+        "T21-A1"
+      ]
+    },
+    {
+      "id": "R26",
+      "description": "Native bounded standard-user Windows process/resource instrumentation with honest metric/permission semantics",
+      "task_ids": [
+        "T25",
+        "T18"
+      ],
+      "acceptance_ids": [
+        "T25-A1",
+        "T25-A2",
+        "T18-A1"
+      ]
+    },
+    {
+      "id": "R27",
+      "description": "Genuine Windows event/effect trace import and separate producer authorization",
+      "task_ids": [
+        "B02",
+        "B01-core",
+        "T26",
+        "B01-G",
+        "B01-S",
+        "B01-W",
+        "B02-W"
+      ],
+      "acceptance_ids": [
+        "B02-W-A1",
+        "T26-A1",
+        "T26-A2",
+        "T26-A3",
+        "B01-G-A1",
+        "B01-S-A1",
+        "B01-W-A1"
+      ]
+    },
+    {
+      "id": "R28",
+      "description": "Native Windows/Linux CI, packages, clean staging and exact-candidate release gates",
+      "task_ids": [
+        "T27",
+        "T20",
+        "T22",
+        "T23"
+      ],
+      "acceptance_ids": [
+        "T27-A1",
+        "T27-A2",
+        "T27-A3",
+        "T20-A1",
+        "T22-A1",
+        "T22-A2",
+        "T23-A1"
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "B00",
+      "title": "Read-only authority and execution admission",
+      "depends_on": [],
+      "owner": {
+        "runtime": "codex exec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "provider_family": "openai",
+        "role": "B00 bounded owner; distinct artifact worker"
+      },
+      "oracle_owner": {
+        "runtime": "grok --single",
+        "model": "grok-4.7",
+        "effort": "medium",
+        "provider_family": "xai",
+        "role": "B00 independent expected-value author; fresh identity"
+      },
+      "reviewer": {
+        "runtime": "claude -p",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "provider_family": "anthropic",
+        "role": "B00 review only; fresh identity"
+      },
+      "paths": [
+        ".agentflow/runs/v080/admission/**"
+      ],
+      "inputs": [
+        "Pinned SHA; actual governance/custody; EXECUTION admission contract",
+        "User full revised implementation instruction2026-10-23; owner direct-agent/no-rig clarification issue526 comment6200530869; actual local admission records"
+      ],
+      "outputs": [
+        "Admission receipt: authoritative paths/digests, observed routes, hold reasons and return conditions"
+      ],
+      "acceptance": [
+        {
+          "id": "B00-A1",
+          "criterion": "Verify current user scope/direct-worker path leases and immutable authorship ledger, baseline/worktree and actual distribution evidence. Missing seat-manifest restoration is a separate governance hold, not a blocker on direct local product/bootstrap leases. Preserve unrelated pause/historical custody, no invented seat/epoch/fence. Direct local route needs no OpenRig rig or seat; do not recreate historical G2 from empty local-preview inputs.",
+          "oracle": ".agentflow/oracles/v080/bootstrap/checklist.json#B00-A1"
+        },
+        {
+          "id": "B00-A2",
+          "criterion": "Record observed native client routes/capacity and protected differences. Native runner admission belongs to B02, never a B00/core gate. Three workers max; real independent oracle/build/review identities required.",
+          "oracle": ".agentflow/oracles/v080/bootstrap/checklist.json#B00-A2"
+        }
+      ],
+      "verification": [
+        "Read-only git status/HEAD; rig whoami; distribution inspect; client help/version; targeted manifests."
+      ],
+      "stop_conditions": [
+        "Missing ownership/authority/toolchain: park; no installation or cross-repo repair.",
+        "Protected-path mutation, stale custody/fence, or unfrozen oracle: park."
+      ],
+      "worker_identity_contract": "Distinct unique_worker_run_id and immutable authorship/input/output digests. Use native_client_session_id when exposed; otherwise dispatcher launch receipt(pid/start/sanitized command/digests) with native_session_id unavailable. Harness-managed task identity recorded factually, never invent seat/PID/session. Oracle/builder/reviewer identities disjoint per artifact, QA disjoint from tested builders.",
+      "substeps": [
+        "Record current direct local route under user scopeapproval and owner issue526 clarification; native rig absence is not a blocker. Recover historical identity/custody only if actually reusing that governed run; no invented ledger/history reset.",
+        "Diagnose distribution inspector dependency/lock resolution failure; attach smallest scoped repair proposal, never blind install or saved-policy migration.",
+        "Locate authoritative ownership policy/template; prepare restoration proposal for actual policy owner.",
+        "Join actual backlog hold and custody transition/fence; prepare goal-scoped resolution and authenticated return route.",
+        "Return concrete evidence and pass conditions for each blocker; existing design/task scope authority carries forward, configured human gates preserved."
+      ],
+      "requirement_ids": [
+        "R01",
+        "R21",
+        "R22"
+      ]
+    },
+    {
+      "id": "B02",
+      "title": "Bounded native Windows/Linux feasibility and remedy admission",
+      "depends_on": [
+        "B00"
+      ],
+      "owner": {
+        "runtime": "codex exec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "provider_family": "openai",
+        "role": "B02 bounded owner; distinct artifact worker"
+      },
+      "oracle_owner": {
+        "runtime": "grok --single",
+        "model": "grok-4.7",
+        "effort": "medium",
+        "provider_family": "xai",
+        "role": "B02 independent expected-value author; fresh identity"
+      },
+      "reviewer": {
+        "runtime": "claude -p",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "provider_family": "anthropic",
+        "role": "B02 review only; fresh identity"
+      },
+      "paths": [
+        ".agentflow/runs/v080/native-feasibility/**"
+      ],
+      "inputs": [
+        "Pinned baseline Unix imports/output/snapshot audit; DESIGN native platform contract and official API references"
+      ],
+      "outputs": [
+        "Bounded native Windows/Linux feasibility and remedy admission implementation/evidence and independent acceptance receipts"
+      ],
+      "acceptance": [
+        {
+          "id": "B02-A1",
+          "criterion": "Record actual Windows/Linux SDK/compiler/runtime and runner evidence; missing native receipts remain blocked for native acceptance/release with owned remedy, never gate platform-neutral T02/T03. Revalidate B02 source/dependency digest after T03 before T24 implementation; missing Linux host is not invented or replaced by WSL.",
+          "oracle": ".agentflow/oracles/v080/bootstrap/checklist.json#B02-A1"
+        },
+        {
+          "id": "B02-A2",
+          "criterion": "Freeze portable safety API and maintained safe-wrapper/dependency choices from primary/source evidence; DACL/file identity/reparse/lock/snapshot guarantees must match security invariants, no safeguard disabling or silent unsafe policy migration.",
+          "oracle": ".agentflow/oracles/v080/bootstrap/checklist.json#B02-A2"
+        }
+      ],
+      "verification": [
+        "Future bounded native toolchain/version/API/dependency inspection and isolated baseline native compile diagnostics; no source mutation or blind installs."
+      ],
+      "stop_conditions": [
+        "Host-wide scanning, privileged attach, raw secret access or fixture-only collector.",
+        "Protected-path mutation, stale custody/fence, or unfrozen oracle: park."
+      ],
+      "worker_identity_contract": "Distinct unique_worker_run_id and immutable authorship/input/output digests. Use native_client_session_id when exposed; otherwise dispatcher launch receipt(pid/start/sanitized command/digests) with native_session_id unavailable. Harness-managed task identity recorded factually, never invent seat/PID/session. Oracle/builder/reviewer identities disjoint per artifact, QA disjoint from tested builders.",
+      "substeps": [
+        "For each missing native prerequisite, one bounded diagnosis; record owner, exact package/version/runner/path scope and authority needed under .agentflow/runs/v080/native-feasibility/remediation/<prerequisite>/.",
+        "Actual environment owner performs at most one explicitly admitted scoped SDK/runtime/runner provision/repair attempt, not a blind reinstall; Codex records observed success/failure receipt and verified native return condition.",
+        "No authority or missing result keeps B02 blocked_pending_artifacts; T24 does not admit on a remedy document. No saved-policy changes, credential access or unbounded retries.",
+        "Bind evidence to current source/dependency digest; after T03, revalidate it before T24. Changed assumptions reopen/revise B02 and invalidate affected receipts."
+      ],
+      "requirement_ids": [
+        "R21",
+        "R25",
+        "R27"
+      ],
+      "admission_predicates": [
+        "B02-A1 actual native runner/prerequisite receipts gate final native acceptance, not core T02/T03.",
+        "B02-A2 independently reviewed portable API/dependency contract may release interface work before all native receipts; bind source digest and revalidate after T03."
+      ],
+      "integration_requests": {
+        "writer": "standing Codex integration owner",
+        "paths": [
+          "Cargo.toml",
+          "Cargo.lock",
+          "crates/dendro-core/src/lib.rs",
+          "crates/dendro-connectors/src/lib.rs",
+          "crates/dendro-connectors/src/capture_registry_v1/**"
+        ],
+        "protocol": "Request exact paths/input digest; global single-writer fenced lease; Codex patch output digest + independent oracle/review receipt required before requesting task consumes/accepts. Inspection-only B02 never writes code; it proposes future requests only."
+      }
+    },
+    {
+      "id": "B01-core",
+      "title": "Core repository fixture/schema and Dendro export-contract admission",
+      "depends_on": [
+        "B00"
+      ],
+      "owner": {
+        "runtime": "codex exec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "provider_family": "openai",
+        "role": "B01-core owner; independent artifact execution identity"
+      },
+      "oracle_owner": {
+        "runtime": "grok --single",
+        "model": "grok-4.7",
+        "effort": "medium",
+        "provider_family": "xai",
+        "role": "B01-core oracle_owner; independent artifact execution identity"
+      },
+      "reviewer": {
+        "runtime": "claude -p",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "provider_family": "anthropic",
+        "role": "B01-core reviewer; independent artifact execution identity"
+      },
+      "paths": [
+        ".agentflow/runs/v080/schemas/**",
+        ".agentflow/runs/v080/source-admission/core/**"
+      ],
+      "inputs": [
+        "Source matrix DESIGN section 3; authorized/public specimens only"
+      ],
+      "outputs": [
+        "Versioned record-kind matrix; sanitized specimen digests and provenance; tracer producer/options grammar",
+        "Exclusive safe source-admission/windows-trace provenance manifests; private external original trace locator/digest/access receipt, never raw committed data"
+      ],
+      "acceptance": [
+        {
+          "id": "B01-core-A1",
+          "criterion": "Admit digest-pinned committed Claude/Codex/Pi/OpenRig and four export fixture/schema contracts for core design only, with exact kind/grain/limits and unknown fields. Fixture-contract admission is not v080 native-parser proof; real source/version gaps remain explicit. Four existing export contracts are Cursor, Windsurf, Goose and Devin ATIF-v1.7, bound by schemas/source-matrix.json evidence digests; synthetic fixture-contract admission is not new native-parser proof.",
+          "oracle": ".agentflow/oracles/v080/bootstrap/checklist.json#B01-core-A1"
+        },
+        {
+          "id": "B01-core-A3",
+          "criterion": "Freeze Dendro AGY/environment export field/type/version/trust/counter/limit contracts from the proposal and safe synthetic schema fixtures; no vendor-native claim. Define collector authorization interface without requiring actual trace-producer permission or native sampling receipts. Dendro AGY and environment exports are two additional proposed interchange contracts, not among Cursor/Windsurf/Goose/Devin; no native-vendor claim.",
+          "oracle": ".agentflow/oracles/v080/bootstrap/checklist.json#B01-core-A3"
+        }
+      ],
+      "verification": [
+        "Document/schema inspection and fixture digest checks only; no private log discovery without authority."
+      ],
+      "stop_conditions": [
+        "Missing specimen, lawful fixture reuse, or capture authorization: park affected admission.",
+        "Protected-path mutation, stale custody/fence, or unfrozen oracle: park."
+      ],
+      "worker_identity_contract": "Distinct unique_worker_run_id and immutable authorship/input/output digests. Use native_client_session_id when exposed; otherwise dispatcher launch receipt(pid/start/sanitized command/digests) with native_session_id unavailable. Harness-managed task identity recorded factually, never invent seat/PID/session. Oracle/builder/reviewer identities disjoint per artifact, QA disjoint from tested builders.",
+      "requirement_ids": [
+        "R02",
+        "R07",
+        "R27"
+      ],
+      "admission_predicates": [
+        "Digest-pinned repository fixture/schema subset and frozen Dendro-defined export contracts reviewed; unknown native producer/schema/capability cells stay unknown. No Grok/strace/ETW specimen or native-runner requirement on core admission."
+      ]
+    },
+    {
+      "id": "T02",
+      "title": "Freeze independent core oracles and benchmark specification",
+      "depends_on": [
+        "B00",
+        "B01-core"
+      ],
+      "owner": {
+        "runtime": "codex exec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "provider_family": "openai",
+        "role": "T02 bounded owner; distinct artifact worker"
+      },
+      "oracle_owner": {
+        "runtime": "grok --single",
+        "model": "grok-4.7",
+        "effort": "medium",
+        "provider_family": "xai",
+        "role": "T02 independent expected-value author; fresh identity"
+      },
+      "reviewer": {
+        "runtime": "claude -p",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "provider_family": "anthropic",
+        "role": "T02 review only; fresh identity"
+      },
+      "paths": [
+        ".agentflow/oracles/v080/**"
+      ],
+      "inputs": [
+        "DESIGN; ADVERSARIAL F01-F29; admitted specimen matrix"
+      ],
+      "outputs": [
+        "Digest-bound core expected-value packs and runner/corpus/budget specification; no executed baseline claim"
+      ],
+      "acceptance": [
+        {
+          "id": "T02-A1",
+          "criterion": "Independently derive/review core F01-F24 and I01-I21 contracts before builders. Native F25-F29 vectors freeze before their respective native builders, not as a T03 admission requirement; implementation task-specific oracles remain independent.",
+          "oracle": ".agentflow/oracles/v080/bootstrap/checklist.json#T02-A1"
+        },
+        {
+          "id": "T02-A2",
+          "criterion": "Freeze benchmark runner specification, deterministic corpus recipe/seeds and fixed budgets before core implementation. Executable runner is T02-runner; actual pinned baseline execution T02-baseline gates T22 comparison, never T03. Missing preport native baseline is not_measurable_preport, no invented timing.",
+          "oracle": ".agentflow/oracles/v080/bootstrap/checklist.json#T02-A2"
+        }
+      ],
+      "verification": [
+        "Independent core contract/oracle/specification review and digest validation only."
+      ],
+      "stop_conditions": [
+        "Oracle copied solely from implementation output or unauthorized raw corpus: reject.",
+        "Protected-path mutation, stale custody/fence, or unfrozen oracle: park."
+      ],
+      "worker_identity_contract": "Distinct unique_worker_run_id and immutable authorship/input/output digests. Use native_client_session_id when exposed; otherwise dispatcher launch receipt(pid/start/sanitized command/digests) with native_session_id unavailable. Harness-managed task identity recorded factually, never invent seat/PID/session. Oracle/builder/reviewer identities disjoint per artifact, QA disjoint from tested builders.",
+      "substeps": [
+        "Review bootstrap checklist and core contract digests.",
+        "Freeze independent Grok-authored expectations for Codex tasks and fresh Codex expectations for Grok tasks, each Claude-reviewed per artifact.",
+        "Freeze runner/corpus/budget specification before code; executable runner and actual baseline are separately accepted tasks."
+      ],
+      "requirement_ids": [
+        "R20"
+      ]
+    },
+    {
+      "id": "T03",
+      "title": "Typed domain and provenance contracts",
+      "depends_on": [
+        "B00",
+        "B01-core"
+      ],
+      "owner": {
+        "runtime": "codex exec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "provider_family": "openai",
+        "role": "T03 bounded owner; distinct artifact worker"
+      },
+      "oracle_owner": {
+        "runtime": "grok --single",
+        "model": "grok-4.7",
+        "effort": "medium",
+        "provider_family": "xai",
+        "role": "T03 independent expected-value author; fresh identity"
+      },
+      "reviewer": {
+        "runtime": "claude -p",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "provider_family": "anthropic",
+        "role": "T03 review only; fresh identity"
+      },
+      "paths": [
+        "crates/dendro-core/src/domain_v1/**",
+        "crates/dendro-core/src/facts.rs",
+        "crates/dendro-core/src/models.rs",
+        "crates/dendro-core/src/traits.rs",
+        "crates/dendro-core/src/lib.rs",
+        "crates/dendro-core/tests/domain_v080.rs",
+        "Cargo.toml",
+        "Cargo.lock",
+        "crates/dendro-core/src/migration_v4/mod.rs",
+        "crates/dendro-core/src/lineage_v1/mod.rs",
+        "crates/dendro-core/src/outcome_v1/mod.rs",
+        "crates/dendro-core/src/security_v1/mod.rs",
+        "crates/dendro-core/src/accounting_v1/mod.rs",
+        "crates/dendro-core/src/insight_v1/mod.rs",
+        "crates/dendro-core/src/insight_v1/reference/mod.rs",
+        "crates/dendro-core/src/explanation_v1/mod.rs",
+        "crates/dendro-core/src/platform_v1/mod.rs"
+      ],
+      "inputs": [
+        "Frozen entity/key/enum/revision contracts; schema-3 compatibility vectors"
+      ],
+      "outputs": [
+        "Typed records, scoped keys, legacy projections, domain conformance tests"
+      ],
+      "acceptance": [
+        {
+          "id": "T03-A1",
+          "criterion": "Represent every DESIGN entity with typed relations and unknown states; no mandatory OpenRig names or shared missing-session sentinel. Includes MessageObservation, CapabilityDefinition/State, WorkAssignment and closed WorkEdge endpoint/cardinality/time/cycle/reachability contract; production/source/clock unknown explicit.",
+          "oracle": ".agentflow/oracles/v080/T03/frozen.json#A1"
+        },
+        {
+          "id": "T03-A2",
+          "criterion": "Validate namespace/incarnation, correction/retraction/cutoff semantics and counter/unit bounds; preserve legacy adapter outputs. Conformance includes first-user ordering without bodies, capability-stage non-inference, many-work assignments and shared-D delegate_existing with single spawn origin.",
+          "oracle": ".agentflow/oracles/v080/T03/frozen.json#A2"
+        }
+      ],
+      "verification": [
+        "PROPOSED: cargo test -p dendro-core --test domain_v080 --locked"
+      ],
+      "stop_conditions": [
+        "Entity conflation, invented identity or unversioned public contract change.",
+        "Protected-path mutation, stale custody/fence, or unfrozen oracle: park."
+      ],
+      "worker_identity_contract": "Distinct unique_worker_run_id and immutable authorship/input/output digests. Use native_client_session_id when exposed; otherwise dispatcher launch receipt(pid/start/sanitized command/digests) with native_session_id unavailable. Harness-managed task identity recorded factually, never invent seat/PID/session. Oracle/builder/reviewer identities disjoint per artifact, QA disjoint from tested builders.",
+      "substeps": [
+        "Codex standing owner creates all later core module declarations and typed refusing skeleton modules before dependent tests; no todo!/panic placeholders.",
+        "Review reuse-first dependencies, approve necessary additions and update lock before --locked checks; all shared writes fenced."
+      ],
+      "requirement_ids": [
+        "R03",
+        "R23"
+      ],
+      "required_artifacts": [
+        {
+          "producer": "T02",
+          "artifact": ".agentflow/oracles/v080/T03/core-type-contract.json",
+          "sha256": "a64e203e4d5882d5a2ae73c33b7ad194956aec847cd7e540343f6499b4990a9f",
+          "must_be": "frozen_scoped_type_contract_with_independent_Claude_review",
+          "rule": "Satisfies T03 structural core oracle subset only; numeric Grok packs and native holds do not gate unrelated type code."
+        },
+        {
+          "producer": "T02",
+          "artifact": "DESIGN benchmark/corpus/budget specification",
+          "must_be": "frozen_specification_not_executed_baseline"
+        }
+      ],
+      "oracle_artifacts": [
+        {
+          "path": ".agentflow/oracles/v080/T03/core-type-contract.json",
+          "sha256": "a64e203e4d5882d5a2ae73c33b7ad194956aec847cd7e540343f6499b4990a9f",
+          "reviewed_scope": "structural core contracts",
+          "authorship": "Codex contract curator, independent Claude scoped reviewer; fresh distinct Codex builder required; no numeric oracle authorship claim."
+        }
+      ]
+    },
+    {
+      "id": "T24",
+      "title": "Native platform safety and portability implementation",
+      "depends_on": [
+        "T03"
+      ],
+      "owner": {
+        "runtime": "grok --single",
+        "model": "grok-4.7",
+        "effort": "medium",
+        "provider_family": "xai",
+        "role": "T24 owner; distinct execution identity"
+      },
+      "oracle_owner": {
+        "runtime": "codex exec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "provider_family": "openai",
+        "role": "T24 oracle_owner; distinct execution identity"
+      },
+      "reviewer": {
+        "runtime": "claude -p",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "provider_family": "anthropic",
+        "role": "T24 reviewer; distinct execution identity"
+      },
+      "paths": [
+        "crates/dendro-core/src/platform_v1/**",
+        "crates/dendro-core/src/output.rs",
+        "crates/dendro-connectors/src/snapshot.rs",
+        "crates/dendro-core/tests/platform_v080.rs",
+        "crates/dendro-core/src/lifecycle.rs",
+        "crates/dendro-core/src/file_state.rs",
+        "crates/dendro-core/src/file_metadata.rs",
+        "crates/dendro-core/src/pipeline.rs",
+        "crates/dendro-core/src/sealed_run.rs",
+        "crates/dendro-cli/src/main.rs",
+        "crates/dendro-cli/src/tui/mod.rs",
+        "crates/dendro-cli/src/extensions.rs",
+        "crates/dendro-core/tests/portfolio.rs",
+        "crates/dendro-core/tests/semantic.rs",
+        "crates/dendro-connectors/tests/export_connectors.rs"
+      ],
+      "inputs": [
+        "B02 frozen safe-wrapper/toolchain/API contract; T03 typed skeleton and independent native safety oracles"
+      ],
+      "outputs": [
+        "Native platform safety and portability implementation implementation/evidence and independent acceptance receipts"
+      ],
+      "acceptance": [
+        {
+          "id": "T24-A1",
+          "criterion": "Implement Windows and Linux platform seam with native build/run proof on both targets; no unconditional Unix imports in portable paths and no cfg branch disabling source/privacy/alias checks. Verify B02 source digest after T03; use actual B02-pinned native runner/toolchain manifests directly before CI YAML exists. New SDK/dependency assumptions require revised admission. Port actual callsites lifecycle/file_state/file_metadata/pipeline/sealed_run, connector snapshot, CLI main/tui native cancellation and inline extensions tests. Native compile failure cannot be hidden by deleting tests, excluding crates or disabling privacy/path checks.",
+          "oracle": ".agentflow/oracles/v080/T24/frozen.json#A1"
+        },
+        {
+          "id": "T24-A2",
+          "criterion": "Prove native file identity/root containment, Windows junction/reparse/hardlink/case-sensitive and UTF16 path behavior; owner-private DACL versus Unix mode, lock contention/crash release and source/output/key alias tests. Explicit Windows shortname/UNC/device/alternate-stream policies, long paths, UTF16/nonASCII, lock aliases and concurrent replacement races; matching Linux symlink/hardlink/inode/lock-alias/replacement races. Reject unsupported cases safely, never disable containment. Windows protected DACL permits only owner/SYSTEM/Administrators documented trust; untrusted inherited ACEs fail. Linux foreign owner/group/other/ACL private access fails closed. Source input permissions separate from output/key privacy. Existing Unix-specific tests may use platform-specific fixtures/guards only with equivalent native Windows security assertions; preserve Linux cases, do not delete or silently ignore gaps.",
+          "oracle": ".agentflow/oracles/v080/T24/frozen.json#A2"
+        },
+        {
+          "id": "T24-A3",
+          "criterion": "Prove versioned DB snapshot/pointer swap on both native OSes, Windows open-handle/sharing-failure old-pointer preservation, consistent WAL and crash recovery; safe bindings admitted or audited exception handled by existing authority. Pointer is regular manifest FILE, never directory/junction. Same-volume native atomic file replacement; crossvolume uses verified closed private immutable destination staging then local pointer replace, never liveDB blindcopy.",
+          "oracle": ".agentflow/oracles/v080/T24/frozen.json#A3"
+        }
+      ],
+      "verification": [
+        "PROPOSED: cargo test -p dendro-core --test platform_v080 --locked (execute natively on Windows AND Linux)",
+        "Future native cargo check --workspace --locked after skeleton and dependency integration on both OSes."
+      ],
+      "stop_conditions": [
+        "Host-wide scanning, privileged attach, raw secret access or fixture-only collector.",
+        "Protected-path mutation, stale custody/fence, or unfrozen oracle: park.",
+        "Missing native Windows or Linux proof cannot be waived or satisfied with WSL; park with concrete owned remedy."
+      ],
+      "worker_identity_contract": "Distinct unique_worker_run_id and immutable authorship/input/output digests. Use native_client_session_id when exposed; otherwise dispatcher launch receipt(pid/start/sanitized command/digests) with native_session_id unavailable. Harness-managed task identity recorded factually, never invent seat/PID/session. Oracle/builder/reviewer identities disjoint per artifact, QA disjoint from tested builders.",
+      "shared_write_requests": [
+        "Cargo.toml",
+        "Cargo.lock",
+        "crates/dendro-core/src/lib.rs",
+        "crates/dendro-connectors/src/lib.rs",
+        "crates/dendro-connectors/src/capture_registry_v1/**",
+        "crates/dendro-core/Cargo.toml",
+        "crates/dendro-connectors/Cargo.toml",
+        "crates/dendro-resolver/Cargo.toml",
+        "crates/dendro-watcher/Cargo.toml",
+        "crates/dendro-cli/Cargo.toml"
+      ],
+      "requirement_ids": [
+        "R25"
+      ],
+      "integration_requests": {
+        "writer": "standing Codex integration owner",
+        "paths": [
+          "Cargo.toml",
+          "Cargo.lock",
+          "crates/dendro-core/src/lib.rs",
+          "crates/dendro-connectors/src/lib.rs",
+          "crates/dendro-connectors/src/capture_registry_v1/**",
+          "crates/dendro-core/Cargo.toml",
+          "crates/dendro-connectors/Cargo.toml",
+          "crates/dendro-resolver/Cargo.toml",
+          "crates/dendro-watcher/Cargo.toml",
+          "crates/dendro-cli/Cargo.toml"
+        ],
+        "protocol": "Request exact paths/input digest; global single-writer fenced lease; Codex patch output digest + independent oracle/review receipt required before requesting task consumes/accepts. Inspection-only B02 never writes code; it proposes future requests only."
+      },
+      "required_artifacts": [
+        {
+          "producer": "B02",
+          "artifact": "portable-interface-and-safe-dependency-contract",
+          "must_be": "independently_reviewed_source_digest_revalidated"
+        },
+        {
+          "producer": "T02",
+          "artifact": "native-task-specific-vectors",
+          "must_be": "frozen_before_relevant_builder"
+        }
+      ],
+      "sequential_handoffs": [
+        {
+          "paths": [
+            "crates/dendro-core/src/output.rs",
+            "crates/dendro-connectors/src/snapshot.rs",
+            "crates/dendro-core/src/lifecycle.rs",
+            "crates/dendro-core/src/file_state.rs",
+            "crates/dendro-core/src/file_metadata.rs",
+            "crates/dendro-core/src/pipeline.rs",
+            "crates/dendro-core/src/sealed_run.rs"
+          ],
+          "from": "T24",
+          "to": "T13 where its declared security edits apply; other future task requires separate named lease",
+          "condition": "Port implementation frozen at reviewed relevant-native artifact; later Linux proof read-only. Any port code change reacquires lease and invalidates affected descendants."
+        },
+        {
+          "paths": [
+            "crates/dendro-cli/src/main.rs",
+            "crates/dendro-cli/src/tui/mod.rs",
+            "crates/dendro-cli/src/extensions.rs"
+          ],
+          "from": "T24",
+          "to": "T17",
+          "condition": "CLI portability/cancellation changes frozen and lease handed off before T17 source subtree edits; no simultaneous writers."
+        }
+      ]
+    },
+    {
+      "id": "T04",
+      "title": "Staged schema migration and rollback storage",
+      "depends_on": [
+        "T03"
+      ],
+      "owner": {
+        "runtime": "grok --single",
+        "model": "grok-4.7",
+        "effort": "medium",
+        "provider_family": "xai",
+        "role": "T04 bounded owner"
+      },
+      "oracle_owner": {
+        "runtime": "codex exec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "provider_family": "openai",
+        "role": "T04 independent expected-value author"
+      },
+      "reviewer": {
+        "runtime": "claude -p",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "provider_family": "anthropic",
+        "role": "T04 independent acceptance reviewer"
+      },
+      "paths": [
+        "crates/dendro-core/src/storage.rs",
+        "crates/dendro-core/src/migration_v4/**",
+        "crates/dendro-core/tests/migration_v080.rs"
+      ],
+      "inputs": [
+        "Schema-3 golden recipe; typed contracts; privacy-key invariants"
+      ],
+      "outputs": [
+        "Schema-4 DDL/migrator, legacy views, staged-switch receipt and interruption tests"
+      ],
+      "acceptance": [
+        {
+          "id": "T04-A1",
+          "criterion": "Convert private copy; preserve old DB/key/sidecars; migration succeeds without original logs, new fields unknown.",
+          "oracle": ".agentflow/oracles/v080/T04/frozen.json#A1"
+        },
+        {
+          "id": "T04-A2",
+          "criterion": "Idempotent transactional migration, revision queries and integrity checks; old binary refuses schema4; interrupted switch retains schema3 pointer.",
+          "oracle": ".agentflow/oracles/v080/T04/frozen.json#A2"
+        }
+      ],
+      "verification": [
+        "PROPOSED: cargo test -p dendro-core --test migration_v080 --locked"
+      ],
+      "stop_conditions": [
+        "In-place live rewrite, lost provenance/key or fabricated historical facts.",
+        "Protected-path mutation, stale custody/fence, or unfrozen oracle: park."
+      ],
+      "worker_identity_contract": "Distinct unique_worker_run_id and immutable authorship/input/output digests. Use native_client_session_id when exposed; otherwise dispatcher launch receipt(pid/start/sanitized command/digests) with native_session_id unavailable. Harness-managed task identity recorded factually, never invent seat/PID/session. Oracle/builder/reviewer identities disjoint per artifact, QA disjoint from tested builders.",
+      "requirement_ids": [
+        "R04"
+      ],
+      "required_artifacts": [
+        {
+          "producer": "T24",
+          "artifact": "reviewed-platform-interface-and-relevant-native-receipt",
+          "must_be": "reviewed_and_lease_handed_off",
+          "rule": "Windows-native receipt permits local Windows storage/adapter implementation; Linux receipt still required for T24/G02 final acceptance."
+        }
+      ]
+    },
+    {
+      "id": "T05",
+      "title": "Capture contribution registry and bounded SDK",
+      "depends_on": [
+        "T03",
+        "T04"
+      ],
+      "owner": {
+        "runtime": "codex exec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "provider_family": "openai",
+        "role": "T05 bounded owner; distinct artifact worker"
+      },
+      "oracle_owner": {
+        "runtime": "grok --single",
+        "model": "grok-4.7",
+        "effort": "medium",
+        "provider_family": "xai",
+        "role": "T05 independent expected-value author; fresh identity"
+      },
+      "reviewer": {
+        "runtime": "claude -p",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "provider_family": "anthropic",
+        "role": "T05 review only; fresh identity"
+      },
+      "paths": [
+        "crates/dendro-connectors/src/sdk.rs",
+        "crates/dendro-connectors/src/capture_registry_v1/**",
+        "crates/dendro-connectors/tests/registry_v080.rs",
+        "crates/dendro-connectors/src/lib.rs",
+        "Cargo.toml",
+        "Cargo.lock",
+        "docs/contributing/capture-v1.md",
+        "examples/capture-v1/**",
+        "crates/dendro-connectors/src/grok.rs",
+        "crates/dendro-connectors/src/agy.rs",
+        "crates/dendro-connectors/src/environment_v1/mod.rs",
+        "crates/dendro-connectors/src/syscall_v1/mod.rs",
+        "crates/dendro-connectors/src/environment_windows_v1/mod.rs",
+        "crates/dendro-connectors/src/windows_events_v1/mod.rs"
+      ],
+      "inputs": [
+        "Admitted contribution descriptors; existing export SDK limits"
+      ],
+      "outputs": [
+        "Compile-time descriptors, negotiation/coverage API, reusable conformance reader"
+      ],
+      "acceptance": [
+        {
+          "id": "T05-A1",
+          "criterion": "Enforce each B01-admitted adapter descriptor limits and global hostile ceilings:8MiB/logical input record,depth64,1024 decoded records/batch maximum; descriptor only tightens. Quarantine oversize/deep input with partial coverage;1.5MiB native records not presumed valid. Keep containment/version/counter rules and safe errors.",
+          "oracle": ".agentflow/oracles/v080/T05/frozen.json#A1"
+        },
+        {
+          "id": "T05-A2",
+          "criterion": "Each recognized record is projected or counted unprojected; unsupported schema and failed source never become observed zero. Document and run capture example through registry_v080; third-party module plus standing registration works without editing core semantics, incompatible/unsafe contribution refuses.",
+          "oracle": ".agentflow/oracles/v080/T05/frozen.json#A2"
+        }
+      ],
+      "verification": [
+        "PROPOSED: cargo test -p dendro-connectors --test registry_v080 --locked"
+      ],
+      "stop_conditions": [
+        "Runtime plugin execution, arbitrary persisted text or silent empty parser success.",
+        "Protected-path mutation, stale custody/fence, or unfrozen oracle: park."
+      ],
+      "worker_identity_contract": "Distinct unique_worker_run_id and immutable authorship/input/output digests. Use native_client_session_id when exposed; otherwise dispatcher launch receipt(pid/start/sanitized command/digests) with native_session_id unavailable. Harness-managed task identity recorded factually, never invent seat/PID/session. Oracle/builder/reviewer identities disjoint per artifact, QA disjoint from tested builders.",
+      "substeps": [
+        "Codex standing owner creates connector module slots for T06-T11 and registry before adapter compile/tests, reviews dependency/lock requests.",
+        "Ship documented runnable third-party source contribution example, without semantic core edits; conformance command and version incompatibility example."
+      ],
+      "requirement_ids": [
+        "R02",
+        "R15",
+        "R23",
+        "R24"
+      ],
+      "required_artifacts": [
+        {
+          "producer": "T24",
+          "artifact": "reviewed-platform-interface-and-relevant-native-receipt",
+          "must_be": "reviewed_and_lease_handed_off",
+          "rule": "Windows-native receipt permits local Windows storage/adapter implementation; Linux receipt still required for T24/G02 final acceptance."
+        }
+      ]
+    },
+    {
+      "id": "T06",
+      "title": "Migrate native Claude Codex Pi readers",
+      "depends_on": [
+        "T05"
+      ],
+      "owner": {
+        "runtime": "grok --single",
+        "model": "grok-4.7",
+        "effort": "medium",
+        "provider_family": "xai",
+        "role": "T06 bounded owner"
+      },
+      "oracle_owner": {
+        "runtime": "codex exec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "provider_family": "openai",
+        "role": "T06 independent expected-value author"
+      },
+      "reviewer": {
+        "runtime": "claude -p",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "provider_family": "anthropic",
+        "role": "T06 independent acceptance reviewer"
+      },
+      "paths": [
+        "crates/dendro-connectors/src/claude.rs",
+        "crates/dendro-connectors/src/codex.rs",
+        "crates/dendro-connectors/src/pi.rs",
+        "crates/dendro-connectors/src/stream.rs",
+        "crates/dendro-connectors/tests/native_v080.rs"
+      ],
+      "inputs": [
+        "Admitted native schemas; attribution/cumulative-counter fixtures"
+      ],
+      "outputs": [
+        "Streaming projections for three harnesses; record-kind coverage goldens"
+      ],
+      "acceptance": [
+        {
+          "id": "T06-A1",
+          "criterion": "Read real admitted specimen paths and preserve valid usage-only facts; prove session/call keys, model/effort scope and counter deltas. Project supported safe message role/direction/modality/order metadata and capability definition/stage/action links; emit supported structural permission/context typed facts with source evidence and mappings, without requiring downstream T13 execution, unsupported facts counted.",
+          "oracle": ".agentflow/oracles/v080/T06/frozen.json#A1"
+        },
+        {
+          "id": "T06-A2",
+          "criterion": "Project admitted context/capability/action/lifecycle kinds; unsupported kinds counted; missing identity and resets do not borrow unrelated context.",
+          "oracle": ".agentflow/oracles/v080/T06/frozen.json#A2"
+        }
+      ],
+      "verification": [
+        "PROPOSED: cargo test -p dendro-connectors --test native_v080 --locked"
+      ],
+      "stop_conditions": [
+        "Guessed invocation/parentage, cumulative double count or undocumented source format.",
+        "Protected-path mutation, stale custody/fence, or unfrozen oracle: park."
+      ],
+      "worker_identity_contract": "Distinct unique_worker_run_id and immutable authorship/input/output digests. Use native_client_session_id when exposed; otherwise dispatcher launch receipt(pid/start/sanitized command/digests) with native_session_id unavailable. Harness-managed task identity recorded factually, never invent seat/PID/session. Oracle/builder/reviewer identities disjoint per artifact, QA disjoint from tested builders.",
+      "requirement_ids": [
+        "R05",
+        "R23"
+      ]
+    },
+    {
+      "id": "T07",
+      "title": "Migrate four export readers",
+      "depends_on": [
+        "T05"
+      ],
+      "owner": {
+        "runtime": "grok --single",
+        "model": "grok-4.7",
+        "effort": "medium",
+        "provider_family": "xai",
+        "role": "T07 bounded owner"
+      },
+      "oracle_owner": {
+        "runtime": "codex exec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "provider_family": "openai",
+        "role": "T07 independent expected-value author"
+      },
+      "reviewer": {
+        "runtime": "claude -p",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "provider_family": "anthropic",
+        "role": "T07 independent acceptance reviewer"
+      },
+      "paths": [
+        "crates/dendro-connectors/src/exports.rs",
+        "crates/dendro-connectors/src/cursor.rs",
+        "crates/dendro-connectors/src/windsurf.rs",
+        "crates/dendro-connectors/src/goose.rs",
+        "crates/dendro-connectors/src/devin.rs",
+        "crates/dendro-connectors/tests/exports_v080.rs"
+      ],
+      "inputs": [
+        "Four existing admitted export schemas and negative fixtures"
+      ],
+      "outputs": [
+        "Typed file/import adapters and per-source capability matrix"
+      ],
+      "acceptance": [
+        {
+          "id": "T07-A1",
+          "criterion": "Read each export end-to-end and append/replay; preserve source-native warnings and unsupported tokens/context/webhook boundaries.",
+          "oracle": ".agentflow/oracles/v080/T07/frozen.json#A1"
+        },
+        {
+          "id": "T07-A2",
+          "criterion": "Unknown versions/units, truncation, aliases and malformed records return explicit partial/refused coverage.",
+          "oracle": ".agentflow/oracles/v080/T07/frozen.json#A2"
+        }
+      ],
+      "verification": [
+        "EXISTING future run: cargo test -p dendro-connectors --test export_connectors --locked",
+        "PROPOSED: cargo test -p dendro-connectors --test exports_v080 --locked"
+      ],
+      "stop_conditions": [
+        "Export omissions represented as native features or zero measured usage.",
+        "Protected-path mutation, stale custody/fence, or unfrozen oracle: park."
+      ],
+      "worker_identity_contract": "Distinct unique_worker_run_id and immutable authorship/input/output digests. Use native_client_session_id when exposed; otherwise dispatcher launch receipt(pid/start/sanitized command/digests) with native_session_id unavailable. Harness-managed task identity recorded factually, never invent seat/PID/session. Oracle/builder/reviewer identities disjoint per artifact, QA disjoint from tested builders.",
+      "requirement_ids": [
+        "R06"
+      ]
+    },
+    {
+      "id": "T08",
+      "title": "Implement specimen-backed native Grok parser",
+      "depends_on": [
+        "B01-G",
+        "T05"
+      ],
+      "owner": {
+        "runtime": "grok --single",
+        "model": "grok-4.7",
+        "effort": "medium",
+        "provider_family": "xai",
+        "role": "T08 bounded owner"
+      },
+      "oracle_owner": {
+        "runtime": "codex exec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "provider_family": "openai",
+        "role": "T08 independent expected-value author"
+      },
+      "reviewer": {
+        "runtime": "claude -p",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "provider_family": "anthropic",
+        "role": "T08 independent acceptance reviewer"
+      },
+      "paths": [
+        "crates/dendro-connectors/src/grok.rs",
+        "crates/dendro-connectors/tests/grok_v080.rs"
+      ],
+      "inputs": [
+        "Exact Grok producer/schema/specimen admission; safe projection recipe"
+      ],
+      "outputs": [
+        "Real streaming native reader and conformance results for admitted schema"
+      ],
+      "acceptance": [
+        {
+          "id": "T08-A1",
+          "criterion": "Parse admitted genuine file specimen through real reader into evidenced usage/identity and structurally available actions/bindings.",
+          "oracle": ".agentflow/oracles/v080/T08/frozen.json#A1"
+        },
+        {
+          "id": "T08-A2",
+          "criterion": "Test incremental replay, malformed/unknown version, missing call IDs and privacy; descriptor names exact supported record kinds.",
+          "oracle": ".agentflow/oracles/v080/T08/frozen.json#A2"
+        }
+      ],
+      "verification": [
+        "PROPOSED: cargo test -p dendro-connectors --test grok_v080 --locked"
+      ],
+      "stop_conditions": [
+        "No genuine specimen or structural field evidence: park, never empty-success implementation.",
+        "Protected-path mutation, stale custody/fence, or unfrozen oracle: park."
+      ],
+      "worker_identity_contract": "Distinct unique_worker_run_id and immutable authorship/input/output digests. Use native_client_session_id when exposed; otherwise dispatcher launch receipt(pid/start/sanitized command/digests) with native_session_id unavailable. Harness-managed task identity recorded factually, never invent seat/PID/session. Oracle/builder/reviewer identities disjoint per artifact, QA disjoint from tested builders.",
+      "requirement_ids": [
+        "R07"
+      ]
+    },
+    {
+      "id": "T09",
+      "title": "Implement bounded AGY export adapter",
+      "depends_on": [
+        "B01-core",
+        "T05"
+      ],
+      "owner": {
+        "runtime": "grok --single",
+        "model": "grok-4.7",
+        "effort": "medium",
+        "provider_family": "xai",
+        "role": "T09 bounded owner"
+      },
+      "oracle_owner": {
+        "runtime": "codex exec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "provider_family": "openai",
+        "role": "T09 independent expected-value author"
+      },
+      "reviewer": {
+        "runtime": "claude -p",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "provider_family": "anthropic",
+        "role": "T09 independent acceptance reviewer"
+      },
+      "paths": [
+        "crates/dendro-connectors/src/agy.rs",
+        "crates/dendro-connectors/tests/agy_export_v080.rs"
+      ],
+      "inputs": [
+        "Dendro-defined agy.export/v1 schema; synthetic/public vectors"
+      ],
+      "outputs": [
+        "Executable file reader, export contract docs embedded in descriptor, negative vectors"
+      ],
+      "acceptance": [
+        {
+          "id": "T09-A1",
+          "criterion": "Read typed AGY export records and incremental append; validate namespace, units, counters, references and version without vendor-format invention. AGY-specific maximum1MiB/line and128-record batches; larger appends stream through bounded batches.",
+          "oracle": ".agentflow/oracles/v080/T09/frozen.json#A1"
+        },
+        {
+          "id": "T09-A2",
+          "criterion": "Emit supported-export versus unadmitted-native coverage distinctly; unknown required kind/version rejects, omission remains unknown.",
+          "oracle": ".agentflow/oracles/v080/T09/frozen.json#A2"
+        }
+      ],
+      "verification": [
+        "PROPOSED: cargo test -p dendro-connectors --test agy_export_v080 --locked"
+      ],
+      "stop_conditions": [
+        "AGY worker invocation, native-format claim without specimens or generic hook-only delivery.",
+        "Protected-path mutation, stale custody/fence, or unfrozen oracle: park."
+      ],
+      "worker_identity_contract": "Distinct unique_worker_run_id and immutable authorship/input/output digests. Use native_client_session_id when exposed; otherwise dispatcher launch receipt(pid/start/sanitized command/digests) with native_session_id unavailable. Harness-managed task identity recorded factually, never invent seat/PID/session. Oracle/builder/reviewer identities disjoint per artifact, QA disjoint from tested builders.",
+      "requirement_ids": [
+        "R08"
+      ]
+    },
+    {
+      "id": "T10",
+      "title": "Linux native collector and platform-neutral environment import",
+      "depends_on": [
+        "T05"
+      ],
+      "owner": {
+        "runtime": "grok --single",
+        "model": "grok-4.7",
+        "effort": "medium",
+        "provider_family": "xai",
+        "role": "T10 bounded owner"
+      },
+      "oracle_owner": {
+        "runtime": "codex exec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "provider_family": "openai",
+        "role": "T10 independent expected-value author"
+      },
+      "reviewer": {
+        "runtime": "claude -p",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "provider_family": "anthropic",
+        "role": "T10 independent acceptance reviewer"
+      },
+      "paths": [
+        "crates/dendro-connectors/src/environment_v1/**",
+        "crates/dendro-connectors/tests/environment_v080.rs"
+      ],
+      "inputs": [
+        "Environment export/collector contract; explicit authorized process roots"
+      ],
+      "outputs": [
+        "Real observation importer, scoped /proc collector, safe synthetic process harness"
+      ],
+      "acceptance": [
+        {
+          "id": "T10-A1",
+          "criterion": "Capture CPU deltas, sampled RSS, accessible namespace/cgroup/process metadata for bounded roots; PID reuse/exit/permission failures safe. Native Linux positive synthetic activity run required: identity(host incarnation,PID,start_ticks), actual CPU/user/system deltas, sampled RSS and accessible cgroup/namespace facts. Permission/exit/reuse/gaps explicit; Windows T25 does not substitute.",
+          "oracle": ".agentflow/oracles/v080/T10/frozen.json#A1"
+        },
+        {
+          "id": "T10-A2",
+          "criterion": "Read imported remote/Windows-host observations with incarnations, temporal loci, clock/trust and isolation stages; no raw argv/environ/path retained. This importer does not substitute for mandatory native Windows collector T25.",
+          "oracle": ".agentflow/oracles/v080/T10/frozen.json#A2"
+        }
+      ],
+      "verification": [
+        "PROPOSED: cargo test -p dendro-connectors --test environment_v080 --locked on admitted Linux/ext4"
+      ],
+      "stop_conditions": [
+        "Host-wide scanning, privileged attach, raw secret access or fixture-only collector.",
+        "Protected-path mutation, stale custody/fence, or unfrozen oracle: park."
+      ],
+      "worker_identity_contract": "Distinct unique_worker_run_id and immutable authorship/input/output digests. Use native_client_session_id when exposed; otherwise dispatcher launch receipt(pid/start/sanitized command/digests) with native_session_id unavailable. Harness-managed task identity recorded factually, never invent seat/PID/session. Oracle/builder/reviewer identities disjoint per artifact, QA disjoint from tested builders.",
+      "requirement_ids": [
+        "R09"
+      ]
+    },
+    {
+      "id": "T25",
+      "title": "Native Windows scoped process/resource collector",
+      "depends_on": [
+        "T05",
+        "T24",
+        "B02"
+      ],
+      "owner": {
+        "runtime": "grok --single",
+        "model": "grok-4.7",
+        "effort": "medium",
+        "provider_family": "xai",
+        "role": "T25 owner; distinct execution identity"
+      },
+      "oracle_owner": {
+        "runtime": "codex exec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "provider_family": "openai",
+        "role": "T25 oracle_owner; distinct execution identity"
+      },
+      "reviewer": {
+        "runtime": "claude -p",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "provider_family": "anthropic",
+        "role": "T25 reviewer; distinct execution identity"
+      },
+      "paths": [
+        "crates/dendro-connectors/src/environment_windows_v1/**",
+        "crates/dendro-connectors/tests/windows_environment_v080.rs"
+      ],
+      "inputs": [
+        "B02 Windows safe API wrappers and T05 collector slots; bound-process authorization"
+      ],
+      "outputs": [
+        "Native Windows scoped process/resource collector implementation/evidence and independent acceptance receipts"
+      ],
+      "acceptance": [
+        {
+          "id": "T25-A1",
+          "criterion": "Read actual authorized synthetic Windows process CPU/user/kernel and sampled working-set values as standard user; identity host/PID/creation time plus held handle handles reuse/exit; native executable no WSL.",
+          "oracle": ".agentflow/oracles/v080/T25/frozen.json#A1"
+        },
+        {
+          "id": "T25-A2",
+          "criterion": "Same bounded1s/64process/600sample policy; permission failures and token/job/AppContainer configuration unknowns explicit; no argv/environ/process-memory payload, global enumeration retention or inherited authority. Native capture->typed facts positive path; resource semantics distinguish Windows working set from Linux RSS.",
+          "oracle": ".agentflow/oracles/v080/T25/frozen.json#A2"
+        }
+      ],
+      "verification": [
+        "PROPOSED: cargo test -p dendro-connectors --test windows_environment_v080 --locked (native Windows execution required; Linux verifies platform-visible support metadata)"
+      ],
+      "stop_conditions": [
+        "Host-wide scanning, privileged attach, raw secret access or fixture-only collector.",
+        "Protected-path mutation, stale custody/fence, or unfrozen oracle: park.",
+        "Missing native Windows or Linux proof cannot be waived or satisfied with WSL; park with concrete owned remedy."
+      ],
+      "worker_identity_contract": "Distinct unique_worker_run_id and immutable authorship/input/output digests. Use native_client_session_id when exposed; otherwise dispatcher launch receipt(pid/start/sanitized command/digests) with native_session_id unavailable. Harness-managed task identity recorded factually, never invent seat/PID/session. Oracle/builder/reviewer identities disjoint per artifact, QA disjoint from tested builders.",
+      "requirement_ids": [
+        "R09",
+        "R26"
+      ],
+      "integration_requests": {
+        "writer": "standing Codex integration owner",
+        "paths": [
+          "Cargo.toml",
+          "Cargo.lock",
+          "crates/dendro-core/src/lib.rs",
+          "crates/dendro-connectors/src/lib.rs",
+          "crates/dendro-connectors/src/capture_registry_v1/**"
+        ],
+        "protocol": "Request exact paths/input digest; global single-writer fenced lease; Codex patch output digest + independent oracle/review receipt required before requesting task consumes/accepts. Inspection-only B02 never writes code; it proposes future requests only."
+      },
+      "shared_write_requests": [
+        "Cargo.toml",
+        "Cargo.lock",
+        "crates/dendro-core/src/lib.rs",
+        "crates/dendro-connectors/src/lib.rs",
+        "crates/dendro-connectors/src/capture_registry_v1/**"
+      ]
+    },
+    {
+      "id": "T11",
+      "title": "Normalized syscall trace import",
+      "depends_on": [
+        "B01-S",
+        "T05"
+      ],
+      "owner": {
+        "runtime": "grok --single",
+        "model": "grok-4.7",
+        "effort": "medium",
+        "provider_family": "xai",
+        "role": "T11 bounded owner"
+      },
+      "oracle_owner": {
+        "runtime": "codex exec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "provider_family": "openai",
+        "role": "T11 independent expected-value author"
+      },
+      "reviewer": {
+        "runtime": "claude -p",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "provider_family": "anthropic",
+        "role": "T11 independent acceptance reviewer"
+      },
+      "paths": [
+        "crates/dendro-connectors/src/syscall_v1/**",
+        "crates/dendro-connectors/tests/syscall_v080.rs"
+      ],
+      "inputs": [
+        "Pinned real tracer format/options and permitted synthetic tracing"
+      ],
+      "outputs": [
+        "Bounded transient trace reader; normalized effect records; end-to-end receipt"
+      ],
+      "acceptance": [
+        {
+          "id": "T11-A1",
+          "criterion": "Parse admitted real format including unfinished/resumed and errors; persist only operation/status/count/resource class and evidenced duration.",
+          "oracle": ".agentflow/oracles/v080/T11/frozen.json#A1"
+        },
+        {
+          "id": "T11-A2",
+          "criterion": "Trace short-lived synthetic bound process when admitted tracer available, import actual output and verify normalized effects/privacy.",
+          "oracle": ".agentflow/oracles/v080/T11/frozen.json#A2"
+        }
+      ],
+      "verification": [
+        "PROPOSED: cargo test -p dendro-connectors --test syscall_v080 --locked; synthetic tracer run under B01 scope"
+      ],
+      "stop_conditions": [
+        "Missing tracer/authority parks live AC; no install, global attach, raw trace retention or invented grammar.",
+        "Protected-path mutation, stale custody/fence, or unfrozen oracle: park."
+      ],
+      "worker_identity_contract": "Distinct unique_worker_run_id and immutable authorship/input/output digests. Use native_client_session_id when exposed; otherwise dispatcher launch receipt(pid/start/sanitized command/digests) with native_session_id unavailable. Harness-managed task identity recorded factually, never invent seat/PID/session. Oracle/builder/reviewer identities disjoint per artifact, QA disjoint from tested builders.",
+      "requirement_ids": [
+        "R10"
+      ]
+    },
+    {
+      "id": "T26",
+      "title": "Native Windows real event/effect trace importer",
+      "depends_on": [
+        "B01-W",
+        "T05",
+        "T24"
+      ],
+      "owner": {
+        "runtime": "grok --single",
+        "model": "grok-4.7",
+        "effort": "medium",
+        "provider_family": "xai",
+        "role": "T26 owner; distinct execution identity"
+      },
+      "oracle_owner": {
+        "runtime": "codex exec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "provider_family": "openai",
+        "role": "T26 oracle_owner; distinct execution identity"
+      },
+      "reviewer": {
+        "runtime": "claude -p",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "provider_family": "anthropic",
+        "role": "T26 reviewer; distinct execution identity"
+      },
+      "paths": [
+        "crates/dendro-connectors/src/windows_events_v1/**",
+        "crates/dendro-connectors/tests/windows_events_v080.rs",
+        "crates/dendro-connectors/tests/fixtures/windows_events_v080/**"
+      ],
+      "inputs": [
+        "B01 real Windows trace fixture/provider profile and B02 permission/acquisition plan"
+      ],
+      "outputs": [
+        "Native Windows real event/effect trace importer implementation/evidence and independent acceptance receipts"
+      ],
+      "acceptance": [
+        {
+          "id": "T26-A1",
+          "criterion": "Implement B01-pinned real Windows ETW profile via native ETL consumption or pinned bounded tracerpt XML export reader; exact provider/event IDs/versions/opcodes/clock/process linkage and safe limits, unsupported types counted. No synthetic invented format or claim allsyscall parity.",
+          "oracle": ".agentflow/oracles/v080/T26/frozen.json#A1"
+        },
+        {
+          "id": "T26-A2",
+          "criterion": "Ingest genuine controlled synthetic-process Windows trace on native Windows into normalized evidenced operation/status/count/resource-class facts. Required producer capture authorization/provenance receipt separate from standard-user import tests; unknown or missing evidence blocks release, never silently replaced by self-reported events. B01 owns private external original acquisition/provenance; T26 alone derives safe minimized project fixtures at tests/fixtures/windows_events_v080/** with source/redaction/projection/digest lineage. No raw trace committed.",
+          "oracle": ".agentflow/oracles/v080/T26/frozen.json#A2"
+        },
+        {
+          "id": "T26-A3",
+          "criterion": "Test lost events, timestamp/creation-time reuse, malformed input, ambiguous process joins and privacy canaries; raw ETL/XML/argv/filenames/payload stay outside retained DB. Source assertions remain distinguishable from kernel-observed effects.",
+          "oracle": ".agentflow/oracles/v080/T26/frozen.json#A3"
+        }
+      ],
+      "verification": [
+        "PROPOSED: cargo test -p dendro-connectors --test windows_events_v080 --locked (native Windows plus portable grammar vectors on Linux)",
+        "Required future controlled native producer capture provenance and standard-user real-fixture import receipts."
+      ],
+      "stop_conditions": [
+        "Host-wide scanning, privileged attach, raw secret access or fixture-only collector.",
+        "Protected-path mutation, stale custody/fence, or unfrozen oracle: park.",
+        "Missing native Windows or Linux proof cannot be waived or satisfied with WSL; park with concrete owned remedy."
+      ],
+      "worker_identity_contract": "Distinct unique_worker_run_id and immutable authorship/input/output digests. Use native_client_session_id when exposed; otherwise dispatcher launch receipt(pid/start/sanitized command/digests) with native_session_id unavailable. Harness-managed task identity recorded factually, never invent seat/PID/session. Oracle/builder/reviewer identities disjoint per artifact, QA disjoint from tested builders.",
+      "requirement_ids": [
+        "R10",
+        "R27"
+      ],
+      "integration_requests": {
+        "writer": "standing Codex integration owner",
+        "paths": [
+          "Cargo.toml",
+          "Cargo.lock",
+          "crates/dendro-core/src/lib.rs",
+          "crates/dendro-connectors/src/lib.rs",
+          "crates/dendro-connectors/src/capture_registry_v1/**"
+        ],
+        "protocol": "Request exact paths/input digest; global single-writer fenced lease; Codex patch output digest + independent oracle/review receipt required before requesting task consumes/accepts. Inspection-only B02 never writes code; it proposes future requests only."
+      },
+      "shared_write_requests": [
+        "Cargo.toml",
+        "Cargo.lock",
+        "crates/dendro-core/src/lib.rs",
+        "crates/dendro-connectors/src/lib.rs",
+        "crates/dendro-connectors/src/capture_registry_v1/**"
+      ]
+    },
+    {
+      "id": "T12",
+      "title": "Generic lineage OpenRig and outcome rules",
+      "depends_on": [
+        "T03",
+        "T05",
+        "T06"
+      ],
+      "owner": {
+        "runtime": "grok --single",
+        "model": "grok-4.7",
+        "effort": "medium",
+        "provider_family": "xai",
+        "role": "T12 bounded owner"
+      },
+      "oracle_owner": {
+        "runtime": "codex exec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "provider_family": "openai",
+        "role": "T12 independent expected-value author"
+      },
+      "reviewer": {
+        "runtime": "claude -p",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "provider_family": "anthropic",
+        "role": "T12 independent acceptance reviewer"
+      },
+      "paths": [
+        "crates/dendro-resolver/src/lib.rs",
+        "crates/dendro-connectors/src/openrig.rs",
+        "crates/dendro-core/src/lineage_v1/**",
+        "crates/dendro-core/src/outcome_v1/**",
+        "crates/dendro-resolver/tests/lineage_v080.rs"
+      ],
+      "inputs": [
+        "Typed edges and outcome precedence; exact linkage baseline; OpenRig specimens"
+      ],
+      "outputs": [
+        "Multi-caller resolver, lifecycle/outcome rule evaluator and compatibility projections"
+      ],
+      "acceptance": [
+        {
+          "id": "T12-A1",
+          "criterion": "Preserve collisions/native IDs; prove spawn/delegate/handoff/return/join/retry/resume including same-attempt continuation, cycles and outliving children. WorkAssignment bounds durable-worker usage; only spawn/delegate_existing closures expand inclusive scope, return/join/handoff do not; distinct spawn creator enforced.",
+          "oracle": ".agentflow/oracles/v080/T12/frozen.json#A1"
+        },
+        {
+          "id": "T12-A2",
+          "criterion": "Evaluate completion/review/acceptance/merge/revocation separately at cutoff; failed topology read != zero rigs.",
+          "oracle": ".agentflow/oracles/v080/T12/frozen.json#A2"
+        }
+      ],
+      "verification": [
+        "PROPOSED: cargo test -p dendro-resolver --test lineage_v080 --locked"
+      ],
+      "stop_conditions": [
+        "Inferred parentage/authority, any-success work acceptance default or lost native semantics.",
+        "Protected-path mutation, stale custody/fence, or unfrozen oracle: park."
+      ],
+      "shared_write_requests": [
+        "crates/dendro-core/src/lib.rs"
+      ],
+      "worker_identity_contract": "Distinct unique_worker_run_id and immutable authorship/input/output digests. Use native_client_session_id when exposed; otherwise dispatcher launch receipt(pid/start/sanitized command/digests) with native_session_id unavailable. Harness-managed task identity recorded factually, never invent seat/PID/session. Oracle/builder/reviewer identities disjoint per artifact, QA disjoint from tested builders.",
+      "requirement_ids": [
+        "R03",
+        "R11",
+        "R17"
+      ]
+    },
+    {
+      "id": "T13",
+      "title": "Security facts and Dendro privacy boundaries",
+      "depends_on": [
+        "T03",
+        "T05",
+        "T06",
+        "T10",
+        "T12"
+      ],
+      "owner": {
+        "runtime": "grok --single",
+        "model": "grok-4.7",
+        "effort": "medium",
+        "provider_family": "xai",
+        "role": "T13 bounded owner"
+      },
+      "oracle_owner": {
+        "runtime": "codex exec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "provider_family": "openai",
+        "role": "T13 independent expected-value author"
+      },
+      "reviewer": {
+        "runtime": "claude -p",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "provider_family": "anthropic",
+        "role": "T13 independent acceptance reviewer"
+      },
+      "paths": [
+        "crates/dendro-core/src/security_v1/**",
+        "crates/dendro-core/src/privacy.rs",
+        "crates/dendro-core/src/output.rs",
+        "crates/dendro-connectors/src/snapshot.rs",
+        "crates/dendro-core/tests/security_v080.rs"
+      ],
+      "inputs": [
+        "Frozen policy/grant/effect and malicious-input oracles; privacy sidecar contract",
+        "B01 admitted native structural permission/context specimens and T06 typed projection receipts, not private logs"
+      ],
+      "outputs": [
+        "Layer comparator, rule assessment, hardened projection/output/snapshot boundaries"
+      ],
+      "acceptance": [
+        {
+          "id": "T13-A1",
+          "criterion": "Policy/grant/approval/attempt/authority/effect stay separate; no policy NOT_ASSESSED and no grant-alone violation. Accept core comparator against independently frozen safe typed rows and admitted repo fixture projections; actual full native reader/security positive paths are required later by T18/T20, not this core task.",
+          "oracle": ".agentflow/oracles/v080/T13/frozen.json#A1"
+        },
+        {
+          "id": "T13-A2",
+          "criterion": "Canaries including PEM/JWT/arbitrary secrets absent from decoded DB/sidecars/exports; injection inert, missing key fails private operations, source aliases cannot write source. Test C0/C1/ANSI/OSC52 stripping, HTML+CSP/inert source strings, restricted query connection, signed-but-unverified assertion and provenance-scoped incident quarantine/remediation including backups/key copies; no automatic deletion. Exercise platform-v1 Windows DACL/handle/locking and Linux mode/inode defenses natively; no cfg branch bypasses security. Windows real T26 effect evidence joins security without inventing grant/isolation facts. Core code can be accepted against relevant available native receipt; full Windows/Linux safety and T26 effect joins remain mandatory at T18/T20/G02, not an ETW/strace build prerequisite.",
+          "oracle": ".agentflow/oracles/v080/T13/frozen.json#A2"
+        }
+      ],
+      "verification": [
+        "PROPOSED: cargo test -p dendro-core --test security_v080 --locked",
+        "EXISTING future run: cargo test -p dendro-connectors --test privacy_sweep --locked"
+      ],
+      "stop_conditions": [
+        "Secret persistence, unsafe source mutation, unauthenticated approval or textual mention promoted to authority.",
+        "Protected-path mutation, stale custody/fence, or unfrozen oracle: park."
+      ],
+      "shared_write_requests": [
+        "crates/dendro-core/src/lib.rs"
+      ],
+      "worker_identity_contract": "Distinct unique_worker_run_id and immutable authorship/input/output digests. Use native_client_session_id when exposed; otherwise dispatcher launch receipt(pid/start/sanitized command/digests) with native_session_id unavailable. Harness-managed task identity recorded factually, never invent seat/PID/session. Oracle/builder/reviewer identities disjoint per artifact, QA disjoint from tested builders.",
+      "requirement_ids": [
+        "R14",
+        "R15"
+      ],
+      "required_artifacts": [
+        {
+          "producer": "T24",
+          "artifact": "reviewed-platform-safety-interface-and-relevant-native-receipt",
+          "must_be": "reviewed"
+        }
+      ]
+    },
+    {
+      "id": "T14",
+      "title": "Conserved accounting time and cost",
+      "depends_on": [
+        "T04",
+        "T06",
+        "T07",
+        "T09",
+        "T12"
+      ],
+      "owner": {
+        "runtime": "grok --single",
+        "model": "grok-4.7",
+        "effort": "medium",
+        "provider_family": "xai",
+        "role": "T14 bounded owner"
+      },
+      "oracle_owner": {
+        "runtime": "codex exec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "provider_family": "openai",
+        "role": "T14 independent expected-value author"
+      },
+      "reviewer": {
+        "runtime": "claude -p",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "provider_family": "anthropic",
+        "role": "T14 independent acceptance reviewer"
+      },
+      "paths": [
+        "crates/dendro-core/src/accounting_v1/**",
+        "crates/dendro-core/src/concurrency.rs",
+        "crates/dendro-core/tests/accounting_v080.rs"
+      ],
+      "inputs": [
+        "F01-F15 and F22-F24 frozen vectors, plus generation-replacement/unknown-clock/window/decimal normalization cases; usage/component/currency and lineage contracts"
+      ],
+      "outputs": [
+        "Direct/inclusive/allocation folds, interval engine, dedup/cost/cutoff calculator"
+      ],
+      "acceptance": [
+        {
+          "id": "T14-A1",
+          "criterion": "Prove observation conservation, namespace equivalence, overlap refusal, shared residuals and nonadditive descendant unions. Exact rational partial weights conserve residual even with omitted callers; unresolved overlap retains source-grain values.",
+          "oracle": ".agentflow/oracles/v080/T14/frozen.json#A1"
+        },
+        {
+          "id": "T14-A2",
+          "criterion": "Compute half-open wall/summed/censored intervals; observed versus estimated currency and component inclusion exact; named ratios use matched populations. Missing end is unknown unless cutoff liveness proves right censoring; decrease alone not reset, first cumulative baseline unknown; literal reported totals preserved at grain; EUR/USD/estimated/subscription partitions and legitimate named mean-of-ratios tested. Geometric window intersection only duration measures; atomic usage/cost/count uses evidenced attribution timestamp else fully-contained interval; straddle_unsplit excludes amount with partial coverage, never proration. Normalize10/100==1/10 and all zero amounts0/1 before hash/revision equality without precision loss.",
+          "oracle": ".agentflow/oracles/v080/T14/frozen.json#A2"
+        }
+      ],
+      "verification": [
+        "PROPOSED: cargo test -p dendro-core --test accounting_v080 --locked"
+      ],
+      "stop_conditions": [
+        "Depth multiplier, arbitrary split, unknown-as-zero, ambiguous fleet sum or unpriced observed-cost deletion.",
+        "Protected-path mutation, stale custody/fence, or unfrozen oracle: park."
+      ],
+      "shared_write_requests": [
+        "crates/dendro-core/src/lib.rs"
+      ],
+      "worker_identity_contract": "Distinct unique_worker_run_id and immutable authorship/input/output digests. Use native_client_session_id when exposed; otherwise dispatcher launch receipt(pid/start/sanitized command/digests) with native_session_id unavailable. Harness-managed task identity recorded factually, never invent seat/PID/session. Oracle/builder/reviewer identities disjoint per artifact, QA disjoint from tested builders.",
+      "requirement_ids": [
+        "R11",
+        "R12",
+        "R13",
+        "R19"
+      ]
+    },
+    {
+      "id": "T15",
+      "title": "Measure analyzer and Answer extension contracts",
+      "depends_on": [
+        "T03",
+        "T04",
+        "T13",
+        "T14"
+      ],
+      "owner": {
+        "runtime": "grok --single",
+        "model": "grok-4.7",
+        "effort": "medium",
+        "provider_family": "xai",
+        "role": "T15 bounded owner"
+      },
+      "oracle_owner": {
+        "runtime": "codex exec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "provider_family": "openai",
+        "role": "T15 independent expected-value author"
+      },
+      "reviewer": {
+        "runtime": "claude -p",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "provider_family": "anthropic",
+        "role": "T15 independent acceptance reviewer"
+      },
+      "paths": [
+        "crates/dendro-core/src/insight_v1/contract.rs",
+        "crates/dendro-core/src/semantic.rs",
+        "crates/dendro-core/src/semantic_views.sql",
+        "docs/contributing/insights-v1.md",
+        "examples/insight-v1/**",
+        "crates/dendro-core/tests/contribution_v080.rs"
+      ],
+      "inputs": [
+        "Versioned registry/Answer DESIGN contract; frozen refusals"
+      ],
+      "outputs": [
+        "Compile-time contribution API, typed question/query and serialized Answer"
+      ],
+      "acceptance": [
+        {
+          "id": "T15-A1",
+          "criterion": "Validate dimensions/populations/accounting/cutoffs, independent versions, statuses and coverage; no arbitrary confidence or generated SQL. Restricted read-only views disable ATTACH/COPY/file/network access; digest binds snapshot/scope/versions/coverage, excludes narrative. Compare same selection policy except declared contrasts, not identical rows/population hashes.",
+          "oracle": ".agentflow/oracles/v080/T15/frozen.json#A1"
+        },
+        {
+          "id": "T15-A2",
+          "criterion": "Reject contributions without conformance and incompatible comparisons; hypotheses excluded from canonical inputs. Runnable external analyzer/measure example and contribution_v080 command prove extension without semantic core edits; incompatible major/dimension fixtures rejected.",
+          "oracle": ".agentflow/oracles/v080/T15/frozen.json#A2"
+        }
+      ],
+      "verification": [
+        "PROPOSED targeted core contract tests; full workspace gates in T22",
+        "PROPOSED: cargo test -p dendro-core --test contribution_v080 --locked"
+      ],
+      "stop_conditions": [
+        "Presenter recomputation, runtime plugin loading or semantic version drift.",
+        "Protected-path mutation, stale custody/fence, or unfrozen oracle: park."
+      ],
+      "shared_write_requests": [
+        "crates/dendro-core/src/insight_v1/registry.rs",
+        "crates/dendro-core/src/lib.rs"
+      ],
+      "worker_identity_contract": "Distinct unique_worker_run_id and immutable authorship/input/output digests. Use native_client_session_id when exposed; otherwise dispatcher launch receipt(pid/start/sanitized command/digests) with native_session_id unavailable. Harness-managed task identity recorded factually, never invent seat/PID/session. Oracle/builder/reviewer identities disjoint per artifact, QA disjoint from tested builders.",
+      "requirement_ids": [
+        "R16",
+        "R19",
+        "R24"
+      ]
+    },
+    {
+      "id": "T16",
+      "title": "Ship deterministic reference insight catalog",
+      "depends_on": [
+        "T15",
+        "T10",
+        "T12"
+      ],
+      "owner": {
+        "runtime": "grok --single",
+        "model": "grok-4.7",
+        "effort": "medium",
+        "provider_family": "xai",
+        "role": "T16 bounded owner"
+      },
+      "oracle_owner": {
+        "runtime": "codex exec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "provider_family": "openai",
+        "role": "T16 independent expected-value author"
+      },
+      "reviewer": {
+        "runtime": "claude -p",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "provider_family": "anthropic",
+        "role": "T16 independent acceptance reviewer"
+      },
+      "paths": [
+        "crates/dendro-core/src/insight_v1/reference/**",
+        "crates/dendro-core/tests/insights_v080.rs"
+      ],
+      "inputs": [
+        "I01-I21 formulas; frozen expected Answers and captured/imported domain facts"
+      ],
+      "outputs": [
+        "All 21 callable analyzers and positive/negative golden Answers"
+      ],
+      "acceptance": [
+        {
+          "id": "T16-A1",
+          "criterion": "Every I01-I21 computes specified formula/refusal/version, including actual environment/effects/security/outcome facts; no all-unobservable domain stub. I02 cache-read ratio-of-sums versus invocation mean have separate IDs/populations;90/100+1/10 ->91/110 versus0.5; unknown inclusion/grain refuses appropriate rate without losing usage. Standing Codex owner registers exactly I01-I21 at1.0.0 including named submeasures, and lookup tests prove availability before T17/T19. Callable full I01-I21 catalog and independent fixture oracles required here; I15 real strace/ETW positive capture proof is a separate T18/T20 release receipt, never waived or falsely claimed by fixtures.",
+          "oracle": ".agentflow/oracles/v080/T16/frozen.json#A1"
+        },
+        {
+          "id": "T16-A2",
+          "criterion": "Test noncomparable cohorts, missing denominators, allocated/lower-bound uncertainty and policy NOT_ASSESSED with exact evidence IDs.",
+          "oracle": ".agentflow/oracles/v080/T16/frozen.json#A2"
+        }
+      ],
+      "verification": [
+        "PROPOSED: cargo test -p dendro-core --test insights_v080 --locked"
+      ],
+      "stop_conditions": [
+        "Catalog reduction, unsupported causality/significance or builder-authored numeric oracle.",
+        "Protected-path mutation, stale custody/fence, or unfrozen oracle: park."
+      ],
+      "shared_write_requests": [
+        "crates/dendro-core/src/lib.rs",
+        "crates/dendro-core/src/insight_v1/registry.rs"
+      ],
+      "worker_identity_contract": "Distinct unique_worker_run_id and immutable authorship/input/output digests. Use native_client_session_id when exposed; otherwise dispatcher launch receipt(pid/start/sanitized command/digests) with native_session_id unavailable. Harness-managed task identity recorded factually, never invent seat/PID/session. Oracle/builder/reviewer identities disjoint per artifact, QA disjoint from tested builders.",
+      "requirement_ids": [
+        "R14",
+        "R16",
+        "R17",
+        "R19"
+      ]
+    },
+    {
+      "id": "T17",
+      "title": "CLI TUI dashboard progressive disclosure",
+      "depends_on": [
+        "T16"
+      ],
+      "owner": {
+        "runtime": "grok --single",
+        "model": "grok-4.7",
+        "effort": "medium",
+        "provider_family": "xai",
+        "role": "T17 bounded owner"
+      },
+      "oracle_owner": {
+        "runtime": "codex exec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "provider_family": "openai",
+        "role": "T17 independent expected-value author"
+      },
+      "reviewer": {
+        "runtime": "claude -p",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "provider_family": "anthropic",
+        "role": "T17 independent acceptance reviewer"
+      },
+      "paths": [
+        "crates/dendro-cli/src/**",
+        "crates/dendro-core/src/presentation.rs",
+        "crates/dendro-cli/tests/journeys_v080.rs"
+      ],
+      "inputs": [
+        "Shared Answers; six persona journeys; hostile labels"
+      ],
+      "outputs": [
+        "Question-oriented surfaces with L0-L3, machine JSON and seven-answer home"
+      ],
+      "acceptance": [
+        {
+          "id": "T17-A1",
+          "criterion": "Operator/engineer/security/executive/maintainer journeys expose missing/negative cases and method/evidence; generic agents and OpenRig both readable. Exercise populated/empty/loading/error/refusal/partial states and keyboard-only L0-L3 focus/back navigation with labeled controls and noncolor status; fixture phase is provisional until T20 actual-dispatch journeys.",
+          "oracle": ".agentflow/oracles/v080/T17/frozen.json#A1"
+        },
+        {
+          "id": "T17-A2",
+          "criterion": "Cross-surface parse-back equals canonical Answer; escaped HTML/terminal output, no numeric recomputation and bounded rendering.",
+          "oracle": ".agentflow/oracles/v080/T17/frozen.json#A2"
+        }
+      ],
+      "verification": [
+        "PROPOSED: cargo test -p dendro-cli --test journeys_v080 --locked",
+        "EXISTING future run: cargo test -p dendro-cli --test sealed_cli --locked"
+      ],
+      "stop_conditions": [
+        "Hidden missingness, fleet-only required names or inconsistent surface numbers.",
+        "Protected-path mutation, stale custody/fence, or unfrozen oracle: park."
+      ],
+      "worker_identity_contract": "Distinct unique_worker_run_id and immutable authorship/input/output digests. Use native_client_session_id when exposed; otherwise dispatcher launch receipt(pid/start/sanitized command/digests) with native_session_id unavailable. Harness-managed task identity recorded factually, never invent seat/PID/session. Oracle/builder/reviewer identities disjoint per artifact, QA disjoint from tested builders.",
+      "requirement_ids": [
+        "R18"
+      ]
+    },
+    {
+      "id": "T18",
+      "title": "Register all readers and wire end-to-end ingest",
+      "depends_on": [
+        "T06",
+        "T07",
+        "T08",
+        "T09",
+        "T10",
+        "T11",
+        "T12",
+        "T13",
+        "T25",
+        "T26"
+      ],
+      "owner": {
+        "runtime": "codex exec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "provider_family": "openai",
+        "role": "T18 bounded owner; distinct artifact worker"
+      },
+      "oracle_owner": {
+        "runtime": "grok --single",
+        "model": "grok-4.7",
+        "effort": "medium",
+        "provider_family": "xai",
+        "role": "T18 independent expected-value author; fresh identity"
+      },
+      "reviewer": {
+        "runtime": "claude -p",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "provider_family": "anthropic",
+        "role": "T18 review only; fresh identity"
+      },
+      "paths": [
+        "crates/dendro-connectors/src/lib.rs",
+        "crates/dendro-connectors/src/ingest.rs",
+        "crates/dendro-watcher/src/**",
+        "crates/dendro-connectors/tests/capture_v080.rs",
+        "Cargo.toml",
+        "Cargo.lock",
+        "crates/dendro-core/src/lib.rs"
+      ],
+      "inputs": [
+        "Completed adapter descriptors; storage/provenance contract; scoped watcher rules"
+      ],
+      "outputs": [
+        "Actual dispatch paths, per-kind support matrix, bounded watcher and integration corpus"
+      ],
+      "acceptance": [
+        {
+          "id": "T18-A1",
+          "criterion": "All native/export/sensor readers reachable from real ingest entry; unsupported/failed source explicit, no empty parser claims. Register and execute Windows T25/T26 and Linux T10/T11 routes natively on respective OSes; platform-specific unsupported sensors never remove native runtime scope. Receipt set explicitly names Linux native collector(T10), Linux strace(T11), Windows collector(T25), Windows event profile(T26) independently; both platform contributions required, differing grains preserved. Mandatory final reader->security native permission/effect journeys use actual admitted native source specimens; T26 effect/security joins and I15 real strace/ETW positives explicitly required.",
+          "oracle": ".agentflow/oracles/v080/T18/frozen.json#A1"
+        },
+        {
+          "id": "T18-A2",
+          "criterion": "Run representative model/harness/work/environment records through storage with offsets/generations/corrections and privacy; append decodes bounded delta, prefix I/O separately measured. Watcher debounce exactly1500ms, admitted read-only roots only; no source mutation or insight-registry changes. Validate native Windows watch overflow/reparse/UTF16 paths and Linux equivalents; core platform safety remains T24, no Linux-only acceptance.",
+          "oracle": ".agentflow/oracles/v080/T18/frozen.json#A2"
+        }
+      ],
+      "verification": [
+        "PROPOSED: cargo test -p dendro-connectors --test capture_v080 --locked",
+        "EXISTING future run: cargo test -p dendro-connectors --test sealed_replay --locked"
+      ],
+      "stop_conditions": [
+        "Trait-only support, incomplete domain capture or shared-file lease violation.",
+        "Protected-path mutation, stale custody/fence, or unfrozen oracle: park."
+      ],
+      "worker_identity_contract": "Distinct unique_worker_run_id and immutable authorship/input/output digests. Use native_client_session_id when exposed; otherwise dispatcher launch receipt(pid/start/sanitized command/digests) with native_session_id unavailable. Harness-managed task identity recorded factually, never invent seat/PID/session. Oracle/builder/reviewer identities disjoint per artifact, QA disjoint from tested builders.",
+      "substeps": [
+        "Standing Codex integration owner alone merges fenced wiring/manifest patches; separate Grok oracle and Claude review.",
+        "Run true reader->dispatch->storage integration; no trait-only completion.",
+        "Capture registration only; no insight registry edits or catalog removal. T20 owns actual dispatch-to-Answer final journeys."
+      ],
+      "requirement_ids": [
+        "R02",
+        "R05",
+        "R06",
+        "R07",
+        "R08",
+        "R09",
+        "R10",
+        "R26"
+      ]
+    },
+    {
+      "id": "T19",
+      "title": "Nao shared answers and optional safe explanation",
+      "depends_on": [
+        "T16"
+      ],
+      "owner": {
+        "runtime": "grok --single",
+        "model": "grok-4.7",
+        "effort": "medium",
+        "provider_family": "xai",
+        "role": "T19 bounded owner"
+      },
+      "oracle_owner": {
+        "runtime": "codex exec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "provider_family": "openai",
+        "role": "T19 independent expected-value author"
+      },
+      "reviewer": {
+        "runtime": "claude -p",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "provider_family": "anthropic",
+        "role": "T19 independent acceptance reviewer"
+      },
+      "paths": [
+        "crates/dendro-core/src/explanation_v1/**",
+        "templates/nao/answers-v1.json",
+        "templates/nao/questions-v1.json",
+        "crates/dendro-core/tests/explanation_v080.rs"
+      ],
+      "inputs": [
+        "Shared Answer schema; L0-L3 templates and claim-link contract"
+      ],
+      "outputs": [
+        "Provider-free templates and Nao export/read contract; optional validated narrative"
+      ],
+      "acceptance": [
+        {
+          "id": "T19-A1",
+          "criterion": "Nao exposes same values/status/evidence/method; why/evidence/formula work without model or secret configuration. Canonical answer digest excludes prose but binds snapshot/scope/versions/coverage.",
+          "oracle": ".agentflow/oracles/v080/T19/frozen.json#A1"
+        },
+        {
+          "id": "T19-A2",
+          "criterion": "Optional explanation claims reference allowed IDs and immutable numbers; invalid/unfounded narrative becomes labeled hypothesis or deterministic fallback.",
+          "oracle": ".agentflow/oracles/v080/T19/frozen.json#A2"
+        }
+      ],
+      "verification": [
+        "PROPOSED: cargo test -p dendro-core --test explanation_v080 --locked"
+      ],
+      "stop_conditions": [
+        "Raw transcript dependency, regex-only truth proof, numeric mutation or edit to existing Python validator.",
+        "Protected-path mutation, stale custody/fence, or unfrozen oracle: park."
+      ],
+      "shared_write_requests": [
+        "crates/dendro-core/src/lib.rs"
+      ],
+      "worker_identity_contract": "Distinct unique_worker_run_id and immutable authorship/input/output digests. Use native_client_session_id when exposed; otherwise dispatcher launch receipt(pid/start/sanitized command/digests) with native_session_id unavailable. Harness-managed task identity recorded factually, never invent seat/PID/session. Oracle/builder/reviewer identities disjoint per artifact, QA disjoint from tested builders.",
+      "requirement_ids": [
+        "R18",
+        "R19"
+      ]
+    },
+    {
+      "id": "T27",
+      "title": "Native Windows/Linux CI and package staging",
+      "depends_on": [
+        "T17",
+        "T18",
+        "T19"
+      ],
+      "owner": {
+        "runtime": "grok --single",
+        "model": "grok-4.7",
+        "effort": "medium",
+        "provider_family": "xai",
+        "role": "T27 owner; distinct execution identity"
+      },
+      "oracle_owner": {
+        "runtime": "codex exec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "provider_family": "openai",
+        "role": "T27 oracle_owner; distinct execution identity"
+      },
+      "reviewer": {
+        "runtime": "claude -p",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "provider_family": "anthropic",
+        "role": "T27 reviewer; distinct execution identity"
+      },
+      "paths": [
+        ".github/workflows/native-v080.yml",
+        "scripts/package-native-v080.ps1",
+        "scripts/package-native-v080.sh",
+        "docs/native-runtime-v080.md",
+        ".agentflow/evidence/v080/native-packages/**"
+      ],
+      "inputs": [
+        "Completed modules and T18 dispatch; B02 admitted native runner/runtime versions; exact package and privacy manifests"
+      ],
+      "outputs": [
+        "Native Windows/Linux CI and package staging implementation/evidence and independent acceptance receipts"
+      ],
+      "acceptance": [
+        {
+          "id": "T27-A1",
+          "criterion": "Create owned explicit Windows-native MSVC and Linux-native GNU CI lanes with locked toolchains and actual native binary execution, all four Rust gates and required source/privacy/platform/collector/trace/journey tests. Proposed CI/scripts paths are future files, not existing checks. Missing runner/dependency has scoped repair; neither lane waived or replaced by crosscompile/WSL. Revalidate B02/T24 exact runner/toolchain manifest and early proof against current candidate; drift invalidates affected receipts. Conditional evidenced existing macOS build/regression lane is owned here, no new macOS sensor promise.",
+          "oracle": ".agentflow/oracles/v080/T27/frozen.json#A1"
+        },
+        {
+          "id": "T27-A2",
+          "criterion": "Produce native dendro.exe/Linux packages and target/version/tree/binary/dependency/ABI/runtime manifests. Native standard-user clean-staging tests cover spaces/nonASCII default/override roots, Windows private ACL/VC++/DuckDB runtime, Linux modes/dependencies, no development checkout/WSL dependence or global install.",
+          "oracle": ".agentflow/oracles/v080/T27/frozen.json#A2"
+        },
+        {
+          "id": "T27-A3",
+          "criterion": "Execute paired all-domain dispatch/storage/Answer smoke and safe lifecycle/watch overflow/lock/rollback staging tests natively on both; preserve existing macOS contract if established. Package install/uninstall/adoption requires existing authority; staging only does not claim installed success. Require separate named Linux-strace and Windows-ETW profile/coverage receipts, no same-grain or merged-trace checkbox. T18 actually depends on T10/T11/T25/T26.",
+          "oracle": ".agentflow/oracles/v080/T27/frozen.json#A3"
+        }
+      ],
+      "verification": [
+        "Future native CI lanes on x86_64-pc-windows-msvc and x86_64-unknown-linux-gnu; all four workspace Rust gates on each.",
+        "PROPOSED: pwsh -File scripts/package-native-v080.ps1 -StagingOnly (Windows); bash scripts/package-native-v080.sh --staging-only (Linux)."
+      ],
+      "stop_conditions": [
+        "Host-wide scanning, privileged attach, raw secret access or fixture-only collector.",
+        "Protected-path mutation, stale custody/fence, or unfrozen oracle: park.",
+        "Missing native Windows or Linux proof cannot be waived or satisfied with WSL; park with concrete owned remedy."
+      ],
+      "worker_identity_contract": "Distinct unique_worker_run_id and immutable authorship/input/output digests. Use native_client_session_id when exposed; otherwise dispatcher launch receipt(pid/start/sanitized command/digests) with native_session_id unavailable. Harness-managed task identity recorded factually, never invent seat/PID/session. Oracle/builder/reviewer identities disjoint per artifact, QA disjoint from tested builders.",
+      "requirement_ids": [
+        "R21",
+        "R28"
+      ],
+      "integration_requests": {
+        "writer": "standing Codex integration owner",
+        "paths": [
+          "Cargo.toml",
+          "Cargo.lock",
+          "crates/dendro-core/src/lib.rs",
+          "crates/dendro-connectors/src/lib.rs",
+          "crates/dendro-connectors/src/capture_registry_v1/**"
+        ],
+        "protocol": "Request exact paths/input digest; global single-writer fenced lease; Codex patch output digest + independent oracle/review receipt required before requesting task consumes/accepts. Inspection-only B02 never writes code; it proposes future requests only."
+      },
+      "shared_write_requests": [
+        "Cargo.toml",
+        "Cargo.lock",
+        "crates/dendro-core/src/lib.rs",
+        "crates/dendro-connectors/src/lib.rs",
+        "crates/dendro-connectors/src/capture_registry_v1/**"
+      ]
+    },
+    {
+      "id": "T20",
+      "title": "Independent contribution and hostile-input conformance",
+      "depends_on": [
+        "T17",
+        "T18",
+        "T19",
+        "T27"
+      ],
+      "owner": {
+        "runtime": "grok --single",
+        "model": "grok-4.7",
+        "effort": "medium",
+        "provider_family": "xai",
+        "role": "T20 bounded owner"
+      },
+      "oracle_owner": {
+        "runtime": "codex exec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "provider_family": "openai",
+        "role": "T20 independent expected-value author"
+      },
+      "reviewer": {
+        "runtime": "claude -p",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "provider_family": "anthropic",
+        "role": "T20 independent acceptance reviewer"
+      },
+      "paths": [
+        "crates/dendro-core/tests/conformance_v080.rs",
+        "crates/dendro-connectors/tests/hostile_v080.rs",
+        ".agentflow/evidence/v080/conformance/**"
+      ],
+      "inputs": [
+        "Frozen F01-F29; candidate modules; independent worker identity"
+      ],
+      "outputs": [
+        "Conformance suite and immutable source/surface/privacy acceptance report"
+      ],
+      "acceptance": [
+        {
+          "id": "T20-A1",
+          "criterion": "Execute every negative/numeric fixture and compiled-contribution rejection; verify revisions, bounds, injection, identity and all requirement-positive paths. Final keyboard/empty/error/refusal/partial journeys MUST traverse actual T18 capture/dispatch/storage and all surfaces; rerun source/insight documented third-party contribution commands. Repeat native Windows and native Linux actual-dispatch all-domain/accessibility journeys and positive native sensors/imports, no WSL/crosscompile substitute. Verify all deferred native permission/effect/I15 positive receipts, no all-unobservable final domain stub.",
+          "oracle": ".agentflow/oracles/v080/T20/frozen.json#A1"
+        },
+        {
+          "id": "T20-A2",
+          "criterion": "QA execution identity(native_client_session_id,unique_worker_run_id) is disjoint from every builder/integration execution ID of tested artifacts. Reviewer verifies append-only identity/authorship/digest joins; role/model labels alone fail, shared subscription/account allowed. Discrepancies reopen owning task, not rewrite oracle.",
+          "oracle": ".agentflow/oracles/v080/T20/frozen.json#A2"
+        }
+      ],
+      "verification": [
+        "PROPOSED core conformance_v080 and connector hostile_v080 test targets"
+      ],
+      "stop_conditions": [
+        "Oracle drift, missing positive capture path or same worker build/acceptance.",
+        "Protected-path mutation, stale custody/fence, or unfrozen oracle: park."
+      ],
+      "worker_identity_contract": "Distinct unique_worker_run_id and immutable authorship/input/output digests. Use native_client_session_id when exposed; otherwise dispatcher launch receipt(pid/start/sanitized command/digests) with native_session_id unavailable. Harness-managed task identity recorded factually, never invent seat/PID/session. Oracle/builder/reviewer identities disjoint per artifact, QA disjoint from tested builders.",
+      "requirement_ids": [
+        "R15",
+        "R20",
+        "R24",
+        "R28"
+      ]
+    },
+    {
+      "id": "T21",
+      "title": "Rehearse interruption rollback and installed-canary recipe",
+      "depends_on": [
+        "T20"
+      ],
+      "owner": {
+        "runtime": "grok --single",
+        "model": "grok-4.7",
+        "effort": "medium",
+        "provider_family": "xai",
+        "role": "T21 bounded owner"
+      },
+      "oracle_owner": {
+        "runtime": "codex exec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "provider_family": "openai",
+        "role": "T21 independent expected-value author"
+      },
+      "reviewer": {
+        "runtime": "claude -p",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "provider_family": "anthropic",
+        "role": "T21 independent acceptance reviewer"
+      },
+      "paths": [
+        "scripts/rehearse-v080.py",
+        ".agentflow/evidence/v080/recovery/**"
+      ],
+      "inputs": [
+        "Preserved binary/DB/key recipes; no-log schema3 fixture; exact candidate"
+      ],
+      "outputs": [
+        "Synthetic recovery harness and canary/rollback manifest with required authorizations"
+      ],
+      "acceptance": [
+        {
+          "id": "T21-A1",
+          "criterion": "Rehearse interrupted migration, absent logs, missing key, stale lease and old-binary refusal without touching live DB. Rehearse schema4-only new ingest then snapshot rollback; preserve failed v4 privately and require excluded-facts/time-window/replay-availability/loss receipt, never imply missing-log continuity. Run native Windows open-handle/sharing/ACL/consumer-pointer and Linux crash/recovery cases; real native package binaries, not crosscompile-only.",
+          "oracle": ".agentflow/oracles/v080/T21/frozen.json#A1"
+        },
+        {
+          "id": "T21-A2",
+          "criterion": "Define exact binary/profile/source/sensor/sidecar bindings and rollback verification; live adoption remains separately gated.",
+          "oracle": ".agentflow/oracles/v080/T21/frozen.json#A2"
+        }
+      ],
+      "verification": [
+        "PROPOSED: python scripts/rehearse-v080.py --manifest <frozen-recovery.json> --candidate <binary>"
+      ],
+      "stop_conditions": [
+        "Live installation/activation without authority or rollback requiring absent source logs.",
+        "Protected-path mutation, stale custody/fence, or unfrozen oracle: park."
+      ],
+      "worker_identity_contract": "Distinct unique_worker_run_id and immutable authorship/input/output digests. Use native_client_session_id when exposed; otherwise dispatcher launch receipt(pid/start/sanitized command/digests) with native_session_id unavailable. Harness-managed task identity recorded factually, never invent seat/PID/session. Oracle/builder/reviewer identities disjoint per artifact, QA disjoint from tested builders.",
+      "requirement_ids": [
+        "R04",
+        "R22",
+        "R25"
+      ]
+    },
+    {
+      "id": "T22",
+      "title": "Integrated OS security and performance acceptance",
+      "depends_on": [
+        "T20",
+        "T21",
+        "T02-baseline"
+      ],
+      "owner": {
+        "runtime": "grok --single",
+        "model": "grok-4.7",
+        "effort": "medium",
+        "provider_family": "xai",
+        "role": "T22 bounded owner"
+      },
+      "oracle_owner": {
+        "runtime": "codex exec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "provider_family": "openai",
+        "role": "T22 independent expected-value author"
+      },
+      "reviewer": {
+        "runtime": "claude -p",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "provider_family": "anthropic",
+        "role": "T22 independent acceptance reviewer"
+      },
+      "paths": [
+        "scripts/benchmark-v080.py",
+        ".agentflow/evidence/v080/acceptance/**"
+      ],
+      "inputs": [
+        "Frozen benchmark/OS manifests; candidate; all task receipts"
+      ],
+      "outputs": [
+        "Measured local acceptance report, baseline comparison and residual holds"
+      ],
+      "acceptance": [
+        {
+          "id": "T22-A1",
+          "criterion": "Run all four Rust gates plus required source/migration/privacy/UI tests on admitted runtime and preserved supported OS targets. Verify existing deny(unsafe_code) workspace policy and any exception against audited rationale; do not silently replace policy with a stricter blanket forbid. Both native Windows MSVC and native Linux GNU CI lanes and package execution must pass; preserve established macOS checks additionally. No platform waiver or WSL replacement.",
+          "oracle": ".agentflow/oracles/v080/T22/frozen.json#A1"
+        },
+        {
+          "id": "T22-A2",
+          "criterion": "Measure exact DESIGN budgets with five cold/migration reps and >=20 answer calls; RSS/decoded records/prefix I/O separate; all required positive paths pass or release blocked. Small worker RSS budget refers to Dendro analysis/collection runtime process, not builder CLIs; no silent budget relaxation. Fixed absolute budgets measured independently on each native OS; report OS-specific working set/RSS basis and no fabricated pre-port Windows baseline. Historical comparisons only when comparable.",
+          "oracle": ".agentflow/oracles/v080/T22/frozen.json#A2"
+        }
+      ],
+      "verification": [
+        "EXISTING future runs: cargo check --workspace --locked; cargo test --workspace --locked; cargo clippy --workspace --locked -- -D warnings; cargo fmt --check",
+        "PROPOSED: python scripts/benchmark-v080.py --manifest <frozen-benchmark.json> --candidate <binary>"
+      ],
+      "stop_conditions": [
+        "Failed required OS/security/correctness case, missing baseline or unapproved performance exception.",
+        "Protected-path mutation, stale custody/fence, or unfrozen oracle: park."
+      ],
+      "worker_identity_contract": "Distinct unique_worker_run_id and immutable authorship/input/output digests. Use native_client_session_id when exposed; otherwise dispatcher launch receipt(pid/start/sanitized command/digests) with native_session_id unavailable. Harness-managed task identity recorded factually, never invent seat/PID/session. Oracle/builder/reviewer identities disjoint per artifact, QA disjoint from tested builders.",
+      "substeps": [
+        "Use T02 frozen benchmark runner; any extension versions and reruns affected baseline before comparison.",
+        "Independently execute T20 actual-dispatch positive/negative accessible journeys and all source/OS/privacy/accounting checks."
+      ],
+      "requirement_ids": [
+        "R21",
+        "R28"
+      ]
+    },
+    {
+      "id": "T23",
+      "title": "Prepare release and adoption decision packet",
+      "depends_on": [
+        "T22"
+      ],
+      "owner": {
+        "runtime": "codex exec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "provider_family": "openai",
+        "role": "T23 bounded owner; distinct artifact worker"
+      },
+      "oracle_owner": {
+        "runtime": "grok --single",
+        "model": "grok-4.7",
+        "effort": "medium",
+        "provider_family": "xai",
+        "role": "T23 independent expected-value author; fresh identity"
+      },
+      "reviewer": {
+        "runtime": "claude -p",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "provider_family": "anthropic",
+        "role": "T23 review only; fresh identity"
+      },
+      "paths": [
+        "Cargo.toml",
+        "Cargo.lock",
+        ".agentflow/releases/v080/**"
+      ],
+      "inputs": [
+        "Accepted exact candidate/receipts; pending human decisions; proposed version target"
+      ],
+      "outputs": [
+        "Proposed version/changelog artifact, canary custody record and human merge/publication packet",
+        "Paired Windows/Linux exact-version package manifests and native gate receipts"
+      ],
+      "acceptance": [
+        {
+          "id": "T23-A1",
+          "criterion": "Future authorized candidate metadata targets v0.8.0/schema4/contracts1.0.0; exact digests and unresolved blockers explicit. Version metadata mutation requires all T20/T21/T22 gates rerun on exact final tree/binary; release digests identical, no untested post-acceptance bump. Final versioned Windows/Linux package digests independently rebuilt and all relevant native lane receipts replaced before promotion.",
+          "oracle": ".agentflow/oracles/v080/T23/frozen.json#A1"
+        },
+        {
+          "id": "T23-A2",
+          "criterion": "Distinguish candidate/local acceptance/authorized installed canary/human merge/publication; no implied approval or executed install from source tests.",
+          "oracle": ".agentflow/oracles/v080/T23/frozen.json#A2"
+        }
+      ],
+      "verification": [
+        "Future version/manifest consistency, exact versioned candidate rebuild and full T20/T21/T22 revalidation; installed canary only after actual authority."
+      ],
+      "stop_conditions": [
+        "Any merge/publication/install without actual authority, missing Claude review or unresolved release AC.",
+        "Protected-path mutation, stale custody/fence, or unfrozen oracle: park."
+      ],
+      "worker_identity_contract": "Distinct unique_worker_run_id and immutable authorship/input/output digests. Use native_client_session_id when exposed; otherwise dispatcher launch receipt(pid/start/sanitized command/digests) with native_session_id unavailable. Harness-managed task identity recorded factually, never invent seat/PID/session. Oracle/builder/reviewer identities disjoint per artifact, QA disjoint from tested builders.",
+      "substeps": [
+        "Standing owner finalizes v0.8.0 metadata/lock then builds exact versioned candidate.",
+        "Rerun complete T20/T21/T22 gates on versioned tree/binary digests, collect independent review, and replace previous acceptance receipts.",
+        "Bind canary/merge/publication artifacts to those exact digests; any later changes invalidate affected evidence."
+      ],
+      "requirement_ids": [
+        "R01",
+        "R22",
+        "R28"
+      ]
+    },
+    {
+      "id": "B01-G",
+      "title": "Genuine Grok native schema admission",
+      "depends_on": [
+        "B00"
+      ],
+      "owner": {
+        "runtime": "codex exec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "provider_family": "openai",
+        "role": "B01-G owner; distinct artifact execution identity"
+      },
+      "oracle_owner": {
+        "runtime": "grok --single",
+        "model": "grok-4.7",
+        "effort": "medium",
+        "provider_family": "xai",
+        "role": "B01-G oracle_owner; distinct artifact execution identity"
+      },
+      "reviewer": {
+        "runtime": "claude -p",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "provider_family": "anthropic",
+        "role": "B01-G reviewer; distinct artifact execution identity"
+      },
+      "paths": [
+        ".agentflow/runs/v080/source-admission/grok/**"
+      ],
+      "inputs": [
+        "Frozen bootstrap checklist; scoped actual source/permission evidence only"
+      ],
+      "outputs": [
+        "Genuine Grok native schema admission digest-bound acceptance receipt"
+      ],
+      "acceptance": [
+        {
+          "id": "B01-G-A1",
+          "criterion": "Pin genuine authorized/public nonsecret Grok structural specimen, exact producer/schema version, digest, limits and fact mappings. Absence blocks T08/native Grok integration and release, not core schemas or T03. Partial/missing specimen remains blocked_pending_artifacts with named owner/remedy/actual return artifacts; remedy-only never accepted.",
+          "oracle": ".agentflow/oracles/v080/bootstrap/checklist.json#B01-G-A1"
+        }
+      ],
+      "verification": [
+        "Document/schema inspection and fixture digest checks only; no private log discovery without authority."
+      ],
+      "stop_conditions": [
+        "Missing specimen, lawful fixture reuse, or capture authorization: park affected admission.",
+        "Protected-path mutation, stale custody/fence, or unfrozen oracle: park."
+      ],
+      "worker_identity_contract": "Distinct unique_worker_run_id and immutable authorship/input/output digests. Use native_client_session_id when exposed; otherwise dispatcher launch receipt(pid/start/sanitized command/digests) with native_session_id unavailable. Harness-managed task identity recorded factually, never invent seat/PID/session. Oracle/builder/reviewer identities disjoint per artifact, QA disjoint from tested builders.",
+      "requirement_ids": [
+        "R02",
+        "R07",
+        "R27"
+      ],
+      "admission_predicates": [
+        "Actual named evidence required; remedy-only output remains blocked_pending_artifacts."
+      ]
+    },
+    {
+      "id": "B01-S",
+      "title": "Real Linux strace profile admission",
+      "depends_on": [
+        "B00"
+      ],
+      "owner": {
+        "runtime": "codex exec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "provider_family": "openai",
+        "role": "B01-S owner; distinct artifact execution identity"
+      },
+      "oracle_owner": {
+        "runtime": "grok --single",
+        "model": "grok-4.7",
+        "effort": "medium",
+        "provider_family": "xai",
+        "role": "B01-S oracle_owner; distinct artifact execution identity"
+      },
+      "reviewer": {
+        "runtime": "claude -p",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "provider_family": "anthropic",
+        "role": "B01-S reviewer; distinct artifact execution identity"
+      },
+      "paths": [
+        ".agentflow/runs/v080/source-admission/strace/**"
+      ],
+      "inputs": [
+        "Frozen bootstrap checklist; scoped actual source/permission evidence only"
+      ],
+      "outputs": [
+        "Real Linux strace profile admission digest-bound acceptance receipt"
+      ],
+      "acceptance": [
+        {
+          "id": "B01-S-A1",
+          "criterion": "Pin real strace producer/options/grammar and authorized controlled capture provenance. Absence blocks T11 positive path and release, not core T03 or accounting/security implementations. Partial/missing specimen remains blocked_pending_artifacts with named owner/remedy/actual return artifacts; remedy-only never accepted.",
+          "oracle": ".agentflow/oracles/v080/bootstrap/checklist.json#B01-S-A1"
+        }
+      ],
+      "verification": [
+        "Document/schema inspection and fixture digest checks only; no private log discovery without authority."
+      ],
+      "stop_conditions": [
+        "Missing specimen, lawful fixture reuse, or capture authorization: park affected admission.",
+        "Protected-path mutation, stale custody/fence, or unfrozen oracle: park."
+      ],
+      "worker_identity_contract": "Distinct unique_worker_run_id and immutable authorship/input/output digests. Use native_client_session_id when exposed; otherwise dispatcher launch receipt(pid/start/sanitized command/digests) with native_session_id unavailable. Harness-managed task identity recorded factually, never invent seat/PID/session. Oracle/builder/reviewer identities disjoint per artifact, QA disjoint from tested builders.",
+      "requirement_ids": [
+        "R02",
+        "R07",
+        "R27"
+      ],
+      "admission_predicates": [
+        "Actual named evidence required; remedy-only output remains blocked_pending_artifacts."
+      ]
+    },
+    {
+      "id": "B01-W",
+      "title": "Real Windows ETW profile/specimen admission",
+      "depends_on": [
+        "B00",
+        "B02-W"
+      ],
+      "owner": {
+        "runtime": "codex exec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "provider_family": "openai",
+        "role": "B01-W owner; distinct artifact execution identity"
+      },
+      "oracle_owner": {
+        "runtime": "grok --single",
+        "model": "grok-4.7",
+        "effort": "medium",
+        "provider_family": "xai",
+        "role": "B01-W oracle_owner; distinct artifact execution identity"
+      },
+      "reviewer": {
+        "runtime": "claude -p",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "provider_family": "anthropic",
+        "role": "B01-W reviewer; distinct artifact execution identity"
+      },
+      "paths": [
+        ".agentflow/runs/v080/source-admission/windows-trace/**"
+      ],
+      "inputs": [
+        "Frozen bootstrap checklist; scoped actual source/permission evidence only"
+      ],
+      "outputs": [
+        "Real Windows ETW profile/specimen admission digest-bound acceptance receipt"
+      ],
+      "acceptance": [
+        {
+          "id": "B01-W-A1",
+          "criterion": "Acquire genuine controlled Windows trace with exact profile/event/consumer grammar, source digest and capture provenance. Requires B02-W producer permission, blocks T26 and release only; no raw committed trace. Partial/missing specimen remains blocked_pending_artifacts with named owner/remedy/actual return artifacts; remedy-only never accepted.",
+          "oracle": ".agentflow/oracles/v080/bootstrap/checklist.json#B01-W-A1"
+        }
+      ],
+      "verification": [
+        "Document/schema inspection and fixture digest checks only; no private log discovery without authority."
+      ],
+      "stop_conditions": [
+        "Missing specimen, lawful fixture reuse, or capture authorization: park affected admission.",
+        "Protected-path mutation, stale custody/fence, or unfrozen oracle: park."
+      ],
+      "worker_identity_contract": "Distinct unique_worker_run_id and immutable authorship/input/output digests. Use native_client_session_id when exposed; otherwise dispatcher launch receipt(pid/start/sanitized command/digests) with native_session_id unavailable. Harness-managed task identity recorded factually, never invent seat/PID/session. Oracle/builder/reviewer identities disjoint per artifact, QA disjoint from tested builders.",
+      "requirement_ids": [
+        "R02",
+        "R07",
+        "R27"
+      ],
+      "admission_predicates": [
+        "Actual named evidence required; remedy-only output remains blocked_pending_artifacts."
+      ]
+    },
+    {
+      "id": "B02-W",
+      "title": "Windows trace producer permission admission",
+      "depends_on": [
+        "B00"
+      ],
+      "owner": {
+        "runtime": "codex exec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "provider_family": "openai",
+        "role": "B02-W owner; distinct artifact execution identity"
+      },
+      "oracle_owner": {
+        "runtime": "grok --single",
+        "model": "grok-4.7",
+        "effort": "medium",
+        "provider_family": "xai",
+        "role": "B02-W oracle_owner; distinct artifact execution identity"
+      },
+      "reviewer": {
+        "runtime": "claude -p",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "provider_family": "anthropic",
+        "role": "B02-W reviewer; distinct artifact execution identity"
+      },
+      "paths": [
+        ".agentflow/runs/v080/native-feasibility/windows-producer/**"
+      ],
+      "inputs": [
+        "Actual scoped Windows producer permission/readiness; not mere capture plan"
+      ],
+      "outputs": [
+        "Producer permission/readiness receipt; no arbitrary elevated capture authority"
+      ],
+      "acceptance": [
+        {
+          "id": "B02-W-A1",
+          "criterion": "A producer acquisition plan may be planned_not_authorized. B02-W acceptance requires actual scoped Windows trace producer permission/readiness artifacts with owner/authority/window/allowed process/provider profile. Missing evidence or remedy proposal remains blocked_pending_artifacts, never accepted; gates only B01-W/T26 and release.",
+          "oracle": ".agentflow/oracles/v080/bootstrap/checklist.json#B02-W-A1"
+        }
+      ],
+      "verification": [
+        "Document/schema inspection and fixture digest checks only; no private log discovery without authority."
+      ],
+      "stop_conditions": [
+        "Missing specimen, lawful fixture reuse, or capture authorization: park affected admission.",
+        "Protected-path mutation, stale custody/fence, or unfrozen oracle: park."
+      ],
+      "worker_identity_contract": "Distinct unique_worker_run_id and immutable authorship/input/output digests. Use native_client_session_id when exposed; otherwise dispatcher launch receipt(pid/start/sanitized command/digests) with native_session_id unavailable. Harness-managed task identity recorded factually, never invent seat/PID/session. Oracle/builder/reviewer identities disjoint per artifact, QA disjoint from tested builders.",
+      "requirement_ids": [
+        "R27"
+      ],
+      "admission_predicates": [
+        "Actual named evidence required; remedy-only output remains blocked_pending_artifacts."
+      ]
+    },
+    {
+      "id": "T02-runner",
+      "title": "Build and freeze deterministic benchmark runner/corpus",
+      "depends_on": [
+        "T02"
+      ],
+      "owner": {
+        "runtime": "codex exec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "provider_family": "openai",
+        "role": "T02-runner owner; independent artifact execution identity"
+      },
+      "oracle_owner": {
+        "runtime": "grok --single",
+        "model": "grok-4.7",
+        "effort": "medium",
+        "provider_family": "xai",
+        "role": "T02-runner oracle_owner; independent artifact execution identity"
+      },
+      "reviewer": {
+        "runtime": "claude -p",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "provider_family": "anthropic",
+        "role": "T02-runner reviewer; independent artifact execution identity"
+      },
+      "paths": [
+        "scripts/benchmark-v080.py",
+        ".agentflow/evidence/v080/benchmark-runner/**"
+      ],
+      "inputs": [
+        "Reviewed T02 runner/corpus/budget specification and independent Grok runner oracles"
+      ],
+      "outputs": [
+        "Executable runner/corpus and independent verification receipt"
+      ],
+      "acceptance": [
+        {
+          "id": "T02-runner-A1",
+          "criterion": "Implement deterministic corpus/runner from frozen seeds/budgets; checked subprocess exits/timeouts and bounded resource sampling, no fabricated timing or golden capture.",
+          "oracle": ".agentflow/oracles/v080/T02-runner/frozen.json#A1"
+        },
+        {
+          "id": "T02-runner-A2",
+          "criterion": "Independently verify runner/corpus digests and semantic counts before baseline execution; no changes to frozen expectations by builder.",
+          "oracle": ".agentflow/oracles/v080/T02-runner/frozen.json#A2"
+        }
+      ],
+      "verification": [
+        "Future independent deterministic corpus/runner conformance and safe bounded subprocess probes."
+      ],
+      "stop_conditions": [
+        "Oracle copied solely from implementation output or unauthorized raw corpus: reject.",
+        "Protected-path mutation, stale custody/fence, or unfrozen oracle: park."
+      ],
+      "worker_identity_contract": "Distinct unique_worker_run_id and immutable authorship/input/output digests. Use native_client_session_id when exposed; otherwise dispatcher launch receipt(pid/start/sanitized command/digests) with native_session_id unavailable. Harness-managed task identity recorded factually, never invent seat/PID/session. Oracle/builder/reviewer identities disjoint per artifact, QA disjoint from tested builders.",
+      "requirement_ids": [
+        "R20",
+        "R21"
+      ]
+    },
+    {
+      "id": "T02-baseline",
+      "title": "Execute pinned historical performance baseline",
+      "depends_on": [
+        "T02-runner"
+      ],
+      "owner": {
+        "runtime": "codex exec",
+        "model": "gpt-6.1-sol",
+        "effort": "medium",
+        "provider_family": "openai",
+        "role": "T02-baseline owner; independent artifact execution identity"
+      },
+      "oracle_owner": {
+        "runtime": "grok --single",
+        "model": "grok-4.7",
+        "effort": "medium",
+        "provider_family": "xai",
+        "role": "T02-baseline oracle_owner; independent artifact execution identity"
+      },
+      "reviewer": {
+        "runtime": "claude -p",
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "provider_family": "anthropic",
+        "role": "T02-baseline reviewer; independent artifact execution identity"
+      },
+      "paths": [
+        ".agentflow/evidence/v080/baseline/**"
+      ],
+      "inputs": [
+        "Exact baseline6b755135 binary/source; frozen executable runner/corpus; actual native host receipts"
+      ],
+      "outputs": [
+        "Real baseline samples or exact compile/runtime incompatibility receipts"
+      ],
+      "acceptance": [
+        {
+          "id": "T02-baseline-A1",
+          "criterion": "Run five cold/migration reps and >=20 answer calls only where pinned baseline actually runs; retain compile failures as not_measurable_preport, never zero timing. Reconstruct exact pinned baseline later without contamination from product edits.",
+          "oracle": ".agentflow/oracles/v080/T02-baseline/frozen.json#A1"
+        },
+        {
+          "id": "T02-baseline-A2",
+          "criterion": "Bind host/compiler/OS/corpus/runner/binary digests and comparability; unavailable historical comparison refuses regression comparison, never waives fixed new-version absolute budgets. No fabricated baseline.",
+          "oracle": ".agentflow/oracles/v080/T02-baseline/frozen.json#A2"
+        }
+      ],
+      "verification": [
+        "Future native baseline runner execution with actual return codes and bounded samples."
+      ],
+      "stop_conditions": [
+        "Oracle copied solely from implementation output or unauthorized raw corpus: reject.",
+        "Protected-path mutation, stale custody/fence, or unfrozen oracle: park."
+      ],
+      "worker_identity_contract": "Distinct unique_worker_run_id and immutable authorship/input/output digests. Use native_client_session_id when exposed; otherwise dispatcher launch receipt(pid/start/sanitized command/digests) with native_session_id unavailable. Harness-managed task identity recorded factually, never invent seat/PID/session. Oracle/builder/reviewer identities disjoint per artifact, QA disjoint from tested builders.",
+      "requirement_ids": [
+        "R20",
+        "R21"
+      ]
+    }
+  ],
+  "release_gates": [
+    {
+      "id": "G00",
+      "name": "Design authorization",
+      "task_ids": [],
+      "criterion": "User explicitly authorized full revised implementation including native Windows AND Linux. Recorded current scopeapproval satisfies design/high-assurance implementation intent; existing review/merge/publication boundaries remain.",
+      "status": "approved_by_user2026-10-23",
+      "evidence": ".agentflow/runs/v080/admission/admission.json#scope_approval"
+    },
+    {
+      "id": "G01",
+      "name": "Core implementation admission",
+      "task_ids": [
+        "B00",
+        "B01-core",
+        "T02"
+      ],
+      "criterion": "User scopeapproval, direct-local path-control/authorship records, reviewed core schema and independent core oracle/spec freeze. Native specimen, runner execution, baseline and governance restoration holds are scoped to affected tasks/release, not blanket core blockers.",
+      "status": "bootstrap_checklist_review_pending"
+    },
+    {
+      "id": "G02",
+      "name": "Candidate and task acceptance",
+      "task_ids": [
+        "T03",
+        "T04",
+        "T05",
+        "T06",
+        "T07",
+        "T08",
+        "T09",
+        "T10",
+        "T11",
+        "T12",
+        "T13",
+        "T14",
+        "T15",
+        "T16",
+        "T17",
+        "T18",
+        "T19",
+        "T24",
+        "T25",
+        "T26",
+        "T27",
+        "B01-G",
+        "B01-S",
+        "B01-W",
+        "B02",
+        "B02-W",
+        "T02-runner"
+      ],
+      "criterion": "All mapped task ACs, genuine native source specimens and both native OS receipts must pass before candidate acceptance. Core build may consume reviewed partial interface/native artifacts without falsely accepting producer tasks or waiving final scope.",
+      "status": "proposed"
+    },
+    {
+      "id": "G03",
+      "name": "Integrated local acceptance",
+      "task_ids": [
+        "T20",
+        "T21",
+        "T22",
+        "T02-baseline"
+      ],
+      "criterion": "All correctness/privacy/OS/performance oracles pass; no missing required capture path; reviewed exceptions explicit. Revalidated on final versioned T23 candidate before promotion. Remains open until exact T23 versioned-candidate rerun receipts supersede prior T22 receipts. Both native OS packages and required native tests/receipts mandatory; WSL/crosscompile-only or import-only support cannot waive a lane.",
+      "status": "proposed"
+    },
+    {
+      "id": "G04",
+      "name": "Installed runtime canary",
+      "task_ids": [
+        "T23"
+      ],
+      "criterion": "Separately authorized install, bound binary/profile/DB/key/sensor/source receipts, observed all-domain canary and rollback evidence. Both native OS packages and required native tests/receipts mandatory; WSL/crosscompile-only or import-only support cannot waive a lane.",
+      "status": "requires_separate_authority"
+    },
+    {
+      "id": "G05",
+      "name": "Human merge",
+      "task_ids": [
+        "T23"
+      ],
+      "criterion": "Authenticated human merge decision after exact candidate and canary review.",
+      "status": "requires_human"
+    },
+    {
+      "id": "G06",
+      "name": "Publication",
+      "task_ids": [
+        "T23"
+      ],
+      "criterion": "Separate authorized publication decision with immutable artifacts and rollback baseline. Both native OS packages and required native tests/receipts mandatory; WSL/crosscompile-only or import-only support cannot waive a lane.",
+      "status": "requires_separate_authority"
+    }
+  ],
+  "bootstrap_oracle": {
+    "tasks": [
+      "B00",
+      "B01-core",
+      "B01-G",
+      "B01-S",
+      "B01-W",
+      "B02",
+      "B02-W",
+      "T02"
+    ],
+    "source": ".agentflow/oracles/v080/bootstrap/checklist.json (independent Claude review/digest freeze required)",
+    "rule": "Bootstrap expectation assertions authored separately from future implementation expected-value packs; core admission never waits on unrelated native/source evidence.",
+    "sha256": "50e5f557a2dce1fd439a765ee538f84146676ac6a4fb5900a6dd20f504320880",
+    "freeze_receipt": ".agentflow/oracles/v080/bootstrap/freeze.json"
+  },
+  "requirement_test_map": {
+    "R01": {
+      "acceptance_ids": [
+        "B00-A1",
+        "B00-A2",
+        "T23-A1",
+        "T23-A2"
+      ],
+      "test_tasks": [
+        "B00",
+        "T23"
+      ],
+      "verification_commands": [
+        "Read-only git status/HEAD; rig whoami; distribution inspect; client help/version; targeted manifests.",
+        "Future version/manifest consistency, exact versioned candidate rebuild and full T20/T21/T22 revalidation; installed canary only after actual authority."
+      ]
+    },
+    "R02": {
+      "acceptance_ids": [
+        "B01-core-A1",
+        "B01-core-A3",
+        "T05-A1",
+        "T05-A2",
+        "T18-A1",
+        "T18-A2",
+        "B01-G-A1",
+        "B01-S-A1",
+        "B01-W-A1"
+      ],
+      "test_tasks": [
+        "B01-core",
+        "T05",
+        "T18",
+        "B01-G",
+        "B01-S",
+        "B01-W"
+      ],
+      "verification_commands": [
+        "Document/schema inspection and fixture digest checks only; no private log discovery without authority.",
+        "PROPOSED: cargo test -p dendro-connectors --test registry_v080 --locked",
+        "PROPOSED: cargo test -p dendro-connectors --test capture_v080 --locked",
+        "EXISTING future run: cargo test -p dendro-connectors --test sealed_replay --locked",
+        "Document/schema inspection and fixture digest checks only; no private log discovery without authority.",
+        "Document/schema inspection and fixture digest checks only; no private log discovery without authority.",
+        "Document/schema inspection and fixture digest checks only; no private log discovery without authority."
+      ]
+    },
+    "R03": {
+      "acceptance_ids": [
+        "T03-A1",
+        "T03-A2",
+        "T12-A1",
+        "T12-A2"
+      ],
+      "test_tasks": [
+        "T03",
+        "T12"
+      ],
+      "verification_commands": [
+        "PROPOSED: cargo test -p dendro-core --test domain_v080 --locked",
+        "PROPOSED: cargo test -p dendro-resolver --test lineage_v080 --locked"
+      ]
+    },
+    "R04": {
+      "acceptance_ids": [
+        "T04-A1",
+        "T04-A2",
+        "T21-A1",
+        "T21-A2"
+      ],
+      "test_tasks": [
+        "T04",
+        "T21"
+      ],
+      "verification_commands": [
+        "PROPOSED: cargo test -p dendro-core --test migration_v080 --locked",
+        "PROPOSED: python scripts/rehearse-v080.py --manifest <frozen-recovery.json> --candidate <binary>"
+      ]
+    },
+    "R05": {
+      "acceptance_ids": [
+        "T06-A1",
+        "T06-A2",
+        "T18-A1",
+        "T18-A2"
+      ],
+      "test_tasks": [
+        "T06",
+        "T18"
+      ],
+      "verification_commands": [
+        "PROPOSED: cargo test -p dendro-connectors --test native_v080 --locked",
+        "PROPOSED: cargo test -p dendro-connectors --test capture_v080 --locked",
+        "EXISTING future run: cargo test -p dendro-connectors --test sealed_replay --locked"
+      ]
+    },
+    "R06": {
+      "acceptance_ids": [
+        "T07-A1",
+        "T07-A2",
+        "T18-A1",
+        "T18-A2"
+      ],
+      "test_tasks": [
+        "T07",
+        "T18"
+      ],
+      "verification_commands": [
+        "EXISTING future run: cargo test -p dendro-connectors --test export_connectors --locked",
+        "PROPOSED: cargo test -p dendro-connectors --test exports_v080 --locked",
+        "PROPOSED: cargo test -p dendro-connectors --test capture_v080 --locked",
+        "EXISTING future run: cargo test -p dendro-connectors --test sealed_replay --locked"
+      ]
+    },
+    "R07": {
+      "acceptance_ids": [
+        "B01-core-A1",
+        "B01-core-A3",
+        "T08-A1",
+        "T08-A2",
+        "T18-A1",
+        "T18-A2",
+        "B01-G-A1",
+        "B01-S-A1",
+        "B01-W-A1"
+      ],
+      "test_tasks": [
+        "B01-core",
+        "T08",
+        "T18",
+        "B01-G",
+        "B01-S",
+        "B01-W"
+      ],
+      "verification_commands": [
+        "Document/schema inspection and fixture digest checks only; no private log discovery without authority.",
+        "PROPOSED: cargo test -p dendro-connectors --test grok_v080 --locked",
+        "PROPOSED: cargo test -p dendro-connectors --test capture_v080 --locked",
+        "EXISTING future run: cargo test -p dendro-connectors --test sealed_replay --locked",
+        "Document/schema inspection and fixture digest checks only; no private log discovery without authority.",
+        "Document/schema inspection and fixture digest checks only; no private log discovery without authority.",
+        "Document/schema inspection and fixture digest checks only; no private log discovery without authority."
+      ]
+    },
+    "R08": {
+      "acceptance_ids": [
+        "T09-A1",
+        "T09-A2",
+        "T18-A1",
+        "T18-A2"
+      ],
+      "test_tasks": [
+        "T09",
+        "T18"
+      ],
+      "verification_commands": [
+        "PROPOSED: cargo test -p dendro-connectors --test agy_export_v080 --locked",
+        "PROPOSED: cargo test -p dendro-connectors --test capture_v080 --locked",
+        "EXISTING future run: cargo test -p dendro-connectors --test sealed_replay --locked"
+      ]
+    },
+    "R09": {
+      "acceptance_ids": [
+        "T10-A1",
+        "T10-A2",
+        "T18-A1",
+        "T18-A2",
+        "T25-A1",
+        "T25-A2"
+      ],
+      "test_tasks": [
+        "T10",
+        "T18",
+        "T25"
+      ],
+      "verification_commands": [
+        "PROPOSED: cargo test -p dendro-connectors --test environment_v080 --locked on admitted Linux/ext4",
+        "PROPOSED: cargo test -p dendro-connectors --test capture_v080 --locked",
+        "EXISTING future run: cargo test -p dendro-connectors --test sealed_replay --locked",
+        "PROPOSED: cargo test -p dendro-connectors --test windows_environment_v080 --locked (native Windows execution required; Linux verifies platform-visible support metadata)"
+      ]
+    },
+    "R10": {
+      "acceptance_ids": [
+        "T11-A1",
+        "T11-A2",
+        "T18-A1",
+        "T18-A2",
+        "T26-A1",
+        "T26-A2",
+        "T26-A3"
+      ],
+      "test_tasks": [
+        "T11",
+        "T18",
+        "T26"
+      ],
+      "verification_commands": [
+        "PROPOSED: cargo test -p dendro-connectors --test syscall_v080 --locked; synthetic tracer run under B01 scope",
+        "PROPOSED: cargo test -p dendro-connectors --test capture_v080 --locked",
+        "EXISTING future run: cargo test -p dendro-connectors --test sealed_replay --locked",
+        "PROPOSED: cargo test -p dendro-connectors --test windows_events_v080 --locked (native Windows plus portable grammar vectors on Linux)",
+        "Required future controlled native producer capture provenance and standard-user real-fixture import receipts."
+      ]
+    },
+    "R11": {
+      "acceptance_ids": [
+        "T12-A1",
+        "T12-A2",
+        "T14-A1",
+        "T14-A2"
+      ],
+      "test_tasks": [
+        "T12",
+        "T14"
+      ],
+      "verification_commands": [
+        "PROPOSED: cargo test -p dendro-resolver --test lineage_v080 --locked",
+        "PROPOSED: cargo test -p dendro-core --test accounting_v080 --locked"
+      ]
+    },
+    "R12": {
+      "acceptance_ids": [
+        "T14-A1",
+        "T14-A2"
+      ],
+      "test_tasks": [
+        "T14"
+      ],
+      "verification_commands": [
+        "PROPOSED: cargo test -p dendro-core --test accounting_v080 --locked"
+      ]
+    },
+    "R13": {
+      "acceptance_ids": [
+        "T14-A1",
+        "T14-A2"
+      ],
+      "test_tasks": [
+        "T14"
+      ],
+      "verification_commands": [
+        "PROPOSED: cargo test -p dendro-core --test accounting_v080 --locked"
+      ]
+    },
+    "R14": {
+      "acceptance_ids": [
+        "T13-A1",
+        "T13-A2",
+        "T16-A1",
+        "T16-A2"
+      ],
+      "test_tasks": [
+        "T13",
+        "T16"
+      ],
+      "verification_commands": [
+        "PROPOSED: cargo test -p dendro-core --test security_v080 --locked",
+        "EXISTING future run: cargo test -p dendro-connectors --test privacy_sweep --locked",
+        "PROPOSED: cargo test -p dendro-core --test insights_v080 --locked"
+      ]
+    },
+    "R15": {
+      "acceptance_ids": [
+        "T05-A1",
+        "T05-A2",
+        "T13-A1",
+        "T13-A2",
+        "T20-A1",
+        "T20-A2"
+      ],
+      "test_tasks": [
+        "T05",
+        "T13",
+        "T20"
+      ],
+      "verification_commands": [
+        "PROPOSED: cargo test -p dendro-connectors --test registry_v080 --locked",
+        "PROPOSED: cargo test -p dendro-core --test security_v080 --locked",
+        "EXISTING future run: cargo test -p dendro-connectors --test privacy_sweep --locked",
+        "PROPOSED core conformance_v080 and connector hostile_v080 test targets"
+      ]
+    },
+    "R16": {
+      "acceptance_ids": [
+        "T15-A1",
+        "T15-A2",
+        "T16-A1",
+        "T16-A2"
+      ],
+      "test_tasks": [
+        "T15",
+        "T16"
+      ],
+      "verification_commands": [
+        "PROPOSED targeted core contract tests; full workspace gates in T22",
+        "PROPOSED: cargo test -p dendro-core --test contribution_v080 --locked",
+        "PROPOSED: cargo test -p dendro-core --test insights_v080 --locked"
+      ]
+    },
+    "R17": {
+      "acceptance_ids": [
+        "T12-A1",
+        "T12-A2",
+        "T16-A1",
+        "T16-A2"
+      ],
+      "test_tasks": [
+        "T12",
+        "T16"
+      ],
+      "verification_commands": [
+        "PROPOSED: cargo test -p dendro-resolver --test lineage_v080 --locked",
+        "PROPOSED: cargo test -p dendro-core --test insights_v080 --locked"
+      ]
+    },
+    "R18": {
+      "acceptance_ids": [
+        "T17-A1",
+        "T17-A2",
+        "T19-A1",
+        "T19-A2"
+      ],
+      "test_tasks": [
+        "T17",
+        "T19"
+      ],
+      "verification_commands": [
+        "PROPOSED: cargo test -p dendro-cli --test journeys_v080 --locked",
+        "EXISTING future run: cargo test -p dendro-cli --test sealed_cli --locked",
+        "PROPOSED: cargo test -p dendro-core --test explanation_v080 --locked"
+      ]
+    },
+    "R19": {
+      "acceptance_ids": [
+        "T14-A1",
+        "T14-A2",
+        "T15-A1",
+        "T15-A2",
+        "T16-A1",
+        "T16-A2",
+        "T19-A1",
+        "T19-A2"
+      ],
+      "test_tasks": [
+        "T14",
+        "T15",
+        "T16",
+        "T19"
+      ],
+      "verification_commands": [
+        "PROPOSED: cargo test -p dendro-core --test accounting_v080 --locked",
+        "PROPOSED targeted core contract tests; full workspace gates in T22",
+        "PROPOSED: cargo test -p dendro-core --test contribution_v080 --locked",
+        "PROPOSED: cargo test -p dendro-core --test insights_v080 --locked",
+        "PROPOSED: cargo test -p dendro-core --test explanation_v080 --locked"
+      ]
+    },
+    "R20": {
+      "acceptance_ids": [
+        "T02-A1",
+        "T02-A2",
+        "T20-A1",
+        "T20-A2",
+        "T02-runner-A1",
+        "T02-runner-A2",
+        "T02-baseline-A1",
+        "T02-baseline-A2"
+      ],
+      "test_tasks": [
+        "T02",
+        "T20",
+        "T02-runner",
+        "T02-baseline"
+      ],
+      "verification_commands": [
+        "Independent core contract/oracle/specification review and digest validation only.",
+        "PROPOSED core conformance_v080 and connector hostile_v080 test targets",
+        "Future independent deterministic corpus/runner conformance and safe bounded subprocess probes.",
+        "Future native baseline runner execution with actual return codes and bounded samples."
+      ]
+    },
+    "R21": {
+      "acceptance_ids": [
+        "B00-A1",
+        "B00-A2",
+        "T22-A1",
+        "T22-A2",
+        "B02-A1",
+        "T27-A1",
+        "T27-A2",
+        "T27-A3",
+        "T02-runner-A1",
+        "T02-runner-A2",
+        "T02-baseline-A1",
+        "T02-baseline-A2"
+      ],
+      "test_tasks": [
+        "B00",
+        "T22",
+        "B02",
+        "T27",
+        "T02-runner",
+        "T02-baseline"
+      ],
+      "verification_commands": [
+        "Read-only git status/HEAD; rig whoami; distribution inspect; client help/version; targeted manifests.",
+        "EXISTING future runs: cargo check --workspace --locked; cargo test --workspace --locked; cargo clippy --workspace --locked -- -D warnings; cargo fmt --check",
+        "PROPOSED: python scripts/benchmark-v080.py --manifest <frozen-benchmark.json> --candidate <binary>",
+        "Future bounded native toolchain/version/API/dependency inspection and isolated baseline native compile diagnostics; no source mutation or blind installs.",
+        "Future native CI lanes on x86_64-pc-windows-msvc and x86_64-unknown-linux-gnu; all four workspace Rust gates on each.",
+        "PROPOSED: pwsh -File scripts/package-native-v080.ps1 -StagingOnly (Windows); bash scripts/package-native-v080.sh --staging-only (Linux).",
+        "Future independent deterministic corpus/runner conformance and safe bounded subprocess probes.",
+        "Future native baseline runner execution with actual return codes and bounded samples."
+      ]
+    },
+    "R22": {
+      "acceptance_ids": [
+        "B00-A1",
+        "B00-A2",
+        "T21-A1",
+        "T21-A2",
+        "T23-A1",
+        "T23-A2"
+      ],
+      "test_tasks": [
+        "B00",
+        "T21",
+        "T23"
+      ],
+      "verification_commands": [
+        "Read-only git status/HEAD; rig whoami; distribution inspect; client help/version; targeted manifests.",
+        "PROPOSED: python scripts/rehearse-v080.py --manifest <frozen-recovery.json> --candidate <binary>",
+        "Future version/manifest consistency, exact versioned candidate rebuild and full T20/T21/T22 revalidation; installed canary only after actual authority."
+      ]
+    },
+    "R23": {
+      "acceptance_ids": [
+        "T03-A1",
+        "T03-A2",
+        "T05-A2",
+        "T06-A1"
+      ],
+      "test_tasks": [
+        "T03",
+        "T05",
+        "T06"
+      ],
+      "verification_commands": [
+        "PROPOSED: cargo test -p dendro-core --test domain_v080 --locked",
+        "PROPOSED: cargo test -p dendro-connectors --test registry_v080 --locked",
+        "PROPOSED: cargo test -p dendro-connectors --test native_v080 --locked"
+      ]
+    },
+    "R24": {
+      "acceptance_ids": [
+        "T05-A2",
+        "T15-A2",
+        "T20-A1"
+      ],
+      "test_tasks": [
+        "T05",
+        "T15",
+        "T20"
+      ],
+      "verification_commands": [
+        "PROPOSED: cargo test -p dendro-connectors --test registry_v080 --locked",
+        "PROPOSED targeted core contract tests; full workspace gates in T22",
+        "PROPOSED: cargo test -p dendro-core --test contribution_v080 --locked",
+        "PROPOSED core conformance_v080 and connector hostile_v080 test targets"
+      ]
+    },
+    "R25": {
+      "acceptance_ids": [
+        "B02-A1",
+        "B02-A2",
+        "T24-A1",
+        "T24-A2",
+        "T24-A3",
+        "T21-A1"
+      ],
+      "test_tasks": [
+        "B02",
+        "T24",
+        "T21"
+      ],
+      "verification_commands": [
+        "Future bounded native toolchain/version/API/dependency inspection and isolated baseline native compile diagnostics; no source mutation or blind installs.",
+        "PROPOSED: cargo test -p dendro-core --test platform_v080 --locked (execute natively on Windows AND Linux)",
+        "Future native cargo check --workspace --locked after skeleton and dependency integration on both OSes.",
+        "PROPOSED: python scripts/rehearse-v080.py --manifest <frozen-recovery.json> --candidate <binary>"
+      ]
+    },
+    "R26": {
+      "acceptance_ids": [
+        "T25-A1",
+        "T25-A2",
+        "T18-A1"
+      ],
+      "test_tasks": [
+        "T25",
+        "T18"
+      ],
+      "verification_commands": [
+        "PROPOSED: cargo test -p dendro-connectors --test windows_environment_v080 --locked (native Windows execution required; Linux verifies platform-visible support metadata)",
+        "PROPOSED: cargo test -p dendro-connectors --test capture_v080 --locked",
+        "EXISTING future run: cargo test -p dendro-connectors --test sealed_replay --locked"
+      ]
+    },
+    "R27": {
+      "acceptance_ids": [
+        "B02-W-A1",
+        "T26-A1",
+        "T26-A2",
+        "T26-A3",
+        "B01-G-A1",
+        "B01-S-A1",
+        "B01-W-A1"
+      ],
+      "test_tasks": [
+        "B02",
+        "B01-core",
+        "T26",
+        "B01-G",
+        "B01-S",
+        "B01-W",
+        "B02-W"
+      ],
+      "verification_commands": [
+        "Future bounded native toolchain/version/API/dependency inspection and isolated baseline native compile diagnostics; no source mutation or blind installs.",
+        "Document/schema inspection and fixture digest checks only; no private log discovery without authority.",
+        "PROPOSED: cargo test -p dendro-connectors --test windows_events_v080 --locked (native Windows plus portable grammar vectors on Linux)",
+        "Required future controlled native producer capture provenance and standard-user real-fixture import receipts.",
+        "Document/schema inspection and fixture digest checks only; no private log discovery without authority.",
+        "Document/schema inspection and fixture digest checks only; no private log discovery without authority.",
+        "Document/schema inspection and fixture digest checks only; no private log discovery without authority.",
+        "Document/schema inspection and fixture digest checks only; no private log discovery without authority."
+      ]
+    },
+    "R28": {
+      "acceptance_ids": [
+        "T27-A1",
+        "T27-A2",
+        "T27-A3",
+        "T20-A1",
+        "T22-A1",
+        "T22-A2",
+        "T23-A1"
+      ],
+      "test_tasks": [
+        "T27",
+        "T20",
+        "T22",
+        "T23"
+      ],
+      "verification_commands": [
+        "Future native CI lanes on x86_64-pc-windows-msvc and x86_64-unknown-linux-gnu; all four workspace Rust gates on each.",
+        "PROPOSED: pwsh -File scripts/package-native-v080.ps1 -StagingOnly (Windows); bash scripts/package-native-v080.sh --staging-only (Linux).",
+        "PROPOSED core conformance_v080 and connector hostile_v080 test targets",
+        "EXISTING future runs: cargo check --workspace --locked; cargo test --workspace --locked; cargo clippy --workspace --locked -- -D warnings; cargo fmt --check",
+        "PROPOSED: python scripts/benchmark-v080.py --manifest <frozen-benchmark.json> --candidate <binary>",
+        "Future version/manifest consistency, exact versioned candidate rebuild and full T20/T21/T22 revalidation; installed canary only after actual authority."
+      ]
+    }
+  },
+  "review_ledger": {
+    "codex": "architecture author and lead adjudication; no self-acceptance",
+    "grok": "source/domain, insight and mathematics critique supplied; math corrected by lead adjudication",
+    "claude": "initial skeleton critique completed; implementation readiness rejected; findings adjudicated; finalized packet not approved",
+    "final_packet": "Full-snapshot Grok audit returned six HIGH; bounded repairs followed by scoped excerpt re-review closing six contract concerns. No full final-packet approval, source-row validation or product tests; G03 remains open. Hashes and semantic H-ID mapping in ADVERSARIAL.",
+    "runtime_metadata": "CLI/requested model separate from observed model/effort; absent telemetry requested-only",
+    "native_correction": "Scoped Grok excerpt audit reported13 concerns, including omitted-context allegations. Lead-adjudicated admission/security/ownership precision applied; disposition in ADVERSARIAL, no blanket packet approval or tests.",
+    "bootstrap": "Claude scoped core assertions internally consistent; requested checklist corrections adjudicated; detached freeze/core-type artifacts bind hashes. No complete task/product acceptance."
+  },
+  "document_counts": {
+    "tasks": 35,
+    "requirements": 28,
+    "acceptance_criteria": 69,
+    "reference_insights": 21,
+    "fixture_groups": 29
+  },
+  "native_runtime_policy": {
+    "required_targets": [
+      "x86_64-pc-windows-msvc",
+      "x86_64-unknown-linux-gnu"
+    ],
+    "execution": "Actual native build and run on respective Windows/Linux hosts; no WSL substitution",
+    "minimum_versions": "B02 evidence freeze before code admission",
+    "wsl": "optional Linux compatibility, ext4 isolation",
+    "macos": "preserve verified existing support",
+    "missing_prerequisite": "owned bounded B02/T24/T27 remedy; blocks completion, no platform waiver"
+  },
+  "execution_authority_update": {
+    "date": "2026-10-23",
+    "scope": "full_revised_v080",
+    "route": "direct_local_agents",
+    "record": ".agentflow/runs/v080/admission/admission.json",
+    "historical_run_reset": false,
+    "G00": "user_approved",
+    "B00": "not_accepted",
+    "publication_or_merge": "not_authorized"
+  },
+  "dependency_semantics": {
+    "depends_on": "Accepted task dependencies are required; explicit required_artifacts may separately authorize bounded construction from reviewed digest-bound partial inputs without marking producer accepted. All final release task ACs remain required.",
+    "required_artifacts": "Machine checked exact digest/review/lease handoff; partial artifacts do not mark producer accepted or satisfy release gates.",
+    "release": "All required source/native/full positive receipts still required; no omitted scope."
+  }
+}

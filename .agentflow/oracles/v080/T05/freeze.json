@@ -1,0 +1,14 @@
+{
+  "schema": "dendro.capture-oracle-freeze/v1",
+  "frozen_at": "2026-10-23T07:49:52.7335617Z",
+  "status": "expected_contract_only_not_product_acceptance",
+  "artifact": ".agentflow/oracles/v080/T05/frozen.json",
+  "sha256": "cb7f914737c6f2c2c9fa4fe8359fe28f7b321839fc8e391cf4c72e7b4f729160",
+  "vector_count": 34,
+  "original_author_native_session": "a9fe81d7-0955-472b-bb10-af56f9423f93",
+  "amendment_author": "/root/capture_oracle_amendment",
+  "reviewer": "/root/capture_contract_review",
+  "review_sha256": "6f0f12341bac38cb2c10de65198c6e7b623663457f0614efc98c953fed6b8858",
+  "authority": "User temporary Codex fix override; defaults unchanged",
+  "builder_must_be_distinct": true
+}

@@ -1,0 +1,34 @@
+{
+  "schema": "dendro.platform-oracle-freeze/v1",
+  "frozen_at": "2026-10-23T01:06:52.220007+00:00",
+  "status": "accepted_normative_expected_cases_with_explicit_API_gaps_not_product_acceptance",
+  "artifact": ".agentflow/oracles/v080/T24/frozen.json",
+  "sha256": "81122122171a304859658643eaeca5b5f0ac3960819ec837da46b1d8caab3e47",
+  "expected_source_sha256": "8511504525347cb9b6c491c684907d06bcf8786273d7de1e3c8c7f2686164b6f",
+  "pre_review_sha256": "44babbdfaa0c1a8c84414c2478484aa0a25272f8b839abafbaf4239061330ad2",
+  "review": {
+    "provider": "anthropic",
+    "observed_model": "claude-opus-5-5",
+    "actual_session_id": "9043b2ce-135e-460c-a112-448e4931e6a5",
+    "report_sha256": "a29e760da25255b41a5691f92c992fa5f1a1023e301a4b787c6492ec1d245e1a",
+    "original_verdict": "Not acceptable yet; concrete corrections required."
+  },
+  "lead_adjudication": {
+    "accepted": "Mechanical ACE/ancestor policy; trusted owner role; local verbatim namespace distinction; library sidecar effective/privacy policy; lock proof versus process death; recovery receipts; SQLite protocol SHM truth; per-user TEMP; regular-file hardlinks; durable selfvalidating pointer; native roots/names/remote filesystem; lock descriptor/inheritance/unlink; referenced snapshots.",
+    "rejected_or_adapted": [
+      "No process-global umask mutation in threaded Rust; safe private parent/library configuration/effective access and declared mode policy required.",
+      "No automatic ignored ownership for SYSTEM/admin: role/trust policy and owner SID/control verification required.",
+      "No universal64bit Windows identity: admitted NTFS profile or full128bit support/proof for ReFS, otherwise fail closed.",
+      "Privileged policy checker tests cannot establish actual unprivileged OS denial.",
+      "Links above authorized root require explicit admitted resolve/pin policy; not universal allow.",
+      "Lock acquisition proves no conflicting held lock, never prior process death."
+    ]
+  },
+  "case_count": 52,
+  "API_gaps": {
+    "path": ".agentflow/oracles/v080/T24/unresolved-api-evidence.json",
+    "sha256": "0412f110ee9eb168a344fcf4d49ab1a954648c773c0fa510d3574ff57d891613"
+  },
+  "independence": "Codex expected-value author will not implement T24; Grok builder consumes frozen expected cases, cannot edit them.",
+  "native_product_tests_run": false
+}

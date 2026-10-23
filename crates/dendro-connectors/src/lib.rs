@@ -26,3 +26,9 @@ pub use cursor::CursorConnector;
 pub use devin::DevinConnector;
 pub use goose::GooseConnector;
 pub use windsurf::WindsurfConnector;
+
+pub mod capture_registry_v1;
+pub mod environment_v1;
+pub mod environment_windows_v1;
+pub mod syscall_v1;
+pub mod windows_events_v1;

@@ -1,0 +1,81 @@
+{
+  "schema": "dendro.b01-g-four-level-sum-evidence/v1",
+  "author_native_session_id": "01a1669a-7075-7a81-bf1a-4ddff4bb5262",
+  "method": "Add the eight source components across four levels read from each sanitized fixture: usage.turns, usage.turns[].modelUsage.grok-4.7-build, usage.session, and usage.session.modelUsage.grok-4.7-build. Each level equals that fixture's session total. The four-level total is 4 times the session. The two turn modelUsage objects together equal one session.",
+  "fixtures": {
+    "sanitized-authentic.json": {
+      "sha256": "e3f56c510c8c2eb05d370b6858f787cebe7108fdef59502d844fd243ca236e7e",
+      "case": "B01-G-02",
+      "session": {
+        "inputTokens": 67941,
+        "outputTokens": 22418,
+        "cachedReadTokens": 25856,
+        "cacheCreationTokens": 0,
+        "reasoningTokens": 18195,
+        "totalTokens": 90359,
+        "modelCalls": 2,
+        "costUsdTicks": 787460400
+      },
+      "three_level_turns_session_sessionModel": {
+        "inputTokens": 203823,
+        "outputTokens": 67254,
+        "cachedReadTokens": 77568,
+        "cacheCreationTokens": 0,
+        "reasoningTokens": 54585,
+        "totalTokens": 271077,
+        "modelCalls": 6,
+        "costUsdTicks": 2362381200
+      },
+      "four_level_sum": {
+        "inputTokens": 271764,
+        "outputTokens": 89672,
+        "cachedReadTokens": 103424,
+        "cacheCreationTokens": 0,
+        "reasoningTokens": 72780,
+        "totalTokens": 361436,
+        "modelCalls": 8,
+        "costUsdTicks": 3149841600
+      }
+    },
+    "controlled-sanitized-authentic.json": {
+      "sha256": "5939054579d2d9a61b1b17439d57c06bb9b09b6bed9946dfba157993204a5c6b",
+      "case": "B01-G-16",
+      "session": {
+        "inputTokens": 44719,
+        "outputTokens": 83,
+        "cachedReadTokens": 23936,
+        "cacheCreationTokens": 0,
+        "reasoningTokens": 71,
+        "totalTokens": 44802,
+        "modelCalls": 2,
+        "costUsdTicks": 183708800
+      },
+      "three_level_turns_session_sessionModel": {
+        "inputTokens": 134157,
+        "outputTokens": 249,
+        "cachedReadTokens": 71808,
+        "cacheCreationTokens": 0,
+        "reasoningTokens": 213,
+        "totalTokens": 134406,
+        "modelCalls": 6,
+        "costUsdTicks": 551126400
+      },
+      "four_level_sum": {
+        "inputTokens": 178876,
+        "outputTokens": 332,
+        "cachedReadTokens": 95744,
+        "cacheCreationTokens": 0,
+        "reasoningTokens": 284,
+        "totalTokens": 179208,
+        "modelCalls": 8,
+        "costUsdTicks": 734835200
+      }
+    }
+  },
+  "unchanged": [
+    "16 turn component facts",
+    "8 session component facts",
+    "3x forbidden sums"
+  ],
+  "accepted": false
+}

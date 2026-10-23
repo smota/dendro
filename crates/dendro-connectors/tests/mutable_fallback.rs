@@ -1,6 +1,8 @@
 //! F13-5 must disclose the original affected seat when its fallback is lost.
 use std::fs;
-use std::path::{Path, PathBuf};
+#[cfg(not(windows))]
+use std::path::Path;
+use std::path::PathBuf;
 
 use dendro_connectors::{ingest_staged_with_manifest, SourceRoot};
 use dendro_core::{report_json, run_locked_with_manifest, trace_json};
@@ -26,6 +28,17 @@ fn seat<'a>(payload: &'a Value, name: &str) -> &'a Value {
 }
 
 fn check_changed_fallback(creation_mode: u8) {
+    #[cfg(windows)]
+    let root = dendro_core::platform_v1::create_user_private_root_with_choice(
+        "dendro-mutable-fallback-",
+        &dendro_core::platform_v1::StorageRootChoice::UserProfile,
+    )
+    .unwrap();
+    #[cfg(windows)]
+    let directory = root.path().to_path_buf();
+    #[cfg(windows)]
+    drop(root);
+    #[cfg(not(windows))]
     let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/issue-13-tests")
         .join(format!(
@@ -91,7 +104,10 @@ fn check_changed_fallback(creation_mode: u8) {
         &openrig,
         Some(&manifest),
         None,
-        |stage, key, cutoff| ingest_staged_with_manifest(stage, &roots, false, key, cutoff),
+        |stage, key, cutoff| {
+            ingest_staged_with_manifest(stage, &roots, false, key, cutoff)
+                .map_err(|e| e.context("fixture connector ingest closure"))
+        },
     )
     .unwrap();
     let original = report_json(&db, "decisions", None, FROM, TO).unwrap();
@@ -111,7 +127,10 @@ fn check_changed_fallback(creation_mode: u8) {
         &openrig,
         None,
         Some(&manifest),
-        |stage, key, cutoff| ingest_staged_with_manifest(stage, &roots, false, key, cutoff),
+        |stage, key, cutoff| {
+            ingest_staged_with_manifest(stage, &roots, false, key, cutoff)
+                .map_err(|e| e.context("fixture connector ingest closure"))
+        },
     )
     .unwrap();
     let report = report_json(&db, "decisions", None, FROM, TO).unwrap();

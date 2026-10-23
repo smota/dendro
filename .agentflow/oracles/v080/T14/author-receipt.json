@@ -1,0 +1,67 @@
+{
+  "schema_version": "dendro.oracle-author-receipt/v1",
+  "task": "T14",
+  "status": "draft_authored_no_review_no_freeze_no_acceptance",
+  "unique_worker_run_id": "T14-oracle-author-61c1e822-7825-4c7c-bc5d-abb4f964fdc6",
+  "author_run_id_kind": "locally_generated_uuid_not_native_session_id",
+  "receipt_created_at": "2026-10-23T03:22:52.189448+00:00",
+  "role": "independent_expected_value_author",
+  "provider_family_requested": "openai",
+  "runtime_requested": "codex exec",
+  "model_requested": "gpt-6.1-sol",
+  "effort_requested": "medium",
+  "runtime_observed": "current Codex harness; native dispatcher metadata unavailable",
+  "model_observed": "unavailable",
+  "effort_observed": "unavailable",
+  "native_client_session_id": "unavailable",
+  "dispatcher_output": "unavailable",
+  "dispatcher_input_sha256": "unavailable",
+  "dispatcher_output_sha256": "unavailable",
+  "pid": "unavailable",
+  "process_start_time": "unavailable",
+  "sanitized_launch_arguments": "unavailable",
+  "independence": {
+    "product_output_used": false,
+    "product_code_modified": false,
+    "other_oracles_read": false,
+    "builder_authorship": false,
+    "reviewer_authorship": false,
+    "review_or_freeze_or_acceptance": false,
+    "authenticated_account_separation": "not asserted",
+    "execution_disjointness": "requires dispatcher/curator verification; not established by role/model text"
+  },
+  "environment": {
+    "rig_identity": "unavailable: command not found",
+    "distribution_inspect": "failed: ERR_MODULE_NOT_FOUND yaml; no changes made"
+  },
+  "owned_path": ".agentflow/oracles/v080/T14/**",
+  "input_sha256": {
+    ".agentflow/proposals/next-version-2026-10-22/tasks.json": "4bc79593d3b8f280e53a19fed2e9e87d47cd7f7849d317a1d9a90baa2a3d88cf",
+    ".agentflow/proposals/next-version-2026-10-22/DESIGN.md": "7f6ca2da4ea5b4c7e6d78b565c3857a5e716a277c0dfec7abe37f40eb729f638",
+    ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md": "f0e3cbf6f3359a14f9816e509e38498fd5fc7bd2853778628cb6e0e2a1dd9a0f",
+    "crates/dendro-core/src/domain_v1/quantity.rs": "7f7ad9a4d0bef5e39f21ceaa96fa6ea69af413829ec7c644c9c459ed9c1b1fee",
+    "crates/dendro-core/src/domain_v1/revision.rs": "3c940fb895624a227fe6da98a3bbf7ec5e1629f60c18872345de1ac4c3815032",
+    "crates/dendro-core/src/domain_v1/work.rs": "6afd22c395fb4a6e8570a85fbc828da558786f97f1222c1a8fe958c2be45bfa6",
+    "crates/dendro-core/src/domain_v1/record_types/usage.rs": "f530d567f216a5536c75c6b1e05065ca5f5eecb9cd1f3757f716c5905c8b6ca7",
+    "crates/dendro-core/src/domain_v1/record_types/common.rs": "cc05c54ad5487d21442f5d899ada69dd79b5d77832873399153885b5cd49959d",
+    "crates/dendro-core/src/domain_v1/records.rs": "dd3682f98dced31624f39ee97d55646d88f9a306cd99e63791134112b8016655",
+    "crates/dendro-core/src/domain_v1/mod.rs": "0bcff4e17432be0d851afc77ffc69564c1fafbba01362868c19b33e41b5c58ba"
+  },
+  "output_sha256": {
+    "draft-expected.json": "07a3cefd2885c09a0aa16d64da0295d5e5d05e12bb6a5d39a720f96902a62b79",
+    "derivation.md": "4b507005ec312ac8389105e4c027caa6eaec12e832568f1f33901108491de191",
+    "fixture-recipes.py": "3409adddc89286393cce1413a44b986e51ff56cf14bf35b32c10106e92f1007b"
+  },
+  "receipt_self_digest": "excluded; SHA256 of final receipt emitted by command",
+  "verification": {
+    "exact_arithmetic_checks": 80,
+    "unique_cases": 75,
+    "product_conformance": "not run",
+    "independent_review": "not performed"
+  },
+  "open_question_ids": [
+    "Q1",
+    "Q2",
+    "Q3"
+  ]
+}

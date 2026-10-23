@@ -1,0 +1,31 @@
+**Accept for oracle freeze only.** The prior arithmetic blocker is resolved; no remaining blocker within this review scope.
+
+- Independently recomputed all eight components from both sanitized fixtures: corrected sums equal **4× session**, matching oracle and evidence.
+- Diff against the hash-verified preserved oracle changes only the intended blocks in **B01-G-02 and B01-G-16**. All 20 cases remain; 3× sums and 16-turn/8-session fact counts are unchanged.
+- Author receipt binds the corrected oracle, calculation evidence, and unchanged profile.
+
+Verified SHA-256:
+
+```text
+grok-authored.json
+a78d49225ce3ea6e6eb28b7a969edfd2fd7fb01cafb7a7b0593dac7c3df4bde4
+
+author-receipt.json
+f9be487d4c67e4480ccbd418b8edfcd4a2bcd6c32c8cf03328977649b4ac7b2b
+
+evidence/four-level-sums.json
+eb2d640787a048ec88979f489a94495e56e89578d45ab90c2e0623ec865ee78f
+
+profile.json — unchanged
+1a3864a8b0390125c460643d2cf01bbb44fd2b5cb29720aee9a8b0ff7dafbabc
+
+sanitized-authentic.json
+e3f56c510c8c2eb05d370b6858f787cebe7108fdef59502d844fd243ca236e7e
+
+controlled-sanitized-authentic.json
+5939054579d2d9a61b1b17439d57c06bb9b09b6bed9946dfba157993204a5c6b
+```
+
+Reviewer native identity: `01a166f3-e6c7-7c40-ab42-8181cc46af85`, distinct from recorded original Grok author `01a1669a-7075-7a81-bf1a-4ddff4bb5262`.
+
+This verdict grants no source-profile or product/implementation acceptance. No freeze record was written, files edited, or nested workers used.

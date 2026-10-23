@@ -4,7 +4,7 @@ use clap::{Args, Subcommand};
 use serde_json::Value;
 use std::{
     fs,
-    io::{Read, Write},
+    io::Read,
     path::{Path, PathBuf},
 };
 
@@ -26,18 +26,6 @@ pub struct Scope {
     pub from: Option<String>,
     #[arg(long, requires = "from")]
     pub to: Option<String>,
-}
-
-impl Scope {
-    pub fn resolve(&self) -> Result<(String, String, String)> {
-        dendro_core::presentation::resolve_window(
-            &self.db,
-            self.rig.as_deref(),
-            self.window.as_deref(),
-            self.from.as_deref(),
-            self.to.as_deref(),
-        )
-    }
 }
 
 #[derive(Subcommand)]
@@ -166,11 +154,12 @@ pub enum Commands {
         #[arg(long, help_heading = "Output")]
         output: PathBuf,
     },
-    /// Create a new Nao workspace. Existing directories are never overwritten.
+    /// Create a Nao snapshot scaffold and report its integration status. Existing directories are never overwritten.
     #[command(next_help_heading = "Cache & Export")]
     InitNao {
         #[arg(long, default_value = "dendro.duckdb")]
         db: PathBuf,
+        /// New workspace label. Windows allocates a private unique sibling and returns its actual path.
         #[arg(long, visible_alias = "target")]
         output: PathBuf,
     },
@@ -269,7 +258,7 @@ fn build_simulation_scenario(
 fn write_new_private_output_with(
     output: &Path,
     bytes: &[u8],
-    write_fn: impl FnOnce(&mut fs::File, &[u8]) -> std::io::Result<()>,
+    write_fn: impl FnOnce(&mut dyn std::io::Write, &[u8]) -> std::io::Result<()>,
 ) -> Result<()> {
     let mut file = dendro_core::lifecycle::create_private_file(output)
         .context("export requires a new output file")?;
@@ -292,7 +281,7 @@ fn sources(
     }
     for directory in directories {
         if fs::symlink_metadata(directory)
-            .map(|m| m.file_type().is_symlink())
+            .map(|meta| link_or_reparse(&meta))
             .unwrap_or(true)
         {
             bail!("source directory must be an explicit non-symlink directory");
@@ -328,7 +317,7 @@ fn sources(
                 };
                 match fs::symlink_metadata(&p) {
                     Ok(meta) => {
-                        if meta.file_type().is_symlink() {
+                        if link_or_reparse(&meta) {
                             bail!("hold directory escapes its authorized root");
                         }
                         return resolve(path);
@@ -351,6 +340,25 @@ fn sources(
     }
     Ok(sources)
 }
+
+/// Symlinks and, on Windows, any reparse point (junction, mount, or symlink).
+/// A junction is not reported as a Unix symlink. Both escape forms are refused.
+fn link_or_reparse(meta: &fs::Metadata) -> bool {
+    if meta.file_type().is_symlink() {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
+        meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
+}
+
 pub async fn run(command: Commands) -> Result<()> {
     let ui_request = match &command {
         Commands::Ui {
@@ -394,17 +402,32 @@ pub async fn run(command: Commands) -> Result<()> {
         _ => None,
     };
     if let Some((db, rig, window, from, to, once)) = ui_request {
-        let watch_paths: Vec<PathBuf> =
-            crate::default_roots().into_iter().map(|r| r.path).collect();
+        let watch_paths: Vec<PathBuf> = match crate::default_roots() {
+            Ok(roots) => roots.into_iter().map(|root| root.path).collect(),
+            Err(error) => {
+                eprintln!("dendro: {error}");
+                Vec::new()
+            }
+        };
         crate::tui::run_interactive_or_once(db, rig, window, from, to, once, watch_paths).await?;
         return Ok(());
     }
     tokio::task::spawn_blocking(move || -> Result<()> {
         match command {
             Commands::Materialize { scope } => {
-                let (from, to, mode) = scope.resolve()?;
-                let mut res =
-                    dendro_core::semantic::refresh(&scope.db, scope.rig.as_deref(), &from, &to)?;
+                let request = dendro_core::presentation::ReadRequest::open(&scope.db)?;
+                let (from, to, mode) = request.window(
+                    scope.rig.as_deref(),
+                    scope.window.as_deref(),
+                    scope.from.as_deref(),
+                    scope.to.as_deref(),
+                )?;
+                let (mut res, _published) = dendro_core::semantic::refresh_request(
+                    &request,
+                    scope.rig.as_deref(),
+                    &from,
+                    &to,
+                )?;
                 if scope.from.is_none() {
                     res["window_resolution"] = serde_json::json!(mode);
                 }
@@ -433,12 +456,13 @@ pub async fn run(command: Commands) -> Result<()> {
                 let baseline = baseline.as_deref().map(json_file).transpose()?;
                 let scope_supplied =
                     rig.is_some() || window.is_some() || from.is_some() || to.is_some();
-                let cached = dendro_core::semantic::cached_scope(&db);
+                let mut request = dendro_core::presentation::ReadRequest::open(&db)?;
+                let cached = dendro_core::semantic::cached_scope_physical(request.database());
                 let needs_refresh = !no_refresh
                     && (scope_supplied || cached.as_ref().is_none_or(|(_, _, _, fresh)| !*fresh));
                 let mut auto_materialized = false;
                 let mut resolution_mode: Option<String> = None;
-                if needs_refresh && db.exists() {
+                if needs_refresh && request.initialized() {
                     let effective_rig = if !scope_supplied {
                         cached
                             .as_ref()
@@ -451,8 +475,7 @@ pub async fn run(command: Commands) -> Result<()> {
                         if let Some((_, c_from, c_to, _)) = cached {
                             (c_from, c_to, "cached_scope".into())
                         } else {
-                            dendro_core::presentation::resolve_window(
-                                &db,
+                            request.window(
                                 effective_rig.as_deref(),
                                 window.as_deref(),
                                 from.as_deref(),
@@ -460,19 +483,34 @@ pub async fn run(command: Commands) -> Result<()> {
                             )?
                         }
                     } else {
-                        dendro_core::presentation::resolve_window(
-                            &db,
+                        request.window(
                             effective_rig.as_deref(),
                             window.as_deref(),
                             from.as_deref(),
                             to.as_deref(),
                         )?
                     };
-                    dendro_core::semantic::refresh(&db, effective_rig.as_deref(), &f, &t)?;
+                    let (_, published) = dendro_core::semantic::refresh_request(
+                        &request,
+                        effective_rig.as_deref(),
+                        &f,
+                        &t,
+                    )?;
+                    if let Some(published) = published {
+                        request = published;
+                    }
                     auto_materialized = true;
                     resolution_mode = Some(mode);
                 }
-                let mut ans = dendro_core::semantic::answer(&db, &q, baseline.as_ref())?;
+                let mut ans = dendro_core::semantic::answer_physical(
+                    request.database(),
+                    &q,
+                    baseline.as_ref(),
+                )?;
+                #[cfg(windows)]
+                if let Some(selected) = request.selected() {
+                    ans["analytics_selection_sha256"] = serde_json::json!(crate::hex_selection(&selected.selection().sha256));
+                }
                 if auto_materialized {
                     ans["auto_materialized"] = serde_json::json!(true);
                     if let Some(mode) = resolution_mode {
@@ -493,8 +531,15 @@ pub async fn run(command: Commands) -> Result<()> {
                 }
             }
             Commands::InitNao { db, output } => {
-                dendro_core::semantic::init_workspace(&output, &db)?;
-                println!("{{\"status\":\"created\",\"local_only\":true}}");
+                let snapshot = dendro_core::semantic::init_workspace_with_receipt(&output, &db)?;
+                #[cfg(windows)]
+                let status = "snapshot_created_integration_pending";
+                #[cfg(not(windows))]
+                let status = "created";
+                println!(
+                    "{}",
+                    serde_json::json!({"status":status, "local_only":true, "workspace":snapshot.get("workspace").cloned().unwrap_or_else(|| serde_json::json!(output)), "snapshot":snapshot})
+                );
             }
             Commands::Export {
                 scope,
@@ -502,9 +547,15 @@ pub async fn run(command: Commands) -> Result<()> {
                 output,
             } => {
                 dendro_core::refuse_secret_path(&output)?;
-                let (from, to, _) = scope.resolve()?;
-                let report = dendro_core::report_json(
-                    &scope.db,
+                let request = dendro_core::presentation::ReadRequest::open(&scope.db)?;
+                let (from, to, _) = request.window(
+                    scope.rig.as_deref(),
+                    scope.window.as_deref(),
+                    scope.from.as_deref(),
+                    scope.to.as_deref(),
+                )?;
+                let report = dendro_core::pipeline::report_json_physical(
+                    request.database(),
                     "decisions",
                     scope.rig.as_deref(),
                     &from,
@@ -528,15 +579,20 @@ pub async fn run(command: Commands) -> Result<()> {
                 ..
             } => {
                 dendro_core::refuse_secret_path(&output)?;
-                let (from, to, mode) = dendro_core::presentation::resolve_window(
-                    &db,
+                let request = dendro_core::presentation::ReadRequest::open(&db)?;
+                let (from, to, mode) = request.window(
                     rig.as_deref(),
                     Some(window.as_deref().unwrap_or("all")),
                     from.as_deref(),
                     to.as_deref(),
                 )?;
-                let report =
-                    dendro_core::report_json(&db, "decisions", rig.as_deref(), &from, &to)?;
+                let report = dendro_core::pipeline::report_json_physical(
+                    request.database(),
+                    "decisions",
+                    rig.as_deref(),
+                    &from,
+                    &to,
+                )?;
                 let html_str = dendro_core::presentation::offline_html(&report)?;
                 write_new_private_output_with(&output, html_str.as_bytes(), |file, data| {
                     file.write_all(data)
@@ -595,8 +651,8 @@ pub async fn run(command: Commands) -> Result<()> {
                         enforce_model_family_diversity,
                     },
             } => {
-                let (from, to, _) = dendro_core::presentation::resolve_window(
-                    &db,
+                let request = dendro_core::presentation::ReadRequest::open(&db)?;
+                let (from, to, _) = request.window(
                     rig.as_deref(),
                     Some(window.as_deref().unwrap_or("24h")),
                     from.as_deref(),
@@ -611,8 +667,13 @@ pub async fn run(command: Commands) -> Result<()> {
                     boundary_reset_threshold,
                     enforce_model_family_diversity,
                 )?;
-                let report =
-                    dendro_core::report_json(&db, "decisions", rig.as_deref(), &from, &to)?;
+                let report = dendro_core::pipeline::report_json_physical(
+                    request.database(),
+                    "decisions",
+                    rig.as_deref(),
+                    &from,
+                    &to,
+                )?;
                 println!("{}", dendro_core::simulation::simulate(&report, &scenario)?);
             }
             Commands::Ui { .. } | Commands::Dashboard { html: None, .. } => unreachable!(),
@@ -630,16 +691,28 @@ mod tests {
     struct TempDir(PathBuf);
     impl TempDir {
         fn new(prefix: &str) -> Self {
-            let nanos = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos();
-            let dir = std::env::temp_dir().join(format!(
-                "dendro-ext-{prefix}-{}-{nanos}",
-                std::process::id(),
-            ));
-            fs::create_dir_all(&dir).unwrap();
-            Self(dir)
+            #[cfg(windows)]
+            {
+                let root = dendro_core::platform_v1::create_user_private_root_with_choice(
+                    &format!(".dendro-cli-ext-{prefix}-"),
+                    &dendro_core::platform_v1::StorageRootChoice::UserProfile,
+                )
+                .expect("explicit USERPROFILE private fixture root");
+                Self(root.path().to_path_buf())
+            }
+            #[cfg(not(windows))]
+            {
+                let nanos = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos();
+                let dir = std::env::temp_dir().join(format!(
+                    "dendro-ext-{prefix}-{}-{nanos}",
+                    std::process::id(),
+                ));
+                fs::create_dir_all(&dir).unwrap();
+                Self(dir)
+            }
         }
     }
     impl Drop for TempDir {
@@ -673,6 +746,39 @@ mod tests {
         );
     }
 
+    /// Unix keeps a dangling symlink. Windows creates an unprivileged directory
+    /// junction to an outside directory. Neither fixture is treated as the other OS.
+    fn install_escaping_hold(link: &Path, target: &Path) {
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(target, link).expect("unix dangling symlink");
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            fs::create_dir_all(target).expect("junction target directory");
+            // One `cmd /C` string. Separate argv tokens are not a reliable mklink command line.
+            let status = std::process::Command::new("cmd")
+                .arg("/C")
+                .raw_arg(format!(
+                    "mklink /J \"{}\" \"{}\"",
+                    link.display(),
+                    target.display()
+                ))
+                .status()
+                .expect("mklink /J");
+            assert!(
+                status.success(),
+                "windows directory junction could not be created: {status}"
+            );
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            let _ = (link, target);
+            panic!("hold escape fixture requires a unix symlink or a windows junction");
+        }
+    }
+
     #[test]
     fn dangling_symlink_hold_dir_is_refused_with_explicit_containment_error() {
         let dir = TempDir::new("hold-symlink");
@@ -680,11 +786,10 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         let db = root.join("analytics.duckdb");
         fs::write(&db, b"placeholder").unwrap();
-        std::os::unix::fs::symlink(
-            dir.0.join("outside-missing-target"),
-            root.join("dangling-holds"),
-        )
-        .unwrap();
+        install_escaping_hold(
+            &root.join("dangling-holds"),
+            &dir.0.join("outside-missing-target"),
+        );
         fs::write(
             root.join("dendro-source.json"),
             serde_json::to_vec(&json!({

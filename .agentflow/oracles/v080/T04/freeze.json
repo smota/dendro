@@ -1,0 +1,70 @@
+{
+  "schema": "dendro.migration-oracle-freeze/v1",
+  "frozen_at": "2026-10-23T02:02:39.904925+00:00",
+  "status": "accepted_expected_contract_and_recipe_only_not_product_acceptance",
+  "author": {
+    "worker": "/root/finalize_plan",
+    "provider_family": "openai",
+    "role": "independent T04 oracle author; must never build T04"
+  },
+  "review": {
+    "provider": "anthropic",
+    "native_session": "869d7938-f796-457d-963b-dc6310034ced",
+    "verdict": "conditional freeze; exact two corrections and required/recommended clarifications applied by independent author",
+    "report_sha256": "cedea622f1bc57078bc568efde2cde9da6b2a66305518fd7056dedb8172d86d7",
+    "scope": "logical recipe and expected values only; no product/migration/native approval"
+  },
+  "artifact": ".agentflow/oracles/v080/T04/frozen.json",
+  "sha256": "b7e80ab7c4259bfe86df8857835137a7033f167a2b4b7545931ec3e2765793ae",
+  "case_count": 24,
+  "A1": [
+    "T04-01",
+    "T04-02",
+    "T04-03",
+    "T04-04",
+    "T04-05",
+    "T04-06",
+    "T04-19",
+    "T04-20",
+    "T04-22",
+    "T04-23",
+    "T04-24"
+  ],
+  "A2": [
+    "T04-07",
+    "T04-08",
+    "T04-09",
+    "T04-10",
+    "T04-11",
+    "T04-12",
+    "T04-13",
+    "T04-14",
+    "T04-15",
+    "T04-16",
+    "T04-17",
+    "T04-18",
+    "T04-19",
+    "T04-20",
+    "T04-21",
+    "T04-22"
+  ],
+  "artifacts": {
+    "expected.pre-review.json": "57555654fa22cebd185c725dd2804b4fe4cb1f20a6f2201764ff4901d9ffcb6a",
+    "review-adjudication.json": "205ee630ed8ab4bd1d807fc0878819f58a483d94c71d3e9c1cd2113bbfb9370f",
+    "schema3-fixture.sql": "a3d489511393771f8991666012f0872db234f9844dbbdd0eafe405130f4b761b",
+    "schema3-fixture-projections.json": "b7c566c962d058e8b1edfec00230e8f9f0dbe14dff6a3cc6c72670485e3da5b6",
+    "schema3-currency-extension.sql": "aacc7f839c5b4294f5577a3a87f2019e7823436872759b785b02c04e22a9a35d",
+    "independent-review.json": "cedea622f1bc57078bc568efde2cde9da6b2a66305518fd7056dedb8172d86d7"
+  },
+  "remaining_gates": [
+    "Reviewed platform interface plus relevant native receipt and serialized storage lease handoff required before constructing migration implementation.",
+    "Review crash fault hook mapping/durability proof against admitted platform API; logical points are normative not invented function names.",
+    "Run old binary/version refusal on actual staged fixture; no fabricated run evidence.",
+    "Compatibility view names, canonical legacy precision metadata representation and typed error names remain builder mapping decisions reviewed against these semantics; no invented API promised.",
+    "Actual DuckDB recipe/extension execution, baseline key_id confirmation and native fixture bundle digests before migration acceptance; no physical fixture proof implied by logical freeze."
+  ],
+  "native_tests_run": false,
+  "physical_DuckDB_fixture_created": false,
+  "product_code_written": false,
+  "original_author_corrections": true
+}

@@ -1,0 +1,2201 @@
+{
+  "schema": "dendro.benchmark-runner-oracle/v1",
+  "task": "T02-runner",
+  "author": "grok-independent-oracle",
+  "builder_must_not_modify_expected_values": true,
+  "product_benchmark_code_written": false,
+  "measurements_performed": false,
+  "timings_in_this_document_are": "synthetic_fixture_inputs",
+  "requirements_recorded_at": "2026-10-23T00:51:51.866683+00:00",
+  "source_contract": {
+    "path": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+    "sha256": "7f6ca2da4ea5b4c7e6d78b565c3857a5e716a277c0dfec7abe37f40eb729f638",
+    "private_source_required": false,
+    "product_cli_inference": "forbidden"
+  },
+  "oracle_integer_encoding": "JSON numbers are used only inside the closed range [-9007199254740991, 9007199254740991]. Every integer outside that range is a decimal string and must be parsed as an integer, never as an IEEE-754 float.",
+  "specified_protocol": {
+    "id": "dendro.bench.runner-protocol/v1",
+    "runner": "python-harness",
+    "shell": false,
+    "max_processes_in_tree": 2,
+    "process_tree_counts": "Count the harness, the candidate, and every descendant of the candidate. The bound is 2, so any descendant overruns it. A runtime collector must prove the count. Windows uses a Job Object; Linux uses the waited process-group or equivalent. If the collector is absent, the count is unknown, not 0, status blocked_unmeasured, runner_exit 6.",
+    "clock": "monotonic",
+    "elapsed_unit": "ns",
+    "budget_comparison": "less_or_equal on integer nanoseconds or bytes",
+    "ms_to_ns": "multiply the requirement millisecond figure by 1000000 exactly",
+    "display_ms_floor": "elapsed_ns // 1000000 is display only and is not the budget comparison",
+    "candidate_timing_fields": "ignored. A printed elapsed_ms is never a sample. With no monotonic reading the metric is blocked_unmeasured.",
+    "surfaces": {
+      "v080": [
+        "{candidate}",
+        "benchmark",
+        "answer",
+        "--protocol",
+        "dendro.bench.answer/v1",
+        "--request",
+        "{request_path}"
+      ],
+      "v070": "not a frozen CLI"
+    },
+    "surface_rule": "v080 is the only frozen benchmark argv. v070 is not a claimed CLI. Probe the real pinned command and do not invent or rewrite it into v080. A failed, absent, or nonzero probe is not_measurable_preport. Any other v080 argv is unsupported_surface.",
+    "answer_protocol": "dendro.bench.answer/v1",
+    "answer_request_fields": [
+      "protocol",
+      "corpus_id",
+      "question_id",
+      "mode"
+    ],
+    "answer_response_fields": [
+      "protocol",
+      "corpus_id",
+      "question_id",
+      "mode",
+      "status",
+      "record_count",
+      "answer_count"
+    ],
+    "answer_status_ok_required": true,
+    "modes_are_disjoint": [
+      "warmup",
+      "warm_answer",
+      "cold_migration",
+      "replay",
+      "seven_answer_home",
+      "ui_blocking"
+    ],
+    "percentile": {
+      "name": "nearest_rank_ceil",
+      "allowed": [
+        50,
+        95
+      ],
+      "sorted": "ascending",
+      "rank_1_based": "(p * n + 99) // 100",
+      "value": "sorted[rank_1_based - 1]",
+      "n_0": "undefined, blocked_unmeasured, value null",
+      "median": "nearest_rank_ceil p50, not the mean of the two central observations",
+      "worst": "maximum of the eligible population",
+      "best": "minimum of the eligible population",
+      "spread_ns": "worst_ns - best_ns"
+    },
+    "eligible_sample": "mode matches the metric, phase is measured, candidate exit 0, termination_reason none, no timeout, clock monotonic, elapsed_ns is a uint64 and elapsed_ns>=1. Zero is not eligible.",
+    "warmup_exclusion": [
+      "percentile population",
+      "median",
+      "worst",
+      "spread",
+      "throughput answers",
+      "throughput elapsed",
+      "minimum_answer_calls"
+    ],
+    "throughput": {
+      "direction": "higher_is_better",
+      "answers": "eligible warm_answer measured call count",
+      "elapsed_ns": "sum of those same samples",
+      "rate": "answers / elapsed_ns as a rational",
+      "regression_exceeded_iff": "5 * candidate_answers * baseline_elapsed_ns < 4 * baseline_answers * candidate_elapsed_ns",
+      "equality_at_20_of_100": "passes",
+      "arithmetic": "Python integers, arbitrary precision. Inputs must fit uint64. Intermediate products may exceed uint64 and must not wrap.",
+      "baseline_answers_0": "refused_noncomparable, regression null",
+      "either_elapsed_0": "invalid_elapsed, throughput null, refused_noncomparable",
+      "candidate_answers_0_with_positive_baseline_and_positive_elapsed": "comparable, regression exceeded"
+    },
+    "uint64": {
+      "min": 0,
+      "max_decimal": "18446744073709551615",
+      "applies_to_stored_fields": [
+        "counts",
+        "byte sizes",
+        "elapsed_ns",
+        "capture limits",
+        "timeouts",
+        "pids",
+        "repetition counts"
+      ],
+      "reject": "stored values below 0 or above max are schema_mismatch. The runner must not wrap 2^64 to 0."
+    },
+    "runner_exit": {
+      "0": "schema-valid report published and measurement_valid",
+      "2": "output_limit_exceeded",
+      "3": "candidate_nonzero_exit or signal_or_kill",
+      "4": "timeout",
+      "5": "schema_mismatch, unsupported_surface, shell, uint64 stored overflow, method label invalid, or answer status error",
+      "6": "required metric missing, insufficient population, or blocked_unmeasured",
+      "7": "process_limit_exceeded or native probe failed for the claimed proof"
+    },
+    "exit_precedence": [
+      "5 before launch for manifest, shell, surface, uint64, and protocol schema",
+      "7 for process limit or failed claimed native probe",
+      "2 output limit",
+      "4 timeout, including a kill caused by the timeout",
+      "3 nonzero exit or signal",
+      "6 missing required metric after a zero exit",
+      "0"
+    ],
+    "performance_success": "measurement_valid and every required absolute budget in the manifest passes. A comparable regression that is exceeded makes performance_success false. A refused or not_measurable_preport comparison does not become a zero regression and does not by itself fail an otherwise passing absolute budget.",
+    "measurement_valid": "candidate exit 0, no timeout, schema matches, every required metric present with an allowed method and scope, no fabricated timing",
+    "missing_required_metric": {
+      "status": "blocked_unmeasured",
+      "value": null,
+      "forbidden_value": 0,
+      "runner_exit": 6,
+      "performance_success": false
+    },
+    "manifest_required_fields": [
+      "manifest_version",
+      "candidate_binary_sha256",
+      "candidate_source_sha256",
+      "corpus_sha256",
+      "generator_sha256",
+      "runner_sha256",
+      "os_id",
+      "compiler_id",
+      "storage_id",
+      "argv_sha256",
+      "command_surface",
+      "shell",
+      "seed",
+      "profile",
+      "corpus_version",
+      "max_capture_bytes",
+      "timeout_ns",
+      "required_metrics",
+      "clock"
+    ],
+    "manifest_version": "dendro.bench.manifest/v1",
+    "clock_required_value": "monotonic",
+    "shell_required_value": false,
+    "timeout_ns": "required finite uint64 probe limit in the manifest. It is not a design latency budget.",
+    "max_capture_bytes": "required finite uint64 in the manifest. Output beyond it is not parsed as a successful answer.",
+    "canonical_json": "UTF-8, object keys sorted lexicographically, arrays keep order, separators colon and comma with no spaces, no trailing newline, RFC 8259 strings, integers without leading zeros.",
+    "digest": "SHA-256 over the canonical bytes, lowercase hex.",
+    "report_atomic": "write a temp file in the destination directory, fsync, then rename over the destination. A crash before rename leaves the previous destination bytes unchanged.",
+    "report_allowlist": [
+      "protocol ids",
+      "command_surface",
+      "argv_sha256",
+      "synthetic corpus_id",
+      "seed",
+      "profile",
+      "corpus_version",
+      "corpus_sha256",
+      "os_family",
+      "environment",
+      "binary_format",
+      "metric name",
+      "unit",
+      "method",
+      "source",
+      "scope",
+      "integer measurements",
+      "status enums",
+      "exit codes"
+    ],
+    "report_forbidden": [
+      "source text",
+      "raw argv",
+      "executable path",
+      "request path",
+      "credentials",
+      "candidate-printed timings used as measurements"
+    ],
+    "each_run_records": [
+      "candidate_exit_code",
+      "candidate_exit_method",
+      "termination_reason",
+      "metric method",
+      "metric source",
+      "metric scope"
+    ],
+    "candidate_exit_method": "subprocess_returncode",
+    "native_probe": {
+      "windows_native_pass": "os_family windows AND environment native AND binary_format PE",
+      "linux_native_pass": "os_family linux AND environment native AND binary_format ELF",
+      "wsl": "environment wsl is not windows_native and is not a substitute proof",
+      "crosscompiled_foreign": "not a native proof",
+      "independent": "one OS proof does not fill the other proof. The other proof is not_measured with value null."
+    },
+    "memory_methods": {
+      "small_resident": {
+        "metric": "small_process_resident_bytes",
+        "allowed_methods": [
+          "sampled_maximum",
+          "reliable_resident"
+        ],
+        "windows_sampled_source": "win32.GetProcessMemoryInfo.WorkingSetSize",
+        "linux_sampled_source": "procfs.status.VmRSS",
+        "scope": "candidate_process",
+        "must_not_be_labeled": "reliable_peak"
+      },
+      "large_peak": {
+        "metric": "large_reliable_peak_rss_bytes",
+        "allowed_methods": [
+          "reliable_peak"
+        ],
+        "windows_source": "win32.GetProcessMemoryInfo.PeakWorkingSetSize",
+        "windows_requirement": "The spawning process handle stays open through exit and the peak is read from that handle; otherwise blocked_unmeasured.",
+        "linux_reliable_source": "waited child rusage ru_maxrss, bytes=ru_maxrss*1024, or an equivalent verified waited-child peak collector in bytes",
+        "linux_vmhwm_polling": "sampled_maximum only",
+        "absent_collector": {
+          "status": "blocked_unmeasured",
+          "value": null,
+          "forbidden_value": 0,
+          "runner_exit": 6
+        },
+        "scope": "candidate_process",
+        "sampled_maximum_satisfies_peak": false
+      }
+    },
+    "comparable_requires_equal": [
+      "cohort",
+      "command_surface",
+      "work_mode",
+      "unit",
+      "os_family",
+      "os_version",
+      "environment",
+      "compiler_id",
+      "storage_id",
+      "corpus_sha256",
+      "corpus_version",
+      "profile",
+      "seed",
+      "metric_method",
+      "clock"
+    ],
+    "comparable_may_differ": [
+      "candidate_binary_sha256",
+      "candidate_source_sha256"
+    ],
+    "old_binary_nonzero_timeout_or_absent": "not_measurable_preport. Baseline metrics null. Synthetic baseline forbidden.",
+    "full_acceptance_runs": [
+      "small profile on windows_native",
+      "small profile on linux_native",
+      "large profile on windows_native",
+      "large profile on linux_native"
+    ],
+    "design_thresholds": {
+      "scope": "Design thresholds, not measured performance promises or builder CLI budgets.",
+      "warm_answer_p95_max_ns": 250000000,
+      "seven_answer_home_max_ns": 1000000000,
+      "ui_max_blocking_task_ns": 50000000,
+      "small_process_resident_cap_bytes": 536870912,
+      "large_peak_rss_cap_bytes": 1073741824,
+      "baseline_cold_migration_repetitions": 5,
+      "cold_latency_cap": "none declared",
+      "minimum_warm_answer_calls": 20,
+      "maximum_comparable_throughput_regression": {
+        "numerator": 20,
+        "denominator": 100
+      },
+      "small_attempts": 10000,
+      "small_usage_observations": 50000,
+      "small_depth_max_edges": 4,
+      "multi_caller_fraction": {
+        "numerator": 5,
+        "denominator": 100
+      },
+      "missing_link_fraction": {
+        "numerator": 10,
+        "denominator": 100
+      },
+      "large_facts": 1000000,
+      "large_append_records": 1000
+    },
+    "author_frozen_declarations": {
+      "bounded_context_carryover_max_records": 1,
+      "decode_retained_context_max_records": 1001,
+      "decode_bound_formula": "large_append_records + bounded_context_carryover_max_records",
+      "prefix_validation_bytes": "separate instrument, not added to decode records and not treated as total IO",
+      "max_retained_fact_payload_slots": 1,
+      "multi_means_caller_list_length": 2,
+      "single_means_caller_list_length": 1,
+      "other_caller_list_lengths": "conservation failure",
+      "missing_link_means": "nav target is null and the target id is not in the node set",
+      "depth_means": "edge count from the root along present nav links. Roots are 0. Maximum stored depth is 4. A missing nav does not create a child."
+    },
+    "answer_unknown_fields": "Reject unknown response fields. The only exception is elapsed_ms, which is ignored and is never a sample.",
+    "warm_procedure": {
+      "warmups_exact": 2,
+      "warm_answer_repetitions_min": 20,
+      "per": "one selected question",
+      "selected_question_id": "attempt-{profile}-{seed}-00000",
+      "seeds": {
+        "corpus": 8675309,
+        "profile_material": 8675309,
+        "warm_sequence": 8675309
+      },
+      "entropy": "forbidden",
+      "measurement_label": "process_warm_os_cache",
+      "includes": [
+        "process_startup",
+        "db_open"
+      ],
+      "forbidden_label": "in_process_warm",
+      "warmup_phase": "excluded from percentile, median, worst, spread, throughput, and minimum_answer_calls"
+    },
+    "budget_aggregation": {
+      "seven_answer_home": "maximum elapsed_ns of n>=1 eligible samples; each sample answer_count is 7; n=0 is blocked_unmeasured",
+      "ui_blocking": "maximum elapsed_ns of n>=1 trace samples; n=0 or absent trace is blocked_unmeasured",
+      "schema_mismatch_budget_pass": null
+    },
+    "ui_blocking": {
+      "max_ns": 50000000,
+      "source": "independently instrumented UI event-loop trace",
+      "required_input": [
+        "candidate_binding",
+        "method",
+        "clock",
+        "samples_ns"
+      ],
+      "method": "ui_event_loop_trace",
+      "clock": "monotonic",
+      "subprocess_elapsed_forbidden": true,
+      "absent": {
+        "status": "blocked_unmeasured",
+        "value": null,
+        "forbidden_value": 0,
+        "runner_exit": 6
+      }
+    },
+    "cold_migration": {
+      "candidate_reps": 5,
+      "baseline_reps": 5,
+      "four_reps": {
+        "status": "blocked_unmeasured",
+        "runner_exit": 6
+      },
+      "six_reps": {
+        "status": "schema_mismatch",
+        "runner_exit": 5
+      },
+      "latency_cap": "none",
+      "comparison": "completed_units/elapsed_ns, higher is better",
+      "exceeded_iff": "5*candidate_units*baseline_elapsed_ns < 4*baseline_units*candidate_elapsed_ns",
+      "equality_20_of_100": "passes",
+      "arithmetic": "Python int, no uint64 wrap",
+      "units": "sum of per-rep completed_units over exactly 5 eligible reps",
+      "elapsed": "sum of per-rep elapsed_ns, each elapsed_ns>=1"
+    }
+  },
+  "frozen_corpus": {
+    "corpus_version": "dendro.bench.corpus/v1",
+    "seed": 8675309,
+    "identity": [
+      "corpus_version",
+      "profile",
+      "seed"
+    ],
+    "same_seed_different_profile_is_different_corpus": true,
+    "id_formulas": {
+      "node": "node-{profile}-{seed}-{chain:04d}-{depth}",
+      "present_nav": "nav-{profile}-{seed}-{chain:04d}-{child_depth}",
+      "missing_nav": "nav-missing-{profile}-{seed}-{j:04d}",
+      "caller_single": "caller-{profile}-{seed}-{k:04d}",
+      "caller_single_caller_id": "u-{profile}-{seed}-{k:04d}",
+      "caller_multi": "caller-multi-{profile}-{seed}-{m:03d}",
+      "caller_multi_ids": [
+        "u-a-{profile}-{seed}-{m:03d}",
+        "u-b-{profile}-{seed}-{m:03d}"
+      ],
+      "attempt": "attempt-{profile}-{seed}-{i:05d}",
+      "usage": "usage-{profile}-{seed}-{i:05d}",
+      "large_fact": "fact-large-{seed}-{i:07d}",
+      "large_append": "append-large-{seed}-{i:04d}"
+    },
+    "denominators": {
+      "multi_caller": "caller_single count plus caller_multi count only",
+      "missing_link": "present_nav count plus missing_nav count only",
+      "attempts_are_in_link_denominators": false,
+      "usage_is_in_link_denominators": false,
+      "class_intersection_count": 0
+    },
+    "small": {
+      "profile": "small",
+      "chain_count": 2250,
+      "each_chain_child_depths": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "nodes": 11250,
+      "depth_histogram": {
+        "0": 2250,
+        "1": 2250,
+        "2": 2250,
+        "3": 2250,
+        "4": 2250
+      },
+      "present_nav": 9000,
+      "missing_nav": 1000,
+      "nav_denominator": 10000,
+      "missing_numerator": 1000,
+      "missing_check": "1000 * 100 == 10 * 10000",
+      "caller_single": 9500,
+      "caller_multi": 500,
+      "caller_denominator": 10000,
+      "multi_numerator": 500,
+      "multi_check": "500 * 100 == 5 * 10000",
+      "attempts": 10000,
+      "usage_observations": 50000,
+      "total_records": 91250,
+      "missing_sources": "j from 0 to 999 attaches to node chain j depth 3 and creates no node",
+      "multi_target": "chain (m % 2250) depth 4",
+      "single_target": "chain (k % 2250) depth 0"
+    },
+    "large": {
+      "profile": "large",
+      "facts": 1000000,
+      "append_records": 1000,
+      "fact_index_inclusive": [
+        0,
+        999999
+      ],
+      "append_index_inclusive": [
+        0,
+        999
+      ],
+      "depth_multi_caller_and_missing_link_apply": false,
+      "max_retained_fact_payload_slots": 1,
+      "max_retained_decode_context_records": 1001
+    },
+    "micro": {
+      "profile": "micro",
+      "purpose": "executable fixture, not a substitute for the small or large census",
+      "chains": [
+        {
+          "chain": 0,
+          "child_depths": [
+            1,
+            2,
+            3,
+            4
+          ]
+        },
+        {
+          "chain": 1,
+          "child_depths": [
+            1,
+            2,
+            3,
+            4
+          ]
+        },
+        {
+          "chain": 2,
+          "child_depths": [
+            1
+          ]
+        }
+      ],
+      "full_chain_count_for_multi_targets": 2,
+      "nodes": 12,
+      "depth_histogram": {
+        "0": 3,
+        "1": 3,
+        "2": 2,
+        "3": 2,
+        "4": 2
+      },
+      "present_nav": 9,
+      "missing_nav_records": [
+        {
+          "id": "nav-missing-micro-8675309-0000",
+          "source": "node-micro-8675309-0000-3",
+          "target": null
+        }
+      ],
+      "nav_denominator": 10,
+      "missing_numerator": 1,
+      "caller_single_k_inclusive": [
+        0,
+        18
+      ],
+      "caller_multi_records": [
+        {
+          "id": "caller-multi-micro-8675309-000",
+          "callers": [
+            "u-a-micro-8675309-000",
+            "u-b-micro-8675309-000"
+          ],
+          "target": "node-micro-8675309-0000-4"
+        }
+      ],
+      "caller_denominator": 20,
+      "multi_numerator": 1,
+      "single_caller": 19,
+      "attempts": 20,
+      "usage_observations": 20,
+      "total_records": 82
+    },
+    "seeds": {
+      "corpus": 8675309,
+      "profile_material": 8675309,
+      "warm_sequence": 8675309,
+      "entropy": "forbidden"
+    },
+    "target_rules": {
+      "single": "k % profile.chain_count, depth 0",
+      "multi": "m % profile.full_chain_count, depth 4",
+      "small": {
+        "chain_count": 2250,
+        "full_chain_count": 2250
+      },
+      "micro": {
+        "chain_count": 3,
+        "full_chain_count": 2,
+        "k18_chain": 0,
+        "k18_target": "node-micro-8675309-0000-0"
+      },
+      "impossible": "If the chain or configured layer is absent, schema_mismatch. Do not reduce that index modulo 2250."
+    },
+    "serialization": {
+      "format": "JSONL",
+      "encoding": "UTF-8",
+      "bom": false,
+      "newline": "LF",
+      "final_line_ends_with_lf": true,
+      "floats": false,
+      "null_allowed": true,
+      "keys": "sorted, canonical JSON, no spaces",
+      "corpus_id": "dendro.bench.corpus/v1/{profile}/{seed}",
+      "corpus_sha256": "sha256 of the JSONL bytes",
+      "record_order": [
+        "node by chain,depth",
+        "present_nav by chain,child_depth",
+        "missing_nav by j",
+        "caller_single by k",
+        "caller_multi by m",
+        "attempt by i",
+        "usage by i"
+      ],
+      "large_record_order": [
+        "fact by i",
+        "append by i"
+      ]
+    }
+  },
+  "measurement_correctness_testcases": [
+    {
+      "id": "percentile.nearest_rank.p95_n20",
+      "input": {
+        "required_metrics": [
+          "warm_answer_p95_ns"
+        ],
+        "warmup_ns": [
+          900000000,
+          800000000
+        ],
+        "warm_answer_ns_recorded_order": [
+          100000000,
+          10000000,
+          250000000,
+          20000000,
+          30000000,
+          40000000,
+          50000000,
+          60000000,
+          70000000,
+          80000000,
+          90000000,
+          110000000,
+          120000000,
+          130000000,
+          140000000,
+          150000000,
+          160000000,
+          170000000,
+          180000000,
+          200000000
+        ],
+        "measurement_label": "process_warm_os_cache",
+        "warmup_repetitions": 2,
+        "selected_question_id": "attempt-micro-8675309-00000"
+      },
+      "expected": {
+        "runner_exit": 0,
+        "performance_success": true,
+        "sorted_ns": [
+          10000000,
+          20000000,
+          30000000,
+          40000000,
+          50000000,
+          60000000,
+          70000000,
+          80000000,
+          90000000,
+          100000000,
+          110000000,
+          120000000,
+          130000000,
+          140000000,
+          150000000,
+          160000000,
+          170000000,
+          180000000,
+          200000000,
+          250000000
+        ],
+        "n": 20,
+        "warmup_excluded_n": 2,
+        "p95_rank": 19,
+        "p95_ns": 200000000,
+        "median_rank": 10,
+        "median_ns": 100000000,
+        "interpolated_median_forbidden_ns": 105000000,
+        "worst_ns": 250000000,
+        "best_ns": 10000000,
+        "spread_ns": 240000000,
+        "budget_max_ns": 250000000,
+        "budget_pass": true,
+        "raw_samples_ns": [
+          100000000,
+          10000000,
+          250000000,
+          20000000,
+          30000000,
+          40000000,
+          50000000,
+          60000000,
+          70000000,
+          80000000,
+          90000000,
+          110000000,
+          120000000,
+          130000000,
+          140000000,
+          150000000,
+          160000000,
+          170000000,
+          180000000,
+          200000000
+        ],
+        "throughput_answers": 20,
+        "throughput_elapsed_ns": 2160000000,
+        "warmup_elapsed_in_throughput_denominator": 0
+      }
+    },
+    {
+      "id": "percentile.boundary.p95_equal_budget_passes",
+      "input": {
+        "required_metrics": [
+          "warm_answer_p95_ns"
+        ],
+        "warm_answer_ns": [
+          1,
+          250000000,
+          250000000,
+          250000000,
+          250000000,
+          250000000,
+          250000000,
+          250000000,
+          250000000,
+          250000000,
+          250000000,
+          250000000,
+          250000000,
+          250000000,
+          250000000,
+          250000000,
+          250000000,
+          250000000,
+          250000000,
+          250000000
+        ]
+      },
+      "expected": {
+        "n": 20,
+        "p95_rank": 19,
+        "p95_ns": 250000000,
+        "budget_pass": true,
+        "performance_success": true,
+        "runner_exit": 0
+      }
+    },
+    {
+      "id": "percentile.over.floor_ms_still_fails",
+      "input": {
+        "required_metrics": [
+          "warm_answer_p95_ns"
+        ],
+        "warm_answer_ns": [
+          1,
+          250000001,
+          250000001,
+          250000001,
+          250000001,
+          250000001,
+          250000001,
+          250000001,
+          250000001,
+          250000001,
+          250000001,
+          250000001,
+          250000001,
+          250000001,
+          250000001,
+          250000001,
+          250000001,
+          250000001,
+          250000001,
+          250000001
+        ]
+      },
+      "expected": {
+        "p95_ns": 250000001,
+        "p95_ms_floor": 250,
+        "budget_max_ns": 250000000,
+        "budget_pass": false,
+        "performance_success": false,
+        "runner_exit": 0,
+        "measurement_valid": true
+      }
+    },
+    {
+      "id": "percentile.median_not_central_mean",
+      "input": {
+        "n": 20,
+        "sorted_10th_ns": 100000000,
+        "sorted_11th_ns": 110000000
+      },
+      "expected": {
+        "median_ns": 100000000
+      }
+    },
+    {
+      "id": "percentile.worst_is_max",
+      "input": {
+        "p95_ns": 200000000,
+        "max_ns": 250000000
+      },
+      "expected": {
+        "worst_ns": 250000000,
+        "worst_equals_p95": false
+      }
+    },
+    {
+      "id": "percentile.n19_plus_warmups_insufficient",
+      "input": {
+        "required_metrics": [
+          "warm_answer_p95_ns"
+        ],
+        "warm_answer_ns": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "warmup_ns": [
+          1,
+          1
+        ],
+        "measurement_label": "process_warm_os_cache"
+      },
+      "expected": {
+        "n_eligible": 19,
+        "warmup_excluded_n": 2,
+        "p95_ns": null,
+        "status": "blocked_unmeasured",
+        "forbidden_value": 0,
+        "runner_exit": 6,
+        "performance_success": false
+      }
+    },
+    {
+      "id": "denominator.populations_stay_unmixed",
+      "input": {
+        "warmup_ns": [
+          900000000,
+          800000000
+        ],
+        "warm_answer_ns": [
+          100000000,
+          10000000,
+          250000000,
+          20000000,
+          30000000,
+          40000000,
+          50000000,
+          60000000,
+          70000000,
+          80000000,
+          90000000,
+          110000000,
+          120000000,
+          130000000,
+          140000000,
+          150000000,
+          160000000,
+          170000000,
+          180000000,
+          200000000
+        ],
+        "cold_migration_ns": [
+          500,
+          100,
+          400,
+          200,
+          300
+        ],
+        "replay_ns": [
+          1
+        ],
+        "seven_answer_home_ns": [
+          1000000000
+        ],
+        "seven_answer_count": 7,
+        "ui_blocking_ns": [
+          50000000
+        ],
+        "ui_trace": {
+          "candidate_binding": "candidate-pin",
+          "method": "ui_event_loop_trace",
+          "clock": "monotonic",
+          "samples_ns": [
+            50000000
+          ]
+        }
+      },
+      "expected": {
+        "warm_n": 20,
+        "warmup_n": 2,
+        "cold_n": 5,
+        "replay_n": 1,
+        "seven_answer_home_n": 1,
+        "ui_blocking_n": 1,
+        "warm_p95_ns": 200000000,
+        "cold_median_ns": 300,
+        "cold_median_rank": 3,
+        "seven_answer_home_ns": 1000000000,
+        "ui_blocking_ns": 50000000
+      }
+    },
+    {
+      "id": "throughput.exact_20_of_100_passes",
+      "input": {
+        "comparable": true,
+        "baseline_answers": 100,
+        "baseline_elapsed_ns": 1000,
+        "candidate_answers": 80,
+        "candidate_elapsed_ns": 1000
+      },
+      "expected": {
+        "regression_rational": "20/100",
+        "exceeded": false,
+        "comparison_status": "comparable",
+        "performance_success": true
+      }
+    },
+    {
+      "id": "throughput.79_of_100_fails",
+      "input": {
+        "comparable": true,
+        "baseline_answers": 100,
+        "baseline_elapsed_ns": 1000,
+        "candidate_answers": 79,
+        "candidate_elapsed_ns": 1000
+      },
+      "expected": {
+        "regression_rational": "21/100",
+        "exceeded": true,
+        "comparison_status": "comparable",
+        "performance_success": false,
+        "runner_exit": 0
+      }
+    },
+    {
+      "id": "throughput.candidate_zero_answers_fails",
+      "input": {
+        "comparable": true,
+        "baseline_answers": 100,
+        "baseline_elapsed_ns": 1000,
+        "candidate_answers": 0,
+        "candidate_elapsed_ns": 1000
+      },
+      "expected": {
+        "comparison_status": "comparable",
+        "exceeded": true,
+        "throughput_answers": 0,
+        "status": "measured",
+        "performance_success": false
+      }
+    },
+    {
+      "id": "throughput.zero_elapsed_invalid",
+      "input": {
+        "candidate_answers": 10,
+        "candidate_elapsed_ns": 0,
+        "baseline_answers": 100,
+        "baseline_elapsed_ns": 1000,
+        "required_metrics": [
+          "warm_throughput"
+        ]
+      },
+      "expected": {
+        "throughput": null,
+        "eligible": false,
+        "status": "blocked_unmeasured",
+        "runner_exit": 6,
+        "comparison_status": "refused_noncomparable",
+        "forbidden_throughput": "infinite",
+        "performance_success": false,
+        "performance_success_false_because": "blocked_unmeasured",
+        "elapsed_ns_eligible_min": 1
+      }
+    },
+    {
+      "id": "throughput.zero_baseline_answers",
+      "input": {
+        "baseline_answers": 0,
+        "baseline_elapsed_ns": 1000,
+        "candidate_answers": 80,
+        "candidate_elapsed_ns": 1000
+      },
+      "expected": {
+        "comparison_status": "refused_noncomparable",
+        "regression": null,
+        "forbidden_regression": 0
+      }
+    },
+    {
+      "id": "throughput.product_not_uint64_wrapped",
+      "input": {
+        "comparable": true,
+        "baseline_answers_decimal": "4611686018427387904",
+        "baseline_elapsed_ns": 1,
+        "candidate_answers": 1,
+        "candidate_elapsed_ns": 8
+      },
+      "expected": {
+        "unbounded_right_product_decimal": "147573952589676412928",
+        "uint64_wrapped_right_product": 0,
+        "exceeded": true,
+        "false_pass_if_wrapped": true
+      }
+    },
+    {
+      "id": "uint64.max_stored_byte_count_accepted",
+      "input": {
+        "payload_io_bytes_decimal": "18446744073709551615"
+      },
+      "expected": {
+        "schema_ok": true,
+        "stored_decimal": "18446744073709551615"
+      }
+    },
+    {
+      "id": "clock.monotonic_ignores_wall_jump",
+      "input": {
+        "monotonic_start_ns": 1000,
+        "monotonic_end_ns": 26000,
+        "wall_start_ms": 50000,
+        "wall_end_ms": 40000
+      },
+      "expected": {
+        "elapsed_ns": 25000,
+        "forbidden_elapsed_ns": -10000
+      }
+    },
+    {
+      "id": "clock.monotonic_regression_invalid",
+      "input": {
+        "monotonic_start_ns": 5000,
+        "monotonic_end_ns": 4999
+      },
+      "expected": {
+        "elapsed_ns": null,
+        "status": "blocked_unmeasured",
+        "forbidden_value": -1,
+        "runner_exit": 6
+      }
+    },
+    {
+      "id": "answer.parsed_counts",
+      "input": {
+        "shell": false,
+        "command_surface": "v080",
+        "argv": [
+          "candidate",
+          "benchmark",
+          "answer",
+          "--protocol",
+          "dendro.bench.answer/v1",
+          "--request",
+          "req.json"
+        ],
+        "candidate_exit_code": 0,
+        "stdout": {
+          "protocol": "dendro.bench.answer/v1",
+          "corpus_id": "micro-1",
+          "question_id": "q1",
+          "mode": "warm_answer",
+          "status": "ok",
+          "record_count": 3,
+          "answer_count": 1
+        },
+        "monotonic_elapsed_ns": 25000000
+      },
+      "expected": {
+        "record_count": 3,
+        "answer_count": 1,
+        "status": "ok",
+        "sample_elapsed_ns": 25000000,
+        "shell": false,
+        "candidate_exit_method": "subprocess_returncode"
+      }
+    },
+    {
+      "id": "answer.printed_timing_without_monotonic_reading",
+      "input": {
+        "stdout_elapsed_ms": 1,
+        "monotonic_elapsed_ns": null,
+        "required_metrics": [
+          "warm_answer_p95_ns"
+        ]
+      },
+      "expected": {
+        "sample_elapsed_ns": null,
+        "status": "blocked_unmeasured",
+        "forbidden_value": 1,
+        "runner_exit": 6,
+        "performance_success": false
+      }
+    },
+    {
+      "id": "protocol.v070_real_probe",
+      "input": {
+        "pinned_command_probe": "absent"
+      },
+      "expected": {
+        "v070_cli_frozen": false,
+        "comparison_status": "not_measurable_preport",
+        "synthetic_bench_answer_argv": false,
+        "baseline_metrics": null,
+        "forbidden_baseline_value": 0
+      }
+    },
+    {
+      "id": "protocol.v080_argv",
+      "input": {
+        "command_surface": "v080",
+        "candidate": "candidate",
+        "request_path": "req.json"
+      },
+      "expected": {
+        "shell": false,
+        "argv": [
+          "candidate",
+          "benchmark",
+          "answer",
+          "--protocol",
+          "dendro.bench.answer/v1",
+          "--request",
+          "req.json"
+        ]
+      }
+    },
+    {
+      "id": "corpus.micro_conservation",
+      "input": {
+        "profile": "micro",
+        "seed": 8675309,
+        "corpus_version": "dendro.bench.corpus/v1"
+      },
+      "expected": {
+        "nodes": 12,
+        "depth_histogram": {
+          "0": 3,
+          "1": 3,
+          "2": 2,
+          "3": 2,
+          "4": 2
+        },
+        "max_depth": 4,
+        "present_nav": 9,
+        "missing_nav": 1,
+        "nav_denominator": 10,
+        "missing_fraction_ok": true,
+        "caller_denominator": 20,
+        "multi_numerator": 1,
+        "single_caller": 19,
+        "multi_caller_list_length": 2,
+        "attempts": 20,
+        "usage_observations": 20,
+        "attempts_in_nav_denominator": 0,
+        "usage_in_caller_denominator": 0,
+        "class_intersection_count": 0,
+        "total_records": 82,
+        "missing_id": "nav-missing-micro-8675309-0000",
+        "multi_id": "caller-multi-micro-8675309-000",
+        "multi_target": "node-micro-8675309-0000-4",
+        "single_k18_target": "node-micro-8675309-0000-0"
+      }
+    },
+    {
+      "id": "corpus.small_census",
+      "input": {
+        "profile": "small",
+        "seed": 8675309,
+        "corpus_version": "dendro.bench.corpus/v1"
+      },
+      "expected": {
+        "attempts": 10000,
+        "usage_observations": 50000,
+        "nodes": 11250,
+        "depth_histogram": {
+          "0": 2250,
+          "1": 2250,
+          "2": 2250,
+          "3": 2250,
+          "4": 2250
+        },
+        "present_nav": 9000,
+        "missing_nav": 1000,
+        "nav_denominator": 10000,
+        "caller_single": 9500,
+        "caller_multi": 500,
+        "caller_denominator": 10000,
+        "total_records": 91250,
+        "retained_fact_payload_slots_max": 1
+      }
+    },
+    {
+      "id": "corpus.large_stream_census",
+      "input": {
+        "profile": "large",
+        "seed": 8675309,
+        "stream_fact_ids_observed": 3,
+        "retained_fact_payload_slots_observed": 1
+      },
+      "expected": {
+        "facts_when_fully_streamed": 1000000,
+        "append_records": 1000,
+        "max_retained_fact_payload_slots": 1,
+        "this_fixture_does_not_embed_the_facts": true
+      }
+    },
+    {
+      "id": "corpus.seed_identity_profiles_differ",
+      "input": {
+        "left_canonical_utf8": "{\"corpus_version\":\"dendro.bench.corpus/v1\",\"profile\":\"small\",\"seed\":8675309}",
+        "right_canonical_utf8": "{\"corpus_version\":\"dendro.bench.corpus/v1\",\"profile\":\"large\",\"seed\":8675309}"
+      },
+      "expected": {
+        "identity_equal": false,
+        "sha256_equal": false,
+        "seed_only_digest_is_incorrect": true
+      }
+    },
+    {
+      "id": "corpus.same_identity_same_digest",
+      "input": {
+        "left_canonical_utf8": "{\"corpus_version\":\"dendro.bench.corpus/v1\",\"profile\":\"small\",\"seed\":8675309}",
+        "right_canonical_utf8": "{\"corpus_version\":\"dendro.bench.corpus/v1\",\"profile\":\"small\",\"seed\":8675309}"
+      },
+      "expected": {
+        "identity_equal": true,
+        "sha256_equal": true
+      }
+    },
+    {
+      "id": "digest.nist_empty",
+      "input": {
+        "utf8": ""
+      },
+      "expected": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "id": "digest.nist_a",
+      "input": {
+        "utf8": "a"
+      },
+      "expected": {
+        "sha256": "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb"
+      }
+    },
+    {
+      "id": "digest.nist_abc",
+      "input": {
+        "utf8": "abc"
+      },
+      "expected": {
+        "sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+      }
+    },
+    {
+      "id": "report.atomic_rename",
+      "input": {
+        "destination_before_utf8": "abc",
+        "new_report_utf8": "a",
+        "crash_before_rename": true
+      },
+      "expected": {
+        "destination_sha256_before": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+        "new_sha256": "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb",
+        "destination_sha256_after_crash": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+      }
+    },
+    {
+      "id": "report.no_argv_payload",
+      "input": {
+        "canonical_argv_utf8": "[\"candidate\",\"benchmark\",\"answer\",\"--protocol\",\"dendro.bench.answer/v1\",\"--request\",\"req.json\"]"
+      },
+      "expected": {
+        "report_contains_req_json": false,
+        "report_contains_raw_argv": false,
+        "argv_sha256_equals_sha256_of_canonical_argv_utf8": true
+      }
+    },
+    {
+      "id": "decode.instruments_independent",
+      "input": {
+        "incremental_decode_records": 1000,
+        "prefix_validation_bytes": 64,
+        "payload_io_bytes": 4096,
+        "retained_context_records": 1001
+      },
+      "expected": {
+        "incremental_decode_records": 1000,
+        "prefix_validation_bytes": 64,
+        "payload_io_bytes": 4096,
+        "retained_context_records": 1001,
+        "allowed_retained": 1001,
+        "bound_pass": true,
+        "payload_io_bytes_equals_decode_records": false,
+        "prefix_bytes_added_into_decode_records": 0
+      }
+    },
+    {
+      "id": "decode.edge_1002_fails",
+      "input": {
+        "append_record_budget": 1000,
+        "carryover_max_records": 1,
+        "retained_context_records": 1002,
+        "prefix_validation_bytes": 64
+      },
+      "expected": {
+        "allowed_retained": 1001,
+        "bound_pass": false,
+        "performance_success": false,
+        "measurement_valid": true,
+        "runner_exit": 0
+      }
+    },
+    {
+      "id": "decode.micro_stream_retains_one_payload",
+      "input": {
+        "fact_ids_streamed": [
+          "f0",
+          "f1",
+          "f2"
+        ],
+        "max_retained_fact_payload_slots_observed": 1
+      },
+      "expected": {
+        "facts_emitted": 3,
+        "bound_pass": true,
+        "retained_array_of_all_facts": false
+      }
+    },
+    {
+      "id": "budgets.seven_equal_passes",
+      "input": {
+        "seven_answer_home_ns": 1000000000,
+        "answer_count": 7,
+        "aggregation": "maximum"
+      },
+      "expected": {
+        "budget_pass": true,
+        "performance_success": true
+      }
+    },
+    {
+      "id": "budgets.seven_plus_one_fails",
+      "input": {
+        "seven_answer_home_ns": 1000000001,
+        "answer_count": 7,
+        "aggregation": "maximum"
+      },
+      "expected": {
+        "budget_pass": false,
+        "performance_success": false,
+        "runner_exit": 0
+      }
+    },
+    {
+      "id": "budgets.seven_wrong_answer_count",
+      "input": {
+        "seven_answer_home_ns": 1,
+        "answer_count": 6
+      },
+      "expected": {
+        "budget_pass": null,
+        "status": "schema_mismatch",
+        "runner_exit": 5
+      }
+    },
+    {
+      "id": "budgets.ui_equal_passes",
+      "input": {
+        "ui_blocking_ns": 50000000,
+        "ui_trace": {
+          "candidate_binding": "candidate-pin",
+          "method": "ui_event_loop_trace",
+          "clock": "monotonic",
+          "samples_ns": [
+            50000000
+          ]
+        }
+      },
+      "expected": {
+        "budget_pass": true,
+        "aggregation": "maximum"
+      }
+    },
+    {
+      "id": "budgets.ui_plus_one_fails",
+      "input": {
+        "ui_blocking_ns": 50000001,
+        "ui_trace": {
+          "candidate_binding": "candidate-pin",
+          "method": "ui_event_loop_trace",
+          "clock": "monotonic",
+          "samples_ns": [
+            50000001
+          ]
+        }
+      },
+      "expected": {
+        "budget_pass": false,
+        "performance_success": false,
+        "runner_exit": 0,
+        "aggregation": "maximum"
+      }
+    },
+    {
+      "id": "budgets.small_resident_equal_passes",
+      "input": {
+        "bytes": 536870912,
+        "method": "sampled_maximum",
+        "source": "procfs.status.VmRSS",
+        "scope": "candidate_process",
+        "os_family": "linux",
+        "environment": "native"
+      },
+      "expected": {
+        "budget_pass": true,
+        "labeled_reliable_peak": false
+      }
+    },
+    {
+      "id": "budgets.small_resident_plus_one_fails",
+      "input": {
+        "bytes": 536870913,
+        "method": "sampled_maximum",
+        "source": "win32.GetProcessMemoryInfo.WorkingSetSize",
+        "scope": "candidate_process"
+      },
+      "expected": {
+        "budget_pass": false,
+        "performance_success": false
+      }
+    },
+    {
+      "id": "budgets.large_peak_equal_passes",
+      "input": {
+        "bytes": 1073741824,
+        "method": "reliable_peak",
+        "source": "posix.wait_rusage.ru_maxrss",
+        "scope": "candidate_process",
+        "os_family": "linux",
+        "environment": "native",
+        "binary_format": "ELF",
+        "bytes_are_converted": "ru_maxrss*1024",
+        "collector_verified": true
+      },
+      "expected": {
+        "budget_pass": true
+      }
+    },
+    {
+      "id": "budgets.large_peak_plus_one_fails",
+      "input": {
+        "bytes": 1073741825,
+        "method": "reliable_peak",
+        "source": "win32.GetProcessMemoryInfo.PeakWorkingSetSize",
+        "scope": "candidate_process",
+        "os_family": "windows",
+        "environment": "native",
+        "binary_format": "PE",
+        "process_handle_held_until_after_exit": true
+      },
+      "expected": {
+        "budget_pass": false,
+        "performance_success": false
+      }
+    },
+    {
+      "id": "cold.exactly_five_median",
+      "input": {
+        "cold_migration_ns": [
+          500,
+          100,
+          400,
+          200,
+          300
+        ],
+        "applies_to": "each of candidate and baseline when that side is required"
+      },
+      "expected": {
+        "n": 5,
+        "median_rank": 3,
+        "median_ns": 300,
+        "worst_ns": 500,
+        "sorted_ns": [
+          100,
+          200,
+          300,
+          400,
+          500
+        ],
+        "latency_budget_applied": false
+      }
+    },
+    {
+      "id": "native.linux_does_not_fill_windows",
+      "input": {
+        "claimed_proofs_present": [
+          "linux_native"
+        ],
+        "os_family": "linux",
+        "environment": "native",
+        "binary_format": "ELF"
+      },
+      "expected": {
+        "linux_native": "pass",
+        "windows_native": "not_measured",
+        "windows_native_value": null,
+        "forbidden_windows_value": 0,
+        "dual_native_complete": false
+      }
+    },
+    {
+      "id": "native.windows_pass",
+      "input": {
+        "os_family": "windows",
+        "environment": "native",
+        "binary_format": "PE",
+        "claimed_proof": "windows_native"
+      },
+      "expected": {
+        "windows_native": "pass",
+        "linux_native": "not_measured"
+      }
+    },
+    {
+      "id": "comparison.matching_environment",
+      "input": {
+        "baseline": {
+          "cohort": "cohort-alpha",
+          "command_surface": "v080",
+          "work_mode": "warm_answer",
+          "unit": "answers_per_ns",
+          "os_family": "linux",
+          "os_version": "fixture-linux-1",
+          "environment": "native",
+          "compiler_id": "fixture-cc-1",
+          "storage_id": "fixture-disk-1",
+          "corpus_sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+          "corpus_version": "dendro.bench.corpus/v1",
+          "profile": "small",
+          "seed": 8675309,
+          "metric_method": "monotonic_elapsed",
+          "clock": "monotonic"
+        },
+        "candidate": {
+          "cohort": "cohort-alpha",
+          "command_surface": "v080",
+          "work_mode": "warm_answer",
+          "unit": "answers_per_ns",
+          "os_family": "linux",
+          "os_version": "fixture-linux-1",
+          "environment": "native",
+          "compiler_id": "fixture-cc-1",
+          "storage_id": "fixture-disk-1",
+          "corpus_sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+          "corpus_version": "dendro.bench.corpus/v1",
+          "profile": "small",
+          "seed": 8675309,
+          "metric_method": "monotonic_elapsed",
+          "clock": "monotonic"
+        }
+      },
+      "expected": {
+        "comparison_status": "comparable"
+      }
+    },
+    {
+      "id": "comparison.absolute_budget_stands_when_refused",
+      "input": {
+        "comparison_status_inputs_differ_on": "os_family",
+        "candidate_warm_p95_ns": 200000000,
+        "required_metrics": [
+          "warm_answer_p95_ns"
+        ]
+      },
+      "expected": {
+        "comparison_status": "refused_noncomparable",
+        "regression": null,
+        "forbidden_regression": 0,
+        "p95_budget_pass": true,
+        "performance_success": true
+      }
+    },
+    {
+      "id": "process.harness_plus_candidate_allowed",
+      "input": {
+        "children": [
+          "candidate"
+        ],
+        "sampler": "in_process",
+        "descendant_collector": {
+          "present": true,
+          "descendants": 0,
+          "method": "runtime_collector"
+        }
+      },
+      "expected": {
+        "process_tree": 2,
+        "process_budget_pass": true
+      }
+    },
+    {
+      "id": "full_acceptance.four_runs",
+      "input": {
+        "runs": [
+          {
+            "id": "small-windows",
+            "profile": "small",
+            "native": "windows_native",
+            "warm_p95_ns": 250000000,
+            "seven_answer_home_ns": 1000000000,
+            "ui_blocking_ns": 50000000,
+            "small_resident_bytes": 536870912
+          },
+          {
+            "id": "small-linux",
+            "profile": "small",
+            "native": "linux_native",
+            "warm_p95_ns": 250000000,
+            "seven_answer_home_ns": 1000000000,
+            "ui_blocking_ns": 50000000,
+            "small_resident_bytes": 536870912
+          },
+          {
+            "id": "large-windows",
+            "profile": "large",
+            "native": "windows_native",
+            "large_peak_rss_bytes": 1073741824,
+            "retained_context_records": 1001
+          },
+          {
+            "id": "large-linux",
+            "profile": "large",
+            "native": "linux_native",
+            "large_peak_rss_bytes": 1073741824,
+            "retained_context_records": 1001
+          }
+        ],
+        "baseline_pinned": false,
+        "candidate_cold_migration_ns_each_run": [
+          500,
+          100,
+          400,
+          200,
+          300
+        ]
+      },
+      "expected": {
+        "full_acceptance": true,
+        "cold_comparison_required": false,
+        "each_run_cold_n": 5
+      }
+    },
+    {
+      "id": "cold.regression_exact_20_of_100",
+      "input": {
+        "candidate_reps": 5,
+        "baseline_reps": 5,
+        "baseline_units": 100,
+        "baseline_elapsed_ns": 1000,
+        "candidate_units": 80,
+        "candidate_elapsed_ns": 1000
+      },
+      "expected": {
+        "comparison_status": "comparable",
+        "regression_rational": "20/100",
+        "exceeded": false,
+        "latency_cap_applied": false
+      }
+    }
+  ],
+  "failure_semantics_testcases": [
+    {
+      "id": "failure.timeout",
+      "input": {
+        "timeout_ns": 10,
+        "candidate_still_running_at_monotonic_ns": 11,
+        "candidate_killed_by_timeout": true
+      },
+      "expected": {
+        "status": "timeout",
+        "runner_exit": 4,
+        "performance_success": false,
+        "eligible_samples": 0,
+        "p95_ns": null,
+        "forbidden_value": 0
+      }
+    },
+    {
+      "id": "failure.nonzero_exit",
+      "input": {
+        "candidate_exit_code": 1,
+        "stdout_status": "ok",
+        "monotonic_elapsed_ns": 1000,
+        "required_metrics": [
+          "warm_answer_p95_ns"
+        ]
+      },
+      "expected": {
+        "candidate_exit_code": 1,
+        "candidate_exit_method": "subprocess_returncode",
+        "runner_exit": 3,
+        "eligible_samples": 0,
+        "ineligible_elapsed_ns": [
+          1000
+        ],
+        "p95_ns": null,
+        "performance_success": false
+      }
+    },
+    {
+      "id": "failure.signal_or_kill",
+      "input": {
+        "termination_reason": "signal_or_kill",
+        "candidate_exit_code": null
+      },
+      "expected": {
+        "runner_exit": 3,
+        "performance_success": false,
+        "elapsed_ns": null,
+        "forbidden_value": 0
+      }
+    },
+    {
+      "id": "failure.answer_status_error_exit_0",
+      "input": {
+        "candidate_exit_code": 0,
+        "status": "error",
+        "record_count": 0,
+        "answer_count": 0
+      },
+      "expected": {
+        "runner_exit": 5,
+        "performance_success": false,
+        "measurement_valid": false
+      }
+    },
+    {
+      "id": "failure.output_limit",
+      "input": {
+        "max_capture_bytes": 32,
+        "stdout_byte_length": 33
+      },
+      "expected": {
+        "runner_exit": 2,
+        "parsed_as_success": false,
+        "performance_success": false
+      }
+    },
+    {
+      "id": "failure.precedence_output_limit_before_timeout",
+      "input": {
+        "stdout_byte_length": 33,
+        "max_capture_bytes": 32,
+        "timeout_also_exceeded": true
+      },
+      "expected": {
+        "runner_exit": 2
+      }
+    },
+    {
+      "id": "failure.precedence_timeout_before_nonzero",
+      "input": {
+        "timeout_fired": true,
+        "candidate_exit_code_after_kill": 1
+      },
+      "expected": {
+        "runner_exit": 4,
+        "status": "timeout"
+      }
+    },
+    {
+      "id": "failure.uint64_overflow_not_wrapped",
+      "input": {
+        "payload_io_bytes_decimal": "18446744073709551616"
+      },
+      "expected": {
+        "runner_exit": 5,
+        "status": "schema_mismatch",
+        "stored_value": null,
+        "forbidden_stored_value": 0,
+        "performance_success": false
+      }
+    },
+    {
+      "id": "failure.uint64_negative",
+      "input": {
+        "elapsed_ns": -1
+      },
+      "expected": {
+        "runner_exit": 5,
+        "status": "schema_mismatch",
+        "performance_success": false
+      }
+    },
+    {
+      "id": "failure.missing_metric",
+      "input": {
+        "required_metrics": [
+          "warm_answer_p95_ns"
+        ],
+        "warm_answer_p95_ns": null
+      },
+      "expected": {
+        "status": "blocked_unmeasured",
+        "value": null,
+        "forbidden_value": 0,
+        "runner_exit": 6,
+        "performance_success": false
+      }
+    },
+    {
+      "id": "failure.cold_four_repetitions",
+      "input": {
+        "cold_migration_ns": [
+          100,
+          200,
+          300,
+          400
+        ],
+        "baseline_cold_required": true
+      },
+      "expected": {
+        "n": 4,
+        "median_ns": null,
+        "status": "blocked_unmeasured",
+        "runner_exit": 6,
+        "forbidden_value": 0
+      }
+    },
+    {
+      "id": "failure.cold_six_repetitions",
+      "input": {
+        "cold_migration_ns": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "baseline_cold_required": true
+      },
+      "expected": {
+        "status": "schema_mismatch",
+        "runner_exit": 5,
+        "median_ns": null
+      }
+    },
+    {
+      "id": "failure.shell_enabled",
+      "input": {
+        "shell": true,
+        "argv": [
+          "candidate",
+          "benchmark",
+          "answer",
+          "--protocol",
+          "dendro.bench.answer/v1",
+          "--request",
+          "req.json"
+        ]
+      },
+      "expected": {
+        "runner_exit": 5,
+        "status": "shell_forbidden",
+        "performance_success": false
+      }
+    },
+    {
+      "id": "failure.surface_mismatch",
+      "input": {
+        "command_surface": "v070",
+        "argv": [
+          "candidate",
+          "benchmark",
+          "answer",
+          "--protocol",
+          "dendro.bench.answer/v1",
+          "--request",
+          "req.json"
+        ]
+      },
+      "expected": {
+        "runner_exit": 5,
+        "status": "unsupported_surface",
+        "rewritten": false,
+        "performance_success": false,
+        "v070_cli_frozen": false
+      }
+    },
+    {
+      "id": "failure.unlisted_argv",
+      "input": {
+        "command_surface": "v080",
+        "argv": [
+          "candidate",
+          "answer"
+        ]
+      },
+      "expected": {
+        "runner_exit": 5,
+        "status": "unsupported_surface",
+        "performance_success": false
+      }
+    },
+    {
+      "id": "failure.manifest_pin_missing",
+      "input": {
+        "manifest_omits": "candidate_source_sha256"
+      },
+      "expected": {
+        "runner_exit": 5,
+        "status": "schema_mismatch",
+        "performance_success": false
+      }
+    },
+    {
+      "id": "failure.sampled_labeled_as_peak",
+      "input": {
+        "claimed_method": "reliable_peak",
+        "actual_source": "procfs.status.VmRSS",
+        "bytes": 10
+      },
+      "expected": {
+        "runner_exit": 5,
+        "status": "method_label_invalid",
+        "peak_value": null,
+        "budget_pass": null
+      }
+    },
+    {
+      "id": "failure.large_peak_not_satisfied_by_sample",
+      "input": {
+        "required_metrics": [
+          "large_reliable_peak_rss_bytes"
+        ],
+        "method": "sampled_maximum",
+        "source": "procfs.status.VmRSS",
+        "bytes": 100,
+        "scope": "candidate_process"
+      },
+      "expected": {
+        "peak_value": null,
+        "status": "blocked_unmeasured",
+        "runner_exit": 6,
+        "forbidden_value": 0,
+        "budget_pass": false
+      }
+    },
+    {
+      "id": "failure.resource_unavailable",
+      "input": {
+        "required_metrics": [
+          "small_process_resident_bytes"
+        ],
+        "sampler": "unavailable"
+      },
+      "expected": {
+        "value": null,
+        "status": "blocked_unmeasured",
+        "forbidden_value": 0,
+        "runner_exit": 6,
+        "performance_success": false
+      }
+    },
+    {
+      "id": "failure.wrong_memory_scope",
+      "input": {
+        "scope": "system_commit",
+        "bytes": 1,
+        "method": "reliable_peak"
+      },
+      "expected": {
+        "runner_exit": 5,
+        "status": "schema_mismatch",
+        "budget_pass": null
+      }
+    },
+    {
+      "id": "failure.wsl_claimed_as_windows",
+      "input": {
+        "claimed_proof": "windows_native",
+        "os_family": "linux",
+        "environment": "wsl",
+        "binary_format": "ELF"
+      },
+      "expected": {
+        "windows_native": "fail",
+        "status": "not_native",
+        "runner_exit": 7,
+        "performance_success": false,
+        "wsl_counts_as_windows_native": false
+      }
+    },
+    {
+      "id": "failure.crosscompiled_not_native",
+      "input": {
+        "claimed_proof": "windows_native",
+        "os_family": "windows",
+        "environment": "crosscompiled_foreign",
+        "binary_format": "ELF"
+      },
+      "expected": {
+        "windows_native": "fail",
+        "runner_exit": 7,
+        "performance_success": false
+      }
+    },
+    {
+      "id": "failure.os_mismatch_comparison",
+      "input": {
+        "baseline_os_family": "linux",
+        "candidate_os_family": "windows",
+        "otherwise_equal": true
+      },
+      "expected": {
+        "comparison_status": "refused_noncomparable",
+        "regression": null,
+        "forbidden_regression": 0
+      }
+    },
+    {
+      "id": "failure.method_mismatch_comparison",
+      "input": {
+        "baseline_method": "reliable_peak",
+        "candidate_method": "sampled_maximum",
+        "otherwise_equal": true
+      },
+      "expected": {
+        "comparison_status": "refused_noncomparable",
+        "regression": null
+      }
+    },
+    {
+      "id": "failure.old_binary_not_measurable_preport",
+      "input": {
+        "pinned_baseline_exit_code": 2,
+        "baseline_samples": []
+      },
+      "expected": {
+        "comparison_status": "not_measurable_preport",
+        "baseline_p95_ns": null,
+        "forbidden_baseline_p95_ns": 0,
+        "synthetic_baseline": false
+      }
+    },
+    {
+      "id": "failure.process_limit",
+      "input": {
+        "children": [
+          "candidate",
+          "sampler"
+        ]
+      },
+      "expected": {
+        "process_tree": 3,
+        "status": "process_limit_exceeded",
+        "runner_exit": 7,
+        "performance_success": false
+      }
+    },
+    {
+      "id": "failure.retained_two_fact_payloads",
+      "input": {
+        "max_retained_fact_payload_slots_observed": 2
+      },
+      "expected": {
+        "bound_pass": false,
+        "allowed": 1,
+        "performance_success": false
+      }
+    },
+    {
+      "id": "failure.decode_counter_missing",
+      "input": {
+        "required_metrics": [
+          "retained_context_records"
+        ],
+        "retained_context_records": null
+      },
+      "expected": {
+        "status": "blocked_unmeasured",
+        "value": null,
+        "forbidden_value": 0,
+        "runner_exit": 6,
+        "bound_pass": false
+      }
+    },
+    {
+      "id": "failure.full_acceptance_missing_windows_large",
+      "input": {
+        "present_runs": [
+          "small-windows",
+          "small-linux",
+          "large-linux"
+        ],
+        "missing_runs": [
+          "large-windows"
+        ]
+      },
+      "expected": {
+        "full_acceptance": false,
+        "missing_value": null,
+        "forbidden_missing_value": 0,
+        "runner_exit": 6
+      }
+    },
+    {
+      "id": "failure.negative_answers",
+      "input": {
+        "candidate_answers": -1,
+        "candidate_elapsed_ns": 1000
+      },
+      "expected": {
+        "runner_exit": 5,
+        "status": "schema_mismatch",
+        "throughput": null
+      }
+    },
+    {
+      "id": "failure.ui_trace_absent",
+      "input": {
+        "required_metrics": [
+          "ui_blocking_ns"
+        ],
+        "subprocess_elapsed_ns": 1,
+        "ui_trace": null
+      },
+      "expected": {
+        "status": "blocked_unmeasured",
+        "value": null,
+        "forbidden_value": 0,
+        "runner_exit": 6,
+        "subprocess_substituted": false,
+        "budget_max_ns": 50000000,
+        "budget_pass": null
+      }
+    },
+    {
+      "id": "failure.vmhwm_polling_not_peak",
+      "input": {
+        "claimed_method": "reliable_peak",
+        "actual_source": "procfs.status.VmHWM",
+        "polling": true,
+        "bytes": 10
+      },
+      "expected": {
+        "runner_exit": 5,
+        "status": "method_label_invalid",
+        "budget_pass": null,
+        "peak_value": null
+      }
+    },
+    {
+      "id": "failure.descendant_collector_absent",
+      "input": {
+        "children": [
+          "candidate"
+        ],
+        "descendant_collector": null
+      },
+      "expected": {
+        "descendant_count": null,
+        "forbidden_descendant_count": 0,
+        "status": "blocked_unmeasured",
+        "runner_exit": 6,
+        "process_budget_pass": false
+      }
+    },
+    {
+      "id": "failure.unknown_answer_field",
+      "input": {
+        "stdout_field": "extra"
+      },
+      "expected": {
+        "runner_exit": 5,
+        "status": "schema_mismatch",
+        "budget_pass": null
+      }
+    },
+    {
+      "id": "failure.impossible_micro_layer",
+      "input": {
+        "profile": "micro",
+        "chain": 2,
+        "depth": 4
+      },
+      "expected": {
+        "status": "schema_mismatch",
+        "runner_exit": 5,
+        "reduced_mod_2250": false,
+        "budget_pass": null
+      }
+    }
+  ],
+  "review_rejections": [
+    "Reject elapsed_ns 0 as an eligible sample, and reject dropping performance_success false without a rule. Eligibility is elapsed_ns>=1; 0 is blocked_unmeasured, runner_exit 6.",
+    "Reject UI blocking as subprocess time. Keep the 50ms target. Require a bound UI event-loop trace; if absent, blocked_unmeasured.",
+    "Reject polled Linux VmHWM as reliable_peak. VmHWM polling is sampled_maximum only. Reliable peak is waited-child rusage or an equivalent verified collector.",
+    "Reject a frozen v070 bench-answer CLI. Probe the real pinned command. Failure stays not_measurable_preport.",
+    "Reject modulus 2250 on every profile and reject emitting impossible chain or layer targets.",
+    "Reject a missing descendant collector as child count 0.",
+    "Reject budget_pass false when the schema is invalid. Use null.",
+    "Reject mode warm. The mode is warm_answer.",
+    "Reject unknown answer fields. The only ignored field is documented elapsed_ms, and that field is removed from the parsed-counts fixture.",
+    "Reject no-cold-regression and reject a cold latency cap. Candidate and baseline each use exactly 5 reps; comparison is the same 20/100 completed-units/elapsed rule.",
+    "Reject label in_process_warm. Measured warm samples are process_warm_os_cache and include process startup and db open."
+  ]
+}

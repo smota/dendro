@@ -1354,7 +1354,8 @@ mod tests {
         let from = at(0).to_rfc3339();
         let to = at(100).to_rfc3339();
         for kind in ["handoffs", "tokens", "decisions"] {
-            let report = crate::report_json(&db, kind, None, &from, &to).unwrap();
+            let report =
+                crate::pipeline::report_json_physical(&db, kind, None, &from, &to).unwrap();
             let p = &report["payload"];
             assert_eq!(p["tokens"], 100);
             assert_eq!(p["mission_tokens"]["mission:mission"], 10);
@@ -1382,7 +1383,8 @@ mod tests {
                 "issue_lineage",
                 "task_intake_overhead",
             ] {
-                let trace = crate::trace_json(&db, metric, None, &from, &to).unwrap();
+                let trace =
+                    crate::pipeline::trace_json_physical(&db, metric, None, &from, &to).unwrap();
                 assert_eq!(
                     trace["inputs"]["task_intake_overhead"],
                     p["task_intake_overhead"]
@@ -1396,7 +1398,9 @@ mod tests {
                 }
             }
         }
-        let scoped = crate::report_json(&db, "tokens", Some("dendro-dev"), &from, &to).unwrap();
+        let scoped =
+            crate::pipeline::report_json_physical(&db, "tokens", Some("dendro-dev"), &from, &to)
+                .unwrap();
         assert_eq!(scoped["payload"]["tokens"], 60);
         assert_eq!(
             scoped["payload"]["task_intake_overhead"]["unlinked_session"],

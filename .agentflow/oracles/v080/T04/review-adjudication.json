@@ -1,0 +1,537 @@
+{
+  "schema": "dendro.oracle-review-adjudication/v1",
+  "reviewer_session": "869d7938-f796-457d-963b-dc6310034ced",
+  "review_sha256": "cedea622f1bc57078bc568efde2cde9da6b2a66305518fd7056dedb8172d86d7",
+  "decision": "accept both contradictions and all five clarifications; corrections made by original independent Codex author",
+  "changes": [
+    {
+      "case": "T04-01",
+      "before": {
+        "id": "T04-01",
+        "name": "schema3_no_logs",
+        "acceptance_refs": [
+          "A1"
+        ],
+        "input": {
+          "source_schema": 3,
+          "key": "matching_private_sidecar",
+          "logs_present": false,
+          "fixture": "S3-minimal"
+        },
+        "expected": {
+          "migration": "succeeds_on_admitted_platform",
+          "source_db_and_key_and_sidecars": "byte_for_byte_unchanged",
+          "target_schema": 4,
+          "legacy_counts_and_values": "preserved",
+          "new_relationships": "unknown",
+          "source_replay_required": false
+        }
+      },
+      "after": {
+        "id": "T04-01",
+        "name": "schema3_no_logs",
+        "acceptance_refs": [
+          "A1"
+        ],
+        "input": {
+          "source_schema": 3,
+          "key": "matching_private_sidecar",
+          "logs_present": false,
+          "fixture": "S3-minimal",
+          "source_access": "read-only source open or already closed consistent snapshot; never baseline open_existing on original source because it writes semantic state"
+        },
+        "expected": {
+          "migration": "succeeds_on_admitted_platform",
+          "source_db_and_key_and_sidecars": "byte_for_byte_unchanged",
+          "target_schema": 4,
+          "legacy_counts_and_values": "preserved",
+          "new_relationships": "unknown",
+          "source_replay_required": false
+        }
+      }
+    },
+    {
+      "case": "T04-02",
+      "before": {
+        "id": "T04-02",
+        "name": "legacy_grain_and_unknowns",
+        "acceptance_refs": [
+          "A1"
+        ],
+        "input": {
+          "legacy_usage_rows": 2,
+          "message_id": [
+            null,
+            "m1"
+          ],
+          "ts": [
+            null,
+            "2026-10-22T00:00:00Z"
+          ],
+          "input_uncached": [
+            0,
+            90
+          ],
+          "cache_read": [
+            0,
+            10
+          ],
+          "output_tokens": [
+            0,
+            4
+          ],
+          "currency_total": [
+            null,
+            0.0
+          ],
+          "fixture_subset": [
+            "usage-0",
+            "usage-1"
+          ]
+        },
+        "expected": {
+          "usage_row_count": 2,
+          "input_uncached_sum": 90,
+          "cache_read_sum": 10,
+          "output_sum": 4,
+          "null_vs_zero": "preserved",
+          "new_invocation_membership": "unknown",
+          "context_capacity": "unknown",
+          "acceptance": "unknown",
+          "spawn_edges": 0,
+          "zero_proves_missing_field": false
+        }
+      },
+      "after": {
+        "id": "T04-02",
+        "name": "legacy_grain_and_unknowns",
+        "acceptance_refs": [
+          "A1"
+        ],
+        "input": {
+          "legacy_usage_rows": 2,
+          "message_id": [
+            null,
+            "m1"
+          ],
+          "ts": [
+            null,
+            "2026-10-22 00:00:00"
+          ],
+          "input_uncached": [
+            0,
+            90
+          ],
+          "cache_read": [
+            0,
+            10
+          ],
+          "output_tokens": [
+            0,
+            4
+          ],
+          "currency_total": [
+            null,
+            0.0
+          ],
+          "fixture_subset": [
+            "usage-0",
+            "usage-1"
+          ]
+        },
+        "expected": {
+          "usage_row_count": 2,
+          "input_uncached_sum": 90,
+          "cache_read_sum": 10,
+          "output_sum": 4,
+          "null_vs_zero": "preserved",
+          "new_invocation_membership": "unknown",
+          "context_capacity": "unknown",
+          "acceptance": "unknown",
+          "spawn_edges": 0,
+          "zero_proves_missing_field": false,
+          "timestamp_comparison": "stored timezone-free TIMESTAMP value; no UTC offset synthesized"
+        }
+      }
+    },
+    {
+      "case": "T04-06",
+      "before": {
+        "id": "T04-06",
+        "name": "legacy_tables_views",
+        "acceptance_refs": [
+          "A1"
+        ],
+        "input": {
+          "tables": [
+            "usage_facts",
+            "tool_facts",
+            "identity_facts",
+            "activity_facts",
+            "queue_facts",
+            "skill_facts",
+            "seat_bounds",
+            "seat_roles",
+            "destination_snapshots",
+            "file_source_baselines",
+            "openrig_row_records",
+            "mutable_source_disclosures"
+          ],
+          "values": "S3-minimal fixture rows"
+        },
+        "expected": {
+          "legacy_grain_results": "same rows and nulls through declared compatibility views",
+          "new_precision_claim": "none",
+          "destructive_legacy_drop": false
+        }
+      },
+      "after": {
+        "id": "T04-06",
+        "name": "legacy_tables_views",
+        "acceptance_refs": [
+          "A1"
+        ],
+        "input": {
+          "tables": [
+            "usage_facts",
+            "tool_facts",
+            "identity_facts",
+            "activity_facts",
+            "queue_facts",
+            "skill_facts",
+            "seat_bounds",
+            "seat_roles",
+            "destination_snapshots",
+            "file_source_baselines",
+            "openrig_row_records",
+            "mutable_source_disclosures",
+            "warnings"
+          ],
+          "values": "S3-minimal fixture rows"
+        },
+        "expected": {
+          "legacy_grain_results": "same rows and nulls through declared compatibility views",
+          "new_precision_claim": "none",
+          "destructive_legacy_drop": false,
+          "warnings": "retain synthetic-source-A, NULL line_no, synthetic-warning exactly in private legacy projection",
+          "legacy_view_scope": "raw stored row projection including NULL, NaN, infinities and signed zero; no new finite aggregate promised"
+        }
+      }
+    },
+    {
+      "case": "T04-10",
+      "before": {
+        "id": "T04-10",
+        "name": "old_binary_refusal",
+        "acceptance_refs": [
+          "A2"
+        ],
+        "input": {
+          "binary": "pinned v0.7.0 schema3",
+          "target_db_schema": 4
+        },
+        "expected": {
+          "open_result": "clean unsupported-version refusal",
+          "migration_by_old_binary": false,
+          "schema4_canonical_rows": "unchanged",
+          "assertion_scope": "canonical DB content, no unsupported claim about engine incidental read metadata"
+        }
+      },
+      "after": {
+        "id": "T04-10",
+        "name": "old_binary_refusal",
+        "acceptance_refs": [
+          "A2"
+        ],
+        "input": {
+          "binary": "pinned v0.7.0 schema3",
+          "target_db_schema": 4
+        },
+        "expected": {
+          "open_result": "refuses without canonical writes or migration; error text is not asserted uniformly for pinned old binary",
+          "migration_by_old_binary": false,
+          "schema4_canonical_rows": "unchanged",
+          "assertion_scope": "canonical DB content, no unsupported claim about engine incidental read metadata",
+          "opener_outcomes": {
+            "open_existing": "schema3-only meta query returns no row on schema4, before semantic DDL",
+            "open_staged": "explicit unsupported schema version before supplemental DDL",
+            "open_read_only": "explicit unsupported schema version; read-only connection"
+          }
+        }
+      }
+    },
+    {
+      "case": "T04-20",
+      "before": {
+        "id": "T04-20",
+        "name": "rollback_v4_only_loss_receipt",
+        "acceptance_refs": [
+          "A1",
+          "A2"
+        ],
+        "input": {
+          "last_common_watermark": 512,
+          "last_common_cutoff": "2026-10-22T00:00:00Z",
+          "v4_only_facts": [
+            {
+              "id": "v4-A",
+              "ts": "2026-10-22T00:00:01Z"
+            },
+            {
+              "id": "v4-B",
+              "ts": "2026-10-22T00:00:03Z"
+            }
+          ],
+          "logs_present": false
+        },
+        "expected": {
+          "rollback_snapshot": "available",
+          "excluded_fact_count": 2,
+          "excluded_windows": [
+            [
+              "2026-10-22T00:00:01Z",
+              "2026-10-22T00:00:03Z"
+            ]
+          ],
+          "replay_available": false,
+          "full_continuity_claim": false,
+          "receipt_requires": [
+            "last_common_watermark",
+            "last_common_cutoff",
+            "excluded_counts",
+            "excluded_time_windows",
+            "replay_availability",
+            "unresolved_loss"
+          ],
+          "failed_v4_retained_private": true
+        }
+      },
+      "after": {
+        "id": "T04-20",
+        "name": "rollback_v4_only_loss_receipt",
+        "acceptance_refs": [
+          "A1",
+          "A2"
+        ],
+        "input": {
+          "last_common_watermark": {
+            "source_id": "src-A",
+            "generation": 2,
+            "byte_offset": 512
+          },
+          "last_common_cutoff": "2026-10-22 00:00:01",
+          "v4_only_facts": [
+            {
+              "id": "v4-A",
+              "ts": "2026-10-22 00:00:02",
+              "source_id": "src-A",
+              "generation": 2,
+              "byte_range_half_open": [
+                512,
+                544
+              ]
+            },
+            {
+              "id": "v4-B",
+              "ts": "2026-10-22 00:00:03",
+              "source_id": "src-A",
+              "generation": 2,
+              "byte_range_half_open": [
+                544,
+                576
+              ]
+            }
+          ],
+          "logs_present": false,
+          "fixture": "S3-minimal",
+          "timestamp_basis": "stored timezone-free TIMESTAMP; no inferred UTC offset"
+        },
+        "expected": {
+          "rollback_snapshot": "available",
+          "excluded_fact_count": 2,
+          "excluded_windows": [
+            [
+              "2026-10-22 00:00:02",
+              "2026-10-22 00:00:03"
+            ]
+          ],
+          "replay_available": false,
+          "full_continuity_claim": false,
+          "receipt_requires": [
+            "last_common_watermark",
+            "last_common_cutoff",
+            "excluded_counts",
+            "excluded_time_windows",
+            "replay_availability",
+            "unresolved_loss"
+          ],
+          "failed_v4_retained_private": true,
+          "excluded_source_ranges": [
+            {
+              "source_id": "src-A",
+              "generation": 2,
+              "byte_range_half_open": [
+                512,
+                576
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case": "T04-21",
+      "before": {
+        "id": "T04-21",
+        "name": "revision_cutoff_reproducible",
+        "acceptance_refs": [
+          "A2"
+        ],
+        "input": {
+          "schema4_revisions": [
+            {
+              "fact": "U",
+              "revision": 1,
+              "ingested": 10,
+              "quantity": 5
+            },
+            {
+              "fact": "U",
+              "revision": 2,
+              "ingested": 20,
+              "quantity": 7
+            },
+            {
+              "fact": "U",
+              "revision": 3,
+              "ingested": 30,
+              "retracted": true
+            }
+          ],
+          "query_ingestion_cutoffs": [
+            15,
+            25,
+            35
+          ]
+        },
+        "expected": {
+          "values": [
+            5,
+            7,
+            null
+          ],
+          "states": [
+            "present",
+            "present",
+            "retracted"
+          ],
+          "revision_history_count": 3,
+          "earlier_cutoff_mutated": false,
+          "legacy_migration_synthesizes_history": false
+        }
+      },
+      "after": {
+        "id": "T04-21",
+        "name": "revision_cutoff_reproducible",
+        "acceptance_refs": [
+          "A2"
+        ],
+        "input": {
+          "schema4_revisions": [
+            {
+              "fact": "U",
+              "revision": 1,
+              "ingested": 10,
+              "quantity": 5
+            },
+            {
+              "fact": "U",
+              "revision": 2,
+              "ingested": 20,
+              "quantity": 7
+            },
+            {
+              "fact": "U",
+              "revision": 3,
+              "ingested": 30,
+              "retracted": true
+            }
+          ],
+          "query_ingestion_cutoffs": [
+            15,
+            25,
+            35
+          ]
+        },
+        "expected": {
+          "values": [
+            5,
+            7,
+            null
+          ],
+          "states": [
+            "present",
+            "present",
+            "retracted"
+          ],
+          "revision_history_count": 3,
+          "earlier_cutoff_mutated": false,
+          "legacy_migration_synthesizes_history": false,
+          "legacy_ingestion_time": "unknown when not actually stored; migration execution timestamp is not historical fact ingestion time",
+          "migration_operation_receipt_timestamp": "may be separately recorded as migration operation metadata only"
+        }
+      }
+    },
+    {
+      "case": "T04-24",
+      "before": {
+        "id": "T04-24",
+        "name": "legacy_nonfinite_and_signedzero_extension",
+        "acceptance_refs": [
+          "A1"
+        ],
+        "input": {
+          "extension": "DuckDB CAST NaN,+Infinity,-Infinity,-0.0 prior to migrate; capture original classifications/sign"
+        },
+        "expected": {
+          "legacy_values_retained": true,
+          "NaN_is_NULL": false,
+          "infinity_is_zero": false,
+          "signed_zero_preserved_as_stored": true,
+          "canonical_exact_money": "not_eligible",
+          "finite_aggregate_from_nonfinite": "refuse",
+          "NaN_payload_bits": "compare only engine admitted representable contract; not universal payload encoding claim"
+        }
+      },
+      "after": {
+        "id": "T04-24",
+        "name": "legacy_nonfinite_and_signedzero_extension",
+        "acceptance_refs": [
+          "A1"
+        ],
+        "input": {
+          "extension": "DuckDB CAST NaN,+Infinity,-Infinity,-0.0 prior to migrate; capture original classifications/sign"
+        },
+        "expected": {
+          "legacy_values_retained": true,
+          "NaN_is_NULL": false,
+          "infinity_is_zero": false,
+          "signed_zero_preserved_as_stored": true,
+          "canonical_exact_money": "not_eligible",
+          "finite_aggregate_from_nonfinite": "canonical exact-money queries refuse; legacy raw view retains stored values without inventing a finite total",
+          "NaN_payload_bits": "compare only engine admitted representable contract; not universal payload encoding claim"
+        }
+      }
+    }
+  ],
+  "new_review_loop_required": false,
+  "source_reconciliation": [
+    "storage.rs:140-151 old_existing missing-row failure occurs before semantic write",
+    "storage.rs:165-177 staged version check before supplemental DDL",
+    "storage.rs:182-204 read-only opener version refusal",
+    "schema3-fixture.sql latest shared timestamps 2026-10-22 00:00:01; scoped watermark src-A generation2 offset512",
+    "schema3 TIMESTAMP has no timezone; compare stored forms",
+    "warnings exact synthetic row retained; raw legacy projection separate exact-money refusal"
+  ],
+  "product_approval": false
+}

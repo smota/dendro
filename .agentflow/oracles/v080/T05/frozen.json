@@ -1,0 +1,674 @@
+{
+  "schema": "dendro.t05.draft-expected/v1",
+  "status": "draft_pending_review_not_frozen",
+  "frozen": false,
+  "review_claimed": false,
+  "admission_claimed": false,
+  "task_id": "T05",
+  "acceptance_ids": ["T05-A1", "T05-A2"],
+  "requirement_ids": ["R02", "R15", "R23", "R24"],
+  "verification_command": "cargo test -p dendro-connectors --test registry_v080 --locked",
+  "command_status": "proposed_not_run",
+  "author": {
+    "provider": "xai",
+    "model": "grok-4.7",
+    "role": "T05 independent expected-value author; fresh identity",
+    "native_client_session_id": "a9fe81d7-0955-472b-bb10-af56f9423f93",
+    "session_id_source": "dispatcher_assigned_--session-id"
+  },
+  "amendment": {
+    "author_provider": "openai",
+    "author_role": "Codex independent T05 oracle amendment author, distinct from the original Grok author and future T05 builder",
+    "authority": "temporary user override permitting Codex fixes in this workspace; no policy or default route migration",
+    "original_grok_draft": ".agentflow/runs/v080/T05/oracle-amendment/original-grok-draft/",
+    "status": "draft_pending_independent_review_not_frozen"
+  },
+  "owns_only": ".agentflow/oracles/v080/T05/**",
+  "pins": {
+    "mib_bytes": 1048576,
+    "mib_basis": "1024*1024, the value of crates/dendro-connectors/src/sdk.rs MAX_LINE_BYTES. Decimal 1000*1000 is not used.",
+    "global_encoded_bytes": 8388608,
+    "global_nesting_depth": 64,
+    "global_decoded_records_per_batch": 1024,
+    "one_point_five_mib_bytes": 1572864,
+    "export_and_agy_encoded_bytes": 1048576,
+    "export_and_agy_batch_line_attempts": 128,
+    "encoded_bytes_include_terminating_lf_or_crlf": true,
+    "line_framing_rule": "For LF- or CRLF-delimited records, count every consumed encoded byte including the complete LF or CRLF delimiter. A different format must declare its own record boundary and framing semantics.",
+    "depth_rule": "A JSON scalar has depth 0. An array or object has depth 1 plus the maximum depth of its child values. An empty array or object has depth 1. Object keys add no depth. Depth 64 is the maximum admitted container depth under the global ceiling.",
+    "decoded_record": "One successfully decoded JSON value from a delimited record, including a recognized-unprojected or unsupported-major JSON value. An ASCII-whitespace-only line is not a decoded record. A malformed delimited line is not a decoded record. A held trailing partial is not a decoded record.",
+    "effective_encoded_limit": "min(descriptor encoded limit, 8388608). An omitted descriptor limit inherits 8388608 for the hostile cap only. It does not inherit the AGY or export 1048576 limit, and it does not admit a native 1572864-byte record.",
+    "descriptor_comparison": "Equal to a ceiling is allowed. Any encoded limit above 8388608, depth above 64, or decoded-record batch above 1024 is looser and is refused.",
+    "recognized_identity": "recognized = projected + recognized_unprojected. unsupported_schema, quarantined, and malformed are outside that sum.",
+    "observed_zero_only_when": "discovery is present, read is complete, the source schema is admitted, and projected, recognized_unprojected, unsupported_schema, quarantined, and malformed counts are all 0. This means zero captured/projected records in the scoped read, never zero model usage, activity, cost, or security events. A failed source, an unknown schema major, a blocked source, and a missing root are not observed zero.",
+    "unknown_major_source_local_stop": "Decode sequentially through the first unsupported major. Count that valid JSON record as decoded and unsupported_schema=1. Stop further reading and projection for this source; subsequent records are UNOBSERVED, with no guessed unsupported or decoded count. Keep the durable watermark at the last safe projected record before the unsupported record so a future adapter may replay it. A raw read position, if reported, is distinct from that committed offset."
+  },
+  "diagnostic_codes": {
+    "existing_sdk_exact": [
+      "malformed-json-record",
+      "export line exceeds 1 MiB; watermark unchanged",
+      "export truncated; reset source explicitly",
+      "export prefix changed; reset source explicitly",
+      "watermark belongs to another export",
+      "parent traversal is not allowed",
+      "export root must not be a symlink",
+      "export outside selected root",
+      "symlink export refused",
+      "unsupported export extension; expected .jsonl",
+      "export must be a regular file",
+      "mismatch: export shorter than cutoff",
+      "mismatch: export cutoff digest differs",
+      "export changed during read",
+      "export replaced during read",
+      "export replaced before read",
+      "export metadata verification unsupported",
+      "export root unavailable",
+      "export unavailable",
+      "cannot read export directory",
+      "cannot read export entry"
+    ],
+    "oracle_assigned_static": [
+      "encoded_record_exceeds_limit",
+      "encoded_record_exceeds_adapter_limit",
+      "nesting_depth_exceeds_limit",
+      "duplicate_json_key",
+      "descriptor_looser_than_global_ceiling",
+      "descriptor_looser_than_admitted_adapter_limit",
+      "native_record_size_not_admitted",
+      "unsupported_schema",
+      "incompatible_contribution_contract",
+      "runtime_plugin_refused",
+      "source_not_admitted",
+      "missing_conformance_fixture",
+      "ignored_unknown_field"
+    ],
+    "rule": "Every persisted diagnostic is one of these exact strings. No diagnostic contains source bytes, paths from the record, secrets, or arbitrary warning text."
+  },
+  "adapter_limits": [
+    {
+      "source": "cursor",
+      "also": ["windsurf", "goose", "devin"],
+      "capture_mode": "verified-export-only",
+      "source_matrix_admission_status": "repository_fixture_evidence_available_not_runtime_accepted",
+      "encoded_bytes_including_lf": 1048576,
+      "batch_line_attempts": 128,
+      "decoded_records_per_batch_max": 128,
+      "nesting_depth_max": 64,
+      "basis": "sdk.rs MAX_LINE_BYTES and MAX_BATCH_LINES, cited by source-matrix evidence lines 12-13. v080 per-descriptor schema admission remains pending. No tighter producer byte limit is invented."
+    },
+    {
+      "source": "AGY",
+      "capture_mode": "dendro.agy.export/v1-proposed",
+      "source_matrix_admission_status": "planned_contract_no_schema_fixture_yet",
+      "encoded_bytes_including_lf": 1048576,
+      "decoded_records_per_batch_max": 128,
+      "nesting_depth_max": 64,
+      "basis": "DESIGN states per-line 1 MiB and batches <=128. This oracle uses the SDK MiB. JSON key grammar is not pinned.",
+      "native_vendor_claim": false
+    },
+    {
+      "source": "Claude",
+      "also": ["Codex", "Pi", "OpenRig"],
+      "encoded_bytes_admitted": null,
+      "native_1572864_bytes": "not_admitted",
+      "basis": "source-matrix pins fixture evidence only. No byte ceiling is stated for these producers. Pi producer_version session-header:3 and Devin ATIF-v1.7 are specimen identities, not size admissions."
+    },
+    {
+      "source": "Grok",
+      "source_matrix_admission_status": "admitted_scoped_source_contract_only_native_parser_unimplemented",
+      "capture_profile_scope": "only the two exact sanitized fixture digests bound by the admitted B01-G profile; no version-wide admission",
+      "parser_implementation": "T08_pending",
+      "parser_enrollment_as_implemented": "refused_until_T08_acceptance",
+      "empty_stub_is_observed_zero": false
+    },
+    {
+      "source": "Linux strace",
+      "source_matrix_admission_status": "blocked_missing_real_profile_and_controlled_specimen",
+      "grammar_claim": false
+    },
+    {
+      "source": "Windows ETW",
+      "source_matrix_admission_status": "blocked_missing_real_profile_and_controlled_specimen",
+      "grammar_claim": false
+    },
+    {
+      "source": "Environment export",
+      "source_matrix_admission_status": "planned_contract_no_schema_fixture_yet",
+      "encoded_bytes_admitted": null,
+      "hostile_cap_bytes": 8388608
+    },
+    {
+      "source": "Linux scoped collector",
+      "also": ["Windows scoped collector"],
+      "source_matrix_admission_status": "native_feasibility_and_synthetic_execution_pending",
+      "max_bound_processes": 64,
+      "max_samples_per_invocation": 600,
+      "default_sample_period_seconds": 1,
+      "basis": "DESIGN collector bounds. They are not replaced by the 1024 decoded-record ceiling. No producer specimen is admitted."
+    }
+  ],
+  "fixture_recipes": {
+    "json_string_line": {
+      "shape": "{\"u\":\"<pad>\"}\\n",
+      "crlf_variant_suffix_bytes": [13, 10],
+      "overhead_bytes_including_lf": 9,
+      "pad_ascii": "0x61",
+      "export_at": {"pad_bytes": 1048567, "len": 1048576, "sha256": "c4872366d68b52468e7948c861aa26aa7a44dc0e2a28f845dcd6583b1d7e6875"},
+      "export_at_crlf": {"pad_bytes": 1048566, "framing": "CRLF", "len": 1048576, "sha256": "c602207b24697afb96940a2bb3cb4e23ccd4a87ad064d7ce893acb3a020a9d9d"},
+      "export_max_plus_1": {"pad_bytes": 1048568, "len": 1048577, "sha256": "5194c456d94055f3ac1ac5a97d90da627017ab9f6000be56c32d6bfa80221305"},
+      "global_at": {"pad_bytes": 8388599, "len": 8388608, "sha256": "59c8fc71bb5873752927f067364f6962acc7ca6749f67c91f6abf84a0c57631f"},
+      "global_max_plus_1": {"pad_bytes": 8388600, "len": 8388609, "sha256": "c5decbf1ca58779dbf09cf2091adb72f1fb9371c6c512ac65e41b0ab2349916e"},
+      "one_point_five_mib": {"pad_bytes": 1572855, "len": 1572864, "sha256": "c46dcb1aadbab110e04a8133daeba0d03e8daa34e2ca18dea06c37c9b91fc5b3"}
+    },
+    "unicode_equal_scalar_count": {
+      "scalar": "U+00E9",
+      "utf8": "C3 A9",
+      "scalar_count_both": 524284,
+      "at": {"two_byte_scalars": 524283, "ascii_0x61": 1, "len": 1048576, "sha256": "deb499490dd640f4d9ff3323f13513263f03c55c06422be25e5d4a6e5be37f04"},
+      "max_plus_1": {"two_byte_scalars": 524284, "ascii_0x61": 0, "len": 1048577, "sha256": "cd2dad23277603c08043c080245d02df5734f652764e14c1db7a6e5d5a450ce1"}
+    },
+    "depth": {
+      "shape": "\"[\" * n + \"null\" + \"]\" * n + \"\\n\"",
+      "n_64": {"len": 133, "sha256": "1cdbcca7139fe44c80d006ca2653caad56bb2cf2cdc8c2a52e76d4633ddeffa9"},
+      "n_65": {"len": 135, "sha256": "7d4411ce8d6abf9d6360f28525df090e2edd3a45ec207adbc812df695b6745b8"},
+      "n_8": {"len": 21, "sha256": "9018de04733063e8b698b07137edf9f702375a7d93fb9dff78de7d9e815ca156"},
+      "n_9": {"len": 23, "sha256": "c220455a3c2327e9589601d0441432b954c5ff89c2db3b7b5fad7a090a509f35"}
+    },
+    "grammar": {
+      "duplicate": {"utf8": "{\"a\":1,\"a\":2}\\n", "len": 14, "sha256": "d8e3ca834eb476cf1c6b23a2da362bc58d053e0c4e96edf8db122b5ae5814009"},
+      "duplicate_nested": {"utf8": "{\"a\":{\"b\":1,\"b\":2}}\\n", "len": 20, "sha256": "0bc281a18cf28083d1f62acac16e0d1d2a3c7ab8954eda952bd4ca6ea08abbeb"},
+      "held_partial_file": {"utf8": "{}\\nnot-json\\n{\"tail\":", "len": 20, "sha256": "ac5f2059c439a6675f9bc62767e03d995b4c5c46299ae5110cb6294f0e874d1e"},
+      "consumed_prefix_12": {"utf8": "{}\\nnot-json\\n", "len": 12, "sha256": "c11465e84e4339d643ff74f5363622c207dfd398ef923ec798891c77c99d18f2"},
+      "one_empty_object": {"utf8": "{}\\n", "len": 3, "sha256": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356"},
+      "one_hundred_twenty_eight_empty_objects": {"len": 384, "sha256": "e0efc41423d4287da9c3663824854891995f5fbc35bd163e68209d5f45d7ca91"},
+      "one_thousand_twenty_four_empty_objects": {"len": 3072, "sha256": "aa5b144fe6184429d09932b6a52031b39fc040e844f1d4e4349536a0c7cbd84a"}
+    },
+    "example_lines": {
+      "projected_1": {"utf8": "{\"kind\":\"example.record\",\"n\":1}\\n", "len": 32, "sha256": "22ff04976f4184047dfbdfd7688c6fcb83eac44a2917565c9e5bb43d6f257012"},
+      "unprojected": {"utf8": "{\"kind\":\"example.unsupported\",\"n\":9}\\n", "len": 37, "sha256": "0117101ccb2cb274d72621bab1868e16b4da81f5dc1350422cafa89b47dc7018"},
+      "projected_2_unknown_field": {"utf8": "{\"kind\":\"example.record\",\"n\":2,\"note\":\"sk-SYNTHETIC-T05-CANARY\"}\\n", "len": 65, "sha256": "ed4ede17353ad37977a3639ce5a2d16b4faf56de2e00c0d8c5b5102ffd3e8b63"},
+      "unknown_major": {"utf8": "{\"schema\":\"example.capture.synthetic/2\",\"kind\":\"example.record\",\"n\":4}\\n", "len": 71, "sha256": "613d031d2f5559f508232602299e05179745324baf949d56a48e4e94c82419e2"},
+      "sixteen_projected_prefix": {"records": 16, "len": 512, "sha256": "8afd832c64aed6bec61cb39ef501de8c321d64db57129d2ae3227f56779140cb"}
+    }
+  },
+  "contribution_example": {
+    "contract": "dendro.capture.contribution/v1",
+    "contribution_version": "1.0.0",
+    "source_id": "example.capture.synthetic",
+    "schema": "example.capture.synthetic/1",
+    "capture_mode": "verified-export-only",
+    "registration": "compile_time_static",
+    "runtime_plugin": false,
+    "sandboxed_by_descriptor": false,
+    "edits_core_fact_types": false,
+    "standing_owner_registers": true,
+    "limits": {
+      "encoded_bytes_including_lf": 1048576,
+      "nesting_depth": 8,
+      "decoded_records_per_batch": 16,
+      "carryover": "trailing_partial_excluded_from_batch_and_prefix_hash"
+    },
+    "record_kinds": {
+      "example.record": {"disposition": "projected", "fact": {"grain": "usage", "amount_field": "n"}},
+      "example.unsupported": {"disposition": "recognized_unprojected"}
+    },
+    "unknown_fields": "ignored_unknown_field counter, value not persisted",
+    "privacy_projection": "allowlisted kind enum and integer n only",
+    "trust": "unverified",
+    "missing_fixture_digest": "registration refusal missing_conformance_fixture"
+  },
+  "vectors": [
+    {
+      "id": "T05-A1-01",
+      "acceptance": "T05-A1",
+      "name": "export encoded boundary at max",
+      "input": {"recipe": "fixture_recipes.json_string_line.export_at", "crlf_variant_recipe": "fixture_recipes.json_string_line.export_at_crlf", "descriptor_encoded_bytes": 1048576},
+      "expected": {
+        "disposition": "size_eligible",
+        "decoded": 1,
+        "quarantined": 0,
+        "depth": 1,
+        "watermark_byte_offset": 1048576,
+        "crlf_variant": {"recipe": "fixture_recipes.json_string_line.export_at_crlf", "disposition": "size_eligible", "decoded": 1, "watermark_byte_offset": 1048576},
+        "reasons": []
+      }
+    },
+    {
+      "id": "T05-A1-02",
+      "acceptance": "T05-A1",
+      "name": "export encoded boundary max plus one delimited",
+      "input": {"prefix": "{}\\n", "then": "fixture_recipes.json_string_line.export_max_plus_1"},
+      "expected": {
+        "read": "partial",
+        "projected_prior_records": 1,
+        "quarantined": 1,
+        "reasons": ["encoded_record_exceeds_adapter_limit"],
+        "watermark_byte_offset": 1048580,
+        "observed_zero": false,
+        "record_valid": false,
+        "retained_pad_text": false
+      }
+    },
+    {
+      "id": "T05-A1-03",
+      "acceptance": "T05-A1",
+      "name": "export undelimited byte past max",
+      "input": {"bytes": "0x78 repeated 1048577 times", "terminating_lf": false},
+      "expected": {
+        "result": "error",
+        "diagnostic_exact": "export line exceeds 1 MiB; watermark unchanged",
+        "watermark_advanced": false,
+        "decoded": 0,
+        "observed_zero": false,
+        "diagnostic_contains_0x78": false
+      }
+    },
+    {
+      "id": "T05-A1-04",
+      "acceptance": "T05-A1",
+      "name": "global ceiling at 8388608",
+      "input": {
+        "descriptor": {"source_id": "conformance.limit.synthetic", "encoded_bytes_including_lf": 8388608, "nesting_depth": 64, "decoded_records_per_batch": 1024},
+        "recipe": "fixture_recipes.json_string_line.global_at"
+      },
+      "expected": {"disposition": "size_eligible", "decoded": 1, "quarantined": 0, "watermark_byte_offset": 8388608}
+    },
+    {
+      "id": "T05-A1-05",
+      "acceptance": "T05-A1",
+      "name": "global ceiling max plus one",
+      "input": {"descriptor_encoded_bytes": 8388608, "recipe": "fixture_recipes.json_string_line.global_max_plus_1"},
+      "expected": {
+        "read": "partial",
+        "quarantined": 1,
+        "reasons": ["encoded_record_exceeds_limit"],
+        "record_valid": false,
+        "observed_zero": false,
+        "watermark_byte_offset": 8388609,
+        "retained_pad_text": false
+      }
+    },
+    {
+      "id": "T05-A1-06",
+      "acceptance": "T05-A1",
+      "name": "nesting depth 64",
+      "input": {"recipe": "fixture_recipes.depth.n_64", "descriptor_nesting_depth": 64},
+      "expected": {"disposition": "depth_eligible", "decoded": 1, "depth": 64, "quarantined": 0, "watermark_byte_offset": 133}
+    },
+    {
+      "id": "T05-A1-07",
+      "acceptance": "T05-A1",
+      "name": "nesting depth 65",
+      "input": {"recipe": "fixture_recipes.depth.n_65"},
+      "expected": {
+        "read": "partial",
+        "quarantined": 1,
+        "reasons": ["nesting_depth_exceeds_limit"],
+        "decoded": 0,
+        "observed_zero": false,
+        "watermark_byte_offset": 135
+      }
+    },
+    {
+      "id": "T05-A1-08",
+      "acceptance": "T05-A1",
+      "name": "1024 decoded records then the next batch",
+      "input": {"recipe": "grammar.one_thousand_twenty_four_empty_objects", "then": "{}\\n", "decoded_records_per_batch": 1024},
+      "expected": {
+        "batch_1": {"decoded": 1024, "watermark_byte_offset": 3072, "session_id": "sdk-v1:aa5b144fe6184429d09932b6a52031b39fc040e844f1d4e4349536a0c7cbd84a", "read": "partial"},
+        "batch_2": {"decoded": 1, "watermark_byte_offset": 3075, "reasons": []},
+        "refusal_of_record_1025": false
+      }
+    },
+    {
+      "id": "T05-A1-09",
+      "acceptance": "T05-A1",
+      "name": "descriptor may only tighten",
+      "cases": [
+        {"encoded_bytes_including_lf": 8388609, "nesting_depth": 64, "decoded_records_per_batch": 1024},
+        {"encoded_bytes_including_lf": 8388608, "nesting_depth": 65, "decoded_records_per_batch": 1024},
+        {"encoded_bytes_including_lf": 8388608, "nesting_depth": 64, "decoded_records_per_batch": 1025}
+      ],
+      "expected": {"registration": "refused", "reasons": ["descriptor_looser_than_global_ceiling"], "facts_emitted": 0}
+    },
+    {
+      "id": "T05-A1-10",
+      "acceptance": "T05-A1",
+      "name": "export 128-line batch preserved",
+      "input": {"repeat": "{}\\n", "count": 300, "adapter_batch_line_attempts": 128},
+      "expected": {
+        "decoded": 128,
+        "watermark_byte_offset": 384,
+        "session_id": "sdk-v1:e0efc41423d4287da9c3663824854891995f5fbc35bd163e68209d5f45d7ca91",
+        "read": "partial",
+        "batch_uses_global_1024": false
+      }
+    },
+    {
+      "id": "T05-A1-11",
+      "acceptance": "T05-A1",
+      "name": "1.5 MiB is over the export and AGY limits",
+      "input": {"recipe": "fixture_recipes.json_string_line.one_point_five_mib", "adapters": ["cursor", "windsurf", "goose", "devin", "AGY"]},
+      "expected": {
+        "record_valid": false,
+        "reasons": ["encoded_record_exceeds_adapter_limit"],
+        "global_ceiling_reason": false,
+        "below_8388608": true,
+        "observed_zero": false,
+        "retained_pad_text": false
+      }
+    },
+    {
+      "id": "T05-A1-12",
+      "acceptance": "T05-A1",
+      "name": "1.5 MiB native record is not admitted by the global cap",
+      "input": {
+        "recipe": "fixture_recipes.json_string_line.one_point_five_mib",
+        "sources": ["Claude", "Codex", "Pi", "OpenRig", "Grok"],
+        "pinned_descriptor_admits_1572864": false
+      },
+      "expected": {
+        "reasons": ["native_record_size_not_admitted"],
+        "record_valid": false,
+        "observed_zero": false,
+        "producer_size_invented": false
+      }
+    },
+    {
+      "id": "T05-A1-13",
+      "acceptance": "T05-A1",
+      "name": "1.5 MiB is eligible only for a descriptor that admits it",
+      "input": {
+        "descriptor": {"source_id": "conformance.limit.synthetic", "encoded_bytes_including_lf": 2097152, "nesting_depth": 64, "decoded_records_per_batch": 1024},
+        "recipe": "fixture_recipes.json_string_line.one_point_five_mib"
+      },
+      "expected": {
+        "registration": "accepted",
+        "disposition": "size_eligible",
+        "decoded": 1,
+        "this_is_a_producer_fact": false
+      }
+    },
+    {
+      "id": "T05-A1-14",
+      "acceptance": "T05-A1",
+      "name": "Unicode boundary counts encoded bytes",
+      "input": {"adapter_encoded_bytes": 1048576, "at": "fixture_recipes.unicode_equal_scalar_count.at", "max_plus_1": "fixture_recipes.unicode_equal_scalar_count.max_plus_1"},
+      "expected": {
+        "scalar_count_equal": true,
+        "at": {"len": 1048576, "disposition": "size_eligible", "watermark_byte_offset": 1048576},
+        "max_plus_1": {"len": 1048577, "disposition": "quarantined", "reasons": ["encoded_record_exceeds_adapter_limit"], "watermark_byte_offset": 1048577}
+      }
+    },
+    {
+      "id": "T05-A1-15",
+      "acceptance": "T05-A1",
+      "name": "duplicate object keys are not last-wins",
+      "input": {"recipe": "fixture_recipes.grammar.duplicate"},
+      "expected": {
+        "disposition": "quarantined",
+        "reasons": ["duplicate_json_key"],
+        "projected_value": null,
+        "last_wins_value_2": false,
+        "decoded": 0,
+        "retained_key_or_number": false,
+        "watermark_byte_offset": 14
+      }
+    },
+    {
+      "id": "T05-A1-16",
+      "acceptance": "T05-A1",
+      "name": "nested duplicate keys",
+      "input": {"recipe": "fixture_recipes.grammar.duplicate_nested"},
+      "expected": {
+        "disposition": "quarantined",
+        "reasons": ["duplicate_json_key"],
+        "depth": 2,
+        "watermark_byte_offset": 20,
+        "retained_key_or_number": false
+      }
+    },
+    {
+      "id": "T05-A1-17",
+      "acceptance": "T05-A1",
+      "name": "malformed line consumed and trailing partial held",
+      "input": {"recipe": "fixture_recipes.grammar.held_partial_file"},
+      "expected": {
+        "first_read": {
+          "decoded": 1,
+          "malformed": 1,
+          "read": "partial",
+          "coverage": "partial",
+          "observed_zero": false,
+          "zero_activity_usage_cost_security_claim": false,
+          "warnings_exact": ["malformed-json-record"],
+          "watermark_byte_offset": 12,
+          "session_id": "sdk-v1:c11465e84e4339d643ff74f5363622c207dfd398ef923ec798891c77c99d18f2",
+          "held_partial_in_batch": false
+        },
+        "reread": {"decoded": 0, "malformed_new": 0, "read": "partial", "coverage": "partial", "observed_zero": false, "watermark_byte_offset": 12},
+        "after_append_utf8": "1}\\n",
+        "third_read": {"decoded": 1, "malformed_prior": 1, "coverage": "partial", "observed_zero": false, "amount_or_field": {"tail": 1}, "watermark_byte_offset": 23}
+      }
+    },
+    {
+      "id": "T05-A1-18",
+      "acceptance": "T05-A1",
+      "name": "truncation and prefix change refuse resume",
+      "input": {"initial": "{}\\n", "initial_session_id": "sdk-v1:ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356", "watermark_byte_offset": 3},
+      "cases": [
+        {"replace_with": "{", "diagnostic_exact": "export truncated; reset source explicitly"},
+        {"replace_with": "[]\\n", "diagnostic_exact": "export prefix changed; reset source explicitly"},
+        {"resume_on_other_file_with_same_bytes": true, "diagnostic_exact": "watermark belongs to another export"}
+      ],
+      "expected": {"facts_emitted": 0, "observed_zero": false, "watermark_advanced": false}
+    },
+    {
+      "id": "T05-A1-19",
+      "acceptance": "T05-A1",
+      "name": "example descriptor depth tightens below 64",
+      "input": {"descriptor_nesting_depth": 8, "at": "fixture_recipes.depth.n_8", "over": "fixture_recipes.depth.n_9"},
+      "expected": {
+        "at": {"decoded": 1, "depth": 8, "watermark_byte_offset": 21},
+        "over": {"quarantined": 1, "reasons": ["nesting_depth_exceeds_limit"], "global_ceiling_reason": false, "watermark_byte_offset": 23}
+      }
+    },
+    {
+      "id": "T05-A1-20",
+      "acceptance": "T05-A1",
+      "name": "collector bounds stay 64 and 600",
+      "cases": [
+        {"max_bound_processes": 65, "max_samples_per_invocation": 600},
+        {"max_bound_processes": 64, "max_samples_per_invocation": 601}
+      ],
+      "expected": {
+        "registration": "refused",
+        "reasons": ["descriptor_looser_than_admitted_adapter_limit"],
+        "producer_specimen_created": false,
+        "equal_64_and_600_registration_limit": "allowed_as_a_bound_only"
+      }
+    },
+    {
+      "id": "T05-A1-21",
+      "acceptance": "T05-A1",
+      "name": "whitespace line is not a decoded record",
+      "input": {"utf8": " \\n{}\\n", "batch_counts": "decoded records"},
+      "expected": {"decoded": 1, "whitespace_lines": 1, "watermark_byte_offset": 5, "warnings": []}
+    },
+    {
+      "id": "T05-A1-22",
+      "acceptance": "T05-A1",
+      "name": "hostile precedence inside the size bound",
+      "rule": "If encoded length exceeds the effective limit, the only reason is the size code and the body is not parsed. Otherwise depth is evaluated. Duplicate keys are required only when the record is inside the depth limit. A malformed delimited line that is inside size and depth uses malformed-json-record.",
+      "input": {"oversize_with_duplicate_text": "fixture_recipes.json_string_line.export_max_plus_1"},
+      "expected": {"reasons": ["encoded_record_exceeds_adapter_limit"], "duplicate_json_key_also_required": false}
+    },
+    {
+      "id": "T05-A2-01",
+      "acceptance": "T05-A2",
+      "name": "recognized equals projected plus unprojected",
+      "input": {
+        "source_id": "example.capture.synthetic",
+        "lines": ["example_lines.projected_1", "example_lines.unprojected", "example_lines.projected_2_unknown_field"]
+      },
+      "expected": {
+        "counts": {"projected": 2, "recognized_unprojected": 1, "recognized": 3, "unsupported_schema": 0, "quarantined": 0, "malformed": 0, "decoded": 3},
+        "amounts": [1, 2],
+        "ignored_unknown_field": 1,
+        "identity_holds": true,
+        "read": "complete",
+        "discovery": "present",
+        "observed_zero": false
+      }
+    },
+    {
+      "id": "T05-A2-02",
+      "acceptance": "T05-A2",
+      "name": "unknown schema major is not observed zero",
+      "input": {
+        "lines": ["example_lines.projected_1", "example_lines.unknown_major", "example_lines.projected_1"]
+      },
+      "expected": {
+        "counts": {"projected": 1, "recognized_unprojected": 0, "recognized": 1, "unsupported_schema": 1, "decoded": 2},
+        "third_record_state": "UNOBSERVED",
+        "unread_record_counts_inferred": false,
+        "durable_watermark_byte_offset": 32,
+        "raw_read_position_distinct_from_committed_offset": true,
+        "later_records_projected": false,
+        "prior_projected_amount": 1,
+        "read": "partial",
+        "reasons": ["unsupported_schema"],
+        "observed_zero": false,
+        "projection_stopped_for_this_source": true
+      }
+    },
+    {
+      "id": "T05-A2-03",
+      "acceptance": "T05-A2",
+      "name": "one unsupported source does not zero another admitted source",
+      "input": {
+        "source_a": {"lines": ["example_lines.unknown_major"]},
+        "source_b": {"lines": ["example_lines.projected_1"]}
+      },
+      "expected": {
+        "source_a": {"reasons": ["unsupported_schema"], "projected": 0, "observed_zero": false, "read": "partial"},
+        "source_b": {"projected": 1, "amounts": [1], "read": "complete", "observed_zero": false}
+      }
+    },
+    {
+      "id": "T05-A2-04",
+      "acceptance": "T05-A2",
+      "name": "failed resume is not observed zero",
+      "input": {"diagnostic_exact": "watermark belongs to another export"},
+      "expected": {"read": "failed", "discovery": "present", "facts_emitted": 0, "observed_zero": false}
+    },
+    {
+      "id": "T05-A2-05",
+      "acceptance": "T05-A2",
+      "name": "missing root is absent, not zero facts",
+      "input": {"root_exists": false},
+      "expected": {"discovery": "absent", "files": 0, "read": "not_attempted", "observed_zero": false}
+    },
+    {
+      "id": "T05-A2-06",
+      "acceptance": "T05-A2",
+      "name": "empty admitted directory can be observed zero",
+      "input": {"root_exists": true, "jsonl_files": 0, "schema_admitted": true},
+      "expected": {"discovery": "present", "read": "complete", "counts_all_zero": true, "observed_zero": true, "zero_captured_or_projected_records_in_scoped_read": true, "zero_model_usage_activity_cost_or_security_events_claim": false}
+    },
+    {
+      "id": "T05-A2-07",
+      "acceptance": "T05-A2",
+      "name": "scoped Grok source contract and blocked trace sources do not make empty parser success",
+      "input": {"sources": ["Grok", "Linux strace", "Windows ETW"]},
+      "expected": {
+        "grok": {"source_contract": "admitted_for_exact_two_profile_fixture_digests", "version_wide_admission": false, "native_parser": "T08_pending", "implemented_parser_registration": "refused_until_T08_acceptance"},
+        "linux_strace_and_windows_etw": {"source_contract": "blocked_missing_real_profile_and_controlled_specimen", "registration_as_supported_parser": "refused", "reasons": ["source_not_admitted"]},
+        "empty_event_vec_counts_as_observed_zero": false,
+        "trace_format_grammar_claimed": false,
+        "runtime_plugin_claimed": false
+      }
+    },
+    {
+      "id": "T05-A2-08",
+      "acceptance": "T05-A2",
+      "name": "compatible compile-time example",
+      "input": {"contribution": "contribution_example", "file_lines": ["example_lines.projected_1"]},
+      "expected": {
+        "registration": "accepted",
+        "contract": "dendro.capture.contribution/v1",
+        "test": "cargo test -p dendro-connectors --test registry_v080 --locked",
+        "projected": 1,
+        "amounts": [1],
+        "core_fact_types_changed": false,
+        "dynamic_library_loaded": false,
+        "sandboxed": false,
+        "read": "complete"
+      }
+    },
+    {
+      "id": "T05-A2-09",
+      "acceptance": "T05-A2",
+      "name": "example batch bound 16 streams the 17th record",
+      "input": {"repeat": "example_lines.projected_1", "count": 17, "decoded_records_per_batch": 16},
+      "expected": {
+        "batch_1": {"decoded": 16, "watermark_byte_offset": 512, "session_id": "sdk-v1:8afd832c64aed6bec61cb39ef501de8c321d64db57129d2ae3227f56779140cb"},
+        "batch_2": {"decoded": 1, "watermark_byte_offset": 544},
+        "reasons": []
+      }
+    },
+    {
+      "id": "T05-A2-10",
+      "acceptance": "T05-A2",
+      "name": "incompatible contribution versions and unsafe descriptors",
+      "cases": [
+        {"contract": "dendro.capture.contribution/2", "reasons": ["incompatible_contribution_contract"]},
+        {"contract": "dendro.capture.contribution/0", "reasons": ["incompatible_contribution_contract"]},
+        {"schema_major_registered": 1, "record_schema": "example.capture.synthetic/2", "reasons": ["unsupported_schema"]},
+        {"encoded_bytes_including_lf": 8388609, "reasons": ["descriptor_looser_than_global_ceiling"]},
+        {"load": "dynamic", "reasons": ["runtime_plugin_refused"]},
+        {"fixture_digest": null, "reasons": ["missing_conformance_fixture"]}
+      ],
+      "expected": {"facts_emitted": 0, "observed_zero": false, "core_semantics_edited": false}
+    },
+    {
+      "id": "T05-A2-11",
+      "acceptance": "T05-A2",
+      "name": "privacy-safe errors retain no source text",
+      "input": {
+        "canary_line": "example_lines.projected_2_unknown_field",
+        "also_forbidden_if_present_in_any_fixture": ["PRIVATE_TRANSCRIPT", "-----BEGIN", "\\u001b]52;"]
+      },
+      "expected": {
+        "persisted_output_contains": {"sk-SYNTHETIC-T05-CANARY": false, "PRIVATE_TRANSCRIPT": false, "-----BEGIN": false},
+        "diagnostics_are_closed_static_codes": true,
+        "ignored_unknown_field": 1,
+        "projected_amount": 2
+      }
+    },
+    {
+      "id": "T05-A2-12",
+      "acceptance": "T05-A2",
+      "name": "containment refusals stay exact and empty of source text",
+      "cases": [
+        {"condition": "path component ParentDir", "diagnostic_exact": "parent traversal is not allowed"},
+        {"condition": "export path is a symlink", "diagnostic_exact": "symlink export refused"},
+        {"condition": "resolved parent is not the selected root", "diagnostic_exact": "export outside selected root"},
+        {"condition": "extension is not .jsonl", "diagnostic_exact": "unsupported export extension; expected .jsonl"}
+      ],
+      "expected": {"facts_emitted": 0, "observed_zero": false, "symlink_followed": false}
+    }
+  ],
+  "open_ambiguities": [
+    "AGY and environment JSON key names are not pinned. source-matrix status is planned_contract_no_schema_fixture_yet. T09 owns the AGY reader. This oracle pins only their numeric limits and the no-vendor-format claim.",
+    "No admitted adapter states a numeric carryover byte budget. The pinned carryover rule is the existing one: a trailing partial without LF is absent from the batch and from the prefix hash, and the watermark stays at its first byte.",
+    "An undelimited record longer than max+1 is not required to be scanned until a later LF. The required result is the existing export error with an unmoved watermark, or a quarantine that retains no bytes and does not claim EOF.",
+    "Creating a Windows symlink can fail for lack of privilege. When a symlink is actually presented, the refusal string is required. Inability to create the fixture is not_attempted, not a pass.",
+    "file_path in the watermark is the SHA-256 of the canonical OsStr encoded bytes, so its hex value is machine-dependent and is not an expected constant. session_id hashes above are hashes of consumed file bytes only.",
+    "last_modified is filesystem mtime and is not an expected constant.",
+    "Depth counting and the 1024*1024-byte MiB are fixed by T05 lead contract clarification. LF and CRLF framing bytes are included in encoded limits; other formats must declare framing. The original Grok draft predates that clarification.",
+    "duplicate_json_key is an oracle-assigned code. Current serde_json::Value decoding is last-wins and is not the expected result. DESIGN requires duplicate-key handling and does not name this string.",
+    "Collector 64/600/1s limits are DESIGN bounds. source-matrix still says native_feasibility_and_synthetic_execution_pending. Registering the equal bound does not admit a producer specimen.",
+    "B01-G admits only the exact two sanitized fixture digests in its current profile, with native parser T08 still pending. Linux strace and Windows ETW remain blocked pending real profiles and controlled specimens. This draft claims no version-wide Grok admission or trace grammar."
+  ]
+}

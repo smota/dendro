@@ -1,0 +1,62 @@
+{
+  "schema": "dendro.grok-oracle-author-receipt/v1",
+  "status": "draft_pending_review_not_frozen",
+  "expectation_id": "T05-A1,T05-A2",
+  "task_id": "T05",
+  "authored_at_note": "Hashes below are of the bytes on disk after the draft was written. No wall-clock was invented.",
+  "author": {
+    "provider": "xai",
+    "model": "grok-4.7",
+    "role": "T05 independent expected-value author; fresh identity",
+    "identity_basis": "dispatcher-assigned session id",
+    "author_native_session_id": "a9fe81d7-0955-472b-bb10-af56f9423f93",
+    "session_id_source": "dispatcher_assigned_--session-id",
+    "pid_invented": false,
+    "not_builder": true,
+    "not_reviewer": true
+  },
+  "owned_outputs": {
+    "draft-expected.json": {
+      "path": ".agentflow/oracles/v080/T05/draft-expected.json",
+      "sha256": "694e5bd03ff9d740e7c98ab7134a50a55bc0fe517e06e52b64fb794fa494f205",
+      "vector_count": 34,
+      "T05-A1": 22,
+      "T05-A2": 12
+    },
+    "README.md": {
+      "path": ".agentflow/oracles/v080/T05/README.md",
+      "sha256": "4ab10c579b14aa6bdab85f60ae403c3003d48164b8e0804c2a71b946c980af17"
+    },
+    "author-receipt.json": {
+      "path": ".agentflow/oracles/v080/T05/author-receipt.json",
+      "sha256": null,
+      "self_digest": "detached"
+    }
+  },
+  "input_digests_sha256": {
+    ".agentflow/proposals/next-version-2026-10-22/DESIGN.md": "7f6ca2da4ea5b4c7e6d78b565c3857a5e716a277c0dfec7abe37f40eb729f638",
+    ".agentflow/proposals/next-version-2026-10-22/EXECUTION.md": "77b0b15484d1b127391e7800274460a011a70c5a964b6481c354c0abf5982015",
+    ".agentflow/proposals/next-version-2026-10-22/tasks.json": "4bc79593d3b8f280e53a19fed2e9e87d47cd7f7849d317a1d9a90baa2a3d88cf",
+    ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md": "f0e3cbf6f3359a14f9816e509e38498fd5fc7bd2853778628cb6e0e2a1dd9a0f",
+    "crates/dendro-connectors/src/sdk.rs": "db30b2159ed51303c6623a7f03e3cd4d878b07acb30ab3213c5654a4089d9acf",
+    ".agentflow/runs/v080/schemas/source-matrix.json": "81276f2ea395088e26a3208147bf24294fd151105e08fdf74011afe684444cc5",
+    "crates/dendro-connectors/tests/export_connectors.rs": "f3b9516c04a5791dd00ee15d2fb98423eae6b9c2a50a56c21271b86f30768",
+    "crates/dendro-core/src/models.rs": "a588296dcb50b438f346539c1ce1bfd6a374861e59cf9778bae9d33cdb286794"
+  },
+  "digest_agreement": {
+    "sdk.rs_matches_source_matrix_evidence": true,
+    "export_connectors.rs_matches_source_matrix_evidence": true,
+    "source_matrix_status": "B01_partial_not_accepted"
+  },
+  "acceptance": {
+    "ready_for_review": true,
+    "frozen": false,
+    "accepted": false,
+    "review_claimed": false,
+    "admission_claimed": false,
+    "product_code_written": false,
+    "oracle_paths_outside_T05_written": false,
+    "registry_v080_executed": false
+  },
+  "open_ambiguity_count": 10
+}

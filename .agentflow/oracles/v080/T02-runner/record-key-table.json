@@ -1,0 +1,282 @@
+{
+  "seed": 8675309,
+  "corpus_version": "dendro.bench.corpus/v1",
+  "corpus_id": "dendro.bench.corpus/v1/{profile}/{seed}",
+  "pads": {
+    "chain": 4,
+    "depth": 0,
+    "child_depth": 0,
+    "k": 4,
+    "j": 4,
+    "m": 3,
+    "attempt_i": 5,
+    "usage_i": 5,
+    "fact_i": 7,
+    "append_i": 4
+  },
+  "prohibited": [
+    "float",
+    "entropy",
+    "private_data",
+    "free_text"
+  ],
+  "usage_quantity": 1,
+  "attempt_has_quantity": false,
+  "profiles": {
+    "micro": {
+      "chain_count": 3,
+      "full_chain_count": 2,
+      "chains": [
+        {
+          "chain": 0,
+          "node_depths": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ]
+        },
+        {
+          "chain": 1,
+          "node_depths": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ]
+        },
+        {
+          "chain": 2,
+          "node_depths": [
+            0,
+            1
+          ]
+        }
+      ],
+      "missing_j_inclusive": [
+        0,
+        0
+      ],
+      "caller_single_k_inclusive": [
+        0,
+        18
+      ],
+      "caller_multi_m_inclusive": [
+        0,
+        0
+      ],
+      "attempt_i_inclusive": [
+        0,
+        19
+      ],
+      "usage_i_inclusive": [
+        0,
+        19
+      ]
+    },
+    "small": {
+      "chain_count": 2250,
+      "full_chain_count": 2250,
+      "chain_inclusive": [
+        0,
+        2249
+      ],
+      "node_depths_each_chain": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "missing_j_inclusive": [
+        0,
+        999
+      ],
+      "caller_single_k_inclusive": [
+        0,
+        9499
+      ],
+      "caller_multi_m_inclusive": [
+        0,
+        499
+      ],
+      "attempt_i_inclusive": [
+        0,
+        9999
+      ],
+      "usage_i_inclusive": [
+        0,
+        49999
+      ]
+    },
+    "large": {
+      "fact_i_inclusive": [
+        0,
+        999999
+      ],
+      "append_i_inclusive": [
+        0,
+        999
+      ],
+      "graph_attempt_usage_nav_caller": false
+    }
+  },
+  "order": [
+    "node by chain,depth",
+    "present_nav by chain,child_depth",
+    "missing_nav by j",
+    "caller_single by k",
+    "caller_multi by m",
+    "attempt by i",
+    "usage by i"
+  ],
+  "large_order": [
+    "fact by i",
+    "append by i"
+  ],
+  "types": {
+    "node": {
+      "profiles": [
+        "micro",
+        "small"
+      ],
+      "keys": {
+        "chain": "int chain index",
+        "depth": "int edge depth listed for that chain",
+        "id": "string node-{profile}-{seed}-{chain:04d}-{depth}",
+        "profile": "string profile name",
+        "record_class": "string node",
+        "seed": "int 8675309"
+      }
+    },
+    "present_nav": {
+      "profiles": [
+        "micro",
+        "small"
+      ],
+      "keys": {
+        "chain": "int",
+        "child_depth": "int target depth; parent depth is child_depth-1; both exist on that chain",
+        "id": "string nav-{profile}-{seed}-{chain:04d}-{child_depth}",
+        "parent": "string node-{profile}-{seed}-{chain:04d}-{child_depth-1}",
+        "profile": "string",
+        "record_class": "string present_nav",
+        "seed": "int 8675309",
+        "target": "string node-{profile}-{seed}-{chain:04d}-{child_depth}"
+      }
+    },
+    "missing_nav": {
+      "profiles": [
+        "micro",
+        "small"
+      ],
+      "keys": {
+        "id": "string nav-missing-{profile}-{seed}-{j:04d}",
+        "j": "int",
+        "profile": "string",
+        "record_class": "string missing_nav",
+        "seed": "int 8675309",
+        "source": "string node-{profile}-{seed}-{j:04d}-3; that node must exist else schema_mismatch",
+        "target": "null"
+      }
+    },
+    "caller_single": {
+      "profiles": [
+        "micro",
+        "small"
+      ],
+      "keys": {
+        "callers": "array length 1, only u-{profile}-{seed}-{k:04d}",
+        "id": "string caller-{profile}-{seed}-{k:04d}",
+        "k": "int",
+        "profile": "string",
+        "record_class": "string caller_single",
+        "seed": "int 8675309",
+        "target": "string node-{profile}-{seed}-{(k % chain_count):04d}-0"
+      }
+    },
+    "caller_multi": {
+      "profiles": [
+        "micro",
+        "small"
+      ],
+      "keys": {
+        "callers": "array length 2, exactly [u-a-{profile}-{seed}-{m:03d}, u-b-{profile}-{seed}-{m:03d}]",
+        "id": "string caller-multi-{profile}-{seed}-{m:03d}",
+        "m": "int",
+        "profile": "string",
+        "record_class": "string caller_multi",
+        "seed": "int 8675309",
+        "target": "string node-{profile}-{seed}-{(m % full_chain_count):04d}-4"
+      }
+    },
+    "attempt": {
+      "profiles": [
+        "micro",
+        "small"
+      ],
+      "keys_absent": [
+        "quantity"
+      ],
+      "keys": {
+        "i": "int",
+        "id": "string attempt-{profile}-{seed}-{i:05d}",
+        "profile": "string",
+        "record_class": "string attempt",
+        "seed": "int 8675309",
+        "target": "string node-{profile}-{seed}-{(i % chain_count):04d}-0"
+      }
+    },
+    "usage": {
+      "profiles": [
+        "micro",
+        "small"
+      ],
+      "keys": {
+        "i": "int",
+        "id": "string usage-{profile}-{seed}-{i:05d}",
+        "profile": "string",
+        "quantity": "int 1",
+        "record_class": "string usage",
+        "seed": "int 8675309",
+        "target": "string node-{profile}-{seed}-{(i % chain_count):04d}-0"
+      }
+    },
+    "fact": {
+      "profiles": [
+        "large"
+      ],
+      "keys_absent": [
+        "quantity",
+        "target",
+        "text"
+      ],
+      "keys": {
+        "i": "int",
+        "id": "string fact-large-{seed}-{i:07d}",
+        "profile": "string large",
+        "record_class": "string fact",
+        "seed": "int 8675309"
+      }
+    },
+    "append": {
+      "profiles": [
+        "large"
+      ],
+      "keys_absent": [
+        "quantity",
+        "target",
+        "text"
+      ],
+      "keys": {
+        "i": "int",
+        "id": "string append-large-{seed}-{i:04d}",
+        "profile": "string large",
+        "record_class": "string append",
+        "seed": "int 8675309"
+      }
+    }
+  }
+}

@@ -8,6 +8,11 @@ use dendro_core::{report_json, run_locked_with_manifest, trace_json, CutoffManif
 use rusqlite::{params, Connection};
 use serde_json::{json, Value};
 
+fn database_bytes(db: &Path) -> Vec<u8> {
+    let request = dendro_core::presentation::ReadRequest::open(db).unwrap();
+    fs::read(request.database()).unwrap()
+}
+
 const FROM: &str = "2026-10-09T00:00:00Z";
 const TO: &str = "2026-10-10T00:00:00Z";
 static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -21,6 +26,20 @@ struct Fixture {
 }
 impl Fixture {
     fn new() -> Self {
+        #[cfg(windows)]
+        let root = dendro_core::platform_v1::create_user_private_root_with_choice(
+            &format!(
+                "dendro-integration-{}-",
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ),
+            &dendro_core::platform_v1::StorageRootChoice::UserProfile,
+        )
+        .unwrap();
+        #[cfg(windows)]
+        let dir = root.path().to_path_buf();
+        #[cfg(windows)]
+        drop(root);
+        #[cfg(not(windows))]
         let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../target/issue-13-tests")
             .join(format!(
@@ -303,10 +322,10 @@ fn replacement_reused_keys_create_new_generation_without_silently_dropping_rows(
 #[test]
 fn sqlite_mismatch_refuses_publish_and_unsealed_w3_reports_changed_source() {
     for mutation in ["DELETE FROM events WHERE seq=2", "UPDATE events SET payload='{\"qitemId\":\"q1\",\"destinationSession\":\"seat-b\"}' WHERE seq=2", "DELETE FROM queue_transitions", "UPDATE queue_transitions SET closure_reason='cancelled' WHERE transition_id=1", "DELETE FROM snapshots", "UPDATE snapshots SET data='{\"changed\":true}'"] {
-        let fixture=Fixture::new(); fixture.run(true,false).unwrap(); let bytes=fs::read(&fixture.db).unwrap();
+        let fixture=Fixture::new(); fixture.run(true,false).unwrap(); let bytes=database_bytes(&fixture.db);
         let manifest:CutoffManifest=serde_json::from_slice(&fs::read(&fixture.manifest).unwrap()).unwrap();
         Connection::open(&fixture.sqlite).unwrap().execute_batch(mutation).unwrap();
-        let error=fixture.run(false,true).unwrap_err().to_string(); assert!(error.contains("mismatch"),"{error}"); assert!(error.contains(&manifest.openrig[0].source_id),"{error}"); assert_eq!(fs::read(&fixture.db).unwrap(),bytes);
+        let error=fixture.run(false,true).unwrap_err().to_string(); assert!(error.contains("mismatch"),"{error}"); assert!(error.contains(&manifest.openrig[0].source_id),"{error}"); assert_eq!(database_bytes(&fixture.db),bytes);
         if mutation.starts_with("UPDATE events") {
             let result=fixture.run(false,false).unwrap(); assert!(result["sources"].as_array().unwrap().iter().any(|note|note.as_str().unwrap().contains("openrig source changed")));
             let trace=fixture.trace(); assert!(trace["inputs"]["openrig_row_states"].as_array().unwrap().iter().any(|row|row["state"]=="changed"));

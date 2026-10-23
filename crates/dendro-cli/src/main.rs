@@ -4,11 +4,10 @@ mod extensions;
 pub mod tui;
 
 use anyhow::Result;
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand};
 use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::time::Duration;
-use tokio::signal::unix::{signal, Signal, SignalKind};
 use tokio::task::JoinHandle;
 
 /// How long a signalled run may take to stop its worker and remove its stage.
@@ -54,6 +53,9 @@ Command Groups:
 #[command(about = "Dendro AI Fleet Intelligence. Operational Intelligence for seat, handoff, and token evidence. Fleet Governance stays with the operator.", long_about = None)]
 #[command(version, after_help = AFTER_HELP)]
 struct Cli {
+    /// Verified existing private storage root; default database becomes <root>/dendro.duckdb.
+    #[arg(long, global = true)]
+    storage_root: Option<PathBuf>,
     #[command(subcommand)]
     command: Commands,
 }
@@ -215,19 +217,21 @@ struct ReportScope {
 }
 async fn canonical_decisions(scope: ReportScope) -> Result<serde_json::Value> {
     tokio::task::spawn_blocking(move || {
+        let request = dendro_core::presentation::ReadRequest::open(&scope.db)?;
         let (from, to) = if scope.window.is_some() {
-            let (f, t, _) = dendro_core::presentation::resolve_window(
-                &scope.db,
-                scope.rig.as_deref(),
-                scope.window.as_deref(),
-                None,
-                None,
-            )?;
+            let (f, t, _) =
+                request.window(scope.rig.as_deref(), scope.window.as_deref(), None, None)?;
             (f, t)
         } else {
             (scope.from, scope.to)
         };
-        dendro_core::report_json(&scope.db, "decisions", scope.rig.as_deref(), &from, &to)
+        dendro_core::pipeline::report_json_physical(
+            request.database(),
+            "decisions",
+            scope.rig.as_deref(),
+            &from,
+            &to,
+        )
     })
     .await?
 }
@@ -260,6 +264,16 @@ fn issue_publish_args(repo: &str, body: &str) -> Result<Vec<String>> {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Create a private UserProfile root; reuse the returned path with --storage-root.
+    StorageInit,
+    /// Reconcile a prepared Windows selection under its recorded writer/publisher locks.
+    RecoverSelection {
+        #[arg(long, default_value = "dendro.duckdb")]
+        db: PathBuf,
+        /// Reconcile a prepared cutoff manifest after recovering the analytics selection.
+        #[arg(long)]
+        cutoff: Option<PathBuf>,
+    },
     /// Inspect coverage, discovered harness roots, fleet topology, and next commands.
     #[command(next_help_heading = "Database & Scope")]
     Status {
@@ -392,7 +406,7 @@ async fn run_ingest(
     sealed: Option<PathBuf>,
 ) -> Result<serde_json::Value> {
     let mut roots = if root.is_empty() {
-        default_roots()
+        default_roots()?
     } else {
         parse_roots(&root)?
     };
@@ -408,8 +422,7 @@ async fn run_ingest(
         .map(|root| root.path.clone())
         .collect();
     let db_for_align = db.clone();
-    let mut interrupt = signal(SignalKind::interrupt())?;
-    let mut terminate = signal(SignalKind::terminate())?;
+    let mut events = ShutdownEvents::new()?;
     let mut worker = tokio::task::spawn_blocking(move || {
         dendro_core::run_locked_with_manifest(
             &db,
@@ -430,26 +443,41 @@ async fn run_ingest(
             },
         )
     });
-    let code = tokio::select! {
+    let cause = tokio::select! {
         joined = &mut worker => {
             return joined?;
         }
-        _ = interrupt.recv() => 130,
-        _ = terminate.recv() => 143,
+        cause = events.next() => cause,
     };
-    std::process::exit(stop_cooperatively(worker, interrupt, terminate, code).await);
+    std::process::exit(stop_cooperatively(worker, events, cause).await);
+}
+
+fn has_explicit_database(matches: &clap::ArgMatches) -> bool {
+    (matches.ids().any(|id| id.as_str() == "db")
+        && matches.value_source("db") == Some(clap::parser::ValueSource::CommandLine))
+        || matches
+            .subcommand()
+            .is_some_and(|(_, matches)| has_explicit_database(matches))
+}
+
+#[cfg(windows)]
+fn hex_selection(digest: &[u8; 32]) -> String {
+    digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
     let parse_result = if std::env::args_os().len() == 1 {
-        Cli::try_parse_from(["dendro", "status"])
+        Cli::command().try_get_matches_from(["dendro", "status"])
     } else {
-        Cli::try_parse()
+        Cli::command().try_get_matches()
     };
-    let cli = match parse_result {
-        Ok(cli) => cli,
+    let (cli, db_explicit) = match parse_result {
+        Ok(matches) => (
+            Cli::from_arg_matches(&matches)?,
+            has_explicit_database(&matches),
+        ),
         Err(err) => {
             use clap::error::ErrorKind;
             if matches!(
@@ -465,7 +493,129 @@ async fn main() -> Result<()> {
         }
     };
 
-    match cli.command {
+    let mut command = cli.command;
+    if matches!(command, Commands::StorageInit) {
+        if cli.storage_root.is_some() {
+            anyhow::bail!("storage-init creates a new UserProfile root; omit --storage-root, then reuse the printed path with consumer commands");
+        }
+        #[cfg(windows)]
+        {
+            let root = dendro_core::selection_binding::create_userprofile_storage_root()?;
+            println!(
+                "{}",
+                serde_json::json!({"status":"created", "storage_root":root, "reuse":"pass the exact storage_root path with --storage-root; protected persistent root discovery is not configured"})
+            );
+            return Ok(());
+        }
+        #[cfg(not(windows))]
+        anyhow::bail!(
+            "storage-init is a Windows private-storage setup command; use --db on this platform"
+        );
+    }
+    if let Some(root) = cli.storage_root {
+        if db_explicit {
+            anyhow::bail!("use either an explicit --db (including dendro.duckdb) or --storage-root, never both");
+        }
+        if matches!(
+            command,
+            Commands::Extensions(extensions::Commands::Portfolio { .. })
+        ) {
+            anyhow::bail!(
+                "portfolio requires explicit source mappings; --storage-root does not apply"
+            );
+        }
+        if root == std::path::Path::new("userprofile")
+            || root == std::path::Path::new("localappdata")
+        {
+            anyhow::bail!("a persistent verified root path is required; run dendro storage-init, then reuse its exact path with --storage-root <path>");
+        }
+        #[cfg(windows)]
+        let _admitted = dendro_core::platform_v1::open_existing_private_root(&root)?;
+        #[cfg(not(windows))]
+        if !root.is_dir() {
+            anyhow::bail!("storage root must be an existing directory");
+        }
+        let db = match &mut command {
+            Commands::RecoverSelection { db, .. }
+            | Commands::Status { db, .. }
+            | Commands::Run { db, .. }
+            | Commands::Report { db, .. }
+            | Commands::Trace { db, .. } => Some(db),
+            Commands::Assert { scope, .. } | Commands::IssueDraft { scope, .. } => {
+                Some(&mut scope.db)
+            }
+            Commands::Extensions(extension) => match extension {
+                extensions::Commands::Dashboard { db, .. }
+                | extensions::Commands::Ui { db, .. }
+                | extensions::Commands::Ask { db, .. }
+                | extensions::Commands::InitNao { db, .. } => Some(db),
+                extensions::Commands::Materialize { scope }
+                | extensions::Commands::Export { scope, .. } => Some(&mut scope.db),
+                extensions::Commands::Simulate {
+                    command: extensions::SimulateCommand::Topology { db, .. },
+                } => Some(db),
+                extensions::Commands::Portfolio { .. } => None,
+            },
+            Commands::StorageInit => None,
+        };
+        if let Some(db) = db {
+            if db == std::path::Path::new("dendro.duckdb") {
+                *db = root.join("dendro.duckdb");
+            } else {
+                anyhow::bail!(
+                    "use either --db or --storage-root, so the selected location is explicit"
+                );
+            }
+        }
+    }
+    match command {
+        Commands::StorageInit => unreachable!(),
+        Commands::RecoverSelection { db, cutoff } => {
+            if let Some(path) = cutoff.as_ref() {
+                dendro_core::refuse_secret_path(path)?;
+            }
+            #[cfg(windows)]
+            {
+                let logical = std::path::absolute(&db)?;
+                let choice = dendro_core::platform_v1::StorageRootChoice::Explicit(
+                    logical
+                        .parent()
+                        .ok_or_else(|| anyhow::anyhow!("logical database has no parent"))?
+                        .to_path_buf(),
+                );
+                let recovered = dendro_core::selection_binding::recover_logical_db(&db, &choice)?;
+                let digest = hex_selection(&recovered.selection().sha256);
+                let cutoff_outcome = if let Some(cutoff) = cutoff {
+                    use dendro_core::sealed_run::CutoffRecoveryOutcome;
+                    match dendro_core::sealed_run::recover_cutoff_manifest(&cutoff) {
+                        Ok(CutoffRecoveryOutcome::Reconciled) => {
+                            serde_json::json!({"status":"reconciled", "path":cutoff, "custody_reconciled":true})
+                        }
+                        Ok(CutoffRecoveryOutcome::Unchanged) => {
+                            serde_json::json!({"status":"unchanged", "path":cutoff, "published_by_recovery":false, "recapture_required_for_retained_draft":true, "message":"No cutoff pointer was changed. Any retained draft remains unpublished; re-capture it before use."})
+                        }
+                        Err(error) => {
+                            println!(
+                                "{}",
+                                serde_json::json!({"status":"partial_recovery", "analytics_selection_sha256":digest, "cutoff":{"status":"recovery_required", "path":cutoff, "error":dendro_core::redact(&error.to_string())}})
+                            );
+                            anyhow::bail!("cutoff recovery failed after analytics recovery; inspect the explicit recovery receipt");
+                        }
+                    }
+                } else {
+                    serde_json::json!({"status":"not_requested"})
+                };
+                println!(
+                    "{}",
+                    serde_json::json!({"status":"recovered", "analytics_selection_sha256":digest, "cutoff":cutoff_outcome})
+                );
+            }
+            #[cfg(not(windows))]
+            {
+                let _ = (db, cutoff);
+                anyhow::bail!("recover-selection is a Windows selected-storage command");
+            }
+        }
         Commands::Extensions(command) => {
             let auto_ingest_target = match &command {
                 extensions::Commands::Ui {
@@ -486,13 +636,11 @@ async fn main() -> Result<()> {
                 let needs_ingest = tokio::task::spawn_blocking({
                     let db = db.clone();
                     move || {
-                        !db.exists()
-                            || dendro_core::presentation::database_status(&db, rig.as_deref())
-                                .map(|s| s["status"] != "ready")
-                                .unwrap_or(true)
+                        dendro_core::presentation::database_status(&db, rig.as_deref())
+                            .map(|s| s["status"] == "not_initialized")
                     }
                 })
-                .await?;
+                .await??;
                 if needs_ingest {
                     let _ = run_ingest(db, Vec::new(), false, None, None).await?;
                 }
@@ -500,7 +648,13 @@ async fn main() -> Result<()> {
             extensions::run(command).await?;
         }
         Commands::Status { db, rig, format } => {
-            let roots = default_roots();
+            let roots = match default_roots() {
+                Ok(roots) => roots,
+                Err(error) => {
+                    eprintln!("dendro: {error}");
+                    Vec::new()
+                }
+            };
             let status = tokio::task::spawn_blocking(move || -> Result<serde_json::Value> {
                 let mut s = dendro_core::presentation::database_status(&db, rig.as_deref())?;
                 let discovered: Vec<serde_json::Value> = roots
@@ -632,20 +786,16 @@ async fn main() -> Result<()> {
             }
             let evaluated_kind = kind.clone();
             let report = tokio::task::spawn_blocking(move || -> Result<serde_json::Value> {
+                let request = dendro_core::presentation::ReadRequest::open(&db)?;
                 let (from, to, mode) = if window.is_some() {
-                    let (f, t, m) = dendro_core::presentation::resolve_window(
-                        &db,
-                        rig.as_deref(),
-                        window.as_deref(),
-                        None,
-                        None,
-                    )?;
+                    let (f, t, m) =
+                        request.window(rig.as_deref(), window.as_deref(), None, None)?;
                     (f, t, Some(m))
                 } else {
                     (from, to, None)
                 };
-                let mut r = dendro_core::report_json_with_analysis(
-                    &db,
+                let mut r = dendro_core::pipeline::report_json_with_analysis_physical(
+                    request.database(),
                     &evaluated_kind,
                     rig.as_deref(),
                     &from,
@@ -720,20 +870,16 @@ async fn main() -> Result<()> {
                 handoff_loop_returns,
             };
             let report = tokio::task::spawn_blocking(move || -> Result<serde_json::Value> {
+                let request = dendro_core::presentation::ReadRequest::open(&db)?;
                 let (from, to, mode) = if window.is_some() {
-                    let (f, t, m) = dendro_core::presentation::resolve_window(
-                        &db,
-                        rig.as_deref(),
-                        window.as_deref(),
-                        None,
-                        None,
-                    )?;
+                    let (f, t, m) =
+                        request.window(rig.as_deref(), window.as_deref(), None, None)?;
                     (f, t, Some(m))
                 } else {
                     (from, to, None)
                 };
-                let mut r = dendro_core::trace_json_with_analysis(
-                    &db,
+                let mut r = dendro_core::pipeline::trace_json_with_analysis_physical(
+                    request.database(),
                     &metric_id,
                     rig.as_deref(),
                     &from,
@@ -755,89 +901,433 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-/// Asks the worker to stop, waits for it (its SQLite and DuckDB handles close
-/// and its stage is removed inside the worker), and returns the exit code. A
-/// second signal or the time limit stops waiting without deleting anything the
-/// worker may still write; that is reported as a failed cleanup, and the next
-/// run's recovery removes the stage.
+/// Native `STATUS_CONTROL_C_EXIT`. This is a Windows console status, not a Unix signal.
+#[cfg(any(windows, test))]
+const WINDOWS_CTRL_C_STATUS: i32 = 0xC000_013A_u32 as i32;
+
+const CLOSE_CLEANUP_MESSAGE: &str = "\
+dendro: console close, logoff, or shutdown does not promise asynchronous cleanup time; \
+staging cleanup FAILED and is left for the next run's recovery";
+
+/// What actually woke the process. Unix variants are only produced from Unix
+/// signals. Windows variants are only produced from console control events.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ShutdownCause {
+    #[cfg(any(unix, test))]
+    UnixInterrupt,
+    #[cfg(any(unix, test))]
+    UnixTerminate,
+    #[cfg(any(windows, test))]
+    WindowsCtrlC,
+    #[cfg(any(windows, test))]
+    WindowsCtrlBreak,
+    #[cfg(any(windows, test))]
+    WindowsCtrlClose,
+    #[cfg(any(windows, test))]
+    WindowsCtrlLogoff,
+    #[cfg(any(windows, test))]
+    WindowsCtrlShutdown,
+}
+
+impl ShutdownCause {
+    fn exit_code(self) -> i32 {
+        match self {
+            #[cfg(any(unix, test))]
+            Self::UnixInterrupt => 130,
+            #[cfg(any(unix, test))]
+            Self::UnixTerminate => 143,
+            #[cfg(any(windows, test))]
+            Self::WindowsCtrlC | Self::WindowsCtrlBreak => WINDOWS_CTRL_C_STATUS,
+            #[cfg(any(windows, test))]
+            Self::WindowsCtrlClose | Self::WindowsCtrlLogoff | Self::WindowsCtrlShutdown => 2,
+        }
+    }
+
+    /// First interactive cancel may wait for the worker. Console close, logoff,
+    /// and shutdown do not. This does not translate one platform into the other.
+    fn allows_bounded_cleanup(self) -> bool {
+        match self {
+            #[cfg(any(unix, test))]
+            Self::UnixInterrupt | Self::UnixTerminate => true,
+            #[cfg(any(windows, test))]
+            Self::WindowsCtrlC | Self::WindowsCtrlBreak => true,
+            #[cfg(any(windows, test))]
+            Self::WindowsCtrlClose | Self::WindowsCtrlLogoff | Self::WindowsCtrlShutdown => false,
+        }
+    }
+
+    #[cfg(test)]
+    fn native_name(self) -> &'static str {
+        match self {
+            Self::UnixInterrupt => "unix-sigint",
+            Self::UnixTerminate => "unix-sigterm",
+            Self::WindowsCtrlC => "windows-ctrl-c",
+            Self::WindowsCtrlBreak => "windows-ctrl-break",
+            Self::WindowsCtrlClose => "windows-ctrl-close",
+            Self::WindowsCtrlLogoff => "windows-ctrl-logoff",
+            Self::WindowsCtrlShutdown => "windows-ctrl-shutdown",
+        }
+    }
+}
+
+pub(crate) struct ShutdownEvents {
+    #[cfg(unix)]
+    interrupt: tokio::signal::unix::Signal,
+    #[cfg(unix)]
+    terminate: tokio::signal::unix::Signal,
+    #[cfg(windows)]
+    ctrl_c: tokio::signal::windows::CtrlC,
+    #[cfg(windows)]
+    ctrl_break: tokio::signal::windows::CtrlBreak,
+    #[cfg(windows)]
+    ctrl_close: tokio::signal::windows::CtrlClose,
+    #[cfg(windows)]
+    ctrl_logoff: tokio::signal::windows::CtrlLogoff,
+    #[cfg(windows)]
+    ctrl_shutdown: tokio::signal::windows::CtrlShutdown,
+}
+
+impl ShutdownEvents {
+    pub(crate) fn new() -> std::io::Result<Self> {
+        #[cfg(unix)]
+        {
+            Ok(Self {
+                interrupt: tokio::signal::unix::signal(
+                    tokio::signal::unix::SignalKind::interrupt(),
+                )?,
+                terminate: tokio::signal::unix::signal(
+                    tokio::signal::unix::SignalKind::terminate(),
+                )?,
+            })
+        }
+        #[cfg(windows)]
+        {
+            Ok(Self {
+                ctrl_c: tokio::signal::windows::ctrl_c()?,
+                ctrl_break: tokio::signal::windows::ctrl_break()?,
+                ctrl_close: tokio::signal::windows::ctrl_close()?,
+                ctrl_logoff: tokio::signal::windows::ctrl_logoff()?,
+                ctrl_shutdown: tokio::signal::windows::ctrl_shutdown()?,
+            })
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            compile_error!("ShutdownEvents requires Unix signals or Windows console events");
+        }
+    }
+
+    pub(crate) async fn next(&mut self) -> ShutdownCause {
+        #[cfg(unix)]
+        {
+            tokio::select! {
+                biased;
+                _ = self.interrupt.recv() => ShutdownCause::UnixInterrupt,
+                _ = self.terminate.recv() => ShutdownCause::UnixTerminate,
+            }
+        }
+        #[cfg(windows)]
+        {
+            tokio::select! {
+                biased;
+                _ = self.ctrl_c.recv() => ShutdownCause::WindowsCtrlC,
+                _ = self.ctrl_break.recv() => ShutdownCause::WindowsCtrlBreak,
+                _ = self.ctrl_close.recv() => ShutdownCause::WindowsCtrlClose,
+                _ = self.ctrl_logoff.recv() => ShutdownCause::WindowsCtrlLogoff,
+                _ = self.ctrl_shutdown.recv() => ShutdownCause::WindowsCtrlShutdown,
+            }
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            compile_error!("ShutdownEvents requires Unix signals or Windows console events");
+        }
+    }
+}
+
+/// Asks the owned worker to stop and returns the process exit code.
+/// Unix SIGINT/SIGTERM and Windows CTRL_C/CTRL_BREAK wait up to [`SHUTDOWN_LIMIT`].
+/// A second native event or that time limit stops waiting without deleting
+/// anything the worker may still write. Windows close, logoff, and shutdown do
+/// not promise asynchronous cleanup time, so they do not wait. Unfinished
+/// cleanup is left for the next run's recovery.
 async fn stop_cooperatively(
     mut worker: JoinHandle<Result<serde_json::Value>>,
-    mut interrupt: Signal,
-    mut terminate: Signal,
-    code: i32,
+    mut events: ShutdownEvents,
+    cause: ShutdownCause,
 ) -> i32 {
+    let code = cause.exit_code();
     dendro_core::RUN_CANCEL.request();
+    if !cause.allows_bounded_cleanup() {
+        if worker.is_finished() {
+            return report_joined(Some(worker.await), code);
+        }
+        eprintln!("{CLOSE_CLEANUP_MESSAGE}");
+        return code;
+    }
     eprintln!("dendro: stopping; removing private staging");
     let waited = tokio::time::timeout(SHUTDOWN_LIMIT, async {
         tokio::select! {
             joined = &mut worker => Some(joined),
-            _ = interrupt.recv() => None,
-            _ = terminate.recv() => None,
+            _ = events.next() => None,
         }
     })
     .await;
-    match waited {
-        Ok(Some(Ok(Ok(summary)))) => {
-            // The run finished before the request took effect.
+    let joined = waited.unwrap_or_default();
+    report_joined(joined, code)
+}
+
+fn report_joined(
+    joined: Option<Result<Result<serde_json::Value, anyhow::Error>, tokio::task::JoinError>>,
+    code: i32,
+) -> i32 {
+    match joined {
+        Some(Ok(Ok(summary))) => {
             println!("{summary}");
             eprintln!("dendro: the run had already completed");
             0
         }
-        Ok(Some(Ok(Err(error)))) if error.downcast_ref::<dendro_core::Interrupted>().is_some() => {
+        Some(Ok(Err(error))) if error.downcast_ref::<dendro_core::Interrupted>().is_some() => {
             eprintln!("dendro: interrupted; private staging removed");
             code
         }
-        Ok(Some(Ok(Err(error)))) => {
+        Some(Ok(Err(error))) => {
             eprintln!(
                 "dendro: interrupted with error: {}",
                 dendro_core::redact(&format!("{error:#}"))
             );
             code
         }
-        Ok(Some(Err(_))) => {
+        Some(Err(_)) => {
             eprintln!("dendro: interrupted; the worker failed; staging cleanup not confirmed");
             code
         }
-        Ok(None) | Err(_) => {
+        None => {
             eprintln!("dendro: interrupted before shutdown finished; staging cleanup FAILED and is left for the next run's recovery");
             code
         }
     }
 }
 
-pub(crate) fn default_roots() -> Vec<dendro_connectors::SourceRoot> {
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-    let openrig = std::env::var("OPENRIG_HOME").unwrap_or_else(|_| format!("{home}/.openrig"));
-    vec![
-        dendro_connectors::SourceRoot {
-            name: "claude".into(),
-            path: PathBuf::from(&home).join(".claude/projects"),
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HostKind {
+    Windows,
+    Linux,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct HomeQuery {
+    home: Option<String>,
+    userprofile: Option<String>,
+    openrig_home: Option<String>,
+    euid_is_root: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HomeRefusal {
+    NoTrustworthyRoot,
+    PrivilegedForeignHome,
+    RelativeRoot,
+    UnadmittedUnc,
+    UnadmittedDevice,
+    NonRoundtrip,
+    #[cfg(target_os = "linux")]
+    EuidUnknown,
+    UnsupportedPlatform,
+}
+
+impl HomeRefusal {
+    fn message(self) -> &'static str {
+        match self {
+            Self::NoTrustworthyRoot => {
+                "no trustworthy default source root; current directory is not a fallback"
+            }
+            Self::PrivilegedForeignHome => "privileged process will not adopt a foreign home",
+            Self::RelativeRoot => "default source root must be an absolute native path",
+            Self::UnadmittedUnc => "UNC default source root is not admitted",
+            Self::UnadmittedDevice => {
+                "device, volume-guid, or alternate-stream default source root is not admitted"
+            }
+            Self::NonRoundtrip => "default source root is not valid Unicode",
+            #[cfg(target_os = "linux")]
+            Self::EuidUnknown => "process effective user is unknown; default source root refused",
+            Self::UnsupportedPlatform => {
+                "this operating system has no admitted default source root"
+            }
+        }
+    }
+}
+
+pub(crate) fn default_roots() -> Result<Vec<dendro_connectors::SourceRoot>> {
+    let host = live_host().map_err(|refusal| anyhow::anyhow!(refusal.message()))?;
+    let query = live_home_query().map_err(|refusal| anyhow::anyhow!(refusal.message()))?;
+    configured_source_roots(host, &query).map_err(|refusal| anyhow::anyhow!(refusal.message()))
+}
+
+fn configured_source_roots(
+    host: HostKind,
+    query: &HomeQuery,
+) -> Result<Vec<dendro_connectors::SourceRoot>, HomeRefusal> {
+    let home = admitted_user_home(host, query)?;
+    let openrig = admitted_openrig_home(host, query, &home)?;
+    Ok(vec![
+        source_root("claude", home.join(".claude").join("projects")),
+        source_root("codex", home.join(".codex").join("sessions")),
+        source_root("pi", openrig.join("state").join("pi")),
+        source_root("pi", home.join(".pi").join("agent").join("sessions")),
+        source_root("openrig", openrig.join("openrig.sqlite")),
+        source_root(
+            "agy",
+            home.join(".gemini").join("antigravity-cli").join("brain"),
+        ),
+        source_root("grok", home.join(".grok")),
+    ])
+}
+
+fn source_root(name: &str, path: PathBuf) -> dendro_connectors::SourceRoot {
+    dendro_connectors::SourceRoot {
+        name: name.to_string(),
+        path,
+    }
+}
+
+fn admitted_user_home(host: HostKind, query: &HomeQuery) -> Result<PathBuf, HomeRefusal> {
+    match host {
+        HostKind::Windows => {
+            let Some(profile) = query.userprofile.as_deref() else {
+                return Err(HomeRefusal::NoTrustworthyRoot);
+            };
+            admit_windows_absolute(profile)?;
+            Ok(PathBuf::from(profile))
+        }
+        HostKind::Linux => {
+            if query.euid_is_root {
+                return match query.home.as_deref().map(|path| path.trim_end_matches('/')) {
+                    Some("/root") => Ok(PathBuf::from("/root")),
+                    Some(_) => Err(HomeRefusal::PrivilegedForeignHome),
+                    None => Err(HomeRefusal::NoTrustworthyRoot),
+                };
+            }
+            let Some(home) = query.home.as_deref() else {
+                return Err(HomeRefusal::NoTrustworthyRoot);
+            };
+            admit_linux_absolute(home)?;
+            Ok(PathBuf::from(home.trim_end_matches('/')))
+        }
+    }
+}
+
+fn admitted_openrig_home(
+    host: HostKind,
+    query: &HomeQuery,
+    home: &std::path::Path,
+) -> Result<PathBuf, HomeRefusal> {
+    let Some(explicit) = query.openrig_home.as_deref() else {
+        return Ok(home.join(".openrig"));
+    };
+    match host {
+        HostKind::Windows => admit_windows_absolute(explicit)?,
+        HostKind::Linux => {
+            admit_linux_absolute(explicit)?;
+            if query.euid_is_root && !linux_under_root_home(explicit) {
+                return Err(HomeRefusal::PrivilegedForeignHome);
+            }
+        }
+    }
+    Ok(PathBuf::from(explicit))
+}
+
+fn admit_linux_absolute(path: &str) -> Result<(), HomeRefusal> {
+    if path.contains('\0') {
+        return Err(HomeRefusal::NonRoundtrip);
+    }
+    if !path.starts_with('/') || lexical_has_dot_segments(path) {
+        return Err(HomeRefusal::RelativeRoot);
+    }
+    Ok(())
+}
+
+fn admit_windows_absolute(path: &str) -> Result<(), HomeRefusal> {
+    if path.contains('\0') {
+        return Err(HomeRefusal::NonRoundtrip);
+    }
+    if lexical_has_dot_segments(path) {
+        return Err(HomeRefusal::RelativeRoot);
+    }
+    match dendro_core::platform_v1::classify_windows_path(path) {
+        dendro_core::platform_v1::PathClass::LocalDrive
+        | dendro_core::platform_v1::PathClass::LocalDriveVerbatim => Ok(()),
+        dendro_core::platform_v1::PathClass::Unc => Err(HomeRefusal::UnadmittedUnc),
+        dendro_core::platform_v1::PathClass::Device
+        | dendro_core::platform_v1::PathClass::VolumeGuid
+        | dendro_core::platform_v1::PathClass::AlternateStream => {
+            Err(HomeRefusal::UnadmittedDevice)
+        }
+        dendro_core::platform_v1::PathClass::Relative
+        | dendro_core::platform_v1::PathClass::Other => Err(HomeRefusal::RelativeRoot),
+    }
+}
+
+fn lexical_has_dot_segments(path: &str) -> bool {
+    path.split(['/', '\\'])
+        .any(|segment| segment == "." || segment == "..")
+}
+
+fn linux_under_root_home(path: &str) -> bool {
+    let trimmed = path.trim_end_matches('/');
+    trimmed == "/root" || trimmed.starts_with("/root/")
+}
+
+fn live_host() -> Result<HostKind, HomeRefusal> {
+    if cfg!(windows) {
+        Ok(HostKind::Windows)
+    } else if cfg!(target_os = "linux") {
+        Ok(HostKind::Linux)
+    } else {
+        Err(HomeRefusal::UnsupportedPlatform)
+    }
+}
+
+fn live_home_query() -> Result<HomeQuery, HomeRefusal> {
+    let home = match optional_env("HOME") {
+        Ok(value) => value,
+        Err(HomeRefusal::NonRoundtrip) if cfg!(windows) => None,
+        Err(refusal) => return Err(refusal),
+    };
+    let euid_is_root = {
+        #[cfg(target_os = "linux")]
+        {
+            linux_euid_is_root()?
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            false
+        }
+    };
+    Ok(HomeQuery {
+        home,
+        userprofile: optional_env("USERPROFILE")?,
+        openrig_home: optional_env("OPENRIG_HOME")?,
+        euid_is_root,
+    })
+}
+
+fn optional_env(key: &str) -> Result<Option<String>, HomeRefusal> {
+    match std::env::var_os(key) {
+        None => Ok(None),
+        Some(value) => match value.to_str() {
+            Some("") => Ok(None),
+            Some(text) => Ok(Some(text.to_string())),
+            None => Err(HomeRefusal::NonRoundtrip),
         },
-        dendro_connectors::SourceRoot {
-            name: "codex".into(),
-            path: PathBuf::from(&home).join(".codex/sessions"),
-        },
-        dendro_connectors::SourceRoot {
-            name: "pi".into(),
-            path: PathBuf::from(&openrig).join("state/pi"),
-        },
-        dendro_connectors::SourceRoot {
-            name: "pi".into(),
-            path: PathBuf::from(&home).join(".pi/agent/sessions"),
-        },
-        dendro_connectors::SourceRoot {
-            name: "openrig".into(),
-            path: PathBuf::from(&openrig).join("openrig.sqlite"),
-        },
-        dendro_connectors::SourceRoot {
-            name: "agy".into(),
-            path: PathBuf::from(&home).join(".gemini/antigravity-cli/brain"),
-        },
-        dendro_connectors::SourceRoot {
-            name: "grok".into(),
-            path: PathBuf::from(&home).join(".grok"),
-        },
-    ]
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn linux_euid_is_root() -> Result<bool, HomeRefusal> {
+    let text =
+        std::fs::read_to_string("/proc/self/status").map_err(|_| HomeRefusal::EuidUnknown)?;
+    let euid = dendro_core::platform_v1::parse_proc_status_euid(&text)
+        .map_err(|_| HomeRefusal::EuidUnknown)?;
+    Ok(euid == 0)
 }
 
 fn parse_roots(values: &[String]) -> Result<Vec<dendro_connectors::SourceRoot>> {
@@ -956,7 +1446,16 @@ mod tests {
 
     #[test]
     fn default_roots_and_parse_roots_pi_dual_root() {
-        let defaults = default_roots();
+        let defaults = configured_source_roots(
+            HostKind::Linux,
+            &HomeQuery {
+                home: Some("/home/dendro".into()),
+                userprofile: None,
+                openrig_home: None,
+                euid_is_root: false,
+            },
+        )
+        .expect("absolute linux home");
         let pi_roots: Vec<_> = defaults.iter().filter(|r| r.name == "pi").collect();
         assert_eq!(pi_roots.len(), 2);
         assert!(pi_roots[0].path.ends_with("state/pi"));
@@ -997,6 +1496,203 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn home_query(
+        home: Option<&str>,
+        userprofile: Option<&str>,
+        openrig_home: Option<&str>,
+        euid_is_root: bool,
+    ) -> HomeQuery {
+        HomeQuery {
+            home: home.map(str::to_string),
+            userprofile: userprofile.map(str::to_string),
+            openrig_home: openrig_home.map(str::to_string),
+            euid_is_root,
+        }
+    }
+
+    #[test]
+    fn windows_userprofile_wins_over_foreign_home() {
+        let roots = configured_source_roots(
+            HostKind::Windows,
+            &home_query(
+                Some("/c/Users/foreign"),
+                Some(r"C:\Users\native"),
+                None,
+                false,
+            ),
+        )
+        .expect("native profile");
+        assert_eq!(roots.len(), 7);
+        assert!(roots
+            .iter()
+            .all(|root| root.path.starts_with(r"C:\Users\native")));
+        assert!(roots
+            .iter()
+            .all(|root| !root.path.to_string_lossy().contains("foreign")));
+        let pi: Vec<_> = roots.iter().filter(|root| root.name == "pi").collect();
+        assert_eq!(pi.len(), 2);
+        assert!(pi[0].path.ends_with(r"state\pi") || pi[0].path.ends_with("state/pi"));
+        assert!(
+            pi[1].path.ends_with(".pi/agent/sessions")
+                || pi[1].path.ends_with(r".pi\agent\sessions")
+        );
+    }
+
+    #[test]
+    fn windows_home_or_dot_is_not_a_default_root() {
+        let missing = configured_source_roots(
+            HostKind::Windows,
+            &home_query(Some(r"C:\Users\from-home"), None, None, false),
+        )
+        .expect_err("HOME is not the Windows authority");
+        assert_eq!(missing, HomeRefusal::NoTrustworthyRoot);
+        let dotted =
+            configured_source_roots(HostKind::Windows, &home_query(None, Some("."), None, false))
+                .expect_err("dot profile");
+        assert_eq!(dotted, HomeRefusal::RelativeRoot);
+        let unc = configured_source_roots(
+            HostKind::Windows,
+            &home_query(None, Some(r"\\server\share\Users\a"), None, false),
+        )
+        .expect_err("unc profile");
+        assert_eq!(unc, HomeRefusal::UnadmittedUnc);
+    }
+
+    #[test]
+    fn linux_missing_or_relative_home_does_not_become_dot() {
+        let missing =
+            configured_source_roots(HostKind::Linux, &home_query(None, None, None, false))
+                .expect_err("missing home");
+        assert_eq!(missing, HomeRefusal::NoTrustworthyRoot);
+        assert!(!missing.message().contains("HOME fallback dot"));
+        assert!(missing
+            .message()
+            .contains("current directory is not a fallback"));
+        let dotted =
+            configured_source_roots(HostKind::Linux, &home_query(Some("."), None, None, false))
+                .expect_err("dot home");
+        assert_eq!(dotted, HomeRefusal::RelativeRoot);
+        let walked = configured_source_roots(
+            HostKind::Linux,
+            &home_query(Some("/home/dendro/../other"), None, None, false),
+        )
+        .expect_err("dotdot home");
+        assert_eq!(walked, HomeRefusal::RelativeRoot);
+    }
+
+    #[test]
+    fn privileged_linux_refuses_foreign_home_and_admits_own_root() {
+        let foreign = configured_source_roots(
+            HostKind::Linux,
+            &home_query(Some("/home/other"), None, None, true),
+        )
+        .expect_err("foreign home");
+        assert_eq!(foreign, HomeRefusal::PrivilegedForeignHome);
+        let explicit_foreign = configured_source_roots(
+            HostKind::Linux,
+            &home_query(Some("/root"), None, Some("/home/other/.openrig"), true),
+        )
+        .expect_err("foreign openrig");
+        assert_eq!(explicit_foreign, HomeRefusal::PrivilegedForeignHome);
+        let roots = configured_source_roots(
+            HostKind::Linux,
+            &home_query(Some("/root"), None, None, true),
+        )
+        .expect("root own home");
+        assert!(roots.iter().all(|root| root.path.starts_with("/root")));
+        assert_eq!(
+            roots
+                .iter()
+                .find(|root| root.name == "openrig")
+                .expect("openrig")
+                .path,
+            PathBuf::from("/root/.openrig/openrig.sqlite")
+        );
+    }
+
+    #[test]
+    fn relative_openrig_home_is_refused_for_a_normal_linux_user() {
+        let err = configured_source_roots(
+            HostKind::Linux,
+            &home_query(Some("/home/dendro"), None, Some("relative/.openrig"), false),
+        )
+        .expect_err("relative openrig");
+        assert_eq!(err, HomeRefusal::RelativeRoot);
+        let roots = configured_source_roots(
+            HostKind::Linux,
+            &home_query(Some("/home/dendro"), None, Some("/opt/openrig"), false),
+        )
+        .expect("absolute openrig");
+        assert_eq!(
+            roots
+                .iter()
+                .find(|root| root.name == "openrig")
+                .expect("openrig")
+                .path,
+            PathBuf::from("/opt/openrig/openrig.sqlite")
+        );
+    }
+
+    #[test]
+    fn shutdown_causes_keep_platform_exit_codes_without_signal_emulation() {
+        assert_eq!(ShutdownCause::UnixInterrupt.exit_code(), 130);
+        assert_eq!(ShutdownCause::UnixTerminate.exit_code(), 143);
+        assert!(ShutdownCause::UnixInterrupt.allows_bounded_cleanup());
+        assert!(ShutdownCause::UnixTerminate.allows_bounded_cleanup());
+        assert_eq!(
+            ShutdownCause::WindowsCtrlC.exit_code(),
+            WINDOWS_CTRL_C_STATUS
+        );
+        assert_eq!(
+            ShutdownCause::WindowsCtrlBreak.exit_code(),
+            WINDOWS_CTRL_C_STATUS
+        );
+        assert_ne!(ShutdownCause::WindowsCtrlC.exit_code(), 130);
+        assert_ne!(ShutdownCause::WindowsCtrlBreak.exit_code(), 143);
+        assert!(ShutdownCause::WindowsCtrlC.allows_bounded_cleanup());
+        assert!(ShutdownCause::WindowsCtrlBreak.allows_bounded_cleanup());
+        for cause in [
+            ShutdownCause::WindowsCtrlClose,
+            ShutdownCause::WindowsCtrlLogoff,
+            ShutdownCause::WindowsCtrlShutdown,
+        ] {
+            assert!(!cause.allows_bounded_cleanup());
+            assert_eq!(cause.exit_code(), 2);
+            assert!(!cause.native_name().contains("sig"));
+        }
+        assert_eq!(ShutdownCause::WindowsCtrlC.native_name(), "windows-ctrl-c");
+        assert!(ShutdownCause::UnixInterrupt
+            .native_name()
+            .contains("sigint"));
+    }
+
+    #[test]
+    fn live_default_roots_do_not_use_the_current_directory() {
+        match default_roots() {
+            Ok(roots) => {
+                assert!(!roots.is_empty());
+                assert!(roots.iter().all(|root| root.path.is_absolute()));
+                assert!(roots.iter().all(|root| {
+                    let text = root.path.to_string_lossy();
+                    text != "." && !text.starts_with("./") && !text.starts_with(".\\")
+                }));
+            }
+            Err(error) => {
+                let text = error.to_string();
+                assert!(
+                    text.contains("current directory is not a fallback")
+                        || text.contains("foreign home")
+                        || text.contains("absolute native path")
+                        || text.contains("not admitted")
+                        || text.contains("not valid Unicode")
+                        || text.contains("effective user is unknown")
+                        || text.contains("no admitted default source root"),
+                    "unexpected refusal: {text}"
+                );
+            }
+        }
     }
 
     #[test]

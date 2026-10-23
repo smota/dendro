@@ -69,6 +69,10 @@ pub struct AnalyticsStore {
     openrig_rows: RefCell<Option<openrig_provenance::OpenRigRowCache>>,
     openrig_pending: RefCell<Option<Vec<OpenRigRecord>>>,
     canonical_write_active: std::cell::Cell<bool>,
+    // Rust drops fields in declaration order: Connection closes before the
+    // read-only native pins are released.
+    #[cfg(windows)]
+    _custody: Option<std::sync::Arc<crate::platform_v1::ResolvedSelection>>,
 }
 
 impl AnalyticsStore {
@@ -116,6 +120,8 @@ impl AnalyticsStore {
             openrig_rows: RefCell::new(None),
             openrig_pending: RefCell::new(None),
             canonical_write_active: std::cell::Cell::new(false),
+            #[cfg(windows)]
+            _custody: None,
         };
         store.create_schema()?;
         Ok(store)
@@ -132,6 +138,8 @@ impl AnalyticsStore {
             openrig_rows: RefCell::new(None),
             openrig_pending: RefCell::new(None),
             canonical_write_active: std::cell::Cell::new(false),
+            #[cfg(windows)]
+            _custody: None,
         };
         store.create_schema()?;
         Ok(store)
@@ -155,6 +163,8 @@ impl AnalyticsStore {
             openrig_rows: RefCell::new(None),
             openrig_pending: RefCell::new(None),
             canonical_write_active: std::cell::Cell::new(false),
+            #[cfg(windows)]
+            _custody: None,
         })
     }
 
@@ -178,6 +188,8 @@ impl AnalyticsStore {
             openrig_rows: RefCell::new(None),
             openrig_pending: RefCell::new(None),
             canonical_write_active: std::cell::Cell::new(false),
+            #[cfg(windows)]
+            _custody: None,
         })
     }
 
@@ -205,7 +217,18 @@ impl AnalyticsStore {
             openrig_rows: RefCell::new(None),
             openrig_pending: RefCell::new(None),
             canonical_write_active: std::cell::Cell::new(false),
+            #[cfg(windows)]
+            _custody: None,
         })
+    }
+
+    #[cfg(windows)]
+    pub fn open_read_only_selected(
+        selected: &crate::selection_binding::SelectedRead,
+    ) -> Result<Self> {
+        let mut store = Self::open_read_only(&selected.database)?;
+        store._custody = Some(std::sync::Arc::clone(&selected.custody));
+        Ok(store)
     }
 
     fn create_schema(&self) -> Result<()> {
@@ -2267,10 +2290,20 @@ mod tests {
             .unwrap();
         assert_eq!(bounds, 0);
         assert!(wal.exists(), "expected a DuckDB wal before checkpoint");
-        let wal_bytes = std::fs::read(&wal).unwrap();
-        let wal_blob = String::from_utf8_lossy(&wal_bytes);
-        for token in families {
-            assert!(!wal_blob.contains(token), "wal {token}");
+        assert!(
+            std::fs::metadata(&wal).unwrap().len() > 0,
+            "nonempty live WAL"
+        );
+        // Windows DuckDB exclusively holds the active WAL. Direct live WAL
+        // bytes remain unverified there; the decoded scan above and the
+        // closed-database byte scan below still cover every marker family.
+        #[cfg(not(windows))]
+        {
+            let wal_bytes = std::fs::read(&wal).unwrap();
+            let wal_blob = String::from_utf8_lossy(&wal_bytes);
+            for token in families {
+                assert!(!wal_blob.contains(token), "wal {token}");
+            }
         }
         store.checkpoint().unwrap();
         drop(store);
@@ -2981,7 +3014,7 @@ mod tests {
         }
         store.checkpoint().unwrap();
         drop(store);
-        let trace = crate::pipeline::trace_json(
+        let trace = crate::pipeline::trace_json_physical(
             &db,
             "tokens",
             None,
@@ -3014,7 +3047,7 @@ mod tests {
             .unwrap();
         store.checkpoint().unwrap();
         drop(store);
-        let trace = crate::pipeline::trace_json(
+        let trace = crate::pipeline::trace_json_physical(
             &db,
             "tokens",
             None,
@@ -3044,7 +3077,7 @@ mod tests {
             .unwrap();
         store.checkpoint().unwrap();
         drop(store);
-        let trace = crate::pipeline::trace_json(
+        let trace = crate::pipeline::trace_json_physical(
             &db,
             "tokens",
             None,
@@ -3071,7 +3104,7 @@ mod tests {
             .unwrap();
         store.checkpoint().unwrap();
         drop(store);
-        let trace = crate::pipeline::trace_json(
+        let trace = crate::pipeline::trace_json_physical(
             &db,
             "tokens",
             None,

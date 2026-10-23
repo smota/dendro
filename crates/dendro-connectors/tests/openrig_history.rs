@@ -14,6 +14,20 @@ static NEXT: AtomicU64 = AtomicU64::new(0);
 struct Scratch(PathBuf);
 impl Scratch {
     fn new() -> Self {
+        #[cfg(windows)]
+        let root = dendro_core::platform_v1::create_user_private_root_with_choice(
+            &format!(
+                "dendro-integration-{}-",
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ),
+            &dendro_core::platform_v1::StorageRootChoice::UserProfile,
+        )
+        .unwrap();
+        #[cfg(windows)]
+        let path = root.path().to_path_buf();
+        #[cfg(windows)]
+        drop(root);
+        #[cfg(not(windows))]
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../target/issue-13-tests")
             .join(format!(
@@ -120,7 +134,10 @@ fn retention_and_missing_source_preserve_totals_and_expose_gone_evidence() {
     fixture(&source, "q1");
     run(&db, &source);
     let before = report(&db);
-    let store = AnalyticsStore::open_read_only(&db).unwrap();
+    let store = dendro_core::presentation::ReadRequest::open(&db)
+        .unwrap()
+        .open_store()
+        .unwrap();
     let roles = store.load_seat_roles().unwrap().len();
     let skills = store.load_skills().unwrap().len();
     drop(store);
@@ -157,7 +174,10 @@ fn retention_and_missing_source_preserve_totals_and_expose_gone_evidence() {
             assert_eq!(old[key], new[key], "retention changed seat total {key}");
         }
     }
-    let store = AnalyticsStore::open_read_only(&db).unwrap();
+    let store = dendro_core::presentation::ReadRequest::open(&db)
+        .unwrap()
+        .open_store()
+        .unwrap();
     assert_eq!(store.load_seat_roles().unwrap().len(), roles);
     assert_eq!(store.load_skills().unwrap().len(), skills);
     drop(store);
@@ -276,7 +296,10 @@ fn queue_metadata_combines_current_recovery_and_creation_lineage_without_changin
     .unwrap();
     drop(conn);
     run(&db, &source);
-    let store = AnalyticsStore::open_read_only(&db).unwrap();
+    let store = dendro_core::presentation::ReadRequest::open(&db)
+        .unwrap()
+        .open_store()
+        .unwrap();
     let meta = store.load_queue_item_meta().unwrap();
     let original = &meta["q1"];
     assert!(original.is_recovery);
@@ -336,7 +359,10 @@ fn queue_metadata_seals_identifier_canaries_and_rejects_unsafe_plain_tokens() {
         key,
     )
     .unwrap();
-    let store = AnalyticsStore::open_read_only(&db).unwrap();
+    let store = dendro_core::presentation::ReadRequest::open(&db)
+        .unwrap()
+        .open_store()
+        .unwrap();
     let meta = store.load_queue_item_meta().unwrap();
     let item = &meta["q1"];
     assert!(item.is_recovery);
@@ -400,7 +426,10 @@ fn retained_creation_event_supplies_mission_lineage_after_parent_row_is_deleted(
     .unwrap();
     drop(conn);
     run(&db, &source);
-    let store = AnalyticsStore::open_read_only(&db).unwrap();
+    let store = dendro_core::presentation::ReadRequest::open(&db)
+        .unwrap()
+        .open_store()
+        .unwrap();
     let queue = store.load_queue().unwrap();
     let creation = queue
         .iter()

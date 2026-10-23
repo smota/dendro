@@ -1,0 +1,148 @@
+{
+  "schema": "dendro.independent-core-oracle-freeze/v1",
+  "frozen_at": "2026-10-23T00:53:15.417825+00:00",
+  "status": "accepted_expected_semantic_cases_only_not_product_acceptance",
+  "artifact": ".agentflow/oracles/v080/T03/frozen.json",
+  "sha256": "4eb62b9e1846e6103b45abdb2ffb22555df23ea7d80c70939c2f255c1eff5609",
+  "case_count": 20,
+  "original_artifact": ".agentflow/oracles/v080/T03/draft-independent-core.json",
+  "original_sha256": "b96d7000cc6ce82b028d704c6c22a28970a7d7512e2140930e69a1dcc213ccd3",
+  "author_patch_artifact": ".agentflow/oracles/v080/T03/author-corrections.json",
+  "author_patch_sha256": "ed9dd00d7ed64c2516b7a74c918cbbce18db04168c37c2c3c07a81e318c749b0",
+  "author_patch_provenance": "Parent reports original native Grok author confirmed exact machine patch in process76751; this curator applied only specified expected paths, null explicitly deletes.",
+  "original_author": {
+    "provider": "xai",
+    "session_id": "b51ad78c-d506-4ec8-a9d1-d6a886059a37",
+    "requested_model": "grok-4.7",
+    "observed_usage_model": "grok-4.7-build"
+  },
+  "independent_reviewer": {
+    "provider": "anthropic",
+    "actual_session_id": "fc3f7f2e-7829-4a29-bfc0-73caec264048",
+    "model": "claude-opus-5-5",
+    "report_sha256": "e2c40e2fb83a95c4f215ef6899566d12fd879b27d0192c01b0ae4587340f1961",
+    "scope": "18 cases consistent; two corrections requested plus scope notes confirmed by original author. No additional whole-product review claimed."
+  },
+  "curation": {
+    "worker": "/root/finalize_plan",
+    "changed_expected_values_on_own_authority": false,
+    "operations": [
+      {
+        "case": "T03-10",
+        "path": "expected.spawn_origin_of_d",
+        "before": 0,
+        "after": "unknown",
+        "operation": "author_confirmed_set"
+      },
+      {
+        "case": "T03-10",
+        "path": "expected.spawn_origins_from_delegate_edges",
+        "before": null,
+        "after": 0,
+        "operation": "author_confirmed_set"
+      },
+      {
+        "case": "T03-14",
+        "path": "expected.later_ingestion_mutates_answer",
+        "before": null,
+        "after": "refuse",
+        "operation": "author_confirmed_set"
+      },
+      {
+        "case": "T03-14",
+        "path": "expected.later_event_mutates_answer",
+        "before": "refuse",
+        "after": null,
+        "operation": "delete"
+      },
+      {
+        "case": "T03-09",
+        "path": "expected.u2_attachment_basis",
+        "before": null,
+        "after": "source_asserted_membership",
+        "operation": "author_confirmed_set"
+      },
+      {
+        "case": "T03-09",
+        "path": "expected.u2_time_overlap_alone",
+        "before": null,
+        "after": "refuse",
+        "operation": "author_confirmed_set"
+      },
+      {
+        "case": "T03-09",
+        "path": "expected.u3_retained_scope",
+        "before": null,
+        "after": "shared_or_unattributed",
+        "operation": "author_confirmed_set"
+      },
+      {
+        "case": "T03-16",
+        "path": "expected.source_precision_metadata",
+        "before": null,
+        "after": "retained_separate_from_canonical",
+        "operation": "author_confirmed_set"
+      },
+      {
+        "case": "T03-18",
+        "path": "expected.accepted_2_disposition",
+        "before": null,
+        "after": "outside_query_window_or_noneligible",
+        "operation": "author_confirmed_set"
+      },
+      {
+        "case": "T03-18",
+        "path": "expected.observed_zero_means_zero_accepted",
+        "before": null,
+        "after": "refuse",
+        "operation": "author_confirmed_set"
+      }
+    ],
+    "all_inputs_and_rules_preserved": true,
+    "unpatched_cases_unchanged": true,
+    "metadata_only_additions": [
+      "Top-level A1/A2 acceptance-reference aliases; no case inputs/rules or non-author expected edits."
+    ]
+  },
+  "acceptance_ref_map": {
+    "A1": {
+      "assertion": "T03-A1 typed identity/relations/unknown contracts",
+      "case_ids": [
+        "T03-01",
+        "T03-02",
+        "T03-03",
+        "T03-04",
+        "T03-05",
+        "T03-06",
+        "T03-07",
+        "T03-08",
+        "T03-09",
+        "T03-10",
+        "T03-11",
+        "T03-12",
+        "T03-13",
+        "T03-14",
+        "T03-15",
+        "T03-16",
+        "T03-17",
+        "T03-18",
+        "T03-19",
+        "T03-20"
+      ]
+    },
+    "A2": {
+      "assertion": "T03-A2 namespace/incarnation/correction/retraction/cutoff/canonical metadata and source role scope",
+      "case_ids": [
+        "T03-01",
+        "T03-02",
+        "T03-09",
+        "T03-10",
+        "T03-14",
+        "T03-16",
+        "T03-18"
+      ]
+    }
+  },
+  "broad175pack": "unaccepted draft, not transitively frozen",
+  "product_tests_run": false
+}

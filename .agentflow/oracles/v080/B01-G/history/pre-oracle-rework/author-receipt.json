@@ -1,0 +1,192 @@
+{
+  "schema": "dendro.grok-oracle-author-receipt/v1",
+  "status": "authored_not_accepted",
+  "expectation_id": "B01-G-A1",
+  "authored_at": "2026-10-23T02:35:36.7986725Z",
+  "author": {
+    "provider": "xai",
+    "role": "independent grok oracle author",
+    "harness": "grok",
+    "author_native_session_id": null,
+    "author_session_not_recorded_because": "Inspecting native sessions, auth, and transcripts was out of scope."
+  },
+  "owned_outputs": {
+    "grok-authored.json": {
+      "path": ".agentflow/oracles/v080/B01-G/grok-authored.json",
+      "sha256": "f5a21567f195e469aa5498950aff600f81d63ee5eb9ad12ac6b5069464437465",
+      "case_count": 14,
+      "case_ids": [
+        "B01-G-01",
+        "B01-G-02",
+        "B01-G-03",
+        "B01-G-04",
+        "B01-G-05",
+        "B01-G-06",
+        "B01-G-07",
+        "B01-G-08",
+        "B01-G-09",
+        "B01-G-10",
+        "B01-G-11",
+        "B01-G-12",
+        "B01-G-13",
+        "B01-G-14"
+      ]
+    },
+    "author-receipt.json": {
+      "path": ".agentflow/oracles/v080/B01-G/author-receipt.json",
+      "sha256": null,
+      "self_digest": "detached; do not embed this file's own hash"
+    }
+  },
+  "acceptance": {
+    "parser_product_written": false,
+    "adapter_acceptance": false,
+    "profile_freeze": false,
+    "checklist_b01_g_a1_status_left": "blocked_out_of_core_scope_until_actual_specimen",
+    "this_receipt_is_not_the_named_native_admission_receipt": true
+  },
+  "sources_read": [
+    ".agentflow/runs/v080/schemas/grok-profile/sanitized-authentic.json",
+    ".agentflow/runs/v080/schemas/grok-profile/profile.json",
+    ".agentflow/runs/v080/schemas/grok-profile/provenance.json",
+    ".agentflow/runs/v080/schemas/grok-profile/BUILDER-CONTRACT.txt",
+    ".agentflow/runs/v080/schemas/grok-profile/REVIEW.md",
+    ".agentflow/oracles/v080/bootstrap/checklist.json",
+    ".agentflow/oracles/v080/B01-G/draft-expected.json"
+  ],
+  "sources_not_read": [
+    "native grok session directories",
+    "auth material",
+    "raw transcripts and reasoning",
+    "raw usage.json, summary.json, and events.jsonl bytes",
+    "parser and adapter implementation"
+  ],
+  "sha256": {
+    "recomputed_by_author": {
+      ".agentflow/runs/v080/schemas/grok-profile/sanitized-authentic.json": "e3f56c510c8c2eb05d370b6858f787cebe7108fdef59502d844fd243ca236e7e",
+      ".agentflow/runs/v080/schemas/grok-profile/profile.json": "efa0a7a0c69e586bb2ad0350fb1cc016270a2ce6f841c19d1b8297c7ccca4cfb",
+      ".agentflow/runs/v080/schemas/grok-profile/provenance.json": "27db1d32b4dd6d00031f8647643e9c210a09b8a174d78e58b72f81a706e08beb",
+      ".agentflow/runs/v080/schemas/grok-profile/BUILDER-CONTRACT.txt": "e7187b1c8608903cc49185a6873c0859cf04d20233ed311ad43d12bb761c1020",
+      ".agentflow/runs/v080/schemas/grok-profile/REVIEW.md": "8c6f748cb0c55558a87c1ae1add5dc546b4fc060e6c7c3c8dd5c412f429f5a62",
+      ".agentflow/oracles/v080/bootstrap/checklist.json": "50e5f557a2dce1fd439a765ee538f84146676ac6a4fb5900a6dd20f504320880",
+      ".agentflow/oracles/v080/B01-G/draft-expected.json": "020380a0a8e0fd588e5034a0a4d7b082276475092a56ec3d0f67f1cb3640130e"
+    },
+    "recorded_in_provenance_not_recomputed": {
+      "usage.json": "50d80f4bcaf673280dc33010f9f6c6c7f75dd9cad5b180476e306fbab709835c",
+      "summary.json": "ded360c619aee6da2344e4fecd25dc17c992e0b46777a5136dd19d9c6a04312f",
+      "events.jsonl": "cc09dd1ef719446ed59c055f0e2957880b8bd235f59230c23c553d5da09ca5fb"
+    },
+    "provenance_claims_matching_recomputed_fixture_and_profile": true
+  },
+  "session_and_model_evidence": {
+    "source_session_authorized": "b51ad78c-d506-4ec8-a9d1-d6a886059a37",
+    "pseudonym_in_fixture": "grok-session-A",
+    "agent_id": "grok-agent-A",
+    "attempt_id": "grok-attempt-A",
+    "raw_identity_copied_into_fixture": false,
+    "usage_and_modelUsage_model": "grok-4.7-build",
+    "event_and_summary_model": "grok-4.7",
+    "summary_reasoning_effort": "medium",
+    "summary_session_kind": "headless",
+    "event_schema_version_in_fixture": "1.0",
+    "summary_chat_format_version_in_fixture": 1,
+    "profile_client_version_observed": "1.0.52",
+    "client_version_string_inside_sanitized_fixture": false,
+    "yolo_mode_declaration": true,
+    "yolo_is_not_effective_authority": true
+  },
+  "numeric_derivation": {
+    "method": "Summed the sanitized fixture only. Profile sums were checked afterward and matched. Draft numbers were not used as inputs.",
+    "session_equals_turn_sums": {
+      "inputTokens": 67941,
+      "outputTokens": 22418,
+      "cachedReadTokens": 25856,
+      "cacheCreationTokens": 0,
+      "reasoningTokens": 18195,
+      "totalTokens": 90359,
+      "modelCalls": 2,
+      "costUsdTicks": 787460400,
+      "turnCount": 2
+    },
+    "turns": [
+      {
+        "turnNumber": 1,
+        "inputTokens": 25936,
+        "outputTokens": 15817,
+        "cachedReadTokens": 0,
+        "cacheCreationTokens": 0,
+        "reasoningTokens": 12158,
+        "totalTokens": 41753,
+        "modelCalls": 1,
+        "costUsdTicks": 499031600,
+        "turnCount": 1
+      },
+      {
+        "turnNumber": 2,
+        "inputTokens": 42005,
+        "outputTokens": 6601,
+        "cachedReadTokens": 25856,
+        "cacheCreationTokens": 0,
+        "reasoningTokens": 6037,
+        "totalTokens": 48606,
+        "modelCalls": 1,
+        "costUsdTicks": 288428800,
+        "turnCount": 1
+      }
+    ],
+    "totalTokens_equals_input_plus_output_on_all_three_rows": true,
+    "no_monetary_unit_derived": true
+  },
+  "limitations": [
+    "Raw usage, summary, and events bytes were not opened, so provenance raw hashes and native_equals_export_equals_observed were not recomputed.",
+    "The percent-encoded native session directory is not in the authorized read set, so parent path identity was not rechecked.",
+    "Client version 1.0.52 appears only as profile.json client_version_observed. It is not a sanitized-authentic.json field.",
+    "Other events were discarded before this fixture. Absence of tool, grant, or outcome fields is not evidence about those capabilities.",
+    "Two chronological rows support event_number+1 = usage turnNumber here only.",
+    "cacheRead <= input and reasoning <= output on every row, and totalTokens = input+output, still leave cache and reasoning inclusion undecided.",
+    "costUsdTicks remains an integer of unknown scale. No USD amount is admitted.",
+    "modelCalls is not an invocation count.",
+    "Checklist B01-G-A1 stays blocked_out_of_core_scope_until_actual_specimen. This author receipt does not clear it."
+  ],
+  "draft_crosswalk": {
+    "draft_sha256": "020380a0a8e0fd588e5034a0a4d7b082276475092a56ec3d0f67f1cb3640130e",
+    "draft_authority": "non_authoritative_proposal",
+    "map": {
+      "draft B01-G-01": "B01-G-01, with chronology timestamps added",
+      "draft B01-G-02": "B01-G-02, per-turn counters added beside the session rollup",
+      "draft B01-G-03": "B01-G-02, all eight counters kept; triple-add forbidden values stated",
+      "draft B01-G-04": "B01-G-08, per-turn ticks added; field name is not a unit",
+      "draft B01-G-05": "B01-G-09 for fraction; per-invocation mean moved to B01-G-11",
+      "draft B01-G-06": "B01-G-10, plus the statement that total=input+output does not decide inclusion",
+      "draft B01-G-07": "B01-G-06",
+      "draft B01-G-08": "B01-G-12",
+      "draft B01-G-09": "B01-G-03; identical reingest adds zero facts rather than two new identities",
+      "draft B01-G-10": "B01-G-05",
+      "draft B01-G-11": "B01-G-13; missing client version inside the fixture is not itself a refusal",
+      "draft B01-G-12": "B01-G-12"
+    },
+    "added": [
+      "B01-G-04 bare equal integer join is the wrong namespace on this specimen",
+      "B01-G-06 truncated event list and incomplete JSON",
+      "B01-G-07 conflicting rollup has no silent winner",
+      "B01-G-14 source interval is not execution or invocation time"
+    ]
+  },
+  "unresolved_for_claude": [
+    "Does this authored oracle plus the sanitized specimen satisfy B01-G-A1's demand for an actual evidence receipt at the named source/native admission path, or does the checklist stay blocked until a separate admission artifact exists?",
+    "Can producer version be pinned as grok client 1.0.52 when that string is only in profile.json and not in the sanitized fixture or provenance.json?",
+    "Numeric rollup conflict (B01-G-07) has no entry in profile.refusal_codes. Behavior is partial-or-refusal with no silent winner. The code name is unassigned.",
+    "Bare equal-integer join (B01-G-04) is forbidden by the profile text, but ambiguous_turn_index is the wrong code for the healthy specimen. behavior_label is descriptive, not a new admitted code.",
+    "Incomplete JSON refusal (B01-G-06) has no admitted code either.",
+    "Case IDs B01-G-01 through B01-G-14 are author-assigned and differ in boundaries from draft-expected.json. They are not frozen.",
+    "Whether cachedReadTokens is inside inputTokens is still unknown. Every row has cache read less than or equal to input, which is necessary for a subset and not sufficient.",
+    "Whether reasoningTokens is inside outputTokens is still unknown. totalTokens = input+output on all three rows fits both exclusion from the total and inclusion inside output, because reasoning is also less than or equal to output on every row.",
+    "costUsdTicks scale and any display unit remain unknown. Do not admit a divisor.",
+    "modelCalls versus domain invocation identity remains unproved, so cache means and invocation durations stay refused.",
+    "The +1 index map is limited to this two-row profile. It is not a universal Grok indexing guarantee.",
+    "yolo_mode true, session_kind headless, and reasoning_effort medium are declarations. They do not admit isolation, approval, or a reasoning-token explanation.",
+    "Tool commands, effects, outcomes, grants, loaded capabilities, and human acceptance were not in the allowlist. They stay unknown.",
+    "Raw native hash equality is a provenance claim. This author did not rehash those files.",
+    "No parser implementation and no adapter acceptance follows from this oracle."
+  ]
+}

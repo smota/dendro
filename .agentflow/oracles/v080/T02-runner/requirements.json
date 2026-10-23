@@ -1,0 +1,66 @@
+{
+  "schema": "dendro.benchmark-runner-requirements/v1",
+  "recorded_at": "2026-10-23T00:51:51.866683+00:00",
+  "task": "T02-runner",
+  "status": "requirements_only_pending_standalone_independent_expected_values_and_review",
+  "not_an_oracle": true,
+  "source_contract": {
+    "path": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+    "sha256": "7f6ca2da4ea5b4c7e6d78b565c3857a5e716a277c0dfec7abe37f40eb729f638"
+  },
+  "fixed_design_targets": {
+    "small_corpus": {
+      "attempts": 10000,
+      "usage_observations": 50000,
+      "depth": 4,
+      "multi_caller_fraction": "5/100",
+      "missing_link_fraction": "10/100"
+    },
+    "large_corpus": {
+      "facts": 1000000,
+      "append_records": 1000,
+      "decode_upper_bound": "1000 + separately declared bounded context carryover; prefix validation bytes measured separately"
+    },
+    "warm_answer_p95_max_ms": 250,
+    "seven_answer_home_max_ms": 1000,
+    "ui_max_blocking_task_ms": 50,
+    "small_Dendro_process_resident_cap_bytes": 536870912,
+    "large_peak_RSS_cap_bytes": 1073741824,
+    "baseline_cold_migration_repetitions": 5,
+    "minimum_answer_calls": 20,
+    "maximum_comparable_throughput_regression": "20/100",
+    "scope": "Design thresholds, not measured performance promises or builder CLI budgets."
+  },
+  "runner_contract_requirements": [
+    "Manifest pins candidate binary/source, corpus/generator/runner, OS/compiler/storage and command argv digests; each run result records actual exit and method.",
+    "Seeded corpus writer and large ingestion stream bounded data, not giant retained payload arrays; no private source or credentials.",
+    "Invoke exact candidate with argv list and shell disabled. Finite per-probe timeouts, bounded capture/output and resource sampler lifetime; nonzero exit/timeout/schema mismatch forbids performance success.",
+    "Actual elapsed measurements use monotonic clock; distinguish warm queries, cold setup/migration and replay. Store raw samples and report spread, not invented aggregate values.",
+    "Resource metric must identify OS/source/process scope and reliable peak versus sampled maximum. Sampling must not be labeled true peak. Unavailable required measurement is blocked/unmeasured, not zero/pass.",
+    "Windows native and Linux native candidate proof independently required; WSL/crosscompiled binary is not native Windows. Actual pinned old binary failure is not_measurable_preport, never a synthetic baseline.",
+    "Historical comparison only when cohort, command/work, units, host/runtime/corpus and method are comparable; otherwise explicit refused/noncomparable. Fixed new-version absolute budgets remain required.",
+    "Decode count and prefix verification IO independently instrumented; do not equate incremental decoding with O(delta) total IO.",
+    "No source content/argv payloads in report; only explicit safe benchmark command metadata and synthetic identifiers."
+  ],
+  "independent_author_must_freeze_before_builder": [
+    "Corpus seed/version, exact fact distributions, depth interpretation and multi-caller/missing-link denominator without overlap ambiguity",
+    "Executable fixture/Answer protocol and candidate commands with independent expected record/count/status outputs; current0.7 command compatibility versus new surface unsupported explicit",
+    "Percentile convention and sample population, median/worst definitions, throughput direction/regression formula and zero/invalid cases",
+    "Independent subprocess failure/timeout/signal/output-limit/resource-unavailable negative oracles",
+    "Declared bounded carryover maximum and edge-record fixture; effective measurement source for all budgets",
+    "Deterministic reproducibility/digest/atomic report validation and meaningful corpus conservation checks independent of generator implementation"
+  ],
+  "broad_draft_candidate_inputs": {
+    "native_budget_metadata": "v080.dg.NAT.budgets-unmeasured",
+    "bounded_incremental": "v080.dg.ACC.decode-bound",
+    "exact_arithmetic_examples": [
+      "v080.dg.F10.cache-ratio-of-sums",
+      "v080.dg.F10.cache-invocation-mean",
+      "v080.dg.F04.partial-25-40"
+    ],
+    "caution": "Broad pack has no runner/corpus seeds or executed baseline and is unaccepted; these are source candidates only."
+  },
+  "authorship_boundary": "Independent Grok/other distinct expected-value author and Claude review must freeze runnable expected cases. Codex runner builder cannot author its own expected outputs. This file extracts approved requirements only.",
+  "product_benchmark_code_written": false,
+  "measurements_performed": false
+}

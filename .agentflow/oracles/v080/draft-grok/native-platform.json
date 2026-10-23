@@ -1,0 +1,437 @@
+{
+  "schema": "dendro.oracle.expected-value-pack/v1",
+  "acceptanceState": "draft_pending_claude_review",
+  "frozen": false,
+  "vectors": [
+    {
+      "vectorID": "v080.dg.NAT.targets",
+      "pack": "native-platform",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "NAT",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "windows": "x86_64-pc-windows-msvc",
+        "linux": "x86_64-unknown-linux-gnu"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "release_blocking_pair"
+        ],
+        "values": {
+          "wslSubstitutesEither": {
+            "boolean": false,
+            "sourceLiteral": "cannot replace either native lane"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 182,
+          "symbol": "targets",
+          "section": "Mandatory native Windows and Linux delivery"
+        }
+      ],
+      "derivation": "Both target triples are release blocking. No version number is invented.",
+      "unresolved": [
+        "Minimum OS, SDK, and compiler versions are not claimed tested. B02 must freeze them from evidence."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.NAT.identity-pair",
+      "pack": "native-platform",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "NAT",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "windows": "handle and creation time",
+        "linux": "inode/device and start_ticks"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "platform_identity"
+        ],
+        "values": {
+          "windowsUsesLowercasePathOnly": {
+            "boolean": false,
+            "sourceLiteral": "no lowercase-string-only containment"
+          },
+          "linuxUsesInode": {
+            "boolean": true,
+            "sourceLiteral": "inode/device"
+          },
+          "metricsInterchangeable": {
+            "boolean": false,
+            "sourceLiteral": "never false equality"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 186,
+          "symbol": "filesystem identity",
+          "section": "Mandatory native Windows and Linux delivery"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 190,
+          "symbol": "process identity",
+          "section": "Mandatory native Windows and Linux delivery"
+        }
+      ],
+      "derivation": "Windows containment is handle-based. Linux containment is inode/device. Process markers differ by OS and are not copied across.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.NAT.dacl",
+      "pack": "native-platform",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "NAT",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "os": "native Windows",
+        "object": "private data/key/WAL/staging/receipts"
+      },
+      "expected": {
+        "status": "supported",
+        "reasons": [
+          "protected_dacl"
+        ],
+        "values": {
+          "allowList": {
+            "literal": "current owner SID, local SYSTEM, built-in Administrators"
+          },
+          "readonlyAttributeIsAcl": {
+            "boolean": false,
+            "sourceLiteral": "not an ACL"
+          },
+          "otherPrincipalBlocks": {
+            "boolean": true,
+            "sourceLiteral": "blocks private operations"
+          },
+          "untrustedInheritedAceFails": {
+            "boolean": true,
+            "sourceLiteral": "fail"
+          },
+          "administratorResistanceClaimed": {
+            "boolean": false,
+            "sourceLiteral": "without claiming administrator resistance"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 187,
+          "symbol": "DACL",
+          "section": "Mandatory native Windows and Linux delivery"
+        }
+      ],
+      "derivation": "The protected DACL allow-list is owner, SYSTEM, and built-in Administrators. Any other principal or an unverifiable policy blocks private operations. The readonly attribute is not an ACL.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.NAT.linux-mode",
+      "pack": "native-platform",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "NAT",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "os": "native Linux",
+        "access": "foreign owner or effective group/other/ACL outside admitted model"
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "fail_closed"
+        ],
+        "values": {
+          "privateAccess": {
+            "boolean": false,
+            "sourceLiteral": "fails closed"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 187,
+          "symbol": "Linux modes",
+          "section": "Mandatory native Windows and Linux delivery"
+        }
+      ],
+      "derivation": "Foreign ownership or extra group, other, or ACL access fails closed. It is not a warning.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.NAT.source-not-mutated",
+      "pack": "native-platform",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "NAT",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "input": "read-only source",
+        "purpose": "make it private"
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "source_permissions_separate"
+        ],
+        "values": {
+          "chmodOrAclMutation": {
+            "boolean": false,
+            "sourceLiteral": "not chmod/ACL-mutated"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 187,
+          "symbol": "source inputs",
+          "section": "Mandatory native Windows and Linux delivery"
+        }
+      ],
+      "derivation": "Source read-only authorization is separate from private output and key permissions. Sources are not mutated to force privacy.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.NAT.etw-strace-grains",
+      "pack": "native-platform",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "NAT",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "windows": "one ETW profile",
+        "linux": "one strace profile"
+      },
+      "expected": {
+        "status": "noncomparable",
+        "reasons": [
+          "different_sensor_grains"
+        ],
+        "values": {
+          "silentGrainEquality": {
+            "boolean": false,
+            "sourceLiteral": "cannot be silently compared"
+          },
+          "mergedCheckbox": {
+            "boolean": false,
+            "sourceLiteral": "no merged checkbox"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 191,
+          "symbol": "event evidence",
+          "section": "Mandatory native Windows and Linux delivery"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 99,
+          "symbol": "strace",
+          "section": "3. Capture and sensor admission"
+        }
+      ],
+      "derivation": "Linux strace and Windows ETW stay separate receipts. Neither is all-syscall coverage, and their grains are not equated.",
+      "unresolved": [
+        "The strace grammar and the ETW event profile are not pinned in these three files."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.NAT.producer-permission",
+      "pack": "native-platform",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "NAT",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "role": "standard-user importer",
+        "producerSession": "not authorized here"
+      },
+      "expected": {
+        "status": "refused",
+        "reasons": [
+          "consumer_is_not_producer"
+        ],
+        "values": {
+          "importerStartsPrivilegedSession": {
+            "boolean": false,
+            "sourceLiteral": "separate"
+          },
+          "hostwideMonitorAuthorized": {
+            "boolean": false,
+            "sourceLiteral": "not required or silently authorized"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 193,
+          "symbol": "producer permissions",
+          "section": "Mandatory native Windows and Linux delivery"
+        }
+      ],
+      "derivation": "Permission to import a frozen trace is not permission to start a producer session. No driver install, global kernel trace, or host-wide monitor is authorized.",
+      "unresolved": [],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.NAT.macos",
+      "pack": "native-platform",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "NAT",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "baselineEvidence": "not in these three files"
+      },
+      "expected": {
+        "status": "unknown",
+        "reasons": [
+          "no_invented_sensor"
+        ],
+        "values": {
+          "newMacosSensorMandate": {
+            "boolean": false,
+            "sourceLiteral": "do not invent macOS sensor support"
+          },
+          "establishedSupport": {
+            "literal": "preserve if recovered, otherwise unknown"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 182,
+          "symbol": "macOS",
+          "section": "Mandatory native Windows and Linux delivery"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 201,
+          "symbol": "T27 macOS",
+          "section": "Mandatory native Windows and Linux delivery"
+        }
+      ],
+      "derivation": "Established macOS support is preserved when evidence exists. Absent evidence is an unknown recovery hold, not a new sensor mandate.",
+      "unresolved": [
+        "Whether an existing macOS lane is present is not decided by these three files."
+      ],
+      "disputedDefinition": false,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    },
+    {
+      "vectorID": "v080.dg.NAT.budgets-unmeasured",
+      "pack": "native-platform",
+      "acceptanceState": "draft_pending_claude_review",
+      "frozen": false,
+      "fixtureID": "BUDGET",
+      "inputOrigin": "source_fixture",
+      "inputs": {
+        "proposed": {
+          "smallCorpusAttempts": "10000/1",
+          "smallCorpusUsage": "50000/1",
+          "depth": "4/1",
+          "multiCaller": "5/100",
+          "missingLinks": "10/100",
+          "warmAnswerP95": "250/1 ms",
+          "homeSevenAnswers": "1/1 s",
+          "uiMainThread": "50/1 ms",
+          "runtimeRss": "512/1 MiB",
+          "largeFacts": "1000000/1",
+          "largePeakRss": "1/1 GiB",
+          "coldRegression": "20/100"
+        }
+      },
+      "expected": {
+        "status": "noncomparable",
+        "reasons": [
+          "proposed_not_measured",
+          "not_measurable_preport"
+        ],
+        "values": {
+          "measuredResult": {
+            "rational": null,
+            "unit": null,
+            "sourceLiteral": "none of these runs was performed"
+          },
+          "fabricatedTiming": {
+            "boolean": false,
+            "sourceLiteral": "do not fabricate timings"
+          },
+          "runtimeRssExcludesBuilderCli": {
+            "boolean": true,
+            "sourceLiteral": "not builder/model CLI RSS"
+          }
+        }
+      },
+      "forbidden": [],
+      "sourceDefinition": [
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/DESIGN.md",
+          "line": 211,
+          "symbol": "performance targets",
+          "section": "8. Migration, operating systems and validation"
+        },
+        {
+          "file": ".agentflow/proposals/next-version-2026-10-22/tasks.json",
+          "line": 825,
+          "symbol": "T02-A2",
+          "section": "T02"
+        }
+      ],
+      "derivation": "These are proposed budgets. They are not observed oracles. A missing pre-port native baseline is not_measurable_preport. No timing is invented. Current T02-A2 assigns executable baseline runs to T02-baseline, not to this draft. F25-F29 are included as draft vectors and are not a T03 admission gate.",
+      "unresolved": [
+        "MiB and GiB byte bases are not defined.",
+        "No baseline receipt exists in the sources."
+      ],
+      "disputedDefinition": true,
+      "relatedVectorIDs": [],
+      "executionEvidence": "not_run"
+    }
+  ]
+}

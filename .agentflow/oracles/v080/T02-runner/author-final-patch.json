@@ -1,0 +1,482 @@
+[
+  {
+    "op": "replace",
+    "path": "/failure_semantics_testcases/32/expected/process_budget_pass",
+    "value": null
+  },
+  {
+    "op": "add",
+    "path": "/failure_semantics_testcases/32/expected/performance_success",
+    "value": false
+  },
+  {
+    "op": "add",
+    "path": "/failure_semantics_testcases/32/expected/performance_success_false_because",
+    "value": "blocked_unmeasured"
+  },
+  {
+    "op": "replace",
+    "path": "/specified_protocol/process_tree_counts",
+    "value": "Count the harness, the candidate, and every descendant, including double-fork and re-parented processes. The bound is 2, so any proven descendant overruns it. Proof is a Windows Job Object or an equivalent collector that actually accounts for every descendant. A Linux process-group label alone does not prove the count. If the collector is absent or unproven, descendant_count is unknown, not 0, status is blocked_unmeasured, runner_exit is 6, and process_budget_pass is null. When that proof is required, aggregate performance_success is false and performance_success_false_because is blocked_unmeasured. The false aggregate does not change the unknown gate from null to false."
+  },
+  {
+    "op": "add",
+    "path": "/specified_protocol/unknown_result",
+    "value": "An unknown or unmeasured gate is null, never false and never 0. process_budget_pass follows that rule. Aggregate performance_success may be false only with performance_success_false_because blocked_unmeasured. invalid_elapsed is diagnostic only and never replaces status, comparison_status, or runner_exit."
+  },
+  {
+    "op": "add",
+    "path": "/specified_protocol/sample_classification",
+    "value": "A wrong response answer_count is schema_mismatch runner_exit 5 and budget_pass null. For seven_answer_home the only valid answer_count is 7. Invalid measurement means elapsed_ns < 1, a missing monotonic reading, or a negative elapsed that is not already a uint64 schema failure. That measurement result is blocked_unmeasured runner_exit 6 unless process-limit exit 7, output-limit exit 2, timeout exit 4, nonzero or signal exit 3, or schema exit 5 already applies. A stored negative elapsed is uint64 schema_mismatch exit 5 and that schema failure wins. In throughput.zero_elapsed_invalid, elapsed 0 precedes any insufficient warm-population rule; that fixture is blocked_unmeasured exit 6 because the elapsed is ineligible."
+  },
+  {
+    "op": "replace",
+    "path": "/specified_protocol/budget_aggregation/seven_answer_home",
+    "value": "The budget value is the maximum elapsed_ns of n>=1 samples whose answer_count is 7. answer_count other than 7 is schema_mismatch runner_exit 5 and budget_pass null, not exit 6. n=0 after valid samples are absent is blocked_unmeasured."
+  },
+  {
+    "op": "replace",
+    "path": "/specified_protocol/throughput/either_elapsed_0",
+    "value": "Diagnostic invalid_elapsed only. It does not override status. status remains blocked_unmeasured, runner_exit 6, throughput null, comparison_status refused_noncomparable. Zero elapsed wins over an insufficient warm-sample count in this unit fixture."
+  },
+  {
+    "op": "replace",
+    "path": "/specified_protocol/eligible_sample",
+    "value": "mode matches the metric; the harness, not stdout, assigns phase measured or warmup; candidate exit 0; termination_reason none; no timeout; clock monotonic; elapsed_ns is a uint64 and elapsed_ns>=1. Zero is not eligible. A stdout phase field is an unknown field and is schema_mismatch exit 5."
+  },
+  {
+    "op": "replace",
+    "path": "/specified_protocol/budget_comparison",
+    "value": "Every absolute budget uses inclusive <=. Equality passes and cap+1 fails. Caps remain warm p95 250000000 ns, seven_answer_home 1000000000 ns, ui 50000000 ns, small resident 536870912 bytes, and large peak 1073741824 bytes."
+  },
+  {
+    "op": "add",
+    "path": "/specified_protocol/memory_methods/small_resident/linux_vmhwm_polling",
+    "value": "Allowed as sampled_maximum for small resident when the method label is sampled_maximum. Never reliable_peak and never the large-peak budget."
+  },
+  {
+    "op": "add",
+    "path": "/specified_protocol/full_acceptance_precondition",
+    "value": "full_acceptance.four_runs reads already validated per-run reports and requires per_run_reports_valid true. Those reports must already include UI trace binding, memory method and scope, a proving process collector, native Windows or Linux proof as claimed, and schema checks. An aggregate summary cannot bypass those checks. Any invalid run makes full_acceptance false."
+  },
+  {
+    "op": "add",
+    "path": "/measurement_correctness_testcases/0/expected/throughput_elapsed_population",
+    "value": "2160000000 is the sum of the 20 measured warm_answer samples only. The two warmups 900000000 and 800000000 are excluded."
+  },
+  {
+    "op": "add",
+    "path": "/measurement_correctness_testcases/10/expected/invalid_elapsed",
+    "value": true
+  },
+  {
+    "op": "add",
+    "path": "/measurement_correctness_testcases/10/expected/invalid_elapsed_overrides_status",
+    "value": false
+  },
+  {
+    "op": "add",
+    "path": "/measurement_correctness_testcases/10/expected/zero_elapsed_precedes",
+    "value": "insufficient_warm_population"
+  },
+  {
+    "op": "add",
+    "path": "/measurement_correctness_testcases/16/input/fixture_role",
+    "value": "parser_only"
+  },
+  {
+    "op": "add",
+    "path": "/measurement_correctness_testcases/16/input/corpus_binding",
+    "value": false
+  },
+  {
+    "op": "add",
+    "path": "/measurement_correctness_testcases/16/expected/corpus_binding_checked",
+    "value": false
+  },
+  {
+    "op": "add",
+    "path": "/measurement_correctness_testcases/48/input/per_run_reports_valid",
+    "value": true
+  },
+  {
+    "op": "add",
+    "path": "/measurement_correctness_testcases/48/input/reports_are",
+    "value": "already_validated_per_run_reports"
+  },
+  {
+    "op": "add",
+    "path": "/measurement_correctness_testcases/-",
+    "value": {
+      "id": "answer.corpus_id_mismatch",
+      "input": {
+        "fixture_role": "runtime_integration",
+        "corpus_binding": true,
+        "bound_corpus_id": "dendro.bench.corpus/v1/micro/8675309",
+        "bound_question_id": "attempt-micro-8675309-00000",
+        "stdout_corpus_id": "micro-1",
+        "stdout_question_id": "attempt-micro-8675309-00000"
+      },
+      "expected": {
+        "status": "schema_mismatch",
+        "runner_exit": 5,
+        "budget_pass": null
+      }
+    }
+  },
+  {
+    "op": "add",
+    "path": "/measurement_correctness_testcases/-",
+    "value": {
+      "id": "answer.question_id_mismatch",
+      "input": {
+        "fixture_role": "runtime_integration",
+        "corpus_binding": true,
+        "bound_corpus_id": "dendro.bench.corpus/v1/micro/8675309",
+        "bound_question_id": "attempt-micro-8675309-00000",
+        "stdout_corpus_id": "dendro.bench.corpus/v1/micro/8675309",
+        "stdout_question_id": "q1"
+      },
+      "expected": {
+        "status": "schema_mismatch",
+        "runner_exit": 5,
+        "budget_pass": null
+      }
+    }
+  },
+  {
+    "op": "add",
+    "path": "/measurement_correctness_testcases/-",
+    "value": {
+      "id": "full_acceptance.invalid_run_blocks",
+      "input": {
+        "per_run_reports_valid": false,
+        "invalid_run_id": "small-linux",
+        "invalid_reason": "ui_trace_absent",
+        "runs_claimed": 4
+      },
+      "expected": {
+        "full_acceptance": false,
+        "status": "blocked_unmeasured",
+        "runner_exit": 6,
+        "checks_bypassed": false
+      }
+    }
+  },
+  {
+    "op": "add",
+    "path": "/measurement_correctness_testcases/-",
+    "value": {
+      "id": "budgets.small_resident_vmhwm_sampled_passes",
+      "input": {
+        "bytes": 536870912,
+        "method": "sampled_maximum",
+        "source": "procfs.status.VmHWM",
+        "scope": "candidate_process",
+        "os_family": "linux",
+        "environment": "native"
+      },
+      "expected": {
+        "budget_pass": true,
+        "labeled_reliable_peak": false
+      }
+    }
+  },
+  {
+    "op": "add",
+    "path": "/frozen_corpus/golden_micro",
+    "value": {
+      "path": ".agentflow/oracles/v080/T02-runner/golden-micro.jsonl",
+      "line_count": 82,
+      "sha256_authored": false,
+      "detached_digest_supplier": "curator",
+      "self_hash_forbidden": true
+    }
+  },
+  {
+    "op": "add",
+    "path": "/frozen_corpus/record_key_table",
+    "value": {
+      "seed": 8675309,
+      "corpus_version": "dendro.bench.corpus/v1",
+      "corpus_id": "dendro.bench.corpus/v1/{profile}/{seed}",
+      "pads": {
+        "chain": 4,
+        "depth": 0,
+        "child_depth": 0,
+        "k": 4,
+        "j": 4,
+        "m": 3,
+        "attempt_i": 5,
+        "usage_i": 5,
+        "fact_i": 7,
+        "append_i": 4
+      },
+      "prohibited": [
+        "float",
+        "entropy",
+        "private_data",
+        "free_text"
+      ],
+      "usage_quantity": 1,
+      "attempt_has_quantity": false,
+      "profiles": {
+        "micro": {
+          "chain_count": 3,
+          "full_chain_count": 2,
+          "chains": [
+            {
+              "chain": 0,
+              "node_depths": [
+                0,
+                1,
+                2,
+                3,
+                4
+              ]
+            },
+            {
+              "chain": 1,
+              "node_depths": [
+                0,
+                1,
+                2,
+                3,
+                4
+              ]
+            },
+            {
+              "chain": 2,
+              "node_depths": [
+                0,
+                1
+              ]
+            }
+          ],
+          "missing_j_inclusive": [
+            0,
+            0
+          ],
+          "caller_single_k_inclusive": [
+            0,
+            18
+          ],
+          "caller_multi_m_inclusive": [
+            0,
+            0
+          ],
+          "attempt_i_inclusive": [
+            0,
+            19
+          ],
+          "usage_i_inclusive": [
+            0,
+            19
+          ]
+        },
+        "small": {
+          "chain_count": 2250,
+          "full_chain_count": 2250,
+          "chain_inclusive": [
+            0,
+            2249
+          ],
+          "node_depths_each_chain": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ],
+          "missing_j_inclusive": [
+            0,
+            999
+          ],
+          "caller_single_k_inclusive": [
+            0,
+            9499
+          ],
+          "caller_multi_m_inclusive": [
+            0,
+            499
+          ],
+          "attempt_i_inclusive": [
+            0,
+            9999
+          ],
+          "usage_i_inclusive": [
+            0,
+            49999
+          ]
+        },
+        "large": {
+          "fact_i_inclusive": [
+            0,
+            999999
+          ],
+          "append_i_inclusive": [
+            0,
+            999
+          ],
+          "graph_attempt_usage_nav_caller": false
+        }
+      },
+      "order": [
+        "node by chain,depth",
+        "present_nav by chain,child_depth",
+        "missing_nav by j",
+        "caller_single by k",
+        "caller_multi by m",
+        "attempt by i",
+        "usage by i"
+      ],
+      "large_order": [
+        "fact by i",
+        "append by i"
+      ],
+      "types": {
+        "node": {
+          "profiles": [
+            "micro",
+            "small"
+          ],
+          "keys": {
+            "chain": "int chain index",
+            "depth": "int edge depth listed for that chain",
+            "id": "string node-{profile}-{seed}-{chain:04d}-{depth}",
+            "profile": "string profile name",
+            "record_class": "string node",
+            "seed": "int 8675309"
+          }
+        },
+        "present_nav": {
+          "profiles": [
+            "micro",
+            "small"
+          ],
+          "keys": {
+            "chain": "int",
+            "child_depth": "int target depth; parent depth is child_depth-1; both exist on that chain",
+            "id": "string nav-{profile}-{seed}-{chain:04d}-{child_depth}",
+            "parent": "string node-{profile}-{seed}-{chain:04d}-{child_depth-1}",
+            "profile": "string",
+            "record_class": "string present_nav",
+            "seed": "int 8675309",
+            "target": "string node-{profile}-{seed}-{chain:04d}-{child_depth}"
+          }
+        },
+        "missing_nav": {
+          "profiles": [
+            "micro",
+            "small"
+          ],
+          "keys": {
+            "id": "string nav-missing-{profile}-{seed}-{j:04d}",
+            "j": "int",
+            "profile": "string",
+            "record_class": "string missing_nav",
+            "seed": "int 8675309",
+            "source": "string node-{profile}-{seed}-{j:04d}-3; that node must exist else schema_mismatch",
+            "target": "null"
+          }
+        },
+        "caller_single": {
+          "profiles": [
+            "micro",
+            "small"
+          ],
+          "keys": {
+            "callers": "array length 1, only u-{profile}-{seed}-{k:04d}",
+            "id": "string caller-{profile}-{seed}-{k:04d}",
+            "k": "int",
+            "profile": "string",
+            "record_class": "string caller_single",
+            "seed": "int 8675309",
+            "target": "string node-{profile}-{seed}-{(k % chain_count):04d}-0"
+          }
+        },
+        "caller_multi": {
+          "profiles": [
+            "micro",
+            "small"
+          ],
+          "keys": {
+            "callers": "array length 2, exactly [u-a-{profile}-{seed}-{m:03d}, u-b-{profile}-{seed}-{m:03d}]",
+            "id": "string caller-multi-{profile}-{seed}-{m:03d}",
+            "m": "int",
+            "profile": "string",
+            "record_class": "string caller_multi",
+            "seed": "int 8675309",
+            "target": "string node-{profile}-{seed}-{(m % full_chain_count):04d}-4"
+          }
+        },
+        "attempt": {
+          "profiles": [
+            "micro",
+            "small"
+          ],
+          "keys_absent": [
+            "quantity"
+          ],
+          "keys": {
+            "i": "int",
+            "id": "string attempt-{profile}-{seed}-{i:05d}",
+            "profile": "string",
+            "record_class": "string attempt",
+            "seed": "int 8675309",
+            "target": "string node-{profile}-{seed}-{(i % chain_count):04d}-0"
+          }
+        },
+        "usage": {
+          "profiles": [
+            "micro",
+            "small"
+          ],
+          "keys": {
+            "i": "int",
+            "id": "string usage-{profile}-{seed}-{i:05d}",
+            "profile": "string",
+            "quantity": "int 1",
+            "record_class": "string usage",
+            "seed": "int 8675309",
+            "target": "string node-{profile}-{seed}-{(i % chain_count):04d}-0"
+          }
+        },
+        "fact": {
+          "profiles": [
+            "large"
+          ],
+          "keys_absent": [
+            "quantity",
+            "target",
+            "text"
+          ],
+          "keys": {
+            "i": "int",
+            "id": "string fact-large-{seed}-{i:07d}",
+            "profile": "string large",
+            "record_class": "string fact",
+            "seed": "int 8675309"
+          }
+        },
+        "append": {
+          "profiles": [
+            "large"
+          ],
+          "keys_absent": [
+            "quantity",
+            "target",
+            "text"
+          ],
+          "keys": {
+            "i": "int",
+            "id": "string append-large-{seed}-{i:04d}",
+            "profile": "string large",
+            "record_class": "string append",
+            "seed": "int 8675309"
+          }
+        }
+      }
+    }
+  }
+]

@@ -1,0 +1,2531 @@
+{
+  "schema_version": "dendro.t14.independent-draft-expected/v1",
+  "task": "T14",
+  "status": "draft_not_frozen_not_reviewed",
+  "author_role": "independent_expected_value_author",
+  "builder_role": "future_native_grok_builder",
+  "revision_policy": "corrections_at_cutoff_v1",
+  "input_sha256": {
+    ".agentflow/proposals/next-version-2026-10-22/tasks.json": "4bc79593d3b8f280e53a19fed2e9e87d47cd7f7849d317a1d9a90baa2a3d88cf",
+    ".agentflow/proposals/next-version-2026-10-22/DESIGN.md": "7f6ca2da4ea5b4c7e6d78b565c3857a5e716a277c0dfec7abe37f40eb729f638",
+    ".agentflow/proposals/next-version-2026-10-22/ADVERSARIAL.md": "f0e3cbf6f3359a14f9816e509e38498fd5fc7bd2853778628cb6e0e2a1dd9a0f",
+    "crates/dendro-core/src/domain_v1/quantity.rs": "7f7ad9a4d0bef5e39f21ceaa96fa6ea69af413829ec7c644c9c459ed9c1b1fee",
+    "crates/dendro-core/src/domain_v1/revision.rs": "3c940fb895624a227fe6da98a3bbf7ec5e1629f60c18872345de1ac4c3815032",
+    "crates/dendro-core/src/domain_v1/work.rs": "6afd22c395fb4a6e8570a85fbc828da558786f97f1222c1a8fe958c2be45bfa6",
+    "crates/dendro-core/src/domain_v1/record_types/usage.rs": "f530d567f216a5536c75c6b1e05065ca5f5eecb9cd1f3757f716c5905c8b6ca7",
+    "crates/dendro-core/src/domain_v1/record_types/common.rs": "cc05c54ad5487d21442f5d899ada69dd79b5d77832873399153885b5cd49959d",
+    "crates/dendro-core/src/domain_v1/records.rs": "dd3682f98dced31624f39ee97d55646d88f9a306cd99e63791134112b8016655",
+    "crates/dendro-core/src/domain_v1/mod.rs": "0bcff4e17432be0d851afc77ffc69564c1fafbba01362868c19b33e41b5c58ba"
+  },
+  "conventions": {
+    "time": "All JSON times are integer microseconds, including symbolic ingestion/cutoff day labels in F22-derived recipes; no wall-clock date inference.",
+    "identity": "Symbols are synthetic typed identities, not production IDs. Within a recipe repeated symbols identify the same entity. An adapter must materialize domain-tagged IDs through IdentityFactory with a synthetic private test key, never infer from display labels.",
+    "evidence": "Unless explicitly missing/unknown/conflict, positive asserted edges, membership, prices, equivalence and continuation are stipulated source-backed synthetic evidence with valid references. Unspecified metadata is fixture scaffolding, not a default for real data.",
+    "scaffolding": "Give each fact a unique source key/fact/evidence identity, schema/parser version1, revision1, observed_at<=ingested_at, event_sequence in source order. Revision cases override their chain keys and revisions. All ordinary facts are ingested before the query knowledge cutoff; assignments bound exactly their stated work/attempt; all omitted unrelated session facts are out of scope.",
+    "clock": "Interval-fold recipes stipulate one evidenced same clock and exact bounds unless explicitly testing comparability. Arithmetic interval endpoints use UTC microsecond representation, never anonymous cross-clock alignment.",
+    "quantity": "JSON integers are exact; rational strings n/d are reduced mathematical values. Money canonical Decimal uses coefficient/power-of-ten denominator and is distinct from reduced Ratio. Source precision remains metadata.",
+    "assertions": "Expected fields are scoped assertions, not an entire Answer schema. Null never means zero. Refusal/reason strings are semantic draft labels requiring future adapter mapping.",
+    "execution": "fixture-recipes.py materializes input and expected JSON and validates exact arithmetic workings using Python stdlib Fraction. It does not run Dendro or test product behavior. Future builder translates structured operation/input to typed fixtures without editing this author-owned oracle.",
+    "missing_expected": "Open questions are excluded from claimed expectations; do not auto-fill them from implementation output."
+  },
+  "non_claims": [
+    "No causal inference",
+    "No statistical significance or confidence",
+    "No implementation correctness claim",
+    "No review, freeze, acceptance or publication authority"
+  ],
+  "case_count": 75,
+  "cases": [
+    {
+      "id": "T14-01-diamond",
+      "references": [
+        "F03",
+        "T14-A1"
+      ],
+      "operation": "direct_and_inclusive",
+      "input": {
+        "direct": {
+          "P": 1,
+          "A": 1,
+          "B": 1,
+          "D": 1
+        },
+        "edges": [
+          [
+            "spawn",
+            "P",
+            "A"
+          ],
+          [
+            "spawn",
+            "P",
+            "B"
+          ],
+          [
+            "delegate_existing",
+            "A",
+            "D"
+          ],
+          [
+            "delegate_existing",
+            "B",
+            "D"
+          ]
+        ],
+        "D_existing": true,
+        "D_spawn_origin_count": 0
+      },
+      "expected": {
+        "fleet_direct": 4,
+        "inclusive": {
+          "P": 4,
+          "A": 2,
+          "B": 2,
+          "D": 1
+        },
+        "inclusive_nonadditive": true,
+        "forbidden_caller_sum": 5
+      },
+      "working": "Reach(P)={P,A,B,D}; Reach(A)={A,D}; Reach(B)={B,D}. Each observation occurs once in its set. 1+2+2=5 repeats D and is not fleet usage.",
+      "arithmetic_checks": [
+        "1+1+1+1 == 4",
+        "1+2+2 == 5"
+      ]
+    },
+    {
+      "id": "T14-02-two-roots",
+      "references": [
+        "F03"
+      ],
+      "operation": "multi_root_union",
+      "input": {
+        "direct": {
+          "R1": 2,
+          "R2": 3,
+          "D": 7
+        },
+        "edges": [
+          [
+            "delegate_existing",
+            "R1",
+            "D"
+          ],
+          [
+            "delegate_existing",
+            "R2",
+            "D"
+          ]
+        ]
+      },
+      "expected": {
+        "inclusive": {
+          "R1": 9,
+          "R2": 10
+        },
+        "union_direct": 12,
+        "forbidden_sum": 19
+      },
+      "working": "Root observation sets {r1,d} and {r2,d} intersect at d; union is {r1,r2,d}.",
+      "arithmetic_checks": [
+        "2+7 == 9",
+        "3+7 == 10",
+        "2+3+7 == 12",
+        "9+10 == 19"
+      ]
+    },
+    {
+      "id": "T14-03-shared-no-weights",
+      "references": [
+        "F04"
+      ],
+      "operation": "allocation",
+      "input": {
+        "shared_tokens": 1000,
+        "callers": [
+          "A",
+          "B"
+        ],
+        "weights": null
+      },
+      "expected": {
+        "shared": 1000,
+        "owned": {
+          "A": null,
+          "B": null
+        },
+        "ownership": "unknown"
+      },
+      "working": "Two callers provide no ownership weights. Shared amount remains 1000, never 500 per caller.",
+      "arithmetic_checks": []
+    },
+    {
+      "id": "T14-04-partial-weights",
+      "references": [
+        "F04"
+      ],
+      "operation": "allocation",
+      "input": {
+        "tokens": 1000,
+        "weights": {
+          "A": "3/5",
+          "B": "3/10"
+        },
+        "method": "evidenced-v1"
+      },
+      "expected": {
+        "allocated": {
+          "A": "600/1",
+          "B": "300/1"
+        },
+        "residual": "100/1",
+        "conserved": "1000/1"
+      },
+      "working": "1000*3/5=600; 1000*3/10=300; residual=1000*(1-9/10)=100.",
+      "arithmetic_checks": [
+        "1000*F(3,5)==600",
+        "1000*F(3,10)==300",
+        "1000*(1-F(9,10))==100",
+        "600+300+100==1000"
+      ]
+    },
+    {
+      "id": "T14-05-omitted-claimant",
+      "references": [
+        "F04"
+      ],
+      "operation": "allocation",
+      "input": {
+        "tokens": 100,
+        "known_callers": [
+          "A",
+          "B",
+          "C"
+        ],
+        "weights": {
+          "A": "25/100",
+          "B": "40/100"
+        }
+      },
+      "expected": {
+        "allocated": {
+          "A": "25/1",
+          "B": "40/1"
+        },
+        "residual": "35/1",
+        "C_owned": null
+      },
+      "working": "25/100+40/100=13/20. Residual 100*7/20=35 stays unallocated; C has no weight.",
+      "arithmetic_checks": [
+        "F(25,100)+F(40,100)==F(13,20)",
+        "100*(1-F(13,20))==35",
+        "25+40+35==100"
+      ]
+    },
+    {
+      "id": "T14-06-overweight",
+      "references": [
+        "F04"
+      ],
+      "operation": "allocation",
+      "input": {
+        "tokens": 100,
+        "weight_sets": [
+          [
+            "7/10",
+            "4/10"
+          ],
+          [
+            "70/100",
+            "50/100"
+          ]
+        ]
+      },
+      "expected": {
+        "allocated": null,
+        "refusal": "weight_sum_exceeds_one",
+        "source_tokens": 100
+      },
+      "working": "11/10>1 and 6/5>1; neither set admits a conserved nonnegative residual.",
+      "arithmetic_checks": [
+        "F(7,10)+F(4,10)>1",
+        "F(70,100)+F(50,100)>1"
+      ]
+    },
+    {
+      "id": "T14-07-fractional-conservation",
+      "references": [
+        "F04"
+      ],
+      "operation": "allocation",
+      "input": {
+        "tokens": 1,
+        "weights": {
+          "A": "1/3",
+          "B": "1/6"
+        },
+        "display_places": 2
+      },
+      "expected": {
+        "allocated": {
+          "A": "1/3",
+          "B": "1/6"
+        },
+        "residual": "1/2",
+        "total": "1/1",
+        "display": {
+          "A": "0.33",
+          "B": "0.17",
+          "residual": "0.50"
+        }
+      },
+      "working": "1/3+1/6=1/2; residual=1/2; exact sum=1. Display does not replace canonical rational shares.",
+      "arithmetic_checks": [
+        "F(1,3)+F(1,6)+F(1,2)==1",
+        "half_even(F(1,3),2)==F(33,100)",
+        "half_even(F(1,6),2)==F(17,100)"
+      ]
+    },
+    {
+      "id": "T14-08-equivalent-pair",
+      "references": [
+        "F06"
+      ],
+      "operation": "observation_equivalence",
+      "input": {
+        "rows": [
+          [
+            "o1",
+            100
+          ],
+          [
+            "o2",
+            100
+          ]
+        ],
+        "equivalence_evidence": [
+          [
+            "o1",
+            "o2"
+          ]
+        ]
+      },
+      "expected": {
+        "canonical_tokens": 100,
+        "duplicate_rows": 1
+      },
+      "working": "Explicit equivalence collapses {o1,o2} to one 100-token equivalence class; 2-1=1 duplicate.",
+      "arithmetic_checks": [
+        "2-1==1"
+      ]
+    },
+    {
+      "id": "T14-09-overlap",
+      "references": [
+        "F06"
+      ],
+      "operation": "observation_equivalence",
+      "input": {
+        "rows": [
+          [
+            "o1",
+            100
+          ],
+          [
+            "o2",
+            100
+          ],
+          [
+            "o3",
+            100
+          ]
+        ],
+        "equivalence": [
+          [
+            "o1",
+            "o2"
+          ]
+        ],
+        "possible_overlap": [
+          [
+            "o1",
+            "o3"
+          ]
+        ]
+      },
+      "expected": {
+        "canonical_fleet": null,
+        "refusal": "ambiguous_overlap",
+        "equivalent_pair_tokens": 100,
+        "o3_source_tokens": 100,
+        "duplicate_rows": 1
+      },
+      "working": "Known equivalence resolves only o1/o2. Unknown intersection with o3 prevents a canonical fleet sum.",
+      "arithmetic_checks": []
+    },
+    {
+      "id": "T14-10-namespaces",
+      "references": [
+        "F07"
+      ],
+      "operation": "request_identity",
+      "input": {
+        "keys": [
+          [
+            "authA",
+            "inc1",
+            "r1",
+            100
+          ],
+          [
+            "authB",
+            "inc1",
+            "r1",
+            200
+          ]
+        ],
+        "overlap": false
+      },
+      "expected": {
+        "distinct_observations": 2,
+        "direct_tokens": 300
+      },
+      "working": "The authority component differs; full keys are unequal. Disjoint direct values add 100+200.",
+      "arithmetic_checks": [
+        "100+200==300"
+      ]
+    },
+    {
+      "id": "T14-11-generation-replacement",
+      "references": [
+        "F06",
+        "F09"
+      ],
+      "operation": "generation_equivalence",
+      "input": {
+        "rows": [
+          [
+            "sourceA",
+            1,
+            "r1",
+            40
+          ],
+          [
+            "sourceA",
+            2,
+            "r1",
+            40
+          ]
+        ],
+        "replacement": true,
+        "cross_generation_equivalence": null,
+        "possible_same_call": true
+      },
+      "expected": {
+        "canonical_fleet": null,
+        "refusal": "ambiguous_overlap",
+        "retained_source_values": [
+          40,
+          40
+        ],
+        "inferred_reset": false
+      },
+      "working": "Equal bytes/native keys in generations 1 and 2 prove neither equivalence nor reset; do not silently choose 40 or 80.",
+      "arithmetic_checks": []
+    },
+    {
+      "id": "T14-12-usage-only",
+      "references": [
+        "T14-A1"
+      ],
+      "operation": "direct_usage_without_invocation",
+      "input": {
+        "tokens": 17,
+        "invocation": null,
+        "overlap": false,
+        "coverage": "complete"
+      },
+      "expected": {
+        "direct_tokens": 17,
+        "linked_invocation_count": 0,
+        "total_invocation_count": null
+      },
+      "working": "Usage amount is evidenced independently. An absent invocation link does not erase 17 or prove total invocation count.",
+      "arithmetic_checks": []
+    },
+    {
+      "id": "T14-13-inclusion",
+      "references": [
+        "F08"
+      ],
+      "operation": "component_total",
+      "input": {
+        "input_inclusive": 100,
+        "cache_read": 40,
+        "cache_read_included_in": "input",
+        "output_exclusive": 20
+      },
+      "expected": {
+        "derived_total": 120,
+        "cache_fraction": "2/5"
+      },
+      "working": "Input already contains cache-read; 100+20=120. Cache fraction=40/100=2/5, not extra usage.",
+      "arithmetic_checks": [
+        "100+20==120",
+        "F(40,100)==F(2,5)"
+      ]
+    },
+    {
+      "id": "T14-14-unknown-inclusion",
+      "references": [
+        "F08"
+      ],
+      "operation": "component_total",
+      "input": {
+        "input": 100,
+        "cache_read": 40,
+        "output": 20,
+        "inclusion": "unknown",
+        "literal_reported_total": 120
+      },
+      "expected": {
+        "derived_total": null,
+        "cache_fraction": null,
+        "refusal": "unknown_inclusion",
+        "literal_reported_total": 120,
+        "literal_definition": "definition_unknown",
+        "retained_components": [
+          100,
+          40,
+          20
+        ]
+      },
+      "working": "Unknown intersection size prevents union cardinality. Literal 120 is a separate source-grain statement, not a derived total.",
+      "arithmetic_checks": []
+    },
+    {
+      "id": "T14-15-mixed-knownness",
+      "references": [
+        "F08"
+      ],
+      "operation": "component_total",
+      "input": {
+        "modern_input": 100,
+        "legacy_input": null,
+        "legacy_definition": "unknown"
+      },
+      "expected": {
+        "observed_subset_input": 100,
+        "full_input": null
+      },
+      "working": "Known subset is 100; no quantity is supplied for legacy input, so full total cannot be 100 by substitution.",
+      "arithmetic_checks": []
+    },
+    {
+      "id": "T14-16-cumulative",
+      "references": [
+        "F09"
+      ],
+      "operation": "counter_deltas",
+      "input": {
+        "counter": "c1",
+        "incarnation": "i1",
+        "values": [
+          100,
+          150
+        ],
+        "initialized_since_zero": false
+      },
+      "expected": {
+        "first_cumulative": 100,
+        "first_delta": null,
+        "second_delta": 50,
+        "complete_consumption": null
+      },
+      "working": "The first baseline is unknown; only the difference 150-100=50 is observed incremental consumption.",
+      "arithmetic_checks": [
+        "150-100==50"
+      ]
+    },
+    {
+      "id": "T14-17-reset",
+      "references": [
+        "F09"
+      ],
+      "operation": "counter_reset",
+      "input": {
+        "previous": 150,
+        "current": 20,
+        "source_reset": true,
+        "initialized_since_zero": true
+      },
+      "expected": {
+        "new_epoch_delta": 20
+      },
+      "working": "An explicit since-zero reset initializes a new epoch at zero; current-minus-zero=20.",
+      "arithmetic_checks": [
+        "20-0==20"
+      ]
+    },
+    {
+      "id": "T14-18-decrease-only",
+      "references": [
+        "F09"
+      ],
+      "operation": "counter_reset",
+      "input": {
+        "previous": 150,
+        "current": 20,
+        "source_reset": false
+      },
+      "expected": {
+        "delta": null,
+        "status": "conflict_or_unknown",
+        "retained_current": 20
+      },
+      "working": "20<150 without reset evidence. Negative difference -130 is not consumed usage and does not prove an epoch change.",
+      "arithmetic_checks": [
+        "20-150==-130"
+      ]
+    },
+    {
+      "id": "T14-19-reset-baseline-only",
+      "references": [
+        "F09"
+      ],
+      "operation": "counter_reset",
+      "input": {
+        "previous": 150,
+        "current": 20,
+        "source_reset": true,
+        "initialized_since_zero": false
+      },
+      "expected": {
+        "new_epoch_baseline": 20,
+        "new_epoch_delta": null
+      },
+      "working": "Reset evidence without since-zero initialization does not establish pre-reading consumption in the new epoch.",
+      "arithmetic_checks": []
+    },
+    {
+      "id": "T14-20-retry",
+      "references": [
+        "F14",
+        "T14-A1"
+      ],
+      "operation": "same_work_attempt_selection",
+      "input": {
+        "work": "W",
+        "attempts": [
+          [
+            "a1",
+            10,
+            "failed"
+          ],
+          [
+            "a2",
+            4,
+            "succeeded"
+          ]
+        ],
+        "edges": [
+          [
+            "retry",
+            "a1",
+            "a2"
+          ]
+        ],
+        "accepted_receipt": null
+      },
+      "expected": {
+        "work_direct_tokens": 14,
+        "attempt_count": 2,
+        "inclusive_a1_tokens": 10,
+        "attempt_successes": 1,
+        "work_acceptance": null
+      },
+      "working": "Work membership selects both distinct attempts: 10+4=14. Retry is not descendant reachability; success is not acceptance.",
+      "arithmetic_checks": [
+        "10+4==14"
+      ]
+    },
+    {
+      "id": "T14-21-resume",
+      "references": [
+        "T14-A1"
+      ],
+      "operation": "same_attempt_segments",
+      "input": {
+        "attempt": "a1",
+        "segments": [
+          [
+            "s1",
+            0,
+            3
+          ],
+          [
+            "s2",
+            5,
+            8
+          ]
+        ],
+        "continuation_evidence": true,
+        "direct_observations": [
+          [
+            "o1",
+            2
+          ],
+          [
+            "o2",
+            7
+          ]
+        ]
+      },
+      "expected": {
+        "attempt_count": 1,
+        "segment_count": 2,
+        "wall_us": 6,
+        "summed_attempt_us": 6,
+        "direct_tokens": 9
+      },
+      "working": "Continuation keeps one attempt. Disjoint lengths (3-0)+(8-5)=6; observations 2+7=9.",
+      "arithmetic_checks": [
+        "(3-0)+(8-5)==6",
+        "2+7==9"
+      ]
+    },
+    {
+      "id": "T14-22-correction-cutoffs",
+      "references": [
+        "F22"
+      ],
+      "operation": "corrections_at_cutoff_v1",
+      "input": {
+        "event_us": 0,
+        "revisions": [
+          {
+            "id": "f1",
+            "revision": 1,
+            "ingested": 1,
+            "value": 100
+          },
+          {
+            "id": "f2",
+            "revision": 2,
+            "ingested": 3,
+            "value": 80,
+            "supersedes": "f1"
+          },
+          {
+            "id": "f3",
+            "revision": 3,
+            "ingested": 4,
+            "retracts": "f2"
+          }
+        ],
+        "cutoffs": [
+          2,
+          3,
+          4
+        ]
+      },
+      "expected": {
+        "active_values": [
+          [
+            100
+          ],
+          [
+            80
+          ],
+          []
+        ],
+        "active_fact_counts": [
+          1,
+          1,
+          0
+        ],
+        "audit_fact_count": 3
+      },
+      "working": "At cutoff2 only f1 is visible. At3 f2 supersedes f1. At4 f3 removes f2. Empty active set is not erased history.",
+      "arithmetic_checks": []
+    },
+    {
+      "id": "T14-23-reparent-correction",
+      "references": [
+        "F22",
+        "F23"
+      ],
+      "operation": "edge_revision_then_closure",
+      "input": {
+        "direct": {
+          "P": 2,
+          "Q": 3,
+          "D": 7
+        },
+        "D_created_at": 2,
+        "edge_revisions": [
+          {
+            "id": "e1",
+            "revision": 1,
+            "ingested": 1,
+            "event": 0,
+            "spawn": [
+              "P",
+              "D"
+            ]
+          },
+          {
+            "id": "e2",
+            "revision": 2,
+            "ingested": 3,
+            "event": 0,
+            "spawn": [
+              "Q",
+              "D"
+            ],
+            "supersedes": "e1"
+          }
+        ],
+        "source_key": "same-edge-chain",
+        "cutoffs": [
+          2,
+          3
+        ]
+      },
+      "expected": {
+        "at_2": {
+          "P": 9,
+          "Q": 3,
+          "D": 7
+        },
+        "at_3": {
+          "P": 2,
+          "Q": 10,
+          "D": 7
+        },
+        "fleet_at_both": 12
+      },
+      "working": "This is an authoritative correction of the same historical relationship, not a new creator. Cutoff2 has only P->D; cutoff3 only Q->D. Fleet observation set remains {p,q,d}.",
+      "arithmetic_checks": [
+        "2+7==9",
+        "3+7==10",
+        "2+3+7==12"
+      ]
+    },
+    {
+      "id": "T14-24-conflicting-creators",
+      "references": [
+        "F23"
+      ],
+      "operation": "conflicting_spawn_claims",
+      "input": {
+        "direct": {
+          "P": 2,
+          "Q": 3,
+          "D": 7
+        },
+        "edges": [
+          [
+            "spawn",
+            "P",
+            "D"
+          ],
+          [
+            "spawn",
+            "Q",
+            "D"
+          ]
+        ],
+        "same_D_attempt": true,
+        "supersedes": null
+      },
+      "expected": {
+        "fleet_direct": 12,
+        "affected_inclusive": null,
+        "refusal": "conflicting_creators"
+      },
+      "working": "Two independent creator claims violate one-creator cardinality. No latest-wins reparenting; direct facts survive.",
+      "arithmetic_checks": [
+        "2+3+7==12"
+      ]
+    },
+    {
+      "id": "T14-25-cycle",
+      "references": [
+        "F23"
+      ],
+      "operation": "cyclic_inclusive",
+      "input": {
+        "edges": [
+          [
+            "spawn",
+            "A",
+            "B"
+          ],
+          [
+            "spawn",
+            "B",
+            "A"
+          ]
+        ],
+        "direct_after_correction": {
+          "A": 10,
+          "B": 4
+        }
+      },
+      "expected": {
+        "fleet_direct": 14,
+        "inclusive_A": null,
+        "inclusive_B": null,
+        "refusal": "cycle"
+      },
+      "working": "A->B->A is not an admissible lineage DAG. Independent direct values remain 10+4=14.",
+      "arithmetic_checks": [
+        "10+4==14"
+      ]
+    },
+    {
+      "id": "T14-26-return-does-not-expand",
+      "references": [
+        "F23"
+      ],
+      "operation": "nonclosure_relationship",
+      "input": {
+        "direct": {
+          "A": 10,
+          "B": 4
+        },
+        "edges": [
+          [
+            "spawn",
+            "A",
+            "B"
+          ],
+          [
+            "return",
+            "B",
+            "A"
+          ]
+        ],
+        "return_correlates_to_spawn": true
+      },
+      "expected": {
+        "fleet_direct": 14,
+        "inclusive": {
+          "A": 14,
+          "B": 4
+        }
+      },
+      "working": "Only spawn expands closure. B return A is a receipt, so Reach(B)={B}; no caller-session import.",
+      "arithmetic_checks": [
+        "10+4==14"
+      ]
+    },
+    {
+      "id": "T14-27-incomplete-closure",
+      "references": [
+        "T14-A1"
+      ],
+      "operation": "incomplete_nonnegative_lineage",
+      "input": {
+        "direct_observed": 8,
+        "known_descendant_observed": 3,
+        "missing_edge": true,
+        "all_observed_nonnegative": true,
+        "overlap": false
+      },
+      "expected": {
+        "inclusive_observed_lower_bound": 11,
+        "complete_inclusive": null,
+        "uncertainty": "observed_lower_bound"
+      },
+      "working": "The unique observed nonnegative subset contributes 8+3=11; missing descendants cannot reduce it.",
+      "arithmetic_checks": [
+        "8+3==11"
+      ]
+    },
+    {
+      "id": "T14-28-handoff-straddle",
+      "references": [
+        "T14-A1"
+      ],
+      "operation": "assignment_membership",
+      "input": {
+        "worker_tokens": 100,
+        "evidence_interval_us": [
+          0,
+          10
+        ],
+        "handoff_us": 5,
+        "ownership_split_evidence": null
+      },
+      "expected": {
+        "worker_direct": 100,
+        "before_owned": null,
+        "after_owned": null,
+        "shared_unattributed": 100
+      },
+      "working": "A transfer at5 does not split atomic 100-token evidence into equal halves. Worker-grain observation survives.",
+      "arithmetic_checks": []
+    },
+    {
+      "id": "T14-29-same-revision",
+      "references": [
+        "F11",
+        "F22"
+      ],
+      "operation": "revision_identity",
+      "input": {
+        "same_source_key_revision": true,
+        "money_values": [
+          [
+            "USD",
+            10,
+            100
+          ],
+          [
+            "USD",
+            1,
+            10
+          ]
+        ],
+        "all_other_canonical_fields_equal": true
+      },
+      "expected": {
+        "canonical_decimal": {
+          "coefficient": 1,
+          "denominator": 10
+        },
+        "idempotent": true,
+        "digest_relation": "equal",
+        "duplicate_consumption": 0
+      },
+      "working": "Strip one trailing zero from 10/100 ->1/10; numeric canonical content is identical, no new usage.",
+      "arithmetic_checks": [
+        "F(10,100)==F(1,10)"
+      ]
+    },
+    {
+      "id": "T14-30-divergent-revision",
+      "references": [
+        "F22"
+      ],
+      "operation": "revision_identity",
+      "input": {
+        "same_source_key_revision": true,
+        "values": [
+          40,
+          25
+        ],
+        "all_other_fields_equal": true
+      },
+      "expected": {
+        "status": "conflict",
+        "selected_value": null,
+        "retained_values": [
+          40,
+          25
+        ]
+      },
+      "working": "Same revision differs in canonical amount. Neither 40,25 nor their sum is an authorized winner.",
+      "arithmetic_checks": []
+    },
+    {
+      "id": "T14-31-window-moved-correction",
+      "references": [
+        "F22"
+      ],
+      "operation": "revision_selection_before_window",
+      "input": {
+        "window_us": [
+          0,
+          5
+        ],
+        "revisions": [
+          {
+            "id": "a",
+            "event": 4,
+            "value": 100,
+            "ingested": 1
+          },
+          {
+            "id": "b",
+            "event": 6,
+            "value": 80,
+            "ingested": 3,
+            "supersedes": "a"
+          }
+        ],
+        "cutoffs": [
+          2,
+          3
+        ]
+      },
+      "expected": {
+        "at_2_included_ids": [
+          "a"
+        ],
+        "at_2_tokens": 100,
+        "at_3_included_ids": [],
+        "at_3_active_id": "b"
+      },
+      "working": "At3 the active revision b lies outside [0,5); filtering b cannot resurrect superseded a.",
+      "arithmetic_checks": []
+    },
+    {
+      "id": "T14-32-observed-unpriced",
+      "references": [
+        "F11"
+      ],
+      "operation": "observed_vs_estimated_cost",
+      "input": {
+        "observed": [
+          "USD",
+          2,
+          100
+        ],
+        "rate_card": null
+      },
+      "expected": {
+        "observed": {
+          "currency": "USD",
+          "coefficient": 2,
+          "denominator": 100
+        },
+        "estimate": null,
+        "estimate_refusal": "rate_card_absent"
+      },
+      "working": "Observed two cents needs no price inference. Missing rates invalidate only estimated cost.",
+      "arithmetic_checks": []
+    },
+    {
+      "id": "T14-33-priced-components",
+      "references": [
+        "F11"
+      ],
+      "operation": "estimated_cost",
+      "input": {
+        "provider": "p1",
+        "model": "m1",
+        "rate_card": "v3",
+        "rate_time_match": true,
+        "exclusive_components": {
+          "input": 1000,
+          "output": 500
+        },
+        "USD_per_million": {
+          "input": 2,
+          "output": 8
+        }
+      },
+      "expected": {
+        "estimated_USD": {
+          "coefficient": 6,
+          "denominator": 1000
+        },
+        "exact_reduced": "3/500"
+      },
+      "working": "1000*2/1000000+500*8/1000000=2000/1000000+4000/1000000=0.006. Canonical Decimal is 6/1000; reduced ratio 3/500 describes the same number, not Decimal wire.",
+      "arithmetic_checks": [
+        "1000*F(2,1000000)+500*F(8,1000000)==F(3,500)",
+        "F(6,1000)==F(3,500)"
+      ]
+    },
+    {
+      "id": "T14-34-cost-partitions",
+      "references": [
+        "F11"
+      ],
+      "operation": "cost_partition",
+      "input": {
+        "facts": [
+          [
+            "observed",
+            "USD",
+            150
+          ],
+          [
+            "observed",
+            "EUR",
+            200
+          ],
+          [
+            "estimated",
+            "USD",
+            6,
+            "card-v3"
+          ],
+          [
+            "subscription",
+            "USD",
+            2000,
+            "month"
+          ]
+        ],
+        "FX_policy": null
+      },
+      "expected": {
+        "partitions": [
+          [
+            "observed",
+            "USD",
+            150
+          ],
+          [
+            "observed",
+            "EUR",
+            200
+          ],
+          [
+            "estimated",
+            "USD",
+            6
+          ],
+          [
+            "subscription",
+            "USD",
+            2000
+          ]
+        ],
+        "grand_total": null
+      },
+      "working": "Currency, evidence mode and subscription period define distinct measures. No operation authorizes 2356 as spend.",
+      "arithmetic_checks": []
+    },
+    {
+      "id": "T14-35-observed-precedence",
+      "references": [
+        "F11"
+      ],
+      "operation": "cost_population_partition",
+      "input": {
+        "observed_USD": {
+          "A": "2/100"
+        },
+        "estimated_USD": {
+          "A": "3/100",
+          "B": "1/100"
+        }
+      },
+      "expected": {
+        "preferred_observed_USD": "1/50",
+        "unmatched_estimated_USD": "1/100",
+        "matched_estimate_USD": "3/100",
+        "combined_observed_plus_estimated": null
+      },
+      "working": "A has an observed comparable cost; its estimate remains labeled and is not added. B has only an unmatched estimate.",
+      "arithmetic_checks": [
+        "F(2,100)==F(1,50)"
+      ]
+    },
+    {
+      "id": "T14-36-unknown-currency",
+      "references": [
+        "F11"
+      ],
+      "operation": "cost_currency_eligibility",
+      "input": {
+        "source_amount": "0.02",
+        "currency": null
+      },
+      "expected": {
+        "currency_total": null,
+        "refusal": "currency_unknown"
+      },
+      "working": "A scalar without evidenced currency cannot be silently USD. No expected typed Money or FX value is asserted.",
+      "arithmetic_checks": []
+    },
+    {
+      "id": "T14-37-missing-component-rate",
+      "references": [
+        "F11"
+      ],
+      "operation": "estimated_cost",
+      "input": {
+        "tokens": {
+          "input": 1000,
+          "output": 500
+        },
+        "prices_per_million": {
+          "input": 2,
+          "output": null
+        }
+      },
+      "expected": {
+        "full_estimate": null,
+        "refusal": "component_rate_missing",
+        "priced_input_subset_USD": "1/500"
+      },
+      "working": "Known input component is 1000*2/1000000=1/500; unknown output price prevents a full estimate.",
+      "arithmetic_checks": [
+        "1000*F(2,1000000)==F(1,500)"
+      ]
+    },
+    {
+      "id": "T14-38-round-once",
+      "references": [
+        "F11"
+      ],
+      "operation": "money_display",
+      "input": {
+        "currency": "USD",
+        "amounts_decimal": [
+          [
+            5,
+            1000
+          ],
+          [
+            5,
+            1000
+          ]
+        ],
+        "display_places": 2,
+        "rounding": "half_even"
+      },
+      "expected": {
+        "canonical_sum": {
+          "coefficient": 1,
+          "denominator": 100
+        },
+        "display": "0.01",
+        "forbidden_sum_of_rounded": "0.00"
+      },
+      "working": "0.005+0.005=0.010 ->canonical0.01 ->display0.01. Each 0.005 independently rounds to0.00; rounding before aggregation loses the cent.",
+      "arithmetic_checks": [
+        "F(5,1000)+F(5,1000)==F(1,100)",
+        "half_even(F(5,1000),2)==0",
+        "half_even(F(1,100),2)==F(1,100)"
+      ]
+    },
+    {
+      "id": "T14-39-half-even-ties",
+      "references": [
+        "F11"
+      ],
+      "operation": "money_display",
+      "input": {
+        "amounts": [
+          "0.025",
+          "0.035",
+          "-0.025",
+          "-0.035"
+        ],
+        "places": 2
+      },
+      "expected": {
+        "display": [
+          "0.02",
+          "0.04",
+          "-0.02",
+          "-0.04"
+        ]
+      },
+      "working": "Scaled ties are2.5,3.5,-2.5,-3.5; choose the even integer2,4,-2,-4. Signed decimal display is tested without interpreting negative amounts as nonnegative usage.",
+      "arithmetic_checks": [
+        "half_even(F(25,1000),2)==F(2,100)",
+        "half_even(F(35,1000),2)==F(4,100)",
+        "half_even(F(-25,1000),2)==F(-2,100)",
+        "half_even(F(-35,1000),2)==F(-4,100)"
+      ]
+    },
+    {
+      "id": "T14-40-zero-and-precision",
+      "references": [
+        "F11"
+      ],
+      "operation": "decimal_normalization",
+      "input": {
+        "decimals": [
+          [
+            0,
+            1000000
+          ],
+          [
+            123456789,
+            1000000000
+          ],
+          [
+            100,
+            1000
+          ]
+        ]
+      },
+      "expected": {
+        "canonical_decimals": [
+          [
+            0,
+            1
+          ],
+          [
+            123456789,
+            1000000000
+          ],
+          [
+            1,
+            10
+          ]
+        ]
+      },
+      "working": "Zero is0/1.123456789 has no trailing decimal zero, so preserve all nine source decimal places;100/1000 strips two zeros.",
+      "arithmetic_checks": [
+        "F(0,1000000)==0",
+        "F(100,1000)==F(1,10)"
+      ]
+    },
+    {
+      "id": "T14-41-count-overflow",
+      "references": [
+        "T14-A1"
+      ],
+      "operation": "checked_count_sum",
+      "input": {
+        "unit": "tokens",
+        "values": [
+          "18446744073709551615",
+          "1"
+        ]
+      },
+      "expected": {
+        "canonical_count": null,
+        "refusal": "overflow",
+        "mathematical_sum": "18446744073709551616"
+      },
+      "working": "2^64-1+1=2^64 exceeds Count u64; never wrap to0.",
+      "arithmetic_checks": [
+        "(2**64-1)+1==2**64"
+      ]
+    },
+    {
+      "id": "T14-42-full-overlap",
+      "references": [
+        "F01"
+      ],
+      "operation": "interval_fold",
+      "input": {
+        "segments": [
+          [
+            "A",
+            0,
+            10000000
+          ],
+          [
+            "B",
+            0,
+            10000000
+          ]
+        ],
+        "clock": "c1"
+      },
+      "expected": {
+        "wall_us": 10000000,
+        "summed_attempt_us": 20000000,
+        "mean_concurrency": "2/1"
+      },
+      "working": "Union is[0,10M); two distinct attempt lengths sum20M.20M/10M=2.",
+      "arithmetic_checks": [
+        "10000000+10000000==20000000",
+        "F(20000000,10000000)==2"
+      ]
+    },
+    {
+      "id": "T14-43-abut",
+      "references": [
+        "F02"
+      ],
+      "operation": "interval_fold",
+      "input": {
+        "segments": [
+          [
+            "A",
+            0,
+            10000000
+          ],
+          [
+            "B",
+            10000000,
+            12000000
+          ]
+        ],
+        "clock": "c1"
+      },
+      "expected": {
+        "wall_us": 12000000,
+        "summed_attempt_us": 12000000,
+        "mean_concurrency": "1/1",
+        "peak": 1
+      },
+      "working": "At10M A has ended and B starts. Half-open endpoints do not create overlap;10M+2M=12M.",
+      "arithmetic_checks": [
+        "10000000+2000000==12000000"
+      ]
+    },
+    {
+      "id": "T14-44-overlap-sweep",
+      "references": [
+        "F02"
+      ],
+      "operation": "interval_fold",
+      "input": {
+        "segments": [
+          [
+            "A",
+            0,
+            10000000
+          ],
+          [
+            "B",
+            9000000,
+            12000000
+          ]
+        ],
+        "clock": "c1"
+      },
+      "expected": {
+        "wall_us": 12000000,
+        "summed_attempt_us": 13000000,
+        "mean_concurrency": "13/12",
+        "peak": 2,
+        "sweep": [
+          [
+            0,
+            9000000,
+            1
+          ],
+          [
+            9000000,
+            10000000,
+            2
+          ],
+          [
+            10000000,
+            12000000,
+            1
+          ]
+        ]
+      },
+      "working": "Union[0,12M); lengths10M+3M=13M. Sweep integral9M*1+1M*2+2M*1=13M.",
+      "arithmetic_checks": [
+        "10000000+3000000==13000000",
+        "9000000+2*1000000+2000000==13000000",
+        "F(13000000,12000000)==F(13,12)"
+      ]
+    },
+    {
+      "id": "T14-45-distinct-vs-replay",
+      "references": [
+        "F01"
+      ],
+      "operation": "activity_segment_identity",
+      "input": {
+        "rows": [
+          [
+            "A",
+            "s1",
+            0,
+            10
+          ],
+          [
+            "A",
+            "s1",
+            0,
+            10
+          ],
+          [
+            "B",
+            "s2",
+            0,
+            10
+          ]
+        ],
+        "first_pair_equivalent": true,
+        "clock": "c1"
+      },
+      "expected": {
+        "distinct_segments": 2,
+        "wall_us": 10,
+        "summed_attempt_us": 20,
+        "mean_concurrency": "2/1"
+      },
+      "working": "Replay of segment s1 is not another execution. A and B remain distinct active attempts even with equal intervals.",
+      "arithmetic_checks": [
+        "10+10==20"
+      ]
+    },
+    {
+      "id": "T14-46-descendant-outlives",
+      "references": [
+        "F05"
+      ],
+      "operation": "parent_vs_lineage_wall",
+      "input": {
+        "parent_us": [
+          0,
+          5000000
+        ],
+        "child_us": [
+          4000000,
+          20000000
+        ],
+        "child_direct_tokens": 100,
+        "parent_direct_tokens": 0,
+        "edge": "spawn"
+      },
+      "expected": {
+        "parent_wall_us": 5000000,
+        "lineage_wall_us": 20000000,
+        "lineage_summed_us": 21000000,
+        "inclusive_parent_tokens": 100,
+        "descendant_outlived": true
+      },
+      "working": "Parent length5M; child length16M; connected union[0,20M) length20M; summed=5M+16M=21M.",
+      "arithmetic_checks": [
+        "5000000+16000000==21000000",
+        "20000000-4000000==16000000"
+      ]
+    },
+    {
+      "id": "T14-47-duration-window",
+      "references": [
+        "F02",
+        "T14-A2"
+      ],
+      "operation": "duration_window_intersection",
+      "input": {
+        "window_us": [
+          5,
+          10
+        ],
+        "segments": [
+          [
+            "A",
+            0,
+            8
+          ],
+          [
+            "B",
+            7,
+            12
+          ]
+        ],
+        "clock": "c1"
+      },
+      "expected": {
+        "clipped": [
+          [
+            5,
+            8
+          ],
+          [
+            7,
+            10
+          ]
+        ],
+        "wall_us": 5,
+        "summed_attempt_us": 6,
+        "mean_concurrency": "6/5"
+      },
+      "working": "Intersect duration intervals geometrically: lengths3+3=6, union[5,10) length5.",
+      "arithmetic_checks": [
+        "(8-5)+(10-7)==6",
+        "10-5==5",
+        "F(6,5)==F(6,5)"
+      ]
+    },
+    {
+      "id": "T14-48-censored",
+      "references": [
+        "F15"
+      ],
+      "operation": "right_censoring",
+      "input": {
+        "start_us": 5,
+        "end_us": null,
+        "cutoff_us": 10,
+        "liveness_through_us": 10,
+        "liveness_ingested_at": 10,
+        "knowledge_cutoff": 10,
+        "clock": "c1"
+      },
+      "expected": {
+        "observed_contribution_us": 5,
+        "right_censored": true,
+        "status": "partial",
+        "completed_duration": null
+      },
+      "working": "Visible liveness proves survival through10, yielding10-5=5 observed duration; completed duration remains unknown.",
+      "arithmetic_checks": [
+        "10-5==5"
+      ]
+    },
+    {
+      "id": "T14-49-lone-start",
+      "references": [
+        "F15"
+      ],
+      "operation": "right_censoring",
+      "input": {
+        "start_us": 5,
+        "end_us": null,
+        "cutoff_us": 10,
+        "liveness": null
+      },
+      "expected": {
+        "duration_us": null,
+        "right_censored": false,
+        "reason": "missing_end"
+      },
+      "working": "A start alone proves no ongoing activity through10; do not replace missing end with cutoff.",
+      "arithmetic_checks": []
+    },
+    {
+      "id": "T14-50-late-liveness",
+      "references": [
+        "F15"
+      ],
+      "operation": "sealed_knowledge_cutoff",
+      "input": {
+        "start_us": 5,
+        "end_us": null,
+        "cutoff_us": 10,
+        "liveness_through_us": 10,
+        "liveness_ingested_at": 11,
+        "knowledge_cutoff": 10
+      },
+      "expected": {
+        "duration_us": null,
+        "reason": "missing_end",
+        "used_liveness": false
+      },
+      "working": "Receipt11 is outside knowledge cutoff10. Later evidence cannot rewrite sealed earlier knowledge.",
+      "arithmetic_checks": []
+    },
+    {
+      "id": "T14-51-invalid-and-empty",
+      "references": [
+        "F15"
+      ],
+      "operation": "interval_validation",
+      "input": {
+        "intervals_us": [
+          [
+            10,
+            5
+          ],
+          [
+            5,
+            5
+          ]
+        ],
+        "clock": "c1"
+      },
+      "expected": {
+        "reversed": {
+          "duration_us": null,
+          "reason": "invalid_interval"
+        },
+        "empty": {
+          "wall_us": 0,
+          "summed_attempt_us": 0,
+          "mean_concurrency": null,
+          "reason": "zero_denominator"
+        }
+      },
+      "working": "10->5 is a conflicting interval, not length0. Valid[5,5) is empty;0/0 has no concurrency ratio.",
+      "arithmetic_checks": [
+        "5-5==0"
+      ]
+    },
+    {
+      "id": "T14-52-unknown-clocks",
+      "references": [
+        "F15"
+      ],
+      "operation": "clock_comparability",
+      "input": {
+        "segments": [
+          [
+            "A",
+            0,
+            10,
+            "cA"
+          ],
+          [
+            "B",
+            0,
+            10,
+            "cB"
+          ]
+        ],
+        "clock_mapping": null
+      },
+      "expected": {
+        "source_durations_us": {
+          "A": 10,
+          "B": 10
+        },
+        "combined_wall_us": null,
+        "combined_concurrency": null,
+        "reason": "incomparable_clocks"
+      },
+      "working": "Local lengths are10 each. Equal numeric coordinates on unrelated clocks do not establish overlap or a fleet wall.",
+      "arithmetic_checks": [
+        "10-0==10"
+      ]
+    },
+    {
+      "id": "T14-53-clock-bounds",
+      "references": [
+        "F15"
+      ],
+      "operation": "boundary_order",
+      "input": {
+        "A": {
+          "time_us": 10,
+          "error_us": 2,
+          "clock": "c"
+        },
+        "B": {
+          "time_us": 13,
+          "error_us": 2,
+          "clock": "c"
+        },
+        "source_sequence": null
+      },
+      "expected": {
+        "A_no_later_than_B": null,
+        "status": "ambiguous"
+      },
+      "working": "A possible[8,12],B possible[11,15] overlap;12<=11 is false and8>15 is false. Nominal ordering is not proved.",
+      "arithmetic_checks": [
+        "10+2==12",
+        "13-2==11",
+        "not (12<=11)",
+        "not (8>15)"
+      ]
+    },
+    {
+      "id": "T14-54-clock-disjoint-and-local",
+      "references": [
+        "F15"
+      ],
+      "operation": "boundary_order",
+      "input": {
+        "disjoint": {
+          "A": [
+            10,
+            2
+          ],
+          "B": [
+            15,
+            2
+          ],
+          "same_clock": true
+        },
+        "local": {
+          "A_sequence": 4,
+          "B_sequence": 5,
+          "same_source_generation": true,
+          "clock": null
+        }
+      },
+      "expected": {
+        "disjoint_A_no_later": true,
+        "local_A_no_later": true,
+        "inferred_causality": false
+      },
+      "working": "Latest A=12<=earliest B=13 proves order. Separately sequence4<=5 proves source-local order, not causal influence.",
+      "arithmetic_checks": [
+        "10+2<=15-2",
+        "4<=5"
+      ]
+    },
+    {
+      "id": "T14-55a-atomic-window",
+      "references": [
+        "T14-A2"
+      ],
+      "operation": "atomic_window_selection",
+      "input": {
+        "window_us": [
+          0,
+          5
+        ],
+        "tokens": 100,
+        "observed_USD": "2/100",
+        "event_count": 1,
+        "attribution_timestamp_us": null,
+        "evidence_interval_us": [
+          0,
+          10
+        ]
+      },
+      "expected": {
+        "included_ids": [],
+        "included_amounts": null,
+        "excluded_observation_count": 1,
+        "excluded_source_tokens": 100,
+        "reason": "straddle_unsplit",
+        "coverage": "partial"
+      },
+      "working": "Timestamp takes precedence when present:0<=t<5. Otherwise require full interval containment. No included observation means exclusion, not an assertion that source usage was measured zero. Apply the same whole-observation decision to100 tokens,USD0.02 and one event; no proration.",
+      "arithmetic_checks": []
+    },
+    {
+      "id": "T14-55b-atomic-window",
+      "references": [
+        "T14-A2"
+      ],
+      "operation": "atomic_window_selection",
+      "input": {
+        "window_us": [
+          0,
+          5
+        ],
+        "tokens": 100,
+        "observed_USD": "2/100",
+        "event_count": 1,
+        "attribution_timestamp_us": 4,
+        "evidence_interval_us": [
+          0,
+          10
+        ]
+      },
+      "expected": {
+        "included_ids": [
+          "o1"
+        ],
+        "included_amounts": {
+          "tokens": 100,
+          "observed_USD": "1/50",
+          "event_count": 1
+        },
+        "excluded_observation_count": 0,
+        "excluded_source_tokens": 0,
+        "reason": null,
+        "coverage": "complete_for_declared_selection"
+      },
+      "working": "Timestamp takes precedence when present:0<=t<5. Otherwise require full interval containment. No included observation means exclusion, not an assertion that source usage was measured zero. Apply the same whole-observation decision to100 tokens,USD0.02 and one event; no proration.",
+      "arithmetic_checks": []
+    },
+    {
+      "id": "T14-55c-atomic-window",
+      "references": [
+        "T14-A2"
+      ],
+      "operation": "atomic_window_selection",
+      "input": {
+        "window_us": [
+          0,
+          5
+        ],
+        "tokens": 100,
+        "observed_USD": "2/100",
+        "event_count": 1,
+        "attribution_timestamp_us": 5,
+        "evidence_interval_us": [
+          0,
+          10
+        ]
+      },
+      "expected": {
+        "included_ids": [],
+        "included_amounts": null,
+        "excluded_observation_count": 1,
+        "excluded_source_tokens": 100,
+        "reason": "timestamp_outside_window",
+        "coverage": "complete_for_declared_selection"
+      },
+      "working": "Timestamp takes precedence when present:0<=t<5. Otherwise require full interval containment. No included observation means exclusion, not an assertion that source usage was measured zero. Apply the same whole-observation decision to100 tokens,USD0.02 and one event; no proration.",
+      "arithmetic_checks": []
+    },
+    {
+      "id": "T14-55d-atomic-window",
+      "references": [
+        "T14-A2"
+      ],
+      "operation": "atomic_window_selection",
+      "input": {
+        "window_us": [
+          0,
+          5
+        ],
+        "tokens": 100,
+        "observed_USD": "2/100",
+        "event_count": 1,
+        "attribution_timestamp_us": 5,
+        "evidence_interval_us": [
+          0,
+          5
+        ]
+      },
+      "expected": {
+        "included_ids": [],
+        "included_amounts": null,
+        "excluded_observation_count": 1,
+        "excluded_source_tokens": 100,
+        "reason": "timestamp_outside_window",
+        "coverage": "complete_for_declared_selection"
+      },
+      "working": "Timestamp takes precedence when present:0<=t<5. Otherwise require full interval containment. No included observation means exclusion, not an assertion that source usage was measured zero. Apply the same whole-observation decision to100 tokens,USD0.02 and one event; no proration.",
+      "arithmetic_checks": []
+    },
+    {
+      "id": "T14-55e-atomic-window",
+      "references": [
+        "T14-A2"
+      ],
+      "operation": "atomic_window_selection",
+      "input": {
+        "window_us": [
+          0,
+          5
+        ],
+        "tokens": 100,
+        "observed_USD": "2/100",
+        "event_count": 1,
+        "attribution_timestamp_us": null,
+        "evidence_interval_us": [
+          0,
+          5
+        ]
+      },
+      "expected": {
+        "included_ids": [
+          "o1"
+        ],
+        "included_amounts": {
+          "tokens": 100,
+          "observed_USD": "1/50",
+          "event_count": 1
+        },
+        "excluded_observation_count": 0,
+        "excluded_source_tokens": 0,
+        "reason": null,
+        "coverage": "complete_for_declared_selection"
+      },
+      "working": "Timestamp takes precedence when present:0<=t<5. Otherwise require full interval containment. No included observation means exclusion, not an assertion that source usage was measured zero. Apply the same whole-observation decision to100 tokens,USD0.02 and one event; no proration.",
+      "arithmetic_checks": []
+    },
+    {
+      "id": "T14-55f-atomic-window",
+      "references": [
+        "T14-A2"
+      ],
+      "operation": "atomic_window_selection",
+      "input": {
+        "window_us": [
+          0,
+          5
+        ],
+        "tokens": 100,
+        "observed_USD": "2/100",
+        "event_count": 1,
+        "attribution_timestamp_us": null,
+        "evidence_interval_us": null
+      },
+      "expected": {
+        "included_ids": [],
+        "included_amounts": null,
+        "excluded_observation_count": 1,
+        "excluded_source_tokens": 100,
+        "reason": "time_unknown",
+        "coverage": "partial"
+      },
+      "working": "Timestamp takes precedence when present:0<=t<5. Otherwise require full interval containment. No included observation means exclusion, not an assertion that source usage was measured zero. Apply the same whole-observation decision to100 tokens,USD0.02 and one event; no proration.",
+      "arithmetic_checks": []
+    },
+    {
+      "id": "T14-55g-atomic-window",
+      "references": [
+        "T14-A2"
+      ],
+      "operation": "atomic_window_selection",
+      "input": {
+        "window_us": [
+          0,
+          5
+        ],
+        "tokens": 100,
+        "observed_USD": "2/100",
+        "event_count": 1,
+        "attribution_timestamp_us": 0,
+        "evidence_interval_us": [
+          0,
+          10
+        ]
+      },
+      "expected": {
+        "included_ids": [
+          "o1"
+        ],
+        "included_amounts": {
+          "tokens": 100,
+          "observed_USD": "1/50",
+          "event_count": 1
+        },
+        "excluded_observation_count": 0,
+        "excluded_source_tokens": 0,
+        "reason": null,
+        "coverage": "complete_for_declared_selection"
+      },
+      "working": "Timestamp takes precedence when present:0<=t<5. Otherwise require full interval containment. No included observation means exclusion, not an assertion that source usage was measured zero. Apply the same whole-observation decision to100 tokens,USD0.02 and one event; no proration.",
+      "arithmetic_checks": []
+    },
+    {
+      "id": "T14-55h-atomic-window",
+      "references": [
+        "T14-A2"
+      ],
+      "operation": "atomic_window_selection",
+      "input": {
+        "window_us": [
+          0,
+          5
+        ],
+        "tokens": 100,
+        "observed_USD": "2/100",
+        "event_count": 1,
+        "attribution_timestamp_us": -1,
+        "evidence_interval_us": [
+          0,
+          5
+        ]
+      },
+      "expected": {
+        "included_ids": [],
+        "included_amounts": null,
+        "excluded_observation_count": 1,
+        "excluded_source_tokens": 100,
+        "reason": "timestamp_outside_window",
+        "coverage": "complete_for_declared_selection"
+      },
+      "working": "Timestamp takes precedence when present:0<=t<5. Otherwise require full interval containment. No included observation means exclusion, not an assertion that source usage was measured zero. Apply the same whole-observation decision to100 tokens,USD0.02 and one event; no proration.",
+      "arithmetic_checks": []
+    },
+    {
+      "id": "T14-56-ratio-populations",
+      "references": [
+        "F10"
+      ],
+      "operation": "named_ratios",
+      "input": {
+        "cost_USD": [
+          10,
+          10,
+          10
+        ],
+        "success": [
+          1,
+          0,
+          1
+        ],
+        "closed_attempt_population": [
+          "a",
+          "b",
+          "c"
+        ]
+      },
+      "expected": {
+        "cost_per_success": "15/1",
+        "mean_successful_attempt_cost": "10/1",
+        "mean_per_attempt_cost_per_success_positive_denominator": "10/1",
+        "undefined_terms": 1
+      },
+      "working": "Ratio of sums=(10+10+10)/(1+0+1)=15. Successful-attempt mean=(10+10)/2=10. Named mean of defined per-attempt ratios=(10/1+10/1)/2=10, excludes one10/0.",
+      "arithmetic_checks": [
+        "F(10+10+10,1+0+1)==15",
+        "F(10+10,2)==10"
+      ]
+    },
+    {
+      "id": "T14-57-cache-ratios",
+      "references": [
+        "F10"
+      ],
+      "operation": "named_ratios",
+      "input": {
+        "invocations": [
+          [
+            "a",
+            90,
+            100
+          ],
+          [
+            "b",
+            1,
+            10
+          ]
+        ],
+        "inclusion": "known_compatible"
+      },
+      "expected": {
+        "ratio_of_sums": "91/110",
+        "named_mean_invocation_fraction": "1/2",
+        "undefined_terms": 0
+      },
+      "working": "Sum raw counts:(90+1)/(100+10)=91/110. Mean fractions=(9/10+1/10)/2=1/2. Reducing individual ratios before summing counts would change the measure.",
+      "arithmetic_checks": [
+        "F(90+1,100+10)==F(91,110)",
+        "(F(90,100)+F(1,10))/2==F(1,2)"
+      ]
+    },
+    {
+      "id": "T14-58-mean-missing-grain",
+      "references": [
+        "F10"
+      ],
+      "operation": "named_ratios",
+      "input": {
+        "cache_read": 91,
+        "input_inclusive": 110,
+        "grain": "aggregate",
+        "invocation_ids": null,
+        "inclusion": "known"
+      },
+      "expected": {
+        "ratio_of_sums": "91/110",
+        "named_mean_invocation_fraction": null,
+        "refusal": "invocation_grain_missing"
+      },
+      "working": "Aggregate numerator/denominator suffice for91/110 but cannot reconstruct individual invocation fractions.",
+      "arithmetic_checks": [
+        "F(91,110)==F(91,110)"
+      ]
+    },
+    {
+      "id": "T14-59-undefined-and-zero",
+      "references": [
+        "F10"
+      ],
+      "operation": "named_ratios",
+      "input": {
+        "terms": [
+          [
+            9,
+            10
+          ],
+          [
+            0,
+            0
+          ]
+        ],
+        "denominator_policy": "positive_only"
+      },
+      "expected": {
+        "ratio_of_sums": "9/10",
+        "named_mean_positive_denominator": "9/10",
+        "included_terms": 1,
+        "undefined_terms": 1,
+        "all_zero_denominator_ratio": null
+      },
+      "working": "0/0 is excluded and counted for the mean. Aggregate9/10 is defined; an all-zero-denominator aggregate is refused.",
+      "arithmetic_checks": [
+        "F(9+0,10+0)==F(9,10)"
+      ]
+    },
+    {
+      "id": "T14-60-missing-denominator",
+      "references": [
+        "F12",
+        "F14"
+      ],
+      "operation": "missingness",
+      "input": {
+        "successes": 2,
+        "eligible_attempt_population": null,
+        "encountered_accepted": 8,
+        "encountered_rejected": 2,
+        "expected_source_population": null
+      },
+      "expected": {
+        "success_rate": null,
+        "completeness_percentage": null,
+        "encountered_parse_acceptance": "4/5",
+        "rejected_count": 2,
+        "denominator_basis": "encountered_records"
+      },
+      "working": "2 successes lack an eligible outcome denominator.8/(8+2)=4/5 describes encountered parse acceptance only, not sensor completeness.",
+      "arithmetic_checks": [
+        "F(8,8+2)==F(4,5)"
+      ]
+    },
+    {
+      "id": "T14-61-zero-vs-unavailable",
+      "references": [
+        "F12"
+      ],
+      "operation": "coverage",
+      "input": {
+        "A": {
+          "discovery": "present",
+          "read": "complete",
+          "projection": "supported",
+          "eligible_count": 0
+        },
+        "B": {
+          "discovery": "unknown",
+          "read": "not_attempted",
+          "reason": "log_unavailable"
+        },
+        "C": {
+          "read": "failed"
+        }
+      },
+      "expected": {
+        "A": {
+          "count": 0,
+          "status": "supported"
+        },
+        "B": {
+          "count": null,
+          "status": "not_observable"
+        },
+        "C": {
+          "count": null
+        }
+      },
+      "working": "Only complete supported eligible enumeration establishes zero. An unread or failed source cannot establish emptiness.",
+      "arithmetic_checks": []
+    },
+    {
+      "id": "T14-62-population-mismatch",
+      "references": [
+        "F21",
+        "T14-A2"
+      ],
+      "operation": "ratio_comparability",
+      "input": {
+        "cost": {
+          "value": 30,
+          "population": [
+            "A",
+            "B",
+            "C"
+          ],
+          "unit": "USD",
+          "grain": "attempt"
+        },
+        "denominator": {
+          "value": 2,
+          "population": [
+            "X",
+            "Y"
+          ],
+          "unit": "accepted_work",
+          "grain": "work"
+        },
+        "attempt_to_work_mapping": null
+      },
+      "expected": {
+        "ratio": null,
+        "status": "noncomparable",
+        "reason": "unmatched_population_and_grain"
+      },
+      "working": "30/2 is arithmetically possible but lacks an evidenced matched work population; no efficiency claim follows.",
+      "arithmetic_checks": []
+    },
+    {
+      "id": "T14-63-unit-mismatch",
+      "references": [
+        "F21",
+        "T14-A2"
+      ],
+      "operation": "aggregate_compatibility",
+      "input": {
+        "values": [
+          {
+            "value": 100,
+            "unit": "tokens"
+          },
+          {
+            "value": 200,
+            "unit": "bytes"
+          }
+        ]
+      },
+      "expected": {
+        "sum": null,
+        "reason": "unit_mismatch",
+        "retained_values": [
+          100,
+          200
+        ]
+      },
+      "working": "Tokens and bytes have no evidenced conversion;100+200 cannot be reported as300 tokens.",
+      "arithmetic_checks": []
+    },
+    {
+      "id": "T14-64-grain-mismatch",
+      "references": [
+        "F21",
+        "T14-A2"
+      ],
+      "operation": "aggregate_compatibility",
+      "input": {
+        "values": [
+          {
+            "value": 2,
+            "unit": "count",
+            "grain": "message"
+          },
+          {
+            "value": 5,
+            "unit": "count",
+            "grain": "fragment"
+          }
+        ],
+        "fragment_to_message_mapping": null
+      },
+      "expected": {
+        "message_count": null,
+        "reason": "grain_mismatch",
+        "retained_values": [
+          2,
+          5
+        ]
+      },
+      "working": "A fragment is not an additional distinct message; missing assembly/equivalence evidence forbids a7-message total.",
+      "arithmetic_checks": []
+    },
+    {
+      "id": "T14-65-selection-mismatch",
+      "references": [
+        "F21"
+      ],
+      "operation": "descriptive_comparison",
+      "input": {
+        "group_A": {
+          "selection": "long_tasks",
+          "coverage": "complete"
+        },
+        "group_B": {
+          "selection": "short_tasks",
+          "coverage": "partial"
+        },
+        "matched_policy": false
+      },
+      "expected": {
+        "status": "noncomparable",
+        "ranking": null,
+        "causal_effect": null,
+        "statistical_significance": null
+      },
+      "working": "Different selection and coverage prevent the proposed ranking. Raw separately labeled descriptive observations remain possible.",
+      "arithmetic_checks": []
+    },
+    {
+      "id": "T14-66-zero-acceptance",
+      "references": [
+        "F14",
+        "T14-A2"
+      ],
+      "operation": "accepted_work_ratio",
+      "input": {
+        "matched_cost_USD": 30,
+        "known_accepted_work_count": 0,
+        "closed_world_acceptance": true
+      },
+      "expected": {
+        "cost_per_accepted_work": null,
+        "reason": "zero_denominator",
+        "infinity": false
+      },
+      "working": "30/0 is undefined; a known zero denominator is distinct from missing acceptance evidence.",
+      "arithmetic_checks": []
+    },
+    {
+      "id": "T14-67-acceptance-cutoffs",
+      "references": [
+        "F14"
+      ],
+      "operation": "outcome_cutoffs",
+      "input": {
+        "attempt": "succeeded",
+        "transitions": [
+          [
+            "completed",
+            1
+          ],
+          [
+            "accepted",
+            3
+          ],
+          [
+            "revoked",
+            4
+          ]
+        ],
+        "cutoffs": [
+          2,
+          3,
+          4
+        ],
+        "revocation_targets_acceptance": true
+      },
+      "expected": {
+        "attempt_successes": 1,
+        "acceptance_states": [
+          "unknown",
+          "accepted",
+          "revoked"
+        ],
+        "merged": null
+      },
+      "working": "At2 no acceptance receipt exists. At3 acceptance is visible. At4 its revocation is visible; successful attempt does not change.",
+      "arithmetic_checks": []
+    },
+    {
+      "id": "T14-68-exact-other-ratios",
+      "references": [
+        "F10"
+      ],
+      "operation": "exact_ratio_serialization",
+      "input": {
+        "pairs": [
+          [
+            19,
+            40
+          ],
+          [
+            11,
+            16
+          ]
+        ]
+      },
+      "expected": {
+        "reduced": [
+          "19/40",
+          "11/16"
+        ],
+        "exact_decimals": [
+          "0.475",
+          "0.6875"
+        ]
+      },
+      "working": "19/40=475/1000 and11/16=6875/10000 exactly; no binary floating approximation.",
+      "arithmetic_checks": [
+        "F(19,40)==F(475,1000)",
+        "F(11,16)==F(6875,10000)"
+      ]
+    }
+  ],
+  "open_questions": [
+    {
+      "id": "Q1",
+      "topic": "General reparenting without authoritative relationship revisions",
+      "question": "Does a runtime reparent event mean a new delegate_existing/handoff relation, or an authoritative correction of historical spawn? Specify stable source key, supersedes target and event validity before expecting subtree transfer.",
+      "omitted": "No generic latest-parent-wins expected vector. Case23 covers only explicit same-chain historical correction; case24 covers conflicting creators."
+    },
+    {
+      "id": "Q2",
+      "topic": "Money allocation canonical result wire type",
+      "question": "How must a nonterminating rational allocated currency share, e.g. USD0.01 * 1/3 = USD1/300, be serialized? Domain Money.amount is Decimal with power-of-ten denominator; allocation contract requires exact reduced rational shares.",
+      "omitted": "No claimed Money/Decimal wire for1/300. Fractional token allocations and terminating money calculations are covered."
+    },
+    {
+      "id": "Q3",
+      "topic": "Future T14 adapter and refusal-code ABI",
+      "question": "What exact public accounting_v1 request/response adapter and refusal-code mapping should execute these recipes? No numeric product implementation was used; labels here are semantic draft labels, not promises of Rust symbols.",
+      "omitted": "No claimed native conformance run, frozen fixture digest or builder/reviewer acceptance."
+    }
+  ]
+}
