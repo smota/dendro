@@ -141,7 +141,9 @@ assert all(case["refused"] and case["canonical_unchanged"] for case in proof["hi
 negative = proof["old_anchor_negative_control"]
 assert negative["old_anchor_write_divergence_detected"] is True
 assert negative["selected_database_unchanged"] is True
-assert "legacy_anchor_diverged_after_selection" in negative["error"]
+# Same accepted refusals as scripts/fixtures/migration_proof_driver.rs.
+assert ("legacy_anchor_diverged_after_selection" in negative["error"]
+        or "logical anchor changed or disappeared after selection binding" in negative["error"])
 
 def blob_hash(commit, path):
     data = subprocess.check_output(["git", "-C", str(repo), "show", f"{commit}:{path}"])

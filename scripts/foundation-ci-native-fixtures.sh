@@ -32,7 +32,8 @@ cleanup() {
   local status=$?
   trap - EXIT
   if $mounted; then sudo umount -- "$mountpoint" || status=1; fi
-  if [[ -n "$loop" ]]; then sudo losetup -d -- "$loop" || status=1; fi
+  # umount autoclears the loop device; detach only if it is still attached.
+  if [[ -n "$loop" ]] && sudo losetup -- "$loop" >/dev/null 2>&1; then sudo losetup -d -- "$loop" || status=1; fi
   printf '%s\n' "$status" > "$root/receipts/native-fixtures.exit"
   exit "$status"
 }
