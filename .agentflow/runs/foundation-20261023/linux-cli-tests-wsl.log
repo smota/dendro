@@ -1,0 +1,29 @@
+   Compiling dendro-core v0.7.0 (/home/sam/code/dendro-foundation-parity-20261023/crates/dendro-core)
+   Compiling dendro-resolver v0.7.0 (/home/sam/code/dendro-foundation-parity-20261023/crates/dendro-resolver)
+   Compiling dendro-watcher v0.7.0 (/home/sam/code/dendro-foundation-parity-20261023/crates/dendro-watcher)
+   Compiling dendro-connectors v0.7.0 (/home/sam/code/dendro-foundation-parity-20261023/crates/dendro-connectors)
+   Compiling dendro-cli v0.7.0 (/home/sam/code/dendro-foundation-parity-20261023/crates/dendro-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.50s
+     Running tests/sealed_cli.rs (/home/sam/code/dendro/target/debug/deps/sealed_cli-ecea4659831149d7)
+
+running 17 tests
+test run_help_lists_manifest_flags_and_visible_alias ... ok
+test manifest_write_and_sealed_are_mutually_exclusive_before_any_output ... ok
+test manifest_paths_refuse_secret_shaped_values_before_creating_outputs ... ok
+test top_level_help_lists_quickstart_shortcuts_and_report_kinds ... ok
+test storage_root_choice_reuses_exact_verified_path ... ok
+test storage_root_conflicts_are_explicit_even_when_db_equals_default ... ok
+test recovery_cli_returns_json_for_legacy_noop_and_first_publication_resume ... ok
+test first_openrig_run_aligns_owned_stage_before_logical_pointer_exists ... ok
+test cutoff_recovery_cli_reports_unchanged_and_reconciled_without_claiming_draft_publication ... ok
+test manifest_alias_writes_replayable_cutoff_and_refuses_output_aliases ... ok
+test recovery_cli_reuses_recorded_selection_and_refuses_invalid_pointer ... ok
+test status_dashboard_and_auto_materializing_ask_work_without_ceremony ... ok
+test nao_workspace_is_private_version_scoped_copy_and_cannot_write_selected_bundle ... ok
+test unicode_long_logical_marker_supports_all_read_surfaces_and_immutable_materialize ... ok
+test legacy_materialize_and_autoask_adopt_without_mutating_legacy_anchor ... ok
+test cli_ingest_after_schema4_migration_preserves_preimage_and_selected_read_custody ... ok
+test explicit_cli_migration_reads_schema4_and_rollback_selects_preserved_schema3 ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 30.89s
+

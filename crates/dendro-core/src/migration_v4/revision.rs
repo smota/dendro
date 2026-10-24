@@ -24,6 +24,7 @@ pub fn revision_count(db: &std::path::Path) -> Result<i64, MigrationError> {
     let count: i64 = conn.query_row("SELECT COUNT(*) FROM dendro_fact_revisions", [], |row| {
         row.get(0)
     })?;
+    conn.verify_runtime()?;
     Ok(count)
 }
 
@@ -54,6 +55,7 @@ pub fn insert_fact_revisions(
         )?;
     }
     tx.commit()?;
+    conn.verify_runtime()?;
     Ok(())
 }
 
@@ -82,6 +84,9 @@ pub fn query_revision_cutoff(
     };
     let quantity: Option<f64> = row.get(0)?;
     let retracted: bool = row.get(1)?;
+    drop(rows);
+    drop(stmt);
+    conn.verify_runtime()?;
     if retracted {
         Ok((None, RevisionState::Retracted))
     } else {

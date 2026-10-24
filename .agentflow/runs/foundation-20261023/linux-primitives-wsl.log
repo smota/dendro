@@ -1,0 +1,15 @@
+   Compiling dendro-platform-policy v0.1.0 (/home/sam/dendro-foundation-linux-parity-20261023/policy)
+   Compiling t24a-platform-harness v0.1.0 (/home/sam/dendro-foundation-linux-parity-20261023)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.55s
+     Running unittests src/lib.rs (target/debug/deps/t24a_platform_harness-82d3d368f8089cf9)
+
+running 6 tests
+test platform_v1::linux::tests::proc_status_euid_matches_bounded_read ... ok
+test platform_v1::linux::tests::held_fd_positive_operations_and_hostile_fixtures ... ok
+test platform_v1::linux::tests::retained_and_concurrent_private_roots_keep_distinct_names ... ok
+test platform_v1::linux_publication::tests::linux_identity_records_reject_windows_shape_and_private_root_acl ... ok
+test platform_v1::linux_publication::tests::linux_lock_busy_and_post_switch_failure_retain_evidence ... ok
+test platform_v1::linux_publication::tests::linux_absent_replace_stale_digest_and_read_custody ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+

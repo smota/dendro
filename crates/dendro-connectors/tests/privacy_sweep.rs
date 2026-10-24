@@ -281,20 +281,20 @@ fn every_family_through_every_source_field_stays_out_of_storage_and_output() {
     let mut decoded_columns = 0usize;
     for (family, marker) in FAMILIES.iter().enumerate() {
         let c = |field: &str| format!("{marker}ZZ{family}x{field}");
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         let root = dendro_core::platform_v1::create_user_private_root_with_choice(
             "dendro-sweep-",
             &dendro_core::platform_v1::StorageRootChoice::UserProfile,
         )
         .unwrap();
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         let dir = root.path().to_path_buf();
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         drop(root);
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         let dir =
             std::env::temp_dir().join(format!("dendro-sweep-{}-{family}", std::process::id()));
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let roots = sources(&dir, &c);
@@ -457,19 +457,19 @@ fn every_family_through_every_source_field_stays_out_of_storage_and_output() {
 fn the_sweep_sees_ordinary_values_that_reach_output() {
     let family = 99;
     let c = |field: &str| format!("plainZZ{family}x{field}");
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     let root = dendro_core::platform_v1::create_user_private_root_with_choice(
         "dendro-sweep-control-",
         &dendro_core::platform_v1::StorageRootChoice::UserProfile,
     )
     .unwrap();
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     let dir = root.path().to_path_buf();
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     drop(root);
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "linux")))]
     let dir = std::env::temp_dir().join(format!("dendro-sweep-control-{}", std::process::id()));
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "linux")))]
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     let roots = sources(&dir, &c);

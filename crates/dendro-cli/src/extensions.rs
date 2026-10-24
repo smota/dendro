@@ -507,7 +507,7 @@ pub async fn run(command: Commands) -> Result<()> {
                     &q,
                     baseline.as_ref(),
                 )?;
-                #[cfg(windows)]
+                #[cfg(any(windows, target_os = "linux"))]
                 if let Some(selected) = request.selected() {
                     ans["analytics_selection_sha256"] = serde_json::json!(crate::hex_selection(&selected.selection().sha256));
                 }
@@ -691,7 +691,7 @@ mod tests {
     struct TempDir(PathBuf);
     impl TempDir {
         fn new(prefix: &str) -> Self {
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "linux"))]
             {
                 let root = dendro_core::platform_v1::create_user_private_root_with_choice(
                     &format!(".dendro-cli-ext-{prefix}-"),
@@ -700,7 +700,7 @@ mod tests {
                 .expect("explicit USERPROFILE private fixture root");
                 Self(root.path().to_path_buf())
             }
-            #[cfg(not(windows))]
+            #[cfg(not(any(windows, target_os = "linux")))]
             {
                 let nanos = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)

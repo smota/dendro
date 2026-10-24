@@ -1,0 +1,34 @@
+{
+  "schema": "dendro.foundation-qa-handoff/v1",
+  "recorded_at": "2026-10-23T12:11:37.6929027Z",
+  "epoch": 1,
+  "fence": "foundation-20261023-1",
+  "owned_files": {
+    "crates/dendro-core/src/selection_binding/cleanup.rs": "0b8f1db30f0057403bdf793f269bf93950d68640765258fbf7142263d23a17b9",
+    "crates/dendro-core/tests/native_foundation_acceptance.rs": "8d629669166c2698dd5524b5f009d57df6ed93767701183f074ec169a26b9587",
+    "scripts/foundation-ci-native-fixtures.sh": "5566f09aef977b71b2e85b14ba46d3c36046d26307fa3e734e03d68eac052436",
+    "scripts/foundation-ci-native-fixtures.ps1": "bbd22210c84d98e4178e8561546018c780a4c3ee386bb7c1e7f6a579f2ecee26",
+    ".github/workflows/foundation.yml": "3befe5567c261db0bf7ac646e5ba7d378853ee7fe42164f901a4fa09a43b9cd8"
+  },
+  "validation": {
+    "windows_tests": "3 passed, 0 failed, 1 explicitly ignored cross-volume fixture",
+    "wsl_tests": "5 passed, 0 failed, 1 explicitly ignored cross-volume fixture",
+    "scoped_rustfmt": "pass",
+    "wsl_targeted_clippy": "pass before final Windows-only child environment fix",
+    "windows_targeted_clippy": "blocked solely by owner migration.rs:51-53 collapsible_if; no QA diagnostic",
+    "bash_syntax": "pass",
+    "powershell_parser": "pass"
+  },
+  "coverage": {
+    "T24_29": "actual distinct-device closed DB/key copy, unchanged source, destination privacy, verified local pointer; hosted Windows C/D and Linux disposable ext4 fixture execution REQUIRED, not yet run",
+    "T24_47": "actual forced DuckDB spill plus WAL, pinned private parents, declared library-leaf policy, native Windows held metadata and trusted ACL check; actual Windows and WSL passed",
+    "T24_52": "actual guarded cleanup request under canonical locks; current, immediate predecessor, older live reader, migrated rollback selection and failed schema4 retained; no disposal authority, no reclamation implemented",
+    "T24_23_24_25_48": "Linux actual subprocess contention, killed-holder release, exec noninheritance and hardlink sentinel refusal"
+  },
+  "limitations": [
+    "WSL is development evidence only; hosted native Linux still required",
+    "Cross-volume test intentionally ignored in ordinary suite; wrapper requires exact execution and positive proof marker",
+    "No reclamation or unreference authority added",
+    "No commit or push"
+  ]
+}

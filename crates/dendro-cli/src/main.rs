@@ -264,15 +264,26 @@ fn issue_publish_args(repo: &str, body: &str) -> Result<Vec<String>> {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Create a private UserProfile root; reuse the returned path with --storage-root.
+    /// Create a native private storage root; reuse its exact path with --storage-root.
     StorageInit,
-    /// Reconcile a prepared Windows selection under its recorded writer/publisher locks.
+    /// Reconcile a prepared selection under its recorded writer/publisher locks.
+    // Recovery returns a JSON status. resume_required is incomplete and exits nonzero.
     RecoverSelection {
         #[arg(long, default_value = "dendro.duckdb")]
         db: PathBuf,
         /// Reconcile a prepared cutoff manifest after recovering the analytics selection.
         #[arg(long)]
         cutoff: Option<PathBuf>,
+    },
+    /// Explicitly select a validated schema4 migration while retaining schema3 custody.
+    Migrate {
+        #[arg(long, default_value = "dendro.duckdb")]
+        db: PathBuf,
+    },
+    /// Select the retained schema3 preimage and preserve schema4 plus a loss receipt.
+    Rollback {
+        #[arg(long, default_value = "dendro.duckdb")]
+        db: PathBuf,
     },
     /// Inspect coverage, discovered harness roots, fleet topology, and next commands.
     #[command(next_help_heading = "Database & Scope")]
@@ -421,7 +432,6 @@ async fn run_ingest(
         .filter(|root| root.name == "openrig")
         .map(|root| root.path.clone())
         .collect();
-    let db_for_align = db.clone();
     let mut events = ShutdownEvents::new()?;
     let mut worker = tokio::task::spawn_blocking(move || {
         dendro_core::run_locked_with_manifest(
@@ -434,7 +444,7 @@ async fn run_ingest(
                 let mut roots = roots;
                 for root in &mut roots {
                     if root.name == "openrig" {
-                        root.path = dendro_core::align_openrig_spelling(&db_for_align, &root.path)?;
+                        root.path = dendro_core::align_openrig_spelling(staged, &root.path)?;
                     }
                 }
                 dendro_connectors::ingest_staged_with_manifest(
@@ -460,7 +470,7 @@ fn has_explicit_database(matches: &clap::ArgMatches) -> bool {
             .is_some_and(|(_, matches)| has_explicit_database(matches))
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 fn hex_selection(digest: &[u8; 32]) -> String {
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
@@ -496,9 +506,9 @@ async fn main() -> Result<()> {
     let mut command = cli.command;
     if matches!(command, Commands::StorageInit) {
         if cli.storage_root.is_some() {
-            anyhow::bail!("storage-init creates a new UserProfile root; omit --storage-root, then reuse the printed path with consumer commands");
+            anyhow::bail!("storage-init creates a new native private root; omit --storage-root, then reuse the printed path with consumer commands");
         }
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         {
             let root = dendro_core::selection_binding::create_userprofile_storage_root()?;
             println!(
@@ -507,10 +517,8 @@ async fn main() -> Result<()> {
             );
             return Ok(());
         }
-        #[cfg(not(windows))]
-        anyhow::bail!(
-            "storage-init is a Windows private-storage setup command; use --db on this platform"
-        );
+        #[cfg(not(any(windows, target_os = "linux")))]
+        anyhow::bail!("storage-init selected storage is supported only on Windows and Linux");
     }
     if let Some(root) = cli.storage_root {
         if db_explicit {
@@ -529,14 +537,16 @@ async fn main() -> Result<()> {
         {
             anyhow::bail!("a persistent verified root path is required; run dendro storage-init, then reuse its exact path with --storage-root <path>");
         }
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         let _admitted = dendro_core::platform_v1::open_existing_private_root(&root)?;
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         if !root.is_dir() {
             anyhow::bail!("storage root must be an existing directory");
         }
         let db = match &mut command {
             Commands::RecoverSelection { db, .. }
+            | Commands::Migrate { db }
+            | Commands::Rollback { db }
             | Commands::Status { db, .. }
             | Commands::Run { db, .. }
             | Commands::Report { db, .. }
@@ -568,13 +578,14 @@ async fn main() -> Result<()> {
             }
         }
     }
+    let rollback_requested = matches!(&command, Commands::Rollback { .. });
     match command {
         Commands::StorageInit => unreachable!(),
         Commands::RecoverSelection { db, cutoff } => {
             if let Some(path) = cutoff.as_ref() {
                 dendro_core::refuse_secret_path(path)?;
             }
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "linux"))]
             {
                 let logical = std::path::absolute(&db)?;
                 let choice = dendro_core::platform_v1::StorageRootChoice::Explicit(
@@ -583,8 +594,33 @@ async fn main() -> Result<()> {
                         .ok_or_else(|| anyhow::anyhow!("logical database has no parent"))?
                         .to_path_buf(),
                 );
-                let recovered = dendro_core::selection_binding::recover_logical_db(&db, &choice)?;
-                let digest = hex_selection(&recovered.selection().sha256);
+                use dendro_core::selection_binding::{
+                    RecoveryDisposition, SelectionRecoveryOutcome,
+                };
+                let (digest, status, message) =
+                    match dendro_core::selection_binding::recover_logical_db_with_outcome(
+                        &db, &choice,
+                    ) {
+                        Ok((recovered, outcome)) => (
+                            Some(hex_selection(&recovered.selection().sha256)),
+                            match outcome {
+                                SelectionRecoveryOutcome::Reconciled => "reconciled",
+                                SelectionRecoveryOutcome::Unchanged => "unchanged",
+                            },
+                            None,
+                        ),
+                        Err(error) => {
+                            if let Some(disposition) = error.downcast_ref::<RecoveryDisposition>() {
+                                let status = match disposition {
+                                    RecoveryDisposition::NothingToRecover => "nothing_to_recover",
+                                    RecoveryDisposition::ResumeRequired => "resume_required",
+                                };
+                                (None, status, Some(disposition.to_string()))
+                            } else {
+                                return Err(error);
+                            }
+                        }
+                    };
                 let cutoff_outcome = if let Some(cutoff) = cutoff {
                     use dendro_core::sealed_run::CutoffRecoveryOutcome;
                     match dendro_core::sealed_run::recover_cutoff_manifest(&cutoff) {
@@ -607,13 +643,64 @@ async fn main() -> Result<()> {
                 };
                 println!(
                     "{}",
-                    serde_json::json!({"status":"recovered", "analytics_selection_sha256":digest, "cutoff":cutoff_outcome})
+                    serde_json::json!({"status":status, "message":message, "published_by_recovery":false, "analytics_selection_sha256":digest, "cutoff":cutoff_outcome})
                 );
+                if status == "resume_required" {
+                    anyhow::bail!(
+                        "selected storage first publication requires resuming dendro run"
+                    );
+                }
             }
-            #[cfg(not(windows))]
+            #[cfg(not(any(windows, target_os = "linux")))]
             {
                 let _ = (db, cutoff);
-                anyhow::bail!("recover-selection is a Windows selected-storage command");
+                anyhow::bail!("recover-selection is supported only on Windows and Linux");
+            }
+        }
+        Commands::Migrate { db } | Commands::Rollback { db } => {
+            #[cfg(any(windows, target_os = "linux"))]
+            {
+                let rollback = rollback_requested;
+                let mut events = ShutdownEvents::new()?;
+                let mut worker = tokio::task::spawn_blocking(
+                    move || -> Result<serde_json::Value> {
+                        dendro_core::refuse_secret_path(&db)?;
+                        let logical = std::path::absolute(&db)?;
+                        let choice = dendro_core::platform_v1::StorageRootChoice::Explicit(
+                            logical
+                                .parent()
+                                .ok_or_else(|| anyhow::anyhow!("logical database has no parent"))?
+                                .to_path_buf(),
+                        );
+                        if rollback {
+                            let (selected, loss) =
+                                dendro_core::selection_binding::rollback_logical_db(
+                                    &db, &choice, false,
+                                )?;
+                            Ok(
+                                serde_json::json!({"status":"schema3_selected", "schema_version":3, "analytics_selection_sha256":hex_selection(&selected.selection().sha256), "loss_receipt":loss}),
+                            )
+                        } else {
+                            let selected =
+                                dendro_core::selection_binding::migrate_logical_db(&db, &choice)?;
+                            Ok(
+                                serde_json::json!({"status":"schema4_selected", "schema_version":4, "analytics_selection_sha256":hex_selection(&selected.selection().sha256), "schema3_preimage_retained":true}),
+                            )
+                        }
+                    },
+                );
+                let receipt = tokio::select! {
+                    joined = &mut worker => joined??,
+                    cause = events.next() => { std::process::exit(stop_cooperatively(worker, events, cause).await); }
+                };
+                println!("{receipt}");
+            }
+            #[cfg(not(any(windows, target_os = "linux")))]
+            {
+                let _ = db;
+                anyhow::bail!(
+                    "selected migration and rollback are supported only on Windows and Linux"
+                );
             }
         }
         Commands::Extensions(command) => {

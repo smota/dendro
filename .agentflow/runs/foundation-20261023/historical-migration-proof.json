@@ -1,0 +1,147 @@
+{
+  "schema": "dendro.historical-migration-proof/v1",
+  "passed": true,
+  "historical_commit": "6b755135f95e497071790e8e5e358995a8244a18",
+  "historical_release_artifact": false,
+  "execution_environment": "WSL",
+  "native_hosted_linux_acceptance": false,
+  "historical_lock_sha256": "d6f4cb003da355c8a17cfe27c52ccdd1e09c042dc9f8383b9788eae63885987b",
+  "historical_storage_sha256": "c58f517ca9992e36ec9c73700b77611ff4046335dddefe5b408686dbb37f5cce",
+  "oracle_sha256": "b7e80ab7c4259bfe86df8857835137a7033f167a2b4b7545931ec3e2765793ae",
+  "harness_files": {
+    "scripts/historical_migration_proof.py": "595d241719d72c72824e9466c2a0e897896e54a2e7363eec971e1367ab56df1d",
+    "scripts/fixtures/historical_openers.rs": "06a2d7087587766d08d3d2805694f04fc3a0a02cb71c822301be79a14d1553cd",
+    "scripts/fixtures/migration_proof_driver.rs": "067f4c1f707ad59b1a772e103244e38b7dd0946c70ae1f2309da65336702a903"
+  },
+  "frozen_fixture_files": {
+    ".agentflow/oracles/v080/T04/schema3-currency-extension.sql": "aacc7f839c5b4294f5577a3a87f2019e7823436872759b785b02c04e22a9a35d",
+    ".agentflow/oracles/v080/T04/schema3-fixture-projections.json": "b7c566c962d058e8b1edfec00230e8f9f0dbe14dff6a3cc6c72670485e3da5b6",
+    ".agentflow/oracles/v080/T04/schema3-fixture.sql": "a3d489511393771f8991666012f0872db234f9844dbbdd0eafe405130f4b761b"
+  },
+  "toolchain": "rustc 1.98.0 (88d9e12ae 2026-08-18)\nbinary: rustc\ncommit-hash: 88d9e12ae178fab0fb5cc050a94da85685d449ea\ncommit-date: 2026-08-18\nhost: x86_64-unknown-linux-gnu\nrelease: 1.98.0\nLLVM version: 22.1.8\n",
+  "historical_binary_sha256": "d4cccef30289163722b65982900c791b9064ccc7fe57bc0765c628af35435792",
+  "historical_binary_version": "dendro 0.7.0",
+  "historical_probe_sha256": "34903273506ac0ec6a8ae03ddad516adb98ab18ed6b042c9dc9b2a9d004e97c3",
+  "candidate_driver_sha256": "45e1d5bc12f4390195505c4a9c673cd69bac50b22e05ed44c78d819b457c68ae",
+  "oracle_fixture": {
+    "candidate_selected": false,
+    "loss_rollback": "LossReceipt { selected_bundle: \"preserved_schema3\", destructive_downmigration: false, failed_schema4_retained_private: true, failed_schema4_path: \"/home/sam/code/dendro-historical-proof-20261023d/home/.local/share/.dendro-t04-d4fb0d9dbc544d3e294cd55a33621bd3/stage.duckdb\", preserved_schema3_path: \"/home/sam/code/dendro-historical-proof-20261023d/oracle-fixture/schema3.duckdb\", last_common_watermark: Some(Watermark { source_id: \"src-A\", generation: 2, byte_offset: 512 }), last_common_cutoff: Some(\"2026-10-22 00:00:01\"), last_common_watermarks: [Watermark { source_id: \"src-A\", generation: 2, byte_offset: 512 }], last_common_cutoffs: [\"2026-10-22 00:00:01\"], watermark_scope: Observed, cutoff_scope: Observed, legacy_usage_scope: Observed, v4_only_membership_verified: true, excluded_fact_count: 2, excluded_windows: [(\"2026-10-22 00:00:02\", \"2026-10-22 00:00:03\")], excluded_source_ranges: [SourceRange { source_id: \"src-A\", generation: 2, byte_range_half_open: [512, 576] }], replay_available: false, full_continuity_claim: false, unresolved_loss: true, publication_code: \"atomic_existing_manifest_replace_unproved\", pointer_changed: false }",
+    "old_source_logs_supplied": false,
+    "pristine_rollback": "LossReceipt { selected_bundle: \"preserved_schema3\", destructive_downmigration: false, failed_schema4_retained_private: true, failed_schema4_path: \"/home/sam/code/dendro-historical-proof-20261023d/home/.local/share/.dendro-t04-d4fb0d9dbc544d3e294cd55a33621bd3/stage.duckdb\", preserved_schema3_path: \"/home/sam/code/dendro-historical-proof-20261023d/oracle-fixture/schema3.duckdb\", last_common_watermark: Some(Watermark { source_id: \"src-A\", generation: 2, byte_offset: 512 }), last_common_cutoff: Some(\"2026-10-22 00:00:01\"), last_common_watermarks: [Watermark { source_id: \"src-A\", generation: 2, byte_offset: 512 }], last_common_cutoffs: [\"2026-10-22 00:00:01\"], watermark_scope: Observed, cutoff_scope: Observed, legacy_usage_scope: Observed, v4_only_membership_verified: true, excluded_fact_count: 0, excluded_windows: [], excluded_source_ranges: [], replay_available: false, full_continuity_claim: true, unresolved_loss: false, publication_code: \"atomic_existing_manifest_replace_unproved\", pointer_changed: false }",
+    "private_retained_stage": "/home/sam/code/dendro-historical-proof-20261023d/home/.local/share/.dendro-t04-d4fb0d9dbc544d3e294cd55a33621bd3/stage.duckdb",
+    "publication_code": "atomic_existing_manifest_replace_unproved",
+    "schema3": "/home/sam/code/dendro-historical-proof-20261023d/oracle-fixture/schema3.duckdb",
+    "schema3_sha256": "02c924902add1894be4dac8a9150e98fbb517f9d492d1f2b6eeb4487afa5da72",
+    "schema4": "/home/sam/code/dendro-historical-proof-20261023d/oracle-fixture/schema4.duckdb",
+    "schema4_sha256": "f047d6f2869622c958f626e7869abe79b2ef15825fb7ab6ffa46009fc7085b38",
+    "sidecar_sha256": "7de1ee5debcdfb60dd4544fd52d6c299b07e3b66d4fd2dadb5a279a0f9dd8b1c",
+    "source_bundle_unchanged": true,
+    "tampered_key_refused": true
+  },
+  "historical_produced_fixture": {
+    "candidate_selected": false,
+    "loss_rollback": "LossReceipt { selected_bundle: \"preserved_schema3\", destructive_downmigration: false, failed_schema4_retained_private: true, failed_schema4_path: \"/home/sam/code/dendro-historical-proof-20261023d/home/.local/share/.dendro-t04-5d35185b21cf8cf477d92d98d3e9164f/stage.duckdb\", preserved_schema3_path: \"/home/sam/code/dendro-historical-proof-20261023d/produced-fixture/schema3.duckdb\", last_common_watermark: Some(Watermark { source_id: \"claude\\n/home/sam/code/dendro-historical-proof-20261023d/synthetic-logs\\nsession.jsonl\", generation: 1, byte_offset: 278 }), last_common_cutoff: None, last_common_watermarks: [Watermark { source_id: \"claude\\n/home/sam/code/dendro-historical-proof-20261023d/synthetic-logs\\nsession.jsonl\", generation: 1, byte_offset: 278 }], last_common_cutoffs: [], watermark_scope: Observed, cutoff_scope: Empty, legacy_usage_scope: Observed, v4_only_membership_verified: true, excluded_fact_count: 2, excluded_windows: [(\"2026-10-22 00:00:02\", \"2026-10-22 00:00:03\")], excluded_source_ranges: [SourceRange { source_id: \"src-A\", generation: 2, byte_range_half_open: [512, 576] }], replay_available: false, full_continuity_claim: false, unresolved_loss: true, publication_code: \"atomic_existing_manifest_replace_unproved\", pointer_changed: false }",
+    "old_source_logs_supplied": false,
+    "pristine_rollback": "LossReceipt { selected_bundle: \"preserved_schema3\", destructive_downmigration: false, failed_schema4_retained_private: true, failed_schema4_path: \"/home/sam/code/dendro-historical-proof-20261023d/home/.local/share/.dendro-t04-5d35185b21cf8cf477d92d98d3e9164f/stage.duckdb\", preserved_schema3_path: \"/home/sam/code/dendro-historical-proof-20261023d/produced-fixture/schema3.duckdb\", last_common_watermark: Some(Watermark { source_id: \"claude\\n/home/sam/code/dendro-historical-proof-20261023d/synthetic-logs\\nsession.jsonl\", generation: 1, byte_offset: 278 }), last_common_cutoff: None, last_common_watermarks: [Watermark { source_id: \"claude\\n/home/sam/code/dendro-historical-proof-20261023d/synthetic-logs\\nsession.jsonl\", generation: 1, byte_offset: 278 }], last_common_cutoffs: [], watermark_scope: Observed, cutoff_scope: Empty, legacy_usage_scope: Observed, v4_only_membership_verified: true, excluded_fact_count: 0, excluded_windows: [], excluded_source_ranges: [], replay_available: false, full_continuity_claim: true, unresolved_loss: false, publication_code: \"atomic_existing_manifest_replace_unproved\", pointer_changed: false }",
+    "private_retained_stage": "/home/sam/code/dendro-historical-proof-20261023d/home/.local/share/.dendro-t04-5d35185b21cf8cf477d92d98d3e9164f/stage.duckdb",
+    "publication_code": "atomic_existing_manifest_replace_unproved",
+    "schema3": "/home/sam/code/dendro-historical-proof-20261023d/produced-fixture/schema3.duckdb",
+    "schema3_sha256": "aa46e9eaa86e0dd110cbb2f3a9afb0a2133716eb02a9eb250107f3802310ebbd",
+    "schema4": "/home/sam/code/dendro-historical-proof-20261023d/produced-fixture/schema4.duckdb",
+    "schema4_sha256": "158c2adc1b8a653c268ebd0a521e4f56081308b2a9e3401c034c9233ef1cbdd4",
+    "sidecar_sha256": "e3a38d223194547f81217c9f2ed0637c3082a6b89f8db007b906567cc6e2253a",
+    "source_bundle_unchanged": true,
+    "tampered_key_refused": true
+  },
+  "historical_report_same_after_rollback": true,
+  "historical_refusal_cases": [
+    {
+      "fixture": "oracle",
+      "mode": "open_existing",
+      "refused": true,
+      "canonical_unchanged": true,
+      "sha256_before": "f047d6f2869622c958f626e7869abe79b2ef15825fb7ab6ffa46009fc7085b38",
+      "sha256_after": "f047d6f2869622c958f626e7869abe79b2ef15825fb7ab6ffa46009fc7085b38",
+      "byte_identical": true
+    },
+    {
+      "fixture": "oracle",
+      "mode": "open_staged",
+      "refused": true,
+      "canonical_unchanged": true,
+      "sha256_before": "f047d6f2869622c958f626e7869abe79b2ef15825fb7ab6ffa46009fc7085b38",
+      "sha256_after": "f047d6f2869622c958f626e7869abe79b2ef15825fb7ab6ffa46009fc7085b38",
+      "byte_identical": true
+    },
+    {
+      "fixture": "oracle",
+      "mode": "open_read_only",
+      "refused": true,
+      "canonical_unchanged": true,
+      "sha256_before": "f047d6f2869622c958f626e7869abe79b2ef15825fb7ab6ffa46009fc7085b38",
+      "sha256_after": "f047d6f2869622c958f626e7869abe79b2ef15825fb7ab6ffa46009fc7085b38",
+      "byte_identical": true
+    },
+    {
+      "fixture": "oracle",
+      "mode": "cli-report",
+      "refused": true,
+      "canonical_unchanged": true,
+      "sha256_before": "f047d6f2869622c958f626e7869abe79b2ef15825fb7ab6ffa46009fc7085b38",
+      "sha256_after": "f047d6f2869622c958f626e7869abe79b2ef15825fb7ab6ffa46009fc7085b38",
+      "byte_identical": true
+    },
+    {
+      "fixture": "historical-produced",
+      "mode": "open_existing",
+      "refused": true,
+      "canonical_unchanged": true,
+      "sha256_before": "158c2adc1b8a653c268ebd0a521e4f56081308b2a9e3401c034c9233ef1cbdd4",
+      "sha256_after": "158c2adc1b8a653c268ebd0a521e4f56081308b2a9e3401c034c9233ef1cbdd4",
+      "byte_identical": true
+    },
+    {
+      "fixture": "historical-produced",
+      "mode": "open_staged",
+      "refused": true,
+      "canonical_unchanged": true,
+      "sha256_before": "158c2adc1b8a653c268ebd0a521e4f56081308b2a9e3401c034c9233ef1cbdd4",
+      "sha256_after": "158c2adc1b8a653c268ebd0a521e4f56081308b2a9e3401c034c9233ef1cbdd4",
+      "byte_identical": true
+    },
+    {
+      "fixture": "historical-produced",
+      "mode": "open_read_only",
+      "refused": true,
+      "canonical_unchanged": true,
+      "sha256_before": "158c2adc1b8a653c268ebd0a521e4f56081308b2a9e3401c034c9233ef1cbdd4",
+      "sha256_after": "158c2adc1b8a653c268ebd0a521e4f56081308b2a9e3401c034c9233ef1cbdd4",
+      "byte_identical": true
+    },
+    {
+      "fixture": "historical-produced",
+      "mode": "cli-report",
+      "refused": true,
+      "canonical_unchanged": true,
+      "sha256_before": "158c2adc1b8a653c268ebd0a521e4f56081308b2a9e3401c034c9233ef1cbdd4",
+      "sha256_after": "158c2adc1b8a653c268ebd0a521e4f56081308b2a9e3401c034c9233ef1cbdd4",
+      "byte_identical": true
+    }
+  ],
+  "complete_receipt_path": "C:\\Users\\samue\\Documents\\Dendro-delivery-evidence-20261023\\foundation-historical\\source-pinned-proof.json",
+  "complete_receipt_sha256": "5380f0ff3708f720627b114e2f3987df3f40280f10992bed12ca841e9492900d",
+  "publication_api_files": {
+    "crates/dendro-core/tests/migration_publication_v080.rs": "68acffbb0a7f75932b3f787b5ff4f1629e4796f28514aa0d9823ca73bf4548bb",
+    "crates/dendro-core/src/migration_v4/mod.rs": "1e61469f8482913d5c3d8a2ed9f4f6dee15f57d7b76b8705348180ed031de91b",
+    "crates/dendro-core/src/migration_v4/publication.rs": "deeb0b3e893c3c5dffc0d0a449362d0db0a1db03492cac9b2cae2c8cd3b0e35f"
+  },
+  "publication_api_scope": "opaque validated handoff only; native publisher integration, new schema4 consumer support and explicit CLI migration remain separate",
+  "source_pin_note": "No v0.7.0 tag or release was found. This is a genuine version 0.7.0 source-pinned CLI build from immutable commit, plus separately hashed historical-core API probe.",
+  "publication_tests_passed": 3,
+  "migration_regression_tests_passed": 23,
+  "regression_log": "C:\\Users\\samue\\Documents\\Dendro-delivery-evidence-20261023\\foundation-historical\\migration-regression-final.log",
+  "regression_log_sha256": "1e22d57ad1d41173ce494d0e57104bf5cc6cc42c8f7725e21991f0204371f99a",
+  "rustfmt_scoped_check": "passed",
+  "candidate_binding": "Historical pre-rework source snapshot only; not acceptance of current candidate",
+  "superseded_candidate_receipt": ".agentflow/runs/foundation-20261023/migration-rework-01.json"
+}

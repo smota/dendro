@@ -228,7 +228,8 @@ fn check_roots(request: &PublicationRequest<'_>) -> Result<(), PlatformError> {
             return Err(refusal("cross_volume_publication_refused"));
         }
     }
-    if request.expected_bundle == request.expected_destination
+    if request.expected_staging == request.expected_destination
+        || request.expected_bundle == request.expected_destination
         || request.expected_bundle == request.expected_staging
     {
         return Err(refusal("publication_roots_alias"));
@@ -747,6 +748,18 @@ mod tests {
             drop(self);
             std::fs::remove_dir_all(path).unwrap();
         }
+    }
+
+    #[test]
+    fn staging_destination_alias_refuses_before_preparation() {
+        let fixture = Fixture::new();
+        let mut alias = fixture.request(None);
+        alias.staging = &fixture.root;
+        alias.expected_staging = fixture.root.metadata().identity;
+        let failure = publish_closed_bundle(&alias).unwrap_err();
+        assert_eq!(failure.mutation, SelectionMutation::NotChanged);
+        assert!(failure.retained.is_empty());
+        fixture.cleanup();
     }
 
     #[test]

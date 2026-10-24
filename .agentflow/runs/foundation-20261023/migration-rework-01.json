@@ -1,0 +1,38 @@
+{
+  "schema": "dendro.migration-foundation-rework/v1",
+  "review_round": 1,
+  "source_files": {
+    "crates/dendro-core/src/selection_binding/migration.rs": "01ee098a50a7851ded82dafecf4cd14cbc16dab00771eb9435015f10e3dcf128",
+    "crates/dendro-core/src/migration_v4/publication.rs": "c2f86b8962971470b346d5023cf7ad20b82a5efe45cc68c945fbd1a1b7eeb1b8",
+    "crates/dendro-core/src/migration_v4/read_validation.rs": "d1c5a257b7e0bf623824ddf6e8fed187f583f0f3e3c593376203997cbb66a3fa",
+    "crates/dendro-core/src/migration_v4/engine.rs": "8416f345d6f87f338390e9920309f26334658238af9095dae9fa5b0b07e9333b",
+    "crates/dendro-core/src/migration_v4/rollback.rs": "85df685f7d9b9232886404f85ce1fac45dca5745967329431dfbb58653232330",
+    "crates/dendro-core/src/migration_v4/mod.rs": "fdd9679e802e04dbb4c25fa15ea4f5e4af8595f30b05c5ea50cb2a8033928fd8",
+    "crates/dendro-core/tests/selected_migration_v080.rs": "828297e62b4e16aa6e7f6a57bdb6400245908e70456f326cb09a0fb5468f3562",
+    "crates/dendro-core/tests/migration_publication_v080.rs": "44e964cd6c2913f35ba797bbf7a0c7d30671a7d2006f237d9522f74c04bf7f82",
+    "scripts/historical_migration_proof.py": "7925fa7fade3cc794b619c9bcf6c327ce4f302b0ca9f6ef57fe257b601e74ba1",
+    "scripts/fixtures/historical_openers.rs": "06a2d7087587766d08d3d2805694f04fc3a0a02cb71c822301be79a14d1553cd",
+    "scripts/fixtures/migration_proof_driver.rs": "cf1ea77e84ec8a2ed25ceffb5463e39519863fbb2d68aae044c1801ed5a01c1e"
+  },
+  "checks": {
+    "environment": "WSL ext4",
+    "historical_clean_isolated_proof": "running",
+    "historical_proof_scratch": "/home/sam/code/dendro-historical-proof-20261023-r1",
+    "publication_handoff_tests": 5,
+    "migration_regression_tests": 23,
+    "selected_publication_migration_tests": 3,
+    "selected_driver_smoke": "passed",
+    "scoped_rustfmt": "passed",
+    "native_hosted_linux_acceptance": false
+  },
+  "limitations": [
+    "Existing frozen StageCandidate selected=false and publication refusal remain accurate for staging API only; child publishes through native selected backend.",
+    "Exclusion count covers declared v4-only IDs union actual new usage source keys; other table row additions/removals and postmigration watermarks are reported separately.",
+    "First-ever binding publication interruptions inherit native first-publication recovery semantics; no new forced-process-crash test was executed for migration child.",
+    "Unknown new derived-cache table/view shapes remain refused."
+  ],
+  "logs": [
+    "C:\\Users\\samue\\Documents\\Dendro-delivery-evidence-20261023\\foundation-historical\\selected-migration-r1-regression.log",
+    "C:\\Users\\samue\\Documents\\Dendro-delivery-evidence-20261023\\foundation-historical\\selected-driver-smoke.json"
+  ]
+}

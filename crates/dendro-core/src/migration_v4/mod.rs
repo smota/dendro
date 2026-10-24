@@ -3,6 +3,9 @@
 //! `facts::SCHEMA_VERSION` is intentionally unread as the target label.
 
 mod engine;
+mod private_connection;
+mod publication;
+mod read_validation;
 mod revision;
 mod rollback;
 mod sidecar;
@@ -19,12 +22,16 @@ use crate::platform_v1::{
     self, parse_child_name, FileIdentity, ObservedMetadata, PlatformError, PrivateRoot,
 };
 
+pub use publication::{
+    validate_publication_candidate, MigrationPublicationFile, MigrationPublicationReady,
+};
+pub use read_validation::{validate_selected_schema4, validate_selected_schema4_identity};
 pub use revision::{
     insert_fact_revisions, query_revision_cutoff, revision_count, FactRevision, RevisionState,
 };
 pub use rollback::{
     merge_half_open_ranges, record_v4_only_fact, rollback_to_preserved_schema3, EvidenceScope,
-    LossReceipt, SourceRange, V4OnlyFact, Watermark,
+    LegacyTableChange, LossReceipt, SourceRange, V4OnlyFact, Watermark,
 };
 pub use sidecar::{
     encode_sidecar, parse_sidecar, ParsedSidecar, SidecarError, SIDECAR_LEN, SIDECAR_VERSION,
@@ -185,7 +192,7 @@ pub fn migrate_closed_snapshot(
 }
 
 /// Explicit storage selection; a refusal never falls back to another root.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 pub fn migrate_closed_snapshot_with_root_choice(
     request: MigrateRequest<'_>,
     choice: &platform_v1::StorageRootChoice,
@@ -344,7 +351,6 @@ fn migrate_with_root_factory(
     }
     let operation_timestamp = operation_timestamp_now();
     let conn = open_rw(&database_path)?;
-    let _spill_pins = configure_spill(&conn, &root)?;
     conn.execute_batch("BEGIN TRANSACTION")?;
     engine::install_schema4_metadata(
         &conn,
@@ -360,6 +366,7 @@ fn migrate_with_root_factory(
     )?;
     if request.stop_at == Some(InterruptBoundary::BeforeTransactionCommit) {
         conn.execute_batch("ROLLBACK")?;
+        conn.verify_runtime()?;
         drop(conn);
         guard.ensure()?;
         return Err(MigrationError::Interrupted(InterruptReport {
@@ -374,6 +381,7 @@ fn migrate_with_root_factory(
     }
     conn.execute_batch("COMMIT")?;
     if request.stop_at == Some(InterruptBoundary::AfterTransactionCommitBeforeIntegrity) {
+        conn.verify_runtime()?;
         drop(conn);
         guard.ensure()?;
         return Err(MigrationError::Interrupted(InterruptReport {
@@ -390,6 +398,7 @@ fn migrate_with_root_factory(
         conn.execute("DELETE FROM usage_facts WHERE source_key = 'usage-0'", [])?;
     }
     if let Err(error) = validate_committed_stage(&conn, &inspection) {
+        conn.verify_runtime()?;
         drop(conn);
         guard.ensure()?;
         return Err(error);
@@ -397,6 +406,7 @@ fn migrate_with_root_factory(
     engine::set_operation_status(&conn, "validated_unpublished")?;
     conn.execute_batch("CHECKPOINT")?;
     let candidate_digest = engine::candidate_digest(&conn)?;
+    conn.verify_runtime()?;
     drop(conn);
     if request.stop_at == Some(InterruptBoundary::AfterIntegrityBeforeManifestReplace) {
         guard.ensure()?;
@@ -696,6 +706,7 @@ fn reuse_validated(
     )?;
     let operation_rows = engine::count_rows(&conn, "dendro_migration_operation")?;
     let rollback_rows = engine::count_rows(&conn, "dendro_rollback_preimage")?;
+    conn.verify_runtime()?;
     drop(conn);
     if !metadata_matches
         || !seal_matches
@@ -826,30 +837,30 @@ fn write_private_preimage(
     Ok(path)
 }
 
-fn configure_spill(
+/// Retain these pins until DuckDB closes. Library-created spill leaves use
+/// effective-private-parent admission; this never changes the process umask.
+pub struct PrivateSpill {
+    spill: PrivateRoot,
+    extensions: PrivateRoot,
+}
+
+impl PrivateSpill {
+    pub fn spill_path(&self) -> &Path {
+        self.spill.path()
+    }
+    pub fn extensions_path(&self) -> &Path {
+        self.extensions.path()
+    }
+}
+
+pub fn configure_private_spill(
     conn: &Connection,
     root: &PrivateRoot,
-) -> Result<Vec<PrivateRoot>, MigrationError> {
-    #[cfg(windows)]
-    let (spill, extensions, pins) = {
-        let spill = platform_v1::create_unique_private_directory(root, "spill-")?;
-        let extensions = platform_v1::create_unique_private_directory(root, "ext-")?;
-        (
-            spill.path().to_path_buf(),
-            extensions.path().to_path_buf(),
-            vec![spill, extensions],
-        )
-    };
-    #[cfg(not(windows))]
-    let (spill, extensions, pins) = {
-        let spill = root.path().join("spill");
-        let extensions = root.path().join("ext");
-        std::fs::create_dir_all(&spill)?;
-        std::fs::create_dir_all(&extensions)?;
-        (spill, extensions, Vec::new())
-    };
-    configure_spill_paths(conn, &spill, &extensions)?;
-    Ok(pins)
+) -> Result<PrivateSpill, MigrationError> {
+    let spill = platform_v1::create_unique_private_directory(root, "spill-")?;
+    let extensions = platform_v1::create_unique_private_directory(root, "ext-")?;
+    configure_spill_paths(conn, spill.path(), extensions.path())?;
+    Ok(PrivateSpill { spill, extensions })
 }
 
 fn configure_spill_paths(
@@ -1055,10 +1066,7 @@ fn physical_identity(path: &Path) -> Result<String, MigrationError> {
 }
 
 fn limitations() -> Vec<&'static str> {
-    #[cfg(windows)]
-    let spill = "windows_spill_parent_pins_required_until_database_close";
-    #[cfg(not(windows))]
-    let spill = "spill_directory_not_created_by_private_file_api";
+    let spill = "private_spill_parent_pins_retained_until_database_close; library_leaf_effective_private_parent_policy";
     vec![
         "atomic_existing_manifest_replace_unproved",
         "facts_SCHEMA_VERSION_not_rewired",
@@ -1082,15 +1090,16 @@ fn child(name: &str) -> Result<platform_v1::ChildName, MigrationError> {
     })
 }
 
-pub(crate) fn open_ro(path: &Path) -> Result<Connection, MigrationError> {
-    let config = duckdb::Config::default()
-        .access_mode(duckdb::AccessMode::ReadOnly)
-        .map_err(|err| MigrationError::Duck(err.to_string()))?;
-    Connection::open_with_flags(path, config).map_err(|err| MigrationError::Duck(err.to_string()))
+pub(crate) fn open_ro(
+    path: &Path,
+) -> Result<private_connection::PrivateConnection, MigrationError> {
+    private_connection::open(path, true)
 }
 
-pub(crate) fn open_rw(path: &Path) -> Result<Connection, MigrationError> {
-    Connection::open(path).map_err(|err| MigrationError::Duck(err.to_string()))
+pub(crate) fn open_rw(
+    path: &Path,
+) -> Result<private_connection::PrivateConnection, MigrationError> {
+    private_connection::open(path, false)
 }
 
 pub(crate) fn quote_ident(name: &str) -> Result<String, MigrationError> {

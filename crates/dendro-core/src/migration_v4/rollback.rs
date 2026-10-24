@@ -6,7 +6,7 @@ use duckdb::params;
 
 use super::{open_ro, sha256_file, MigrationError, Refusal, MIGRATION_TARGET_SCHEMA_VERSION};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Watermark {
     pub source_id: String,
     pub generation: i64,
@@ -22,15 +22,22 @@ pub struct V4OnlyFact {
     pub byte_range_half_open: [i64; 2],
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct SourceRange {
     pub source_id: String,
     pub generation: i64,
     pub byte_range_half_open: [i64; 2],
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct LegacyTableChange {
+    pub table: String,
+    pub added_rows: usize,
+    pub removed_rows: usize,
+}
+
 /// Missing tables leave provenance unknown; an observed empty table is evidence.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum EvidenceScope {
     Absent,
     Empty,
@@ -47,7 +54,7 @@ fn evidence_scope(present: bool, rows: usize) -> EvidenceScope {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct LossReceipt {
     pub selected_bundle: &'static str,
     pub destructive_downmigration: bool,
@@ -65,6 +72,15 @@ pub struct LossReceipt {
     pub legacy_usage_scope: EvidenceScope,
     pub v4_only_membership_verified: bool,
     pub excluded_fact_count: usize,
+    /// Count of declared v4-only IDs union newly observed usage source keys.
+    /// Other table changes are reported separately, without inventing fact IDs.
+    pub excluded_fact_count_scope: &'static str,
+    pub new_usage_fact_count: usize,
+    pub new_usage_unknown_timestamp_count: usize,
+    pub excluded_revision_rows: usize,
+    pub excluded_spawn_edges: usize,
+    pub legacy_table_changes: Vec<LegacyTableChange>,
+    pub postmigration_watermarks: Vec<Watermark>,
     pub excluded_windows: Vec<(String, String)>,
     pub excluded_source_ranges: Vec<SourceRange>,
     pub replay_available: bool,
@@ -109,6 +125,7 @@ pub fn record_v4_only_fact(schema4_db: &Path, fact: &V4OnlyFact) -> Result<(), M
             fact.byte_range_half_open[1]
         ],
     )?;
+    conn.verify_runtime()?;
     Ok(())
 }
 
@@ -275,23 +292,138 @@ pub fn rollback_to_preserved_schema3(
     }
     drop(rows);
     drop(stmt);
+    let mut legacy_table_changes = Vec::new();
+    for table in &inspection.tables {
+        if table == "dendro_meta" {
+            continue;
+        } // The 3 -> 4 label is expected.
+        let sql = format!(
+            "SELECT to_json(t)::VARCHAR FROM {} t ORDER BY to_json(t)::VARCHAR",
+            super::quote_ident(table)?
+        );
+        let mut before_statement = source.prepare(&sql)?;
+        let mut after_statement = staged.prepare(&sql)?;
+        let mut before_rows = before_statement.query([])?;
+        let mut after_rows = after_statement.query([])?;
+        let mut before = next_text(&mut before_rows)?;
+        let mut after = next_text(&mut after_rows)?;
+        let (mut added_rows, mut removed_rows) = (0, 0);
+        while before.is_some() || after.is_some() {
+            match (&before, &after) {
+                (Some(a), Some(b)) if a == b => {
+                    before = next_text(&mut before_rows)?;
+                    after = next_text(&mut after_rows)?;
+                }
+                (Some(a), Some(b)) if a < b => {
+                    removed_rows += 1;
+                    before = next_text(&mut before_rows)?;
+                }
+                (Some(_), None) => {
+                    removed_rows += 1;
+                    before = next_text(&mut before_rows)?;
+                }
+                _ => {
+                    added_rows += 1;
+                    after = next_text(&mut after_rows)?;
+                }
+            }
+        }
+        if added_rows != 0 || removed_rows != 0 {
+            legacy_table_changes.push(LegacyTableChange {
+                table: table.clone(),
+                added_rows,
+                removed_rows,
+            });
+        }
+    }
+    let mut new_usage_fact_count = 0;
+    let mut new_usage_unknown_timestamp_count = 0;
+    let mut extra_usage_count = 0;
+    let mut known_new_times = Vec::new();
+    if usage_present {
+        let mut baseline =
+            source.prepare("SELECT source_key FROM usage_facts ORDER BY source_key")?;
+        let mut current = staged.prepare(
+            "SELECT source_key, CAST(ts AS VARCHAR) FROM usage_facts ORDER BY source_key",
+        )?;
+        let mut baseline_rows = baseline.query([])?;
+        let mut current_rows = current.query([])?;
+        let mut old_key = next_text(&mut baseline_rows)?;
+        while let Some(row) = current_rows.next()? {
+            let key: String = row.get(0)?;
+            while old_key.as_ref().is_some_and(|old| old < &key) {
+                old_key = next_text(&mut baseline_rows)?;
+            }
+            if old_key.as_ref() == Some(&key) {
+                continue;
+            }
+            new_usage_fact_count += 1;
+            if !facts.iter().any(|fact| fact.id == key) {
+                extra_usage_count += 1;
+            }
+            match row.get::<_, Option<String>>(1)? {
+                Some(ts) if known_new_times.is_empty() => {
+                    known_new_times.push(ts.clone());
+                    known_new_times.push(ts);
+                }
+                Some(ts) => {
+                    if ts < known_new_times[0] {
+                        known_new_times[0] = ts.clone();
+                    }
+                    if ts > known_new_times[1] {
+                        known_new_times[1] = ts;
+                    }
+                }
+                None => new_usage_unknown_timestamp_count += 1,
+            }
+        }
+    }
+    let mut postmigration_watermarks = Vec::new();
+    if inspection
+        .tables
+        .iter()
+        .any(|table| table == "source_files")
+    {
+        let mut statement = staged.prepare("SELECT source_id,generation,byte_offset FROM source_files ORDER BY source_id,generation")?;
+        let mut rows = statement.query([])?;
+        while let Some(row) = rows.next()? {
+            postmigration_watermarks.push(Watermark {
+                source_id: row.get(0)?,
+                generation: row.get(1)?,
+                byte_offset: row.get(2)?,
+            });
+        }
+    }
+    let excluded_revision_rows =
+        super::engine::count_rows(&staged, "dendro_fact_revisions")? as usize;
+    let excluded_spawn_edges = super::engine::count_rows(&staged, "dendro_spawn_edges")? as usize;
+    staged.verify_runtime()?;
+    source.verify_runtime()?;
     drop(staged);
     drop(source);
 
     ensure_file_unchanged(preserved_schema3, &schema3_before)?;
     ensure_file_unchanged(failed_schema4, &schema4_before)?;
 
-    let excluded_windows = if facts.is_empty() {
+    let mut all_times: Vec<&str> = facts
+        .iter()
+        .map(|fact| fact.ts.as_str())
+        .chain(known_new_times.iter().map(String::as_str))
+        .collect();
+    let excluded_windows = if all_times.is_empty() {
         Vec::new()
     } else {
-        let mut times: Vec<&str> = facts.iter().map(|fact| fact.ts.as_str()).collect();
-        times.sort_unstable();
-        vec![(times[0].to_string(), times[times.len() - 1].to_string())]
+        all_times.sort_unstable();
+        vec![(
+            all_times[0].to_string(),
+            all_times[all_times.len() - 1].to_string(),
+        )]
     };
     let excluded_source_ranges = merge_source_ranges(&facts);
-    let excluded_fact_count = facts.len();
+    let excluded_fact_count = facts.len() + extra_usage_count;
     let replay_available = logs_present;
-    // Continuity requires evidence of zero excluded facts and no missing logs.
+    // This no-log snapshot-continuity claim requires zero exclusions and an
+    // unchanged legacy image. Merely having logs does not prove replay success.
     let full_continuity_claim = excluded_fact_count == 0
         && !logs_present
         && legacy_unchanged
@@ -316,6 +448,13 @@ pub fn rollback_to_preserved_schema3(
         legacy_usage_scope,
         v4_only_membership_verified: usage_present,
         excluded_fact_count,
+        excluded_fact_count_scope: "declared_v4_only_ids_union_new_usage_source_keys; other legacy table deltas reported separately",
+        new_usage_fact_count,
+        new_usage_unknown_timestamp_count,
+        excluded_revision_rows,
+        excluded_spawn_edges,
+        legacy_table_changes,
+        postmigration_watermarks,
         excluded_windows,
         excluded_source_ranges,
         replay_available,
@@ -324,6 +463,13 @@ pub fn rollback_to_preserved_schema3(
         publication_code,
         pointer_changed: false,
     })
+}
+
+fn next_text(rows: &mut duckdb::Rows<'_>) -> Result<Option<String>, MigrationError> {
+    rows.next()?
+        .map(|row| row.get(0))
+        .transpose()
+        .map_err(MigrationError::from)
 }
 
 fn ensure_file_unchanged(path: &Path, before: &str) -> Result<(), MigrationError> {

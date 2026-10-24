@@ -8,15 +8,15 @@ pub struct ReadRequest {
     logical: std::path::PathBuf,
     database: std::path::PathBuf,
     initialized: bool,
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     selected: Option<crate::selection_binding::SelectedRead>,
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     legacy: Option<Box<crate::selection_binding::LegacyRead>>,
 }
 impl ReadRequest {
     pub fn open(db: &std::path::Path) -> Result<Self> {
         crate::refuse_secret_path(db)?;
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         {
             use crate::selection_binding::{resolve_logical_db, SelectedDb};
             let resolved =
@@ -39,14 +39,14 @@ impl ReadRequest {
                 SelectedDb::Selected(selected) => Ok(Self::from_selected(*selected)),
             }
         }
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         Ok(Self {
             logical: db.into(),
             database: db.into(),
             initialized: db.exists(),
         })
     }
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     pub fn from_selected(selected: crate::selection_binding::SelectedRead) -> Self {
         Self {
             logical: selected.logical.clone(),
@@ -68,23 +68,23 @@ impl ReadRequest {
     }
     /// Cheap pointer check; immutable bundle bytes were verified when this request opened.
     pub fn is_current(&self) -> Result<bool> {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         if let Some(selected) = self.selected() {
             return selected.is_current();
         }
         Ok(false)
     }
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     pub fn selected(&self) -> Option<&crate::selection_binding::SelectedRead> {
         self.selected.as_ref()
     }
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     pub fn is_legacy(&self) -> bool {
         self.legacy.is_some()
     }
 
     pub fn open_store(&self) -> Result<crate::AnalyticsStore> {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         if let Some(selected) = self.selected() {
             return crate::AnalyticsStore::open_read_only_selected(selected);
         }
@@ -715,9 +715,9 @@ fn resolve_window_request(
         _ => bail!("window must be 1h, 24h, 7d, 30d, or all"),
     };
     if request.initialized() {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         let status = Some(request.status(rig)?);
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         let status = request.status(rig).ok();
         if let Some(status) = status {
             let min_dt = status["min_timestamp"]
@@ -1678,15 +1678,15 @@ mod tests {
     }
     #[test]
     fn status_window_resolution_and_help_overlay_are_truthful() {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         let private = crate::platform_v1::create_user_private_root_with_choice(
             "dendro-status-test-",
             &crate::platform_v1::StorageRootChoice::UserProfile,
         )
         .unwrap();
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         let missing = private.path().join("missing.duckdb");
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         let missing = std::env::temp_dir().join("dendro-missing-status-test.duckdb");
         let _ = std::fs::remove_file(&missing);
         let status = database_status(&missing, None).unwrap();
@@ -1752,15 +1752,15 @@ mod tests {
 
     #[test]
     fn test_pi_breakdown_and_human_status() {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         let private = crate::platform_v1::create_user_private_root_with_choice(
             "dendro-pi-test-",
             &crate::platform_v1::StorageRootChoice::UserProfile,
         )
         .unwrap();
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         let dir = private.path().to_path_buf();
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         let dir = std::env::temp_dir().join(format!(
             "dendro-pi-breakdown-{}-{}",
             std::process::id(),
@@ -1769,7 +1769,7 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ));
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         {
             let _ = std::fs::remove_dir_all(&dir);
             std::fs::create_dir_all(&dir).unwrap();

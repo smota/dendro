@@ -1,6 +1,6 @@
 //! Linux private primitives. Modes are set with fchmod on the held fd.
 //! This module never changes the process umask and never unlinks by path.
-//! POSIX ACL bytes are not read. Filesystem admission is `fstatfs` on the held fd.
+//! Extended POSIX ACLs fail closed; admission is ext4 on the held fd.
 #![deny(unsafe_code)]
 
 use std::fs::File;
@@ -10,7 +10,8 @@ use std::path::{Component, Path, PathBuf};
 
 use rand::RngCore;
 use rustix::fs::{
-    fchmod, fstat, fstatfs, mkdirat, open, openat, renameat_with, Mode, OFlags, RenameFlags,
+    fchmod, fgetxattr, fstat, fstatfs, mkdirat, open, openat, renameat_with, Mode, OFlags,
+    RenameFlags,
 };
 use rustix::io::Errno;
 
@@ -27,7 +28,8 @@ const META_FLAGS: OFlags = OFlags::PATH.union(OFlags::NOFOLLOW).union(OFlags::CL
 const LOCK_FLAGS: OFlags = OFlags::RDWR
     .union(OFlags::NONBLOCK)
     .union(OFlags::NOFOLLOW)
-    .union(OFlags::CLOEXEC);
+    .union(OFlags::CLOEXEC)
+    .union(OFlags::NOCTTY);
 
 pub(super) fn map_errno(err: Errno) -> PlatformError {
     if err == Errno::LOOP {
@@ -117,9 +119,9 @@ fn metadata_from_stat(stat: &rustix::fs::Stat) -> Result<ObservedMetadata, Platf
 fn admit_local_filesystem(fd: impl AsFd) -> Result<(), PlatformError> {
     let stat = fstatfs(&fd).map_err(map_errno)?;
     let magic = stat.f_type;
-    // EXT2/3/4, XFS, BTRFS. NFS, CIFS, FUSE, overlay, proc, and 9p stay refused.
-    if magic == 0xEF53 || magic == 0x5846_5342 || magic == 0x9123_683E {
-        Ok(())
+    // ext4 native profile only. NFS, CIFS, FUSE, overlay and drvfs stay refused.
+    if magic == 0xEF53 {
+        super::linux_mount::admit_ext4_mount(&fd)
     } else {
         Err(PlatformError::Rejected(Verdict::refuse(
             "unadmitted_filesystem",
@@ -228,6 +230,200 @@ fn pin_directory(path: &Path) -> Result<Vec<OwnedFd>, PlatformError> {
     Ok(pins)
 }
 
+/// Reject any extended access/default ACL rather than interpreting only mode bits.
+/// ENODATA proves absence. Unsupported/permission/malformed queries refuse.
+fn reject_extended_acl(fd: impl AsFd) -> Result<bool, PlatformError> {
+    for attribute in ["system.posix_acl_access", "system.posix_acl_default"] {
+        let mut bytes = [0u8; 4096];
+        match fgetxattr(&fd, attribute, &mut bytes[..]) {
+            Err(Errno::NODATA) => {}
+            Ok(_) => return Ok(true),
+            Err(error) if error == Errno::RANGE => return Ok(true),
+            Err(_) => {
+                return Err(PlatformError::Rejected(Verdict::refuse(
+                    "posix_acl_unverified",
+                    "held_fd_fgetxattr",
+                )))
+            }
+        }
+    }
+    Ok(false)
+}
+
+pub(super) fn held_root(root: &PrivateRoot) -> Result<&OwnedFd, PlatformError> {
+    root._pins
+        .last()
+        .ok_or_else(|| PlatformError::Rejected(Verdict::refuse("ancestor_pin_absent", "T24-45")))
+}
+
+/// Detect displacement without promoting a reopened directory to authority.
+pub(super) fn check_anchor(root: &PrivateRoot) -> Result<(), PlatformError> {
+    let paths = ancestor_paths(&root.path)?;
+    if paths.len() != root._pins.len() {
+        return Err(PlatformError::Rejected(Verdict::refuse(
+            "root_identity_changed",
+            "anchor_depth",
+        )));
+    }
+    for (index, held) in root._pins.iter().enumerate() {
+        let named = if index == 0 {
+            open_directory_root(&paths[index])?
+        } else {
+            open_directory_at(
+                &root._pins[index - 1],
+                paths[index].file_name().ok_or_else(|| {
+                    PlatformError::Rejected(Verdict::refuse("root_identity_changed", "anchor_name"))
+                })?,
+            )?
+        };
+        let stat = fstat(held).map_err(map_errno)?;
+        let verdict = evaluate_unix_ancestor(UnixAncestorInput {
+            owner_uid: stat.st_uid,
+            current_euid: current_euid()?,
+            mode: stat.st_mode,
+            pinned: true,
+        });
+        if !verdict.is_allow() {
+            return Err(PlatformError::Rejected(verdict));
+        }
+        if stat_only(&named)?.identity != stat_only(held)?.identity {
+            return Err(PlatformError::Rejected(Verdict::refuse(
+                "root_identity_changed",
+                "anchor_displaced",
+            )));
+        }
+    }
+    let fd = held_root(root)?;
+    admit_local_filesystem(fd)?;
+    let stat = fstat(fd).map_err(map_errno)?;
+    let meta = metadata_from_stat(&stat)?;
+    let verdict = evaluate_unix_private(UnixObjectInput {
+        uid: stat.st_uid,
+        current_euid: current_euid()?,
+        mode: stat.st_mode,
+        kind: meta.kind,
+        extended_acl_foreign: Some(reject_extended_acl(fd)?),
+        admit_library_0644: false,
+        parent_effective_private: true,
+        privileged_root_trust: current_euid()? == 0,
+    });
+    if !verdict.is_allow() {
+        return Err(PlatformError::Rejected(verdict));
+    }
+    held_directory_matches(fd, &root.meta.identity)
+}
+
+pub(super) fn sync_directory(root: &PrivateRoot) -> Result<(), PlatformError> {
+    check_anchor(root)?;
+    rustix::fs::fsync(held_root(root)?).map_err(map_errno)
+}
+
+pub(super) fn create_private_directory(
+    parent: &PrivateRoot,
+    name: &ChildName,
+) -> Result<PrivateRoot, PlatformError> {
+    check_anchor(parent)?;
+    mkdirat(
+        held_root(parent)?,
+        name.as_str(),
+        Mode::from_bits_truncate(0o700),
+    )
+    .map_err(map_errno)?;
+    let fd = open_directory_at(held_root(parent)?, std::ffi::OsStr::new(name.as_str()))?;
+    let meta = require_private_directory(&fd, current_euid()?)?;
+    let mut pins = parent
+        ._pins
+        .iter()
+        .map(|pin| rustix::io::dup(pin).map_err(map_errno))
+        .collect::<Result<Vec<_>, _>>()?;
+    pins.push(fd);
+    let root = PrivateRoot {
+        path: parent.path.join(name.as_str()),
+        meta,
+        limitations: vec!["ancestor_acl_not_read"],
+        _pins: pins,
+    };
+    sync_directory(parent)?;
+    Ok(root)
+}
+
+pub(super) fn create_unique_private_directory(
+    parent: &PrivateRoot,
+    prefix: &str,
+) -> Result<PrivateRoot, PlatformError> {
+    for _ in 0..16 {
+        let name = parse_child_name(
+            &format!("{prefix}{:032x}", rand::random::<u128>()),
+            super::NativePlatform::Linux,
+        )
+        .map_err(PlatformError::Rejected)?;
+        match create_private_directory(parent, &name) {
+            Err(PlatformError::Io(error)) if error.kind() == io::ErrorKind::AlreadyExists => {
+                continue
+            }
+            result => return result,
+        }
+    }
+    Err(PlatformError::Rejected(Verdict::refuse(
+        "exclusive_create_exists",
+        "T24-02",
+    )))
+}
+
+pub(super) fn open_private_read_pin(
+    root: &PrivateRoot,
+    name: &ChildName,
+) -> Result<File, PlatformError> {
+    check_anchor(root)?;
+    let fd = openat(
+        held_root(root)?,
+        name.as_str(),
+        OFlags::RDONLY
+            .union(OFlags::NONBLOCK)
+            .union(OFlags::NOFOLLOW)
+            .union(OFlags::CLOEXEC),
+        Mode::empty(),
+    )
+    .map_err(map_errno)?;
+    let file = finish_private_file(root.path.join(name.as_str()), File::from(fd))?.into_file();
+    // Cooperative readers/writers use flock; hostile same-principal mutation is outside custody.
+    file.try_lock_shared().map_err(|error| match error {
+        std::fs::TryLockError::WouldBlock => {
+            PlatformError::Rejected(Verdict::refuse("bundle_file_busy", "flock_shared"))
+        }
+        std::fs::TryLockError::Error(error) => PlatformError::Io(error),
+    })?;
+    Ok(file)
+}
+
+pub(super) fn directory_names(
+    root: &PrivateRoot,
+    limit: usize,
+) -> Result<Vec<String>, PlatformError> {
+    check_anchor(root)?;
+    let directory = rustix::fs::Dir::read_from(held_root(root)?).map_err(map_errno)?;
+    let mut names = Vec::new();
+    for entry in directory {
+        let entry = entry.map_err(map_errno)?;
+        let bytes = entry.file_name().to_bytes();
+        if bytes == b"." || bytes == b".." {
+            continue;
+        }
+        if names.len() >= limit {
+            return Err(PlatformError::Rejected(Verdict::refuse(
+                "bundle_file_count_outside_bound",
+                "held_fd_directory",
+            )));
+        }
+        let name = std::str::from_utf8(bytes).map_err(|_| {
+            PlatformError::Rejected(Verdict::refuse("non_roundtrip_name", "held_fd_directory"))
+        })?;
+        parse_child_name(name, super::NativePlatform::Linux).map_err(PlatformError::Rejected)?;
+        names.push(name.to_owned());
+    }
+    Ok(names)
+}
+
 pub fn resolve_native_root() -> Result<ResolvedRoot, PlatformError> {
     let query = RootQuery {
         home: std::env::var("HOME").ok(),
@@ -264,7 +460,7 @@ fn require_private_directory(fd: &OwnedFd, euid: u32) -> Result<ObservedMetadata
         current_euid: euid,
         mode: stat.st_mode,
         kind: meta.kind,
-        extended_acl_foreign: None,
+        extended_acl_foreign: Some(reject_extended_acl(fd)?),
         admit_library_0644: false,
         parent_effective_private: true,
         privileged_root_trust: euid == 0,
@@ -275,11 +471,30 @@ fn require_private_directory(fd: &OwnedFd, euid: u32) -> Result<ObservedMetadata
     Ok(meta)
 }
 
+pub(super) fn create_user_private_root_in_home(prefix: &str) -> Result<PrivateRoot, PlatformError> {
+    let home = std::env::var("HOME").map_err(|_| {
+        PlatformError::Rejected(Verdict::refuse("no_trustworthy_root", "HOME_missing"))
+    })?;
+    if current_euid()? == 0 && home != "/root" {
+        return Err(PlatformError::Rejected(Verdict::refuse(
+            "privileged_foreign_home",
+            "T24-51",
+        )));
+    }
+    create_user_private_root_at(prefix, PathBuf::from(home))
+}
+
 pub fn create_user_private_root(prefix: &str) -> Result<PrivateRoot, PlatformError> {
+    let resolved = resolve_native_root()?;
+    create_user_private_root_at(prefix, PathBuf::from(resolved.path))
+}
+
+fn create_user_private_root_at(
+    prefix: &str,
+    parent: PathBuf,
+) -> Result<PrivateRoot, PlatformError> {
     let stem = prefix.trim_end_matches(|ch: char| ch == '-' || ch.is_ascii_hexdigit());
     parse_child_name(stem, super::NativePlatform::Linux).map_err(PlatformError::Rejected)?;
-    let resolved = resolve_native_root()?;
-    let parent = PathBuf::from(&resolved.path);
     if broad_temp_rejected(&parent) {
         return Err(PlatformError::Rejected(Verdict::refuse(
             "broad_temp_rejected",
@@ -308,7 +523,7 @@ pub fn create_user_private_root(prefix: &str) -> Result<PrivateRoot, PlatformErr
     Ok(PrivateRoot {
         path: created,
         meta,
-        limitations: vec!["posix_acl_not_read"],
+        limitations: vec!["ancestor_acl_not_read"],
         _pins: pins,
     })
 }
@@ -365,7 +580,7 @@ pub fn open_existing_private_root(path: &Path) -> Result<PrivateRoot, PlatformEr
         current_euid: euid,
         mode: stat.st_mode,
         kind: meta.kind,
-        extended_acl_foreign: None,
+        extended_acl_foreign: Some(reject_extended_acl(fd)?),
         admit_library_0644: false,
         parent_effective_private: true,
         privileged_root_trust: euid == 0,
@@ -376,7 +591,7 @@ pub fn open_existing_private_root(path: &Path) -> Result<PrivateRoot, PlatformEr
     Ok(PrivateRoot {
         path: path.to_path_buf(),
         meta,
-        limitations: vec!["posix_acl_not_read"],
+        limitations: vec!["ancestor_acl_not_read"],
         _pins: pins,
     })
 }
@@ -436,6 +651,56 @@ pub fn open_existing_private_file(
     finish_private_file(root_path.join(name.as_str()), File::from(fd))
 }
 
+pub(super) fn verify_library_leaf(
+    root: &PrivateRoot,
+    name: &ChildName,
+) -> Result<ObservedMetadata, PlatformError> {
+    check_anchor(root)?;
+    let parent = held_root(root)?;
+    let probe = openat(parent, name.as_str(), META_FLAGS, Mode::empty()).map_err(map_errno)?;
+    let observed = stat_only(&probe)?;
+    if observed.kind != ObjectKind::RegularFile || observed.reparse || observed.links != 1 {
+        return Err(PlatformError::Rejected(Verdict::refuse(
+            "library_leaf_not_single_regular",
+            "library_leaf",
+        )));
+    }
+    let fd = openat(
+        parent,
+        name.as_str(),
+        OFlags::RDONLY
+            .union(OFlags::NONBLOCK)
+            .union(OFlags::NOFOLLOW)
+            .union(OFlags::CLOEXEC)
+            .union(OFlags::NOCTTY),
+        Mode::empty(),
+    )
+    .map_err(map_errno)?;
+    let stat = fstat(&fd).map_err(map_errno)?;
+    let meta = metadata_from_stat(&stat)?;
+    if meta.identity != observed.identity {
+        return Err(PlatformError::Rejected(Verdict::refuse(
+            "library_leaf_identity_changed",
+            "library_leaf",
+        )));
+    }
+    let verdict = evaluate_unix_private(UnixObjectInput {
+        uid: stat.st_uid,
+        current_euid: current_euid()?,
+        mode: stat.st_mode,
+        kind: meta.kind,
+        extended_acl_foreign: Some(reject_extended_acl(&fd)?),
+        admit_library_0644: true,
+        parent_effective_private: true,
+        privileged_root_trust: current_euid()? == 0,
+    });
+    if !verdict.is_allow() {
+        return Err(PlatformError::Rejected(verdict));
+    }
+    check_anchor(root)?;
+    Ok(meta)
+}
+
 fn finish_private_file(path: PathBuf, file: File) -> Result<VerifiedFile, PlatformError> {
     let stat = fstat(&file).map_err(map_errno)?;
     let meta = {
@@ -448,7 +713,7 @@ fn finish_private_file(path: PathBuf, file: File) -> Result<VerifiedFile, Platfo
         current_euid: euid,
         mode: stat.st_mode,
         kind: meta.kind,
-        extended_acl_foreign: None,
+        extended_acl_foreign: Some(reject_extended_acl(&file)?),
         admit_library_0644: false,
         parent_effective_private: true,
         privileged_root_trust: euid == 0,
@@ -464,7 +729,7 @@ fn finish_private_file(path: PathBuf, file: File) -> Result<VerifiedFile, Platfo
         path,
         file,
         meta,
-        limitations: vec!["posix_acl_not_read"],
+        limitations: vec!["ancestor_acl_not_read"],
     })
 }
 
@@ -513,7 +778,7 @@ fn private_source_ok(
         current_euid: euid,
         mode: stat.st_mode,
         kind: meta.kind,
-        extended_acl_foreign: None,
+        extended_acl_foreign: Some(reject_extended_acl(&fd)?),
         admit_library_0644: false,
         parent_effective_private: true,
         privileged_root_trust: euid == 0,
@@ -532,7 +797,31 @@ pub fn rename_absent_in_root(
     to: &ChildName,
 ) -> Result<&'static str, PlatformError> {
     held_directory_matches(root, root_identity)?;
-    let source = openat(root, from.as_str(), META_FLAGS, Mode::empty()).map_err(map_errno)?;
+    let probe = openat(root, from.as_str(), META_FLAGS, Mode::empty()).map_err(map_errno)?;
+    let meta = stat_only(&probe)?;
+    if meta.kind != ObjectKind::RegularFile || meta.reparse {
+        return Err(PlatformError::Rejected(Verdict::refuse(
+            "rename_source_not_regular",
+            "not_renamed",
+        )));
+    }
+    if meta.identity != expected.identity() {
+        return Err(PlatformError::Rejected(Verdict::refuse(
+            "rename_source_identity_mismatch",
+            "not_renamed",
+        )));
+    }
+    let source = openat(
+        root,
+        from.as_str(),
+        OFlags::RDONLY
+            .union(OFlags::NONBLOCK)
+            .union(OFlags::NOFOLLOW)
+            .union(OFlags::CLOEXEC)
+            .union(OFlags::NOCTTY),
+        Mode::empty(),
+    )
+    .map_err(map_errno)?;
     let source_meta = private_source_ok(
         &source,
         expected,
@@ -584,18 +873,30 @@ pub fn open_lock_sentinel(
 ) -> Result<File, PlatformError> {
     held_directory_matches(root, root_identity)?;
     let probe = openat(root, name.as_str(), META_FLAGS, Mode::empty()).map_err(map_errno)?;
-    let probed = private_source_ok(
-        &probe,
+    let probed = stat_only(&probe)?;
+    if probed.kind != ObjectKind::RegularFile || probed.reparse || probed.links != 1 {
+        return Err(PlatformError::Rejected(Verdict::refuse(
+            "lock_not_regular_sentinel",
+            "T24-48",
+        )));
+    }
+    if probed.identity != expected.identity() {
+        return Err(PlatformError::Rejected(Verdict::refuse(
+            "lock_identity_changed",
+            "T24-48",
+        )));
+    }
+    drop(probe);
+    admit_local_filesystem_at(root, name)?;
+    let file =
+        File::from(openat(root, name.as_str(), LOCK_FLAGS, Mode::empty()).map_err(map_errno)?);
+    let held = private_source_ok(
+        &file,
         expected,
         "lock_not_regular_sentinel",
         "lock_identity_changed",
         "T24-48",
     )?;
-    drop(probe);
-    admit_local_filesystem_at(root, name)?;
-    let file =
-        File::from(openat(root, name.as_str(), LOCK_FLAGS, Mode::empty()).map_err(map_errno)?);
-    let held = stat_only(&file)?;
     if held.identity != probed.identity || held.kind != ObjectKind::RegularFile || held.links != 1 {
         return Err(PlatformError::Rejected(Verdict::refuse(
             "lock_identity_changed",

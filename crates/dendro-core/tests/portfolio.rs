@@ -2,10 +2,10 @@
 use dendro_core::portfolio::{portfolio_json, portfolio_ndjson, portfolio_table, PortfolioSource};
 use dendro_core::{AnalyticsStore, IdentityFact, QueueFact, QueueItemMeta, UsageFact};
 use serde_json::json;
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::{fs, path::PathBuf};
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 static NEXT: AtomicU64 = AtomicU64::new(0);
 const FROM: &str = "2026-01-01T00:00:00Z";
 const TO: &str = "2026-01-01T01:00:00Z";
@@ -14,7 +14,7 @@ struct Fixture {
 }
 impl Fixture {
     fn new() -> Self {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         {
             let root = dendro_core::platform_v1::create_user_private_root_with_choice(
                 ".dendro-portfolio-fixture-",
@@ -25,7 +25,7 @@ impl Fixture {
                 dir: root.path().to_path_buf(),
             }
         }
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         {
             let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("../../target/portfolio-fixtures")

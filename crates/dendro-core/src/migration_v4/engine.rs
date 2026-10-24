@@ -92,6 +92,7 @@ pub fn inspect_read_only(db: &Path) -> Result<SourceInspection, MigrationError> 
     }
     let projection_sha256 = projection_hash(&conn, &tables, &columns)?;
     let generation_fingerprint = generation_fingerprint(&conn, &tables)?;
+    conn.verify_runtime()?;
     Ok(SourceInspection {
         schema_version,
         key_id,
@@ -408,14 +409,62 @@ pub fn pristine_metadata_matches(
     inspection: &SourceInspection,
     source_db_sha256: &str,
 ) -> Result<bool, MigrationError> {
+    metadata_matches(conn, inspection, source_db_sha256, true)
+}
+
+pub fn selected_metadata_matches(
+    conn: &Connection,
+    inspection: &SourceInspection,
+    source_db_sha256: &str,
+) -> Result<bool, MigrationError> {
+    metadata_matches(conn, inspection, source_db_sha256, false)
+}
+
+fn metadata_matches(
+    conn: &Connection,
+    inspection: &SourceInspection,
+    source_db_sha256: &str,
+    require_pristine: bool,
+) -> Result<bool, MigrationError> {
     let expected = Connection::open_in_memory()?;
     expected.execute_batch(SCHEMA4_METADATA_DDL)?;
     let metadata_tables = list_base_tables(&expected)?;
     let mut expected_tables = inspection.tables.clone();
     expected_tables.extend(metadata_tables.iter().cloned());
     expected_tables.sort_unstable();
-    if list_base_tables(conn)? != expected_tables {
+    let actual_tables = list_base_tables(conn)?;
+    let semantic = if require_pristine {
+        None
+    } else {
+        Some(semantic_schema()?)
+    };
+    if require_pristine && actual_tables != expected_tables {
         return Ok(false);
+    }
+    if !require_pristine {
+        let semantic = semantic.as_ref().unwrap();
+        let allowed = list_base_tables(semantic)?;
+        if expected_tables
+            .iter()
+            .any(|table| !actual_tables.contains(table))
+        {
+            return Ok(false);
+        }
+        for table in actual_tables
+            .iter()
+            .filter(|table| !expected_tables.contains(table))
+        {
+            if !allowed.contains(table)
+                || list_columns(conn, table)? != list_columns(semantic, table)?
+            {
+                return Ok(false);
+            }
+        }
+    }
+    for table in &inspection.tables {
+        if list_columns(conn, table)? != inspection.columns[table] {
+            return Ok(false);
+        }
     }
     for table in &metadata_tables {
         if list_columns(conn, table)? != list_columns(&expected, table)? {
@@ -440,15 +489,35 @@ pub fn pristine_metadata_matches(
             return Ok(false);
         }
     }
-    if view_definitions(conn)? != view_definitions(&expected)? {
+    let actual_views = view_definitions(conn)?;
+    let legacy_views = view_definitions(&expected)?;
+    if require_pristine && actual_views != legacy_views {
         return Ok(false);
+    }
+    if !require_pristine {
+        // DuckDB's persisted view serializer renders an explicit CROSS JOIN as
+        // a comma join. Admit only that equivalent spelling for these exact
+        // known derived definitions, not arbitrary rewritten SQL.
+        let normalize =
+            |view: &(String, String)| (view.0.clone(), view.1.replace(" CROSS JOIN ", " , "));
+        let derived_views: Vec<_> = view_definitions(semantic.as_ref().unwrap())?
+            .iter()
+            .map(normalize)
+            .collect();
+        if legacy_views.iter().any(|view| !actual_views.contains(view))
+            || actual_views.iter().any(|view| {
+                !legacy_views.contains(view) && !derived_views.contains(&normalize(view))
+            })
+        {
+            return Ok(false);
+        }
     }
     for table in [
         "dendro_fact_revisions",
         "dendro_spawn_edges",
         "dendro_v4_only_facts",
     ] {
-        if count_rows(conn, table)? != 0 {
+        if require_pristine && count_rows(conn, table)? != 0 {
             return Ok(false);
         }
     }
@@ -478,6 +547,14 @@ pub fn pristine_metadata_matches(
         && preimage_matches == 1
         && count_rows(conn, "dendro_migration_operation")? == 1
         && count_rows(conn, "dendro_rollback_preimage")? == 1)
+}
+
+fn semantic_schema() -> Result<Connection, MigrationError> {
+    let conn = Connection::open_in_memory()?;
+    conn.execute_batch(include_str!("../semantic.sql"))?;
+    conn.execute_batch("CREATE TABLE dendro_semantic_snapshot (report JSON, signature VARCHAR, refreshed_at TIMESTAMP); CREATE TABLE dendro_semantic_provenance (source_key VARCHAR PRIMARY KEY); CREATE TABLE dendro_semantic_state (id INTEGER PRIMARY KEY, dirty BOOLEAN NOT NULL); CREATE VIEW dendro_semantic_guard AS SELECT CASE WHEN NOT dirty THEN true ELSE error('Insufficient data: semantic snapshot is stale; refresh required') END AS fresh FROM dendro_semantic_state WHERE id = 1")?;
+    conn.execute_batch(include_str!("../semantic_views.sql"))?;
+    Ok(conn)
 }
 
 fn view_definitions(conn: &Connection) -> Result<Vec<(String, String)>, MigrationError> {

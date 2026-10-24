@@ -1,4 +1,4 @@
-//! Separate Windows private regular-file publication for cutoff manifests.
+//! Separate native private regular-file publication for cutoff manifests.
 //! The old destination and every failed source/journal are retained.
 #![deny(unsafe_code)]
 
@@ -7,13 +7,12 @@ use std::io::Read;
 use std::path::Path;
 
 use anyhow::{anyhow, Context, Result};
+#[cfg(windows)]
 use dendro_windows_private_io::{ChildName as NativeName, VerifiedDirectory};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::platform_v1::{
-    self as p, ChildName, FileIdentity, NativePlatform, PrivateRoot, SelectionIdentity,
-};
+use crate::platform_v1::{self as p, ChildName, FileIdentity, PrivateRoot, SelectionIdentity};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -44,20 +43,46 @@ struct State {
     selected: Pointer,
 }
 
+fn publication_busy(error: &anyhow::Error) -> bool {
+    let io = error.downcast_ref::<std::io::Error>().or_else(|| {
+        match error.downcast_ref::<p::PlatformError>() {
+            Some(p::PlatformError::Io(error)) => Some(error),
+            _ => None,
+        }
+    });
+    #[cfg(windows)]
+    {
+        io.is_some_and(|error| matches!(error.raw_os_error(), Some(5 | 32 | 33)))
+    }
+    #[cfg(target_os = "linux")]
+    {
+        io.is_some_and(|error| matches!(error.raw_os_error(), Some(11 | 16 | 26)))
+    }
+}
+
 fn digest(bytes: &[u8]) -> [u8; 32] {
     Sha256::digest(bytes).into()
 }
 
 fn child(leaf: &str) -> Result<ChildName> {
-    p::parse_child_name(leaf, NativePlatform::Windows)
+    p::parse_child_name(leaf, p::current_native_platform())
         .map_err(p::PlatformError::Rejected)
         .map_err(Into::into)
 }
 
 fn leaf_hash(parent: SelectionIdentity, leaf: &str) -> String {
     let mut hasher = Sha256::new();
-    hasher.update(parent.volume_serial_64.to_le_bytes());
-    hasher.update(parent.file_id);
+    #[cfg(windows)]
+    {
+        hasher.update(parent.volume_serial_64.to_le_bytes());
+        hasher.update(parent.file_id);
+    }
+    #[cfg(target_os = "linux")]
+    {
+        hasher.update(b"linux-device-inode-v1");
+        hasher.update(parent.device.to_le_bytes());
+        hasher.update(parent.inode.to_le_bytes());
+    }
     hasher.update(leaf.as_bytes());
     hex::encode(hasher.finalize())
 }
@@ -205,9 +230,11 @@ fn load_recovery_binding(root: &PrivateRoot, leaf: &str) -> Result<(String, Bind
     let parent = SelectionIdentity::try_from(root.metadata().identity)?;
     let hash = leaf_hash(parent, leaf);
     let record_leaf = format!("cutoff-bind-{hash}.json");
-    let (_, bytes) = read_existing(root, &record_leaf)?
-        .ok_or_else(|| anyhow!("cutoff binding absent; nothing to recover"))?;
-    if serde_json::from_slice::<Binding>(&bytes).is_ok() {
+    let existing = read_existing(root, &record_leaf)?;
+    if existing
+        .as_ref()
+        .is_some_and(|(_, bytes)| serde_json::from_slice::<Binding>(bytes).is_ok())
+    {
         let (loaded_hash, binding) = load_or_create_binding(root, leaf)?;
         return Ok((loaded_hash, binding, false));
     }
@@ -260,6 +287,7 @@ pub(super) fn publish(path: &Path, bytes: &[u8]) -> Result<()> {
         .file_name()
         .and_then(|s| s.to_str())
         .ok_or_else(|| anyhow!("cutoff leaf is not Unicode"))?;
+    #[cfg(windows)]
     NativeName::parse(leaf)
         .context("cutoff manifest leaf must be lowercase ASCII of at most 100 bytes")?;
     let root = p::open_existing_private_root(parent_path)?;
@@ -274,8 +302,11 @@ pub(super) fn publish(path: &Path, bytes: &[u8]) -> Result<()> {
             observed_matches(&root, leaf, expected)?;
             root.check_anchor()?;
             staging.check_anchor()?;
+            #[cfg(windows)]
             let native_stage = VerifiedDirectory::from_held(staging.held_directory_file()?)?;
+            #[cfg(windows)]
             let native_dest = VerifiedDirectory::from_held(root.held_directory_file()?)?;
+            #[cfg(windows)]
             let native_leaf = NativeName::parse(leaf)?;
             let manifest_digest = digest(bytes);
             for attempt in 1..=3u32 {
@@ -290,7 +321,11 @@ pub(super) fn publish(path: &Path, bytes: &[u8]) -> Result<()> {
                     rand::random::<u32>(),
                     attempt
                 );
+                #[cfg(windows)]
                 let mut source = native_stage.create_source(&NativeName::parse(&source_name)?)?;
+                #[cfg(target_os = "linux")]
+                let mut source =
+                    p::LinuxPublicationSource::create(&staging, &child(&source_name)?)?;
                 let source_identity = SelectionIdentity::try_from(source.identity()?)?;
                 source.write_all(bytes)?;
                 write_new(
@@ -305,8 +340,31 @@ pub(super) fn publish(path: &Path, bytes: &[u8]) -> Result<()> {
                     }),
                 )?;
                 staging.sync_dir()?;
+                crate::selection_binding::record_recovery_stage(
+                    &root,
+                    "recovery-cutoff",
+                    source_identity.into(),
+                    Some(manifest_digest),
+                    &staging,
+                )?;
                 observed_matches(&root, leaf, expected)?;
-                match source.publish_replace(&native_dest, &native_leaf) {
+                #[cfg(windows)]
+                let publish = source
+                    .publish_replace(&native_dest, &native_leaf)
+                    .map_err(anyhow::Error::from);
+                #[cfg(target_os = "linux")]
+                let publish = source
+                    .publish_checked(
+                        &root,
+                        binding.parent.into(),
+                        &child(leaf)?,
+                        expected.map(|pointer| p::ExpectedSelection {
+                            identity: pointer.identity.into(),
+                            sha256: pointer.sha256,
+                        }),
+                    )
+                    .map_err(anyhow::Error::from);
+                match publish {
                     Ok(()) => {
                         let selected = Pointer {
                             identity: source_identity,
@@ -327,9 +385,7 @@ pub(super) fn publish(path: &Path, bytes: &[u8]) -> Result<()> {
                             .context("cutoff replacement selected but state receipt incomplete; recovery required")?;
                         return Ok(());
                     }
-                    Err(error)
-                        if matches!(error.raw_os_error(), Some(5 | 32 | 33)) && attempt < 3 =>
-                    {
+                    Err(error) if publication_busy(&error) && attempt < 3 => {
                         std::thread::sleep(std::time::Duration::from_millis(
                             25 * u64::from(attempt),
                         ));
@@ -359,19 +415,53 @@ pub(super) fn recover(path: &Path) -> Result<super::CutoffRecoveryOutcome> {
         .file_name()
         .and_then(|v| v.to_str())
         .ok_or_else(|| anyhow!("invalid cutoff leaf"))?;
-    NativeName::parse(leaf)?;
+    child(leaf)?;
     let root = p::open_existing_private_root(parent)?;
     let parent_identity = SelectionIdentity::try_from(root.metadata().identity)?;
     let initial_hash = leaf_hash(parent_identity, leaf);
     if read_existing(&root, &format!("cutoff-bind-{initial_hash}.json"))?.is_none() {
-        if read_existing(&root, leaf)?.is_none()
-            && read_existing(&root, &format!("cutoff-lock-{initial_hash}.lock"))?.is_none()
-        {
+        let prefix = format!("cutoff-state-{initial_hash}-");
+        let mut history = false;
+        for entry in fs::read_dir(root.path())? {
+            crate::RUN_CANCEL.check()?;
+            if entry?.file_name().to_string_lossy().starts_with(&prefix) {
+                history = true;
+                break;
+            }
+        }
+        if !history {
+            let observed = read_existing(&root, leaf)?.map(|(pointer, _)| pointer);
+            if let Some((lock_pointer, bytes)) =
+                read_existing(&root, &format!("cutoff-lock-{initial_hash}.lock"))?
+            {
+                if !bytes.is_empty() {
+                    return Err(anyhow!("orphan cutoff lock is not empty"));
+                }
+                let lock = child(&format!("cutoff-lock-{initial_hash}.lock"))?;
+                let lock_id =
+                    p::canonical_identity_from_persisted_record(lock_pointer.identity.into());
+                return p::with_exclusive_lock(&root, &lock, &lock_id, |_| {
+                    Ok((|| -> Result<super::CutoffRecoveryOutcome> {
+                        if read_existing(&root, leaf)?.map(|(pointer, _)| pointer) == observed
+                            && read_existing(&root, &format!("cutoff-bind-{initial_hash}.json"))?
+                                .is_none()
+                        {
+                            Ok(super::CutoffRecoveryOutcome::Unchanged)
+                        } else {
+                            Err(anyhow!("cutoff admission advanced before recovery lock"))
+                        }
+                    })())
+                })?;
+            }
             return Ok(super::CutoffRecoveryOutcome::Unchanged);
         }
-        return Err(anyhow!(
-            "cutoff binding absent with retained destination or lock; manual recovery required"
-        ));
+        if read_existing(&root, leaf)?.is_none() {
+            return Err(anyhow!(
+                "cutoff destination absent with custody history; recovery refuses"
+            ));
+        }
+        // Missing binding with state history is reconstructed only from canonical
+        // lock, valid baseline state and matching journal below.
     }
     let (hash, binding, torn_binding) = load_recovery_binding(&root, leaf)?;
     let lock_name = child(&binding.lock)?;
@@ -412,23 +502,10 @@ pub(super) fn recover(path: &Path) -> Result<super::CutoffRecoveryOutcome> {
                 (generation + 1, expected)
             };
             let mut matches = 0usize;
-            let mut examined = 0usize;
-            for entry in fs::read_dir(root.path())? {
-                let entry = entry?;
-                let Some(stage_name) = entry.file_name().to_str().map(str::to_owned) else {
-                    continue;
-                };
-                if !stage_name.starts_with("cutoff-stage-") {
-                    continue;
-                }
-                examined += 1;
-                if examined > 4096 {
-                    return Err(anyhow!("cutoff recovery scan exceeds bounded stage limit"));
-                }
-                let Ok(stage) = p::open_existing_private_root(&entry.path()) else {
-                    continue;
-                };
+            let mut examine_stage = |stage: &PrivateRoot| -> Result<()> {
+                let mut examined = 0usize;
                 for item in fs::read_dir(stage.path())? {
+                    crate::RUN_CANCEL.check()?;
                     let item = item?;
                     let Some(journal_leaf) = item.file_name().to_str().map(str::to_owned) else {
                         continue;
@@ -439,12 +516,10 @@ pub(super) fn recover(path: &Path) -> Result<super::CutoffRecoveryOutcome> {
                         continue;
                     }
                     examined += 1;
-                    if examined > 4096 {
-                        return Err(anyhow!(
-                            "cutoff recovery scan exceeds bounded journal limit"
-                        ));
+                    if examined > 16 {
+                        return Err(anyhow!("cutoff recovery stage has too many journals"));
                     }
-                    let Ok(Some((_, bytes))) = read_existing(&stage, &journal_leaf) else {
+                    let Ok(Some((_, bytes))) = read_existing(stage, &journal_leaf) else {
                         continue;
                     };
                     let Ok(journal) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
@@ -473,9 +548,39 @@ pub(super) fn recover(path: &Path) -> Result<super::CutoffRecoveryOutcome> {
                         && journal
                             .get("source")
                             .and_then(|v| v.as_str())
-                            .is_some_and(|name| !stage.path().join(name).exists());
+                            .is_some_and(|name| {
+                                child(name).is_ok() && !stage.path().join(name).exists()
+                            });
                     if matching {
                         matches += 1;
+                    }
+                }
+                Ok(())
+            };
+            if let Some(stage) = crate::selection_binding::recovery_stage(
+                &root,
+                "recovery-cutoff",
+                selected.identity.into(),
+                Some(selected.sha256),
+                "cutoff-stage-",
+            )? {
+                examine_stage(&stage)?;
+            } else {
+                // Compatibility with stores written before direct locators.
+                // Constant memory and no lifetime publication limit.
+                for entry in fs::read_dir(root.path())? {
+                    crate::RUN_CANCEL.check()?;
+                    let entry = entry?;
+                    if !entry
+                        .file_name()
+                        .to_string_lossy()
+                        .starts_with("cutoff-stage-")
+                    {
+                        continue;
+                    }
+                    if let Ok(stage) = crate::selection_binding::open_recovery_stage(&entry.path())
+                    {
+                        examine_stage(&stage)?;
                     }
                 }
             }
@@ -486,7 +591,9 @@ pub(super) fn recover(path: &Path) -> Result<super::CutoffRecoveryOutcome> {
             }
             if current_torn_binding {
                 let record_leaf = format!("cutoff-bind-{hash}.json");
-                crate::selection_binding::quarantine_torn_record(&root, &record_leaf)?;
+                if read_existing(&root, &record_leaf)?.is_some() {
+                    crate::selection_binding::quarantine_torn_record(&root, &record_leaf)?;
+                }
                 write_new(&root, &record_leaf, &current_binding)?;
             }
             if let Some(torn) = &torn_state {
@@ -514,6 +621,51 @@ pub(super) fn recover(path: &Path) -> Result<super::CutoffRecoveryOutcome> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn preexisting_cutoff_without_custody_is_typed_unchanged_with_or_without_empty_lock() {
+        let root = p::create_user_private_root_with_choice(
+            "dendro-cutoff-uncustodied-",
+            &p::StorageRootChoice::UserProfile,
+        )
+        .unwrap();
+        let path = root.path().join("capture.json");
+        let mut file = root.create_file(&child("capture.json").unwrap()).unwrap();
+        file.file_mut()
+            .write_all(br#"{"preexisting":true}"#)
+            .unwrap();
+        file.file().sync_all().unwrap();
+        let identity = file.metadata().identity;
+        drop(file);
+        assert_eq!(
+            recover(&path).unwrap(),
+            super::super::CutoffRecoveryOutcome::Unchanged
+        );
+        let hash = leaf_hash(
+            SelectionIdentity::try_from(root.metadata().identity).unwrap(),
+            "capture.json",
+        );
+        drop(
+            root.create_file(&child(&format!("cutoff-lock-{hash}.lock")).unwrap())
+                .unwrap(),
+        );
+        assert_eq!(
+            recover(&path).unwrap(),
+            super::super::CutoffRecoveryOutcome::Unchanged
+        );
+        assert_eq!(
+            p::open_existing_private_file(&root, &child("capture.json").unwrap())
+                .unwrap()
+                .metadata()
+                .identity,
+            identity
+        );
+        assert_eq!(fs::read(&path).unwrap(), br#"{"preexisting":true}"#);
+        let cleanup = root.path().to_path_buf();
+        drop(root);
+        fs::remove_dir_all(cleanup).unwrap();
+    }
 
     #[test]
     fn untouched_cutoff_recovery_reports_unchanged_without_creating_binding() {
@@ -574,5 +726,164 @@ mod tests {
         recover(&path).unwrap();
         publish(&path, br#"{"second":true}"#).unwrap();
         assert_eq!(fs::read(&path).unwrap(), br#"{"second":true}"#);
+    }
+
+    #[test]
+    fn cutoff_history_direct_lookup_and_pre_locator_compatibility() {
+        use crate::selection_binding::RECOVERY_STAGE_OPENS;
+        let root = p::create_user_private_root_with_choice(
+            "dendro-cutoff-history-",
+            &p::StorageRootChoice::UserProfile,
+        )
+        .unwrap();
+        let path = root.path().join("capture.json");
+        publish(&path, br#"{"first":true}"#).unwrap();
+        let hash = leaf_hash(root.metadata().identity.try_into().unwrap(), "capture.json");
+        let state = root.path().join(state_name(&hash, 1));
+        let selected = read_existing(&root, "capture.json").unwrap().unwrap().0;
+        for ordinal in 0..4100 {
+            let stage = root
+                .path()
+                .join(format!("cutoff-stage-history-{ordinal:04}"));
+            fs::create_dir(&stage).unwrap();
+            fs::write(
+                stage.join("cutoff-journal-old.json"),
+                match ordinal % 3 {
+                    0 => b"{\"state\":\"prepared\"}".as_slice(),
+                    1 => b"{\"state\":\"published\"}",
+                    _ => b"{",
+                },
+            )
+            .unwrap();
+        }
+        fs::remove_file(&state).unwrap();
+        RECOVERY_STAGE_OPENS.with(|n| n.set(0));
+        assert_eq!(
+            recover(&path).unwrap(),
+            super::super::CutoffRecoveryOutcome::Reconciled
+        );
+        assert_eq!(RECOVERY_STAGE_OPENS.with(|n| n.get()), 1);
+        let locator = fs::read_dir(root.path())
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .find(|p| {
+                p.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with("recovery-cutoff-")
+            })
+            .unwrap();
+        fs::remove_file(locator).unwrap();
+        fs::remove_file(&state).unwrap();
+        RECOVERY_STAGE_OPENS.with(|n| n.set(0));
+        recover(&path).unwrap();
+        assert_eq!(RECOVERY_STAGE_OPENS.with(|n| n.get()), 4101);
+        assert_eq!(
+            read_existing(&root, "capture.json").unwrap().unwrap().0,
+            selected
+        );
+        assert_eq!(
+            fs::read_dir(root.path())
+                .unwrap()
+                .filter_map(Result::ok)
+                .filter(|e| e
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("cutoff-stage-history-"))
+                .count(),
+            4100
+        );
+    }
+
+    #[test]
+    fn cutoff_orphan_lock_is_unchanged_and_binding_repair_resumes_after_quarantine() {
+        let root = p::create_user_private_root_with_choice(
+            "dendro-cutoff-repair-gap-",
+            &p::StorageRootChoice::UserProfile,
+        )
+        .unwrap();
+        let path = root.path().join("capture.json");
+        let hash = leaf_hash(root.metadata().identity.try_into().unwrap(), "capture.json");
+        let lock = format!("cutoff-lock-{hash}.lock");
+        drop(root.create_file(&child(&lock).unwrap()).unwrap());
+        let before = fs::read_dir(root.path()).unwrap().count();
+        assert_eq!(
+            recover(&path).unwrap(),
+            super::super::CutoffRecoveryOutcome::Unchanged
+        );
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), before);
+        publish(&path, br#"{"first":true}"#).unwrap();
+        let binding = format!("cutoff-bind-{hash}.json");
+        fs::write(root.path().join(&binding), b"{").unwrap();
+        crate::selection_binding::quarantine_torn_record(&root, &binding).unwrap();
+        // Interruption at the former destructive gap, before writing a repair.
+        assert_eq!(
+            recover(&path).unwrap(),
+            super::super::CutoffRecoveryOutcome::Reconciled
+        );
+        assert!(root.path().join(&binding).exists());
+        assert_eq!(
+            recover(&path).unwrap(),
+            super::super::CutoffRecoveryOutcome::Unchanged
+        );
+        // Missing pointer with prior custody cannot masquerade as empty admission.
+        fs::remove_file(root.path().join(&binding)).unwrap();
+        fs::remove_file(&path).unwrap();
+        assert!(recover(&path).is_err());
+    }
+
+    #[test]
+    fn cutoff_direct_locator_cannot_replace_a_journal_proof_or_overwrite_a_collision() {
+        let root = p::create_user_private_root_with_choice(
+            "dendro-cutoff-locator-",
+            &p::StorageRootChoice::UserProfile,
+        )
+        .unwrap();
+        let path = root.path().join("capture.json");
+        publish(&path, br#"{"first":true}"#).unwrap();
+        let selected = read_existing(&root, "capture.json").unwrap().unwrap().0;
+        let stage = crate::selection_binding::recovery_stage(
+            &root,
+            "recovery-cutoff",
+            selected.identity.into(),
+            Some(selected.sha256),
+            "cutoff-stage-",
+        )
+        .unwrap()
+        .unwrap();
+        let error = crate::selection_binding::record_recovery_stage(
+            &root,
+            "recovery-cutoff",
+            selected.identity.into(),
+            Some(selected.sha256),
+            &stage,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("rename absent"), "{error:#}");
+        let journal_path = fs::read_dir(stage.path())
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .find(|p| {
+                p.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with("cutoff-journal-")
+            })
+            .unwrap();
+        let mut journal: serde_json::Value =
+            serde_json::from_slice(&fs::read(&journal_path).unwrap()).unwrap();
+        journal["expected"] =
+            serde_json::json!({"identity": selected.identity, "sha256": selected.sha256});
+        fs::write(&journal_path, serde_json::to_vec(&journal).unwrap()).unwrap();
+        let hash = leaf_hash(root.metadata().identity.try_into().unwrap(), "capture.json");
+        fs::remove_file(root.path().join(state_name(&hash, 1))).unwrap();
+        assert!(recover(&path)
+            .unwrap_err()
+            .to_string()
+            .contains("no unique matching"));
+        assert_eq!(
+            read_existing(&root, "capture.json").unwrap().unwrap().0,
+            selected
+        );
     }
 }

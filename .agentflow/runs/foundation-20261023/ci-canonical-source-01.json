@@ -1,0 +1,357 @@
+{
+  "schema": "dendro.foundation-canonical-source/v1",
+  "recorded_at": "2026-10-23T12:16:13.369140+00:00",
+  "scope": "Foundation byte identity and CI evidence corrections only; no native acceptance claim",
+  "commit_binding": "prospective Git clean-filtered blobs; final committed candidate and native runs still required",
+  "base_head": "d20cbb2cc4dd5380968091d6dd94451ed10f9f3c",
+  "input_manifests": [
+    "linux-primitives-candidate-02.json",
+    "linux-consumer-candidate-01.json",
+    "migration-rework-01.json",
+    "qa-closure-handoff-01.json"
+  ],
+  "files": [
+    {
+      "path": ".gitattributes",
+      "working_tree_sha256": "592a514c6403548ec15d158ad943009da65694c63b35914bcbceacd355a4549a",
+      "canonical_git_blob_sha256": "592a514c6403548ec15d158ad943009da65694c63b35914bcbceacd355a4549a",
+      "prospective_git_blob_oid": "f9841d290ab85df5f5fb1ea138616d0237ae4aa6",
+      "raw_equals_canonical": true
+    },
+    {
+      "path": ".github/workflows/foundation.yml",
+      "working_tree_sha256": "238b276014e528e7971ad67d97638fc4dea7172c935cdfdf3e2b01be5bf7a694",
+      "canonical_git_blob_sha256": "238b276014e528e7971ad67d97638fc4dea7172c935cdfdf3e2b01be5bf7a694",
+      "prospective_git_blob_oid": "5ceb3294f6faf0a7fc337901f7b81b8bddbee17d",
+      "raw_equals_canonical": true
+    },
+    {
+      "path": "crates/dendro-cli/src/extensions.rs",
+      "working_tree_sha256": "66649fa75e439b7d510256165c11ca89e389955d6efb017c818e7cd06e8a0126",
+      "canonical_git_blob_sha256": "be60dac4a29cad6fa64df4ae48b76db997091540f9f6f4191075a7414e68bb09",
+      "prospective_git_blob_oid": "91f170cd63c0faaef8f8bc269ee9d4ef49bf0863",
+      "raw_equals_canonical": false
+    },
+    {
+      "path": "crates/dendro-cli/src/main.rs",
+      "working_tree_sha256": "e08d19c24418816b5e406ac90f68605fb8251c30f53473a933476f90a2d97f7b",
+      "canonical_git_blob_sha256": "e08d19c24418816b5e406ac90f68605fb8251c30f53473a933476f90a2d97f7b",
+      "prospective_git_blob_oid": "e50e2fe61dfacd5052032b87a312099d17512d71",
+      "raw_equals_canonical": true
+    },
+    {
+      "path": "crates/dendro-cli/tests/sealed_cli.rs",
+      "working_tree_sha256": "09b4f155308e50cb098d454e4aea60217b31af95a4807201b4e8999f9688b431",
+      "canonical_git_blob_sha256": "09b4f155308e50cb098d454e4aea60217b31af95a4807201b4e8999f9688b431",
+      "prospective_git_blob_oid": "f91408b8894ffc75d3a1f33a7501b6825d8d0897",
+      "raw_equals_canonical": true
+    },
+    {
+      "path": "crates/dendro-connectors/src/ingest.rs",
+      "working_tree_sha256": "1edb434f215fe918fd140f172596e4545131b8bea1e60bd28ada27fc728e5a0a",
+      "canonical_git_blob_sha256": "81cc08b9451aaf610a16ba3153157bf63ae5165dc02a43c451f1baaec6fea40c",
+      "prospective_git_blob_oid": "4fa3b4c7d8522d59b3827a9ab9e38e6080e0d7f8",
+      "raw_equals_canonical": false
+    },
+    {
+      "path": "crates/dendro-connectors/tests/mutable_fallback.rs",
+      "working_tree_sha256": "6435a4b603af41079e3c76f50201af71c83b5558cc3cfd125ddb3bc8f8a90c01",
+      "canonical_git_blob_sha256": "6772ce523d82bce465db0ed652a0ff294d6c367716724210ebe0d91d4f1398ce",
+      "prospective_git_blob_oid": "36c87488f033ebdc9fdd9e20d1d468405a6d87de",
+      "raw_equals_canonical": false
+    },
+    {
+      "path": "crates/dendro-connectors/tests/openrig_history.rs",
+      "working_tree_sha256": "6307be53daa67c3971c39cf30fba14afe03450c006ff5f559426c31d62c7a026",
+      "canonical_git_blob_sha256": "1f8c70af6f5f51a2290aaf0fd2a5e1cfb7b7807d114cea44c65673a85b24b7e9",
+      "prospective_git_blob_oid": "60c66d0a065f7815db4a6e872980c4683bed6297",
+      "raw_equals_canonical": false
+    },
+    {
+      "path": "crates/dendro-connectors/tests/openrig_lifecycle.rs",
+      "working_tree_sha256": "1cbf70db2fe7bdae493aecf194bd44218a43e42ee1f2a469cfbc91787d3f79f8",
+      "canonical_git_blob_sha256": "6c7795ac15961b13acc96d1b3057a749998ce056bb77a3ba84f1e1d5d69eedac",
+      "prospective_git_blob_oid": "d6939197856761bffada3a0f1e6a35e6d4a29a17",
+      "raw_equals_canonical": false
+    },
+    {
+      "path": "crates/dendro-connectors/tests/privacy_sweep.rs",
+      "working_tree_sha256": "c082b28a16cac50f05d8e91902b46726716cf5f3a02a24ce1a34064b6e48b53e",
+      "canonical_git_blob_sha256": "5b6b842b0f0e91b0413d301e00b5bd69f4d3d9703cfb794f5c9d97d7edcd14f4",
+      "prospective_git_blob_oid": "7f890b7f5d19f57ac8fc79c6fe553ff2411beeff",
+      "raw_equals_canonical": false
+    },
+    {
+      "path": "crates/dendro-connectors/tests/sealed_openrig.rs",
+      "working_tree_sha256": "1dbd59ed5acd700e934f98ed4a91c7341687a9582097d61973deae3663bd8059",
+      "canonical_git_blob_sha256": "d98f6bb0bce39837422b0befcc25fc35b86af8e38088d4116dd0dbef43c1119b",
+      "prospective_git_blob_oid": "6b33095f14ca92978414a5723fcae65072423560",
+      "raw_equals_canonical": false
+    },
+    {
+      "path": "crates/dendro-connectors/tests/sealed_replay.rs",
+      "working_tree_sha256": "1f073ea763acce8e325ce39ec64c505abd11160b6a21f90bd419248de7eab8a1",
+      "canonical_git_blob_sha256": "2b40d1c55e0e72e5b297f1eaa865f6d3e84fce1894d55e66ca4afc46eecb483d",
+      "prospective_git_blob_oid": "057b8a5ae737e91ca0466eb3485eaa37eab4bfad",
+      "raw_equals_canonical": false
+    },
+    {
+      "path": "crates/dendro-core/src/lib.rs",
+      "working_tree_sha256": "15cf903355f40e0a401839da43c52ba0323a35d44354f7b029675798cea320c0",
+      "canonical_git_blob_sha256": "8c7d3740f97f2d2901f8b62e6728d2573d8e7677dfd53774d5d2a64475f0c622",
+      "prospective_git_blob_oid": "4fc3b8d617a43c1413d70e056b58eb3001220d76",
+      "raw_equals_canonical": false
+    },
+    {
+      "path": "crates/dendro-core/src/migration_v4/engine.rs",
+      "working_tree_sha256": "a4b64c5d0eeb70ae20b7099cda4035913e8529e5614ccfbdfb093115a4924f91",
+      "canonical_git_blob_sha256": "a4b64c5d0eeb70ae20b7099cda4035913e8529e5614ccfbdfb093115a4924f91",
+      "prospective_git_blob_oid": "b1d477aaac8bf7867ac09f6c90e44622b6b2ebc9",
+      "raw_equals_canonical": true
+    },
+    {
+      "path": "crates/dendro-core/src/migration_v4/mod.rs",
+      "working_tree_sha256": "65c8a01d2bec111fe10162553f4608d583d6749bf5dcd79fec1ee7dac8315af0",
+      "canonical_git_blob_sha256": "65c8a01d2bec111fe10162553f4608d583d6749bf5dcd79fec1ee7dac8315af0",
+      "prospective_git_blob_oid": "0e8dc74c3703ce0d1acdce794a02359775cf3cfd",
+      "raw_equals_canonical": true
+    },
+    {
+      "path": "crates/dendro-core/src/migration_v4/publication.rs",
+      "working_tree_sha256": "c2f86b8962971470b346d5023cf7ad20b82a5efe45cc68c945fbd1a1b7eeb1b8",
+      "canonical_git_blob_sha256": "c2f86b8962971470b346d5023cf7ad20b82a5efe45cc68c945fbd1a1b7eeb1b8",
+      "prospective_git_blob_oid": "210b0c4445c49bba5e6939ff5cb5bebd312f6384",
+      "raw_equals_canonical": true
+    },
+    {
+      "path": "crates/dendro-core/src/migration_v4/read_validation.rs",
+      "working_tree_sha256": "6fddcf6bf0d17a8069e8d5f28e41e075c44e4716ffaa72734aae3d55e065bd4f",
+      "canonical_git_blob_sha256": "6fddcf6bf0d17a8069e8d5f28e41e075c44e4716ffaa72734aae3d55e065bd4f",
+      "prospective_git_blob_oid": "53f954ad9554ba134e4b2c9d5870ec0712555e67",
+      "raw_equals_canonical": true
+    },
+    {
+      "path": "crates/dendro-core/src/migration_v4/rollback.rs",
+      "working_tree_sha256": "172737dca624c8f1b6a69d60e80cfcc48c3b297c6ccb23c6310d5bde518e6166",
+      "canonical_git_blob_sha256": "172737dca624c8f1b6a69d60e80cfcc48c3b297c6ccb23c6310d5bde518e6166",
+      "prospective_git_blob_oid": "891a1983f7f533408f634f13e21b9e9fcbb8187f",
+      "raw_equals_canonical": true
+    },
+    {
+      "path": "crates/dendro-core/src/pipeline.rs",
+      "working_tree_sha256": "4db3d2424da2f26dbb737950b9c8852ac8ef82938dcf3b486ca72c106ec2c3cd",
+      "canonical_git_blob_sha256": "52cdd9d7035f111217c6d45b71f54db21a41ef9b16a0a296a2bc58d9f9d9739f",
+      "prospective_git_blob_oid": "9d1ce394881a981ff8aafeaec00b28df59b11edd",
+      "raw_equals_canonical": false
+    },
+    {
+      "path": "crates/dendro-core/src/platform_v1/linux.rs",
+      "working_tree_sha256": "aa6e02fb64194d2f89c1859ca97a7c7779efcda9d4dae22d71483b76d70c2c29",
+      "canonical_git_blob_sha256": "aa6e02fb64194d2f89c1859ca97a7c7779efcda9d4dae22d71483b76d70c2c29",
+      "prospective_git_blob_oid": "7dfe32f3ce6958c223f20702fbf8635cfd640f59",
+      "raw_equals_canonical": true
+    },
+    {
+      "path": "crates/dendro-core/src/platform_v1/linux_mount.rs",
+      "working_tree_sha256": "4576ec3b6bdf69c83ce9362311ed2956f590cf070997e10aaeeb20ef3e67a001",
+      "canonical_git_blob_sha256": "4576ec3b6bdf69c83ce9362311ed2956f590cf070997e10aaeeb20ef3e67a001",
+      "prospective_git_blob_oid": "0c071402128dba8ea2741f845fc7997f968f078e",
+      "raw_equals_canonical": true
+    },
+    {
+      "path": "crates/dendro-core/src/platform_v1/linux_publication.rs",
+      "working_tree_sha256": "4ce9156e9aed1fd6a997075a37a75a73a0ab2dae7664ad5f42f1f68bbe9d0cea",
+      "canonical_git_blob_sha256": "4ce9156e9aed1fd6a997075a37a75a73a0ab2dae7664ad5f42f1f68bbe9d0cea",
+      "prospective_git_blob_oid": "ed65d5b18b24ad0726cdceff3ca1d04ee0f8ccde",
+      "raw_equals_canonical": true
+    },
+    {
+      "path": "crates/dendro-core/src/platform_v1/mod.rs",
+      "working_tree_sha256": "272cd8fe75618291ac501ffeeef226bf64145a504398333c7f53c901976c69fa",
+      "canonical_git_blob_sha256": "272cd8fe75618291ac501ffeeef226bf64145a504398333c7f53c901976c69fa",
+      "prospective_git_blob_oid": "697689b8a06f66993deb630ae54da390345ae7fe",
+      "raw_equals_canonical": true
+    },
+    {
+      "path": "crates/dendro-core/src/platform_v1/windows_publication.rs",
+      "working_tree_sha256": "8a5c533a9e2a453c9c3eedf4e46e3fc76b259a41ffdec4a0037c95f4f70ab06b",
+      "canonical_git_blob_sha256": "8a5c533a9e2a453c9c3eedf4e46e3fc76b259a41ffdec4a0037c95f4f70ab06b",
+      "prospective_git_blob_oid": "3805b6698ec96a5b74bdf2faff64f82c7d5e92ff",
+      "raw_equals_canonical": true
+    },
+    {
+      "path": "crates/dendro-core/src/presentation.rs",
+      "working_tree_sha256": "2cef944dfa82cc3a2fa9f4fc6a727093576c8717c7932b59e566bb0b49e22747",
+      "canonical_git_blob_sha256": "68099e0ed09c204c061f95b61ba938b6a1ffe45751025b5303be210096a6e804",
+      "prospective_git_blob_oid": "c8f5abc0c1696ef5607d34789dc0079e23ead699",
+      "raw_equals_canonical": false
+    },
+    {
+      "path": "crates/dendro-core/src/sealed_run.rs",
+      "working_tree_sha256": "c5a71ecc336fd00d34e4dc69e48dcd32c986288ed4f8950ae94ec81efb45852b",
+      "canonical_git_blob_sha256": "c5a71ecc336fd00d34e4dc69e48dcd32c986288ed4f8950ae94ec81efb45852b",
+      "prospective_git_blob_oid": "f216000d66ff45cf073da772b768f3173e894c94",
+      "raw_equals_canonical": true
+    },
+    {
+      "path": "crates/dendro-core/src/sealed_run/cutoff_publication.rs",
+      "working_tree_sha256": "f93fbe2fbc092db28ff9f294067cb2763e73f59247ba1ea3016b33e99a4cf1e9",
+      "canonical_git_blob_sha256": "91ac924bfe13371a81baacdb8eaf9cbce0e47898259696cc88ba78e6351cafe5",
+      "prospective_git_blob_oid": "05ecbd7f9683d532948af7135a045b97de2171fe",
+      "raw_equals_canonical": false
+    },
+    {
+      "path": "crates/dendro-core/src/selection_binding.rs",
+      "working_tree_sha256": "e26251967763913e60ed628060233caf7fe19887b0a58160446fa96cda674480",
+      "canonical_git_blob_sha256": "50513f711c5aab6d90b93e3c99aae9b6882abc504dee09d7caa6ba7a2ffa9ebc",
+      "prospective_git_blob_oid": "00828060f46db2615fb3f28f4a663c36061b2e99",
+      "raw_equals_canonical": false
+    },
+    {
+      "path": "crates/dendro-core/src/selection_binding/cleanup.rs",
+      "working_tree_sha256": "0b8f1db30f0057403bdf793f269bf93950d68640765258fbf7142263d23a17b9",
+      "canonical_git_blob_sha256": "0b8f1db30f0057403bdf793f269bf93950d68640765258fbf7142263d23a17b9",
+      "prospective_git_blob_oid": "f208b4a2bcbaaba93a884a3df1301b08bacd029b",
+      "raw_equals_canonical": true
+    },
+    {
+      "path": "crates/dendro-core/src/selection_binding/migration.rs",
+      "working_tree_sha256": "090b08a08aadf124841d7c244bcc1b91677c3884bcdde2cc031a0c03ce5e48d0",
+      "canonical_git_blob_sha256": "090b08a08aadf124841d7c244bcc1b91677c3884bcdde2cc031a0c03ce5e48d0",
+      "prospective_git_blob_oid": "eac86352562564c97ee5958381d9eef0732c2470",
+      "raw_equals_canonical": true
+    },
+    {
+      "path": "crates/dendro-core/src/semantic.rs",
+      "working_tree_sha256": "b1ab8cb49aedeff5e85c22bb0dc6a87cc938e4eaa84d3194e5afca61e9da049b",
+      "canonical_git_blob_sha256": "b1ab8cb49aedeff5e85c22bb0dc6a87cc938e4eaa84d3194e5afca61e9da049b",
+      "prospective_git_blob_oid": "6c94fa8ac72b3b02c0875046a53762e1e3afb646",
+      "raw_equals_canonical": true
+    },
+    {
+      "path": "crates/dendro-core/src/storage.rs",
+      "working_tree_sha256": "a52fe277767ac861db3f661fb241943a14044cf4b8d6aae1fdfd813043132077",
+      "canonical_git_blob_sha256": "a52fe277767ac861db3f661fb241943a14044cf4b8d6aae1fdfd813043132077",
+      "prospective_git_blob_oid": "82faffb65243f1d5da38244baf85c2654693ade8",
+      "raw_equals_canonical": true
+    },
+    {
+      "path": "crates/dendro-core/tests/benchmark_nao.rs",
+      "working_tree_sha256": "802fce50045019e987bf68b30baf65d767a2bbc57be9bf2fd765c047fcdcbe53",
+      "canonical_git_blob_sha256": "8483ee87d99216621ebf221d8933f1adc4faed47b5d0fdc832e0d45d3f8dccb1",
+      "prospective_git_blob_oid": "335ce5c9033af1b8db1af87d39557be4b6e20939",
+      "raw_equals_canonical": false
+    },
+    {
+      "path": "crates/dendro-core/tests/migration_publication_v080.rs",
+      "working_tree_sha256": "44e964cd6c2913f35ba797bbf7a0c7d30671a7d2006f237d9522f74c04bf7f82",
+      "canonical_git_blob_sha256": "44e964cd6c2913f35ba797bbf7a0c7d30671a7d2006f237d9522f74c04bf7f82",
+      "prospective_git_blob_oid": "98e255235856dc7772c0f1ea3c7722f1c71f5a8a",
+      "raw_equals_canonical": true
+    },
+    {
+      "path": "crates/dendro-core/tests/native_foundation_acceptance.rs",
+      "working_tree_sha256": "8d629669166c2698dd5524b5f009d57df6ed93767701183f074ec169a26b9587",
+      "canonical_git_blob_sha256": "aed11a56d3d3f7fee93446ae310e84b4746d48f86a96c6292493e6238ffc62f4",
+      "prospective_git_blob_oid": "422de8555ba7a1a83a85a58bbb2369ad3f5aa50a",
+      "raw_equals_canonical": false
+    },
+    {
+      "path": "crates/dendro-core/tests/portfolio.rs",
+      "working_tree_sha256": "6fdc5c6f38a2a161a5ec576b3bbf3fa96635093721f6e064f15262034b155f44",
+      "canonical_git_blob_sha256": "3473348c75feabcf39a67905841626c51795b9a9b115dc7201ae3b5c35e8e723",
+      "prospective_git_blob_oid": "7a8ab6a5c45ba6e8f76689c7f3754906c5c764c0",
+      "raw_equals_canonical": false
+    },
+    {
+      "path": "crates/dendro-core/tests/routing_pipeline.rs",
+      "working_tree_sha256": "11f474ec9f1def1fb01ff3b98f4d9f6d37657925a0cd4b40cbf5a3e909193322",
+      "canonical_git_blob_sha256": "a9935992179f89d6d9ddc5bc0f73232098e325452657fc6a189520eba9c738c2",
+      "prospective_git_blob_oid": "9606bed1d94f0f0645bd846d85bea2ab24472695",
+      "raw_equals_canonical": false
+    },
+    {
+      "path": "crates/dendro-core/tests/selected_migration_v080.rs",
+      "working_tree_sha256": "78194bb7443e0083b7bbc64ea12d93f9601718693fc8d7df692696b006f6d5b8",
+      "canonical_git_blob_sha256": "78194bb7443e0083b7bbc64ea12d93f9601718693fc8d7df692696b006f6d5b8",
+      "prospective_git_blob_oid": "8ea60c28e920a98014dd092a1430363cf7711b4f",
+      "raw_equals_canonical": true
+    },
+    {
+      "path": "crates/dendro-core/tests/semantic.rs",
+      "working_tree_sha256": "15f682a69b36a8a8cd96d4a83578e99245233c37a9f16756f4b8d02384db032a",
+      "canonical_git_blob_sha256": "15f682a69b36a8a8cd96d4a83578e99245233c37a9f16756f4b8d02384db032a",
+      "prospective_git_blob_oid": "0e67a893870bdf1bceb8068559c26b050b127c87",
+      "raw_equals_canonical": true
+    },
+    {
+      "path": "crates/dendro-core/tests/simulation.rs",
+      "working_tree_sha256": "7565ea7e5ed7df83e4d0334dcb90d0b7724be2309c7b89947e6306ca21c659d0",
+      "canonical_git_blob_sha256": "738a9f913e0b8061274a36b1ef3aa9c20246c11ca272ac23397226a7a3e4ecba",
+      "prospective_git_blob_oid": "6f312684832f5a40ddcd6798b931a7f6083db7f5",
+      "raw_equals_canonical": false
+    },
+    {
+      "path": "crates/dendro-core/tests/windows_selection.rs",
+      "working_tree_sha256": "a3d14341dce7902becd2bc60c51951b62d7171cf24c1e7c9c93140242558930d",
+      "canonical_git_blob_sha256": "a3d14341dce7902becd2bc60c51951b62d7171cf24c1e7c9c93140242558930d",
+      "prospective_git_blob_oid": "75d042cb0a73598824b01b5c0b27066483ae6856",
+      "raw_equals_canonical": true
+    },
+    {
+      "path": "scripts/fixtures/historical_openers.rs",
+      "working_tree_sha256": "06a2d7087587766d08d3d2805694f04fc3a0a02cb71c822301be79a14d1553cd",
+      "canonical_git_blob_sha256": "06a2d7087587766d08d3d2805694f04fc3a0a02cb71c822301be79a14d1553cd",
+      "prospective_git_blob_oid": "499e2469a79b730c5c94f9937bd0de9057793028",
+      "raw_equals_canonical": true
+    },
+    {
+      "path": "scripts/fixtures/migration_proof_driver.rs",
+      "working_tree_sha256": "cf1ea77e84ec8a2ed25ceffb5463e39519863fbb2d68aae044c1801ed5a01c1e",
+      "canonical_git_blob_sha256": "cf1ea77e84ec8a2ed25ceffb5463e39519863fbb2d68aae044c1801ed5a01c1e",
+      "prospective_git_blob_oid": "b94a9eab45ef17031324aded346e2da4de058d4d",
+      "raw_equals_canonical": true
+    },
+    {
+      "path": "scripts/foundation-ci-native-fixtures.ps1",
+      "working_tree_sha256": "7266b1c12d04154636950cebebdc47fde47cf0f704f33e729c969def591ee80c",
+      "canonical_git_blob_sha256": "7266b1c12d04154636950cebebdc47fde47cf0f704f33e729c969def591ee80c",
+      "prospective_git_blob_oid": "f3216e9bb2d1d9e24ababa7c2b34a1c340224460",
+      "raw_equals_canonical": true
+    },
+    {
+      "path": "scripts/foundation-ci-native-fixtures.sh",
+      "working_tree_sha256": "5566f09aef977b71b2e85b14ba46d3c36046d26307fa3e734e03d68eac052436",
+      "canonical_git_blob_sha256": "5566f09aef977b71b2e85b14ba46d3c36046d26307fa3e734e03d68eac052436",
+      "prospective_git_blob_oid": "3636435e8b98f2a9938649ee9e847b8ee1e5dbc6",
+      "raw_equals_canonical": true
+    },
+    {
+      "path": "scripts/foundation-ci-verify.sh",
+      "working_tree_sha256": "7ed5e59d56f21c7b67cd7c4cada175a3aea959fd49493b4188b0ed0952ed896f",
+      "canonical_git_blob_sha256": "7ed5e59d56f21c7b67cd7c4cada175a3aea959fd49493b4188b0ed0952ed896f",
+      "prospective_git_blob_oid": "b936743170ad02df9ff2a5634b757641f3b415eb",
+      "raw_equals_canonical": true
+    },
+    {
+      "path": "scripts/historical_migration_proof.py",
+      "working_tree_sha256": "c736ce99f6ce8963b5315d73761d413e2f2ba9a09adceff5b5030778ed981812",
+      "canonical_git_blob_sha256": "c736ce99f6ce8963b5315d73761d413e2f2ba9a09adceff5b5030778ed981812",
+      "prospective_git_blob_oid": "00dfabc593748a1e988ee4dffbe78a1e091730df",
+      "raw_equals_canonical": true
+    }
+  ],
+  "preserved_evidence": "Earlier raw source hashes and WSL receipts are unchanged; this separate receipt distinguishes current raw and canonical Git bytes.",
+  "wsl_comment_delta": {
+    "scratch_path": "/home/sam/dendro-foundation-linux-parity-20261023/src/platform_v1/linux_publication.rs",
+    "scratch_sha256": "03fd9246bbb573136ea15b8dc1e69cbfbeb8a00a9d7ad6845c86ad769a7613a8",
+    "current_path": "crates/dendro-core/src/platform_v1/linux_publication.rs",
+    "semantic_change": false,
+    "verified_difference": "Only the two doc-comment lines immediately above publish_closed_bundle differ after CRLF normalization: wording now describes one native attempt under canonical locks, retained source/journal, and no unlink. Prior WSL 12-test evidence remains development-only and does not establish native Linux or pinned Rust 1.98.1 acceptance."
+  },
+  "limitations": [
+    "No source logic changed by this CI evidence rework.",
+    "Only stable platform_v1 five-file set and owned CI files were LF-normalized; migration and frozen QA source bytes were not rewritten.",
+    "Final Windows four gates and hosted Linux run must bind the eventual commit; native cross-volume fixtures remain pending."
+  ]
+}

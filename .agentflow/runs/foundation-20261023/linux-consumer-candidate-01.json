@@ -1,0 +1,166 @@
+{
+  "run": "foundation-20261023",
+  "epoch": 1,
+  "fence": "foundation-20261023-1",
+  "candidate_commit": "d20cbb2cc4dd5380968091d6dd94451ed10f9f3c",
+  "status": "source_frozen_for_independent_review; minimal parent hooks transferred to root",
+  "environment": {
+    "scope": "WSL development evidence only",
+    "kernel": "6.18.33.2-microsoft-standard-WSL2",
+    "filesystem": "ext4 /dev/sdd",
+    "toolchain": "rustc 1.98.0 x86_64-unknown-linux-gnu",
+    "native_linux_acceptance": false
+  },
+  "files": [
+    {
+      "path": ".gitattributes",
+      "sha256": "13598f83eb9096e1fec45518faf7e29d29f89ed5750f882baea291b8e53168bb"
+    },
+    {
+      "path": "crates/dendro-core/src/lib.rs",
+      "sha256": "15cf903355f40e0a401839da43c52ba0323a35d44354f7b029675798cea320c0"
+    },
+    {
+      "path": "crates/dendro-core/src/platform_v1/mod.rs",
+      "sha256": "e22d3c988d38ba5b8dd9f25573868d6dd1bc7f550513532806d03681dfcd28cc"
+    },
+    {
+      "path": "crates/dendro-core/src/platform_v1/linux.rs",
+      "sha256": "aa6e02fb64194d2f89c1859ca97a7c7779efcda9d4dae22d71483b76d70c2c29"
+    },
+    {
+      "path": "crates/dendro-core/src/platform_v1/linux_mount.rs",
+      "sha256": "4576ec3b6bdf69c83ce9362311ed2956f590cf070997e10aaeeb20ef3e67a001"
+    },
+    {
+      "path": "crates/dendro-core/src/platform_v1/linux_publication.rs",
+      "sha256": "a9c387fb6c19e9f09893a273df96dd67dc413c21b7eba8638d782796d7275206"
+    },
+    {
+      "path": "crates/dendro-core/src/platform_v1/windows_publication.rs",
+      "sha256": "73ce3f3bd59785c9e309fe6f8ea796034533765f0247e530606f9fb1ec69dc3f"
+    },
+    {
+      "path": "crates/dendro-core/src/selection_binding.rs",
+      "sha256": "de83cd92ee079036aaa9d8e6a455243a8064d952f7390ac8b05737db970cf385"
+    },
+    {
+      "path": "crates/dendro-core/src/sealed_run.rs",
+      "sha256": "c5a71ecc336fd00d34e4dc69e48dcd32c986288ed4f8950ae94ec81efb45852b"
+    },
+    {
+      "path": "crates/dendro-core/src/sealed_run/cutoff_publication.rs",
+      "sha256": "f93fbe2fbc092db28ff9f294067cb2763e73f59247ba1ea3016b33e99a4cf1e9"
+    },
+    {
+      "path": "crates/dendro-core/src/pipeline.rs",
+      "sha256": "4db3d2424da2f26dbb737950b9c8852ac8ef82938dcf3b486ca72c106ec2c3cd"
+    },
+    {
+      "path": "crates/dendro-core/src/presentation.rs",
+      "sha256": "2cef944dfa82cc3a2fa9f4fc6a727093576c8717c7932b59e566bb0b49e22747"
+    },
+    {
+      "path": "crates/dendro-core/src/storage.rs",
+      "sha256": "a52fe277767ac861db3f661fb241943a14044cf4b8d6aae1fdfd813043132077"
+    },
+    {
+      "path": "crates/dendro-core/src/semantic.rs",
+      "sha256": "b1ab8cb49aedeff5e85c22bb0dc6a87cc938e4eaa84d3194e5afca61e9da049b"
+    },
+    {
+      "path": "crates/dendro-cli/src/main.rs",
+      "sha256": "e08d19c24418816b5e406ac90f68605fb8251c30f53473a933476f90a2d97f7b"
+    },
+    {
+      "path": "crates/dendro-cli/src/extensions.rs",
+      "sha256": "66649fa75e439b7d510256165c11ca89e389955d6efb017c818e7cd06e8a0126"
+    },
+    {
+      "path": "crates/dendro-cli/tests/sealed_cli.rs",
+      "sha256": "09b4f155308e50cb098d454e4aea60217b31af95a4807201b4e8999f9688b431"
+    },
+    {
+      "path": "crates/dendro-core/tests/windows_selection.rs",
+      "sha256": "a3d14341dce7902becd2bc60c51951b62d7171cf24c1e7c9c93140242558930d"
+    },
+    {
+      "path": "crates/dendro-core/tests/semantic.rs",
+      "sha256": "15f682a69b36a8a8cd96d4a83578e99245233c37a9f16756f4b8d02384db032a"
+    },
+    {
+      "path": "crates/dendro-core/tests/portfolio.rs",
+      "sha256": "6fdc5c6f38a2a161a5ec576b3bbf3fa96635093721f6e064f15262034b155f44"
+    },
+    {
+      "path": "crates/dendro-core/tests/benchmark_nao.rs",
+      "sha256": "802fce50045019e987bf68b30baf65d767a2bbc57be9bf2fd765c047fcdcbe53"
+    },
+    {
+      "path": "crates/dendro-core/tests/routing_pipeline.rs",
+      "sha256": "11f474ec9f1def1fb01ff3b98f4d9f6d37657925a0cd4b40cbf5a3e909193322"
+    },
+    {
+      "path": "crates/dendro-core/tests/simulation.rs",
+      "sha256": "7565ea7e5ed7df83e4d0334dcb90d0b7724be2309c7b89947e6306ca21c659d0"
+    },
+    {
+      "path": "crates/dendro-connectors/src/ingest.rs",
+      "sha256": "1edb434f215fe918fd140f172596e4545131b8bea1e60bd28ada27fc728e5a0a"
+    },
+    {
+      "path": "crates/dendro-connectors/tests/openrig_history.rs",
+      "sha256": "6307be53daa67c3971c39cf30fba14afe03450c006ff5f559426c31d62c7a026"
+    },
+    {
+      "path": "crates/dendro-connectors/tests/sealed_replay.rs",
+      "sha256": "1f073ea763acce8e325ce39ec64c505abd11160b6a21f90bd419248de7eab8a1"
+    },
+    {
+      "path": "crates/dendro-connectors/tests/mutable_fallback.rs",
+      "sha256": "6435a4b603af41079e3c76f50201af71c83b5558cc3cfd125ddb3bc8f8a90c01"
+    },
+    {
+      "path": "crates/dendro-connectors/tests/sealed_openrig.rs",
+      "sha256": "1dbd59ed5acd700e934f98ed4a91c7341687a9582097d61973deae3663bd8059"
+    },
+    {
+      "path": "crates/dendro-connectors/tests/openrig_lifecycle.rs",
+      "sha256": "1cbf70db2fe7bdae493aecf194bd44218a43e42ee1f2a469cfbc91787d3f79f8"
+    },
+    {
+      "path": "crates/dendro-connectors/tests/privacy_sweep.rs",
+      "sha256": "c082b28a16cac50f05d8e91902b46726716cf5f3a02a24ce1a34064b6e48b53e"
+    }
+  ],
+  "ffi_sha256": "31b2d35de0f36b88d665ee03c3f19254a70e2f7dbcf5b68b1debe7af30147412",
+  "verified": [
+    "12 Linux primitive/mount tests pass",
+    "252 core unit tests pass",
+    "4 semantic integration tests pass",
+    "17 selection integration tests pass",
+    "17 CLI integration tests pass including explicit migrate/read/v4 fact/rollback, postmigration ingest/rollback, first Openrig stage alignment",
+    "cargo check --workspace --locked pass",
+    "cargo clippy --workspace --all-targets --locked -- -D warnings pass",
+    "cargo fmt --all --check pass"
+  ],
+  "pending": [
+    "Final full workspace test log still running at handoff; root owns exact final candidate native Windows and native hosted Linux gates",
+    "Parent hook migration::validate_migration_candidate(bundle,files) at start publish_candidate after child readiness",
+    "Parent hook migration::validate_legacy_anchor(binding,resolved) in selected_from_binding after historical worker resolves distinct original anchor digest",
+    "mod cleanup; pub use cleanup::{request_retained_bundle_cleanup,CleanupRefusal}; after QA readiness",
+    "Independent combined consumer review; primitive rework02 review; native cross-volume/forced spill/cleanup evidence"
+  ],
+  "limitations": [
+    "Stage lookup independent of retained stage history only; state-chain/root scans remain linear and cancellable",
+    "Linux has no inode-CAS rename against hostile same principal; locks/read pins are cooperative flock",
+    "Linux publication uses one attempt; Windows native sharing busy retries remain bounded at three",
+    "Ancestor ACLs not read; owner, group/other write mask and sticky policy are rechecked; private root/file ACLs fail closed",
+    "No release/T24/oracle/installed-runtime acceptance claimed; incomplete_oracle_cases unchanged",
+    "No commit or push performed"
+  ],
+  "handoff": {
+    "standing_writer": "/root now owns ONLY minimal selection_binding.rs child hooks/exports <=30LOC; all other owned files frozen",
+    "parent_sha256": "de83cd92ee079036aaa9d8e6a455243a8064d952f7390ac8b05737db970cf385"
+  }
+}

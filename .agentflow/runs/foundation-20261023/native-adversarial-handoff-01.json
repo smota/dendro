@@ -1,0 +1,40 @@
+{
+  "schema": "dendro.foundation-native-adversarial-handoff/v1",
+  "recorded_at": "2026-10-23T12:33:11.5049186Z",
+  "epoch": 1,
+  "fence": "foundation-20261023-1",
+  "owned_file": "crates/dendro-core/tests/native_adversarial_foundation.rs",
+  "sha256": "e9249f287c7235119c521e3850eb72c08ae9a7ca424dac4c3f46b2dfaaec6f87",
+  "line_endings": "LF; CRLF count zero",
+  "windows": {
+    "test": "cargo test -p dendro-core --test native_adversarial_foundation --locked -- --nocapture",
+    "passed": 11,
+    "failed": 0,
+    "ignored": 0,
+    "shortname": "Actual native 8.3 alias was present; held native identities equal; source/output role admission denied",
+    "clippy": "targeted -D warnings pass"
+  },
+  "wsl": {
+    "passed": 5,
+    "failed": 0,
+    "ignored": 0,
+    "scope": "WSL Ubuntu ext4 development only; snapshot /home/sam/code/dendro-foundation-parity-20261023",
+    "clippy": "targeted -D warnings pass"
+  },
+  "coverage": [
+    "T24-14 actual unprivileged junction escape refusal with outside bytes unchanged",
+    "T24-15 actual Linux outside symlink and two-link cycle refusal",
+    "T24-17 actual Windows 8.3 alias; hosted absence remains explicitly reported unsupported rather than fake proof",
+    "T24-21 deterministic worker-thread root replacement versus held-root operations",
+    "T24-38 actual child process native LOCALAPPDATA positive discovery with HOME absent and foreign",
+    "T24-46 actual junction/symlink above selected root; ordinary no-policy refusal; explicit resolved-native-identity admission; wrong-identity refusal; later alias replacement cannot redirect held-root writes",
+    "T24-48 unrelated fd close, original canonical token replacement refusal, actual binding refusal of recreated canonical sentinel, Windows child-process crash release and descendant noninheritance"
+  ],
+  "limitations": [
+    "Exact final combined candidate requires parent full native gates",
+    "Hosted native Linux receipts still required",
+    "Caller intentionally minting fresh canonical authority is outside cooperative same-principal trust boundary; no automatic production binding re-adoption permitted",
+    "Migration interruption tests remain boundary-return/restart proof; actual killed lock holder is separately identified",
+    "No new production files, settings, FFI, volumes, commits or push"
+  ]
+}

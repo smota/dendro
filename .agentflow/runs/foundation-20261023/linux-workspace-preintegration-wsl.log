@@ -1,0 +1,8 @@
+    Checking dendro-platform-policy v0.7.0 (/home/sam/code/dendro-foundation-parity-20261023/crates/dendro-platform-policy)
+    Checking dendro-core v0.7.0 (/home/sam/code/dendro-foundation-parity-20261023/crates/dendro-core)
+    Checking dendro-windows-private-io v0.7.0 (/home/sam/code/dendro-foundation-parity-20261023/crates/dendro-windows-private-io)
+    Checking dendro-connectors v0.7.0 (/home/sam/code/dendro-foundation-parity-20261023/crates/dendro-connectors)
+    Checking dendro-watcher v0.7.0 (/home/sam/code/dendro-foundation-parity-20261023/crates/dendro-watcher)
+    Checking dendro-resolver v0.7.0 (/home/sam/code/dendro-foundation-parity-20261023/crates/dendro-resolver)
+    Checking dendro-cli v0.7.0 (/home/sam/code/dendro-foundation-parity-20261023/crates/dendro-cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 5.79s

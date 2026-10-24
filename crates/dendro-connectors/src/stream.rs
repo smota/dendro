@@ -3346,8 +3346,19 @@ mod tests {
 
     #[test]
     fn source_identity_follows_path_not_directory_order() {
+        #[cfg(windows)]
+        let fixture_root = dendro_core::platform_v1::create_user_private_root_with_choice(
+            "dendro-ingest-fixture-",
+            &dendro_core::platform_v1::StorageRootChoice::UserProfile,
+        )
+        .expect("explicit UserProfile staged ingest fixture");
+        #[cfg(windows)]
+        let dir = fixture_root.path().to_path_buf();
+        #[cfg(not(windows))]
         let dir = std::env::temp_dir().join(format!("dendro-source-id-{}", std::process::id()));
+        #[cfg(not(windows))]
         let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
         let root = dir.join("codex");
         fs::create_dir_all(&root).unwrap();
         let line = |input: i64| {
@@ -3414,8 +3425,19 @@ mod tests {
 
     #[test]
     fn same_relative_name_under_two_roots_does_not_share_a_watermark() {
+        #[cfg(windows)]
+        let fixture_root = dendro_core::platform_v1::create_user_private_root_with_choice(
+            "dendro-ingest-fixture-",
+            &dendro_core::platform_v1::StorageRootChoice::UserProfile,
+        )
+        .expect("explicit UserProfile staged ingest fixture");
+        #[cfg(windows)]
+        let dir = fixture_root.path().to_path_buf();
+        #[cfg(not(windows))]
         let dir = std::env::temp_dir().join(format!("dendro-two-roots-{}", std::process::id()));
+        #[cfg(not(windows))]
         let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
         let left = dir.join("left");
         let right = dir.join("right");
         fs::create_dir_all(&left).unwrap();

@@ -1,0 +1,54 @@
+# Audited native boundary and frozen evidence require identical bytes on checkout.
+/crates/dendro-windows-private-io/src/ffi.rs text eol=lf
+/.agentflow/oracles/v080/** text eol=lf
+# Native CI executes repository scripts directly.
+/scripts/*.sh text eol=lf
+/scripts/*.py text eol=lf
+/.github/workflows/*.yml text eol=lf
+
+# Foundation candidate Rust paths only; preserve prior raw evidence receipts.
+/crates/dendro-cli/src/extensions.rs text eol=lf
+/crates/dendro-cli/src/main.rs text eol=lf
+/crates/dendro-cli/tests/sealed_cli.rs text eol=lf
+/crates/dendro-connectors/src/ingest.rs text eol=lf
+/crates/dendro-connectors/tests/mutable_fallback.rs text eol=lf
+/crates/dendro-connectors/tests/openrig_history.rs text eol=lf
+/crates/dendro-connectors/tests/openrig_lifecycle.rs text eol=lf
+/crates/dendro-connectors/tests/privacy_sweep.rs text eol=lf
+/crates/dendro-connectors/tests/sealed_openrig.rs text eol=lf
+/crates/dendro-connectors/tests/sealed_replay.rs text eol=lf
+/crates/dendro-core/src/lib.rs text eol=lf
+/crates/dendro-core/src/migration_v4/engine.rs text eol=lf
+/crates/dendro-core/src/migration_v4/mod.rs text eol=lf
+/crates/dendro-core/src/migration_v4/publication.rs text eol=lf
+/crates/dendro-core/src/migration_v4/read_validation.rs text eol=lf
+/crates/dendro-core/src/migration_v4/rollback.rs text eol=lf
+/crates/dendro-core/src/pipeline.rs text eol=lf
+/crates/dendro-core/src/platform_v1/linux.rs text eol=lf
+/crates/dendro-core/src/platform_v1/linux_mount.rs text eol=lf
+/crates/dendro-core/src/platform_v1/linux_publication.rs text eol=lf
+/crates/dendro-core/src/platform_v1/mod.rs text eol=lf
+/crates/dendro-core/src/platform_v1/windows_publication.rs text eol=lf
+/crates/dendro-core/src/presentation.rs text eol=lf
+/crates/dendro-core/src/sealed_run.rs text eol=lf
+/crates/dendro-core/src/sealed_run/cutoff_publication.rs text eol=lf
+/crates/dendro-core/src/selection_binding.rs text eol=lf
+/crates/dendro-core/src/selection_binding/cleanup.rs text eol=lf
+/crates/dendro-core/src/selection_binding/migration.rs text eol=lf
+/crates/dendro-core/src/semantic.rs text eol=lf
+/crates/dendro-core/src/storage.rs text eol=lf
+/crates/dendro-core/tests/benchmark_nao.rs text eol=lf
+/crates/dendro-core/tests/migration_publication_v080.rs text eol=lf
+/crates/dendro-core/tests/native_foundation_acceptance.rs text eol=lf
+/crates/dendro-core/tests/portfolio.rs text eol=lf
+/crates/dendro-core/tests/routing_pipeline.rs text eol=lf
+/crates/dendro-core/tests/selected_migration_v080.rs text eol=lf
+/crates/dendro-core/tests/semantic.rs text eol=lf
+/crates/dendro-core/tests/simulation.rs text eol=lf
+/crates/dendro-core/tests/windows_selection.rs text eol=lf
+/scripts/fixtures/historical_openers.rs text eol=lf
+/scripts/fixtures/migration_proof_driver.rs text eol=lf
+/scripts/foundation-ci-native-fixtures.ps1 text eol=lf
+
+crates/dendro-core/src/storage/library_privacy.rs text eol=lf
+crates/dendro-core/tests/native_adversarial_foundation.rs text eol=lf

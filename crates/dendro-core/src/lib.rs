@@ -28,7 +28,7 @@ pub mod privacy;
 pub mod routing;
 pub mod sealed_run;
 pub mod security_v1;
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 pub mod selection_binding;
 pub mod spotlight;
 pub mod storage;
