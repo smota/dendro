@@ -13,10 +13,12 @@ use tokio::task::JoinHandle;
 /// How long a signalled run may take to stop its worker and remove its stage.
 const SHUTDOWN_LIMIT: Duration = Duration::from_secs(30);
 
+const DEFAULT_DB_HELP: &str = "Analytics database. When omitted, Dendro uses dendro.duckdb in the private per-user default folder (Windows: %LOCALAPPDATA%\\Dendro, Linux: $XDG_DATA_HOME/dendro or ~/.local/share/dendro). A database outside a private folder is refused; Dendro prints a copy command and does not copy the file.";
+
 const AFTER_HELP: &str = "\
 Quickstart Examples:
   dendro
-      Status report. Same as `dendro status`.
+      Status report. Same as `dendro status`. The database is dendro.duckdb in the private default folder.
   dendro dashboard --auto-ingest
       Open the 6-screen cockpit. Ingest local roots when the database is missing.
   dendro ask --format text \"highest idle\"
@@ -54,6 +56,7 @@ Command Groups:
 #[command(version, after_help = AFTER_HELP)]
 struct Cli {
     /// Verified existing private storage root; default database becomes <root>/dendro.duckdb.
+    /// Omit both this flag and --db to use the private per-user default folder.
     #[arg(long, global = true)]
     storage_root: Option<PathBuf>,
     #[command(subcommand)]
@@ -200,7 +203,7 @@ fn parse_nonnegative(value: &str) -> Result<f64, String> {
 }
 #[derive(Args, Debug)]
 struct ReportScope {
-    #[arg(long, default_value = "dendro.duckdb")]
+    #[arg(long, default_value = "dendro.duckdb", hide_default_value = true, help = DEFAULT_DB_HELP)]
     db: PathBuf,
     #[arg(long)]
     rig: Option<String>,
@@ -264,12 +267,12 @@ fn issue_publish_args(repo: &str, body: &str) -> Result<Vec<String>> {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Create a native private storage root; reuse its exact path with --storage-root.
+    /// Create or verify the private default data folder and print its path.
     StorageInit,
     /// Reconcile a prepared selection under its recorded writer/publisher locks.
     // Recovery returns a JSON status. resume_required is incomplete and exits nonzero.
     RecoverSelection {
-        #[arg(long, default_value = "dendro.duckdb")]
+        #[arg(long, default_value = "dendro.duckdb", hide_default_value = true, help = DEFAULT_DB_HELP)]
         db: PathBuf,
         /// Reconcile a prepared cutoff manifest after recovering the analytics selection.
         #[arg(long)]
@@ -277,18 +280,18 @@ enum Commands {
     },
     /// Explicitly select a validated schema4 migration while retaining schema3 custody.
     Migrate {
-        #[arg(long, default_value = "dendro.duckdb")]
+        #[arg(long, default_value = "dendro.duckdb", hide_default_value = true, help = DEFAULT_DB_HELP)]
         db: PathBuf,
     },
     /// Select the retained schema3 preimage and preserve schema4 plus a loss receipt.
     Rollback {
-        #[arg(long, default_value = "dendro.duckdb")]
+        #[arg(long, default_value = "dendro.duckdb", hide_default_value = true, help = DEFAULT_DB_HELP)]
         db: PathBuf,
     },
     /// Inspect coverage, discovered harness roots, fleet topology, and next commands.
     #[command(next_help_heading = "Database & Scope")]
     Status {
-        #[arg(long, default_value = "dendro.duckdb")]
+        #[arg(long, default_value = "dendro.duckdb", hide_default_value = true, help = DEFAULT_DB_HELP)]
         db: PathBuf,
         #[arg(long)]
         rig: Option<String>,
@@ -299,7 +302,7 @@ enum Commands {
     /// Ingest local harness roots into an analytics database.
     #[command(next_help_heading = "Ingest")]
     Run {
-        #[arg(short, long, default_value = "dendro.duckdb")]
+        #[arg(short, long, default_value = "dendro.duckdb", hide_default_value = true, help = DEFAULT_DB_HELP)]
         db: PathBuf,
         #[arg(long)]
         root: Vec<String>,
@@ -328,7 +331,7 @@ enum Commands {
         /// Request the handoff friction field (also present without this flag).
         #[arg(long)]
         friction: bool,
-        #[arg(long, default_value = "dendro.duckdb")]
+        #[arg(long, default_value = "dendro.duckdb", hide_default_value = true, help = DEFAULT_DB_HELP)]
         db: PathBuf,
         #[arg(long)]
         rig: Option<String>,
@@ -356,7 +359,7 @@ enum Commands {
     /// Print the trace inputs for one metric id.
     #[command(next_help_heading = "Trace")]
     Trace {
-        #[arg(long, default_value = "dendro.duckdb")]
+        #[arg(long, default_value = "dendro.duckdb", hide_default_value = true, help = DEFAULT_DB_HELP)]
         db: PathBuf,
         #[arg(long)]
         metric_id: String,
@@ -462,6 +465,154 @@ async fn run_ingest(
     std::process::exit(stop_cooperatively(worker, events, cause).await);
 }
 
+fn database_slot(command: &mut Commands) -> Option<&mut PathBuf> {
+    match command {
+        Commands::RecoverSelection { db, .. }
+        | Commands::Migrate { db }
+        | Commands::Rollback { db }
+        | Commands::Status { db, .. }
+        | Commands::Run { db, .. }
+        | Commands::Report { db, .. }
+        | Commands::Trace { db, .. } => Some(db),
+        Commands::Assert { scope, .. } | Commands::IssueDraft { scope, .. } => Some(&mut scope.db),
+        Commands::Extensions(extension) => match extension {
+            extensions::Commands::Dashboard { db, .. }
+            | extensions::Commands::Ui { db, .. }
+            | extensions::Commands::Ask { db, .. }
+            | extensions::Commands::InitNao { db, .. } => Some(db),
+            extensions::Commands::Materialize { scope }
+            | extensions::Commands::Export { scope, .. } => Some(&mut scope.db),
+            extensions::Commands::Simulate {
+                command: extensions::SimulateCommand::Topology { db, .. },
+            } => Some(db),
+            extensions::Commands::Portfolio { .. } => None,
+        },
+        Commands::StorageInit => None,
+    }
+}
+
+#[cfg(any(windows, target_os = "linux"))]
+fn command_opens_database(command: &Commands) -> bool {
+    !matches!(
+        command,
+        Commands::StorageInit
+            | Commands::Extensions(extensions::Commands::Portfolio { .. })
+            | Commands::Extensions(extensions::Commands::Ask {
+                list_intents: true,
+                ..
+            })
+            | Commands::Extensions(extensions::Commands::Ask {
+                query: None,
+                question: None,
+                ..
+            })
+    )
+}
+
+#[cfg(any(windows, target_os = "linux"))]
+fn admitted_private_root(path: &std::path::Path) -> bool {
+    dendro_core::platform_v1::open_existing_private_root(path).is_ok()
+}
+
+#[cfg(any(windows, target_os = "linux"))]
+fn parent_is_admitted_private_root(path: &std::path::Path) -> bool {
+    std::path::absolute(path)
+        .ok()
+        .and_then(|absolute| absolute.parent().map(std::path::Path::to_path_buf))
+        .is_some_and(|parent| admitted_private_root(&parent))
+}
+
+#[cfg(any(windows, target_os = "linux"))]
+fn quoted_path(path: &std::path::Path) -> String {
+    let text = path.display().to_string();
+    #[cfg(windows)]
+    {
+        format!("\"{}\"", text.replace('`', "``").replace('"', "`\""))
+    }
+    #[cfg(target_os = "linux")]
+    {
+        format!("'{}'", text.replace('\'', "'\\''"))
+    }
+}
+
+#[cfg(any(windows, target_os = "linux"))]
+fn copy_command(source: &std::path::Path, destination: &std::path::Path) -> String {
+    #[cfg(windows)]
+    {
+        format!(
+            "Copy-Item -LiteralPath {} -Destination {}",
+            quoted_path(source),
+            quoted_path(destination)
+        )
+    }
+    #[cfg(target_os = "linux")]
+    {
+        format!("cp -- {} {}", quoted_path(source), quoted_path(destination))
+    }
+}
+
+/// Refuse before any database open. Names the private default folder and the
+/// OS copy command. Does not copy or move the file.
+#[cfg(any(windows, target_os = "linux"))]
+fn refuse_database_outside_private_folder(
+    source: &std::path::Path,
+    folder: &std::path::Path,
+) -> String {
+    let source = std::path::absolute(source).unwrap_or_else(|_| source.to_path_buf());
+    let mut message = format!(
+        "database {} is outside a private folder and cannot be opened. Move it into the private default folder {}: {}",
+        source.display(),
+        folder.display(),
+        copy_command(&source, &folder.join("dendro.duckdb"))
+    );
+    let wal = std::path::PathBuf::from(format!("{}.wal", source.display()));
+    if wal.is_file() {
+        message.push_str(&format!(
+            " Also copy the WAL: {}",
+            copy_command(&wal, &folder.join("dendro.duckdb.wal"))
+        ));
+    }
+    message
+}
+
+#[cfg(any(windows, target_os = "linux"))]
+fn prepare_default_database(command: &mut Commands, db_explicit: bool) -> Result<()> {
+    if !command_opens_database(command) {
+        return Ok(());
+    }
+    let Some(db) = database_slot(command) else {
+        return Ok(());
+    };
+    if db_explicit {
+        if parent_is_admitted_private_root(db) {
+            return Ok(());
+        }
+        let root = dendro_core::platform_v1::open_or_create_default_data_root()?;
+        let folder = root.path().to_path_buf();
+        drop(root);
+        anyhow::bail!("{}", refuse_database_outside_private_folder(db, &folder));
+    }
+    if db.as_path() != std::path::Path::new("dendro.duckdb") {
+        return Ok(());
+    }
+    let root = dendro_core::platform_v1::open_or_create_default_data_root()?;
+    let folder = root.path().to_path_buf();
+    let default_db = folder.join("dendro.duckdb");
+    drop(root);
+    let legacy = std::path::Path::new("dendro.duckdb");
+    if legacy.exists() && !default_db.exists() {
+        if std::env::current_dir().is_ok_and(|cwd| admitted_private_root(&cwd)) {
+            return Ok(());
+        }
+        anyhow::bail!(
+            "{}",
+            refuse_database_outside_private_folder(legacy, &folder)
+        );
+    }
+    *db = default_db;
+    Ok(())
+}
+
 fn has_explicit_database(matches: &clap::ArgMatches) -> bool {
     (matches.ids().any(|id| id.as_str() == "db")
         && matches.value_source("db") == Some(clap::parser::ValueSource::CommandLine))
@@ -510,10 +661,12 @@ async fn main() -> Result<()> {
         }
         #[cfg(any(windows, target_os = "linux"))]
         {
-            let root = dendro_core::selection_binding::create_userprofile_storage_root()?;
+            let root = dendro_core::platform_v1::open_or_create_default_data_root()?;
+            let path = root.path().to_path_buf();
+            drop(root);
             println!(
                 "{}",
-                serde_json::json!({"status":"created", "storage_root":root, "reuse":"pass the exact storage_root path with --storage-root; protected persistent root discovery is not configured"})
+                serde_json::json!({"status":"created", "storage_root":path, "reuse":"pass the exact storage_root path with --storage-root, or omit --db to use storage_root/dendro.duckdb"})
             );
             return Ok(());
         }
@@ -543,33 +696,8 @@ async fn main() -> Result<()> {
         if !root.is_dir() {
             anyhow::bail!("storage root must be an existing directory");
         }
-        let db = match &mut command {
-            Commands::RecoverSelection { db, .. }
-            | Commands::Migrate { db }
-            | Commands::Rollback { db }
-            | Commands::Status { db, .. }
-            | Commands::Run { db, .. }
-            | Commands::Report { db, .. }
-            | Commands::Trace { db, .. } => Some(db),
-            Commands::Assert { scope, .. } | Commands::IssueDraft { scope, .. } => {
-                Some(&mut scope.db)
-            }
-            Commands::Extensions(extension) => match extension {
-                extensions::Commands::Dashboard { db, .. }
-                | extensions::Commands::Ui { db, .. }
-                | extensions::Commands::Ask { db, .. }
-                | extensions::Commands::InitNao { db, .. } => Some(db),
-                extensions::Commands::Materialize { scope }
-                | extensions::Commands::Export { scope, .. } => Some(&mut scope.db),
-                extensions::Commands::Simulate {
-                    command: extensions::SimulateCommand::Topology { db, .. },
-                } => Some(db),
-                extensions::Commands::Portfolio { .. } => None,
-            },
-            Commands::StorageInit => None,
-        };
-        if let Some(db) = db {
-            if db == std::path::Path::new("dendro.duckdb") {
+        if let Some(db) = database_slot(&mut command) {
+            if db.as_path() == std::path::Path::new("dendro.duckdb") {
                 *db = root.join("dendro.duckdb");
             } else {
                 anyhow::bail!(
@@ -577,6 +705,11 @@ async fn main() -> Result<()> {
                 );
             }
         }
+    } else {
+        #[cfg(any(windows, target_os = "linux"))]
+        prepare_default_database(&mut command, db_explicit)?;
+        #[cfg(not(any(windows, target_os = "linux")))]
+        let _ = db_explicit;
     }
     let rollback_requested = matches!(&command, Commands::Rollback { .. });
     match command {

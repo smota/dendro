@@ -936,6 +936,75 @@ pub fn recheck_lock_name(
     Ok(())
 }
 
+const DEFAULT_DATA_DIR: &str = "dendro";
+
+/// `$XDG_DATA_HOME/dendro`, or `~/.local/share/dendro`. The leaf is created
+/// mode `0700` only when `mkdirat` wins the exclusive create. An existing
+/// leaf is admitted and is never chmod'd.
+pub(super) fn open_or_create_default_data_root() -> Result<PrivateRoot, PlatformError> {
+    let resolved = resolve_native_root()?;
+    let parent = PathBuf::from(&resolved.path);
+    if broad_temp_rejected(&parent) {
+        return Err(PlatformError::Rejected(Verdict::refuse(
+            "broad_temp_rejected",
+            "T24-22",
+        )));
+    }
+    parse_child_name(DEFAULT_DATA_DIR, super::NativePlatform::Linux)
+        .map_err(PlatformError::Rejected)?;
+    if !parent.exists() {
+        let mut builder = std::fs::DirBuilder::new();
+        builder.recursive(true);
+        std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700_u32);
+        builder.create(&parent)?;
+    }
+    let target = parent.join(DEFAULT_DATA_DIR);
+    let mut pins = pin_directory(&parent)?;
+    let created = mkdirat(
+        pins.last().ok_or_else(|| {
+            PlatformError::Rejected(Verdict::refuse("ancestor_pin_absent", "T24-45"))
+        })?,
+        DEFAULT_DATA_DIR,
+        Mode::from_bits_truncate(0o700),
+    );
+    match created {
+        Ok(()) => {
+            let fd = open_directory_at(
+                pins.last().ok_or_else(|| {
+                    PlatformError::Rejected(Verdict::refuse("ancestor_pin_absent", "T24-45"))
+                })?,
+                std::ffi::OsStr::new(DEFAULT_DATA_DIR),
+            )?;
+            let meta = match require_private_directory(&fd, current_euid()?) {
+                Ok(meta) => meta,
+                Err(err) => {
+                    drop(fd);
+                    return Err(err);
+                }
+            };
+            pins.push(fd);
+            Ok(PrivateRoot {
+                path: target,
+                meta,
+                limitations: vec!["ancestor_acl_not_read"],
+                _pins: pins,
+            })
+        }
+        Err(errno) if errno == Errno::EXIST => {
+            drop(pins);
+            match open_existing_private_root(&target) {
+                Ok(root) => Ok(root),
+                Err(error) => Err(super::existing_default_root_not_private(&target, &error)),
+            }
+        }
+        Err(errno) if errno == Errno::NOENT => Err(PlatformError::Rejected(Verdict::refuse(
+            "no_trustworthy_root",
+            "T24-40",
+        ))),
+        Err(errno) => Err(map_errno(errno)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

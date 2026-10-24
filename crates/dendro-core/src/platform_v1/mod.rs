@@ -349,6 +349,44 @@ pub fn open_existing_private_root_with_link_policy(
     Ok(root)
 }
 
+/// Open the fixed per-user private data folder, creating it on first use.
+///
+/// Windows: `%LOCALAPPDATA%\Dendro`. Linux: `$XDG_DATA_HOME/dendro`, or
+/// `~/.local/share/dendro` when `XDG_DATA_HOME` is unset. An existing folder
+/// is admitted with `open_existing_private_root` and is never re-permissioned.
+/// Other platforms keep the existing refusal.
+pub fn open_or_create_default_data_root() -> Result<PrivateRoot, PlatformError> {
+    #[cfg(windows)]
+    {
+        windows::open_or_create_default_data_root()
+    }
+    #[cfg(target_os = "linux")]
+    {
+        linux::open_or_create_default_data_root()
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
+    {
+        Err(PlatformError::Rejected(Verdict::refuse(
+            "platform_unsupported",
+            "macos_private_create_not_admitted",
+        )))
+    }
+}
+
+#[cfg(any(windows, target_os = "linux"))]
+fn existing_default_root_not_private(
+    target: &std::path::Path,
+    error: &PlatformError,
+) -> PlatformError {
+    PlatformError::Io(std::io::Error::new(
+        std::io::ErrorKind::PermissionDenied,
+        format!(
+            "default data folder {target} exists but is not private ({error}); refusing to change its permissions",
+            target = target.display()
+        ),
+    ))
+}
+
 pub fn open_existing_private_root(path: &std::path::Path) -> Result<PrivateRoot, PlatformError> {
     #[cfg(target_os = "linux")]
     {

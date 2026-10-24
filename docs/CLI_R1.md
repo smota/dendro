@@ -5,10 +5,12 @@ Dendro is an AI Fleet Intelligence tool. Reports are Operational Intelligence. F
 The sealed acceptance contract is Amendment 1. This page only describes the commands.
 
 ```text
-dendro run --db dendro.duckdb
-dendro report <links|activity|handoffs|tokens|decisions> --db dendro.duckdb --rig <rig> --from <utc> --to <utc>
-dendro trace --db dendro.duckdb --metric-id <id>
+dendro run
+dendro report <links|activity|handoffs|tokens|decisions> --rig <rig> --from <utc> --to <utc>
+dendro trace --metric-id <id>
 ```
+
+Omitting `--db` and `--storage-root` uses `dendro.duckdb` in the private default folder (`%LOCALAPPDATA%\Dendro` on Windows, `$XDG_DATA_HOME/dendro` or `~/.local/share/dendro` on Linux). A database outside a private folder, including a legacy `./dendro.duckdb` when that folder has no database yet and an explicit `--db`, is refused before it is opened. Dendro prints one OS copy command into `<folder>/dendro.duckdb` (PowerShell `Copy-Item -LiteralPath` on Windows, `cp --` on Linux) and, only when `<db>.wal` is already beside the source, a second command for that WAL. It does not copy or move the file. `dendro migrate` does not move a database. When the current directory is already a private folder, `./dendro.duckdb` is opened there with no extra message.
 
 `report` and `trace` print JSON. A missing M1 denominator is JSON null, which means no data, not zero. M4 impact stays insufficient data. Nao and watch are outside this R1 proof.
 

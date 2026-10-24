@@ -2,6 +2,8 @@
 use anyhow::{bail, Context, Result};
 use clap::{Args, Subcommand};
 use serde_json::Value;
+const DEFAULT_DB_HELP: &str = super::DEFAULT_DB_HELP;
+
 use std::{
     fs,
     io::Read,
@@ -11,7 +13,7 @@ use std::{
 #[derive(Args, Clone, Debug)]
 #[command(next_help_heading = "Scope")]
 pub struct Scope {
-    #[arg(long, default_value = "dendro.duckdb")]
+    #[arg(long, default_value = "dendro.duckdb", hide_default_value = true, help = DEFAULT_DB_HELP)]
     pub db: PathBuf,
     #[arg(long)]
     pub rig: Option<String>,
@@ -33,7 +35,7 @@ pub enum Commands {
     /// Open the 6-screen cockpit, or export a self-contained HTML dashboard.
     #[command(next_help_heading = "Scope")]
     Dashboard {
-        #[arg(long, default_value = "dendro.duckdb")]
+        #[arg(long, default_value = "dendro.duckdb", hide_default_value = true, help = DEFAULT_DB_HELP)]
         db: PathBuf,
         #[arg(long)]
         rig: Option<String>,
@@ -60,7 +62,7 @@ pub enum Commands {
     /// Open the cockpit for an explicit window. Auto-anchors to recorded data.
     #[command(next_help_heading = "Scope")]
     Ui {
-        #[arg(long, default_value = "dendro.duckdb")]
+        #[arg(long, default_value = "dendro.duckdb", hide_default_value = true, help = DEFAULT_DB_HELP)]
         db: PathBuf,
         #[arg(long)]
         rig: Option<String>,
@@ -88,7 +90,7 @@ pub enum Commands {
         query: Option<String>,
         #[arg(long)]
         question: Option<String>,
-        #[arg(long, default_value = "dendro.duckdb", help_heading = "Scope")]
+        #[arg(long, default_value = "dendro.duckdb", hide_default_value = true, help = DEFAULT_DB_HELP, help_heading = "Scope")]
         db: PathBuf,
         #[arg(long, help_heading = "Scope")]
         baseline: Option<PathBuf>,
@@ -157,7 +159,7 @@ pub enum Commands {
     /// Create a Nao snapshot scaffold and report its integration status. Existing directories are never overwritten.
     #[command(next_help_heading = "Cache & Export")]
     InitNao {
-        #[arg(long, default_value = "dendro.duckdb")]
+        #[arg(long, default_value = "dendro.duckdb", hide_default_value = true, help = DEFAULT_DB_HELP)]
         db: PathBuf,
         /// New workspace label. Windows allocates a private unique sibling and returns its actual path.
         #[arg(long, visible_alias = "target")]
@@ -170,7 +172,7 @@ pub enum SimulateCommand {
     /// Model historical seat removal, direct handoffs, tier multipliers, and boundary resets.
     #[command(next_help_heading = "Scenario")]
     Topology {
-        #[arg(long, default_value = "dendro.duckdb")]
+        #[arg(long, default_value = "dendro.duckdb", hide_default_value = true, help = DEFAULT_DB_HELP)]
         db: PathBuf,
         #[arg(long)]
         rig: Option<String>,
