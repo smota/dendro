@@ -1573,7 +1573,7 @@ impl AnalyticsStore {
                     AND regexp_full_match(t.fingerprint, '[0-9a-f]{64}')
                     AND t.tool_name = ? AND t.ts IS NULL AND t.failed IS NULL AND NOT t.structured_write
                     AND t.native_session = COALESCE(s.native_session, ''))
-             FROM source_files s WHERE s.harness IN ('claude', 'pi', 'codex') ORDER BY s.source_id",
+             FROM source_files s WHERE s.harness IN ('claude', 'pi', 'codex', 'grok') ORDER BY s.source_id",
         )?;
         let rows = stmt.query_map(
             params![

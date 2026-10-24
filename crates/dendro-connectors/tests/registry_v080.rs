@@ -900,7 +900,7 @@ fn review_b6_pending_and_blocked_have_typed_causes_but_closed_persisted_codes() 
     }
     assert_eq!(
         dendro_connectors::grok::GrokConnector::new().availability(),
-        Availability::ParserPending
+        Availability::Implemented
     );
     assert_eq!(
         dendro_connectors::agy::AgyConnector::new().availability(),

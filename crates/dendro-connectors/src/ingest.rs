@@ -62,8 +62,15 @@ pub fn ingest_staged_with_manifest(
             continue;
         }
         match root.name.as_str() {
-            "claude" | "codex" | "pi" => {
+            "claude" | "codex" | "pi" | "grok" => {
                 let mut files = walk_jsonl(&root.path);
+                if root.name == "grok" {
+                    // Session stream only. Sibling jsonl files hold prompts and
+                    // file text; `summary.json` is read beside `updates.jsonl`.
+                    files.retain(|file| {
+                        file.file_name().and_then(|name| name.to_str()) == Some("updates.jsonl")
+                    });
+                }
                 files.sort();
                 let mut read = stream::FileStats::default();
                 let mut file_count = 0;
@@ -198,7 +205,7 @@ pub fn ingest_staged_with_manifest(
                     snapshot.wal_bytes.unwrap_or(0), snapshot.copy_ms, snapshot.check_ms
                 ));
             }
-            "agy" | "grok" => notes.push(format!("{shown} present-not-parsed")),
+            "agy" => notes.push(format!("{shown} present-not-parsed")),
             _ => notes.push(format!("{shown} unsupported")),
         }
     }
