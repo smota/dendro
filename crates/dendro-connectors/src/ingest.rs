@@ -7,7 +7,7 @@ use rusqlite::OpenFlags;
 use serde_json::Value;
 
 use crate::capture_registry_v1::{ReaderRoute, Registry};
-use crate::stream::{self, walk_jsonl};
+use crate::stream;
 
 #[derive(Debug, Clone)]
 pub struct SourceRoot {
@@ -54,7 +54,9 @@ pub fn ingest_staged_with_manifest(
             if root.name == "openrig" {
                 lifecycle_complete = false;
             }
-            notes.push(format!("{shown} missing"));
+            notes.push(format!(
+                "{shown} missing coverage=refused reason=source_missing"
+            ));
             store.record_warning(&dendro_core::WarningNote {
                 path: root.path.display().to_string(),
                 line: None,
@@ -89,123 +91,212 @@ pub fn ingest_staged_with_manifest(
                     snapshot.wal_bytes.unwrap_or(0), snapshot.copy_ms, snapshot.check_ms
                 ));
             }
-            name => match Registry::builtin().route(name) {
-                ReaderRoute::NativeJsonl => {
-                    let mut files = walk_jsonl(&root.path);
-                    if root.name == "grok" {
-                        // Session stream only. Sibling jsonl files hold prompts and
-                        // file text; `summary.json` is read beside `updates.jsonl`.
-                        files.retain(|file| {
-                            file.file_name().and_then(|file_name| file_name.to_str())
-                                == Some("updates.jsonl")
-                        });
-                    }
-                    files.sort();
-                    let mut read = stream::FileStats::default();
-                    let mut file_count = 0;
-                    for file in &files {
-                        let id = manifest_source_id(root, file);
-                        let entry = sealed.and_then(|manifest| {
-                            manifest
-                                .files
-                                .iter()
-                                .find(|entry| entry.source_id == id && entry.harness == root.name)
-                        });
-                        if sealed.is_some() && entry.is_none() {
-                            continue;
+            name => {
+                match Registry::builtin().route(name) {
+                    ReaderRoute::NativeJsonl => {
+                        let mut files = match stream::walk_jsonl_checked(&root.path) {
+                            Ok(files) => files,
+                            Err(_) if sealed.is_none() => {
+                                let reason = "coverage=refused reason=native_discovery_failed";
+                                store.record_warning(&dendro_core::WarningNote {
+                                    path: manifest_source_id(root, &root.path),
+                                    line: None,
+                                    reason: reason.into(),
+                                })?;
+                                notes.push(format!("{shown} {reason}"));
+                                continue;
+                            }
+                            Err(error) => return Err(error),
+                        };
+                        if root.name == "grok" {
+                            // Session stream only. Sibling jsonl files hold prompts and
+                            // file text; `summary.json` is read beside `updates.jsonl`.
+                            files.retain(|file| {
+                                file.file_name().and_then(|file_name| file_name.to_str())
+                                    == Some("updates.jsonl")
+                            });
                         }
-                        if !seen_files.insert(id.clone()) {
-                            continue;
+                        files.sort();
+                        let mut read = stream::FileStats::default();
+                        let mut file_count = 0;
+                        let mut refused = 0;
+                        for file in &files {
+                            let id = manifest_source_id(root, file);
+                            let entry = sealed.and_then(|manifest| {
+                                manifest.files.iter().find(|entry| {
+                                    entry.source_id == id && entry.harness == root.name
+                                })
+                            });
+                            if sealed.is_some() && entry.is_none() {
+                                continue;
+                            }
+                            if !seen_files.insert(id.clone()) {
+                                continue;
+                            }
+                            let source_id = stable_source_id(&root.name, &root.path, file, key);
+                            let stats = match stream::ingest_jsonl_with_cutoff(
+                                &store,
+                                &source_id,
+                                &root.name,
+                                file,
+                                Some(key),
+                                entry,
+                            ) {
+                                Ok(stats) => stats,
+                                Err(error) if sealed.is_none() && error.is::<std::io::Error>() => {
+                                    let reason = "coverage=refused reason=native_file_unreadable";
+                                    store.record_warning(&dendro_core::WarningNote {
+                                        path: id.clone(),
+                                        line: None,
+                                        reason: reason.into(),
+                                    })?;
+                                    notes.push(format!("{shown} file={id} {reason}"));
+                                    refused += 1;
+                                    continue;
+                                }
+                                Err(error) => return Err(error),
+                            };
+                            let (_, offset, digest) =
+                                store.source_state(&source_id)?.ok_or_else(|| {
+                                    anyhow::anyhow!("missing file cutoff after ingest")
+                                })?;
+                            manifest.files.push(dendro_core::FileCutoff {
+                                source_id: dendro_core::redact(&id),
+                                harness: dendro_core::redact(&root.name),
+                                byte_length: u64::try_from(offset)?,
+                                prefix_sha256: digest,
+                            });
+                            file_count += 1;
+                            read.records_read += stats.records_read;
+                            read.usage_records += stats.usage_records;
+                            read.coverage.merge(stats.coverage);
+                            notes.push(format!("{shown} file={id} {}", stats.coverage.summary()));
                         }
-                        let source_id = stable_source_id(&root.name, &root.path, file, key);
-                        let stats = stream::ingest_jsonl_with_cutoff(
-                            &store,
-                            &source_id,
-                            &root.name,
-                            file,
-                            Some(key),
-                            entry,
-                        )?;
-                        let (_, offset, digest) = store
-                            .source_state(&source_id)?
-                            .ok_or_else(|| anyhow::anyhow!("missing file cutoff after ingest"))?;
-                        manifest.files.push(dendro_core::FileCutoff {
-                            source_id: dendro_core::redact(&id),
-                            harness: dendro_core::redact(&root.name),
-                            byte_length: u64::try_from(offset)?,
-                            prefix_sha256: digest,
-                        });
-                        file_count += 1;
-                        read.records_read += stats.records_read;
-                        read.usage_records += stats.usage_records;
-                    }
-                    let coverage = if root.name == "codex" {
-                        " tool_calls=not read"
-                    } else {
-                        ""
-                    };
-                    notes.push(format!(
-                        "{shown} files={file_count} records_read={} usage_records={}{coverage}",
-                        read.records_read, read.usage_records
+                        read.coverage.partial |= refused != 0;
+                        let coverage = if root.name == "codex" {
+                            " tool_calls=not read"
+                        } else {
+                            ""
+                        };
+                        notes.push(format!(
+                        "{shown} files={file_count} refused={refused} records_read={} usage_records={}{coverage} {}",
+                        read.records_read, read.usage_records, read.coverage.summary()
                     ));
-                }
-                ReaderRoute::VerifiedExport => {
-                    let Some((harness, format)) = crate::capture_registry_v1::verified_export(name)
-                    else {
-                        notes.push(format!("{shown} unsupported"));
-                        continue;
-                    };
-                    let connector = crate::exports::ExportConnector::new(
-                        root.path.clone(),
-                        key.to_vec(),
-                        harness,
-                        format,
-                    );
-                    let mut file_count = 0;
-                    for file in connector.discover()? {
-                        let id = manifest_source_id(root, &file);
-                        let entry = sealed.and_then(|manifest| {
-                            manifest
-                                .files
-                                .iter()
-                                .find(|entry| entry.source_id == id && entry.harness == root.name)
-                        });
-                        if sealed.is_some() && entry.is_none() {
+                    }
+                    ReaderRoute::VerifiedExport => {
+                        let Some((harness, format)) =
+                            crate::capture_registry_v1::verified_export(name)
+                        else {
+                            notes.push(format!("{shown} unsupported"));
                             continue;
-                        }
-                        if !seen_files.insert(id.clone()) {
-                            continue;
-                        }
-                        let (warnings, watermark) =
-                            connector.ingest_file_with_cutoff(&store, &file, entry)?;
-                        for reason in warnings {
+                        };
+                        let connector = crate::exports::ExportConnector::new(
+                            root.path.clone(),
+                            key.to_vec(),
+                            harness,
+                            format,
+                        );
+                        let mut file_count = 0;
+                        let listing = match connector.inspect_discovery() {
+                            Ok(listing) => listing,
+                            Err(error)
+                                if sealed.is_none() && !error.is::<dendro_core::Interrupted>() =>
+                            {
+                                let reason = "coverage=refused reason=export_discovery_failed";
+                                store.record_warning(&dendro_core::WarningNote {
+                                    path: manifest_source_id(root, &root.path),
+                                    line: None,
+                                    reason: reason.into(),
+                                })?;
+                                notes.push(format!("{shown} {reason}"));
+                                continue;
+                            }
+                            Err(error) => return Err(error),
+                        };
+                        let mut refused = listing.refused.len();
+                        for (path, reason) in listing.refused {
+                            let id = manifest_source_id(root, &path);
+                            let reason = format!("coverage=refused reason={reason}");
                             store.record_warning(&dendro_core::WarningNote {
                                 path: id.clone(),
                                 line: None,
-                                reason: reason.into(),
+                                reason: reason.clone(),
                             })?;
-                            notes.push(format!("{shown} {reason}"));
+                            notes.push(format!("{shown} file={id} {reason}"));
                         }
-                        manifest.files.push(dendro_core::FileCutoff {
-                            source_id: id,
-                            harness: harness.into(),
-                            byte_length: watermark.byte_offset,
-                            prefix_sha256: watermark
-                                .session_id
-                                .as_deref()
-                                .and_then(|value| value.strip_prefix("sdk-v1:"))
-                                .ok_or_else(|| anyhow::anyhow!("missing export prefix digest"))?
-                                .into(),
-                        });
-                        file_count += 1;
+                        let mut coverage = crate::sdk::Coverage::default();
+                        for file in listing.paths {
+                            let id = manifest_source_id(root, &file);
+                            let entry = sealed.and_then(|manifest| {
+                                manifest.files.iter().find(|entry| {
+                                    entry.source_id == id && entry.harness == root.name
+                                })
+                            });
+                            if sealed.is_some() && entry.is_none() {
+                                continue;
+                            }
+                            if !seen_files.insert(id.clone()) {
+                                continue;
+                            }
+                            let (warnings, watermark, file_coverage) =
+                                match connector.ingest_file_with_cutoff(&store, &file, entry) {
+                                    Ok(batch) => batch,
+                                    Err(error)
+                                        if sealed.is_none()
+                                            && error.is::<crate::exports::ExportRefused>() =>
+                                    {
+                                        let failure = error
+                                            .downcast_ref::<crate::exports::ExportRefused>()
+                                            .expect("typed refusal");
+                                        coverage.merge(failure.1);
+                                        let reason = format!(
+                                            "coverage=refused reason={} {}",
+                                            failure.0,
+                                            failure.1.summary()
+                                        );
+                                        store.record_warning(&dendro_core::WarningNote {
+                                            path: id.clone(),
+                                            line: None,
+                                            reason: reason.clone(),
+                                        })?;
+                                        notes.push(format!("{shown} file={id} {reason}"));
+                                        refused += 1;
+                                        continue;
+                                    }
+                                    Err(error) => return Err(error),
+                                };
+                            coverage.merge(file_coverage);
+                            notes.push(format!("{shown} file={id} {}", file_coverage.summary()));
+                            for reason in warnings {
+                                store.record_warning(&dendro_core::WarningNote {
+                                    path: id.clone(),
+                                    line: None,
+                                    reason: reason.into(),
+                                })?;
+                                notes.push(format!("{shown} {reason}"));
+                            }
+                            manifest.files.push(dendro_core::FileCutoff {
+                                source_id: id,
+                                harness: harness.into(),
+                                byte_length: watermark.byte_offset,
+                                prefix_sha256: watermark
+                                    .session_id
+                                    .as_deref()
+                                    .and_then(|value| value.strip_prefix("sdk-v1:"))
+                                    .ok_or_else(|| anyhow::anyhow!("missing export prefix digest"))?
+                                    .into(),
+                            });
+                            file_count += 1;
+                        }
+                        coverage.partial |= refused != 0;
+                        notes.push(format!("{shown} files={file_count} refused={refused} format=verified-export-only native-storage=unsupported {}", coverage.summary()));
                     }
-                    notes.push(format!("{shown} files={file_count} format=verified-export-only native-storage=unsupported"));
+                    ReaderRoute::PresentNotParsed => {
+                        notes.push(format!("{shown} present-not-parsed"));
+                    }
+                    ReaderRoute::Unsupported => notes.push(format!("{shown} unsupported")),
                 }
-                ReaderRoute::PresentNotParsed => {
-                    notes.push(format!("{shown} present-not-parsed"));
-                }
-                ReaderRoute::Unsupported => notes.push(format!("{shown} unsupported")),
-            },
+            }
         }
     }
     if let Some(sealed) = sealed {

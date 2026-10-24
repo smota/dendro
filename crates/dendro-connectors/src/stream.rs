@@ -123,6 +123,7 @@ pub fn ingest_jsonl(
 /// What one ingest call read from a session file (AC1).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct FileStats {
+    pub coverage: crate::sdk::Coverage,
     /// Records read: complete, non-blank JSONL lines read by this call. Lines
     /// before the stored watermark were read by an earlier run and are not
     /// counted again; a trailing partial line is not a record yet.
@@ -222,14 +223,21 @@ fn ingest_jsonl_limited(
         )?;
         total.records_read += batch.records_read;
         total.usage_records += batch.usage_records;
+        total.coverage.merge(batch.coverage);
         if !(batch.batch_capped && batch.advanced) {
             break;
         }
     }
+    store.record_warning(&WarningNote {
+        path: path.display().to_string(),
+        line: None,
+        reason: total.coverage.summary(),
+    })?;
     Ok(total)
 }
 
 struct BatchOutcome {
+    coverage: crate::sdk::Coverage,
     records_read: u64,
     usage_records: u64,
     /// Stopped because the descriptor's batch cap was reached, not because
@@ -391,6 +399,9 @@ fn ingest_jsonl_one_batch<F: FnOnce() -> Result<()>>(
     let mut line_no = 0i64;
     let mut consumed = 0i64;
     let reset_generation = generation_was_reset(prior, generation);
+    let partial_reason = format!("coverage-partial generation={generation}");
+    let prior_partial =
+        !reset_generation && store.has_warning(&path.display().to_string(), &partial_reason)?;
     let mut counters = if reset_generation {
         CodexCounters::default()
     } else {
@@ -417,6 +428,8 @@ fn ingest_jsonl_one_batch<F: FnOnce() -> Result<()>>(
     let mut seen_messages = HashSet::new();
     let mut unknown_types = HashSet::new();
     let mut records_read = 0u64;
+    let mut coverage = crate::sdk::Coverage::default();
+    let mut coverage_defect = prior_partial;
     let mut reader_complete = true;
     let mut source_session = file_session
         .as_ref()
@@ -474,7 +487,18 @@ fn ingest_jsonl_one_batch<F: FnOnce() -> Result<()>>(
         dendro_core::RUN_CANCEL.check()?;
         let capped = read_capped_line(&mut reader, limits.encoded_bytes, &mut hasher)?;
         let buf = match capped {
-            CappedLine::Eof | CappedLine::Partial => break,
+            CappedLine::Eof => break,
+            CappedLine::Partial => {
+                reader_complete = false;
+                coverage.partial = true;
+                coverage.held_tail = 1;
+                warnings.push(WarningNote {
+                    path: path.display().to_string(),
+                    line: Some(line_no + 1),
+                    reason: "unterminated-tail-held".into(),
+                });
+                break;
+            }
             CappedLine::Oversize { len } => {
                 consumed += i64::try_from(len)?;
                 line_no += 1;
@@ -488,6 +512,7 @@ fn ingest_jsonl_one_batch<F: FnOnce() -> Result<()>>(
                 }
                 if is_new {
                     records_read += 1;
+                    coverage.quarantined_oversize += 1;
                     warnings.push(WarningNote {
                         path: path.display().to_string(),
                         line: Some(line_no),
@@ -522,6 +547,7 @@ fn ingest_jsonl_one_batch<F: FnOnce() -> Result<()>>(
             Err(_) => {
                 reader_complete = false;
                 if is_new {
+                    coverage.malformed += 1;
                     warnings.push(WarningNote {
                         path: path.display().to_string(),
                         line: Some(line_no),
@@ -537,6 +563,7 @@ fn ingest_jsonl_one_batch<F: FnOnce() -> Result<()>>(
         if crate::sdk::container_depth(bytes) > limits.nesting_depth {
             reader_complete = false;
             if is_new {
+                coverage.quarantined_depth += 1;
                 warnings.push(WarningNote {
                     path: path.display().to_string(),
                     line: Some(line_no),
@@ -554,6 +581,7 @@ fn ingest_jsonl_one_batch<F: FnOnce() -> Result<()>>(
             Err(_) => {
                 reader_complete = false;
                 if is_new {
+                    coverage.malformed += 1;
                     warnings.push(WarningNote {
                         path: path.display().to_string(),
                         line: Some(line_no),
@@ -574,6 +602,7 @@ fn ingest_jsonl_one_batch<F: FnOnce() -> Result<()>>(
         }
         let mut codex_skills = Vec::new();
         let mut codex_categories = Vec::new();
+        let tools_before = tools.len();
         if harness == "codex" && unknown_record_type(harness, &value).is_none() {
             reader_complete &= observe_codex(
                 &value,
@@ -616,6 +645,8 @@ fn ingest_jsonl_one_batch<F: FnOnce() -> Result<()>>(
             }
         }
         if let Some(reason) = unknown_record_type(harness, &value) {
+            coverage_defect = true;
+            coverage.unknown_kind += 1;
             let repeat = !unknown_types.insert(reason.clone())
                 || store.has_warning(&path.display().to_string(), &reason)?;
             if !repeat {
@@ -627,11 +658,25 @@ fn ingest_jsonl_one_batch<F: FnOnce() -> Result<()>>(
             }
             continue;
         }
+        let mut projected_tool = tools.len() > tools_before;
         if let Some(scan) = tool_scan.as_mut() {
+            let before = scan.calls.len() + scan.results.len() + scan.skills.len();
             scan.observe(line_no, text, &value);
+            projected_tool |= scan.calls.len() + scan.results.len() + scan.skills.len() > before;
         }
         match parse_value(harness, &value, &mut counters) {
             Ok((buckets, partial)) => {
+                if !partial.is_empty() {
+                    reader_complete = false;
+                    coverage_defect = true;
+                }
+                if projected_tool || !buckets.is_empty() {
+                    coverage.projected += 1;
+                } else if !partial.is_empty() {
+                    coverage.unsupported_schema += 1;
+                } else {
+                    coverage.not_projected += 1;
+                }
                 for reason in partial {
                     warnings.push(WarningNote {
                         path: path.display().to_string(),
@@ -727,6 +772,13 @@ fn ingest_jsonl_one_batch<F: FnOnce() -> Result<()>>(
                 }
             }
             Err(reason) => {
+                reader_complete = false;
+                coverage_defect = true;
+                if projected_tool {
+                    coverage.projected += 1;
+                } else {
+                    coverage.malformed += 1;
+                }
                 warnings.push(WarningNote {
                     path: path.display().to_string(),
                     line: Some(line_no),
@@ -743,6 +795,14 @@ fn ingest_jsonl_one_batch<F: FnOnce() -> Result<()>>(
             None
         };
     }
+    coverage_defect |= coverage.unknown_kind
+        + coverage.quarantined_oversize
+        + coverage.quarantined_depth
+        + coverage.malformed
+        + coverage.unsupported_schema
+        != 0;
+    coverage.partial |= !reader_complete || coverage_defect;
+    reader_complete &= !coverage_defect;
     if batch_capped {
         // This batch stopped early. The draining loop continues; a crash
         // must not report the unread tail as a finished reader.
@@ -812,7 +872,15 @@ fn ingest_jsonl_one_batch<F: FnOnce() -> Result<()>>(
     for note in &warnings {
         store.record_warning(note)?;
     }
+    if coverage_defect {
+        store.record_warning(&WarningNote {
+            path: path.display().to_string(),
+            line: None,
+            reason: partial_reason,
+        })?;
+    }
     Ok(BatchOutcome {
+        coverage,
         records_read,
         usage_records: usages.len() as u64,
         batch_capped,
@@ -2720,6 +2788,8 @@ mod tests {
             assert_eq!(
                 reasons,
                 [
+                    "coverage-partial generation=1",
+                    "coverage=partial projected=3 unprojected=3 held_tail=0 (unknown_kind=1 malformed=2)",
                     "invalid-utf8",
                     "malformed-json",
                     "unknown-record-type: qa_unknown_record_version_999"
@@ -3628,9 +3698,15 @@ mod tests {
             "{\"type\":\"assistant\",\"sessionId\":\"s\",\"message\":{\"id\":\"m1\",\"usage\":{\"input_tokens\":2,\"output_tokens\":3,\"cache_read_input_tokens\":4,\"cache_creation_input_tokens\":5,\"cache_creation\":{\"ephemeral_5m_input_tokens\":5}}}}\nnot-json\n{\"type\":\"assistant\",\"sessionId\":\"s\",\"message\":{\"id\":\"m1\",\"usage\":{\"input_tokens\":9,\"output_tokens\":9,\"cache_read_input_tokens\":9,\"cache_creation_input_tokens\":9}}}\npartial",
         );
         let db = store();
-        ingest_jsonl(&db, "c1", "claude", &path).unwrap();
+        let stats = ingest_jsonl_with_key(&db, "c1", "claude", &path, None).unwrap();
         assert_eq!(db.latest_usage_totals("c1").unwrap(), (2, 3, 4, 5));
-        assert_eq!(db.warning_count().unwrap(), 1);
+        assert_eq!(db.warning_count().unwrap(), 4);
+        assert!(stats.coverage.partial);
+        assert_eq!(stats.coverage.malformed, 1);
+        assert_eq!(stats.coverage.held_tail, 1);
+        assert!(db
+            .has_warning(&path.display().to_string(), &stats.coverage.summary())
+            .unwrap());
         let state = db.source_state("c1").unwrap().unwrap();
         assert!(state.1 < fs::metadata(&path).unwrap().len() as i64);
         let _ = fs::remove_dir_all(&dir);
@@ -4700,17 +4776,32 @@ mod tests {
 }
 
 pub fn walk_jsonl(root: &Path) -> Vec<PathBuf> {
+    collect_jsonl(root, false).unwrap_or_default()
+}
+
+pub(crate) fn walk_jsonl_checked(root: &Path) -> Result<Vec<PathBuf>> {
+    collect_jsonl(root, true)
+}
+
+fn collect_jsonl(root: &Path, strict: bool) -> Result<Vec<PathBuf>> {
     let mut out = Vec::new();
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
         let entries = match fs::read_dir(&dir) {
             Ok(entries) => entries,
+            Err(error) if strict => return Err(error.into()),
             Err(_) => continue,
         };
-        for entry in entries.flatten() {
+        for entry in entries {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(error) if strict => return Err(error.into()),
+                Err(_) => continue,
+            };
             let path = entry.path();
             let meta = match fs::symlink_metadata(&path) {
                 Ok(meta) => meta,
+                Err(error) if strict => return Err(error.into()),
                 Err(_) => continue,
             };
             if meta.file_type().is_symlink() {
@@ -4723,7 +4814,7 @@ pub fn walk_jsonl(root: &Path) -> Vec<PathBuf> {
             }
         }
     }
-    out
+    Ok(out)
 }
 
 #[cfg(test)]

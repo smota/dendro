@@ -12,8 +12,62 @@ use std::{
 pub const MAX_LINE_BYTES: u64 = 1024 * 1024;
 pub const MAX_BATCH_LINES: usize = 128;
 
+/// Content-free record accounting shared by production readers.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Coverage {
+    pub projected: u64,
+    pub unknown_kind: u64,
+    pub unsupported_version: u64,
+    pub quarantined_oversize: u64,
+    pub quarantined_depth: u64,
+    pub malformed: u64,
+    pub unsupported_schema: u64,
+    pub not_projected: u64,
+    pub held_tail: u64,
+    pub partial: bool,
+}
+impl Coverage {
+    pub fn merge(&mut self, other: Self) {
+        self.projected += other.projected;
+        self.unknown_kind += other.unknown_kind;
+        self.unsupported_version += other.unsupported_version;
+        self.quarantined_oversize += other.quarantined_oversize;
+        self.quarantined_depth += other.quarantined_depth;
+        self.malformed += other.malformed;
+        self.unsupported_schema += other.unsupported_schema;
+        self.not_projected += other.not_projected;
+        self.held_tail += other.held_tail;
+        self.partial |= other.partial;
+    }
+    pub fn summary(&self) -> String {
+        let reasons = [
+            ("unknown_kind", self.unknown_kind),
+            ("unsupported_version", self.unsupported_version),
+            ("quarantined_oversize", self.quarantined_oversize),
+            ("quarantined_depth", self.quarantined_depth),
+            ("malformed", self.malformed),
+            ("unsupported_schema", self.unsupported_schema),
+            ("no_projectable_fact", self.not_projected),
+        ];
+        let total: u64 = reasons.iter().map(|(_, count)| count).sum();
+        let detail = reasons
+            .into_iter()
+            .filter(|(_, count)| *count != 0)
+            .map(|(reason, count)| format!("{reason}={count}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        format!(
+            "coverage={} projected={} unprojected={total} held_tail={} ({detail})",
+            if self.partial { "partial" } else { "complete" },
+            self.projected,
+            self.held_tail
+        )
+    }
+}
+
 /// A batch never includes a trailing unterminated record. Diagnostic codes contain no source text.
 pub struct JsonlBatch {
+    pub coverage: Coverage,
     pub records: Vec<(u64, Value)>,
     pub warnings: Vec<&'static str>,
     pub watermark: Watermark,
@@ -72,8 +126,14 @@ impl ExportRoot {
                 .map_err(|_| anyhow::anyhow!("cannot read export entry"))?;
             if metadata.file_type().is_symlink() {
                 push_reason(&mut listing.reasons, "symlink export refused");
+                listing
+                    .refused
+                    .push((entry.path(), "symlink export refused"));
             } else if !metadata.is_file() {
                 push_reason(&mut listing.reasons, "export must be a regular file");
+                listing
+                    .refused
+                    .push((entry.path(), "export must be a regular file"));
             } else {
                 listing.paths.push(entry.path());
             }
@@ -209,6 +269,7 @@ impl ExportRoot {
         let mut whitespace_lines = 0;
         let mut malformed = 0;
         let mut quarantined = 0;
+        let mut coverage = Coverage::default();
         let mut max_decoded_depth = 0;
         let mut max_examined_depth = 0;
         let mut bytes_examined = 0;
@@ -263,6 +324,7 @@ impl ExportRoot {
                     delimited = scratch.ends_with(b"\n");
                 }
             } else if !line.ends_with(b"\n") {
+                coverage.held_tail = 1;
                 break;
             }
             if !oversized {
@@ -271,9 +333,11 @@ impl ExportRoot {
             if !oversized && line.iter().all(u8::is_ascii_whitespace) {
                 whitespace_lines += 1;
             } else if oversized {
+                coverage.quarantined_oversize += 1;
                 quarantined += 1;
                 push_reason(&mut warnings, oversize_reason(limits));
             } else if container_depth(&line) > limits.nesting_depth {
+                coverage.quarantined_depth += 1;
                 quarantined += 1;
                 push_reason(&mut warnings, "nesting_depth_exceeds_limit");
             } else {
@@ -287,6 +351,7 @@ impl ExportRoot {
                         }
                     }
                     Err(code) => {
+                        coverage.malformed += 1;
                         if code == "malformed-json-record" {
                             malformed += 1;
                         } else {
@@ -302,6 +367,7 @@ impl ExportRoot {
             consumed += encoded_length;
         }
         let complete = consumed == length && warnings.is_empty();
+        coverage.partial = !warnings.is_empty() || coverage.held_tail != 0;
         let held = reader.into_inner().into_inner();
         ensure!(
             before == dendro_core::file_metadata::FileMetadata::from_file(&held),
@@ -317,6 +383,7 @@ impl ExportRoot {
             .duration_since(std::time::UNIX_EPOCH)?
             .as_secs();
         Ok(JsonlBatch {
+            coverage,
             metadata: before,
             raw_read_position,
             complete,
@@ -350,6 +417,7 @@ pub const MAX_BATCH_ENCODED_BYTES: u64 = GLOBAL_MAX_RECORD_BYTES + 1;
 pub struct DiscoveryListing {
     pub paths: Vec<PathBuf>,
     pub reasons: Vec<&'static str>,
+    pub refused: Vec<(PathBuf, &'static str)>,
 }
 pub(crate) fn oversize_reason(limits: &ReadLimits) -> &'static str {
     if limits.encoded_bytes == GLOBAL_MAX_RECORD_BYTES {

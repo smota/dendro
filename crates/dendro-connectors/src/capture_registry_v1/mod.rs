@@ -302,6 +302,7 @@ pub struct Counts {
     pub decoded: usize,
     pub projected: usize,
     pub recognized_unprojected: usize,
+    pub unprojected_reasons: std::collections::BTreeMap<&'static str, usize>,
     pub unsupported_schema: usize,
     pub quarantined: usize,
     pub unrecognized: usize,
@@ -412,12 +413,29 @@ pub fn capture<A: Contribution>(
     report.counts.whitespace_lines = batch.whitespace_lines;
     report.counts.malformed = batch.malformed;
     report.counts.quarantined = batch.quarantined;
+    for (reason, count) in [
+        ("quarantined_oversize", batch.coverage.quarantined_oversize),
+        ("quarantined_depth", batch.coverage.quarantined_depth),
+        ("malformed", batch.coverage.malformed),
+    ] {
+        if count != 0 {
+            report
+                .counts
+                .unprojected_reasons
+                .insert(reason, count as usize);
+        }
+    }
     for reason in batch.warnings {
         push_reason(&mut report.reasons, reason);
     }
     for (_, value) in batch.records {
         if !schema_supported(descriptor, &value) {
             report.counts.unsupported_schema += 1;
+            *report
+                .counts
+                .unprojected_reasons
+                .entry("unsupported_version")
+                .or_default() += 1;
             cursor.stopped_schema = true;
             push_reason(&mut report.reasons, "unsupported_schema");
             break;
@@ -428,16 +446,36 @@ pub fn capture<A: Contribution>(
                 report.facts.push(fact);
                 report.counts.projected += 1;
             }
-            Projection::RecognizedUnprojected => report.counts.recognized_unprojected += 1,
+            Projection::RecognizedUnprojected => {
+                report.counts.recognized_unprojected += 1;
+                *report
+                    .counts
+                    .unprojected_reasons
+                    .entry("no_projectable_fact")
+                    .or_default() += 1;
+            }
             Projection::Unrecognized => {
                 report.counts.unrecognized += 1;
+                *report
+                    .counts
+                    .unprojected_reasons
+                    .entry("unknown_kind")
+                    .or_default() += 1;
                 push_reason(&mut report.reasons, "unsupported_schema");
             }
             Projection::Quarantined => {
                 report.counts.quarantined += 1;
+                *report
+                    .counts
+                    .unprojected_reasons
+                    .entry("malformed")
+                    .or_default() += 1;
                 push_reason(&mut report.reasons, "malformed-json-record");
             }
         }
+    }
+    for (reason, count) in &report.counts.unprojected_reasons {
+        *cursor.counts.unprojected_reasons.entry(reason).or_default() += count;
     }
     cursor.counts.decoded += report.counts.decoded;
     cursor.counts.projected += report.counts.projected;
