@@ -1047,6 +1047,80 @@ fn reopen_verified(hint: &File, file_id_128: [u8; 16], write: bool) -> Result<Fi
     Ok(File::from(opened))
 }
 
+const DEFAULT_DATA_DIR: &str = "Dendro";
+
+/// `%LOCALAPPDATA%\Dendro`, created with the same protected descriptor as other
+/// private roots. `bound_platform` only mints a random suffix, so the fresh
+/// directory is renamed onto the fixed leaf. An existing leaf is never replaced
+/// and its DACL is never rewritten.
+pub(super) fn open_or_create_default_data_root() -> Result<PrivateRoot, PlatformError> {
+    let raw = std::env::var_os("LOCALAPPDATA").ok_or_else(|| {
+        PlatformError::Rejected(Verdict::refuse(
+            "no_trustworthy_root",
+            "LOCALAPPDATA_missing",
+        ))
+    })?;
+    let text = raw
+        .to_str()
+        .ok_or_else(|| PlatformError::Rejected(Verdict::refuse("non_roundtrip_name", "T24-50")))?;
+    let resolved = resolve_root(&RootQuery {
+        home: None,
+        userprofile: None,
+        local_app_data: None,
+        xdg_data_home: None,
+        explicit_override: Some(text.to_owned()),
+        euid_is_root: false,
+        platform: super::NativePlatform::Windows,
+    })
+    .map_err(PlatformError::Rejected)?;
+    let parent = PathBuf::from(&resolved.path);
+    if broad_temp_rejected(&parent) {
+        return Err(PlatformError::Rejected(Verdict::refuse(
+            "broad_temp_rejected",
+            "T24-22",
+        )));
+    }
+    parse_child_name(DEFAULT_DATA_DIR, super::NativePlatform::Windows)
+        .map_err(PlatformError::Rejected)?;
+    let sids = known_sids()?;
+    // Prove the parent before creating. Drop the pins before the same-directory
+    // rename: those handles omit FILE_SHARE_DELETE.
+    drop(pin_ancestors(&parent, &sids)?);
+    let target = parent.join(DEFAULT_DATA_DIR);
+    match std::fs::symlink_metadata(&target) {
+        Ok(_) => admit_existing_default_root(&target),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            create_fixed_default_root(&parent, &target)
+        }
+        Err(err) => Err(PlatformError::from(err)),
+    }
+}
+
+fn admit_existing_default_root(target: &Path) -> Result<PrivateRoot, PlatformError> {
+    match open_existing_private_root(target) {
+        Ok(root) => Ok(root),
+        Err(error) => Err(super::existing_default_root_not_private(target, &error)),
+    }
+}
+
+fn create_fixed_default_root(parent: &Path, target: &Path) -> Result<PrivateRoot, PlatformError> {
+    let temporary = bound_platform::fs::create_private_dir(parent, ".dendro-default-")?;
+    match std::fs::rename(&temporary, target) {
+        Ok(()) => open_existing_private_root(target),
+        Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+            let _ = std::fs::remove_dir(&temporary);
+            admit_existing_default_root(target)
+        }
+        Err(err) => {
+            let _ = std::fs::remove_dir(&temporary);
+            if std::fs::symlink_metadata(target).is_ok() {
+                return admit_existing_default_root(target);
+            }
+            Err(PlatformError::from(err))
+        }
+    }
+}
+
 pub fn rename_absent_same_directory(
     from: &Path,
     to: &Path,

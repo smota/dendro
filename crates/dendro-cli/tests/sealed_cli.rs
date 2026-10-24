@@ -41,6 +41,12 @@ impl Drop for Scratch {
         let _ = fs::remove_dir_all(&self.0);
     }
 }
+struct RemoveDir(PathBuf);
+impl Drop for RemoveDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
 fn command() -> Command {
     Command::new(env!("CARGO_BIN_EXE_dendro"))
 }
@@ -365,12 +371,52 @@ fn unicode_long_logical_marker_supports_all_read_surfaces_and_immutable_material
 }
 
 #[cfg(any(windows, target_os = "linux"))]
+fn isolated_default_parent() -> PathBuf {
+    let root = dendro_core::platform_v1::create_user_private_root_with_choice(
+        "dendro-cli-default-",
+        &dendro_core::platform_v1::StorageRootChoice::UserProfile,
+    )
+    .unwrap();
+    root.path().to_path_buf()
+}
+
+#[cfg(any(windows, target_os = "linux"))]
+fn with_default_parent(mut cmd: Command, parent: &Path) -> Command {
+    #[cfg(windows)]
+    cmd.env("LOCALAPPDATA", parent);
+    #[cfg(target_os = "linux")]
+    cmd.env("XDG_DATA_HOME", parent);
+    cmd
+}
+
+#[cfg(windows)]
+fn default_folder_name() -> &'static str {
+    "Dendro"
+}
+
+#[cfg(target_os = "linux")]
+fn default_folder_name() -> &'static str {
+    "dendro"
+}
+
+#[cfg(any(windows, target_os = "linux"))]
 #[test]
 fn storage_root_choice_reuses_exact_verified_path() {
-    let setup = command().arg("storage-init").output().unwrap();
+    let parent = isolated_default_parent();
+    let _parent_cleanup = RemoveDir(parent.clone());
+    let setup = with_default_parent(command(), &parent)
+        .arg("storage-init")
+        .output()
+        .unwrap();
     assert!(setup.status.success(), "{}", error(&setup));
     let setup: serde_json::Value = serde_json::from_slice(&setup.stdout).unwrap();
     let scratch = Scratch(PathBuf::from(setup["storage_root"].as_str().unwrap()));
+    assert!(
+        scratch.0.ends_with(default_folder_name()),
+        "{}",
+        scratch.0.display()
+    );
+    assert!(scratch.0.starts_with(&parent), "{}", scratch.0.display());
     for _ in 0..2 {
         let status = command()
             .args(["status", "--storage-root"])
@@ -392,6 +438,180 @@ fn storage_root_choice_reuses_exact_verified_path() {
         .unwrap();
     assert!(!refused.status.success());
     assert!(error(&refused).contains("storage-init"));
+    let again = with_default_parent(command(), &parent)
+        .arg("storage-init")
+        .output()
+        .unwrap();
+    assert!(again.status.success(), "{}", error(&again));
+    let again: serde_json::Value = serde_json::from_slice(&again.stdout).unwrap();
+    assert_eq!(again["status"], "created");
+    assert_eq!(again["storage_root"], setup["storage_root"]);
+}
+
+#[cfg(any(windows, target_os = "linux"))]
+#[test]
+fn default_database_resolution_order() {
+    let parent = isolated_default_parent();
+    let _parent_cleanup = RemoveDir(parent.clone());
+    let folder_name = default_folder_name();
+    let empty = parent.join("empty-cwd");
+    fs::create_dir(&empty).unwrap();
+
+    let fresh = with_default_parent(command(), &parent)
+        .current_dir(&empty)
+        .args(["status", "--format", "json"])
+        .output()
+        .unwrap();
+    assert!(fresh.status.success(), "{}", error(&fresh));
+    let fresh_err = error(&fresh);
+    assert!(!fresh_err.contains("using legacy"), "{fresh_err}");
+    assert!(!fresh_err.contains("unprotected"), "{fresh_err}");
+    let fresh: serde_json::Value = serde_json::from_slice(&fresh.stdout).unwrap();
+    assert_eq!(fresh["status"], "not_initialized");
+    let default_db = fresh["db"].as_str().unwrap();
+    assert!(default_db.contains(folder_name), "{default_db}");
+    assert!(default_db.ends_with("dendro.duckdb"), "{default_db}");
+    let folder = PathBuf::from(default_db).parent().unwrap().to_path_buf();
+    let default_file = folder.join("dendro.duckdb");
+    assert!(!default_file.exists());
+    let before = dir_names(&folder);
+
+    let cwd = parent.join("legacy-cwd");
+    fs::create_dir(&cwd).unwrap();
+    let legacy = cwd.join("dendro.duckdb");
+    fs::write(&legacy, b"legacy-bytes").unwrap();
+    let legacy_wal = PathBuf::from(format!("{}.wal", legacy.display()));
+    fs::write(&legacy_wal, b"wal-bytes").unwrap();
+    let refused = with_default_parent(command(), &parent)
+        .current_dir(&cwd)
+        .args(["status", "--format", "json"])
+        .output()
+        .unwrap();
+    let refusal = error(&refused);
+    let expected = refusal_message(&legacy, &folder, true);
+    assert!(!refused.status.success(), "{refusal}");
+    assert!(refusal.contains(&expected), "{refusal}");
+    assert_eq!(
+        refusal.matches("outside a private folder").count(),
+        1,
+        "{refusal}"
+    );
+    assert_eq!(fs::read(&legacy).unwrap(), b"legacy-bytes");
+    assert_eq!(fs::read(&legacy_wal).unwrap(), b"wal-bytes");
+    assert_eq!(dir_names(&folder), before, "refused command must not copy");
+
+    let private_db = parent.join("dendro.duckdb");
+    fs::write(&private_db, b"private-cwd-bytes").unwrap();
+    let kept = with_default_parent(command(), &parent)
+        .current_dir(&parent)
+        .args(["status", "--format", "json"])
+        .output()
+        .unwrap();
+    let kept_err = error(&kept);
+    assert!(!kept_err.contains("outside a private folder"), "{kept_err}");
+    assert!(!kept_err.contains(copy_command_needle()), "{kept_err}");
+    assert!(!default_file.exists());
+    assert_eq!(fs::read(&private_db).unwrap(), b"private-cwd-bytes");
+
+    let plain = parent.join("plain");
+    fs::create_dir(&plain).unwrap();
+    let explicit = plain.join("custom.duckdb");
+    fs::write(&explicit, b"explicit-bytes").unwrap();
+    let before_explicit = dir_names(&folder);
+    let warned = with_default_parent(command(), &parent)
+        .args(["status", "--format", "json", "--db"])
+        .arg(&explicit)
+        .output()
+        .unwrap();
+    let warning = error(&warned);
+    let expected_explicit = refusal_message(&explicit, &folder, false);
+    assert!(!warned.status.success(), "{warning}");
+    assert!(warning.contains(&expected_explicit), "{warning}");
+    assert!(!warning.contains("Also copy the WAL"), "{warning}");
+    assert_eq!(
+        warning.matches("outside a private folder").count(),
+        1,
+        "{warning}"
+    );
+    assert_eq!(fs::read(&explicit).unwrap(), b"explicit-bytes");
+    assert_eq!(dir_names(&folder), before_explicit);
+
+    fs::write(&default_file, b"default-bytes").unwrap();
+    let preferred = with_default_parent(command(), &parent)
+        .current_dir(&cwd)
+        .args(["status", "--format", "json"])
+        .output()
+        .unwrap();
+    let preferred_err = error(&preferred);
+    assert!(
+        !preferred_err.contains("outside a private folder"),
+        "{preferred_err}"
+    );
+    assert_eq!(fs::read(&legacy).unwrap(), b"legacy-bytes");
+    assert_eq!(fs::read(&legacy_wal).unwrap(), b"wal-bytes");
+    assert_eq!(fs::read(&default_file).unwrap(), b"default-bytes");
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&preferred.stdout),
+        preferred_err
+    );
+    assert!(
+        combined.contains(folder_name),
+        "default folder missing from output: {combined}"
+    );
+}
+
+#[cfg(any(windows, target_os = "linux"))]
+fn dir_names(dir: &Path) -> Vec<String> {
+    let mut names = fs::read_dir(dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    names.sort();
+    names
+}
+
+#[cfg(windows)]
+fn copy_command_needle() -> &'static str {
+    "Copy-Item -LiteralPath"
+}
+
+#[cfg(target_os = "linux")]
+fn copy_command_needle() -> &'static str {
+    "cp --"
+}
+
+#[cfg(windows)]
+fn copy_line(source: &Path, destination: &Path) -> String {
+    format!(
+        "Copy-Item -LiteralPath \"{}\" -Destination \"{}\"",
+        source.display(),
+        destination.display()
+    )
+}
+
+#[cfg(target_os = "linux")]
+fn copy_line(source: &Path, destination: &Path) -> String {
+    format!("cp -- '{}' '{}'", source.display(), destination.display())
+}
+
+#[cfg(any(windows, target_os = "linux"))]
+fn refusal_message(source: &Path, folder: &Path, wal: bool) -> String {
+    let source = std::path::absolute(source).unwrap();
+    let mut message = format!(
+        "database {} is outside a private folder and cannot be opened. Move it into the private default folder {}: {}",
+        source.display(),
+        folder.display(),
+        copy_line(&source, &folder.join("dendro.duckdb"))
+    );
+    if wal {
+        let wal_path = PathBuf::from(format!("{}.wal", source.display()));
+        message.push_str(&format!(
+            " Also copy the WAL: {}",
+            copy_line(&wal_path, &folder.join("dendro.duckdb.wal"))
+        ));
+    }
+    message
 }
 
 #[cfg(any(windows, target_os = "linux"))]

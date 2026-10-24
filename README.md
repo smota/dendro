@@ -53,21 +53,23 @@ cargo build --release --locked
 
 ### Zero-ceremony quickstart
 
-Running bare `dendro` (or `dendro status`) prints the fleet brief: database readiness, discovered local harness roots, rig-scoped recorded bounds, seats grouped by rig, Pi source coverage, semantic cache freshness, and the next commands:
+Running bare `dendro` (or `dendro status`) prints the fleet brief: database readiness, discovered local harness roots, rig-scoped recorded bounds, seats grouped by rig, Pi source coverage, semantic cache freshness, and the next commands.
+
+With no `--db` and no `--storage-root`, the database is `dendro.duckdb` in the private default folder: `%LOCALAPPDATA%\Dendro` on Windows, or `$XDG_DATA_HOME/dendro` (default `~/.local/share/dendro`) on Linux. `dendro storage-init` creates or verifies that folder and prints its path. If `./dendro.duckdb` is in the current directory and that folder has no database yet, Dendro refuses to open it and prints the command to copy it there (PowerShell `Copy-Item -LiteralPath` on Windows, `cp --` on Linux), including `dendro.duckdb.wal` when that file is beside it. Dendro does not copy or move the file. `--db` outside a private folder is refused the same way. When the current directory is already a private folder, `./dendro.duckdb` is opened there with no extra message.
 
 ```sh
 # 1. Check status, discovered local harness sources, and recorded bounds
-./target/release/dendro status --db ./dendro.duckdb
+./target/release/dendro status
 
 # 2. Launch the interactive TUI dashboard (or --once snapshot), auto-ingesting if needed
-./target/release/dendro dashboard --db ./dendro.duckdb --auto-ingest
+./target/release/dendro dashboard --auto-ingest
 
 # 3. Export the self-contained, secret-redacted, seat-aliased offline HTML dashboard
-./target/release/dendro dashboard --db ./dendro.duckdb --html ./dendro-dashboard.html
+./target/release/dendro dashboard --html ./dendro-dashboard.html
 
 # 4. Ask natural questions (auto-materializes semantic views over the active window)
-./target/release/dendro ask --db ./dendro.duckdb "highest idle"
-./target/release/dendro ask --format text --db ./dendro.duckdb "where do tokens go?"
+./target/release/dendro ask "highest idle"
+./target/release/dendro ask --format text "where do tokens go?"
 ./target/release/dendro ask --list-intents
 ```
 
@@ -78,13 +80,13 @@ Inside the cockpit, press `?` for the full key list. `1` through `6` select the 
 Choose authorized source roots explicitly and keep the output database outside those roots. You can pass `--window 1h|24h|7d|30d|all` (anchored to the database's rig-scoped recorded bounds when data exists) or explicit half-open `[from, to)` RFC3339 timestamps:
 
 ```sh
-./target/release/dendro run --db ./dendro.duckdb \
+./target/release/dendro run \
   --root openrig=/absolute/path/to/openrig.sqlite \
   --root codex=/absolute/path/to/codex
-./target/release/dendro report decisions --db ./dendro.duckdb --window 7d
-./target/release/dendro report decisions --db ./dendro.duckdb \
+./target/release/dendro report decisions --window 7d
+./target/release/dendro report decisions \
   --from 2026-10-14T00:00:00Z --to 2026-10-15T00:00:00Z
-./target/release/dendro trace --db ./dendro.duckdb \
+./target/release/dendro trace \
   --metric-id handoff_friction --window 7d
 ```
 
