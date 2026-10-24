@@ -272,14 +272,7 @@ impl ExportRoot {
                 whitespace_lines += 1;
             } else if oversized {
                 quarantined += 1;
-                push_reason(
-                    &mut warnings,
-                    if limits.encoded_bytes == GLOBAL_MAX_RECORD_BYTES {
-                        "encoded_record_exceeds_limit"
-                    } else {
-                        "encoded_record_exceeds_adapter_limit"
-                    },
-                );
+                push_reason(&mut warnings, oversize_reason(limits));
             } else if container_depth(&line) > limits.nesting_depth {
                 quarantined += 1;
                 push_reason(&mut warnings, "nesting_depth_exceeds_limit");
@@ -358,6 +351,13 @@ pub struct DiscoveryListing {
     pub paths: Vec<PathBuf>,
     pub reasons: Vec<&'static str>,
 }
+pub(crate) fn oversize_reason(limits: &ReadLimits) -> &'static str {
+    if limits.encoded_bytes == GLOBAL_MAX_RECORD_BYTES {
+        "encoded_record_exceeds_limit"
+    } else {
+        "encoded_record_exceeds_adapter_limit"
+    }
+}
 pub(crate) fn push_reason(reasons: &mut Vec<&'static str>, reason: &'static str) {
     if !reasons.contains(&reason) {
         reasons.push(reason);
@@ -401,7 +401,7 @@ impl ReadLimits {
 
 // Strings and escaped quotes do not contribute container depth. This scan precedes
 // deserialization, bounding recursive serde visitors independently of serde defaults.
-fn container_depth(bytes: &[u8]) -> usize {
+pub(crate) fn container_depth(bytes: &[u8]) -> usize {
     let (mut depth, mut maximum, mut quoted, mut escaped) = (0usize, 0, false, false);
     for &byte in bytes {
         if quoted {

@@ -183,6 +183,148 @@ fn ingest_jsonl_bounded(
     cutoff: Option<&dendro_core::FileCutoff>,
     after_header: impl FnOnce() -> Result<()>,
 ) -> Result<FileStats> {
+    let limits = crate::capture_registry_v1::Registry::reader_limits(harness);
+    ingest_jsonl_limited(
+        store,
+        source_id,
+        harness,
+        path,
+        tool_key,
+        cutoff,
+        after_header,
+        &limits,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn ingest_jsonl_limited(
+    store: &AnalyticsStore,
+    source_id: &str,
+    harness: &str,
+    path: &Path,
+    tool_key: Option<&[u8]>,
+    cutoff: Option<&dendro_core::FileCutoff>,
+    after_header: impl FnOnce() -> Result<()>,
+    limits: &crate::sdk::ReadLimits,
+) -> Result<FileStats> {
+    let mut header = Some(after_header);
+    let mut total = FileStats::default();
+    loop {
+        let batch = ingest_jsonl_one_batch(
+            store,
+            source_id,
+            harness,
+            path,
+            tool_key,
+            cutoff,
+            &mut header,
+            limits,
+        )?;
+        total.records_read += batch.records_read;
+        total.usage_records += batch.usage_records;
+        if !(batch.batch_capped && batch.advanced) {
+            break;
+        }
+    }
+    Ok(total)
+}
+
+struct BatchOutcome {
+    records_read: u64,
+    usage_records: u64,
+    /// Stopped because the descriptor's batch cap was reached, not because
+    /// the file ended. The caller continues from the committed watermark.
+    batch_capped: bool,
+    advanced: bool,
+}
+
+enum CappedLine {
+    Eof,
+    /// Unterminated, or an oversize line that never found a newline. Not committed.
+    Partial,
+    Line(Vec<u8>),
+    /// A newline-terminated line longer than `limit`. The body was not kept.
+    Oversize {
+        len: u64,
+    },
+}
+
+/// Read one JSONL line without retaining more than `limit` bytes of it.
+/// An oversize line is hashed and counted, then discarded up to its newline.
+fn read_capped_line(
+    reader: &mut impl BufRead,
+    limit: u64,
+    hasher: &mut Sha256,
+) -> Result<CappedLine> {
+    let limit = usize::try_from(limit).unwrap_or(usize::MAX);
+    if limit == 0 {
+        anyhow::bail!("record limit is zero");
+    }
+    let checkpoint = hasher.clone();
+    let mut buf = Vec::new();
+    let mut oversize = false;
+    let mut total = 0u64;
+    loop {
+        let available = reader.fill_buf()?;
+        if available.is_empty() {
+            if !oversize && buf.is_empty() {
+                return Ok(CappedLine::Eof);
+            }
+            *hasher = checkpoint;
+            return Ok(CappedLine::Partial);
+        }
+        if let Some(i) = available.iter().position(|byte| *byte == b'\n') {
+            let take = i + 1;
+            if !oversize && buf.len().saturating_add(take) <= limit {
+                buf.extend_from_slice(&available[..take]);
+                hasher.update(&buf);
+                reader.consume(take);
+                return Ok(CappedLine::Line(buf));
+            }
+            if !oversize && !buf.is_empty() {
+                hasher.update(&buf);
+                total += buf.len() as u64;
+                buf.clear();
+            }
+            // `available` is the reader's fixed scratch, not a copy of the line.
+            hasher.update(&available[..take]);
+            total += take as u64;
+            reader.consume(take);
+            return Ok(CappedLine::Oversize { len: total });
+        }
+        let n = available.len();
+        if !oversize {
+            let room = limit - buf.len();
+            if n > room {
+                buf.extend_from_slice(&available[..room]);
+                hasher.update(&buf);
+                total += buf.len() as u64;
+                buf.clear();
+                reader.consume(room);
+                oversize = true;
+                continue;
+            }
+            buf.extend_from_slice(available);
+            reader.consume(n);
+            continue;
+        }
+        hasher.update(&available[..n]);
+        total += n as u64;
+        reader.consume(n);
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn ingest_jsonl_one_batch<F: FnOnce() -> Result<()>>(
+    store: &AnalyticsStore,
+    source_id: &str,
+    harness: &str,
+    path: &Path,
+    tool_key: Option<&[u8]>,
+    cutoff: Option<&dendro_core::FileCutoff>,
+    after_header: &mut Option<F>,
+    limits: &crate::sdk::ReadLimits,
+) -> Result<BatchOutcome> {
     let mismatch = |reason: &str| {
         anyhow::anyhow!(
             "mismatch: source {} {}",
@@ -241,11 +383,11 @@ fn ingest_jsonl_bounded(
         )?),
         _ => None,
     };
-    after_header()?;
+    if let Some(after_header) = after_header.take() {
+        after_header()?;
+    }
     file.seek(SeekFrom::Start(0))?;
-    // One reusable line buffer. The generation is never copied.
     let mut reader = BufReader::with_capacity(64 * 1024, file.take(byte_limit));
-    let mut buf = Vec::new();
     let mut line_no = 0i64;
     let mut consumed = 0i64;
     let reset_generation = generation_was_reset(prior, generation);
@@ -317,20 +459,55 @@ fn ingest_jsonl_bounded(
             &mut warnings,
         );
     }
+    let mut batch_capped = false;
+    let mut decoded_in_batch = 0usize;
+    let mut attempts_in_batch = 0usize;
+    let attempt_limit = limits.effective_line_attempts();
+    let batch_start = offset;
     loop {
-        dendro_core::RUN_CANCEL.check()?;
-        buf.clear();
-        let n = reader.read_until(b'\n', &mut buf)?;
-        if n == 0 {
+        if decoded_in_batch >= limits.decoded_records_per_batch
+            || attempts_in_batch >= attempt_limit
+        {
+            batch_capped = true;
             break;
         }
+        dendro_core::RUN_CANCEL.check()?;
+        let capped = read_capped_line(&mut reader, limits.encoded_bytes, &mut hasher)?;
+        let buf = match capped {
+            CappedLine::Eof | CappedLine::Partial => break,
+            CappedLine::Oversize { len } => {
+                consumed += i64::try_from(len)?;
+                line_no += 1;
+                let is_new = consumed > prefix_end;
+                attempts_in_batch += usize::from(is_new);
+                reader_complete = false;
+                if !is_new {
+                    if let Some(scan) = tool_scan.as_mut() {
+                        scan.prefix_lines = line_no;
+                    }
+                }
+                if is_new {
+                    records_read += 1;
+                    warnings.push(WarningNote {
+                        path: path.display().to_string(),
+                        line: Some(line_no),
+                        reason: crate::sdk::oversize_reason(limits).into(),
+                    });
+                }
+                continue;
+            }
+            CappedLine::Line(buf) => {
+                consumed += i64::try_from(buf.len())?;
+                buf
+            }
+        };
         if !buf.ends_with(b"\n") {
             break;
         }
-        hasher.update(&buf);
-        consumed += buf.len() as i64;
         line_no += 1;
         let is_new = consumed > prefix_end;
+        // The legacy prefix is re-read on every batch; only new lines spend the caps.
+        attempts_in_batch += usize::from(is_new);
         if !is_new {
             if let Some(scan) = tool_scan.as_mut() {
                 scan.prefix_lines = line_no;
@@ -357,9 +534,23 @@ fn ingest_jsonl_bounded(
         if text.trim().is_empty() {
             continue;
         }
+        if crate::sdk::container_depth(bytes) > limits.nesting_depth {
+            reader_complete = false;
+            if is_new {
+                warnings.push(WarningNote {
+                    path: path.display().to_string(),
+                    line: Some(line_no),
+                    reason: "nesting_depth_exceeds_limit".into(),
+                });
+            }
+            continue;
+        }
         // Reader completion describes every complete line, including a legacy prefix.
         let value = match serde_json::from_str::<Value>(text) {
-            Ok(value) => value,
+            Ok(value) => {
+                decoded_in_batch += usize::from(is_new);
+                value
+            }
             Err(_) => {
                 reader_complete = false;
                 if is_new {
@@ -552,9 +743,18 @@ fn ingest_jsonl_bounded(
             None
         };
     }
+    if batch_capped {
+        // This batch stopped early. The draining loop continues; a crash
+        // must not report the unread tail as a finished reader.
+        reader_complete = false;
+    }
     let prefix_sha = hex::encode(hasher.finalize());
     if let Some(entry) = cutoff {
-        if consumed as u64 != entry.byte_length || prefix_sha != entry.prefix_sha256 {
+        let at_cutoff = consumed as u64 == entry.byte_length;
+        if consumed as u64 > entry.byte_length
+            || ((at_cutoff || !batch_capped)
+                && (consumed as u64 != entry.byte_length || prefix_sha != entry.prefix_sha256))
+        {
             return Err(mismatch(
                 "file prefix changed while reading or incomplete cutoff",
             ));
@@ -612,9 +812,11 @@ fn ingest_jsonl_bounded(
     for note in &warnings {
         store.record_warning(note)?;
     }
-    Ok(FileStats {
+    Ok(BatchOutcome {
         records_read,
         usage_records: usages.len() as u64,
+        batch_capped,
+        advanced: consumed != batch_start,
     })
 }
 
@@ -4536,5 +4738,146 @@ mod sealed_header_tests {
         let complete = super::file_session("codex", &mut &complete[..], "source").unwrap();
         assert!(complete.from_header);
         assert_eq!(complete.raw, "future-session");
+    }
+}
+
+#[cfg(test)]
+mod hostile_input_tests {
+    use super::*;
+    use crate::sdk::ReadLimits;
+
+    const LINE: &str = r#"{"type":"system","sessionId":"s"}"#;
+
+    fn limits(encoded_bytes: u64, per_batch: usize) -> ReadLimits {
+        ReadLimits {
+            encoded_bytes,
+            nesting_depth: 64,
+            decoded_records_per_batch: per_batch,
+            line_attempts: None,
+        }
+    }
+
+    fn run(
+        name: &str,
+        body: &str,
+        limits: &ReadLimits,
+    ) -> (AnalyticsStore, std::path::PathBuf, FileStats) {
+        let dir =
+            std::env::temp_dir().join(format!("dendro-hostile-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let store = AnalyticsStore::open_path(&dir.join("a.duckdb"), "key").unwrap();
+        let path = dir.join("claude.jsonl");
+        fs::write(&path, body).unwrap();
+        let stats = ingest_jsonl_limited(
+            &store,
+            "claude",
+            "claude",
+            &path,
+            None,
+            None,
+            || Ok(()),
+            limits,
+        )
+        .unwrap();
+        (store, path, stats)
+    }
+
+    #[test]
+    fn oversize_line_is_quarantined_and_following_lines_ingest() {
+        let big = "x".repeat(5000);
+        let body = format!("{LINE}\n{{\"pad\":\"{big}\"}}\n{LINE}\n");
+        let limits = limits(200, 1024);
+        let (store, path, stats) = run("oversize", &body, &limits);
+        assert_eq!(stats.records_read, 3);
+        let shown = path.display().to_string();
+        assert!(store
+            .has_warning(&shown, "encoded_record_exceeds_adapter_limit")
+            .unwrap());
+        let (_, offset, _) = store.source_state("claude").unwrap().unwrap();
+        assert_eq!(offset as usize, body.len());
+        // A re-run reads nothing new and does not move the watermark.
+        let again = ingest_jsonl_limited(
+            &store,
+            "claude",
+            "claude",
+            &path,
+            None,
+            None,
+            || Ok(()),
+            &limits,
+        )
+        .unwrap();
+        assert_eq!(again.records_read, 0);
+        let (_, offset, _) = store.source_state("claude").unwrap().unwrap();
+        assert_eq!(offset as usize, body.len());
+    }
+
+    #[test]
+    fn capped_line_reader_never_retains_more_than_the_limit() {
+        let body = format!("{}\nok\n", "y".repeat(100_000));
+        let mut reader = BufReader::with_capacity(64, body.as_bytes());
+        let mut hasher = Sha256::new();
+        match read_capped_line(&mut reader, 50, &mut hasher).unwrap() {
+            CappedLine::Oversize { len } => assert_eq!(len, 100_001),
+            _ => panic!("expected oversize"),
+        }
+        match read_capped_line(&mut reader, 50, &mut hasher).unwrap() {
+            CappedLine::Line(line) => assert_eq!(line, b"ok\n"),
+            _ => panic!("expected line"),
+        }
+        let mut whole = Sha256::new();
+        whole.update(body.as_bytes());
+        assert_eq!(hasher.finalize(), whole.finalize());
+    }
+
+    #[test]
+    fn unterminated_oversize_tail_is_not_committed() {
+        let body = format!("{LINE}\n{}", "z".repeat(5000));
+        let (store, _, _) = run("tail", &body, &limits(200, 1024));
+        let (_, offset, _) = store.source_state("claude").unwrap().unwrap();
+        assert_eq!(offset as usize, LINE.len() + 1);
+    }
+
+    #[test]
+    fn depth_64_is_accepted_and_65_is_quarantined() {
+        let nest = |n: usize| format!("{}{}", "[".repeat(n), "]".repeat(n));
+        let body = format!("{}\n{}\n", nest(64), nest(65));
+        let (store, path, stats) = run("depth", &body, &limits(8 * 1024, 1024));
+        assert_eq!(stats.records_read, 2);
+        let shown = path.display().to_string();
+        assert!(store
+            .has_warning(&shown, "nesting_depth_exceeds_limit")
+            .unwrap());
+        let only_64 = format!("{}\n", nest(64));
+        let (store, path, _) = run("depth64", &only_64, &limits(8 * 1024, 1024));
+        assert!(!store
+            .has_warning(&path.display().to_string(), "nesting_depth_exceeds_limit")
+            .unwrap());
+        // Brackets inside strings do not count.
+        let quoted = format!("{{\"s\":\"{}\"}}\n", "[".repeat(200));
+        let (store, path, _) = run("depthstr", &quoted, &limits(8 * 1024, 1024));
+        assert!(!store
+            .has_warning(&path.display().to_string(), "nesting_depth_exceeds_limit")
+            .unwrap());
+    }
+
+    #[test]
+    fn batch_cap_continues_without_losing_records() {
+        let body = format!("{LINE}\n").repeat(10);
+        let (store, _, stats) = run("batch", &body, &limits(8 * 1024, 3));
+        assert_eq!(stats.records_read, 10);
+        let (_, offset, _) = store.source_state("claude").unwrap().unwrap();
+        assert_eq!(offset as usize, body.len());
+    }
+
+    #[test]
+    fn registry_limits_never_exceed_the_global_ceilings() {
+        for source in ["claude", "codex", "pi", "grok", "unknown"] {
+            let limits = crate::capture_registry_v1::Registry::reader_limits(source);
+            assert!(limits.encoded_bytes <= crate::sdk::GLOBAL_MAX_RECORD_BYTES);
+            assert!(limits.nesting_depth <= crate::sdk::GLOBAL_MAX_DEPTH);
+            assert!(limits.decoded_records_per_batch <= crate::sdk::GLOBAL_MAX_BATCH_RECORDS);
+        }
     }
 }

@@ -209,6 +209,32 @@ impl Registry {
     pub fn descriptors(&self) -> &'static [Descriptor] {
         self.descriptors
     }
+    /// Ceilings for a registered reader. A missing id gets the global ceiling.
+    /// A descriptor may only tighten those ceilings.
+    pub fn reader_limits(source_id: &str) -> crate::sdk::ReadLimits {
+        use crate::sdk::{
+            ReadLimits, GLOBAL_MAX_BATCH_RECORDS, GLOBAL_MAX_DEPTH, GLOBAL_MAX_RECORD_BYTES,
+        };
+        let limits = Self::builtin()
+            .descriptor(source_id)
+            .map(|descriptor| descriptor.limits)
+            .unwrap_or(ReadLimits {
+                encoded_bytes: GLOBAL_MAX_RECORD_BYTES,
+                nesting_depth: GLOBAL_MAX_DEPTH,
+                decoded_records_per_batch: GLOBAL_MAX_BATCH_RECORDS,
+                line_attempts: None,
+            });
+        ReadLimits {
+            encoded_bytes: limits.encoded_bytes.min(GLOBAL_MAX_RECORD_BYTES),
+            nesting_depth: limits.nesting_depth.min(GLOBAL_MAX_DEPTH),
+            decoded_records_per_batch: limits
+                .decoded_records_per_batch
+                .min(GLOBAL_MAX_BATCH_RECORDS),
+            line_attempts: limits
+                .line_attempts
+                .map(|attempts| attempts.min(GLOBAL_MAX_BATCH_RECORDS)),
+        }
+    }
     /// Native JSONL, verified export, or present-not-parsed. Unknown names,
     /// including OpenRig, are `Unsupported` here; ingest handles OpenRig itself.
     pub fn route(&self, source_id: &str) -> ReaderRoute {

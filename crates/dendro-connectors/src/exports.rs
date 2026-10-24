@@ -84,7 +84,10 @@ impl ExportConnector {
         prior: Option<&Watermark>,
         cutoff: Option<&dendro_core::FileCutoff>,
     ) -> Result<ExportBatch> {
-        let raw = self.root.read_batch_with_cutoff(path, prior, cutoff)?;
+        let limits = crate::capture_registry_v1::Registry::reader_limits(self.harness);
+        let raw = self
+            .root
+            .read_bounded(path, prior, cutoff, &limits, |_| true)?;
         if matches!(self.format, Format::Goose) && prior.is_none() && raw.watermark.byte_offset > 0
         {
             ensure!(

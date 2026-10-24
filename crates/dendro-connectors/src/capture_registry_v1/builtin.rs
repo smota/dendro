@@ -18,8 +18,8 @@ const NONE: &[&str] = &[];
 
 /// The stream reader has no separate producer byte profile. Stating the global
 /// ceiling here keeps `native_record_size_not_admitted` enforced for a missing
-/// or looser admission. It does not cap the stream reader; M1 does not change
-/// what that reader parses.
+/// or looser admission. The native ingest path reads these limits and will not
+/// buffer, nest, or decode a batch past them.
 const NATIVE_LIMITS: ReadLimits = ReadLimits {
     encoded_bytes: GLOBAL_MAX_RECORD_BYTES,
     nesting_depth: GLOBAL_MAX_DEPTH,
