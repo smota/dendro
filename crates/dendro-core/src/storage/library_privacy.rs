@@ -37,6 +37,11 @@ fn setting(conn: &Connection, key: &str) -> Result<String> {
         })?,
     )
 }
+fn native_path(path: &Path) -> Result<String> {
+    path.to_str()
+        .map(str::to_owned)
+        .ok_or_else(|| anyhow!("non-Unicode private runtime path"))
+}
 impl PrivateLibraryRuntime {
     pub(crate) fn prepare(database: &Path) -> Result<Self> {
         Self::prepare_for(database, true)
@@ -97,6 +102,25 @@ impl PrivateLibraryRuntime {
         registry.insert(database, Arc::downgrade(&result.0));
         Ok(result)
     }
+    /// Opens with spill and extension options already in the startup config.
+    /// DuckDB reads those during `open`, including WAL replay. `configure`
+    /// still applies `allowed_configs` / `lock_configuration` afterwards.
+    pub(crate) fn open(&self, read_only: bool) -> Result<Connection> {
+        let mut config = duckdb::Config::default();
+        if read_only {
+            config = config.access_mode(duckdb::AccessMode::ReadOnly)?;
+        }
+        let spill = native_path(self.0.spill.path())?;
+        let extensions = native_path(self.0.extensions.path())?;
+        config = config
+            .with("temp_directory", &spill)?
+            .with("extension_directory", &extensions)?
+            .with("autoinstall_known_extensions", "false")?
+            .with("autoload_known_extensions", "false")?;
+        let conn = Connection::open_with_flags(&self.0.database, config)?;
+        self.configure(&conn)?;
+        Ok(conn)
+    }
     pub(crate) fn configure(&self, conn: &Connection) -> Result<()> {
         if setting(conn, "lock_configuration")? != "true" {
             if !setting(conn, "access_mode")?.eq_ignore_ascii_case("read_only")
@@ -106,13 +130,9 @@ impl PrivateLibraryRuntime {
             }
             // DuckDB SET path syntax has no bind parameters. Quote only trusted,
             // freshly created native paths; never interpolate user SQL.
-            let quote = |path: &Path| -> Result<String> {
-                Ok(path
-                    .to_str()
-                    .ok_or_else(|| anyhow!("non-Unicode private runtime path"))?
-                    .replace('\'', "''"))
-            };
-            conn.execute_batch(&format!("SET temp_directory='{}'; SET extension_directory='{}'; SET autoinstall_known_extensions=false; SET autoload_known_extensions=false; SET allowed_configs=['memory_limit','threads','preserve_insertion_order']; SET lock_configuration=true;", quote(self.0.spill.path())?, quote(self.0.extensions.path())?))?;
+            let spill = native_path(self.0.spill.path())?.replace('\'', "''");
+            let extensions = native_path(self.0.extensions.path())?.replace('\'', "''");
+            conn.execute_batch(&format!("SET temp_directory='{spill}'; SET extension_directory='{extensions}'; SET autoinstall_known_extensions=false; SET autoload_known_extensions=false; SET allowed_configs=['memory_limit','threads','preserve_insertion_order']; SET lock_configuration=true;"))?;
         }
         self.verify(conn)
     }

@@ -33,17 +33,12 @@ pub(crate) fn open(path: &Path, read_only: bool) -> Result<PrivateConnection, Mi
         crate::storage::PrivateLibraryRuntime::prepare(path)
     }
     .map_err(|error| MigrationError::Platform(error.to_string()))?;
-    let connection = if read_only {
-        Connection::open_with_flags(
-            path,
-            duckdb::Config::default().access_mode(duckdb::AccessMode::ReadOnly)?,
-        )?
-    } else {
-        Connection::open(path)?
-    };
-    runtime
-        .configure(&connection)
-        .map_err(|error| MigrationError::Platform(error.to_string()))?;
+    let connection = runtime.open(read_only).map_err(|error| {
+        error
+            .downcast_ref::<duckdb::Error>()
+            .map(|db| MigrationError::Duck(db.to_string()))
+            .unwrap_or_else(|| MigrationError::Platform(error.to_string()))
+    })?;
     Ok(PrivateConnection {
         connection,
         runtime,
