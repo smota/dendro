@@ -47,6 +47,17 @@ impl Drop for RemoveDir {
         let _ = fs::remove_dir_all(&self.0);
     }
 }
+// A deliberately non-private directory: a restrictive umask (077 on CI) would otherwise
+// make it an admitted private root and defeat the refusal under test.
+fn ordinary_dir(path: &Path) {
+    fs::create_dir(path).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+}
+
 fn command() -> Command {
     Command::new(env!("CARGO_BIN_EXE_dendro"))
 }
@@ -477,7 +488,7 @@ fn default_database_resolution_order() {
     let before = dir_names(&folder);
 
     let cwd = parent.join("legacy-cwd");
-    fs::create_dir(&cwd).unwrap();
+    ordinary_dir(&cwd);
     let legacy = cwd.join("dendro.duckdb");
     fs::write(&legacy, b"legacy-bytes").unwrap();
     let legacy_wal = PathBuf::from(format!("{}.wal", legacy.display()));
@@ -514,7 +525,7 @@ fn default_database_resolution_order() {
     assert_eq!(fs::read(&private_db).unwrap(), b"private-cwd-bytes");
 
     let plain = parent.join("plain");
-    fs::create_dir(&plain).unwrap();
+    ordinary_dir(&plain);
     let explicit = plain.join("custom.duckdb");
     fs::write(&explicit, b"explicit-bytes").unwrap();
     let before_explicit = dir_names(&folder);
