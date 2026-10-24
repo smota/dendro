@@ -241,11 +241,13 @@ impl AnalyticsStore {
         } else {
             None
         }; // legacy physical entry point, outside selected storage
-        let conn = Connection::open(path)?;
         #[cfg(any(windows, target_os = "linux"))]
-        if let Some(runtime) = &runtime {
-            runtime.configure(&conn)?;
-        }
+        let conn = match &runtime {
+            Some(runtime) => runtime.open(false)?,
+            None => Connection::open(path)?,
+        };
+        #[cfg(not(any(windows, target_os = "linux")))]
+        let conn = Connection::open(path)?;
         refuse_legacy(&conn)?;
         let (version, stored): (i32, String) = conn.query_row(
             "SELECT schema_version, key_id FROM dendro_meta",
@@ -274,9 +276,10 @@ impl AnalyticsStore {
     pub fn open_staged(path: &Path) -> Result<Self> {
         #[cfg(any(windows, target_os = "linux"))]
         let runtime = PrivateLibraryRuntime::prepare(path)?;
-        let conn = Connection::open(path)?;
         #[cfg(any(windows, target_os = "linux"))]
-        runtime.configure(&conn)?;
+        let conn = runtime.open(false)?;
+        #[cfg(not(any(windows, target_os = "linux")))]
+        let conn = Connection::open(path)?;
         refuse_legacy(&conn)?;
         let (version, key_id): (i32, String) = conn.query_row(
             "SELECT schema_version, key_id FROM dendro_meta",
@@ -302,16 +305,28 @@ impl AnalyticsStore {
     pub fn open_read_only(path: &Path) -> Result<Self> {
         #[cfg(any(windows, target_os = "linux"))]
         let runtime = PrivateLibraryRuntime::prepare_read_only(path)?;
-        let config = duckdb::Config::default().access_mode(duckdb::AccessMode::ReadOnly)?;
-        let conn = Connection::open_with_flags(path, config).map_err(|_| {
+        let open_error = || {
             if !path.exists() {
                 anyhow!("analytics database could not be opened (not found; run 'dendro run' or 'dendro dashboard --auto-ingest' first)")
             } else {
                 anyhow!("analytics database could not be opened")
             }
-        })?;
+        };
         #[cfg(any(windows, target_os = "linux"))]
-        runtime.configure(&conn)?;
+        // Keep privacy-verification errors visible; only a missing file gets the hint.
+        let conn = runtime.open(true).map_err(|error| {
+            if path.exists() {
+                error.context("analytics database could not be opened")
+            } else {
+                open_error()
+            }
+        })?;
+        #[cfg(not(any(windows, target_os = "linux")))]
+        let conn = Connection::open_with_flags(
+            path,
+            duckdb::Config::default().access_mode(duckdb::AccessMode::ReadOnly)?,
+        )
+        .map_err(|_| open_error())?;
         refuse_legacy(&conn)?;
         let (version, key_id): (i32, String) = conn.query_row(
             "SELECT schema_version, key_id FROM dendro_meta",

@@ -151,6 +151,66 @@ fn actual_duckdb_spill_and_wal_stay_under_pinned_private_parents() {
     fs::remove_dir_all(path).unwrap();
 }
 
+// Regression guard for open-time spill settings: a guarded reopen with a leftover WAL creates
+// no default `<db>.tmp` and later spill stays private. The WAL is too small to spill during
+// replay itself, so this does not by itself prove replay-time redirection.
+#[test]
+fn guarded_reopen_does_not_spill_wal_replay_to_default_tmp() {
+    use dendro_core::AnalyticsStore;
+    let root = p::create_user_private_root_with_choice(
+        "dendro-wal-replay-",
+        &p::StorageRootChoice::UserProfile,
+    )
+    .unwrap();
+    let db = root.path().join("analytics.duckdb");
+    let default_spill = db.with_extension("duckdb.tmp");
+    let store = AnalyticsStore::open_path(&db, "wal-replay").unwrap();
+    store.checkpoint().unwrap();
+    drop(store);
+    let writer = duckdb::Connection::open(&db).unwrap();
+    writer
+        .execute_batch(
+            "PRAGMA disable_checkpoint_on_shutdown; CREATE TABLE replay_probe(v INTEGER); INSERT INTO replay_probe VALUES (7);",
+        )
+        .unwrap();
+    drop(writer);
+    assert!(
+        db.with_extension("duckdb.wal").is_file(),
+        "writer must leave a WAL for the guarded reopen to replay"
+    );
+    if default_spill.is_dir() {
+        fs::remove_dir_all(&default_spill).unwrap();
+    } else if default_spill.exists() {
+        fs::remove_file(&default_spill).unwrap();
+    }
+    let reopened = AnalyticsStore::open_existing(&db, "wal-replay").unwrap();
+    assert!(
+        !default_spill.exists(),
+        "guarded open created the default spill directory during WAL replay"
+    );
+    reopened
+        .with_private_connection(|conn| {
+            let configured: String =
+                conn.query_row("SELECT current_setting('temp_directory')", [], |row| {
+                    row.get(0)
+                })?;
+            assert_ne!(PathBuf::from(&configured), default_spill);
+            p::open_existing_private_root(std::path::Path::new(&configured))?;
+            conn.execute_batch("SET memory_limit='16MB'; SET threads=1; SET preserve_insertion_order=false; CREATE TEMP TABLE forced_spill AS SELECT i, repeat(md5(i::VARCHAR), 32) AS payload FROM range(100000) t(i)")?;
+            assert_actual_spill(conn)?;
+            assert!(
+                !default_spill.exists(),
+                "spill after WAL replay used the default <db>.tmp directory"
+            );
+            Ok(())
+        })
+        .unwrap();
+    drop(reopened);
+    let path = root.path().to_owned();
+    drop(root);
+    fs::remove_dir_all(path).unwrap();
+}
+
 fn assert_actual_spill(conn: &duckdb::Connection) -> anyhow::Result<()> {
     let paths = conn
         .prepare("SELECT path FROM duckdb_temporary_files()")?
