@@ -504,8 +504,18 @@ fn run_vector(v: &Value) {
             assert_eq!(r.counts, Counts::default());
         }
         "T05-A2-07" => {
+            // Grok is an admitted native reader. Naming the source no longer
+            // forces ParserPending, so an implemented descriptor with a native
+            // size and a real fixture is not source_not_admitted.
+            let grok = Descriptor {
+                source_id: "Grok",
+                admission: Admission::Implemented,
+                admitted_native_record_bytes: Some(1048576),
+                ..DESCRIPTOR
+            };
+            assert_eq!(grok.availability(), Availability::Implemented);
+            assert!(grok.validate().is_ok());
             for (source, reason) in [
-                ("Grok", "source_not_admitted"),
                 ("Linux strace", "source_not_admitted"),
                 ("Windows ETW", "source_not_admitted"),
             ] {
@@ -671,6 +681,102 @@ fn containment(v: &Value) {
 #[test]
 fn frozen_vector_count_guard() {
     assert_eq!(vector("T05-A2-12")["cases"].as_array().unwrap().len(), 4);
+}
+
+#[test]
+fn builtin_registry_is_the_dispatch_table() {
+    let registry = Registry::builtin();
+    let mut ids: Vec<_> = registry
+        .descriptors()
+        .iter()
+        .map(|descriptor| descriptor.source_id)
+        .collect();
+    ids.sort_unstable();
+    assert_eq!(
+        ids,
+        ["agy", "claude", "codex", "cursor", "devin", "goose", "grok", "pi", "windsurf",]
+    );
+    let expect = [
+        (
+            "claude",
+            Availability::Implemented,
+            ReaderRoute::NativeJsonl,
+            "native-jsonl",
+        ),
+        (
+            "codex",
+            Availability::Implemented,
+            ReaderRoute::NativeJsonl,
+            "native-jsonl",
+        ),
+        (
+            "pi",
+            Availability::Implemented,
+            ReaderRoute::NativeJsonl,
+            "native-jsonl",
+        ),
+        (
+            "grok",
+            Availability::Implemented,
+            ReaderRoute::NativeJsonl,
+            "native-jsonl",
+        ),
+        (
+            "cursor",
+            Availability::Implemented,
+            ReaderRoute::VerifiedExport,
+            "verified-export-only",
+        ),
+        (
+            "windsurf",
+            Availability::Implemented,
+            ReaderRoute::VerifiedExport,
+            "verified-export-only",
+        ),
+        (
+            "goose",
+            Availability::Implemented,
+            ReaderRoute::VerifiedExport,
+            "verified-export-only",
+        ),
+        (
+            "devin",
+            Availability::Implemented,
+            ReaderRoute::VerifiedExport,
+            "verified-export-only",
+        ),
+        (
+            "agy",
+            Availability::ParserPending,
+            ReaderRoute::PresentNotParsed,
+            "parser-pending",
+        ),
+    ];
+    for (id, availability, route, mode) in expect {
+        let descriptor = registry.descriptor(id).unwrap();
+        assert_eq!(descriptor.availability(), availability, "{id}");
+        assert_eq!(registry.route(id), route, "{id}");
+        assert_eq!(descriptor.capture_mode, mode, "{id}");
+        assert_eq!(descriptor.record_kinds.is_empty(), id == "agy", "{id}");
+    }
+    assert!(registry
+        .descriptor("grok")
+        .unwrap()
+        .record_kinds
+        .contains(&"turn_completed"));
+    assert!(registry
+        .descriptor("claude")
+        .unwrap()
+        .record_kinds
+        .contains(&"assistant"));
+    assert_eq!(registry.route("custom"), ReaderRoute::Unsupported);
+    assert_eq!(registry.route("openrig"), ReaderRoute::Unsupported);
+    assert_eq!(registry.route("Grok"), ReaderRoute::Unsupported);
+    static DUP: [Descriptor; 2] = [DESCRIPTOR, DESCRIPTOR];
+    match Registry::new(&DUP) {
+        Err(error) => assert_eq!(error, "incompatible_contribution_contract"),
+        Ok(_) => panic!("duplicate source was admitted"),
+    }
 }
 
 #[test]
@@ -885,19 +991,29 @@ fn review_b6_pending_and_blocked_have_typed_causes_but_closed_persisted_codes() 
             .unwrap()
             .clone(),
     );
-    for (id, availability) in [
-        ("grok", Availability::ParserPending),
-        ("strace", Availability::SourceBlocked),
-    ] {
-        let d = Descriptor {
-            source_id: id,
-            ..DESCRIPTOR
-        };
-        assert_eq!(d.availability(), availability);
-        let code = d.validate().unwrap_err();
-        assert_eq!(code, "source_not_admitted");
-        assert!(codes.iter().any(|c| c == code));
-    }
+    let grok = Descriptor {
+        source_id: "grok",
+        ..DESCRIPTOR
+    };
+    assert_eq!(grok.availability(), Availability::Implemented);
+    let grok_code = grok.validate().unwrap_err();
+    assert_eq!(grok_code, "native_record_size_not_admitted");
+    assert!(codes.iter().any(|c| c == grok_code));
+    let pending = Descriptor {
+        source_id: "grok",
+        admission: Admission::ParserPending,
+        ..DESCRIPTOR
+    };
+    assert_eq!(pending.availability(), Availability::ParserPending);
+    assert_eq!(pending.validate().unwrap_err(), "source_not_admitted");
+    let blocked = Descriptor {
+        source_id: "strace",
+        ..DESCRIPTOR
+    };
+    assert_eq!(blocked.availability(), Availability::SourceBlocked);
+    let blocked_code = blocked.validate().unwrap_err();
+    assert_eq!(blocked_code, "source_not_admitted");
+    assert!(codes.iter().any(|c| c == blocked_code));
     assert_eq!(
         dendro_connectors::grok::GrokConnector::new().availability(),
         Availability::Implemented

@@ -6,6 +6,7 @@ use dendro_core::{ActivityFact, AnalyticsStore, IdentityFact, QueueFact};
 use rusqlite::OpenFlags;
 use serde_json::Value;
 
+use crate::capture_registry_v1::{ReaderRoute, Registry};
 use crate::stream::{self, walk_jsonl};
 
 #[derive(Debug, Clone)]
@@ -62,124 +63,7 @@ pub fn ingest_staged_with_manifest(
             continue;
         }
         match root.name.as_str() {
-            "claude" | "codex" | "pi" | "grok" => {
-                let mut files = walk_jsonl(&root.path);
-                if root.name == "grok" {
-                    // Session stream only. Sibling jsonl files hold prompts and
-                    // file text; `summary.json` is read beside `updates.jsonl`.
-                    files.retain(|file| {
-                        file.file_name().and_then(|name| name.to_str()) == Some("updates.jsonl")
-                    });
-                }
-                files.sort();
-                let mut read = stream::FileStats::default();
-                let mut file_count = 0;
-                for file in &files {
-                    let id = manifest_source_id(root, file);
-                    let entry = sealed.and_then(|manifest| {
-                        manifest
-                            .files
-                            .iter()
-                            .find(|entry| entry.source_id == id && entry.harness == root.name)
-                    });
-                    if sealed.is_some() && entry.is_none() {
-                        continue;
-                    }
-                    if !seen_files.insert(id.clone()) {
-                        continue;
-                    }
-                    let source_id = stable_source_id(&root.name, &root.path, file, key);
-                    let stats = stream::ingest_jsonl_with_cutoff(
-                        &store,
-                        &source_id,
-                        &root.name,
-                        file,
-                        Some(key),
-                        entry,
-                    )?;
-                    let (_, offset, digest) = store
-                        .source_state(&source_id)?
-                        .ok_or_else(|| anyhow::anyhow!("missing file cutoff after ingest"))?;
-                    manifest.files.push(dendro_core::FileCutoff {
-                        source_id: dendro_core::redact(&id),
-                        harness: dendro_core::redact(&root.name),
-                        byte_length: u64::try_from(offset)?,
-                        prefix_sha256: digest,
-                    });
-                    file_count += 1;
-                    read.records_read += stats.records_read;
-                    read.usage_records += stats.usage_records;
-                }
-                let coverage = if root.name == "codex" {
-                    " tool_calls=not read"
-                } else {
-                    ""
-                };
-                notes.push(format!(
-                    "{shown} files={file_count} records_read={} usage_records={}{coverage}",
-                    read.records_read, read.usage_records
-                ));
-            }
-            "cursor" | "windsurf" | "goose" | "devin" => {
-                let format = match root.name.as_str() {
-                    "cursor" => crate::exports::Format::Cursor,
-                    "windsurf" => crate::exports::Format::Windsurf,
-                    "goose" => crate::exports::Format::Goose,
-                    "devin" => crate::exports::Format::Devin,
-                    _ => unreachable!(),
-                };
-                let harness = match format {
-                    crate::exports::Format::Cursor => "cursor",
-                    crate::exports::Format::Windsurf => "windsurf",
-                    crate::exports::Format::Goose => "goose",
-                    crate::exports::Format::Devin => "devin",
-                };
-                let connector = crate::exports::ExportConnector::new(
-                    root.path.clone(),
-                    key.to_vec(),
-                    harness,
-                    format,
-                );
-                let mut file_count = 0;
-                for file in connector.discover()? {
-                    let id = manifest_source_id(root, &file);
-                    let entry = sealed.and_then(|manifest| {
-                        manifest
-                            .files
-                            .iter()
-                            .find(|entry| entry.source_id == id && entry.harness == root.name)
-                    });
-                    if sealed.is_some() && entry.is_none() {
-                        continue;
-                    }
-                    if !seen_files.insert(id.clone()) {
-                        continue;
-                    }
-                    let (warnings, watermark) =
-                        connector.ingest_file_with_cutoff(&store, &file, entry)?;
-                    for reason in warnings {
-                        store.record_warning(&dendro_core::WarningNote {
-                            path: id.clone(),
-                            line: None,
-                            reason: reason.into(),
-                        })?;
-                        notes.push(format!("{shown} {reason}"));
-                    }
-                    manifest.files.push(dendro_core::FileCutoff {
-                        source_id: id,
-                        harness: harness.into(),
-                        byte_length: watermark.byte_offset,
-                        prefix_sha256: watermark
-                            .session_id
-                            .as_deref()
-                            .and_then(|value| value.strip_prefix("sdk-v1:"))
-                            .ok_or_else(|| anyhow::anyhow!("missing export prefix digest"))?
-                            .into(),
-                    });
-                    file_count += 1;
-                }
-                notes.push(format!("{shown} files={file_count} format=verified-export-only native-storage=unsupported"));
-            }
+            // OpenRig is a lifecycle copy, not a capture-registry reader.
             "openrig" => {
                 let id = manifest_source_id(root, &root.path);
                 let entry = sealed.and_then(|manifest| {
@@ -205,8 +89,123 @@ pub fn ingest_staged_with_manifest(
                     snapshot.wal_bytes.unwrap_or(0), snapshot.copy_ms, snapshot.check_ms
                 ));
             }
-            "agy" => notes.push(format!("{shown} present-not-parsed")),
-            _ => notes.push(format!("{shown} unsupported")),
+            name => match Registry::builtin().route(name) {
+                ReaderRoute::NativeJsonl => {
+                    let mut files = walk_jsonl(&root.path);
+                    if root.name == "grok" {
+                        // Session stream only. Sibling jsonl files hold prompts and
+                        // file text; `summary.json` is read beside `updates.jsonl`.
+                        files.retain(|file| {
+                            file.file_name().and_then(|file_name| file_name.to_str())
+                                == Some("updates.jsonl")
+                        });
+                    }
+                    files.sort();
+                    let mut read = stream::FileStats::default();
+                    let mut file_count = 0;
+                    for file in &files {
+                        let id = manifest_source_id(root, file);
+                        let entry = sealed.and_then(|manifest| {
+                            manifest
+                                .files
+                                .iter()
+                                .find(|entry| entry.source_id == id && entry.harness == root.name)
+                        });
+                        if sealed.is_some() && entry.is_none() {
+                            continue;
+                        }
+                        if !seen_files.insert(id.clone()) {
+                            continue;
+                        }
+                        let source_id = stable_source_id(&root.name, &root.path, file, key);
+                        let stats = stream::ingest_jsonl_with_cutoff(
+                            &store,
+                            &source_id,
+                            &root.name,
+                            file,
+                            Some(key),
+                            entry,
+                        )?;
+                        let (_, offset, digest) = store
+                            .source_state(&source_id)?
+                            .ok_or_else(|| anyhow::anyhow!("missing file cutoff after ingest"))?;
+                        manifest.files.push(dendro_core::FileCutoff {
+                            source_id: dendro_core::redact(&id),
+                            harness: dendro_core::redact(&root.name),
+                            byte_length: u64::try_from(offset)?,
+                            prefix_sha256: digest,
+                        });
+                        file_count += 1;
+                        read.records_read += stats.records_read;
+                        read.usage_records += stats.usage_records;
+                    }
+                    let coverage = if root.name == "codex" {
+                        " tool_calls=not read"
+                    } else {
+                        ""
+                    };
+                    notes.push(format!(
+                        "{shown} files={file_count} records_read={} usage_records={}{coverage}",
+                        read.records_read, read.usage_records
+                    ));
+                }
+                ReaderRoute::VerifiedExport => {
+                    let Some((harness, format)) = crate::capture_registry_v1::verified_export(name)
+                    else {
+                        notes.push(format!("{shown} unsupported"));
+                        continue;
+                    };
+                    let connector = crate::exports::ExportConnector::new(
+                        root.path.clone(),
+                        key.to_vec(),
+                        harness,
+                        format,
+                    );
+                    let mut file_count = 0;
+                    for file in connector.discover()? {
+                        let id = manifest_source_id(root, &file);
+                        let entry = sealed.and_then(|manifest| {
+                            manifest
+                                .files
+                                .iter()
+                                .find(|entry| entry.source_id == id && entry.harness == root.name)
+                        });
+                        if sealed.is_some() && entry.is_none() {
+                            continue;
+                        }
+                        if !seen_files.insert(id.clone()) {
+                            continue;
+                        }
+                        let (warnings, watermark) =
+                            connector.ingest_file_with_cutoff(&store, &file, entry)?;
+                        for reason in warnings {
+                            store.record_warning(&dendro_core::WarningNote {
+                                path: id.clone(),
+                                line: None,
+                                reason: reason.into(),
+                            })?;
+                            notes.push(format!("{shown} {reason}"));
+                        }
+                        manifest.files.push(dendro_core::FileCutoff {
+                            source_id: id,
+                            harness: harness.into(),
+                            byte_length: watermark.byte_offset,
+                            prefix_sha256: watermark
+                                .session_id
+                                .as_deref()
+                                .and_then(|value| value.strip_prefix("sdk-v1:"))
+                                .ok_or_else(|| anyhow::anyhow!("missing export prefix digest"))?
+                                .into(),
+                        });
+                        file_count += 1;
+                    }
+                    notes.push(format!("{shown} files={file_count} format=verified-export-only native-storage=unsupported"));
+                }
+                ReaderRoute::PresentNotParsed => {
+                    notes.push(format!("{shown} present-not-parsed"));
+                }
+                ReaderRoute::Unsupported => notes.push(format!("{shown} unsupported")),
+            },
         }
     }
     if let Some(sealed) = sealed {
@@ -1556,6 +1555,63 @@ mod tests {
         assert!(
             notes.contains(&"claude files=1 records_read=1 usage_records=1".to_string()),
             "{notes:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn registry_routes_each_source_to_its_reader() {
+        #[cfg(any(windows, target_os = "linux"))]
+        let fixture_root = dendro_core::platform_v1::create_user_private_root_with_choice(
+            "dendro-ingest-dispatch-",
+            &dendro_core::platform_v1::StorageRootChoice::UserProfile,
+        )
+        .expect("explicit UserProfile staged ingest fixture");
+        #[cfg(any(windows, target_os = "linux"))]
+        let dir = fixture_root.path().to_path_buf();
+        #[cfg(not(any(windows, target_os = "linux")))]
+        let dir =
+            std::env::temp_dir().join(format!("dendro-ingest-dispatch-{}", std::process::id()));
+        #[cfg(not(any(windows, target_os = "linux")))]
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let present = [
+            "claude", "codex", "pi", "grok", "cursor", "windsurf", "goose", "devin", "agy",
+            "custom",
+        ];
+        for name in present {
+            std::fs::create_dir_all(dir.join(name)).unwrap();
+        }
+        let db = dir.join("analytics.duckdb");
+        drop(AnalyticsStore::open_path(&db, "key").unwrap());
+        let mut roots: Vec<SourceRoot> = present
+            .into_iter()
+            .map(|name| SourceRoot {
+                name: name.into(),
+                path: dir.join(name),
+            })
+            .collect();
+        roots.push(SourceRoot {
+            name: "absent".into(),
+            path: dir.join("absent"),
+        });
+        let notes = ingest_staged(&db, &roots, false, b"dispatch-key").unwrap();
+        assert_eq!(
+            notes,
+            vec![
+                "claude files=0 records_read=0 usage_records=0".to_string(),
+                "codex files=0 records_read=0 usage_records=0 tool_calls=not read".to_string(),
+                "pi files=0 records_read=0 usage_records=0".to_string(),
+                "grok files=0 records_read=0 usage_records=0".to_string(),
+                "cursor files=0 format=verified-export-only native-storage=unsupported".to_string(),
+                "windsurf files=0 format=verified-export-only native-storage=unsupported"
+                    .to_string(),
+                "goose files=0 format=verified-export-only native-storage=unsupported".to_string(),
+                "devin files=0 format=verified-export-only native-storage=unsupported".to_string(),
+                "agy present-not-parsed".to_string(),
+                "custom unsupported".to_string(),
+                "absent missing".to_string(),
+            ]
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

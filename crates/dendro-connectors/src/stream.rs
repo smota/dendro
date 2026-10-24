@@ -848,7 +848,7 @@ fn hash_prefix(file: &mut File, len: u64) -> Result<String> {
 /// Top-level record types each parser knows (AC2, F4). Derived from the sealed
 /// corpus of the harness versions in use on 2026-10-11 (Claude 15, Codex 7,
 /// Pi 6), not from a published schema. Any other type, or none, is unknown.
-const CLAUDE_RECORD_TYPES: &[&str] = &[
+pub(crate) const CLAUDE_RECORD_TYPES: &[&str] = &[
     "agent-name",
     "assistant",
     "atis-latch",
@@ -865,7 +865,7 @@ const CLAUDE_RECORD_TYPES: &[&str] = &[
     "system",
     "user",
 ];
-const CODEX_RECORD_TYPES: &[&str] = &[
+pub(crate) const CODEX_RECORD_TYPES: &[&str] = &[
     "compacted",
     "event_msg",
     "response_item",
@@ -874,7 +874,7 @@ const CODEX_RECORD_TYPES: &[&str] = &[
     "turn_context",
     "world_state",
 ];
-const PI_RECORD_TYPES: &[&str] = &[
+pub(crate) const PI_RECORD_TYPES: &[&str] = &[
     "custom",
     "message",
     "model_change",
@@ -889,7 +889,7 @@ const PI_RECORD_TYPES: &[&str] = &[
 /// are counted and then dropped. `subagent_spawned` / `subagent_finished`
 /// are lineage evidence in the file, but UsageFact and ToolFact have no
 /// parent/child slot, so those lines are counted the same way and not stored.
-const GROK_RECORD_TYPES: &[&str] = &[
+pub(crate) const GROK_RECORD_TYPES: &[&str] = &[
     "agent_message_chunk",
     "agent_thought_chunk",
     "auto_compact_completed",

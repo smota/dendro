@@ -18,6 +18,35 @@ pub(crate) enum Format {
     Devin,
 }
 
+/// Kinds `ExportConnector::cursor` accepts. `unsupported-cursor-record` is not a kind.
+pub(crate) const CURSOR_RECORD_KINDS: &[&str] =
+    &["assistant", "result", "system", "tool_call", "user"];
+/// Cascade hook names and transcript `type` values `ExportConnector::windsurf` accepts.
+pub(crate) const WINDSURF_RECORD_KINDS: &[&str] = &[
+    "code_action",
+    "planner_response",
+    "post_cascade_response",
+    "post_cascade_response_with_transcript",
+    "post_mcp_tool_use",
+    "post_read_code",
+    "post_run_command",
+    "post_write_code",
+    "user_input",
+];
+/// Goose message roles and content `type` values. The offset-0 header is positional, not a kind.
+pub(crate) const GOOSE_RECORD_KINDS: &[&str] = &[
+    "assistant",
+    "document",
+    "image",
+    "text",
+    "thinking",
+    "toolRequest",
+    "toolResponse",
+    "user",
+];
+/// ATIF step `source` values `ExportConnector::devin` accepts.
+pub(crate) const DEVIN_RECORD_KINDS: &[&str] = &["agent", "system", "user"];
+
 /// Facts preserve unknown timestamps and absent usage; raw transcripts are never returned.
 pub struct ExportBatch {
     pub usage: Vec<UsageFact>,
