@@ -29,6 +29,9 @@ struct Buckets {
     prior_cache_write_input_tokens: Option<i64>,
     prior_output_tokens: Option<i64>,
     prior_reasoning_output_tokens: Option<i64>,
+    /// Set when one line carries its own model (Grok `modelUsage` keys).
+    /// Empty means the file-level attribution still applies.
+    model: Option<String>,
 }
 
 #[derive(Default)]
@@ -231,7 +234,7 @@ fn ingest_jsonl_bounded(
     // The bounded header read uses the same opened file as the streaming parser.
     // A pathname replacement cannot silently supply a different session header.
     let file_session = match harness {
-        "pi" | "codex" => Some(file_session(
+        "pi" | "codex" | "grok" => Some(file_session(
             harness,
             &mut (&mut file).take(byte_limit),
             source_id,
@@ -279,10 +282,10 @@ fn ingest_jsonl_bounded(
     let mut codex_ordinal = 0i64;
     let mut claude_sessions = HashSet::new();
 
-    // Claude and Pi tool calls are read in their own pass over every complete
-    // line of this generation, so usage dedupe never drops a call (#35, Q5).
-    // Codex tool calls are not read in this version (Q6, #40): each Codex file
-    // carries one warning saying so, kept once across reruns.
+    // Claude, Pi, and Grok tool calls are read in their own pass over every
+    // complete line of this generation, so usage dedupe never drops a call
+    // (#35, Q5). Codex tool calls are not read in this version (Q6, #40):
+    // each Codex file carries one warning saying so, kept once across reruns.
     if harness == "codex" {
         let shown = path.display().to_string();
         if !store.has_warning(&shown, CODEX_TOOLS_NOT_READ)? {
@@ -293,7 +296,7 @@ fn ingest_jsonl_bounded(
             });
         }
     }
-    let mut tool_scan = if harness == "claude" || harness == "pi" {
+    let mut tool_scan = if matches!(harness, "claude" | "pi" | "grok") {
         Some(ToolScan::new(
             harness,
             file_session.as_ref().map(|session| session.raw.as_str()),
@@ -305,6 +308,15 @@ fn ingest_jsonl_bounded(
     } else {
         None
     };
+    if harness == "grok" {
+        // Model and effort live in the sibling summary, not on usage lines.
+        apply_grok_summary(
+            path,
+            &mut usage_attribution,
+            &mut reader_complete,
+            &mut warnings,
+        );
+    }
     loop {
         dendro_core::RUN_CANCEL.check()?;
         buf.clear();
@@ -428,76 +440,99 @@ fn ingest_jsonl_bounded(
             scan.observe(line_no, text, &value);
         }
         match parse_value(harness, &value, &mut counters) {
-            Ok(None) => {}
-            Ok(Some(mut bucket)) => {
-                if let Some(session) = &file_session {
-                    // The file's line-1 session wins over any per-line id.
-                    bucket.native_session = session.raw.clone();
+            Ok((buckets, partial)) => {
+                for reason in partial {
+                    warnings.push(WarningNote {
+                        path: path.display().to_string(),
+                        line: Some(line_no),
+                        reason,
+                    });
                 }
-                if let Some(id) = &bucket.message_id {
-                    let sealed_session = seal_session(tool_key, harness, &bucket.native_session);
-                    let sealed_id = seal_message(tool_key, id);
-                    let seen = format!("{harness}\n{sealed_session}\n{sealed_id}");
-                    if !seen_messages.insert(seen)
-                        || store.message_seen(harness, &sealed_session, &sealed_id, generation)?
-                    {
-                        continue;
+                let split = buckets.len() > 1;
+                for (index, mut bucket) in buckets.into_iter().enumerate() {
+                    if let Some(session) = &file_session {
+                        // The file's line-1 session wins over any per-line id.
+                        bucket.native_session = session.raw.clone();
                     }
-                }
-                let source_key = format!("{source_id}:{generation}:{line_no}");
-                usage_models.push((
-                    source_key.clone(),
-                    usage_attribution.model.clone(),
-                    usage_attribution.effort.clone(),
-                ));
-                usages.push(UsageFact {
-                    source_key,
-                    harness: harness.to_string(),
-                    native_session: seal_session(tool_key, harness, &bucket.native_session),
-                    message_id: bucket
-                        .message_id
-                        .as_deref()
-                        .map(|id| seal_message(tool_key, id)),
-                    ts: bucket.ts,
-                    seq: line_no,
-                    input_uncached: bucket.input_uncached,
-                    output: bucket.output,
-                    cache_read: bucket.cache_read,
-                    cache_write: bucket.cache_write,
-                    reasoning: bucket.reasoning,
-                    currency_total: bucket.currency_total,
-                    generation,
-                    predecessor_source_key: None,
-                    predecessor_reason: bucket.predecessor_reason.clone(),
-                    prior_input_tokens: bucket.prior_input_tokens,
-                    prior_cached_input_tokens: bucket.prior_cached_input_tokens,
-                    prior_cache_write_input_tokens: bucket.prior_cache_write_input_tokens,
-                    prior_output_tokens: bucket.prior_output_tokens,
-                    prior_reasoning_output_tokens: bucket.prior_reasoning_output_tokens,
-                });
-                if harness == "codex" && reset_generation && first_codex_in_this_call {
-                    if let Some(current) = usages.last_mut() {
-                        current.predecessor_reason = Some("reset".into());
-                        current.predecessor_source_key = None;
-                        current.prior_input_tokens = None;
-                        current.prior_cached_input_tokens = None;
-                        current.prior_cache_write_input_tokens = None;
-                        current.prior_output_tokens = None;
-                        current.prior_reasoning_output_tokens = None;
+                    if let Some(id) = &bucket.message_id {
+                        let sealed_session =
+                            seal_session(tool_key, harness, &bucket.native_session);
+                        let sealed_id = seal_message(tool_key, id);
+                        let seen = format!("{harness}\n{sealed_session}\n{sealed_id}");
+                        if !seen_messages.insert(seen)
+                            || store.message_seen(
+                                harness,
+                                &sealed_session,
+                                &sealed_id,
+                                generation,
+                            )?
+                        {
+                            continue;
+                        }
                     }
-                } else if bucket.predecessor_reason.as_deref() == Some("prior") {
-                    let key = usages
-                        .iter()
-                        .rev()
-                        .nth(1)
-                        .map(|prior| prior.source_key.clone())
-                        .or(store.latest_usage_key(source_id, generation).ok().flatten());
-                    if let Some(current) = usages.last_mut() {
-                        current.predecessor_source_key = key;
+                    let source_key = if split {
+                        format!("{source_id}:{generation}:{line_no}:{index}")
+                    } else {
+                        format!("{source_id}:{generation}:{line_no}")
+                    };
+                    let model = bucket
+                        .model
+                        .clone()
+                        .or_else(|| usage_attribution.model.clone());
+                    usage_models.push((
+                        source_key.clone(),
+                        model,
+                        usage_attribution.effort.clone(),
+                    ));
+                    usages.push(UsageFact {
+                        source_key,
+                        harness: harness.to_string(),
+                        native_session: seal_session(tool_key, harness, &bucket.native_session),
+                        message_id: bucket
+                            .message_id
+                            .as_deref()
+                            .map(|id| seal_message(tool_key, id)),
+                        ts: bucket.ts,
+                        seq: line_no,
+                        input_uncached: bucket.input_uncached,
+                        output: bucket.output,
+                        cache_read: bucket.cache_read,
+                        cache_write: bucket.cache_write,
+                        reasoning: bucket.reasoning,
+                        currency_total: bucket.currency_total,
+                        generation,
+                        predecessor_source_key: None,
+                        predecessor_reason: bucket.predecessor_reason.clone(),
+                        prior_input_tokens: bucket.prior_input_tokens,
+                        prior_cached_input_tokens: bucket.prior_cached_input_tokens,
+                        prior_cache_write_input_tokens: bucket.prior_cache_write_input_tokens,
+                        prior_output_tokens: bucket.prior_output_tokens,
+                        prior_reasoning_output_tokens: bucket.prior_reasoning_output_tokens,
+                    });
+                    if harness == "codex" && reset_generation && first_codex_in_this_call {
+                        if let Some(current) = usages.last_mut() {
+                            current.predecessor_reason = Some("reset".into());
+                            current.predecessor_source_key = None;
+                            current.prior_input_tokens = None;
+                            current.prior_cached_input_tokens = None;
+                            current.prior_cache_write_input_tokens = None;
+                            current.prior_output_tokens = None;
+                            current.prior_reasoning_output_tokens = None;
+                        }
+                    } else if bucket.predecessor_reason.as_deref() == Some("prior") {
+                        let key = usages
+                            .iter()
+                            .rev()
+                            .nth(1)
+                            .map(|prior| prior.source_key.clone())
+                            .or(store.latest_usage_key(source_id, generation).ok().flatten());
+                        if let Some(current) = usages.last_mut() {
+                            current.predecessor_source_key = key;
+                        }
                     }
-                }
-                if harness == "codex" {
-                    first_codex_in_this_call = false;
+                    if harness == "codex" {
+                        first_codex_in_this_call = false;
+                    }
                 }
             }
             Err(reason) => {
@@ -637,6 +672,7 @@ fn header_id(harness: &str, value: &Value) -> Option<String> {
     let id = match (harness, kind) {
         ("pi", Some("session")) => value.get("id"),
         ("codex", Some("session_meta")) => value.pointer("/payload/id"),
+        ("grok", _) => value.pointer("/params/sessionId"),
         _ => None,
     };
     id.and_then(|v| v.as_str())
@@ -846,6 +882,28 @@ const PI_RECORD_TYPES: &[&str] = &[
     "session_info",
     "thinking_level_change",
 ];
+/// Grok `params.update.sessionUpdate` values from the session format.
+/// Every named kind is a record (`records_read`). Only `turn_completed`
+/// becomes usage, and only `tool_call` / `tool_call_update` become tool
+/// facts. Message, thought, hook, compaction, and background-task bodies
+/// are counted and then dropped. `subagent_spawned` / `subagent_finished`
+/// are lineage evidence in the file, but UsageFact and ToolFact have no
+/// parent/child slot, so those lines are counted the same way and not stored.
+const GROK_RECORD_TYPES: &[&str] = &[
+    "agent_message_chunk",
+    "agent_thought_chunk",
+    "auto_compact_completed",
+    "auto_compact_started",
+    "background_tasks",
+    "compaction_checkpoint",
+    "hook_execution",
+    "subagent_finished",
+    "subagent_spawned",
+    "tool_call",
+    "tool_call_update",
+    "turn_completed",
+    "user_message_chunk",
+];
 
 pub(crate) const UNKNOWN_RECORD_TYPE: &str = "unknown-record-type";
 pub(crate) const CODEX_TOOLS_NOT_READ: &str = "tool calls not read for codex";
@@ -854,6 +912,9 @@ pub(crate) const CODEX_TOOLS_NOT_READ: &str = "tool calls not read for codex";
 /// None. The type is shown only when it is a plain identifier of at most 64
 /// characters; storage still applies the AC10 redaction to it.
 fn unknown_record_type(harness: &str, value: &Value) -> Option<String> {
+    if harness == "grok" {
+        return unknown_named_kind(grok_session_update(value), GROK_RECORD_TYPES);
+    }
     let known = match harness {
         "claude" => CLAUDE_RECORD_TYPES,
         "codex" => CODEX_RECORD_TYPES,
@@ -877,15 +938,46 @@ fn unknown_record_type(harness: &str, value: &Value) -> Option<String> {
     })
 }
 
+fn unknown_named_kind(kind: Option<&str>, known: &[&str]) -> Option<String> {
+    if kind.is_some_and(|kind| known.contains(&kind)) {
+        return None;
+    }
+    let plain = kind.filter(|kind| {
+        !kind.is_empty()
+            && kind.len() <= 64
+            && kind
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'-'))
+    });
+    Some(match plain {
+        Some(kind) => format!("{UNKNOWN_RECORD_TYPE}: {kind}"),
+        None => UNKNOWN_RECORD_TYPE.to_string(),
+    })
+}
+
+/// `sessionUpdate` when the envelope method is one this reader accepts.
+fn grok_session_update(value: &Value) -> Option<&str> {
+    let method = value.get("method").and_then(Value::as_str)?;
+    if method != "session/update" && method != "_x.ai/session/update" {
+        return None;
+    }
+    value
+        .pointer("/params/update/sessionUpdate")
+        .and_then(Value::as_str)
+}
+
 fn parse_value(
     harness: &str,
     value: &Value,
     counters: &mut CodexCounters,
-) -> Result<Option<Buckets>, String> {
+) -> Result<(Vec<Buckets>, Vec<String>), String> {
     match harness {
-        "codex" => parse_codex(value, counters),
-        "claude" => parse_claude(value),
-        "pi" => parse_pi(value),
+        "codex" => {
+            parse_codex(value, counters).map(|bucket| (bucket.into_iter().collect(), Vec::new()))
+        }
+        "claude" => parse_claude(value).map(|bucket| (bucket.into_iter().collect(), Vec::new())),
+        "pi" => parse_pi(value).map(|bucket| (bucket.into_iter().collect(), Vec::new())),
+        "grok" => parse_grok(value),
         _ => Err("unknown-harness".into()),
     }
 }
@@ -988,6 +1080,7 @@ fn parse_codex(value: &Value, counters: &mut CodexCounters) -> Result<Option<Buc
         prior_cache_write_input_tokens: priors.map(|p| p.2),
         prior_output_tokens: priors.map(|p| p.3),
         prior_reasoning_output_tokens: priors.map(|p| p.4),
+        model: None,
     }))
 }
 
@@ -1019,6 +1112,7 @@ fn parse_claude(value: &Value) -> Result<Option<Buckets>, String> {
         prior_cache_write_input_tokens: None,
         prior_output_tokens: None,
         prior_reasoning_output_tokens: None,
+        model: None,
     }))
 }
 
@@ -1048,7 +1142,206 @@ fn parse_pi(value: &Value) -> Result<Option<Buckets>, String> {
         prior_cache_write_input_tokens: None,
         prior_output_tokens: None,
         prior_reasoning_output_tokens: None,
+        model: None,
     }))
+}
+
+/// One usage row per model inside `turn_completed`. The parent usage object is
+/// not stored again: `modelUsage` repeats it, and writing both would double
+/// count. A turn with no `modelUsage` object stores the parent once.
+/// A `turn_completed` with no usage object is normal and stores nothing.
+/// One bad `modelUsage` entry warns and is skipped; sibling models are kept.
+fn parse_grok(value: &Value) -> Result<(Vec<Buckets>, Vec<String>), String> {
+    if grok_session_update(value) != Some("turn_completed") {
+        return Ok((Vec::new(), Vec::new()));
+    }
+    let Some(update) = value.pointer("/params/update") else {
+        return Ok((Vec::new(), Vec::new()));
+    };
+    let Some(usage) = update.get("usage").filter(|usage| usage.is_object()) else {
+        return Ok((Vec::new(), Vec::new()));
+    };
+    let session = value
+        .pointer("/params/sessionId")
+        .and_then(Value::as_str)
+        .unwrap_or("grok-session");
+    let ts = grok_timestamp(value);
+    if let Some(models) = usage.get("modelUsage").and_then(Value::as_object) {
+        if !models.is_empty() {
+            let mut rows = Vec::new();
+            let mut skipped = Vec::new();
+            for (name, part) in models {
+                if !part.is_object() {
+                    skipped.push("invalid-model-usage".into());
+                    continue;
+                }
+                let model = safe_attribution_token(name).then(|| name.clone());
+                match grok_usage_row(part, session, ts, model) {
+                    Ok(row) => rows.push(row),
+                    Err(reason) => skipped.push(reason),
+                }
+            }
+            return Ok((rows, skipped));
+        }
+    }
+    grok_usage_row(usage, session, ts, None).map(|row| (vec![row], Vec::new()))
+}
+
+/// `inputTokens` is the prompt total: sampled turns have
+/// `totalTokens == inputTokens + outputTokens`, so cache is not an extra
+/// addend. That matches Codex `input_tokens` (cache included) and not Claude
+/// `input_tokens` (already exclusive of `cache_read_input_tokens`). Exclusive
+/// uncached is `inputTokens - cachedReadTokens - cacheCreationTokens`, and the
+/// cache columns are stored beside it. Copying Claude's assignment would add
+/// `cachedReadTokens` a second time whenever the read fits inside input.
+/// FORMAT.md still marks that inclusion unverified; a negative remainder is
+/// `negative-exclusive-input` and the line is warned, not stored, so cache is
+/// never added on top of a total that cannot hold it. Checked on 523 local
+/// `turn_completed` records: `cacheCreationTokens` is never greater than 0,
+/// `totalTokens == inputTokens + outputTokens` on every turn that has usage,
+/// and `cachedReadTokens + cacheCreationTokens` never exceeds `inputTokens`.
+/// Keep this refusal. Do not clamp the uncached remainder to 0.
+/// `reasoningTokens` is inside `outputTokens` and stays in `reasoning` only.
+/// Absent `reasoningTokens` and `cacheCreationTokens` are 0. `inputTokens`,
+/// `outputTokens`, and `cachedReadTokens` stay required.
+fn grok_usage_row(
+    usage: &Value,
+    session: &str,
+    ts: Option<chrono::DateTime<chrono::Utc>>,
+    model: Option<String>,
+) -> Result<Buckets, String> {
+    let input = json_i64(usage, "inputTokens")?;
+    let cache_read = json_i64(usage, "cachedReadTokens")?;
+    let cache_write = json_i64_or_zero(usage, "cacheCreationTokens")?;
+    let input_uncached = input
+        .checked_sub(cache_read)
+        .and_then(|value| value.checked_sub(cache_write))
+        .ok_or("negative-exclusive-input")?;
+    if input_uncached < 0 {
+        return Err("negative-exclusive-input".into());
+    }
+    Ok(Buckets {
+        input_uncached,
+        output: json_i64(usage, "outputTokens")?,
+        cache_read,
+        cache_write,
+        reasoning: json_i64_or_zero(usage, "reasoningTokens")?,
+        currency_total: None,
+        message_id: None,
+        native_session: session.to_string(),
+        ts,
+        predecessor_reason: None,
+        prior_input_tokens: None,
+        prior_cached_input_tokens: None,
+        prior_cache_write_input_tokens: None,
+        prior_output_tokens: None,
+        prior_reasoning_output_tokens: None,
+        model,
+    })
+}
+
+fn grok_timestamp(value: &Value) -> Option<chrono::DateTime<chrono::Utc>> {
+    value
+        .get("timestamp")
+        .and_then(Value::as_i64)
+        .and_then(|secs| chrono::DateTime::from_timestamp(secs, 0))
+}
+
+/// Sibling `summary.json` only. Never `auth.json` or any other file in the directory.
+/// The read is capped at 64 KiB. A symlink is skipped, same as `walk_jsonl`.
+const GROK_SUMMARY_MAX_BYTES: u64 = 64 * 1024;
+
+fn apply_grok_summary(
+    jsonl: &Path,
+    attribution: &mut UsageAttribution,
+    reader_complete: &mut bool,
+    warnings: &mut Vec<WarningNote>,
+) {
+    let Some(path) = jsonl.parent().map(|dir| dir.join("summary.json")) else {
+        return;
+    };
+    if path.file_name().and_then(|name| name.to_str()) != Some("summary.json") {
+        return;
+    }
+    let meta = match fs::symlink_metadata(&path) {
+        Ok(meta) => meta,
+        Err(_) => return,
+    };
+    if meta.file_type().is_symlink() || !meta.file_type().is_file() {
+        return;
+    }
+    if meta.len() > GROK_SUMMARY_MAX_BYTES {
+        return;
+    }
+    let file = match File::open(&path) {
+        Ok(file) => file,
+        Err(_) => {
+            *reader_complete = false;
+            warnings.push(WarningNote {
+                path: path.display().to_string(),
+                line: None,
+                reason: "malformed-json".into(),
+            });
+            return;
+        }
+    };
+    let mut buf = Vec::new();
+    if file
+        .take(GROK_SUMMARY_MAX_BYTES)
+        .read_to_end(&mut buf)
+        .is_err()
+    {
+        *reader_complete = false;
+        warnings.push(WarningNote {
+            path: path.display().to_string(),
+            line: None,
+            reason: "malformed-json".into(),
+        });
+        return;
+    }
+    let Ok(text) = std::str::from_utf8(&buf) else {
+        *reader_complete = false;
+        warnings.push(WarningNote {
+            path: path.display().to_string(),
+            line: None,
+            reason: "malformed-json".into(),
+        });
+        return;
+    };
+    let value = match serde_json::from_str::<Value>(text) {
+        Ok(value) => value,
+        Err(_) => {
+            *reader_complete = false;
+            warnings.push(WarningNote {
+                path: path.display().to_string(),
+                line: None,
+                reason: "malformed-json".into(),
+            });
+            return;
+        }
+    };
+    attribution.model = value
+        .get("current_model_id")
+        .and_then(Value::as_str)
+        .filter(|token| safe_attribution_token(token))
+        .map(str::to_string);
+    attribution.effort = value
+        .get("reasoning_effort")
+        .and_then(Value::as_str)
+        .filter(|token| safe_attribution_token(token))
+        .map(str::to_string);
+    let supported = match value.get("chat_format_version") {
+        None => true,
+        Some(version) => version.as_i64() == Some(1),
+    };
+    if !supported {
+        *reader_complete = false;
+        warnings.push(WarningNote {
+            path: path.display().to_string(),
+            line: None,
+            reason: "unknown-grok-format-version".into(),
+        });
+    }
 }
 
 /// Reads only native execution outcomes and real call boundaries. No result joins.
@@ -1319,6 +1612,10 @@ impl<'a> ToolScan<'a> {
     }
 
     fn observe(&mut self, line_no: i64, text: &str, value: &Value) {
+        if self.harness == "grok" {
+            self.observe_grok(line_no, value);
+            return;
+        }
         let harness = self.harness;
         let file_session = self.file_session;
         let key = self.key;
@@ -1473,6 +1770,89 @@ impl<'a> ToolScan<'a> {
         }
     }
 
+    /// Join `tool_call` to later `tool_call_update` rows by `toolCallId`.
+    /// `rawInput` is fingerprinted and dropped. Progress updates have no
+    /// `status` and do not settle the call. `completed` is success and
+    /// `failed` is failure, matching the Claude `is_error` boolean.
+    fn observe_grok(&mut self, line_no: i64, value: &Value) {
+        let kind = grok_session_update(value);
+        let session = match self.file_session {
+            Some(session) => session.to_string(),
+            None => value
+                .pointer("/params/sessionId")
+                .and_then(Value::as_str)
+                .unwrap_or("grok-session")
+                .to_string(),
+        };
+        let Some(update) = value.pointer("/params/update") else {
+            return;
+        };
+        match kind {
+            Some("tool_call_update") => {
+                let Some(id) = update.get("toolCallId").and_then(Value::as_str) else {
+                    return;
+                };
+                let outcome = match update.get("status").and_then(Value::as_str) {
+                    Some("failed") => Some(true),
+                    Some("completed") => Some(false),
+                    Some(_) => None,
+                    None => return,
+                };
+                self.results
+                    .push(((session, id.to_string()), outcome, line_no));
+            }
+            Some("tool_call") => {
+                let Some(id) = update.get("toolCallId").and_then(Value::as_str) else {
+                    return;
+                };
+                if self.by_id.contains_key(&(session.clone(), id.to_string())) {
+                    return;
+                }
+                let Some(name) = update
+                    .get("_meta")
+                    .and_then(|meta| meta.get("x.ai/tool"))
+                    .and_then(|tool| tool.get("name"))
+                    .and_then(Value::as_str)
+                    .filter(|name| !name.is_empty() && name.len() <= 64)
+                else {
+                    return;
+                };
+                let kind_name = update
+                    .get("_meta")
+                    .and_then(|meta| meta.get("x.ai/tool"))
+                    .and_then(|tool| tool.get("kind"))
+                    .and_then(Value::as_str);
+                let lexical = update.get("rawInput").map(Value::to_string);
+                let fingerprint = self
+                    .key
+                    .and_then(|key| tool_fingerprint(key, name, lexical.as_deref()));
+                let category = classify_tool_invocation(self.harness, name, None);
+                let source_key = format!("{}:{}:{line_no}:0", self.source_id, self.generation);
+                self.by_id
+                    .insert((session.clone(), id.to_string()), self.calls.len());
+                self.calls.push(ToolCall {
+                    fact: ToolFact {
+                        source_key,
+                        harness: self.harness.into(),
+                        native_session: seal_session(self.key, self.harness, &session),
+                        ts: grok_timestamp(value),
+                        seq: line_no,
+                        name: name.to_string(),
+                        fingerprint,
+                        failed: None,
+                        structured_write: kind_name == Some("edit"),
+                        generation: self.generation,
+                    },
+                    line: line_no,
+                    results: Vec::new(),
+                    result_in_new_lines: false,
+                    category,
+                });
+            }
+            _ => {}
+        }
+    }
+
     fn finish(mut self) -> ToolPass {
         let new_from = self.new_from;
         let results = std::mem::take(&mut self.results);
@@ -1572,6 +1952,13 @@ fn json_i64(value: &Value, key: &str) -> Result<i64, String> {
         .ok_or_else(|| format!("missing-{key}"))?
         .as_i64()
         .ok_or_else(|| format!("non-integer-{key}"))
+}
+
+fn json_i64_or_zero(value: &Value, key: &str) -> Result<i64, String> {
+    match value.get(key) {
+        None | Some(Value::Null) => Ok(0),
+        Some(item) => item.as_i64().ok_or_else(|| format!("non-integer-{key}")),
+    }
 }
 
 pub fn file_sha256(path: &Path) -> Result<String> {

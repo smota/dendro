@@ -16,7 +16,7 @@ type SourceRow = (String, String, String, i64, Option<String>);
 const BASIS: &str = "file-metadata-v1";
 
 fn file_harness(h: &str) -> bool {
-    matches!(h, "claude" | "codex" | "pi")
+    matches!(h, "claude" | "codex" | "pi" | "grok")
 }
 
 #[derive(Clone, Debug)]
