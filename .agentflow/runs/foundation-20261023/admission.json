@@ -1,0 +1,52 @@
+{
+  "schema": "dendro.foundation-admission/v1",
+  "created_at": "2026-10-23T11:16:17.8992090Z",
+  "authorization": "User: commit and merge performance amendment, then complete foundation using Codex and Claude sub-agents",
+  "baseline": "d20cbb2cc4dd5380968091d6dd94451ed10f9f3c",
+  "branch": "codex/foundation-completion",
+  "scope": [
+    "T24 recovery correctness and native Linux selected-storage parity",
+    "T04 actual historical binary migration and rollback proof",
+    "native Windows/Linux foundation validation"
+  ],
+  "historical_lane": "Previous parked lane and review verdicts remain historical; this is newly authorized foundation work",
+  "epoch": 1,
+  "fence": "foundation-20261023-1",
+  "leases": [
+    {
+      "paths": [
+        "crates/dendro-core/src/selection_binding.rs",
+        "crates/dendro-core/src/sealed_run.rs",
+        "crates/dendro-core/src/sealed_run/cutoff_publication.rs",
+        "crates/dendro-core/tests/windows_selection.rs",
+        "crates/dendro-cli/src/main.rs",
+        "crates/dendro-cli/tests/sealed_cli.rs"
+      ],
+      "expires": "end of candidate review",
+      "holder": "/root/foundation_recovery_builder",
+      "shared_manifests": "not authorized"
+    },
+    {
+      "paths": [
+        "new isolated historical proof harness and evidence"
+      ],
+      "expires": "end of proof review",
+      "holder": "/root/historical_migration_proof",
+      "product_edits": "not authorized"
+    }
+  ],
+  "reviewer": {
+    "requested_model": "claude-sonnet-5-5",
+    "session": "pending observed receipt",
+    "role": "architecture and independent review",
+    "client": "Claude Code"
+  },
+  "protected": [
+    "unrelated managed skills",
+    "scripts/portfolio-fixture.py",
+    "templates/nao/validate_performance.py",
+    "frozen oracle content",
+    "audited ffi.rs"
+  ],
+  "native_linux": "WSL development does not satisfy native certification; hosted Linux proof to be established"
+}

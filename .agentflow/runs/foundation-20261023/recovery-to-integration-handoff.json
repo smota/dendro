@@ -1,0 +1,23 @@
+{
+  "schema": "dendro.foundation-handoff/v1",
+  "epoch": 1,
+  "fence": "foundation-20261023-1",
+  "created_at": "2026-10-23T11:34:22.8289089Z",
+  "from": "/root/foundation_recovery_builder",
+  "to": "/root/foundation_linux_parity",
+  "review_session": "d574e6ac-8265-47b3-b3c8-7db97a9c30d6",
+  "verdict": "scoped accept nativeWindows sixownedfiles",
+  "candidate": "recovery-candidate-01.json",
+  "new_exclusive_owner": "selection/cutoff/CLI consumers plus pipeline/presentation/storage/semantic/extensions/tui and standing Cargo/lib/platform mod integration",
+  "additional_worker": {
+    "paths": [
+      "NEW selection_binding/migration.rs",
+      "migration_v4",
+      "new migration proof tests"
+    ],
+    "restriction": "no parentselection/storage/CLI/sharedmanifest edits",
+    "holder": "/root/historical_migration_proof"
+  },
+  "remaining": "Linux parity,migration integration,native validation,combined independent review",
+  "nonblocking_review_followups": "Transferred to sharedintegrationworker; historical review remains unchanged"
+}

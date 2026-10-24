@@ -1,0 +1,33 @@
+{
+  "run": "foundation-20261023",
+  "epoch": 1,
+  "fence": "foundation-20261023-1",
+  "scope": "Linux publication primitives; consumer integration pending",
+  "environment": "WSL2 6.18.33.2-microsoft-standard-WSL2; ext4 /dev/sdd; rustc 1.98.0 x86_64-unknown-linux-gnu",
+  "native_linux_acceptance": "not established",
+  "results": [
+    "6 platform/publication unit tests pass",
+    "6 policy integration tests pass",
+    "isolated harness clippy all-targets -D warnings pass",
+    "workspace cargo check --workspace --locked pass before consumer integration"
+  ],
+  "files": [
+    {
+      "path": "crates/dendro-core/src/platform_v1/linux.rs",
+      "sha256": "7b51061086b3f1f1d9baf33cb2dac5459f9eef3fba96f6a2e71377a0a0db7237"
+    },
+    {
+      "path": "crates/dendro-core/src/platform_v1/linux_publication.rs",
+      "sha256": "bf8825d950d7bb5a94aa847b4b437197ce3a757e4a38500555940b22d4fe28a2"
+    },
+    {
+      "path": "crates/dendro-core/src/platform_v1/mod.rs",
+      "sha256": "b53bf018a8dcbd7fd9463499b265dac9150d21a2ba1638bee68420b6872308a9"
+    }
+  ],
+  "limitations": [
+    "Same-principal mutation remains a trust boundary; Linux has no inode-CAS rename primitive",
+    "Reader pins use cooperative shared flock; no Windows deny-write sharing is claimed",
+    "No commit push native hosted CI or release acceptance performed"
+  ]
+}

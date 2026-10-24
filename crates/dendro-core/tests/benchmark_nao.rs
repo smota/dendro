@@ -7,7 +7,7 @@ use std::time::Instant;
 #[test]
 fn canonical_semantic_views_latency_and_conservation() -> anyhow::Result<()> {
     let f = fixture::Fixture::new(5500);
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     let f = {
         let root = dendro_core::platform_v1::create_user_private_root_with_choice(
             "dendro-nao-benchmark-",

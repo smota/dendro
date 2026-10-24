@@ -9,6 +9,12 @@ pub use crate::domain_v1::{CreationMarker, ProcessIdentity};
 
 #[cfg(target_os = "linux")]
 mod linux;
+#[cfg(target_os = "linux")]
+mod linux_mount;
+#[cfg(target_os = "linux")]
+mod linux_publication;
+#[cfg(target_os = "linux")]
+pub use linux_publication::*;
 mod policy;
 #[cfg(windows)]
 mod windows;
@@ -85,6 +91,16 @@ impl PrivateRoot {
         windows::check_anchor(self)
     }
 
+    #[cfg(target_os = "linux")]
+    pub fn check_anchor(&self) -> Result<(), PlatformError> {
+        linux::check_anchor(self)
+    }
+
+    #[cfg(target_os = "linux")]
+    pub fn sync_dir(&self) -> Result<(), PlatformError> {
+        linux::sync_directory(self)
+    }
+
     /// Flush the held directory; unsupported native flushes remain errors.
     #[cfg(windows)]
     pub fn sync_dir(&self) -> Result<(), PlatformError> {
@@ -111,6 +127,7 @@ impl PrivateRoot {
         }
         #[cfg(target_os = "linux")]
         {
+            self.check_anchor()?;
             let root_fd = self._pins.last().ok_or_else(|| {
                 PlatformError::Rejected(Verdict::refuse("ancestor_pin_absent", "T24-45"))
             })?;
@@ -183,6 +200,22 @@ pub fn create_private_directory(
     windows::create_private_directory(parent, name)
 }
 
+#[cfg(target_os = "linux")]
+pub fn create_private_directory(
+    parent: &PrivateRoot,
+    name: &ChildName,
+) -> Result<PrivateRoot, PlatformError> {
+    linux::create_private_directory(parent, name)
+}
+
+#[cfg(target_os = "linux")]
+pub fn create_unique_private_directory(
+    parent: &PrivateRoot,
+    prefix: &str,
+) -> Result<PrivateRoot, PlatformError> {
+    linux::create_unique_private_directory(parent, prefix)
+}
+
 /// Atomically create a fresh protected private directory under the held parent.
 #[cfg(windows)]
 pub fn create_unique_private_directory(
@@ -193,6 +226,11 @@ pub fn create_unique_private_directory(
 }
 
 #[cfg(windows)]
+pub fn sync_directory(path: &std::path::Path) -> Result<(), PlatformError> {
+    open_existing_private_root(path)?.sync_dir()
+}
+
+#[cfg(target_os = "linux")]
 pub fn sync_directory(path: &std::path::Path) -> Result<(), PlatformError> {
     open_existing_private_root(path)?.sync_dir()
 }
@@ -219,7 +257,7 @@ pub fn ancestor_replacement_facts() -> Result<Vec<String>, PlatformError> {
 
 /// Explicit Windows storage parent selection. Every choice is validated and pinned
 /// before creation; a refusal never tries another candidate.
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 #[derive(Debug, Clone)]
 pub enum StorageRootChoice {
     LocalAppData,
@@ -233,6 +271,26 @@ pub fn create_user_private_root_with_choice(
     choice: &StorageRootChoice,
 ) -> Result<PrivateRoot, PlatformError> {
     windows::create_user_private_root_with_choice(prefix, choice)
+}
+
+#[cfg(target_os = "linux")]
+pub fn create_user_private_root_with_choice(
+    prefix: &str,
+    choice: &StorageRootChoice,
+) -> Result<PrivateRoot, PlatformError> {
+    // LocalAppData is unsupported here. UserProfile selects exactly HOME;
+    // create_user_private_root separately implements the native XDG data route.
+    match choice {
+        StorageRootChoice::LocalAppData => Err(PlatformError::Rejected(Verdict::refuse(
+            "storage_root_choice_unsupported",
+            "LocalAppData_is_Windows_only",
+        ))),
+        StorageRootChoice::UserProfile => linux::create_user_private_root_in_home(prefix),
+        StorageRootChoice::Explicit(path) => {
+            let parent = open_existing_private_root(path)?;
+            linux::create_unique_private_directory(&parent, prefix)
+        }
+    }
 }
 
 pub fn create_user_private_root(prefix: &str) -> Result<PrivateRoot, PlatformError> {
@@ -252,6 +310,43 @@ pub fn create_user_private_root(prefix: &str) -> Result<PrivateRoot, PlatformErr
             "macos_private_create_not_admitted",
         )))
     }
+}
+
+/// Explicitly admit an intentionally linked root only after a one-time native
+/// resolution matches the operator-authorized resolved directory identity.
+/// The returned capability retains the resolved root and ancestry; subsequent
+/// operations never reopen or follow the original lexical alias.
+#[cfg(any(windows, target_os = "linux"))]
+pub fn open_existing_private_root_with_link_policy(
+    lexical: &std::path::Path,
+    authorized_resolved_identity: FileIdentity,
+) -> Result<PrivateRoot, PlatformError> {
+    let resolved = std::fs::canonicalize(lexical)?;
+    #[cfg(windows)]
+    let resolved = {
+        // std canonicalize returns an extended-length DOS path. Accept only
+        // its local drive form, never UNC or arbitrary device namespaces.
+        let value = resolved.to_str().ok_or_else(|| {
+            PlatformError::Rejected(Verdict::refuse("canonical_root_not_unicode", "T24-46"))
+        })?;
+        let local = value.strip_prefix(r"\\?\").unwrap_or(value);
+        if local.as_bytes().get(1) != Some(&b':') || !local.as_bytes()[0].is_ascii_alphabetic() {
+            return Err(PlatformError::Rejected(Verdict::refuse(
+                "canonical_root_not_local_drive",
+                "T24-46",
+            )));
+        }
+        std::path::PathBuf::from(local)
+    };
+    let root = open_existing_private_root(&resolved)?;
+    if root.metadata().identity != authorized_resolved_identity {
+        return Err(PlatformError::Rejected(Verdict::refuse(
+            "resolved_root_identity_mismatch",
+            "T24-46",
+        )));
+    }
+    root.check_anchor()?;
+    Ok(root)
 }
 
 pub fn open_existing_private_root(path: &std::path::Path) -> Result<PrivateRoot, PlatformError> {
@@ -279,6 +374,7 @@ pub fn open_existing_private_file(
 ) -> Result<VerifiedFile, PlatformError> {
     #[cfg(target_os = "linux")]
     {
+        root.check_anchor()?;
         let root_fd = root._pins.last().ok_or_else(|| {
             PlatformError::Rejected(Verdict::refuse("ancestor_pin_absent", "T24-45"))
         })?;
@@ -308,6 +404,38 @@ pub fn open_existing_private_read_pin(
 ) -> Result<std::fs::File, PlatformError> {
     root.check_anchor()?;
     windows::open_private_read_pin(root, name, true)
+}
+
+#[cfg(target_os = "linux")]
+pub fn open_existing_private_read_pin(
+    root: &PrivateRoot,
+    name: &ChildName,
+) -> Result<std::fs::File, PlatformError> {
+    linux::open_private_read_pin(root, name)
+}
+
+/// Runtime admission for DuckDB-created WAL/spill files. Linux 0644 is allowed
+/// only inside the retained 0700 ACL-checked parent; no leaf repair is performed.
+pub fn verify_library_leaf(
+    root: &PrivateRoot,
+    name: &ChildName,
+) -> Result<ObservedMetadata, PlatformError> {
+    #[cfg(windows)]
+    {
+        windows::verify_library_leaf(root, name)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        linux::verify_library_leaf(root, name)
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
+    {
+        let _ = (root, name);
+        Err(PlatformError::Rejected(Verdict::refuse(
+            "platform_unsupported",
+            "library_leaf",
+        )))
+    }
 }
 
 pub fn reopen_metadata(path: &std::path::Path) -> Result<ObservedMetadata, PlatformError> {
@@ -420,6 +548,7 @@ pub fn rename_absent_same_directory(
     }
     #[cfg(target_os = "linux")]
     {
+        root.check_anchor()?;
         let root_fd = root._pins.last().ok_or_else(|| {
             PlatformError::Rejected(Verdict::refuse("ancestor_pin_absent", "T24-45"))
         })?;

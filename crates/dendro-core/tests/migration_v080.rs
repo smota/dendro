@@ -13,11 +13,11 @@ use dendro_core::migration_v4::{self as mig, InterruptBoundary, MigrateRequest};
 use dendro_core::platform_v1::{self, FileIdentity, ObjectKind};
 use dendro_core::AnalyticsStore;
 
-const FROZEN_JSON: &str = "b7e80ab7c4259bfe86df8857835137a7033f167a2b4b7545931ec3e2765793ae";
-const FIXTURE_SQL: &str = "a3d489511393771f8991666012f0872db234f9844dbbdd0eafe405130f4b761b";
+const FROZEN_JSON: &str = "33837c362c332b3021b2319800a8ab94a455cc43c306393915535634ffe8f113";
+const FIXTURE_SQL: &str = "aa5fbc2bbd48f59f6a0ef1d41612625394d6dd24919560eacb2c53bc3dbc11b6";
 const FIXTURE_PROJECTIONS: &str =
-    "b7c566c962d058e8b1edfec00230e8f9f0dbe14dff6a3cc6c72670485e3da5b6";
-const CURRENCY_SQL: &str = "aacc7f839c5b4294f5577a3a87f2019e7823436872759b785b02c04e22a9a35d";
+    "f70a2014ac83472413a4806b5b437a713319c0f69bc7ed1d5d56c74d17b48470";
+const CURRENCY_SQL: &str = "cdc5a1837fb9fc384cbef4245d64595279e2b67b827902c0125c069b1a2d45c0";
 
 // The reviewed Windows handoff admits explicit USERPROFILE; the default
 // LOCALAPPDATA refusal is preserved by the production entry point.
@@ -49,16 +49,21 @@ fn sha256_path(path: &Path) -> String {
 
 fn assert_oracle_digests() {
     let dir = oracle_dir();
-    assert_eq!(sha256_path(&dir.join("frozen.json")), FROZEN_JSON);
-    assert_eq!(sha256_path(&dir.join("schema3-fixture.sql")), FIXTURE_SQL);
+    let canonical = |name: &str| {
+        sha256_bytes(
+            fs::read_to_string(dir.join(name))
+                .unwrap()
+                .replace("\r\n", "\n")
+                .as_bytes(),
+        )
+    };
+    assert_eq!(canonical("frozen.json"), FROZEN_JSON);
+    assert_eq!(canonical("schema3-fixture.sql"), FIXTURE_SQL);
     assert_eq!(
-        sha256_path(&dir.join("schema3-fixture-projections.json")),
+        canonical("schema3-fixture-projections.json"),
         FIXTURE_PROJECTIONS
     );
-    assert_eq!(
-        sha256_path(&dir.join("schema3-currency-extension.sql")),
-        CURRENCY_SQL
-    );
+    assert_eq!(canonical("schema3-currency-extension.sql"), CURRENCY_SQL);
     assert_eq!(dendro_core::SCHEMA_VERSION, 3);
 }
 

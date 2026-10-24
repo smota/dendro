@@ -987,6 +987,23 @@ fn verify_private_leaf(file: &File) -> Result<VerifiedLeaf, PlatformError> {
     })
 }
 
+/// Validate a library-created leaf while DuckDB holds exclusive data access.
+/// READ_CONTROL/FILE_READ_ATTRIBUTES avoid requesting data sharing rights.
+pub(super) fn verify_library_leaf(
+    root: &PrivateRoot,
+    name: &ChildName,
+) -> Result<ObservedMetadata, PlatformError> {
+    check_anchor(root)?;
+    let file = OpenOptions::new()
+        .access_mode(0x0002_0080)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(root.path().join(name.as_str()))?;
+    let observed = verify_private_leaf(&file)?.meta;
+    check_anchor(root)?;
+    Ok(observed)
+}
+
 /// Read-only private leaf admission. Immutable pins deny write/delete sharing;
 /// pointer reads allow replacement so a reader never blocks publication itself.
 pub(super) fn open_private_read_pin(

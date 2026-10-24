@@ -1,3 +1,8 @@
+#[cfg(any(windows, target_os = "linux"))]
+mod library_privacy;
+#[cfg(any(windows, target_os = "linux"))]
+pub(crate) use library_privacy::PrivateLibraryRuntime;
+
 #[cfg(test)]
 thread_local! {pub(crate) static FRICTION_METADATA_READS: std::cell::Cell<usize> = const {std::cell::Cell::new(0)};}
 
@@ -14,6 +19,62 @@ use duckdb::{params, Connection};
 use crate::facts::*;
 use crate::file_metadata::FileMetadata;
 use crate::privacy::{activity_state, closure_reason, queue_state, redact};
+
+/// DuckDB creates its own header before returning the connection. Restrict only
+/// that just-created owned regular inode through a no-follow held handle; never
+/// change process umask or repair permissions of an existing caller database.
+#[cfg(target_os = "linux")]
+fn restrict_new_linux_database(path: &Path) -> Result<()> {
+    use std::os::unix::fs::MetadataExt;
+    let fd = rustix::fs::open(
+        path,
+        rustix::fs::OFlags::RDWR
+            .union(rustix::fs::OFlags::NOFOLLOW)
+            .union(rustix::fs::OFlags::NONBLOCK)
+            .union(rustix::fs::OFlags::CLOEXEC),
+        rustix::fs::Mode::empty(),
+    )?;
+    let stat = rustix::fs::fstat(&fd)?;
+    if stat.st_uid != std::fs::metadata("/proc/self")?.uid()
+        || stat.st_nlink != 1
+        || stat.st_mode & 0o170000 != 0o100000
+    {
+        return Err(anyhow!(
+            "new database is not an owned single-link regular file"
+        ));
+    }
+    rustix::fs::fchmod(&fd, rustix::fs::Mode::from_bits_truncate(0o600))?;
+    Ok(())
+}
+
+/// Schema4 is a copied compatible schema3 projection plus explicit migration
+/// metadata. Selected readers additionally authenticate the retained preimage
+/// and exact bundle custody before entering this physical database opener.
+fn validate_reader_schema(conn: &Connection, version: i32, key_id: &str) -> Result<()> {
+    if version == SCHEMA_VERSION {
+        return Ok(());
+    }
+    if version != crate::migration_v4::MIGRATION_TARGET_SCHEMA_VERSION {
+        return Err(anyhow!("unsupported analytics schema version {version}"));
+    }
+    let rows: i64 = conn.query_row("SELECT COUNT(*) FROM dendro_meta", [], |row| row.get(0))?;
+    let operations: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM dendro_migration_operation",
+        [],
+        |row| row.get(0),
+    )?;
+    let validated: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM dendro_migration_operation WHERE id = 1 AND source_schema = 3 AND target_schema = 4 AND key_id = ? AND status = 'validated_unpublished' AND length(source_db_sha256) = 64 AND length(source_sidecar_sha256) = 64 AND length(projection_sha256) = 64",
+        params![key_id], |row| row.get(0))?;
+    let preimages: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM dendro_rollback_preimage AS p JOIN dendro_migration_operation AS o ON o.id = 1 WHERE p.source_schema = 3 AND p.source_db_sha256 = o.source_db_sha256 AND p.source_sidecar_sha256 = o.source_sidecar_sha256 AND p.note = 'preserved_source_bundle_not_rewritten'", [], |row| row.get(0))?;
+    if rows != 1 || operations != 1 || validated != 1 || preimages != 1 {
+        return Err(anyhow!(
+            "schema4 migration metadata is invalid; a version label alone is not admission"
+        ));
+    }
+    Ok(())
+}
 
 /// Legacy entry point retained so the untouched watcher/CLI still typecheck.
 /// It does not create or migrate the pre-R1 tables.
@@ -65,17 +126,36 @@ const FILE_BASELINES_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS file_source_base
 
 pub struct AnalyticsStore {
     conn: Connection,
+    #[cfg(any(windows, target_os = "linux"))]
+    runtime: Option<PrivateLibraryRuntime>,
     pub key_id: String,
     openrig_rows: RefCell<Option<openrig_provenance::OpenRigRowCache>>,
     openrig_pending: RefCell<Option<Vec<OpenRigRecord>>>,
     canonical_write_active: std::cell::Cell<bool>,
     // Rust drops fields in declaration order: Connection closes before the
     // read-only native pins are released.
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     _custody: Option<std::sync::Arc<crate::platform_v1::ResolvedSelection>>,
 }
 
 impl AnalyticsStore {
+    /// Executes a library operation inside the retained private runtime and
+    /// verifies native library leaves before returning its result.
+    #[cfg(any(windows, target_os = "linux"))]
+    pub fn with_private_connection<T>(
+        &self,
+        operation: impl FnOnce(&Connection) -> Result<T>,
+    ) -> Result<T> {
+        let runtime = self
+            .runtime
+            .as_ref()
+            .ok_or_else(|| anyhow!("connection has no private library runtime"))?;
+        runtime.verify(&self.conn)?;
+        let result = operation(&self.conn);
+        runtime.verify(&self.conn)?;
+        result
+    }
+
     pub(crate) fn connection(&self) -> &Connection {
         &self.conn
     }
@@ -120,8 +200,10 @@ impl AnalyticsStore {
             openrig_rows: RefCell::new(None),
             openrig_pending: RefCell::new(None),
             canonical_write_active: std::cell::Cell::new(false),
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "linux"))]
             _custody: None,
+            #[cfg(any(windows, target_os = "linux"))]
+            runtime: None,
         };
         store.create_schema()?;
         Ok(store)
@@ -132,27 +214,45 @@ impl AnalyticsStore {
             return Self::open_existing(path, key_id);
         }
         let conn = Connection::open(path)?;
+        #[cfg(target_os = "linux")]
+        restrict_new_linux_database(path)?;
         let store = Self {
             conn,
             key_id: key_id.to_string(),
             openrig_rows: RefCell::new(None),
             openrig_pending: RefCell::new(None),
             canonical_write_active: std::cell::Cell::new(false),
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "linux"))]
             _custody: None,
+            #[cfg(any(windows, target_os = "linux"))]
+            runtime: None,
         };
         store.create_schema()?;
         Ok(store)
     }
 
     pub fn open_existing(path: &Path, key_id: &str) -> Result<Self> {
+        #[cfg(any(windows, target_os = "linux"))]
+        let runtime = if path
+            .parent()
+            .is_some_and(|parent| crate::platform_v1::open_existing_private_root(parent).is_ok())
+        {
+            Some(PrivateLibraryRuntime::prepare(path)?)
+        } else {
+            None
+        }; // legacy physical entry point, outside selected storage
         let conn = Connection::open(path)?;
+        #[cfg(any(windows, target_os = "linux"))]
+        if let Some(runtime) = &runtime {
+            runtime.configure(&conn)?;
+        }
         refuse_legacy(&conn)?;
-        let stored: String = conn.query_row(
-            "SELECT key_id FROM dendro_meta WHERE schema_version = ?",
-            params![SCHEMA_VERSION],
-            |row| row.get(0),
+        let (version, stored): (i32, String) = conn.query_row(
+            "SELECT schema_version, key_id FROM dendro_meta",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )?;
+        validate_reader_schema(&conn, version, &stored)?;
         if stored != key_id {
             return Err(anyhow!("analytics key id does not match the sidecar"));
         }
@@ -163,23 +263,27 @@ impl AnalyticsStore {
             openrig_rows: RefCell::new(None),
             openrig_pending: RefCell::new(None),
             canonical_write_active: std::cell::Cell::new(false),
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "linux"))]
             _custody: None,
+            #[cfg(any(windows, target_os = "linux"))]
+            runtime,
         })
     }
 
     /// Opens a database this process just created in a private staging directory.
     pub fn open_staged(path: &Path) -> Result<Self> {
+        #[cfg(any(windows, target_os = "linux"))]
+        let runtime = PrivateLibraryRuntime::prepare(path)?;
         let conn = Connection::open(path)?;
+        #[cfg(any(windows, target_os = "linux"))]
+        runtime.configure(&conn)?;
         refuse_legacy(&conn)?;
         let (version, key_id): (i32, String) = conn.query_row(
             "SELECT schema_version, key_id FROM dendro_meta",
             [],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )?;
-        if version != SCHEMA_VERSION {
-            return Err(anyhow!("unsupported analytics schema version {version}"));
-        }
+        validate_reader_schema(&conn, version, &key_id)?;
         conn.execute_batch(openrig_provenance::SCHEMA)?;
         conn.execute_batch(Self::SEMANTIC_STATE_SCHEMA)?;
         Ok(Self {
@@ -188,12 +292,16 @@ impl AnalyticsStore {
             openrig_rows: RefCell::new(None),
             openrig_pending: RefCell::new(None),
             canonical_write_active: std::cell::Cell::new(false),
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "linux"))]
             _custody: None,
+            #[cfg(any(windows, target_os = "linux"))]
+            runtime: Some(runtime),
         })
     }
 
     pub fn open_read_only(path: &Path) -> Result<Self> {
+        #[cfg(any(windows, target_os = "linux"))]
+        let runtime = PrivateLibraryRuntime::prepare_read_only(path)?;
         let config = duckdb::Config::default().access_mode(duckdb::AccessMode::ReadOnly)?;
         let conn = Connection::open_with_flags(path, config).map_err(|_| {
             if !path.exists() {
@@ -202,27 +310,29 @@ impl AnalyticsStore {
                 anyhow!("analytics database could not be opened")
             }
         })?;
+        #[cfg(any(windows, target_os = "linux"))]
+        runtime.configure(&conn)?;
         refuse_legacy(&conn)?;
         let (version, key_id): (i32, String) = conn.query_row(
             "SELECT schema_version, key_id FROM dendro_meta",
             [],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )?;
-        if version != SCHEMA_VERSION {
-            return Err(anyhow!("unsupported analytics schema version {version}"));
-        }
+        validate_reader_schema(&conn, version, &key_id)?;
         Ok(Self {
             conn,
             key_id,
             openrig_rows: RefCell::new(None),
             openrig_pending: RefCell::new(None),
             canonical_write_active: std::cell::Cell::new(false),
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "linux"))]
             _custody: None,
+            #[cfg(any(windows, target_os = "linux"))]
+            runtime: Some(runtime),
         })
     }
 
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     pub fn open_read_only_selected(
         selected: &crate::selection_binding::SelectedRead,
     ) -> Result<Self> {
@@ -373,6 +483,10 @@ impl AnalyticsStore {
     }
 
     pub fn checkpoint(&self) -> Result<()> {
+        #[cfg(any(windows, target_os = "linux"))]
+        if let Some(runtime) = &self.runtime {
+            runtime.verify(&self.conn)?;
+        }
         self.conn.execute_batch("CHECKPOINT")?;
         Ok(())
     }
@@ -2297,7 +2411,7 @@ mod tests {
         // Windows DuckDB exclusively holds the active WAL. Direct live WAL
         // bytes remain unverified there; the decoded scan above and the
         // closed-database byte scan below still cover every marker family.
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         {
             let wal_bytes = std::fs::read(&wal).unwrap();
             let wal_blob = String::from_utf8_lossy(&wal_bytes);

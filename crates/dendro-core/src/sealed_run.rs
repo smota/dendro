@@ -11,11 +11,11 @@ use crate::{
     refuse_aliased_output_with_openrig, refuse_secret_path, AnalyticsStore, CutoffManifest,
 };
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 #[path = "sealed_run/cutoff_publication.rs"]
 mod cutoff_publication;
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 #[derive(Debug, serde::Serialize)]
 #[serde(tag = "state", content = "sha256", rename_all = "snake_case")]
 pub enum AnalyticsSelectionOutcome {
@@ -23,7 +23,7 @@ pub enum AnalyticsSelectionOutcome {
     Uncertain,
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 #[derive(Debug, serde::Serialize)]
 #[serde(tag = "state", content = "path", rename_all = "snake_case")]
 pub enum CutoffOutcome {
@@ -31,7 +31,7 @@ pub enum CutoffOutcome {
     NotPrepared,
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 #[derive(Debug, serde::Serialize)]
 pub struct PartialTransactionError {
     pub analytics_selection: AnalyticsSelectionOutcome,
@@ -39,7 +39,7 @@ pub struct PartialTransactionError {
     pub cause: String,
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 impl std::fmt::Display for PartialTransactionError {
     fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -50,10 +50,10 @@ impl std::fmt::Display for PartialTransactionError {
     }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 impl std::error::Error for PartialTransactionError {}
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CutoffRecoveryOutcome {
@@ -61,7 +61,7 @@ pub enum CutoffRecoveryOutcome {
     Unchanged,
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 pub fn recover_cutoff_manifest(path: &Path) -> Result<CutoffRecoveryOutcome> {
     cutoff_publication::recover(path)
 }
@@ -132,7 +132,7 @@ where
             "--write-manifest and --sealed cannot be used together"
         ));
     }
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     if let Some(path) = write_manifest {
         let absolute = std::path::absolute(path)?;
         let parent = absolute
@@ -143,7 +143,8 @@ where
             .file_name()
             .and_then(|s| s.to_str())
             .ok_or_else(|| anyhow!("invalid cutoff leaf"))?;
-        dendro_windows_private_io::ChildName::parse(leaf).map_err(|_| {
+        crate::platform_v1::parse_child_name(leaf, crate::platform_v1::current_native_platform())
+            .map_err(|_| {
             anyhow!("cutoff manifest leaf must be lowercase ASCII of at most 100 bytes")
         })?;
     }
@@ -183,9 +184,12 @@ where
         check_destination(path)?;
     }
     let sealed_bytes = sealed.map(fs::read).transpose()?;
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     let destination_expectation = if let Some(bytes) = sealed_bytes.as_deref() {
         let raw: serde_json::Value = serde_json::from_slice(bytes)?;
+        // The source selection digest is required metadata and checked for
+        // presence/hex format only; it is not authenticated source provenance.
+        // History bytes and original key are validated separately below.
         let captured = raw
             .get("analytics_selection_sha256")
             .and_then(|value| value.as_str())
@@ -264,7 +268,7 @@ where
                 .parent()
                 .filter(|p| !p.as_os_str().is_empty())
                 .unwrap_or_else(|| Path::new("."));
-            #[cfg(not(windows))]
+            #[cfg(not(any(windows, target_os = "linux")))]
             fs::create_dir_all(parent)?;
             if has_history {
                 let store = AnalyticsStore::open_staged(staged)?;
@@ -296,7 +300,7 @@ where
         }
         Ok(notes)
     };
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     let result = crate::selection_binding::run_locked_with_destination_expectation(
         db,
         &crate::platform_v1::StorageRootChoice::LocalAppData,
@@ -306,7 +310,7 @@ where
         ingest_run,
     )
     .map(|(report, selected)| (report, Some(selected)));
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "linux")))]
     let result = crate::run_locked_with_openrig(db, source_roots, openrig_roots, ingest_run)
         .map(|report| (report, None::<()>));
     // Prepared manifest is published only after the analytics stage succeeded.
@@ -314,9 +318,9 @@ where
     match (result, pending) {
         (Ok((result, published_selection)), Some(temporary)) => {
             let path = write_manifest.expect("prepared manifest has destination");
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "linux"))]
             {
-                let selected = published_selection.expect("Windows selected publication receipt");
+                let selected = published_selection.expect("native selected publication receipt");
                 let publish = (|| -> Result<()> {
                     let mut manifest: serde_json::Value =
                         serde_json::from_reader(fs::File::open(&temporary)?)?;
@@ -343,7 +347,7 @@ where
                 result["cutoff_manifest"] = Value::String("published".into());
                 Ok(result)
             }
-            #[cfg(not(windows))]
+            #[cfg(not(any(windows, target_os = "linux")))]
             {
                 let _ = published_selection;
                 let renamed = fs::rename(&temporary, path);
@@ -356,7 +360,7 @@ where
             }
         }
         (Err(error), Some(temporary)) => {
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "linux"))]
             {
                 Err(PartialTransactionError {
                     analytics_selection: AnalyticsSelectionOutcome::Uncertain,
@@ -365,7 +369,7 @@ where
                 }
                 .into())
             }
-            #[cfg(not(windows))]
+            #[cfg(not(any(windows, target_os = "linux")))]
             {
                 let _ = fs::remove_file(temporary);
                 Err(error)
@@ -381,13 +385,13 @@ mod tests {
 
     struct Scratch {
         path: PathBuf,
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         root: Option<crate::platform_v1::PrivateRoot>,
     }
 
     impl Scratch {
         fn new() -> Self {
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "linux"))]
             {
                 let root = crate::platform_v1::create_user_private_root_with_choice(
                     "dendro-sealed-test",
@@ -399,7 +403,7 @@ mod tests {
                     root: Some(root),
                 }
             }
-            #[cfg(unix)]
+            #[cfg(not(any(windows, target_os = "linux")))]
             {
                 let path = std::env::temp_dir()
                     .join(format!("dendro-sealed-test-{:016x}", rand::random::<u64>()));
@@ -411,7 +415,7 @@ mod tests {
 
     impl Drop for Scratch {
         fn drop(&mut self) {
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "linux"))]
             self.root.take();
             let _ = fs::remove_dir_all(&self.path);
         }
@@ -478,7 +482,7 @@ mod tests {
         );
     }
 
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     #[test]
     fn unadmitted_manifest_parent_refuses_before_ingest_or_directory_creation() {
         let absent = std::env::temp_dir().join(format!(
@@ -494,17 +498,20 @@ mod tests {
             |_, _, _| panic!("ingest must not run before publication admission"),
         )
         .unwrap_err();
+        #[cfg(windows)]
         assert!(
             error.to_string().contains("untrusted_ancestor_replacement"),
             "{error}"
         );
+        #[cfg(target_os = "linux")]
+        assert!(error.to_string().contains("no_trustworthy_root"), "{error}");
         assert!(
             !absent.exists(),
             "refusal must not create the output parent"
         );
     }
 
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     #[test]
     fn second_cutoff_capture_flushes_existing_history_and_publishes() {
         let dir = Scratch::new();
@@ -536,7 +543,7 @@ mod tests {
         );
     }
 
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     #[test]
     fn sealed_manifest_is_read_once_even_if_named_file_changes_during_ingest() {
         let dir = Scratch::new();

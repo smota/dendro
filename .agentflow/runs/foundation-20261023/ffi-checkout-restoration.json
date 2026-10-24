@@ -1,0 +1,9 @@
+{
+  "schema": "dendro.checkout-byte-restoration/v1",
+  "path": "crates/dendro-windows-private-io/src/ffi.rs",
+  "observed_sha256": "b5aee8c892769fc54c532004e7ed730ffca8e22141144f29145c0c74d88eacc7",
+  "committed_and_restored_sha256": "31b2d35de0f36b88d665ee03c3f19254a70e2f7dbcf5b68b1debe7af30147412",
+  "proof": "Working bytes normalize CRLF to exact HEAD blob; exact audited HEAD bytes restored",
+  "git_content_changed": false,
+  "candidate_receipt": "recovery-candidate-01.json preserves original checkout observation"
+}

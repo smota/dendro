@@ -97,7 +97,7 @@ pub fn refresh_request(
     from: &str,
     to: &str,
 ) -> Result<(Value, Option<crate::presentation::ReadRequest>)> {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     {
         let adopted;
         let selected = if let Some(selected) = request.selected() {
@@ -128,7 +128,7 @@ pub fn refresh_request(
             Some(crate::presentation::ReadRequest::from_selected(refreshed)),
         ))
     }
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "linux")))]
     Ok((refresh_physical(request.database(), rig, from, to)?, None))
 }
 
@@ -960,7 +960,7 @@ pub fn init_workspace_with_receipt(destination: &Path, db: &Path) -> Result<Valu
         Err(error) => return Err(error.into()),
     }
     let request = crate::presentation::ReadRequest::open(db)?;
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     let request = if request.is_legacy() {
         let selected = crate::selection_binding::adopt_legacy(
             request.logical(),
@@ -989,9 +989,9 @@ pub fn init_workspace_with_receipt(destination: &Path, db: &Path) -> Result<Valu
     #[cfg(not(windows))]
     let target = requested_target.clone();
     #[cfg(not(windows))]
-    fs::create_dir(&target).context("workspace must be a new directory")?;
+    crate::lifecycle::create_private_dir(&target).context("workspace must be a new directory")?;
     let result = (|| -> Result<Value> {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         let database = {
             let snapshot = target.join("analytics.duckdb");
             crate::lifecycle::private_copy(request.database(), &snapshot, &crate::RUN_CANCEL)?;
@@ -999,13 +999,13 @@ pub fn init_workspace_with_receipt(destination: &Path, db: &Path) -> Result<Valu
             let _store = AnalyticsStore::open_read_only(&snapshot)?;
             snapshot
         };
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         let database = fs::canonicalize(request.database())?;
         crate::pipeline::refuse_secret_path(&database)?;
         let config = include_str!("../../../templates/nao/nao_config.yaml")
             .replace("\r\n", "\n")
             .replace("\"dendro.duckdb\"", &serde_json::to_string(&database)?);
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         let config = {
             format!("# Dedicated private snapshot of one selected version; does not follow later publications.\n# Re-run init-nao into a new workspace to refresh. Local-file connections are read-only in the pinned Nao DuckDBConfig.connect.\n{config}").replace("    type: duckdb\n", "    type: duckdb\n    read_only: true\n")
         };
@@ -1027,6 +1027,22 @@ pub fn init_workspace_with_receipt(destination: &Path, db: &Path) -> Result<Valu
         #[cfg(windows)]
         write_workspace_file(&target.join("semantics-dendro.md"), rules.as_bytes())?;
         let metadata = json!({"path":database,"read_only":true});
+        #[cfg(target_os = "linux")]
+        let metadata = {
+            let mut metadata = metadata;
+            metadata["workspace"] = json!(target);
+            metadata["scope"] = json!("immutable_version_snapshot");
+            metadata["analytics_selection_sha256"] = json!(hex::encode(
+                request
+                    .selected()
+                    .ok_or_else(|| anyhow!("nao_selected_snapshot_required"))?
+                    .selection()
+                    .sha256
+            ));
+            metadata["refresh"] =
+                json!("run dendro init-nao into a new workspace to refresh this snapshot");
+            metadata
+        };
         #[cfg(windows)]
         let metadata = {
             let mut metadata = metadata;
@@ -1250,14 +1266,14 @@ mod tests {
                 let _ = std::fs::remove_dir_all(&self.0);
             }
         }
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         let private = crate::platform_v1::create_user_private_root_with_choice(
             "dendro-semantic-test-",
             &crate::platform_v1::StorageRootChoice::UserProfile,
         )?;
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         let directory = Directory(private.path().to_path_buf());
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         let directory = Directory(std::env::current_dir()?.join("target/semantic-tests").join(
             format!("legacy-{}-{}", std::process::id(), rand::random::<u64>()),
         ));
@@ -1312,14 +1328,14 @@ mod tests {
             store.checkpoint()?;
             Ok(())
         };
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         {
             let request = crate::presentation::ReadRequest::open(&db)?;
             crate::selection_binding::mutate_selected(request.selected().unwrap(), |staged, _| {
                 change_schema(staged)
             })?;
         }
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         change_schema(&db)?;
         let after_schema_change = answer(&db, "Rank idle", None)?;
         assert_eq!(after_schema_change["status"], "insufficient_data");

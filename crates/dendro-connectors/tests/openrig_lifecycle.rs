@@ -87,17 +87,17 @@ fn lives(db: &Path) -> Value {
 
 #[test]
 fn replaced_source_lifetimes_survive_identical_third_ingest_and_later_append() {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     let root = dendro_core::platform_v1::create_user_private_root_with_choice(
         "dendro-lifecycle-",
         &dendro_core::platform_v1::StorageRootChoice::UserProfile,
     )
     .unwrap();
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     let dir = root.path().to_path_buf();
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     drop(root);
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "linux")))]
     let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/issue-13-tests")
         .join(format!("lifecycle-{}", std::process::id()));

@@ -30,7 +30,7 @@ fn rule(seat: &str, uncached: f64, cache: f64) -> TierRule {
 #[test]
 fn canonical_real_report_has_exact_baseline_and_deterministic_default() -> anyhow::Result<()> {
     let f = fixture::Fixture::new(30);
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     let f = {
         let root = dendro_core::platform_v1::create_user_private_root_with_choice(
             "dendro-simulation-",

@@ -1,4 +1,4 @@
-#![cfg(windows)]
+#![cfg(any(windows, target_os = "linux"))]
 
 use std::fs;
 use std::path::PathBuf;
@@ -36,9 +36,15 @@ fn fresh_logical_marker_selects_closed_bundle_and_keeps_key() {
     assert_eq!(first["status"], "ready");
     assert_eq!(fs::read(&logical).unwrap(), b"DENDRO-LOGICAL-DB v1\n");
     let unicode_case_alias = root.path().join("DONNÉES-分析.duckdb");
+    #[cfg(windows)]
     assert!(matches!(
         resolve_logical_db(&unicode_case_alias, &choice).unwrap(),
         SelectedDb::Selected(_)
+    ));
+    #[cfg(target_os = "linux")]
+    assert!(matches!(
+        resolve_logical_db(&unicode_case_alias, &choice).unwrap(),
+        SelectedDb::Uninitialized
     ));
     let prior = match resolve_logical_db(&logical, &choice).unwrap() {
         SelectedDb::Selected(read) => read,
@@ -155,6 +161,7 @@ fn prepared_native_journal_recovers_selected_pointer_without_legacy_rollback() {
         .is_empty());
 }
 
+#[cfg(windows)]
 #[test]
 fn busy_pointer_preserves_old_selection_and_candidate() {
     use std::os::windows::fs::OpenOptionsExt;
@@ -250,11 +257,21 @@ fn replaced_or_deleted_logical_anchor_never_falls_back_to_legacy() {
     let logical = root.path().join("analytics.duckdb");
     let choice = StorageRootChoice::Explicit(root.path().to_path_buf());
     synthetic_run(&logical, &choice).unwrap();
+    // Keep the old inode/file ID alive so the replacement cannot reuse it.
+    let _original_anchor = fs::File::open(&logical).unwrap();
     fs::remove_file(&logical).unwrap();
     assert!(resolve_logical_db(&logical, &choice).is_err());
+    #[cfg(target_os = "linux")]
+    drop(dendro_core::lifecycle::create_private_file(&logical).unwrap());
     fs::write(&logical, b"replacement").unwrap();
     assert!(resolve_logical_db(&logical, &choice).is_err());
     assert!(synthetic_run(&logical, &choice).is_err());
+    let error = recover_logical_db(&logical, &choice).err().unwrap();
+    assert!(
+        error.downcast_ref::<RecoveryDisposition>().is_none(),
+        "a displaced anchor is not untouched legacy"
+    );
+    assert!(error.to_string().contains("anchor changed"), "{error:#}");
 }
 
 #[test]
@@ -453,6 +470,18 @@ fn torn_binding_recovers_from_own_journal_without_bricking_other_logical_db() {
     synthetic_run(&second, &choice).unwrap();
     fs::write(&binding, b"").unwrap();
     assert!(resolve_logical_db(&first, &choice).is_err());
+    let unbound = root.path().join("unbound.duckdb");
+    #[cfg(target_os = "linux")]
+    drop(dendro_core::lifecycle::create_private_file(&unbound).unwrap());
+    fs::write(&unbound, b"unbound").unwrap();
+    let ambiguous = recover_logical_db(&unbound, &choice).err().unwrap();
+    assert!(ambiguous.downcast_ref::<RecoveryDisposition>().is_none());
+    assert!(
+        ambiguous
+            .to_string()
+            .contains("ambiguous with a torn binding"),
+        "{ambiguous:#}"
+    );
     assert!(matches!(
         resolve_logical_db(&second, &choice).unwrap(),
         SelectedDb::Selected(_)
@@ -465,6 +494,25 @@ fn torn_binding_recovers_from_own_journal_without_bricking_other_logical_db() {
         .unwrap()
         .filter_map(Result::ok)
         .any(|entry| entry.file_name().to_string_lossy().starts_with("torn-")));
+    // Simulate a second repair interrupted after its quarantine rename and
+    // before the canonical binding rewrite. Locks and own journal remain.
+    fs::rename(&binding, root.path().join("interrupted-binding.json")).unwrap();
+    assert!(recover_logical_db(&first, &choice)
+        .unwrap()
+        .is_current()
+        .unwrap());
+    // Missing binding never permits an unrelated pointer to establish custody.
+    let record: serde_json::Value = serde_json::from_slice(&fs::read(&binding).unwrap()).unwrap();
+    let pointer = root.path().join(record["manifest"].as_str().unwrap());
+    fs::remove_file(&binding).unwrap();
+    let original_pointer = fs::read(&pointer).unwrap();
+    fs::write(&pointer, b"{}").unwrap();
+    assert!(recover_logical_db(&first, &choice).is_err());
+    assert!(!binding.exists());
+    fs::write(&pointer, original_pointer).unwrap();
+    // Rewriting the pointer changes bytes only, not its identity; the journal
+    // proves the exact original pointer again.
+    assert!(recover_logical_db(&first, &choice).is_ok());
 }
 
 #[test]
@@ -488,4 +536,178 @@ fn truncated_top_state_recovers_with_matching_journal_and_skips_malformed_foreig
         .unwrap()
         .filter_map(Result::ok)
         .any(|entry| entry.file_name().to_string_lossy().starts_with("torn-")));
+}
+
+#[test]
+fn selection_locator_refusals_never_downgrade_to_history_scan() {
+    for case in [
+        "malformed",
+        "wrong_prefix",
+        "wrong_identity",
+        "missing_stage",
+        "forged_journal",
+    ] {
+        let root = platform_v1::create_user_private_root_with_choice(
+            "dendro-locator-refusal-",
+            &StorageRootChoice::UserProfile,
+        )
+        .unwrap();
+        let logical = root.path().join("analytics.duckdb");
+        let choice = StorageRootChoice::Explicit(root.path().to_path_buf());
+        synthetic_run(&logical, &choice).unwrap();
+        let pointer = leaf(root.path(), "selection-");
+        let pointer_before = fs::read(&pointer).unwrap();
+        let locator = leaf(root.path(), "recovery-selection-");
+        let mut record: serde_json::Value =
+            serde_json::from_slice(&fs::read(&locator).unwrap()).unwrap();
+        let stage = root.path().join(record["stage"].as_str().unwrap());
+        fs::remove_file(leaf(root.path(), "selected-")).unwrap();
+        match case {
+            "malformed" => fs::write(&locator, b"{").unwrap(),
+            "wrong_prefix" => {
+                record["stage"] = serde_json::json!("foreign-stage");
+                fs::write(&locator, serde_json::to_vec(&record).unwrap()).unwrap();
+            }
+            "wrong_identity" => {
+                #[cfg(windows)]
+                {
+                    record["identity"]["file_id"][0] =
+                        serde_json::json!(record["identity"]["file_id"][0].as_u64().unwrap() ^ 1);
+                }
+                #[cfg(target_os = "linux")]
+                {
+                    record["identity"]["inode"] =
+                        serde_json::json!(record["identity"]["inode"].as_u64().unwrap() + 1);
+                }
+                fs::write(&locator, serde_json::to_vec(&record).unwrap()).unwrap();
+            }
+            "missing_stage" => fs::rename(
+                &stage,
+                stage.with_file_name(format!("retained-{:032x}", rand::random::<u128>())),
+            )
+            .unwrap(),
+            "forged_journal" => {
+                let journal = leaf(&stage, "selection-journal-");
+                let mut prepared: serde_json::Value = serde_json::from_slice(
+                    fs::read(&journal)
+                        .unwrap()
+                        .split(|byte| *byte == b'\n')
+                        .next()
+                        .unwrap(),
+                )
+                .unwrap();
+                prepared["manifest_sha256"][0] =
+                    serde_json::json!(prepared["manifest_sha256"][0].as_u64().unwrap() ^ 1);
+                fs::write(journal, serde_json::to_vec(&prepared).unwrap()).unwrap();
+            }
+            _ => unreachable!(),
+        }
+        let error = recover_logical_db(&logical, &choice).err().expect(case);
+        if case == "missing_stage" {
+            assert!(format!("{error:#}").contains("missing or unadmitted recovery stage"));
+        }
+        assert_eq!(fs::read(&pointer).unwrap(), pointer_before, "{case}");
+        assert!(
+            !fs::read_dir(root.path()).unwrap().any(|entry| entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with("selected-")),
+            "{case}"
+        );
+        let path = root.path().to_path_buf();
+        drop(root);
+        fs::remove_dir_all(path).unwrap();
+    }
+}
+
+#[test]
+fn pre_locator_recovery_cancellation_preserves_pointer_and_state() {
+    const CHILD: &str = "DENDRO_SELECTION_CANCEL_TEST_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "pre_locator_recovery_cancellation_preserves_pointer_and_state",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return;
+    }
+    let root = platform_v1::create_user_private_root_with_choice(
+        "dendro-cancel-recovery-",
+        &StorageRootChoice::UserProfile,
+    )
+    .unwrap();
+    let logical = root.path().join("analytics.duckdb");
+    let choice = StorageRootChoice::Explicit(root.path().to_path_buf());
+    synthetic_run(&logical, &choice).unwrap();
+    let pointer = leaf(root.path(), "selection-");
+    let before = fs::read(&pointer).unwrap();
+    fs::remove_file(leaf(root.path(), "recovery-selection-")).unwrap();
+    fs::remove_file(leaf(root.path(), "selected-")).unwrap();
+    dendro_core::RUN_CANCEL.request();
+    let error = recover_logical_db(&logical, &choice).err().unwrap();
+    assert!(format!("{error:#}").contains("interrupted"));
+    assert_eq!(fs::read(pointer).unwrap(), before);
+    assert!(!fs::read_dir(root.path()).unwrap().any(|entry| entry
+        .unwrap()
+        .file_name()
+        .to_string_lossy()
+        .starts_with("selected-")));
+    let path = root.path().to_path_buf();
+    drop(root);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[test]
+fn recovery_uses_prepared_journal_when_selected_marker_is_missing_or_torn() {
+    for torn in [false, true] {
+        let root = platform_v1::create_user_private_root_with_choice(
+            "dendro-journal-tail-",
+            &StorageRootChoice::UserProfile,
+        )
+        .unwrap();
+        let logical = root.path().join("analytics.duckdb");
+        let choice = StorageRootChoice::Explicit(root.path().to_path_buf());
+        synthetic_run(&logical, &choice).unwrap();
+        let locator: serde_json::Value =
+            serde_json::from_slice(&fs::read(leaf(root.path(), "recovery-selection-")).unwrap())
+                .unwrap();
+        let stage = root.path().join(locator["stage"].as_str().unwrap());
+        let journal = leaf(&stage, "selection-journal-");
+        let bytes = fs::read(&journal).unwrap();
+        let mut prepared = bytes.split(|byte| *byte == b'\n').next().unwrap().to_vec();
+        prepared.push(b'\n');
+        if torn {
+            prepared.extend_from_slice(b"{\"state\":");
+        }
+        fs::write(&journal, prepared).unwrap();
+        fs::remove_file(leaf(root.path(), "selected-")).unwrap();
+        let pointer_before = fs::read(leaf(root.path(), "selection-")).unwrap();
+        let (recovered, outcome) =
+            dendro_core::selection_binding::recover_logical_db_with_outcome(&logical, &choice)
+                .unwrap();
+        assert_eq!(
+            outcome,
+            dendro_core::selection_binding::SelectionRecoveryOutcome::Reconciled
+        );
+        assert!(recovered.is_current().unwrap());
+        assert_eq!(
+            fs::read(leaf(root.path(), "selection-")).unwrap(),
+            pointer_before
+        );
+        drop(recovered);
+        let path = root.path().to_path_buf();
+        drop(root);
+        fs::remove_dir_all(path).unwrap();
+    }
 }

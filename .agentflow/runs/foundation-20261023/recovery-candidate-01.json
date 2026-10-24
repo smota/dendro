@@ -1,0 +1,90 @@
+{
+  "schema": "dendro.foundation-recovery-candidate/v1",
+  "created_at": "2026-10-23T11:28:02.9374050Z",
+  "epoch": 1,
+  "fence": "foundation-20261023-1",
+  "branch": "codex/foundation-completion",
+  "baseline": "d20cbb2cc4dd5380968091d6dd94451ed10f9f3c",
+  "status": "candidate_for_independent_review",
+  "historical_review": "Archived consumer-review findings-03 remain unchanged; this is a new authorized candidate",
+  "sources": [
+    {
+      "path": "crates/dendro-core/src/selection_binding.rs",
+      "sha256": "06d57dbe60c1e7e9f84ae8bfb43161996802a225678a732745ae6d3c2af050a8"
+    },
+    {
+      "path": "crates/dendro-core/src/sealed_run.rs",
+      "sha256": "74e876ee8789e2cd80c6fcc6edfffcca1ecf6f116056cb9e173b282ed8099707"
+    },
+    {
+      "path": "crates/dendro-core/src/sealed_run/cutoff_publication.rs",
+      "sha256": "30ad54728ce31a34823481315ebccb69c2e183402879c67c5588866f0bf6bf62"
+    },
+    {
+      "path": "crates/dendro-core/tests/windows_selection.rs",
+      "sha256": "bffe1dc7b05caeb67f4d7cc26468469a28a4350bb6146b18055c387babfb8187"
+    },
+    {
+      "path": "crates/dendro-cli/src/main.rs",
+      "sha256": "354592f93aaba4de82f0d4bf76a9a971be3c453ddc3033dd8a5d8a9818012446"
+    },
+    {
+      "path": "crates/dendro-cli/tests/sealed_cli.rs",
+      "sha256": "53d10239c7e2dfa5a29b76814c878fb083c85037b016ad574a9df6d16fe4df09"
+    },
+    {
+      "path": "crates/dendro-windows-private-io/src/ffi.rs",
+      "sha256": "b5aee8c892769fc54c532004e7ed730ffca8e22141144f29145c0c74d88eacc7"
+    }
+  ],
+  "tests": [
+    {
+      "command": "cargo test -p dendro-core --lib selection_binding::tests -- --test-threads=1",
+      "passed": 4,
+      "failed": 0
+    },
+    {
+      "command": "cargo test -p dendro-core --lib sealed_run::cutoff_publication::tests -- --test-threads=1",
+      "passed": 6,
+      "failed": 0
+    },
+    {
+      "command": "cargo test -p dendro-core --test windows_selection -- --test-threads=1",
+      "passed": 15,
+      "failed": 0
+    },
+    {
+      "command": "cargo test -p dendro-cli --test sealed_cli recovery -- --test-threads=1",
+      "passed": 3,
+      "failed": 0
+    }
+  ],
+  "format": "Scoped rustfmt --check --edition 2021 --config skip_children=true passed for six owned source/test files; full workspace gates remain parent responsibility",
+  "diff_check": "git diff --check passed for six owned files",
+  "recovery": {
+    "new_publications": "Durable direct stage locator written before pointer switch; locator alone grants no authority",
+    "analytics_locator": "recovery-selection-<hash(bundle identity)>.json",
+    "cutoff_locator": "recovery-cutoff-<hash(source identity,digest)>.json",
+    "authority": "Original prepared journal still proves actual source identity/digest, parent, stage identity, canonical locks and exact predecessor; analytics also bundle identity",
+    "pre_locator": "Cancellable constant-memory scan with no lifetime publication count; compatibility work is linear in retained history",
+    "bounds": "64KiB analytics journal read; cutoff <=1MiB record read; at most16 journal candidates in a stage; normal publisher creates <=3",
+    "history_regressions": "Each path uses4100 synthetic retained stage directories with incomplete prepared/published/malformed records plus its own actual publication journal; direct1 stageopen, prelocator4101 stageopens; no foreign deletion",
+    "repair": "Missing canonical binding after quarantine can resume only with original anchor/locks, state proof where needed, and uniquely matching prepared journal",
+    "orphan": "Empty cutoff lock with no destination/binding/history reports Unchanged under canonical lock",
+    "quarantine": "Fresh protected private directory, retained record.json identity checked and both directories flushed; same-principal hostile namespace races remain outside existing custody threat model",
+    "semantics": "Unchanged/Reconciled analytics and cutoff; NothingToRecover/ResumeRequired serialized as JSON, with cutoff recovery still processed"
+  },
+  "provenance": "Captured analytics_selection_sha256 checked for presence and64hex format only; no claim of authenticated source provenance. History digest/key/source checks remain distinct.",
+  "limitations": [
+    "Native Windows targeted scope only; Linux parity integration and native Linux certification pending",
+    "No power-loss guarantee added",
+    "Pre-locator compatibility and existing state-chain/root-name validation may remain linear",
+    "Ambiguous, foreign, corrupt non-top state and missing baseline proof continue to refuse",
+    "No commits or publication performed",
+    "Audited ffi.rs unchanged"
+  ],
+  "tool_observations": [
+    "rig unavailable on this Windows PATH; no OpenRig identity inferred",
+    "agentflow-sdlc distribution inspect attempted read-only but failed ERR_MODULE_NOT_FOUND yaml; no policy migration or fallback change performed"
+  ]
+}

@@ -6,11 +6,11 @@ use serde_json::Value;
 
 fn fixture(facts: usize) -> fixture::Fixture {
     let original = fixture::Fixture::new(facts);
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         original
     }
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     {
         let root = dendro_core::platform_v1::create_user_private_root_with_choice(
             "dendro-semantic-integration-",
@@ -49,7 +49,7 @@ fn mutate_fixture(
     db: &std::path::Path,
     mutate: impl FnOnce(&std::path::Path) -> anyhow::Result<()>,
 ) -> anyhow::Result<()> {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     {
         let request = dendro_core::presentation::ReadRequest::open(db)?;
         if let Some(selected) = request.selected() {
@@ -238,8 +238,13 @@ fn workspace_is_new_only_and_contains_real_configuration() -> anyhow::Result<()>
     let config = std::fs::read_to_string(path.join("nao_config.yaml"))?;
     assert!(config.contains("project_name: dendro"));
     assert!(config.contains("allow_listed_only: true"));
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "linux")))]
     assert!(config.contains(&f.db.canonicalize()?.display().to_string()));
+    #[cfg(target_os = "linux")]
+    {
+        assert!(config.contains(&serde_json::to_string(&path.join("analytics.duckdb"))?));
+        assert!(config.contains("read_only: true"));
+    }
     #[cfg(windows)]
     {
         assert!(config.contains(&serde_json::to_string(&receipt["path"].as_str().unwrap())?));

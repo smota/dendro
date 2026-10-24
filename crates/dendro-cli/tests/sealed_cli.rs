@@ -7,7 +7,7 @@ static NEXT: AtomicU64 = AtomicU64::new(0);
 struct Scratch(PathBuf);
 impl Scratch {
     fn new() -> Self {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         {
             let prefix = format!(
                 "dendro-cli-test-{}-{}-",
@@ -21,7 +21,7 @@ impl Scratch {
             .unwrap();
             Self(root.path().to_path_buf())
         }
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../target/issue-13-tests")
             .join(format!(
@@ -29,7 +29,7 @@ impl Scratch {
                 std::process::id(),
                 NEXT.fetch_add(1, Ordering::Relaxed)
             ));
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         {
             fs::create_dir_all(&dir).unwrap();
             Self(dir)
@@ -53,7 +53,7 @@ fn selected_bytes(db: &Path) -> Vec<u8> {
     fs::read(request.database()).unwrap()
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 fn selected_snapshot(db: &Path) -> (dendro_core::presentation::ReadRequest, Vec<u8>, Vec<u8>) {
     let request = dendro_core::presentation::ReadRequest::open(db).unwrap();
     assert!(
@@ -264,7 +264,7 @@ fn status_dashboard_and_auto_materializing_ask_work_without_ceremony() {
     assert!(dash_html.status.success(), "{}", error(&dash_html));
     assert!(html_path.exists());
 
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     let (prior, prior_bytes, prior_key) = selected_snapshot(&db);
     let ask_out = command()
         .args(["ask", "--db"])
@@ -277,7 +277,7 @@ fn status_dashboard_and_auto_materializing_ask_work_without_ceremony() {
     assert_eq!(ask_json["status"], "ok");
     assert_eq!(ask_json["auto_materialized"], true);
     assert_eq!(ask_json["window_resolution"], "recorded_bounds");
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     {
         let current = dendro_core::presentation::ReadRequest::open(&db).unwrap();
         assert_ne!(
@@ -300,7 +300,7 @@ fn status_dashboard_and_auto_materializing_ask_work_without_ceremony() {
     assert_eq!(intents_json["intents"].as_array().unwrap().len(), 6);
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 #[test]
 fn unicode_long_logical_marker_supports_all_read_surfaces_and_immutable_materialize() {
     let scratch = Scratch::new();
@@ -364,7 +364,7 @@ fn unicode_long_logical_marker_supports_all_read_surfaces_and_immutable_material
     assert!(output.status.success(), "{}", error(&output));
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 #[test]
 fn storage_root_choice_reuses_exact_verified_path() {
     let setup = command().arg("storage-init").output().unwrap();
@@ -394,7 +394,7 @@ fn storage_root_choice_reuses_exact_verified_path() {
     assert!(error(&refused).contains("storage-init"));
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 fn legacy_fixture(scratch: &Scratch, leaf: &str) -> PathBuf {
     let db = scratch.0.join(leaf);
     let key_path = scratch.0.join(format!("{leaf}.key"));
@@ -413,7 +413,7 @@ fn legacy_fixture(scratch: &Scratch, leaf: &str) -> PathBuf {
     db
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 #[test]
 fn legacy_materialize_and_autoask_adopt_without_mutating_legacy_anchor() {
     let scratch = Scratch::new();
@@ -428,10 +428,23 @@ fn legacy_materialize_and_autoask_adopt_without_mutating_legacy_anchor() {
         {
             let request = dendro_core::presentation::ReadRequest::open(&db).unwrap();
             assert!(request.is_legacy());
+            #[cfg(windows)]
             assert!(
                 fs::OpenOptions::new().write(true).open(&db).is_err(),
                 "legacy request must retain deny-write custody"
             );
+            #[cfg(target_os = "linux")]
+            {
+                let writer = fs::OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .open(&db)
+                    .unwrap();
+                assert!(
+                    writer.try_lock().is_err(),
+                    "legacy read pin conflicts with cooperative exclusive writer"
+                );
+            }
         }
         let output = command().args(args).arg("--db").arg(&db).output().unwrap();
         assert!(output.status.success(), "{}", error(&output));
@@ -454,7 +467,7 @@ fn legacy_materialize_and_autoask_adopt_without_mutating_legacy_anchor() {
     }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 fn selected_fixture(scratch: &Scratch, leaf: &str) -> PathBuf {
     let db = scratch.0.join(leaf);
     let source = scratch.0.join(format!("source-{leaf}"));
@@ -470,7 +483,7 @@ fn selected_fixture(scratch: &Scratch, leaf: &str) -> PathBuf {
     db
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 #[test]
 fn nao_workspace_is_private_version_scoped_copy_and_cannot_write_selected_bundle() {
     let scratch = Scratch::new();
@@ -484,11 +497,19 @@ fn nao_workspace_is_private_version_scoped_copy_and_cannot_write_selected_bundle
     let selected = dendro_core::presentation::ReadRequest::open(&db).unwrap();
     let selected_bytes = fs::read(selected.database()).unwrap();
     let exact_only = scratch.0.join("exact-nao-workspace");
-    let exact_error = dendro_core::semantic::init_workspace(&exact_only, &db).unwrap_err();
-    assert!(exact_error
-        .to_string()
-        .contains("nao_exact_workspace_path_unproved"));
-    assert!(!exact_only.exists());
+    #[cfg(windows)]
+    {
+        let exact_error = dendro_core::semantic::init_workspace(&exact_only, &db).unwrap_err();
+        assert!(exact_error
+            .to_string()
+            .contains("nao_exact_workspace_path_unproved"));
+        assert!(!exact_only.exists());
+    }
+    #[cfg(target_os = "linux")]
+    {
+        dendro_core::semantic::init_workspace(&exact_only, &db).unwrap();
+        assert!(exact_only.join("semantics/dendro.md").is_file());
+    }
     let requested_workspace = scratch.0.join("nao-workspace");
     let output = command()
         .args(["init-nao", "--db"])
@@ -501,16 +522,25 @@ fn nao_workspace_is_private_version_scoped_copy_and_cannot_write_selected_bundle
     let receipt: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     let workspace = PathBuf::from(receipt["workspace"].as_str().unwrap());
     assert!(workspace.is_dir());
-    assert_ne!(workspace, requested_workspace);
-    assert!(!requested_workspace.exists());
+    #[cfg(windows)]
+    {
+        assert_ne!(workspace, requested_workspace);
+        assert!(!requested_workspace.exists());
+        assert_eq!(receipt["status"], "snapshot_created_integration_pending");
+        assert!(workspace.join("semantics-dendro.md").is_file());
+        assert!(!workspace.join("semantics").exists());
+        assert!(receipt["snapshot"]["semantic_context_status"]
+            .as_str()
+            .unwrap()
+            .contains("not verified"));
+    }
+    #[cfg(target_os = "linux")]
+    {
+        assert_eq!(workspace, requested_workspace);
+        assert_eq!(receipt["status"], "created");
+        assert!(workspace.join("semantics/dendro.md").is_file());
+    }
     assert_eq!(receipt["snapshot"]["workspace"], receipt["workspace"]);
-    assert_eq!(receipt["status"], "snapshot_created_integration_pending");
-    assert!(workspace.join("semantics-dendro.md").is_file());
-    assert!(!workspace.join("semantics").exists());
-    assert!(receipt["snapshot"]["semantic_context_status"]
-        .as_str()
-        .unwrap()
-        .contains("not verified"));
     assert_eq!(receipt["snapshot"]["read_only"], true);
     assert_eq!(receipt["snapshot"]["scope"], "immutable_version_snapshot");
     let metadata: serde_json::Value =
@@ -562,7 +592,7 @@ fn nao_workspace_is_private_version_scoped_copy_and_cannot_write_selected_bundle
     );
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 #[test]
 fn recovery_cli_reuses_recorded_selection_and_refuses_invalid_pointer() {
     let scratch = Scratch::new();
@@ -580,7 +610,7 @@ fn recovery_cli_reuses_recorded_selection_and_refuses_invalid_pointer() {
         .unwrap();
     assert!(recover.status.success(), "{}", error(&recover));
     let receipt: serde_json::Value = serde_json::from_slice(&recover.stdout).unwrap();
-    assert_eq!(receipt["status"], "recovered");
+    assert_eq!(receipt["status"], "unchanged");
     assert_eq!(receipt["cutoff"]["status"], "not_requested");
     let absent_cutoff = scratch.0.join("absent-cutoff.json");
     let before_files = fs::read_dir(&scratch.0).unwrap().count();
@@ -636,7 +666,7 @@ fn recovery_cli_reuses_recorded_selection_and_refuses_invalid_pointer() {
     assert_eq!(fs::read(manifest).unwrap(), b"{}");
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 #[test]
 fn storage_root_conflicts_are_explicit_even_when_db_equals_default() {
     let scratch = Scratch::new();
@@ -673,7 +703,7 @@ fn storage_root_conflicts_are_explicit_even_when_db_equals_default() {
     assert!(!scratch.0.join("dendro.duckdb").exists());
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 #[test]
 fn cutoff_recovery_cli_reports_unchanged_and_reconciled_without_claiming_draft_publication() {
     let scratch = Scratch::new();
@@ -734,4 +764,225 @@ fn cutoff_recovery_cli_reports_unchanged_and_reconciled_without_claiming_draft_p
         reconciled["analytics_selection_sha256"],
         unchanged["analytics_selection_sha256"]
     );
+}
+
+#[cfg(any(windows, target_os = "linux"))]
+#[test]
+fn recovery_cli_returns_json_for_legacy_noop_and_first_publication_resume() {
+    let scratch = Scratch::new();
+    let legacy = scratch.0.join("legacy-recovery.duckdb");
+    let key = dendro_core::output::load_or_create_key(
+        &PathBuf::from(format!("{}.key", legacy.display())),
+        true,
+    )
+    .unwrap();
+    let store = dendro_core::AnalyticsStore::open_path(&legacy, &key.id).unwrap();
+    store.checkpoint().unwrap();
+    drop(store);
+    let bytes = fs::read(&legacy).unwrap();
+    let cutoff = scratch.0.join("absent.json");
+    let output = command()
+        .args(["recover-selection", "--db"])
+        .arg(&legacy)
+        .arg("--cutoff")
+        .arg(&cutoff)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", error(&output));
+    let receipt: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(receipt["status"], "nothing_to_recover");
+    assert_eq!(receipt["cutoff"]["status"], "unchanged");
+    assert_eq!(receipt["published_by_recovery"], false);
+    assert_eq!(fs::read(&legacy).unwrap(), bytes);
+    let started = scratch.0.join("resume-recovery.duckdb");
+    let choice = dendro_core::platform_v1::StorageRootChoice::Explicit(scratch.0.clone());
+    assert!(dendro_core::selection_binding::run_locked_with_selection(
+        &started,
+        &choice,
+        &[],
+        &[],
+        |_, _| { anyhow::bail!("injected pre-publication interruption") }
+    )
+    .is_err());
+    let output = command()
+        .args(["recover-selection", "--db"])
+        .arg(&started)
+        .output()
+        .unwrap();
+    assert!(
+        !output.status.success(),
+        "resume_required must signal incomplete storage"
+    );
+    let receipt: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(receipt["status"], "resume_required");
+    assert_eq!(receipt["published_by_recovery"], false);
+    assert!(receipt["message"].as_str().unwrap().contains("dendro run"));
+}
+
+#[cfg(any(windows, target_os = "linux"))]
+#[test]
+fn explicit_cli_migration_reads_schema4_and_rollback_selects_preserved_schema3() {
+    let scratch = Scratch::new();
+    let logical = scratch.0.join("legacy.duckdb");
+    let key_path = PathBuf::from(format!("{}.key", logical.display()));
+    let key = dendro_core::output::load_or_create_key(&key_path, true).unwrap();
+    let legacy = dendro_core::AnalyticsStore::open_path(&logical, &key.id).unwrap();
+    legacy.checkpoint().unwrap();
+    drop(legacy);
+    let original = fs::read(&logical).unwrap();
+    let original_key = fs::read(&key_path).unwrap();
+    let output = command()
+        .args(["migrate", "--db"])
+        .arg(&logical)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", error(&output));
+    let migrated: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(migrated["status"], "schema4_selected");
+    let choice = dendro_core::platform_v1::StorageRootChoice::Explicit(scratch.0.clone());
+    let selected =
+        match dendro_core::selection_binding::resolve_logical_db(&logical, &choice).unwrap() {
+            dendro_core::selection_binding::SelectedDb::Selected(selected) => selected,
+            _ => panic!("schema4 selected"),
+        };
+    assert_eq!(
+        dendro_core::AnalyticsStore::open_read_only_selected(&selected)
+            .unwrap()
+            .key_id,
+        key.id
+    );
+    let after_fact = dendro_core::selection_binding::mutate_selected(&selected, |staged, _| {
+        dendro_core::migration_v4::record_v4_only_fact(
+            staged,
+            &dendro_core::migration_v4::V4OnlyFact {
+                id: "cli-v4-only".into(),
+                ts: "2026-10-23T00:00:00Z".into(),
+                source_id: "synthetic".into(),
+                generation: 1,
+                byte_range_half_open: [10, 20],
+            },
+        )?;
+        Ok(())
+    })
+    .unwrap();
+    drop(after_fact);
+    drop(selected);
+    let status = command()
+        .args(["status", "--db"])
+        .arg(&logical)
+        .args(["--format", "json"])
+        .output()
+        .unwrap();
+    assert!(status.status.success(), "{}", error(&status));
+    let output = command()
+        .args(["rollback", "--db"])
+        .arg(&logical)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", error(&output));
+    let rolled_back: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(rolled_back["status"], "schema3_selected");
+    assert_eq!(rolled_back["loss_receipt"]["pointer_changed"], true);
+    assert_eq!(rolled_back["loss_receipt"]["excluded_fact_count"], 1);
+    assert_eq!(
+        rolled_back["loss_receipt"]["failed_schema4_retained_private"],
+        true
+    );
+    assert_ne!(
+        rolled_back["analytics_selection_sha256"],
+        migrated["analytics_selection_sha256"]
+    );
+    let restored = dendro_core::presentation::ReadRequest::open(&logical).unwrap();
+    assert_eq!(fs::read(restored.database()).unwrap(), original);
+    assert_eq!(fs::read(&logical).unwrap(), original);
+    assert_eq!(fs::read(&key_path).unwrap(), original_key);
+    let status = command()
+        .args(["status", "--db"])
+        .arg(&logical)
+        .args(["--format", "json"])
+        .output()
+        .unwrap();
+    assert!(status.status.success(), "{}", error(&status));
+}
+
+#[cfg(any(windows, target_os = "linux"))]
+#[test]
+fn cli_ingest_after_schema4_migration_preserves_preimage_and_selected_read_custody() {
+    let scratch = Scratch::new();
+    let logical = scratch.0.join("post-migration.duckdb");
+    let key_path = PathBuf::from(format!("{}.key", logical.display()));
+    let key = dendro_core::output::load_or_create_key(&key_path, true).unwrap();
+    let legacy = dendro_core::AnalyticsStore::open_path(&logical, &key.id).unwrap();
+    legacy.checkpoint().unwrap();
+    drop(legacy);
+    let original = fs::read(&logical).unwrap();
+    let migrated = command()
+        .args(["migrate", "--db"])
+        .arg(&logical)
+        .output()
+        .unwrap();
+    assert!(migrated.status.success(), "{}", error(&migrated));
+    let source = scratch.0.join("claude-after-migration");
+    fs::create_dir(&source).unwrap();
+    fs::write(source.join("synthetic.jsonl"), b"{\"type\":\"assistant\",\"sessionId\":\"synthetic-session\",\"timestamp\":\"2026-10-23T00:00:00Z\",\"message\":{\"id\":\"synthetic-message\",\"usage\":{\"input_tokens\":5,\"output_tokens\":2},\"content\":[]}}\n").unwrap();
+    let output = command()
+        .args(["run", "--db"])
+        .arg(&logical)
+        .args(["--root", &format!("claude={}", source.display())])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", error(&output));
+    let selected = dendro_core::presentation::ReadRequest::open(&logical).unwrap();
+    assert_eq!(
+        selected.open_store().unwrap().load_sources().unwrap().len(),
+        1
+    );
+    let custody = &selected.selected().unwrap().custody;
+    assert_eq!(
+        fs::read(custody.bundle().path().join("schema3-preimage.duckdb")).unwrap(),
+        original
+    );
+    assert_eq!(fs::read(&logical).unwrap(), original);
+    drop(selected);
+    let output = command()
+        .args(["rollback", "--db"])
+        .arg(&logical)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", error(&output));
+    let receipt: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(receipt["status"], "schema3_selected");
+    assert!(receipt["loss_receipt"]["unresolved_loss"]
+        .as_bool()
+        .unwrap());
+    assert_eq!(
+        fs::read(
+            dendro_core::presentation::ReadRequest::open(&logical)
+                .unwrap()
+                .database()
+        )
+        .unwrap(),
+        original
+    );
+}
+
+#[cfg(any(windows, target_os = "linux"))]
+#[test]
+fn first_openrig_run_aligns_owned_stage_before_logical_pointer_exists() {
+    let scratch = Scratch::new();
+    let logical = scratch.0.join("first-openrig.duckdb");
+    let source = scratch.0.join("missing-synthetic-openrig.sqlite");
+    let output = command()
+        .args(["run", "--db"])
+        .arg(&logical)
+        .args(["--root", &format!("openrig={}", source.display())])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", error(&output));
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["status"], "ready");
+    assert!(dendro_core::presentation::ReadRequest::open(&logical)
+        .unwrap()
+        .selected()
+        .is_some());
 }

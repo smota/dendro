@@ -264,7 +264,13 @@ fn unknown_formats_negative_counters_and_missing_optional_roots_are_safe() {
 fn staged_ingest_routes_all_export_roots_and_sealed_replay_excludes_append() {
     use dendro_connectors::{ingest_staged_with_manifest, SourceRoot};
     let fixture = Fixture::new(include_bytes!("fixtures/exports/devin.jsonl"));
-    let db = fixture.dir.join("analytics.duckdb");
+    // The staged database must live under a private root; the export tree may not.
+    let db_root = dendro_core::platform_v1::create_user_private_root_with_choice(
+        "dendro-export-fixture-",
+        &dendro_core::platform_v1::StorageRootChoice::UserProfile,
+    )
+    .expect("private staged ingest root");
+    let db = db_root.path().join("analytics.duckdb");
     drop(AnalyticsStore::open_path(&db, &dendro_core::key_id(KEY)).unwrap());
     let roots = [SourceRoot {
         name: "devin".into(),
@@ -305,7 +311,7 @@ fn staged_ingest_routes_all_export_roots_and_sealed_replay_excludes_append() {
         ),
     ] {
         let f = Fixture::new(bytes);
-        let db = f.dir.join("analytics.duckdb");
+        let db = db_root.path().join(format!("{name}.duckdb"));
         drop(AnalyticsStore::open_path(&db, &dendro_core::key_id(KEY)).unwrap());
         let roots = [SourceRoot {
             name: name.into(),

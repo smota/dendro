@@ -26,7 +26,7 @@ struct Fixture {
 }
 impl Fixture {
     fn new() -> Self {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         let root = dendro_core::platform_v1::create_user_private_root_with_choice(
             &format!(
                 "dendro-integration-{}-",
@@ -35,11 +35,11 @@ impl Fixture {
             &dendro_core::platform_v1::StorageRootChoice::UserProfile,
         )
         .unwrap();
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         let dir = root.path().to_path_buf();
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         drop(root);
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../target/issue-13-tests")
             .join(format!(

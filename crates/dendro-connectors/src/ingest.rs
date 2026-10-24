@@ -1473,8 +1473,19 @@ mod tests {
 
     #[test]
     fn ac1_counts_records_read_per_harness_and_a_missing_root_warns_and_continues() {
+        #[cfg(any(windows, target_os = "linux"))]
+        let fixture_root = dendro_core::platform_v1::create_user_private_root_with_choice(
+            "dendro-ingest-fixture-",
+            &dendro_core::platform_v1::StorageRootChoice::UserProfile,
+        )
+        .expect("explicit UserProfile staged ingest fixture");
+        #[cfg(any(windows, target_os = "linux"))]
+        let dir = fixture_root.path().to_path_buf();
+        #[cfg(not(any(windows, target_os = "linux")))]
         let dir = std::env::temp_dir().join(format!("dendro-ac1-count-{}", std::process::id()));
+        #[cfg(not(any(windows, target_os = "linux")))]
         let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
         std::fs::create_dir_all(dir.join("claude")).unwrap();
         let db = dir.join("analytics.duckdb");
         drop(AnalyticsStore::open_path(&db, "key").unwrap());
@@ -1544,17 +1555,17 @@ mod tests {
 
     #[test]
     fn openrig_roots_do_not_erase_each_others_lives() {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         let fixture_root = dendro_core::platform_v1::create_user_private_root_with_choice(
             "dendro-ingest-fixture-",
             &dendro_core::platform_v1::StorageRootChoice::UserProfile,
         )
         .expect("explicit UserProfile staged ingest fixture");
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         let dir = fixture_root.path().to_path_buf();
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         let dir = std::env::temp_dir().join(format!("dendro-roots-{}", std::process::id()));
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let db = dir.join("analytics.duckdb");
@@ -1595,17 +1606,17 @@ mod tests {
 
     #[test]
     fn k5_reroute_marks_and_unclaim_reach_the_k2_report() {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         let fixture_root = dendro_core::platform_v1::create_user_private_root_with_choice(
             "dendro-ingest-fixture-",
             &dendro_core::platform_v1::StorageRootChoice::UserProfile,
         )
         .expect("explicit UserProfile staged ingest fixture");
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         let dir = fixture_root.path().to_path_buf();
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         let dir = std::env::temp_dir().join(format!("dendro-k5-{}", std::process::id()));
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("openrig.sqlite");
@@ -1932,6 +1943,15 @@ mod tests {
 
     #[test]
     fn dual_root_pi_ingests_both_trees_without_collision() {
+        #[cfg(any(windows, target_os = "linux"))]
+        let fixture_root = dendro_core::platform_v1::create_user_private_root_with_choice(
+            "dendro-ingest-fixture-",
+            &dendro_core::platform_v1::StorageRootChoice::UserProfile,
+        )
+        .expect("explicit UserProfile staged ingest fixture");
+        #[cfg(any(windows, target_os = "linux"))]
+        let dir = fixture_root.path().to_path_buf();
+        #[cfg(not(any(windows, target_os = "linux")))]
         let dir = std::env::temp_dir().join(format!(
             "dendro-dual-pi-{}-{}",
             std::process::id(),
@@ -1940,7 +1960,9 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ));
+        #[cfg(not(any(windows, target_os = "linux")))]
         let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
 
         let openrig_tree = dir.join("openrig").join("state").join("pi");
         let standalone_tree = dir.join("home").join(".pi").join("agent").join("sessions");

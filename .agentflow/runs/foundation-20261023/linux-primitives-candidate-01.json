@@ -1,0 +1,14 @@
+[
+  {
+    "path": "crates/dendro-core/src/platform_v1/linux.rs",
+    "sha256": "7b51061086b3f1f1d9baf33cb2dac5459f9eef3fba96f6a2e71377a0a0db7237"
+  },
+  {
+    "path": "crates/dendro-core/src/platform_v1/linux_publication.rs",
+    "sha256": "86553f712e6a270bb5ff274783894ecaf4bf1ac96e0e6bff948de2a67c5c7e48"
+  },
+  {
+    "path": "crates/dendro-core/src/platform_v1/mod.rs",
+    "sha256": "b53bf018a8dcbd7fd9463499b265dac9150d21a2ba1638bee68420b6872308a9"
+  }
+]

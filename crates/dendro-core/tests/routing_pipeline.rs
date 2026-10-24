@@ -2,17 +2,17 @@
 use dendro_core::{AnalyticsStore, IdentityFact, ReaderState, ToolCategory, ToolFact, UsageFact};
 use serde_json::Value;
 fn report(mixed: bool) -> Value {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     let root = dendro_core::platform_v1::create_user_private_root_with_choice(
         "dendro-routing-",
         &dendro_core::platform_v1::StorageRootChoice::UserProfile,
     )
     .unwrap();
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     let dir = root.path().to_path_buf();
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     drop(root);
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "linux")))]
     let dir = std::env::current_dir()
         .unwrap()
         .join("target/routing-tests")

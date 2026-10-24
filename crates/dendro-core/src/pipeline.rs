@@ -1,5 +1,5 @@
 use std::fs;
-#[cfg(unix)]
+#[cfg(not(any(windows, target_os = "linux")))]
 use std::fs::File;
 use std::path::{Path, PathBuf};
 
@@ -10,7 +10,7 @@ use crate::facts::{SeatBound, SkillFact};
 use crate::lifecycle;
 use crate::metrics::{self, LoopThresholds, SessionBinding, Window};
 use crate::output::refuse_aliased_output_with_openrig;
-#[cfg(unix)]
+#[cfg(not(any(windows, target_os = "linux")))]
 use crate::output::{self, load_or_create_key, with_output_lock};
 use crate::privacy::{contains_secret, opaque_id, redact};
 use crate::storage::AnalyticsStore;
@@ -51,7 +51,7 @@ where
     // Source identity must be established before mkdir, locking, SQLite
     // preflight, key lookup or any other output/source-content effect.
     refuse_aliased_output_with_openrig(db, source_roots, openrig_roots)?;
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     {
         crate::selection_binding::run_locked_with_selection(
             db,
@@ -61,12 +61,12 @@ where
             ingest,
         )
     }
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "linux")))]
     let parent = db
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         fs::create_dir_all(parent)?;
         let lock_path = parent.join(".dendro-output.lock");
@@ -74,7 +74,7 @@ where
     }
 }
 
-#[cfg(unix)]
+#[cfg(not(any(windows, target_os = "linux")))]
 fn run_inner<F>(db: &Path, openrig_roots: &[PathBuf], ingest: F) -> Result<Value>
 where
     F: FnOnce(&Path, &[u8]) -> Result<Vec<String>>,
@@ -158,18 +158,18 @@ where
     }))
 }
 
-#[cfg(unix)]
+#[cfg(not(any(windows, target_os = "linux")))]
 pub(crate) fn sync_staged_output(stage: &lifecycle::Stage) -> Result<()> {
     File::open(stage.path().join("analytics.duckdb"))?.sync_all()?;
     Ok(())
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 pub(crate) fn sync_staged_output(stage: &lifecycle::Stage) -> Result<()> {
-    use crate::platform_v1::{self as platform, NativePlatform};
+    use crate::platform_v1 as platform;
     stage.check_anchor()?;
     let root = platform::open_existing_private_root(stage.path())?;
-    let name = platform::parse_child_name("analytics.duckdb", NativePlatform::Windows)
+    let name = platform::parse_child_name("analytics.duckdb", platform::current_native_platform())
         .map_err(platform::PlatformError::Rejected)?;
     // Admission checks the private regular file before a verified handle is
     // reopened with write access, which Windows FlushFileBuffers requires.
@@ -180,13 +180,13 @@ pub(crate) fn sync_staged_output(stage: &lifecycle::Stage) -> Result<()> {
     Ok(())
 }
 
-#[cfg(unix)]
+#[cfg(not(any(windows, target_os = "linux")))]
 fn publish_staged_output(staged: &Path, db: &Path) -> Result<()> {
     fs::rename(staged, db)?;
     Ok(())
 }
 
-#[cfg(unix)]
+#[cfg(not(any(windows, target_os = "linux")))]
 fn output_identity_if_present(path: &Path) -> Result<Option<crate::platform_v1::FileIdentity>> {
     let meta = match fs::symlink_metadata(path) {
         Ok(meta) => meta,
@@ -379,7 +379,8 @@ pub fn absolute_openrig_root(path: &Path) -> PathBuf {
 /// replaced by that absolute path so the binding does not follow cwd.
 pub fn align_openrig_spelling(db: &Path, incoming: &Path) -> Result<PathBuf> {
     let incoming_abs = absolute_openrig_root(incoming);
-    let bound = bound_openrig_roots(db)?;
+    let request = crate::presentation::ReadRequest::open(db)?;
+    let bound = bound_openrig_roots(request.database())?;
     if bound.len() == 1 && bound[0].canonical == incoming_abs {
         let stored = PathBuf::from(&bound[0].display);
         if stored.is_absolute() && absolute_openrig_root(&stored) == incoming_abs {
@@ -493,7 +494,7 @@ pub fn report_json_with_analysis(
     friction: crate::FrictionThresholds,
     advisory: crate::advisory::AdvisoryOptions,
 ) -> Result<Value> {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     {
         use crate::selection_binding::{resolve_logical_db, SelectedDb};
         match resolve_logical_db(db, &crate::platform_v1::StorageRootChoice::LocalAppData)? {
@@ -520,7 +521,7 @@ pub fn report_json_with_analysis(
             SelectedDb::Uninitialized => Err(anyhow!("analytics database is uninitialized")),
         }
     }
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         report_json_with_analysis_physical(db, kind, rig, from, to, thresholds, friction, advisory)
     }
@@ -2091,7 +2092,7 @@ pub fn trace_json_with_analysis(
     friction: crate::FrictionThresholds,
     advisory: crate::advisory::AdvisoryOptions,
 ) -> Result<Value> {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     {
         use crate::selection_binding::{resolve_logical_db, SelectedDb};
         match resolve_logical_db(db, &crate::platform_v1::StorageRootChoice::LocalAppData)? {
@@ -2118,7 +2119,7 @@ pub fn trace_json_with_analysis(
             SelectedDb::Uninitialized => Err(anyhow!("analytics database is uninitialized")),
         }
     }
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         trace_json_with_analysis_physical(
             db, metric_id, rig, from, to, thresholds, friction, advisory,
@@ -2336,7 +2337,7 @@ mod tests {
     // These pre-selection fixtures deliberately create physical DuckDB files to
     // exercise report arithmetic. Windows logical-selection behavior has its
     // own admitted-root integration tests in windows_selection.rs.
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     fn report_json(
         db: &Path,
         kind: &str,
@@ -2346,7 +2347,7 @@ mod tests {
     ) -> Result<Value> {
         super::report_json_physical(db, kind, rig, from, to)
     }
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     fn trace_json(
         db: &Path,
         metric: &str,
@@ -2356,7 +2357,7 @@ mod tests {
     ) -> Result<Value> {
         super::trace_json_physical(db, metric, rig, from, to)
     }
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     fn report_json_with_thresholds(
         db: &Path,
         kind: &str,
@@ -2376,7 +2377,7 @@ mod tests {
             crate::advisory::AdvisoryOptions::default(),
         )
     }
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     fn trace_json_with_thresholds(
         db: &Path,
         metric: &str,
@@ -3459,7 +3460,7 @@ mod tests {
     }
 
     fn scratch(name: &str) -> PathBuf {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         {
             crate::platform_v1::create_user_private_root_with_choice(
                 &format!("dendro-s31-{name}-"),
@@ -3469,7 +3470,7 @@ mod tests {
             .path()
             .to_path_buf()
         }
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         {
             let dir = std::env::temp_dir().join(format!(
                 "dendro-s31-{name}-{}-{}",
@@ -3623,15 +3624,15 @@ mod tests {
 
     #[test]
     fn a_run_without_openrig_still_runs_and_a_mixed_database_is_refused() {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         let fixture_root = crate::platform_v1::create_user_private_root_with_choice(
             "dendro-pipeline-run-",
             &crate::platform_v1::StorageRootChoice::UserProfile,
         )
         .expect("explicit UserProfile pipeline run fixture");
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         let dir = fixture_root.path().to_path_buf();
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         let dir = scratch("mixed");
         let claude = dir.join("claude");
         fs::create_dir_all(&claude).unwrap();
@@ -3696,15 +3697,15 @@ mod tests {
 
     #[test]
     fn a_relative_binding_stays_the_same_file_after_the_working_directory_changes() {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         let fixture_root = crate::platform_v1::create_user_private_root_with_choice(
             "dendro-pipeline-binding-",
             &crate::platform_v1::StorageRootChoice::UserProfile,
         )
         .expect("explicit UserProfile pipeline binding fixture");
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         let dir = fixture_root.path().to_path_buf();
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         let dir = scratch("cwd");
         let nested = dir.join("nested");
         fs::create_dir_all(&nested).unwrap();
@@ -3753,7 +3754,7 @@ mod tests {
         assert!(message.contains(&absolute.display().to_string()));
         assert!(message.contains("refused"));
         assert!(message.contains(&other.display().to_string()));
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         let selected = match crate::selection_binding::resolve_logical_db(
             &db,
             &crate::platform_v1::StorageRootChoice::UserProfile,
@@ -3763,9 +3764,9 @@ mod tests {
             crate::selection_binding::SelectedDb::Selected(read) => read,
             _ => panic!("expected selected database"),
         };
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         let store = AnalyticsStore::open_read_only_selected(&selected).unwrap();
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "linux")))]
         let store = AnalyticsStore::open_read_only(&db).unwrap();
         let stored = store
             .load_sources()

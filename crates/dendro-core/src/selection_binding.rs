@@ -1,4 +1,4 @@
-//! Windows logical database binding and immutable selected-version custody.
+//! Native logical database binding and immutable selected-version custody.
 //! The logical leaf is a legacy database or a typed marker. It is never replaced.
 #![deny(unsafe_code)]
 
@@ -8,18 +8,36 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
+#[cfg(windows)]
 use dendro_windows_private_io::{ChildName as NativeName, VerifiedDirectory};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::lifecycle::{self, Stage, RUN_CANCEL};
 use crate::output::{self, KeyMaterial};
-use crate::platform_v1::{self as p, ChildName, FileIdentity, NativePlatform, PrivateRoot};
+use crate::platform_v1::{self as p, ChildName, FileIdentity, PrivateRoot};
 use crate::storage::AnalyticsStore;
+
+mod cleanup;
+mod migration;
+pub use cleanup::{request_retained_bundle_cleanup, CleanupRefusal};
+pub use migration::{migrate_logical_db, rollback_logical_db};
 
 const MARKER: &[u8] = b"DENDRO-LOGICAL-DB v1\n";
 const MAX_RECORD: u64 = 64 * 1024;
 
+#[cfg(test)]
+thread_local! {
+    pub(crate) static RECOVERY_STAGE_OPENS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+pub(crate) fn open_recovery_stage(path: &Path) -> Result<PrivateRoot> {
+    #[cfg(test)]
+    RECOVERY_STAGE_OPENS.with(|count| count.set(count.get() + 1));
+    Ok(p::open_existing_private_root(path)?)
+}
+
+#[cfg(windows)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Identity {
@@ -27,6 +45,7 @@ struct Identity {
     file_id: [u8; 16],
 }
 
+#[cfg(windows)]
 impl TryFrom<FileIdentity> for Identity {
     type Error = anyhow::Error;
     fn try_from(value: FileIdentity) -> Result<Self> {
@@ -47,11 +66,39 @@ impl TryFrom<FileIdentity> for Identity {
     }
 }
 
+#[cfg(windows)]
 impl From<Identity> for FileIdentity {
     fn from(id: Identity) -> Self {
         Self::WindowsFileId128 {
             volume_serial_64: id.volume_serial_64,
             file_id: id.file_id,
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Identity {
+    device: u64,
+    inode: u64,
+}
+#[cfg(target_os = "linux")]
+impl TryFrom<FileIdentity> for Identity {
+    type Error = anyhow::Error;
+    fn try_from(value: FileIdentity) -> Result<Self> {
+        match value {
+            FileIdentity::Unix { device, inode } if inode != 0 => Ok(Self { device, inode }),
+            _ => Err(anyhow!("native Linux device/inode identity required")),
+        }
+    }
+}
+#[cfg(target_os = "linux")]
+impl From<Identity> for FileIdentity {
+    fn from(value: Identity) -> Self {
+        Self::Unix {
+            device: value.device,
+            inode: value.inode,
         }
     }
 }
@@ -160,12 +207,90 @@ pub enum RecoveryDisposition {
     ResumeRequired,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelectionRecoveryOutcome {
+    Reconciled,
+    Unchanged,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RecoveryStage {
+    schema: String,
+    stage: String,
+    identity: Identity,
+}
+
+fn recovery_stage_leaf(
+    domain: &str,
+    identity: FileIdentity,
+    digest: Option<[u8; 32]>,
+) -> Result<String> {
+    let mut hash = Sha256::new();
+    hash.update(hash_identity(identity.try_into()?).as_bytes());
+    if let Some(digest) = digest {
+        hash.update(digest);
+    }
+    Ok(format!("{domain}-{}.json", hex::encode(hash.finalize())))
+}
+
+/// A locator is only a lookup hint. The original prepared journal must still
+/// prove every pointer, parent, lock, predecessor and stage identity.
+pub(crate) fn record_recovery_stage(
+    root: &PrivateRoot,
+    domain: &str,
+    identity: FileIdentity,
+    digest: Option<[u8; 32]>,
+    stage: &PrivateRoot,
+) -> Result<()> {
+    let stage_leaf = stage
+        .path()
+        .file_name()
+        .and_then(|v| v.to_str())
+        .ok_or_else(|| anyhow!("recovery stage name invalid"))?;
+    write_record(
+        root,
+        &recovery_stage_leaf(domain, identity, digest)?,
+        &RecoveryStage {
+            schema: "dendro.recovery-stage/v1".into(),
+            stage: stage_leaf.into(),
+            identity: stage.metadata().identity.try_into()?,
+        },
+    )?;
+    Ok(())
+}
+
+pub(crate) fn recovery_stage(
+    root: &PrivateRoot,
+    domain: &str,
+    identity: FileIdentity,
+    digest: Option<[u8; 32]>,
+    prefix: &str,
+) -> Result<Option<PrivateRoot>> {
+    let leaf = recovery_stage_leaf(domain, identity, digest)?;
+    if optional_file(root, &leaf)?.is_none() {
+        return Ok(None);
+    }
+    let record: RecoveryStage = read_record(root, &leaf)?;
+    name(&record.stage)?;
+    if record.schema != "dendro.recovery-stage/v1" || !record.stage.starts_with(prefix) {
+        return Err(anyhow!("invalid recovery stage locator"));
+    }
+    root.check_anchor()?;
+    let stage = open_recovery_stage(&root.path().join(&record.stage))
+        .context("locator names a missing or unadmitted recovery stage")?;
+    if stage.metadata().identity != record.identity.into() {
+        return Err(anyhow!("recovery stage locator identity changed"));
+    }
+    Ok(Some(stage))
+}
+
 impl std::fmt::Display for RecoveryDisposition {
     fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::NothingToRecover => write!(
                 out,
-                "nothing_to_recover: legacy database remains readable; run dendro run to adopt it"
+                "nothing_to_recover: no selected-storage custody exists; nothing to recover"
             ),
             Self::ResumeRequired => write!(
                 out,
@@ -207,7 +332,7 @@ impl SelectedRead {
 }
 
 fn name(value: &str) -> Result<ChildName> {
-    p::parse_child_name(value, NativePlatform::Windows)
+    p::parse_child_name(value, p::current_native_platform())
         .map_err(p::PlatformError::Rejected)
         .map_err(Into::into)
 }
@@ -230,8 +355,17 @@ fn hash_file(path: &Path) -> Result<([u8; 32], u64)> {
 
 fn hash_identity(id: Identity) -> String {
     let mut hasher = Sha256::new();
-    hasher.update(id.volume_serial_64.to_le_bytes());
-    hasher.update(id.file_id);
+    #[cfg(windows)]
+    {
+        hasher.update(id.volume_serial_64.to_le_bytes());
+        hasher.update(id.file_id);
+    }
+    #[cfg(target_os = "linux")]
+    {
+        hasher.update(b"linux-device-inode-v1");
+        hasher.update(id.device.to_le_bytes());
+        hasher.update(id.inode.to_le_bytes());
+    }
     hex::encode(hasher.finalize())
 }
 
@@ -253,7 +387,12 @@ fn read_prepared_journal(root: &PrivateRoot, leaf: &str) -> Result<serde_json::V
         return Err(anyhow!("selection recovery journal too large"));
     }
     let mut bytes = Vec::new();
-    file.file_mut().read_to_end(&mut bytes)?;
+    file.file_mut()
+        .take(MAX_RECORD + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_RECORD {
+        return Err(anyhow!("selection recovery journal too large"));
+    }
     let first = bytes
         .split(|byte| *byte == b'\n')
         .next()
@@ -282,6 +421,7 @@ fn selected_key(selected: &SelectedRead) -> Result<KeyMaterial> {
     output::decode_key(&mut held)
 }
 
+#[cfg(windows)]
 pub(crate) fn write_record<T: Serialize>(
     root: &PrivateRoot,
     leaf: &str,
@@ -340,6 +480,37 @@ pub(crate) fn write_record<T: Serialize>(
     Ok(identity)
 }
 
+#[cfg(target_os = "linux")]
+pub(crate) fn write_record<T: Serialize>(
+    root: &PrivateRoot,
+    leaf: &str,
+    value: &T,
+) -> Result<FileIdentity> {
+    let bytes = serde_json::to_vec(value)?;
+    if bytes.len() as u64 > MAX_RECORD {
+        return Err(anyhow!("selection custody record too large"));
+    }
+    root.check_anchor()?;
+    let temporary = name(&format!("record-{:032x}.tmp", rand::random::<u128>()))?;
+    let mut source = p::LinuxPublicationSource::create(root, &temporary)?;
+    let identity = source.identity()?;
+    source.write_all(&bytes)?;
+    source.sync_all()?;
+    root.sync_dir()?;
+    source
+        .publish_checked(root, root.metadata().identity, &name(leaf)?, None)
+        .context("record rename absent; temporary file retained")?;
+    if p::open_existing_private_file(root, &name(leaf)?)?
+        .metadata()
+        .identity
+        != identity
+    {
+        return Err(anyhow!("published custody record identity changed"));
+    }
+    root.sync_dir()?;
+    Ok(identity)
+}
+
 fn optional_file(root: &PrivateRoot, leaf: &str) -> Result<Option<p::VerifiedFile>> {
     match fs::symlink_metadata(root.path().join(leaf)) {
         Ok(_) => Ok(Some(p::open_existing_private_file(root, &name(leaf)?)?)),
@@ -383,7 +554,7 @@ fn root_and_leaf(
         logical
             .file_name()
             .ok_or_else(|| anyhow!("logical database has no leaf"))?,
-        NativePlatform::Windows,
+        p::current_native_platform(),
     )
     .map_err(p::PlatformError::Rejected)?;
     let root = p::open_existing_private_root(parent).map_err(|e| anyhow!("analytics parent is not admitted ({e}); run dendro storage-init, then --storage-root <printed path>, or --db <admitted path>"))?;
@@ -452,6 +623,7 @@ fn read_states_mode(
     }
     let prefix = format!("selected-{hash}-");
     for entry in fs::read_dir(root.path())? {
+        RUN_CANCEL.check()?;
         let entry = entry?;
         if let Some(leaf) = entry.file_name().to_str() {
             if leaf.starts_with(&prefix)
@@ -572,6 +744,7 @@ fn refuse_displaced_binding(
     let mut ambiguous_absent_unicode = false;
     let mut unproven_torn_binding = false;
     for entry in fs::read_dir(root.path())? {
+        RUN_CANCEL.check()?;
         let entry = entry?;
         let Some(file_name) = entry.file_name().to_str().map(str::to_owned) else {
             continue;
@@ -588,7 +761,8 @@ fn refuse_displaced_binding(
         };
         if record.parent == parent {
             let exact = record.logical_leaf == actual_leaf;
-            let ascii_alias = record.logical_leaf.is_ascii()
+            let ascii_alias = cfg!(windows)
+                && record.logical_leaf.is_ascii()
                 && actual_leaf.is_ascii()
                 && record.logical_leaf.eq_ignore_ascii_case(&actual_leaf);
             if exact || ascii_alias {
@@ -597,8 +771,9 @@ fn refuse_displaced_binding(
                 }
                 return Ok(());
             }
-            ambiguous_absent_unicode |=
-                current.is_none() && (!record.logical_leaf.is_ascii() || !actual_leaf.is_ascii());
+            ambiguous_absent_unicode |= cfg!(windows)
+                && current.is_none()
+                && (!record.logical_leaf.is_ascii() || !actual_leaf.is_ascii());
         }
     }
     if ambiguous_absent_unicode {
@@ -628,6 +803,7 @@ fn selected_from_binding(binding: LogicalDbBinding) -> Result<SelectedRead> {
         ));
     }
     validate_bundle(&resolved)?;
+    migration::validate_legacy_anchor(&binding, &resolved)?;
     let database = resolved.bundle().path().join("analytics.duckdb");
     let key = resolved.bundle().path().join("analytics.key");
     Ok(SelectedRead {
@@ -657,9 +833,10 @@ fn validate_bundle(resolved: &p::ResolvedSelection) -> Result<()> {
             return Err(anyhow!("selected bundle missing unique {role} role"));
         }
     }
-    if files.len() != 4 {
+    if !matches!(files.len(), 4 | 9 | 11) {
         return Err(anyhow!("selected bundle has unexpected roles"));
     }
+    migration::validate_migration_custody(resolved)?;
     let bundle = resolved.bundle().path();
     let provenance: BundleProvenance =
         read_pinned_record(resolved.file("provenance.json").unwrap())?;
@@ -882,7 +1059,7 @@ fn reopen_binding(binding: &LogicalDbBinding) -> Result<LogicalDbBinding> {
     let root = p::open_existing_private_root(binding.root.path())?;
     let leaf = p::parse_child_os(
         binding.logical.file_name().unwrap(),
-        NativePlatform::Windows,
+        p::current_native_platform(),
     )
     .map_err(p::PlatformError::Rejected)?;
     let anchor = p::open_existing_private_read_pin(&root, &leaf)?;
@@ -981,16 +1158,20 @@ pub(crate) fn quarantine_torn_record(root: &PrivateRoot, leaf: &str) -> Result<(
     let verified = p::open_existing_private_file(root, &name(leaf)?)?;
     let identity = verified.metadata().identity;
     drop(verified);
-    let quarantine = format!("torn-{:032x}.json", rand::random::<u128>());
-    if root.path().join(&quarantine).exists() {
-        return Err(anyhow!("torn record quarantine collision"));
-    }
+    // The destination lives in a freshly created private directory rather than
+    // a check-then-rename random leaf that could overwrite retained evidence.
+    let quarantine = p::create_unique_private_directory(root, "torn-")?;
     root.check_anchor()?;
-    fs::rename(root.path().join(leaf), root.path().join(&quarantine))?;
-    let held = p::open_existing_private_file(root, &name(&quarantine)?)?;
+    quarantine.check_anchor()?;
+    fs::rename(
+        root.path().join(leaf),
+        quarantine.path().join("record.json"),
+    )?;
+    let held = p::open_existing_private_file(&quarantine, &name("record.json")?)?;
     if held.metadata().identity != identity {
         return Err(anyhow!("torn record quarantine identity changed"));
     }
+    quarantine.sync_dir()?;
     root.sync_dir()?;
     Ok(())
 }
@@ -1071,25 +1252,10 @@ fn matching_prepared_journals(
 ) -> Result<usize> {
     let current: Pointer = resolved.selection.try_into()?;
     let mut matches = 0usize;
-    let mut examined = 0usize;
-    for entry in fs::read_dir(binding.root.path())? {
-        let entry = entry?;
-        let Some(stage_name) = entry.file_name().to_str().map(str::to_owned) else {
-            continue;
-        };
-        if !stage_name.starts_with("publication-") {
-            continue;
-        }
-        examined += 1;
-        if examined > 4096 {
-            return Err(anyhow!(
-                "selection recovery scan exceeds bounded stage limit"
-            ));
-        }
-        let Ok(stage) = p::open_existing_private_root(&entry.path()) else {
-            continue;
-        };
+    let mut examine_stage = |stage: &PrivateRoot| -> Result<()> {
+        let mut examined = 0usize;
         for item in fs::read_dir(stage.path())? {
+            RUN_CANCEL.check()?;
             let item = item?;
             let Some(journal_name) = item.file_name().to_str().map(str::to_owned) else {
                 continue;
@@ -1099,12 +1265,12 @@ fn matching_prepared_journals(
                 continue;
             }
             examined += 1;
-            if examined > 4096 {
-                return Err(anyhow!(
-                    "selection recovery scan exceeds bounded journal limit"
-                ));
+            // A publication has at most three attempts. Bound hostile content
+            // in one stage, never the number of lifetime publications.
+            if examined > 16 {
+                return Err(anyhow!("selection recovery stage has too many journals"));
             }
-            let Ok(journal) = read_prepared_journal(&stage, &journal_name) else {
+            let Ok(journal) = read_prepared_journal(stage, &journal_name) else {
                 continue;
             };
             let matches_pointer = journal.get("state")
@@ -1134,9 +1300,36 @@ fn matching_prepared_journals(
                 && journal
                     .get("source")
                     .and_then(|v| v.as_str())
-                    .is_some_and(|leaf| !stage.path().join(leaf).exists());
+                    .is_some_and(|leaf| name(leaf).is_ok() && !stage.path().join(leaf).exists());
             if matches_pointer {
                 matches += 1;
+            }
+        }
+        Ok(())
+    };
+    if let Some(stage) = recovery_stage(
+        &binding.root,
+        "recovery-selection",
+        resolved.manifest.payload.bundle_identity.into(),
+        None,
+        "publication-",
+    )? {
+        examine_stage(&stage)?;
+    } else {
+        // Pre-locator stores remain recoverable. Stream their retained history
+        // with constant memory; this compatibility path is linear in history.
+        for entry in fs::read_dir(binding.root.path())? {
+            RUN_CANCEL.check()?;
+            let entry = entry?;
+            if !entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("publication-")
+            {
+                continue;
+            }
+            if let Ok(stage) = open_recovery_stage(&entry.path()) {
+                examine_stage(&stage)?;
             }
         }
     }
@@ -1147,12 +1340,20 @@ fn matching_prepared_journals(
 /// consumer receipt was interrupted. Only its own durable prepared journal may
 /// authorize adopting the observed pointer; a self-consistent rollback cannot.
 pub fn recover_logical_db(db: &Path, choice: &p::StorageRootChoice) -> Result<SelectedRead> {
+    recover_logical_db_with_outcome(db, choice).map(|(read, _)| read)
+}
+
+pub fn recover_logical_db_with_outcome(
+    db: &Path,
+    choice: &p::StorageRootChoice,
+) -> Result<(SelectedRead, SelectionRecoveryOutcome)> {
     let (root, logical, leaf) = root_and_leaf(db, choice)?;
     let anchor = p::open_existing_private_read_pin(&root, &leaf)?;
     let marker = is_marker(&anchor)?;
     let anchor_id: Identity = p::metadata_from_handle(&anchor)?.identity.try_into()?;
     let (_, binding_leaf, manifest_leaf, writer_leaf, publisher_leaf) = binding_names(anchor_id);
     if optional_file(&root, &binding_leaf)?.is_none() {
+        refuse_displaced_binding(&root, &logical, Some(anchor_id.into()))?;
         if !marker
             && optional_file(&root, &manifest_leaf)?.is_none()
             && optional_file(&root, &writer_leaf)?.is_none()
@@ -1163,9 +1364,9 @@ pub fn recover_logical_db(db: &Path, choice: &p::StorageRootChoice) -> Result<Se
         if optional_file(&root, &manifest_leaf)?.is_none() {
             return Err(RecoveryDisposition::ResumeRequired.into());
         }
-        return Err(anyhow!(
-            "orphan selection pointer requires validated binding recovery"
-        ));
+        // A crash during torn-binding repair can leave this leaf absent. The
+        // same canonical locks, anchor and unique prepared journal are required
+        // below before restoring it; absence alone grants no authority.
     }
     let binding = load_recovery_binding(root, logical, anchor)?;
     if binding.expected.is_none()
@@ -1181,6 +1382,7 @@ pub fn recover_logical_db(db: &Path, choice: &p::StorageRootChoice) -> Result<Se
         p::canonical_identity_from_persisted_record(binding.record.writer_identity.into());
     let publisher_id =
         p::canonical_identity_from_persisted_record(binding.record.publisher_identity.into());
+    let mut outcome = SelectionRecoveryOutcome::Unchanged;
     p::with_exclusive_lock(&binding.root, &writer, &writer_id, |_| {
         p::with_exclusive_lock(&binding.root, &publisher, &publisher_id, |_| {
             Ok((|| -> Result<()> {
@@ -1230,21 +1432,28 @@ pub fn recover_logical_db(db: &Path, choice: &p::StorageRootChoice) -> Result<Se
                         "torn top state with unchanged pointer requires manual recovery"
                     ));
                 }
-                if !pointer_is_expected
-                    && matching_prepared_journals(&current_binding, &resolved, previous)? != 1
-                {
+                let prepared_matches = if !pointer_is_expected || current_binding.torn_binding {
+                    Some(matching_prepared_journals(
+                        &current_binding,
+                        &resolved,
+                        previous,
+                    )?)
+                } else {
+                    None
+                };
+                if !pointer_is_expected && prepared_matches != Some(1) {
                     return Err(anyhow!("selection pointer has no unique matching prepared journal; manual recovery required"));
                 }
-                if current_binding.torn_binding
-                    && matching_prepared_journals(&current_binding, &resolved, previous)? != 1
-                {
+                if current_binding.torn_binding && prepared_matches != Some(1) {
                     return Err(anyhow!(
                         "torn binding has no unique matching prepared journal"
                     ));
                 }
                 if current_binding.torn_binding {
                     let leaf = format!("binding-{}.json", current_binding.hash);
-                    quarantine_torn_record(&current_binding.root, &leaf)?;
+                    if optional_file(&current_binding.root, &leaf)?.is_some() {
+                        quarantine_torn_record(&current_binding.root, &leaf)?;
+                    }
                     write_record(&current_binding.root, &leaf, &current_binding.record)?;
                 }
                 if let Some(torn) = &current_binding.torn_state {
@@ -1253,12 +1462,13 @@ pub fn recover_logical_db(db: &Path, choice: &p::StorageRootChoice) -> Result<Se
                 if !pointer_is_expected {
                     append_state(&current_binding, resolved.selection)?;
                 }
+                outcome = SelectionRecoveryOutcome::Reconciled;
                 Ok(())
             })())
         })
     })??;
     match resolve_logical_db(&binding.logical, choice)? {
-        SelectedDb::Selected(read) => Ok(*read),
+        SelectedDb::Selected(read) => Ok((*read, outcome)),
         _ => Err(anyhow!(
             "selection recovery did not produce a selected bundle"
         )),
@@ -1270,7 +1480,15 @@ fn publish_candidate(
     bundle: &PrivateRoot,
     files: &[p::ClosedBundleFile],
 ) -> Result<SelectedRead> {
+    migration::validate_migration_candidate(bundle, files)?;
     let staging = p::create_unique_private_directory(&binding.root, "publication-")?;
+    record_recovery_stage(
+        &binding.root,
+        "recovery-selection",
+        bundle.metadata().identity,
+        None,
+        &staging,
+    ).with_context(|| format!("recovery locator write failed; candidate retained at {} and publication stage retained at {}", bundle.path().display(), staging.path().display()))?;
     let request = p::PublicationRequest {
         destination: &binding.root,
         expected_destination: binding.record.parent.into(),
@@ -1499,8 +1717,11 @@ where
                         .as_ref()
                         .map(|s| s.key.clone())
                         .unwrap_or_else(|| key_path(&current_binding.logical));
-                    let (bundle, files) =
+                    let (bundle, mut files) =
                         make_bundle(&current_binding, &staged, &key_source, &key)?;
+                    if let Some(selected) = selected_source.as_ref() {
+                        migration::carry_migration_custody(selected, &bundle, &mut files)?;
+                    }
                     stage.finish()?;
                     Ok((bundle, files, notes, recovery, current_binding))
                 })())
@@ -1555,7 +1776,9 @@ where
                 store.checkpoint()?;
                 drop(store);
                 super::pipeline::sync_staged_output(&stage)?;
-                let result = make_bundle(&binding, &staged, &selected.key, &key)?;
+                let (bundle, mut files) = make_bundle(&binding, &staged, &selected.key, &key)?;
+                migration::carry_migration_custody(selected, &bundle, &mut files)?;
+                let result = (bundle, files);
                 stage.finish()?;
                 Ok(result)
             })())
@@ -1679,5 +1902,71 @@ mod tests {
             .unwrap()
             .filter_map(Result::ok)
             .any(|entry| entry.file_name().to_string_lossy().starts_with("record-")));
+    }
+
+    #[test]
+    fn recovery_history_uses_one_stage_and_legacy_history_has_no_lifetime_limit() {
+        let root = p::create_user_private_root_with_choice(
+            "dendro-history-recovery-",
+            &p::StorageRootChoice::UserProfile,
+        )
+        .unwrap();
+        let choice = p::StorageRootChoice::Explicit(root.path().to_path_buf());
+        let logical = root.path().join("analytics.duckdb");
+        run_locked_with_selection(&logical, &choice, &[], &[], |staged, _| {
+            let store = AnalyticsStore::open_staged(staged)?;
+            store.checkpoint()?;
+            Ok(vec![])
+        })
+        .unwrap();
+        let find = |prefix: &str| {
+            fs::read_dir(root.path())
+                .unwrap()
+                .map(|e| e.unwrap().path())
+                .find(|p| p.file_name().unwrap().to_string_lossy().starts_with(prefix))
+                .unwrap()
+        };
+        let state = find("selected-");
+        let locator = find("recovery-selection-");
+        let state_bytes = fs::read(&state).unwrap();
+        for ordinal in 0..4100 {
+            let stage = root
+                .path()
+                .join(format!("publication-history-{ordinal:04}"));
+            fs::create_dir(&stage).unwrap();
+            fs::write(
+                stage.join("selection-journal-old.jsonl"),
+                match ordinal % 3 {
+                    0 => b"{\"state\":\"prepared\"}".as_slice(),
+                    1 => b"{\"state\":\"published\"}",
+                    _ => b"{",
+                },
+            )
+            .unwrap();
+        }
+        fs::remove_file(&state).unwrap();
+        RECOVERY_STAGE_OPENS.with(|n| n.set(0));
+        let (read, outcome) = recover_logical_db_with_outcome(&logical, &choice).unwrap();
+        assert_eq!(outcome, SelectionRecoveryOutcome::Reconciled);
+        assert!(read.is_current().unwrap());
+        assert_eq!(RECOVERY_STAGE_OPENS.with(|n| n.get()), 1);
+        drop(read);
+        assert_eq!(fs::read(&state).unwrap(), state_bytes);
+        fs::remove_file(&state).unwrap();
+        fs::remove_file(locator).unwrap();
+        RECOVERY_STAGE_OPENS.with(|n| n.set(0));
+        recover_logical_db(&logical, &choice).unwrap();
+        assert_eq!(RECOVERY_STAGE_OPENS.with(|n| n.get()), 4101);
+        assert_eq!(
+            fs::read_dir(root.path())
+                .unwrap()
+                .filter_map(Result::ok)
+                .filter(|e| e
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("publication-history-"))
+                .count(),
+            4100
+        );
     }
 }

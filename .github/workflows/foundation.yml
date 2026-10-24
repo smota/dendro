@@ -1,0 +1,131 @@
+name: Native Linux foundation
+
+# Bounded foundation evidence, not the complete T27 release matrix.
+on:
+  push:
+    branches: [codex/foundation-completion]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: foundation-linux-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-windows-cross-volume:
+    runs-on: windows-2022
+    # Hosted D:\ root has an owner the ancestor guard (correctly) refuses; non-blocking until
+    # a runner volume matches a real user setup. Linux proves the cross-volume path.
+    continue-on-error: true
+    timeout-minutes: 60
+    env:
+      RUSTUP_TOOLCHAIN: 1.98.1
+      CARGO_BUILD_JOBS: 2
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Install pinned native Rust toolchain
+        shell: pwsh
+        run: rustup toolchain install 1.98.1 --profile minimal
+      - name: Require actual Windows cross-volume publication proof
+        shell: pwsh
+        run: ./scripts/foundation-ci-native-fixtures.ps1
+      - name: Record Windows fixture verdict including early failures
+        if: always()
+        shell: pwsh
+        run: ./scripts/foundation-ci-native-fixtures.ps1 -CollectOnly
+      - name: Preserve scoped Windows receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: foundation-windows-cross-volume-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/dendro-foundation-${{ github.run_id }}-${{ github.run_attempt }}-receipts/
+          if-no-files-found: error
+          retention-days: 7
+  native-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      RUSTUP_TOOLCHAIN: 1.98.1
+      CARGO_BUILD_JOBS: 2
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
+      RUST_TEST_THREADS: 2
+      CARGO_TERM_COLOR: never
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Prepare private native ext4 workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          root="$HOME/dendro-foundation-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -m 700 "$root"
+          mkdir -m 700 "$root/receipts" "$root/cargo" "$root/rustup" "$root/tmp" "$root/source"
+          # Receipt storage exists before admission, including for refused runners.
+          echo "FOUNDATION_ROOT=$root" >> "$GITHUB_ENV"
+          echo "FOUNDATION_RECEIPTS=$root/receipts" >> "$GITHUB_ENV"
+          echo "CARGO_HOME=$root/cargo" >> "$GITHUB_ENV"
+          echo "RUSTUP_HOME=$root/rustup" >> "$GITHUB_ENV"
+          echo "TMPDIR=$root/tmp" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_DIR=$root/source/target" >> "$GITHUB_ENV"
+          bash scripts/foundation-ci-verify.sh prepare "$root"
+
+      - name: Cache dependency downloads
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          # Only Cargo's checksum-verified downloaded archives; never extracted source.
+          path: ${{ env.CARGO_HOME }}/registry/cache
+          key: foundation-linux-archives-v1-${{ runner.arch }}-${{ env.RUSTUP_TOOLCHAIN }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Install isolated pinned Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=0
+          rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --component rustfmt --component clippy 2>&1 | tee "$FOUNDATION_RECEIPTS/toolchain-install.log" || status=$?
+          printf '%s\n' "$status" > "$FOUNDATION_RECEIPTS/toolchain.exit"
+          exit "$status"
+
+      - name: Execute four Rust gates on native Linux
+        shell: bash
+        run: bash "$FOUNDATION_ROOT/source/scripts/foundation-ci-verify.sh" verify "$FOUNDATION_ROOT"
+
+      - name: Prove historical binary migration and rollback
+        shell: bash
+        run: bash "$FOUNDATION_ROOT/source/scripts/foundation-ci-verify.sh" historical "$FOUNDATION_ROOT"
+
+      - name: Require actual cross-volume native publication proof
+        if: always() && env.FOUNDATION_ROOT != ''
+        shell: bash
+        run: bash scripts/foundation-ci-verify.sh native-fixtures "$FOUNDATION_ROOT"
+
+      - name: Collect historical proof receipts on success or failure
+        if: always() && env.FOUNDATION_ROOT != ''
+        shell: bash
+        run: bash scripts/foundation-ci-verify.sh collect "$FOUNDATION_ROOT"
+
+      - name: Preserve foundation receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: foundation-linux-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.FOUNDATION_RECEIPTS }}
+          if-no-files-found: error
+          retention-days: 7

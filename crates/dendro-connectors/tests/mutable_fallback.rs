@@ -1,6 +1,6 @@
 //! F13-5 must disclose the original affected seat when its fallback is lost.
 use std::fs;
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -28,17 +28,17 @@ fn seat<'a>(payload: &'a Value, name: &str) -> &'a Value {
 }
 
 fn check_changed_fallback(creation_mode: u8) {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     let root = dendro_core::platform_v1::create_user_private_root_with_choice(
         "dendro-mutable-fallback-",
         &dendro_core::platform_v1::StorageRootChoice::UserProfile,
     )
     .unwrap();
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     let directory = root.path().to_path_buf();
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     drop(root);
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "linux")))]
     let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/issue-13-tests")
         .join(format!(
