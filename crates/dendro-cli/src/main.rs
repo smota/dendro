@@ -320,6 +320,24 @@ enum Commands {
         #[arg(long, default_value = "60s", value_parser = parse_watch_duration)]
         flush_every: Duration,
     },
+    /// Launch a command and sample that process tree from its exact pid.
+    #[command(next_help_heading = "Ingest")]
+    RunAgent {
+        #[arg(short, long, default_value = "dendro.duckdb", hide_default_value = true, help = DEFAULT_DB_HELP)]
+        db: PathBuf,
+        /// Harness label stored on the launched root. The pid is pinned either way.
+        #[arg(long)]
+        harness: Option<String>,
+        /// Time between samples, for example 50ms, 1s or 2m.
+        #[arg(long, default_value = "1s", value_parser = parse_watch_duration)]
+        interval: Duration,
+        /// How often collected samples are written to the database.
+        #[arg(long, default_value = "60s", value_parser = parse_watch_duration)]
+        flush_every: Duration,
+        /// Command to launch. Put `--` before it so its flags are not Dendro's.
+        #[arg(required = true, trailing_var_arg = true, allow_hyphen_values = true)]
+        command: Vec<String>,
+    },
     /// Ingest local harness roots into an analytics database.
     #[command(next_help_heading = "Ingest")]
     Run {
@@ -592,6 +610,165 @@ fn watch_blocking(
     }))
 }
 
+fn child_exit_code(status: std::process::ExitStatus) -> i32 {
+    if let Some(code) = status.code() {
+        return code;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        if let Some(signal) = status.signal() {
+            return 128 + signal;
+        }
+    }
+    1
+}
+
+async fn run_agent(
+    db: PathBuf,
+    harness: Option<String>,
+    interval: Duration,
+    flush_every: Duration,
+    command: Vec<String>,
+) -> Result<i32> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let stop = std::sync::Arc::new(AtomicBool::new(false));
+    let mut events = ShutdownEvents::new()?;
+    let worker_stop = stop.clone();
+    let mut worker = tokio::task::spawn_blocking(move || {
+        run_agent_blocking(&db, harness, interval, flush_every, &command, &worker_stop)
+    });
+    tokio::select! {
+        joined = &mut worker => return joined?,
+        _ = events.next() => {}
+    }
+    // Ctrl-C already reached the child: Unix delivers SIGINT to the foreground
+    // process group, and Windows delivers it to every process on this console.
+    // The child was not placed in a new group, so signalling it again would
+    // double-deliver. Stop sampling and let the child exit on its own.
+    stop.store(true, Ordering::Relaxed);
+    eprintln!("dendro: stopping; writing collected samples");
+    worker.await?
+}
+
+fn run_agent_blocking(
+    db: &std::path::Path,
+    harness: Option<String>,
+    interval: Duration,
+    flush_every: Duration,
+    command: &[String],
+    stop: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+) -> Result<i32> {
+    use dendro_connectors::environment_v1 as env;
+    use std::process::Command;
+    use std::sync::atomic::Ordering;
+    use std::sync::mpsc;
+    use std::time::Instant;
+
+    let program = command
+        .first()
+        .map(String::as_str)
+        .filter(|program| !program.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("run-agent needs a command after --"))?;
+    let mut config = env::Config::default();
+    // Only the launched tree. The default name list would attribute other harnesses.
+    config.harnesses.clear();
+    let mut collector =
+        env::Collector::new(env::SysinfoSource::new(), config, env::detect_isolation());
+    // Build the sampler before spawn so a short child is not exiting during init.
+    // Inherited stdin/stdout/stderr, cwd, and env. No DENDRO_* marker.
+    let mut child = Command::new(program)
+        .args(&command[1..])
+        .spawn()
+        .map_err(|err| anyhow::anyhow!("could not launch {program}: {err}"))?;
+    let pid = child.id();
+    collector.pin_launched(pid, harness);
+    // Sample before any other work. `cmd /c exit 3` can leave the process list
+    // within a few milliseconds of CreateProcess returning.
+    collector.tick_now();
+
+    let (exit_tx, exit_rx) = mpsc::channel();
+    let (kill_tx, kill_rx) = mpsc::channel::<()>();
+    let child_stop = stop.clone();
+    std::thread::spawn(move || {
+        let status = loop {
+            if kill_rx.try_recv().is_ok() {
+                let _ = child.kill();
+                break child.wait();
+            }
+            match child.try_wait() {
+                Ok(Some(status)) => break Ok(status),
+                Ok(None) => std::thread::sleep(Duration::from_millis(15)),
+                Err(err) => break Err(err),
+            }
+        };
+        child_stop.store(true, Ordering::Relaxed);
+        let _ = exit_tx.send(status);
+    });
+    // A `cmd /c exit` process can disappear between scans. Tick until it is
+    // adopted or it has already ended.
+    let deadline = Instant::now() + Duration::from_millis(500);
+    while !collector.tracks(pid) && Instant::now() < deadline {
+        collector.tick_now();
+        if collector.tracks(pid) || stop.load(Ordering::Relaxed) {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    if !collector.tracks(pid) {
+        // The process can exit before the snapshot syscall under load.
+        let grace = Instant::now() + Duration::from_millis(200);
+        while !stop.load(Ordering::Relaxed) && Instant::now() < grace {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        if stop.load(Ordering::Relaxed) {
+            collector.note_exited_pin(pid, program);
+        }
+    }
+
+    let watched = env::watch(
+        &mut collector,
+        interval,
+        None,
+        false,
+        flush_every,
+        stop,
+        |batch| {
+            if batch.identities.is_empty() && batch.samples.is_empty() {
+                return Ok(());
+            }
+            dendro_core::run_locked_with_manifest(db, &[], &[], None, None, |staged, key, _| {
+                let sealed = batch.seal(key, &[]);
+                let store = dendro_core::AnalyticsStore::open_staged(staged)?;
+                store.commit_process_samples(&sealed.identities, &sealed.samples)?;
+                store.checkpoint()?;
+                Ok((Vec::new(), dendro_core::CutoffManifest::default()))
+            })?;
+            Ok(())
+        },
+    );
+    if let Err(err) = watched {
+        let _ = kill_tx.send(());
+        let _ = exit_rx.recv_timeout(Duration::from_secs(5));
+        return Err(err);
+    }
+    let status = exit_rx
+        .recv()
+        .map_err(|_| anyhow::anyhow!("launched process waiter ended before reporting a status"))?
+        .map_err(|err| anyhow::anyhow!("could not wait for {program}: {err}"))?;
+    let code = child_exit_code(status);
+    println!(
+        "{}",
+        serde_json::json!({
+            "status": "launched",
+            "exit_code": code,
+            "pid": pid,
+        })
+    );
+    let _ = std::io::Write::flush(&mut std::io::stdout());
+    Ok(code)
+}
+
 fn database_slot(command: &mut Commands) -> Option<&mut PathBuf> {
     match command {
         Commands::RecoverSelection { db, .. }
@@ -600,6 +777,7 @@ fn database_slot(command: &mut Commands) -> Option<&mut PathBuf> {
         | Commands::Status { db, .. }
         | Commands::Run { db, .. }
         | Commands::Watch { db, .. }
+        | Commands::RunAgent { db, .. }
         | Commands::Report { db, .. }
         | Commands::Trace { db, .. } => Some(db),
         Commands::Assert { scope, .. } | Commands::IssueDraft { scope, .. } => Some(&mut scope.db),
@@ -1082,6 +1260,16 @@ async fn main() -> Result<()> {
             let summary = run_watch(db, interval, duration, once, harness, flush_every).await?;
             println!("{summary}");
             return Ok(());
+        }
+        Commands::RunAgent {
+            db,
+            harness,
+            interval,
+            flush_every,
+            command,
+        } => {
+            let code = run_agent(db, harness, interval, flush_every, command).await?;
+            std::process::exit(code);
         }
         Commands::Run {
             db,

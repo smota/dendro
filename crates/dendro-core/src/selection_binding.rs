@@ -1709,6 +1709,7 @@ where
                     RUN_CANCEL.check()?;
                     output::refuse_existing_output_wal(&staged)?;
                     let store = AnalyticsStore::open_staged(&staged)?;
+                    store.ensure_process_attribution_column()?;
                     store.checkpoint()?;
                     drop(store);
                     super::pipeline::sync_staged_output(&stage)?;
@@ -1773,6 +1774,7 @@ where
                 lifecycle::private_copy(&selected.database, &staged, &RUN_CANCEL)?;
                 mutate(&staged, &key.bytes)?;
                 let store = AnalyticsStore::open_staged(&staged)?;
+                store.ensure_process_attribution_column()?;
                 store.checkpoint()?;
                 drop(store);
                 super::pipeline::sync_staged_output(&stage)?;

@@ -194,6 +194,7 @@ pub const TEXT_COLUMNS: &[&str] = &[
     "process_identities.environment_kind",
     "process_identities.isolation_hint",
     "process_identities.visibility_limits",
+    "process_identities.attribution",
     "process_samples.watch_id",
     "process_samples.identity_key",
     "process_samples.rss_unit",

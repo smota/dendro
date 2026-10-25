@@ -1295,3 +1295,144 @@ fn watch_once_samples_a_named_process_into_a_migrated_schema4_database() {
         0
     );
 }
+
+#[cfg(any(windows, target_os = "linux"))]
+fn migrated_db(scratch: &Scratch, name: &str) -> PathBuf {
+    let logical = scratch.0.join(name);
+    let key_path = PathBuf::from(format!("{}.key", logical.display()));
+    let key = dendro_core::output::load_or_create_key(&key_path, true).unwrap();
+    let legacy = dendro_core::AnalyticsStore::open_path(&logical, &key.id).unwrap();
+    legacy.checkpoint().unwrap();
+    drop(legacy);
+    let migrated = command()
+        .args(["migrate", "--db"])
+        .arg(&logical)
+        .output()
+        .unwrap();
+    assert!(migrated.status.success(), "{}", error(&migrated));
+    logical
+}
+
+#[cfg(any(windows, target_os = "linux"))]
+fn open_store(db: &Path) -> dendro_core::AnalyticsStore {
+    dendro_core::presentation::ReadRequest::open(db)
+        .unwrap()
+        .open_store()
+        .unwrap()
+}
+
+#[cfg(any(windows, target_os = "linux"))]
+fn run_agent(db: &Path, interval: &str, args: &[&str]) -> Output {
+    let mut command = command();
+    command
+        .arg("run-agent")
+        .args(["--interval", interval, "--flush-every", "60s"])
+        .arg("--db")
+        .arg(db)
+        .arg("--")
+        .args(args);
+    command.output().unwrap()
+}
+
+#[cfg(any(windows, target_os = "linux"))]
+#[test]
+fn run_agent_propagates_exit_code_and_stores_the_root_as_launched() {
+    let scratch = Scratch::new();
+    let db = migrated_db(&scratch, "exit.duckdb");
+    #[cfg(windows)]
+    let args = ["cmd", "/c", "exit", "3"];
+    #[cfg(not(windows))]
+    let args = ["sh", "-c", "exit 3"];
+    let output = run_agent(&db, "50ms", &args);
+    assert_eq!(output.status.code(), Some(3), "{}", error(&output));
+    let (exe, started): (String, i64) = open_store(&db)
+        .with_private_connection(|conn| {
+            let leaked: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM process_identities
+                 WHERE exe_name LIKE ? OR COALESCE(harness, '') LIKE ?
+                    OR COALESCE(attribution, '') LIKE ?",
+                ["%exit%", "%exit%", "%exit%"],
+                |row| row.get(0),
+            )?;
+            assert_eq!(leaked, 0, "command arguments must not be stored");
+            Ok(conn.query_row(
+                "SELECT exe_name, start_time_unix_s FROM process_identities WHERE attribution = ?",
+                ["launched"],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )?)
+        })
+        .unwrap();
+    let exe_lower = exe.to_ascii_lowercase();
+    #[cfg(windows)]
+    assert!(exe_lower == "cmd.exe" || exe_lower == "cmd", "{exe}");
+    #[cfg(not(windows))]
+    assert_eq!(exe_lower, "sh");
+    assert!(started > 0, "pinned root keeps the OS start time");
+}
+
+#[cfg(any(windows, target_os = "linux"))]
+#[test]
+fn run_agent_tracks_a_grandchild_under_the_pinned_root() {
+    let scratch = Scratch::new();
+    let db = migrated_db(&scratch, "tree.duckdb");
+    #[cfg(windows)]
+    let args = ["cmd", "/c", "ping", "-n", "6", "127.0.0.1"];
+    #[cfg(not(windows))]
+    let args = ["sh", "-c", "sleep 2 & wait"];
+    let output = run_agent(&db, "50ms", &args);
+    assert!(output.status.success(), "{}", error(&output));
+    let descendants: i64 = open_store(&db)
+        .with_private_connection(|conn| {
+            let leaked: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM process_identities
+                 WHERE exe_name LIKE ? OR COALESCE(harness, '') LIKE ?",
+                ["%127.0.0.1%", "%127.0.0.1%"],
+                |row| row.get(0),
+            )?;
+            assert_eq!(leaked, 0);
+            Ok(conn.query_row(
+                "SELECT COUNT(*) FROM process_identities AS child
+                 WHERE child.attribution IS NULL
+                   AND child.root_key = (
+                       SELECT identity_key FROM process_identities
+                       WHERE attribution = ? LIMIT 1
+                   )",
+                ["launched"],
+                |row| row.get(0),
+            )?)
+        })
+        .unwrap();
+    assert!(
+        descendants >= 1,
+        "grandchild must sit under the launched root"
+    );
+}
+
+#[cfg(any(windows, target_os = "linux"))]
+#[test]
+fn run_agent_spawn_failure_saves_nothing() {
+    let scratch = Scratch::new();
+    let db = migrated_db(&scratch, "missing.duckdb");
+    let output = run_agent(&db, "1s", &["dendro-missing-run-agent-binary"]);
+    assert_ne!(output.status.code().unwrap_or(0), 0);
+    let stderr = error(&output);
+    assert!(stderr.contains("could not launch"), "stderr was: {stderr}");
+    let rows: i64 = open_store(&db)
+        .with_private_connection(|conn| {
+            let exists: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = ?",
+                ["process_identities"],
+                |row| row.get(0),
+            )?;
+            if exists == 0 {
+                return Ok(0);
+            }
+            Ok(
+                conn.query_row("SELECT COUNT(*) FROM process_identities", [], |row| {
+                    row.get(0)
+                })?,
+            )
+        })
+        .unwrap();
+    assert_eq!(rows, 0);
+}
