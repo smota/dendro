@@ -1318,6 +1318,11 @@ fn evaluate_report_snapshot(
     }
     // AC6: one row per discovered session in scope, with its period categories
     // and its untimestamped records, which stay outside every period figure.
+    // Fleet totals sum each `native_session` once. Grok child sessions have
+    // their own rows; `subagent_finished.tokens_used` is not added again.
+    // Claude sidechain usage is stored under `sessionId`, which is the parent
+    // session, so that parent's total already includes it. It is not re-keyed
+    // onto `agentId`.
     let mut session_period =
         std::collections::BTreeMap::<(String, String), (Categories, usize)>::new();
     for row in &usage {

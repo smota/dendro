@@ -53,7 +53,7 @@ impl Fixture {
                 // `main` created none of the additive tables either.
                 conn.execute_batch(
                     "DROP TABLE message_facts; DROP TABLE process_samples;
-                     DROP TABLE process_identities; CHECKPOINT;",
+                     DROP TABLE process_identities; DROP TABLE session_edges; CHECKPOINT;",
                 )
                 .unwrap();
             }
@@ -437,6 +437,99 @@ fn schema4_validator_refuses_a_malformed_process_samples_table() {
     let conn = Connection::open(&copy).unwrap();
     conn.execute_batch(
         "CREATE TABLE process_samples (identity_key VARCHAR, argv VARCHAR); CHECKPOINT;",
+    )
+    .unwrap();
+    drop(conn);
+    assert!(m::validate_selected_schema4(&copy, &source, &key).is_err());
+}
+
+#[test]
+fn selected_session_edges_publish_on_a_main_era_schema3_source() {
+    use chrono::{TimeZone, Utc};
+    use dendro_core::{AnalyticsStore, SessionEdgeFact};
+    let fixture = Fixture::build_main_style();
+    let selected = binding::migrate_logical_db(&fixture.db, &fixture.choice()).unwrap();
+    assert_eq!(table_count(&selected.database, "session_edges"), 0);
+    let observed = Utc.with_ymd_and_hms(2026, 10, 25, 0, 0, 0).unwrap();
+    let edge = SessionEdgeFact {
+        source_key: "src:lineage:spawn:child-session".into(),
+        source_id: "src".into(),
+        harness: "claude".into(),
+        parent_session: "parent-session".into(),
+        child_session: "child-session".into(),
+        relation: "spawn".into(),
+        status: "started".into(),
+        observed_at: Some(observed),
+        evidence_kind: "claude.sidechain".into(),
+        generation: 1,
+    };
+    let updated = binding::mutate_selected(&selected, |staged, _| {
+        let store = AnalyticsStore::open_staged(staged)?;
+        store.commit_session_edges(std::slice::from_ref(&edge))?;
+        store.checkpoint()?;
+        Ok(())
+    })
+    .expect("lazily created session_edges must not invalidate schema4 custody");
+    assert_eq!(table_count(&updated.database, "session_edges"), 1);
+    drop(updated);
+    drop(selected);
+    let reopened = reopen(&fixture);
+    assert_eq!(table_count(&reopened.database, "session_edges"), 1);
+    let conn = Connection::open_with_flags(
+        &reopened.database,
+        duckdb::Config::default()
+            .access_mode(duckdb::AccessMode::ReadOnly)
+            .unwrap(),
+    )
+    .unwrap();
+    let (relation, status, parent): (String, String, String) = conn
+        .query_row(
+            "SELECT relation, status, parent_session FROM session_edges WHERE child_session = ?",
+            ["child-session"],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(relation, "spawn");
+    assert_eq!(status, "started");
+    assert_eq!(parent, "parent-session");
+    drop(conn);
+    let roots = AnalyticsStore::open_read_only_selected(&reopened)
+        .unwrap()
+        .lineage_roots("claude", "child-session")
+        .unwrap();
+    assert_eq!(
+        roots.roots,
+        std::collections::BTreeSet::from(["parent-session".into()])
+    );
+    assert!(!roots.cycle);
+    assert!(!roots.unresolved);
+    drop(reopened);
+    let (restored, _) =
+        binding::rollback_logical_db(&fixture.db, &fixture.choice(), false).unwrap();
+    assert_eq!(schema(&restored.database), 3);
+    assert_eq!(m::sha256_file(&restored.database).unwrap(), fixture.db_hash);
+    fixture.assert_unchanged();
+}
+
+#[test]
+fn schema4_validator_refuses_a_malformed_session_edges_table() {
+    let fixture = Fixture::build_main_style();
+    let selected = binding::migrate_logical_db(&fixture.db, &fixture.choice()).unwrap();
+    let source = selected
+        .custody
+        .bundle()
+        .path()
+        .join("schema3-preimage.duckdb");
+    let key = selected
+        .custody
+        .bundle()
+        .path()
+        .join("schema3-preimage.key");
+    let copy = fixture.root.path().join("bad-session-edges.duckdb");
+    std::fs::copy(&selected.database, &copy).unwrap();
+    let conn = Connection::open(&copy).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE session_edges (source_key VARCHAR, body VARCHAR); CHECKPOINT;",
     )
     .unwrap();
     drop(conn);

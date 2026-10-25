@@ -100,6 +100,37 @@ pub enum WorkRelation {
         satisfaction: Option<OutcomeId>,
     },
 }
+
+impl WorkRelation {
+    /// Serde `kind` (`rename_all = "snake_case"`). `session_edges.relation` stores these names.
+    pub fn wire_kind(&self) -> &'static str {
+        match self {
+            Self::Spawn { .. } => "spawn",
+            Self::DelegateExisting { .. } => "delegate_existing",
+            Self::Handoff { .. } => "handoff",
+            Self::Return { .. } => "return",
+            Self::Join { .. } => "join",
+            Self::Retry { .. } => "retry",
+            Self::Resume { .. } => "resume",
+            Self::Dependency { .. } => "dependency",
+        }
+    }
+
+    pub fn is_wire_kind(name: &str) -> bool {
+        matches!(
+            name,
+            "spawn"
+                | "delegate_existing"
+                | "handoff"
+                | "return"
+                | "join"
+                | "retry"
+                | "resume"
+                | "dependency"
+        )
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkEdge {

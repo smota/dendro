@@ -23,6 +23,10 @@ pub struct Coverage {
     pub malformed: u64,
     pub unsupported_schema: u64,
     pub not_projected: u64,
+    /// Lineage-shaped records with no explicit parent and child session.
+    pub lineage_not_explicit: u64,
+    /// Session edges written from explicit parent/child fields.
+    pub edges: u64,
     pub held_tail: u64,
     pub partial: bool,
 }
@@ -36,6 +40,8 @@ impl Coverage {
         self.malformed += other.malformed;
         self.unsupported_schema += other.unsupported_schema;
         self.not_projected += other.not_projected;
+        self.lineage_not_explicit += other.lineage_not_explicit;
+        self.edges += other.edges;
         self.held_tail += other.held_tail;
         self.partial |= other.partial;
     }
@@ -48,6 +54,7 @@ impl Coverage {
             ("malformed", self.malformed),
             ("unsupported_schema", self.unsupported_schema),
             ("no_projectable_fact", self.not_projected),
+            ("lineage_not_explicit", self.lineage_not_explicit),
         ];
         let total: u64 = reasons.iter().map(|(_, count)| count).sum();
         let detail = reasons
@@ -57,10 +64,11 @@ impl Coverage {
             .collect::<Vec<_>>()
             .join(" ");
         format!(
-            "coverage={} projected={} unprojected={total} held_tail={} ({detail})",
+            "coverage={} projected={} unprojected={total} held_tail={} edges={} ({detail})",
             if self.partial { "partial" } else { "complete" },
             self.projected,
-            self.held_tail
+            self.held_tail,
+            self.edges
         )
     }
 }

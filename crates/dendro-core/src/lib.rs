@@ -30,6 +30,7 @@ pub mod sealed_run;
 pub mod security_v1;
 #[cfg(any(windows, target_os = "linux"))]
 pub mod selection_binding;
+pub mod session_lineage;
 pub mod spotlight;
 pub mod storage;
 pub mod tool_category;

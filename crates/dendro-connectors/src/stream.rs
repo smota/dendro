@@ -423,6 +423,8 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
     let mut usage_attribution = UsageAttribution::default();
     let mut tools = Vec::new();
     let mut messages: Vec<MessageFact> = Vec::new();
+    let mut session_edges: Vec<dendro_core::SessionEdgeFact> = Vec::new();
+    let mut open_agents = crate::lineage::OpenAgents::default();
     let mut tool_categories: Vec<(String, ToolCategory)> = Vec::new();
     let mut seen_messages = HashSet::new();
     let mut unknown_types = HashSet::new();
@@ -700,14 +702,49 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
                 }
                 None => false,
             };
+            let mut projected_edge = false;
+            let mut lineage_gap = false;
+            match crate::lineage::observe(
+                harness,
+                &value,
+                file_session.as_ref().map(|session| session.raw.as_str()),
+                &mut open_agents,
+            ) {
+                crate::lineage::Hit::None => {}
+                crate::lineage::Hit::Gap => lineage_gap = true,
+                crate::lineage::Hit::Resume(edge) => {
+                    let source_key = format!("{source_id}:lineage:{}", edge.body);
+                    match store.session_edge_parent(&source_key)? {
+                        Some(parent) => {
+                            session_edges.push(session_edge_fact(
+                                source_id, harness, generation, tool_key, &edge, &parent,
+                            ));
+                            projected_edge = true;
+                            coverage.edges += 1;
+                        }
+                        None => lineage_gap = true,
+                    }
+                }
+                crate::lineage::Hit::Edge(edge) => {
+                    let parent = edge.parent_raw.clone();
+                    session_edges.push(session_edge_fact(
+                        source_id, harness, generation, tool_key, &edge, &parent,
+                    ));
+                    projected_edge = true;
+                    coverage.edges += 1;
+                }
+            }
             match parse_value(harness, &value, &mut counters) {
                 Ok((buckets, partial)) => {
                     if !partial.is_empty() {
                         reader_complete = false;
                         coverage_defect = true;
                     }
-                    if projected_tool || projected_message || !buckets.is_empty() {
+                    if projected_tool || projected_message || !buckets.is_empty() || projected_edge
+                    {
                         coverage.projected += 1;
+                    } else if lineage_gap {
+                        coverage.lineage_not_explicit += 1;
                     } else if !partial.is_empty() {
                         coverage.unsupported_schema += 1;
                     } else {
@@ -901,6 +938,7 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
             },
             &baseline,
         )?;
+        store.commit_session_edges(&session_edges)?;
         store.record_tool_categories(&tool_categories)?;
         store.record_usage_models(&usage_models)?;
         for note in &warnings {
@@ -918,6 +956,7 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
         usages.clear();
         tools.clear();
         messages.clear();
+        session_edges.clear();
         warnings.clear();
         tool_categories.clear();
         usage_models.clear();
@@ -1018,6 +1057,28 @@ fn conflicting_session(harness: &str, text: &str, first: &str) -> bool {
             .map(str::to_string)
     });
     named.is_some_and(|id| id != first)
+}
+
+fn session_edge_fact(
+    source_id: &str,
+    harness: &str,
+    generation: i64,
+    tool_key: Option<&[u8]>,
+    edge: &crate::lineage::ObservedEdge,
+    parent_raw: &str,
+) -> dendro_core::SessionEdgeFact {
+    dendro_core::SessionEdgeFact {
+        source_key: format!("{source_id}:lineage:{}", edge.body),
+        source_id: source_id.to_string(),
+        harness: harness.to_string(),
+        parent_session: seal_session(tool_key, harness, parent_raw),
+        child_session: seal_session(tool_key, harness, &edge.child_raw),
+        relation: edge.relation.to_string(),
+        status: edge.status.to_string(),
+        observed_at: edge.observed_at,
+        evidence_kind: edge.evidence_kind.to_string(),
+        generation,
+    }
 }
 
 fn seal_session(key: Option<&[u8]>, harness: &str, raw: &str) -> String {
@@ -1205,8 +1266,8 @@ pub(crate) const PI_RECORD_TYPES: &[&str] = &[
 /// becomes usage, and only `tool_call` / `tool_call_update` become tool
 /// facts. Message, thought, hook, compaction, and background-task bodies
 /// are counted and then dropped. `subagent_spawned` / `subagent_finished`
-/// are lineage evidence in the file, but UsageFact and ToolFact have no
-/// parent/child slot, so those lines are counted the same way and not stored.
+/// are lineage evidence. Explicit `parent_session_id` and `child_session_id`
+/// become a `session_edges` spawn. `tokens_used` is not a usage fact.
 pub(crate) const GROK_RECORD_TYPES: &[&str] = &[
     "agent_message_chunk",
     "agent_thought_chunk",
@@ -1402,6 +1463,10 @@ fn parse_codex(value: &Value, counters: &mut CodexCounters) -> Result<Option<Buc
     }))
 }
 
+/// Usage stays on `sessionId`. In a sidechain file (`agent-<id>.jsonl`) that
+/// id is the parent session, so the parent's per-session total includes the
+/// sidechain usage. `agentId` is the child on the lineage edge only. Do not
+/// re-key these rows onto `agentId`.
 fn parse_claude(value: &Value) -> Result<Option<Buckets>, String> {
     if value.get("type").and_then(|v| v.as_str()) != Some("assistant") {
         return Ok(None);
@@ -1467,6 +1532,11 @@ fn parse_pi(value: &Value) -> Result<Option<Buckets>, String> {
 /// One usage row per model inside `turn_completed`. The parent usage object is
 /// not stored again: `modelUsage` repeats it, and writing both would double
 /// count. A turn with no `modelUsage` object stores the parent once.
+/// `subagent_finished.tokens_used` is a lineage statistic. FORMAT.md does not
+/// define parent `turn_completed.usage` as including the child, and the child
+/// session file carries its own `turn_completed` rows. Do not add `tokens_used`
+/// here or fleet totals would count the child twice. Claude Task tool results
+/// are not usage records either; only assistant `/message/usage` is stored.
 /// A `turn_completed` with no usage object is normal and stores nothing.
 /// One bad `modelUsage` entry warns and is skipped; sibling models are kept.
 fn parse_grok(value: &Value) -> Result<(Vec<Buckets>, Vec<String>), String> {
@@ -2841,7 +2911,7 @@ mod tests {
                 reasons,
                 [
                     "coverage-partial generation=1",
-                    "coverage=partial projected=3 unprojected=3 held_tail=0 (unknown_kind=1 malformed=2)",
+                    "coverage=partial projected=3 unprojected=3 held_tail=0 edges=0 (unknown_kind=1 malformed=2)",
                     "invalid-utf8",
                     "malformed-json",
                     "unknown-record-type: qa_unknown_record_version_999"
