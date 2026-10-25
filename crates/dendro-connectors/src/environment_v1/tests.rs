@@ -79,9 +79,11 @@ fn tracks_own_harness_roots_and_their_descendants_only() {
     let batch = c.drain();
     let root = batch.identities.iter().find(|i| i.pid == 10).unwrap();
     assert_eq!(root.harness.as_deref(), Some("claude.exe"));
+    assert_eq!(root.attribution.as_deref(), Some("discovered"));
     let leaf = batch.identities.iter().find(|i| i.pid == 12).unwrap();
     assert_eq!(leaf.root_key, root.identity_key);
     assert_eq!(leaf.harness, None);
+    assert_eq!(leaf.attribution, None);
     assert_eq!(
         batch.samples.len(),
         4,
@@ -134,6 +136,21 @@ fn pid_reuse_ends_the_old_identity_and_never_continues_it() {
 }
 
 #[test]
+fn an_exited_pin_stores_the_file_name_and_not_the_path() {
+    let mut c = collector(Fake::default(), Config::default());
+    c.pin_launched(9, None);
+    c.note_exited_pin(9, r"C:\secret\dir\cmd.exe");
+    let batch = c.drain();
+    assert_eq!(batch.identities.len(), 1);
+    assert_eq!(batch.identities[0].exe_name, "cmd.exe");
+    assert_eq!(batch.identities[0].attribution.as_deref(), Some("launched"));
+    assert!(batch.identities[0].ended_at.is_some());
+    assert!(batch.identities[0].cwd_fingerprint.is_none());
+    assert!(!batch.identities[0].exe_name.contains("secret"));
+    assert!(batch.identities[0].start_time_unix_s > 0);
+}
+
+#[test]
 fn a_pinned_root_is_adopted_once_whatever_its_name() {
     let mut fake = Fake::default();
     fake.add(30, Some(1), 100, "python", false);
@@ -144,6 +161,12 @@ fn a_pinned_root_is_adopted_once_whatever_its_name() {
     let mut c = collector(fake, config);
     c.tick(t(1));
     assert_eq!(tracked_pids(&c), vec![30]);
+    let pinned = c.drain();
+    assert_eq!(
+        pinned.identities[0].attribution.as_deref(),
+        Some("launched")
+    );
+    assert_eq!(pinned.identities[0].start_time_unix_s, 100);
     c.source.add(30, Some(1), 700, "python", false); // reused pid
     c.tick(t(2));
     assert!(tracked_pids(&c).is_empty(), "the pin was consumed");

@@ -206,8 +206,10 @@ impl AnalyticsStore {
         first_seen TIMESTAMP NOT NULL,
         last_seen TIMESTAMP NOT NULL,
         ended_at TIMESTAMP,
-        visibility_limits VARCHAR NOT NULL
+        visibility_limits VARCHAR NOT NULL,
+        attribution VARCHAR
     );
+    ALTER TABLE process_identities ADD COLUMN IF NOT EXISTS attribution VARCHAR;
     CREATE TABLE IF NOT EXISTS process_samples (
         watch_id VARCHAR NOT NULL,
         identity_key VARCHAR NOT NULL,
@@ -1057,6 +1059,34 @@ impl AnalyticsStore {
         Ok(())
     }
 
+    /// `#82` shipped `process_identities` without `attribution`. Selected
+    /// publishes compare columns with `semantic_schema()` even when this run
+    /// writes no process samples, so add the column before that check.
+    pub(crate) fn ensure_process_attribution_column(&self) -> Result<()> {
+        let exists: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = ?",
+            ["process_identities"],
+            |row| row.get(0),
+        )?;
+        if exists == 0 {
+            return Ok(());
+        }
+        self.conn.execute_batch(
+            "ALTER TABLE process_identities ADD COLUMN IF NOT EXISTS attribution VARCHAR",
+        )?;
+        Ok(())
+    }
+
+    /// Closed vocabulary for `process_identities.attribution`.
+    fn process_attribution(value: Option<&str>) -> Result<Option<&'static str>> {
+        match value {
+            None => Ok(None),
+            Some("launched") => Ok(Some("launched")),
+            Some("discovered") => Ok(Some("discovered")),
+            Some(_) => anyhow::bail!("process attribution must be launched or discovered"),
+        }
+    }
+
     /// Publish process identities and samples in one transaction. Identities
     /// upsert (exit and last-seen move forward, first-seen never does); samples
     /// are keyed by (watch, identity, seq) and never overwritten.
@@ -1080,7 +1110,7 @@ impl AnalyticsStore {
             let mut stmt = tx.prepare(
                 "INSERT INTO process_identities
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                         CAST(? AS TIMESTAMP), CAST(? AS TIMESTAMP), CAST(? AS TIMESTAMP), ?)
+                         CAST(? AS TIMESTAMP), CAST(? AS TIMESTAMP), CAST(? AS TIMESTAMP), ?, ?)
                  ON CONFLICT (identity_key) DO UPDATE SET
                      last_seen = excluded.last_seen,
                      ended_at = excluded.ended_at,
@@ -1105,6 +1135,7 @@ impl AnalyticsStore {
                     i.last_seen.to_rfc3339(),
                     i.ended_at.map(|t| t.to_rfc3339()),
                     limits(&i.visibility_limits)?,
+                    Self::process_attribution(i.attribution.as_deref())?,
                 ])?;
             }
         }

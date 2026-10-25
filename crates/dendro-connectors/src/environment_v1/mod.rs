@@ -10,7 +10,11 @@
 //! Nothing unreadable is stored as zero: a missing value is NULL plus a
 //! visibility limit (`permission_denied`, `process_exited`, `counter_reset`,
 //! `truncated`, ...). A wrapper that knows the exact root pid feeds it with
-//! [`Config::pinned_roots`] instead of relying on the name match.
+//! [`Config::pinned_roots`] instead of relying on the name match. A pinned
+//! root is stored as attribution `launched`; a name-matched root as
+//! `discovered`. Descendants carry no attribution. The pin is the pid; the
+//! start time is the one the OS reports at adoption (`start_time_unix_s`),
+//! and a later start time on that pid is a different process.
 //!
 //! Unit mapping (the closest allowed domain units; `sysinfo` is the only reader):
 //! * CPU: total user+system time, `Unit::Microseconds` (sysinfo cannot split it).
@@ -85,6 +89,8 @@ pub struct Config {
     pub max_samples: usize,
     /// Exact root pids supplied by a launcher; tracked whatever their name.
     pub pinned_roots: BTreeSet<u32>,
+    /// Label stored on a pinned root. `None` stores the executable name.
+    pub pinned_harness: Option<String>,
 }
 
 impl Default for Config {
@@ -94,6 +100,7 @@ impl Default for Config {
             max_tracked: MAX_TRACKED,
             max_samples: MAX_SAMPLES_PER_PROCESS,
             pinned_roots: BTreeSet::new(),
+            pinned_harness: None,
         }
     }
 }
@@ -309,6 +316,54 @@ impl<S: ProcessSource> Collector<S> {
         }
     }
 
+    /// Pin a process this launcher just started. `harness`, when set, is the
+    /// label stored on that root; the executable name still comes from the scan.
+    pub fn pin_launched(&mut self, pid: u32, harness: Option<String>) {
+        self.config.pinned_roots.insert(pid);
+        if let Some(harness) = harness {
+            self.config.pinned_harness = Some(harness);
+        }
+    }
+
+    pub fn tracks(&self, pid: u32) -> bool {
+        self.tracked.contains_key(&pid)
+    }
+
+    /// The pinned process exited before a scan could see it. Stores the exe
+    /// file name only (no directory, no arguments) and the launch-second.
+    /// A process the scan already adopted is left untouched.
+    pub fn note_exited_pin(&mut self, pid: u32, program: &str) {
+        if self.tracks(pid) || !self.config.pinned_roots.contains(&pid) {
+            return;
+        }
+        let now = Utc::now();
+        let start_s = now.timestamp();
+        if start_s <= 0 {
+            return;
+        }
+        let raw = RawProcess {
+            pid,
+            parent: None,
+            start_s,
+            name: exe_file_name(program).to_string(),
+            own: true,
+        };
+        self.track(&raw, None, now);
+        let Some(mut tracked) = self.tracked.remove(&pid) else {
+            return;
+        };
+        // The process is already gone, so a cwd read would belong to whoever
+        // reused the pid. Drop it.
+        self.cwds.remove(&tracked.fact.identity_key);
+        tracked.fact.ended_at = Some(now);
+        tracked
+            .fact
+            .visibility_limits
+            .insert(VisibilityLimit::ProcessExited);
+        self.dirty
+            .insert(tracked.fact.identity_key.clone(), tracked.fact);
+    }
+
     fn matches_harness(&self, name: &str) -> bool {
         let lower = name.to_ascii_lowercase();
         let base = lower.strip_suffix(".exe").unwrap_or(&lower);
@@ -316,6 +371,11 @@ impl<S: ProcessSource> Collector<S> {
             .harnesses
             .iter()
             .any(|h| h.eq_ignore_ascii_case(base))
+    }
+
+    /// One observation at the current time.
+    pub fn tick_now(&mut self) {
+        self.tick(Utc::now());
     }
 
     /// One observation: end what vanished, adopt what qualifies, sample all.
@@ -427,16 +487,27 @@ impl<S: ProcessSource> Collector<S> {
     fn track(&mut self, p: &RawProcess, root_key: Option<String>, now: DateTime<Utc>) {
         let (platform, _, _) = platform();
         // A pinned pid is consumed once adopted, so a reused pid is not pinned.
-        self.config.pinned_roots.remove(&p.pid);
+        let launched = self.config.pinned_roots.remove(&p.pid);
         // Unkeyed placeholder; `Batch::seal` replaces it with the keyed id.
         let identity_key = format!("{platform}:{}:{}", p.pid, p.start_s);
-        let harness = if root_key.is_none() {
+        let (harness, attribution) = if root_key.is_none() {
             if let Some(cwd) = self.source.cwd(p.pid) {
                 self.cwds.insert(identity_key.clone(), cwd);
             }
-            Some(redact(&p.name))
+            let label = if launched {
+                self.config
+                    .pinned_harness
+                    .as_deref()
+                    .unwrap_or(p.name.as_str())
+            } else {
+                p.name.as_str()
+            };
+            (
+                Some(redact(label)),
+                Some(if launched { "launched" } else { "discovered" }.to_string()),
+            )
         } else {
-            None
+            (None, None)
         };
         let fact = ProcessIdentityFact {
             root_key: root_key.unwrap_or_else(|| identity_key.clone()),
@@ -455,6 +526,7 @@ impl<S: ProcessSource> Collector<S> {
             last_seen: now,
             ended_at: None,
             visibility_limits: BTreeSet::new(),
+            attribution,
         };
         self.tracked.insert(
             p.pid,
@@ -726,6 +798,14 @@ impl SysinfoSource {
                 .without_tasks(),
         );
     }
+}
+
+fn exe_file_name(program: &str) -> &str {
+    program
+        .rsplit(['/', '\\'])
+        .next()
+        .filter(|name| !name.is_empty())
+        .unwrap_or(program)
 }
 
 fn clean_name(name: &std::ffi::OsStr) -> String {

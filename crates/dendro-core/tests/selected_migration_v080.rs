@@ -231,6 +231,7 @@ fn selected_process_samples_publish_on_a_main_era_schema3_source() {
         last_seen: now,
         ended_at: None,
         visibility_limits: Default::default(),
+        attribution: Some("launched".into()),
     };
     let sample = |seq: i64, rss: Option<i64>| ProcessSampleFact {
         watch_id: "watch-1".into(),
@@ -261,15 +262,160 @@ fn selected_process_samples_publish_on_a_main_era_schema3_source() {
     assert_eq!(table_count(&updated.database, "process_samples"), 2);
     drop(updated);
     drop(selected);
-    assert_eq!(
-        table_count(&reopen(&fixture).database, "process_samples"),
-        2
-    );
+    let reopened = reopen(&fixture);
+    assert_eq!(table_count(&reopened.database, "process_samples"), 2);
+    let conn = Connection::open_with_flags(
+        &reopened.database,
+        duckdb::Config::default()
+            .access_mode(duckdb::AccessMode::ReadOnly)
+            .unwrap(),
+    )
+    .unwrap();
+    let attribution: String = conn
+        .query_row(
+            "SELECT attribution FROM process_identities WHERE identity_key = ?",
+            ["id-1"],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(attribution, "launched");
+    drop(conn);
+    drop(reopened);
     let (restored, _) =
         binding::rollback_logical_db(&fixture.db, &fixture.choice(), false).unwrap();
     assert_eq!(schema(&restored.database), 3);
     assert_eq!(m::sha256_file(&restored.database).unwrap(), fixture.db_hash);
     fixture.assert_unchanged();
+}
+
+/// `process_identities` as shipped before `attribution` (exact #82 columns).
+const LEGACY_PROCESS_TABLES: &str = "
+CREATE TABLE process_identities (
+    identity_key VARCHAR PRIMARY KEY,
+    root_key VARCHAR NOT NULL,
+    pid BIGINT NOT NULL,
+    parent_pid BIGINT,
+    platform VARCHAR NOT NULL,
+    start_time_unix_s BIGINT NOT NULL,
+    exe_name VARCHAR NOT NULL,
+    harness VARCHAR,
+    cwd_fingerprint VARCHAR,
+    session_link VARCHAR,
+    environment_kind VARCHAR NOT NULL,
+    isolation_hint VARCHAR NOT NULL,
+    first_seen TIMESTAMP NOT NULL,
+    last_seen TIMESTAMP NOT NULL,
+    ended_at TIMESTAMP,
+    visibility_limits VARCHAR NOT NULL
+);
+CREATE TABLE process_samples (
+    watch_id VARCHAR NOT NULL,
+    identity_key VARCHAR NOT NULL,
+    seq BIGINT NOT NULL,
+    ts TIMESTAMP NOT NULL,
+    cpu_time_us BIGINT,
+    rss_bytes BIGINT,
+    rss_unit VARCHAR NOT NULL,
+    disk_read_bytes BIGINT,
+    disk_write_bytes BIGINT,
+    capture_method VARCHAR NOT NULL,
+    visibility_limits VARCHAR NOT NULL,
+    PRIMARY KEY (watch_id, identity_key, seq)
+)";
+
+#[test]
+fn selected_message_ingest_accepts_legacy_process_tables_without_attribution() {
+    use dendro_core::domain_v1::{Direction, Grain, MessageRole, Modality};
+    use dendro_core::{
+        AnalyticsStore, CodexCounters, FileBaselineAttempt, MessageFact, ReaderState,
+    };
+    let fixture = Fixture::build_main_style();
+    let selected = binding::migrate_logical_db(&fixture.db, &fixture.choice()).unwrap();
+    let fact = MessageFact {
+        source_key: "claude:msg-1".into(),
+        harness: "claude".into(),
+        native_session: Some("native-M".into()),
+        ts: None,
+        seq: 1,
+        role: MessageRole::User,
+        direction: Direction::Inbound,
+        modalities: [Modality::Text].into_iter().collect(),
+        grain: Grain::Message,
+        generation: 1,
+    };
+    let updated = binding::mutate_selected(&selected, |staged, _| {
+        // #82 tables already on the candidate. This ingest writes messages only.
+        let conn = Connection::open(staged)?;
+        conn.execute_batch(LEGACY_PROCESS_TABLES)?;
+        conn.execute(
+            "INSERT INTO process_identities VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS TIMESTAMP), CAST(? AS TIMESTAMP), NULL, ?)",
+            duckdb::params![
+                "id-82",
+                "id-82",
+                7_i64,
+                None::<i64>,
+                "windows",
+                1_800_000_000_i64,
+                "claude",
+                Some("claude"),
+                None::<String>,
+                None::<String>,
+                "unknown",
+                "undetected",
+                "2026-10-25T00:00:00Z",
+                "2026-10-25T00:00:00Z",
+                ""
+            ],
+        )?;
+        conn.execute_batch("CHECKPOINT")?;
+        drop(conn);
+        let store = AnalyticsStore::open_staged(staged)?;
+        store.commit_file_batch_observed_messages(
+            "src-M",
+            "claude",
+            "m.jsonl",
+            1,
+            10,
+            "hash",
+            None::<&CodexCounters>,
+            &[],
+            &[],
+            std::slice::from_ref(&fact),
+            &[],
+            &ReaderState {
+                complete: true,
+                native_session: Some("native-M".into()),
+            },
+            &FileBaselineAttempt {
+                attempted_at: "2026-10-22T00:00:00Z".into(),
+                metadata: None,
+            },
+        )?;
+        store.checkpoint()?;
+        Ok(())
+    })
+    .expect("a message ingest must publish when process tables still have the #82 layout");
+    assert_eq!(table_count(&updated.database, "message_facts"), 1);
+    let conn = Connection::open_with_flags(
+        &updated.database,
+        duckdb::Config::default()
+            .access_mode(duckdb::AccessMode::ReadOnly)
+            .unwrap(),
+    )
+    .unwrap();
+    let attribution: Option<String> = conn
+        .query_row(
+            "SELECT attribution FROM process_identities WHERE identity_key = ?",
+            ["id-82"],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(attribution, None);
+    drop(conn);
+    drop(updated);
+    drop(selected);
+    assert_eq!(table_count(&reopen(&fixture).database, "message_facts"), 1);
+    assert_eq!(schema(&reopen(&fixture).database), 4);
 }
 
 #[test]

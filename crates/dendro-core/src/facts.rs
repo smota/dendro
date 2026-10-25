@@ -305,6 +305,9 @@ pub struct ProcessIdentityFact {
     pub last_seen: DateTime<Utc>,
     pub ended_at: Option<DateTime<Utc>>,
     pub visibility_limits: std::collections::BTreeSet<crate::domain_v1::VisibilityLimit>,
+    /// `launched` when a wrapper pinned this root pid, `discovered` when the
+    /// name match adopted it, absent on descendants.
+    pub attribution: Option<String>,
 }
 
 /// One resource sample. An unreadable value is `None` plus a visibility limit,
