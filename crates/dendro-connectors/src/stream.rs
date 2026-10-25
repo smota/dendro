@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use dendro_core::file_metadata::{observe_path, FileMetadata};
 use dendro_core::{
-    classify_tool_invocation, tool_fingerprint, AnalyticsStore, CodexCounters, SkillFact,
-    ToolCategory, ToolFact, UsageFact, WarningNote,
+    classify_tool_invocation, tool_fingerprint, AnalyticsStore, CodexCounters, MessageFact,
+    SkillFact, ToolCategory, ToolFact, UsageFact, WarningNote,
 };
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -123,6 +123,7 @@ pub fn ingest_jsonl(
 /// What one ingest call read from a session file (AC1).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct FileStats {
+    pub coverage: crate::sdk::Coverage,
     /// Records read: complete, non-blank JSONL lines read by this call. Lines
     /// before the stored watermark were read by an earlier run and are not
     /// counted again; a trailing partial line is not a record yet.
@@ -183,6 +184,153 @@ fn ingest_jsonl_bounded(
     cutoff: Option<&dendro_core::FileCutoff>,
     after_header: impl FnOnce() -> Result<()>,
 ) -> Result<FileStats> {
+    let limits = crate::capture_registry_v1::Registry::reader_limits(harness);
+    ingest_jsonl_limited(
+        store,
+        source_id,
+        harness,
+        path,
+        tool_key,
+        cutoff,
+        after_header,
+        &limits,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn ingest_jsonl_limited(
+    store: &AnalyticsStore,
+    source_id: &str,
+    harness: &str,
+    path: &Path,
+    tool_key: Option<&[u8]>,
+    cutoff: Option<&dendro_core::FileCutoff>,
+    after_header: impl FnOnce() -> Result<()>,
+    limits: &crate::sdk::ReadLimits,
+) -> Result<FileStats> {
+    let mut header = Some(after_header);
+    let read = ingest_jsonl_file(
+        store,
+        source_id,
+        harness,
+        path,
+        tool_key,
+        cutoff,
+        &mut header,
+        limits,
+    )?;
+    let total = FileStats {
+        coverage: read.coverage,
+        records_read: read.records_read,
+        usage_records: read.usage_records,
+    };
+    // Only partial coverage is a warning; a complete read is not a defect. An
+    // idle re-run that reads no new bytes adds no row for the same defect.
+    if total.coverage.partial && read.advanced {
+        store.record_warning(&WarningNote {
+            path: path.display().to_string(),
+            line: None,
+            reason: total.coverage.summary(),
+        })?;
+    }
+    Ok(total)
+}
+
+struct FileOutcome {
+    coverage: crate::sdk::Coverage,
+    records_read: u64,
+    usage_records: u64,
+    /// The watermark moved: this call consumed bytes beyond the stored one.
+    advanced: bool,
+}
+
+enum CappedLine {
+    Eof,
+    /// Unterminated, or an oversize line that never found a newline. Not committed.
+    Partial,
+    Line(Vec<u8>),
+    /// A newline-terminated line longer than `limit`. The body was not kept.
+    Oversize {
+        len: u64,
+    },
+}
+
+/// Read one JSONL line without retaining more than `limit` bytes of it.
+/// An oversize line is hashed and counted, then discarded up to its newline.
+fn read_capped_line(
+    reader: &mut impl BufRead,
+    limit: u64,
+    hasher: &mut Sha256,
+) -> Result<CappedLine> {
+    let limit = usize::try_from(limit).unwrap_or(usize::MAX);
+    if limit == 0 {
+        anyhow::bail!("record limit is zero");
+    }
+    let checkpoint = hasher.clone();
+    let mut buf = Vec::new();
+    let mut oversize = false;
+    let mut total = 0u64;
+    loop {
+        let available = reader.fill_buf()?;
+        if available.is_empty() {
+            if !oversize && buf.is_empty() {
+                return Ok(CappedLine::Eof);
+            }
+            *hasher = checkpoint;
+            return Ok(CappedLine::Partial);
+        }
+        if let Some(i) = available.iter().position(|byte| *byte == b'\n') {
+            let take = i + 1;
+            if !oversize && buf.len().saturating_add(take) <= limit {
+                buf.extend_from_slice(&available[..take]);
+                hasher.update(&buf);
+                reader.consume(take);
+                return Ok(CappedLine::Line(buf));
+            }
+            if !oversize && !buf.is_empty() {
+                hasher.update(&buf);
+                total += buf.len() as u64;
+                buf.clear();
+            }
+            // `available` is the reader's fixed scratch, not a copy of the line.
+            hasher.update(&available[..take]);
+            total += take as u64;
+            reader.consume(take);
+            return Ok(CappedLine::Oversize { len: total });
+        }
+        let n = available.len();
+        if !oversize {
+            let room = limit - buf.len();
+            if n > room {
+                buf.extend_from_slice(&available[..room]);
+                hasher.update(&buf);
+                total += buf.len() as u64;
+                buf.clear();
+                reader.consume(room);
+                oversize = true;
+                continue;
+            }
+            buf.extend_from_slice(available);
+            reader.consume(n);
+            continue;
+        }
+        hasher.update(&available[..n]);
+        total += n as u64;
+        reader.consume(n);
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
+    store: &AnalyticsStore,
+    source_id: &str,
+    harness: &str,
+    path: &Path,
+    tool_key: Option<&[u8]>,
+    cutoff: Option<&dendro_core::FileCutoff>,
+    after_header: &mut Option<F>,
+    limits: &crate::sdk::ReadLimits,
+) -> Result<FileOutcome> {
     let mismatch = |reason: &str| {
         anyhow::anyhow!(
             "mismatch: source {} {}",
@@ -209,8 +357,8 @@ fn ingest_jsonl_bounded(
             return Err(mismatch("file prefix digest differs"));
         }
     }
-    let held_before = FileMetadata::from_file(&file);
-    let named_before = observe_path(path);
+    let mut held_before = FileMetadata::from_file(&file);
+    let mut named_before = observe_path(path);
     let byte_limit = cutoff
         .map(|entry| entry.byte_length)
         .unwrap_or(file.metadata()?.len());
@@ -241,14 +389,17 @@ fn ingest_jsonl_bounded(
         )?),
         _ => None,
     };
-    after_header()?;
+    if let Some(after_header) = after_header.take() {
+        after_header()?;
+    }
     file.seek(SeekFrom::Start(0))?;
-    // One reusable line buffer. The generation is never copied.
     let mut reader = BufReader::with_capacity(64 * 1024, file.take(byte_limit));
-    let mut buf = Vec::new();
     let mut line_no = 0i64;
     let mut consumed = 0i64;
     let reset_generation = generation_was_reset(prior, generation);
+    let partial_reason = format!("coverage-partial generation={generation}");
+    let prior_partial =
+        !reset_generation && store.has_warning(&path.display().to_string(), &partial_reason)?;
     let mut counters = if reset_generation {
         CodexCounters::default()
     } else {
@@ -271,10 +422,13 @@ fn ingest_jsonl_bounded(
     let mut usage_models = Vec::new();
     let mut usage_attribution = UsageAttribution::default();
     let mut tools = Vec::new();
+    let mut messages: Vec<MessageFact> = Vec::new();
     let mut tool_categories: Vec<(String, ToolCategory)> = Vec::new();
     let mut seen_messages = HashSet::new();
     let mut unknown_types = HashSet::new();
     let mut records_read = 0u64;
+    let mut coverage = crate::sdk::Coverage::default();
+    let mut coverage_defect = prior_partial;
     let mut reader_complete = true;
     let mut source_session = file_session
         .as_ref()
@@ -317,304 +471,468 @@ fn ingest_jsonl_bounded(
             &mut warnings,
         );
     }
-    loop {
-        dendro_core::RUN_CANCEL.check()?;
-        buf.clear();
-        let n = reader.read_until(b'\n', &mut buf)?;
-        if n == 0 {
-            break;
-        }
-        if !buf.ends_with(b"\n") {
-            break;
-        }
-        hasher.update(&buf);
-        consumed += buf.len() as i64;
-        line_no += 1;
-        let is_new = consumed > prefix_end;
-        if !is_new {
-            if let Some(scan) = tool_scan.as_mut() {
-                scan.prefix_lines = line_no;
-            }
-        }
-        let bytes = &buf[..buf.len() - 1];
-        if is_new && !bytes.iter().all(|byte| byte.is_ascii_whitespace()) {
-            records_read += 1;
-        }
-        let text = match std::str::from_utf8(bytes) {
-            Ok(text) => text,
-            Err(_) => {
-                reader_complete = false;
-                if is_new {
-                    warnings.push(WarningNote {
-                        path: path.display().to_string(),
-                        line: Some(line_no),
-                        reason: "invalid-utf8".into(),
-                    });
-                }
-                continue;
-            }
-        };
-        if text.trim().is_empty() {
-            continue;
-        }
-        // Reader completion describes every complete line, including a legacy prefix.
-        let value = match serde_json::from_str::<Value>(text) {
-            Ok(value) => value,
-            Err(_) => {
-                reader_complete = false;
-                if is_new {
-                    warnings.push(WarningNote {
-                        path: path.display().to_string(),
-                        line: Some(line_no),
-                        reason: "malformed-json".into(),
-                    });
-                }
-                continue;
-            }
-        };
-        if unknown_record_type(harness, &value).is_some() {
-            reader_complete = false;
-        }
-        usage_attribution.observe(harness, &value);
-        if harness == "claude" {
-            if let Some(id) = value.get("sessionId").and_then(Value::as_str) {
-                claude_sessions.insert(seal_session(tool_key, harness, id));
-            }
-        }
-        let mut codex_skills = Vec::new();
-        let mut codex_categories = Vec::new();
-        if harness == "codex" && unknown_record_type(harness, &value).is_none() {
-            reader_complete &= observe_codex(
-                &value,
-                text,
-                source_session.as_deref().unwrap_or(""),
-                source_id,
-                generation,
-                line_no,
-                &mut codex_ordinal,
-                tool_key,
-                &mut tools,
-                &mut codex_skills,
-                &mut codex_categories,
-            )?;
-        }
-        if is_new {
-            for skill in codex_skills {
-                store.insert_skill(&skill)?;
-            }
-            tool_categories.extend(codex_categories);
-        }
-        if !is_new {
-            if let Some(scan) = tool_scan.as_mut() {
-                if unknown_record_type(harness, &value).is_none() {
-                    scan.observe(line_no, text, &value);
-                }
-            }
-            continue;
-        }
-        if let Some(session) = &file_session {
-            if session.from_header
-                && line_no > 1
-                && conflicting_session(harness, text, &session.raw)
+    let attempt_limit = limits.effective_line_attempts();
+    let mut usage_records = 0u64;
+    let initial_offset = offset;
+    // One streaming pass: each full batch is committed and the same reader,
+    // hasher and tool scan carry on from the committed position, so every
+    // line is parsed once however many batches the file needs.
+    let advanced = loop {
+        let mut batch_capped = false;
+        let mut decoded_in_batch = 0usize;
+        let mut attempts_in_batch = 0usize;
+        let batch_start = offset;
+        loop {
+            if decoded_in_batch >= limits.decoded_records_per_batch
+                || attempts_in_batch >= attempt_limit
             {
-                warnings.push(WarningNote {
-                    path: path.display().to_string(),
-                    line: Some(line_no),
-                    reason: "conflicting session header".into(),
-                });
+                batch_capped = true;
+                break;
             }
-        }
-        if let Some(reason) = unknown_record_type(harness, &value) {
-            let repeat = !unknown_types.insert(reason.clone())
-                || store.has_warning(&path.display().to_string(), &reason)?;
-            if !repeat {
-                warnings.push(WarningNote {
-                    path: path.display().to_string(),
-                    line: Some(line_no),
-                    reason,
-                });
+            dendro_core::RUN_CANCEL.check()?;
+            let capped = read_capped_line(&mut reader, limits.encoded_bytes, &mut hasher)?;
+            let buf = match capped {
+                CappedLine::Eof => break,
+                CappedLine::Partial => {
+                    reader_complete = false;
+                    coverage.partial = true;
+                    coverage.held_tail = 1;
+                    warnings.push(WarningNote {
+                        path: path.display().to_string(),
+                        line: Some(line_no + 1),
+                        reason: "unterminated-tail-held".into(),
+                    });
+                    break;
+                }
+                CappedLine::Oversize { len } => {
+                    consumed += i64::try_from(len)?;
+                    line_no += 1;
+                    let is_new = consumed > prefix_end;
+                    attempts_in_batch += usize::from(is_new);
+                    reader_complete = false;
+                    if !is_new {
+                        if let Some(scan) = tool_scan.as_mut() {
+                            scan.new_from = line_no;
+                        }
+                    }
+                    if is_new {
+                        records_read += 1;
+                        coverage.quarantined_oversize += 1;
+                        warnings.push(WarningNote {
+                            path: path.display().to_string(),
+                            line: Some(line_no),
+                            reason: crate::sdk::oversize_reason(limits).into(),
+                        });
+                    }
+                    continue;
+                }
+                CappedLine::Line(buf) => {
+                    consumed += i64::try_from(buf.len())?;
+                    buf
+                }
+            };
+            if !buf.ends_with(b"\n") {
+                break;
             }
-            continue;
-        }
-        if let Some(scan) = tool_scan.as_mut() {
-            scan.observe(line_no, text, &value);
-        }
-        match parse_value(harness, &value, &mut counters) {
-            Ok((buckets, partial)) => {
-                for reason in partial {
+            line_no += 1;
+            let is_new = consumed > prefix_end;
+            // The legacy prefix is re-read on every batch; only new lines spend the caps.
+            attempts_in_batch += usize::from(is_new);
+            if !is_new {
+                if let Some(scan) = tool_scan.as_mut() {
+                    scan.new_from = line_no;
+                }
+            }
+            let bytes = &buf[..buf.len() - 1];
+            if is_new && !bytes.iter().all(|byte| byte.is_ascii_whitespace()) {
+                records_read += 1;
+            }
+            let text = match std::str::from_utf8(bytes) {
+                Ok(text) => text,
+                Err(_) => {
+                    reader_complete = false;
+                    if is_new {
+                        coverage.malformed += 1;
+                        warnings.push(WarningNote {
+                            path: path.display().to_string(),
+                            line: Some(line_no),
+                            reason: "invalid-utf8".into(),
+                        });
+                    }
+                    continue;
+                }
+            };
+            if text.trim().is_empty() {
+                continue;
+            }
+            if crate::sdk::container_depth(bytes) > limits.nesting_depth {
+                reader_complete = false;
+                if is_new {
+                    coverage.quarantined_depth += 1;
+                    warnings.push(WarningNote {
+                        path: path.display().to_string(),
+                        line: Some(line_no),
+                        reason: "nesting_depth_exceeds_limit".into(),
+                    });
+                }
+                continue;
+            }
+            // Reader completion describes every complete line, including a legacy prefix.
+            #[cfg(test)]
+            PARSED_LINES.with(|parsed| parsed.set(parsed.get() + 1));
+            let value = match serde_json::from_str::<Value>(text) {
+                Ok(value) => {
+                    decoded_in_batch += usize::from(is_new);
+                    value
+                }
+                Err(_) => {
+                    reader_complete = false;
+                    if is_new {
+                        coverage.malformed += 1;
+                        warnings.push(WarningNote {
+                            path: path.display().to_string(),
+                            line: Some(line_no),
+                            reason: "malformed-json".into(),
+                        });
+                    }
+                    continue;
+                }
+            };
+            if unknown_record_type(harness, &value).is_some() {
+                reader_complete = false;
+            }
+            usage_attribution.observe(harness, &value);
+            if harness == "claude" {
+                if let Some(id) = value.get("sessionId").and_then(Value::as_str) {
+                    claude_sessions.insert(seal_session(tool_key, harness, id));
+                }
+            }
+            let mut codex_skills = Vec::new();
+            let mut codex_categories = Vec::new();
+            let tools_before = tools.len();
+            if harness == "codex" && unknown_record_type(harness, &value).is_none() {
+                reader_complete &= observe_codex(
+                    &value,
+                    text,
+                    source_session.as_deref().unwrap_or(""),
+                    source_id,
+                    generation,
+                    line_no,
+                    &mut codex_ordinal,
+                    tool_key,
+                    &mut tools,
+                    &mut codex_skills,
+                    &mut codex_categories,
+                )?;
+            }
+            if is_new {
+                for skill in codex_skills {
+                    store.insert_skill(&skill)?;
+                }
+                tool_categories.extend(codex_categories);
+            }
+            if !is_new {
+                if let Some(scan) = tool_scan.as_mut() {
+                    if unknown_record_type(harness, &value).is_none() {
+                        scan.observe(line_no, text, &value);
+                    }
+                }
+                continue;
+            }
+            if let Some(session) = &file_session {
+                if session.from_header
+                    && line_no > 1
+                    && conflicting_session(harness, text, &session.raw)
+                {
+                    warnings.push(WarningNote {
+                        path: path.display().to_string(),
+                        line: Some(line_no),
+                        reason: "conflicting session header".into(),
+                    });
+                }
+            }
+            if let Some(reason) = unknown_record_type(harness, &value) {
+                coverage_defect = true;
+                coverage.unknown_kind += 1;
+                let repeat = !unknown_types.insert(reason.clone())
+                    || store.has_warning(&path.display().to_string(), &reason)?;
+                if !repeat {
                     warnings.push(WarningNote {
                         path: path.display().to_string(),
                         line: Some(line_no),
                         reason,
                     });
                 }
-                let split = buckets.len() > 1;
-                for (index, mut bucket) in buckets.into_iter().enumerate() {
-                    if let Some(session) = &file_session {
-                        // The file's line-1 session wins over any per-line id.
-                        bucket.native_session = session.raw.clone();
-                    }
-                    if let Some(id) = &bucket.message_id {
-                        let sealed_session =
-                            seal_session(tool_key, harness, &bucket.native_session);
-                        let sealed_id = seal_message(tool_key, id);
-                        let seen = format!("{harness}\n{sealed_session}\n{sealed_id}");
-                        if !seen_messages.insert(seen)
-                            || store.message_seen(
-                                harness,
-                                &sealed_session,
-                                &sealed_id,
-                                generation,
-                            )?
-                        {
-                            continue;
-                        }
-                    }
-                    let source_key = if split {
-                        format!("{source_id}:{generation}:{line_no}:{index}")
-                    } else {
-                        format!("{source_id}:{generation}:{line_no}")
-                    };
-                    let model = bucket
-                        .model
-                        .clone()
-                        .or_else(|| usage_attribution.model.clone());
-                    usage_models.push((
-                        source_key.clone(),
-                        model,
-                        usage_attribution.effort.clone(),
-                    ));
-                    usages.push(UsageFact {
-                        source_key,
+                continue;
+            }
+            let mut projected_tool = tools.len() > tools_before;
+            if let Some(scan) = tool_scan.as_mut() {
+                let before = scan.calls.len() + scan.results.len() + scan.skills.len();
+                scan.observe(line_no, text, &value);
+                projected_tool |=
+                    scan.calls.len() + scan.results.len() + scan.skills.len() > before;
+            }
+            // Safe message metadata only: role, direction, modality, source order.
+            let projected_message = match crate::messages::observe(harness, &value) {
+                Some(obs) => {
+                    let session = file_session
+                        .as_ref()
+                        .map(|session| session.raw.as_str())
+                        .or(obs.session.as_deref())
+                        .map(|raw| seal_session(tool_key, harness, raw));
+                    messages.push(MessageFact {
+                        source_key: format!("{source_id}:{generation}:{line_no}:message"),
                         harness: harness.to_string(),
-                        native_session: seal_session(tool_key, harness, &bucket.native_session),
-                        message_id: bucket
-                            .message_id
-                            .as_deref()
-                            .map(|id| seal_message(tool_key, id)),
-                        ts: bucket.ts,
+                        native_session: session,
+                        ts: if harness == "grok" {
+                            grok_timestamp(&value)
+                        } else {
+                            timestamp_of(&value)
+                        },
                         seq: line_no,
-                        input_uncached: bucket.input_uncached,
-                        output: bucket.output,
-                        cache_read: bucket.cache_read,
-                        cache_write: bucket.cache_write,
-                        reasoning: bucket.reasoning,
-                        currency_total: bucket.currency_total,
+                        role: obs.role,
+                        direction: obs.direction,
+                        modalities: obs.modalities,
+                        grain: obs.grain,
                         generation,
-                        predecessor_source_key: None,
-                        predecessor_reason: bucket.predecessor_reason.clone(),
-                        prior_input_tokens: bucket.prior_input_tokens,
-                        prior_cached_input_tokens: bucket.prior_cached_input_tokens,
-                        prior_cache_write_input_tokens: bucket.prior_cache_write_input_tokens,
-                        prior_output_tokens: bucket.prior_output_tokens,
-                        prior_reasoning_output_tokens: bucket.prior_reasoning_output_tokens,
                     });
-                    if harness == "codex" && reset_generation && first_codex_in_this_call {
-                        if let Some(current) = usages.last_mut() {
-                            current.predecessor_reason = Some("reset".into());
-                            current.predecessor_source_key = None;
-                            current.prior_input_tokens = None;
-                            current.prior_cached_input_tokens = None;
-                            current.prior_cache_write_input_tokens = None;
-                            current.prior_output_tokens = None;
-                            current.prior_reasoning_output_tokens = None;
-                        }
-                    } else if bucket.predecessor_reason.as_deref() == Some("prior") {
-                        let key = usages
-                            .iter()
-                            .rev()
-                            .nth(1)
-                            .map(|prior| prior.source_key.clone())
-                            .or(store.latest_usage_key(source_id, generation).ok().flatten());
-                        if let Some(current) = usages.last_mut() {
-                            current.predecessor_source_key = key;
-                        }
+                    true
+                }
+                None => false,
+            };
+            match parse_value(harness, &value, &mut counters) {
+                Ok((buckets, partial)) => {
+                    if !partial.is_empty() {
+                        reader_complete = false;
+                        coverage_defect = true;
                     }
-                    if harness == "codex" {
-                        first_codex_in_this_call = false;
+                    if projected_tool || projected_message || !buckets.is_empty() {
+                        coverage.projected += 1;
+                    } else if !partial.is_empty() {
+                        coverage.unsupported_schema += 1;
+                    } else {
+                        coverage.not_projected += 1;
+                    }
+                    for reason in partial {
+                        warnings.push(WarningNote {
+                            path: path.display().to_string(),
+                            line: Some(line_no),
+                            reason,
+                        });
+                    }
+                    let split = buckets.len() > 1;
+                    for (index, mut bucket) in buckets.into_iter().enumerate() {
+                        if let Some(session) = &file_session {
+                            // The file's line-1 session wins over any per-line id.
+                            bucket.native_session = session.raw.clone();
+                        }
+                        if let Some(id) = &bucket.message_id {
+                            let sealed_session =
+                                seal_session(tool_key, harness, &bucket.native_session);
+                            let sealed_id = seal_message(tool_key, id);
+                            let seen = format!("{harness}\n{sealed_session}\n{sealed_id}");
+                            if !seen_messages.insert(seen)
+                                || store.message_seen(
+                                    harness,
+                                    &sealed_session,
+                                    &sealed_id,
+                                    generation,
+                                )?
+                            {
+                                continue;
+                            }
+                        }
+                        let source_key = if split {
+                            format!("{source_id}:{generation}:{line_no}:{index}")
+                        } else {
+                            format!("{source_id}:{generation}:{line_no}")
+                        };
+                        let model = bucket
+                            .model
+                            .clone()
+                            .or_else(|| usage_attribution.model.clone());
+                        usage_models.push((
+                            source_key.clone(),
+                            model,
+                            usage_attribution.effort.clone(),
+                        ));
+                        usages.push(UsageFact {
+                            source_key,
+                            harness: harness.to_string(),
+                            native_session: seal_session(tool_key, harness, &bucket.native_session),
+                            message_id: bucket
+                                .message_id
+                                .as_deref()
+                                .map(|id| seal_message(tool_key, id)),
+                            ts: bucket.ts,
+                            seq: line_no,
+                            input_uncached: bucket.input_uncached,
+                            output: bucket.output,
+                            cache_read: bucket.cache_read,
+                            cache_write: bucket.cache_write,
+                            reasoning: bucket.reasoning,
+                            currency_total: bucket.currency_total,
+                            generation,
+                            predecessor_source_key: None,
+                            predecessor_reason: bucket.predecessor_reason.clone(),
+                            prior_input_tokens: bucket.prior_input_tokens,
+                            prior_cached_input_tokens: bucket.prior_cached_input_tokens,
+                            prior_cache_write_input_tokens: bucket.prior_cache_write_input_tokens,
+                            prior_output_tokens: bucket.prior_output_tokens,
+                            prior_reasoning_output_tokens: bucket.prior_reasoning_output_tokens,
+                        });
+                        if harness == "codex" && reset_generation && first_codex_in_this_call {
+                            if let Some(current) = usages.last_mut() {
+                                current.predecessor_reason = Some("reset".into());
+                                current.predecessor_source_key = None;
+                                current.prior_input_tokens = None;
+                                current.prior_cached_input_tokens = None;
+                                current.prior_cache_write_input_tokens = None;
+                                current.prior_output_tokens = None;
+                                current.prior_reasoning_output_tokens = None;
+                            }
+                        } else if bucket.predecessor_reason.as_deref() == Some("prior") {
+                            let key = usages
+                                .iter()
+                                .rev()
+                                .nth(1)
+                                .map(|prior| prior.source_key.clone())
+                                .or(store.latest_usage_key(source_id, generation).ok().flatten());
+                            if let Some(current) = usages.last_mut() {
+                                current.predecessor_source_key = key;
+                            }
+                        }
+                        if harness == "codex" {
+                            first_codex_in_this_call = false;
+                        }
                     }
                 }
-            }
-            Err(reason) => {
-                warnings.push(WarningNote {
-                    path: path.display().to_string(),
-                    line: Some(line_no),
-                    reason,
-                });
+                Err(reason) => {
+                    reader_complete = false;
+                    coverage_defect = true;
+                    if projected_tool {
+                        coverage.projected += 1;
+                    } else {
+                        coverage.malformed += 1;
+                    }
+                    warnings.push(WarningNote {
+                        path: path.display().to_string(),
+                        line: Some(line_no),
+                        reason,
+                    });
+                }
             }
         }
-    }
-    if harness == "claude" {
-        // A file with several session identities has no unique source linkage.
-        source_session = if claude_sessions.len() == 1 {
-            claude_sessions.into_iter().next()
-        } else {
-            None
+        if harness == "claude" {
+            // A file with several session identities has no unique source linkage.
+            source_session = if claude_sessions.len() == 1 {
+                claude_sessions.iter().next().cloned()
+            } else {
+                None
+            };
+        }
+        coverage_defect |= coverage.unknown_kind
+            + coverage.quarantined_oversize
+            + coverage.quarantined_depth
+            + coverage.malformed
+            + coverage.unsupported_schema
+            != 0;
+        coverage.partial |= !reader_complete || coverage_defect;
+        reader_complete &= !coverage_defect;
+        // A batch that stopped early is not a finished reader: a crash before the
+        // pass drains the file must not report the unread tail as read.
+        let batch_complete = reader_complete && !batch_capped;
+        let prefix_sha = hex::encode(hasher.clone().finalize());
+        if let Some(entry) = cutoff {
+            let at_cutoff = consumed as u64 == entry.byte_length;
+            if consumed as u64 > entry.byte_length
+                || ((at_cutoff || !batch_capped)
+                    && (consumed as u64 != entry.byte_length || prefix_sha != entry.prefix_sha256))
+            {
+                return Err(mismatch(
+                    "file prefix changed while reading or incomplete cutoff",
+                ));
+            }
+        }
+        offset = consumed;
+        let mut settled = Vec::new();
+        if let Some(scan) = tool_scan.as_mut() {
+            let pass = scan.flush(line_no);
+            tools = pass.new_calls;
+            settled = pass.settled;
+            tool_categories.extend(pass.categories);
+            for skill in pass.skills {
+                store.insert_skill(&skill)?;
+            }
+        }
+        let held_after = FileMetadata::from_file(reader.get_ref().get_ref());
+        let named_after = observe_path(path);
+        let metadata = stable_ingest_metadata(
+            held_before,
+            named_before.metadata,
+            held_after,
+            named_after.metadata,
+        );
+        let baseline = dendro_core::FileBaselineAttempt {
+            attempted_at: named_after
+                .checked_at
+                .unwrap_or_else(|| chrono::Utc::now().to_rfc3339()),
+            metadata,
         };
-    }
-    let prefix_sha = hex::encode(hasher.finalize());
-    if let Some(entry) = cutoff {
-        if consumed as u64 != entry.byte_length || prefix_sha != entry.prefix_sha256 {
-            return Err(mismatch(
-                "file prefix changed while reading or incomplete cutoff",
-            ));
+        store.commit_file_batch_observed_messages(
+            source_id,
+            harness,
+            &path.display().to_string(),
+            generation,
+            offset,
+            &prefix_sha,
+            if harness == "codex" {
+                Some(&counters)
+            } else {
+                None
+            },
+            &usages,
+            &tools,
+            &messages,
+            &settled,
+            &dendro_core::ReaderState {
+                complete: batch_complete,
+                native_session: source_session.clone(),
+            },
+            &baseline,
+        )?;
+        store.record_tool_categories(&tool_categories)?;
+        store.record_usage_models(&usage_models)?;
+        for note in &warnings {
+            store.record_warning(note)?;
         }
-    }
-    offset = consumed;
-    let mut settled = Vec::new();
-    if let Some(mut scan) = tool_scan {
-        scan.new_from = scan.prefix_lines;
-        let pass = scan.finish();
-        tools = pass.new_calls;
-        settled = pass.settled;
-        tool_categories.extend(pass.categories);
-        for skill in pass.skills {
-            store.insert_skill(&skill)?;
+        // One row per defective generation, however many runs or batches see it.
+        if coverage_defect && !store.has_warning(&path.display().to_string(), &partial_reason)? {
+            store.record_warning(&WarningNote {
+                path: path.display().to_string(),
+                line: None,
+                reason: partial_reason.clone(),
+            })?;
         }
-    }
-    let held_after = FileMetadata::from_file(reader.get_ref().get_ref());
-    let named_after = observe_path(path);
-    let metadata = stable_ingest_metadata(
-        held_before,
-        named_before.metadata,
-        held_after,
-        named_after.metadata,
-    );
-    let baseline = dendro_core::FileBaselineAttempt {
-        attempted_at: named_after
-            .checked_at
-            .unwrap_or_else(|| chrono::Utc::now().to_rfc3339()),
-        metadata,
+        usage_records += usages.len() as u64;
+        usages.clear();
+        tools.clear();
+        messages.clear();
+        warnings.clear();
+        tool_categories.clear();
+        usage_models.clear();
+        if !(batch_capped && consumed != batch_start) {
+            break consumed != initial_offset;
+        }
+        // The next batch is judged against what this one left on the file.
+        held_before = FileMetadata::from_file(reader.get_ref().get_ref());
+        named_before = observe_path(path);
     };
-    store.commit_file_batch_observed(
-        source_id,
-        harness,
-        &path.display().to_string(),
-        generation,
-        offset,
-        &prefix_sha,
-        if harness == "codex" {
-            Some(&counters)
-        } else {
-            None
-        },
-        &usages,
-        &tools,
-        &settled,
-        &dendro_core::ReaderState {
-            complete: reader_complete,
-            native_session: source_session,
-        },
-        &baseline,
-    )?;
-    store.record_tool_categories(&tool_categories)?;
-    store.record_usage_models(&usage_models)?;
-    for note in &warnings {
-        store.record_warning(note)?;
-    }
-    Ok(FileStats {
+    Ok(FileOutcome {
+        coverage,
         records_read,
-        usage_records: usages.len() as u64,
+        usage_records,
+        advanced,
     })
 }
 
@@ -848,7 +1166,7 @@ fn hash_prefix(file: &mut File, len: u64) -> Result<String> {
 /// Top-level record types each parser knows (AC2, F4). Derived from the sealed
 /// corpus of the harness versions in use on 2026-10-11 (Claude 15, Codex 7,
 /// Pi 6), not from a published schema. Any other type, or none, is unknown.
-const CLAUDE_RECORD_TYPES: &[&str] = &[
+pub(crate) const CLAUDE_RECORD_TYPES: &[&str] = &[
     "agent-name",
     "assistant",
     "atis-latch",
@@ -865,7 +1183,7 @@ const CLAUDE_RECORD_TYPES: &[&str] = &[
     "system",
     "user",
 ];
-const CODEX_RECORD_TYPES: &[&str] = &[
+pub(crate) const CODEX_RECORD_TYPES: &[&str] = &[
     "compacted",
     "event_msg",
     "response_item",
@@ -874,7 +1192,7 @@ const CODEX_RECORD_TYPES: &[&str] = &[
     "turn_context",
     "world_state",
 ];
-const PI_RECORD_TYPES: &[&str] = &[
+pub(crate) const PI_RECORD_TYPES: &[&str] = &[
     "custom",
     "message",
     "model_change",
@@ -889,7 +1207,7 @@ const PI_RECORD_TYPES: &[&str] = &[
 /// are counted and then dropped. `subagent_spawned` / `subagent_finished`
 /// are lineage evidence in the file, but UsageFact and ToolFact have no
 /// parent/child slot, so those lines are counted the same way and not stored.
-const GROK_RECORD_TYPES: &[&str] = &[
+pub(crate) const GROK_RECORD_TYPES: &[&str] = &[
     "agent_message_chunk",
     "agent_thought_chunk",
     "auto_compact_completed",
@@ -1576,8 +1894,8 @@ struct ToolCall {
 struct ToolScan<'a> {
     harness: &'a str,
     file_session: Option<&'a str>,
+    /// Lines up to here were stored by an earlier run or batch.
     new_from: i64,
-    prefix_lines: i64,
     key: Option<&'a [u8]>,
     source_id: &'a str,
     generation: i64,
@@ -1600,7 +1918,6 @@ impl<'a> ToolScan<'a> {
             harness,
             file_session,
             new_from,
-            prefix_lines: 0,
             key,
             source_id,
             generation,
@@ -1853,7 +2170,9 @@ impl<'a> ToolScan<'a> {
         }
     }
 
-    fn finish(mut self) -> ToolPass {
+    /// Settle what the lines read so far say, then treat them all as stored:
+    /// the scan keeps its calls so a later batch can still settle them.
+    fn flush(&mut self, upto: i64) -> ToolPass {
         let new_from = self.new_from;
         let results = std::mem::take(&mut self.results);
         for (id, outcome, line_no) in results {
@@ -1868,12 +2187,12 @@ impl<'a> ToolScan<'a> {
             skills: Vec::new(),
             categories: Vec::new(),
         };
-        for (line, fact) in self.skills {
+        for (line, fact) in std::mem::take(&mut self.skills) {
             if line > new_from {
                 pass.skills.push(fact);
             }
         }
-        for mut call in self.calls {
+        for call in &mut self.calls {
             let first = call.results.first().copied().flatten();
             call.fact.failed = match first {
                 Some(outcome) if call.results.iter().all(|item| *item == Some(outcome)) => {
@@ -1884,11 +2203,14 @@ impl<'a> ToolScan<'a> {
             if call.line > new_from {
                 pass.categories
                     .push((call.fact.source_key.clone(), call.category));
-                pass.new_calls.push(call.fact);
+                pass.new_calls.push(call.fact.clone());
             } else if call.result_in_new_lines {
-                pass.settled.push((call.fact.source_key, call.fact.failed));
+                pass.settled
+                    .push((call.fact.source_key.clone(), call.fact.failed));
             }
+            call.result_in_new_lines = false;
         }
+        self.new_from = upto;
         pass
     }
 }
@@ -2518,6 +2840,8 @@ mod tests {
             assert_eq!(
                 reasons,
                 [
+                    "coverage-partial generation=1",
+                    "coverage=partial projected=3 unprojected=3 held_tail=0 (unknown_kind=1 malformed=2)",
                     "invalid-utf8",
                     "malformed-json",
                     "unknown-record-type: qa_unknown_record_version_999"
@@ -3426,9 +3750,15 @@ mod tests {
             "{\"type\":\"assistant\",\"sessionId\":\"s\",\"message\":{\"id\":\"m1\",\"usage\":{\"input_tokens\":2,\"output_tokens\":3,\"cache_read_input_tokens\":4,\"cache_creation_input_tokens\":5,\"cache_creation\":{\"ephemeral_5m_input_tokens\":5}}}}\nnot-json\n{\"type\":\"assistant\",\"sessionId\":\"s\",\"message\":{\"id\":\"m1\",\"usage\":{\"input_tokens\":9,\"output_tokens\":9,\"cache_read_input_tokens\":9,\"cache_creation_input_tokens\":9}}}\npartial",
         );
         let db = store();
-        ingest_jsonl(&db, "c1", "claude", &path).unwrap();
+        let stats = ingest_jsonl_with_key(&db, "c1", "claude", &path, None).unwrap();
         assert_eq!(db.latest_usage_totals("c1").unwrap(), (2, 3, 4, 5));
-        assert_eq!(db.warning_count().unwrap(), 1);
+        assert_eq!(db.warning_count().unwrap(), 4);
+        assert!(stats.coverage.partial);
+        assert_eq!(stats.coverage.malformed, 1);
+        assert_eq!(stats.coverage.held_tail, 1);
+        assert!(db
+            .has_warning(&path.display().to_string(), &stats.coverage.summary())
+            .unwrap());
         let state = db.source_state("c1").unwrap().unwrap();
         assert!(state.1 < fs::metadata(&path).unwrap().len() as i64);
         let _ = fs::remove_dir_all(&dir);
@@ -4498,18 +4828,73 @@ mod tests {
 }
 
 pub fn walk_jsonl(root: &Path) -> Vec<PathBuf> {
+    collect_jsonl(root)
+        .map(|found| found.files)
+        .unwrap_or_default()
+}
+
+/// Files found under a root, and how many entries or directories below the
+/// root could not be listed or inspected and were skipped.
+pub(crate) struct JsonlDiscovery {
+    pub files: Vec<PathBuf>,
+    pub skipped: u64,
+}
+
+/// An unreadable root is an error. One bad entry below it is skipped and
+/// counted, so the readable files around it are still discovered.
+pub(crate) fn walk_jsonl_checked(root: &Path) -> Result<JsonlDiscovery> {
+    collect_jsonl(root)
+}
+
+#[cfg(test)]
+thread_local! {
+    static UNINSPECTABLE: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
+    static PARSED_LINES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Tests make one named entry fail at the real inspection boundary, as a file
+/// that vanishes or turns unreadable between listing and inspection does.
+#[cfg(test)]
+pub(crate) fn make_uninspectable(path: Option<PathBuf>) {
+    UNINSPECTABLE.with(|slot| *slot.borrow_mut() = path);
+}
+
+fn inspect_entry(path: &Path) -> std::io::Result<fs::Metadata> {
+    #[cfg(test)]
+    if UNINSPECTABLE.with(|slot| slot.borrow().as_deref() == Some(path)) {
+        return Err(std::io::ErrorKind::NotFound.into());
+    }
+    fs::symlink_metadata(path)
+}
+
+fn collect_jsonl(root: &Path) -> Result<JsonlDiscovery> {
     let mut out = Vec::new();
+    let mut skipped = 0u64;
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
         let entries = match fs::read_dir(&dir) {
             Ok(entries) => entries,
-            Err(_) => continue,
+            Err(error) if dir == root => return Err(error.into()),
+            Err(_) => {
+                skipped += 1;
+                continue;
+            }
         };
-        for entry in entries.flatten() {
+        for entry in entries {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(_) => {
+                    skipped += 1;
+                    continue;
+                }
+            };
             let path = entry.path();
-            let meta = match fs::symlink_metadata(&path) {
+            let meta = match inspect_entry(&path) {
                 Ok(meta) => meta,
-                Err(_) => continue,
+                Err(_) => {
+                    skipped += 1;
+                    continue;
+                }
             };
             if meta.file_type().is_symlink() {
                 continue;
@@ -4521,7 +4906,10 @@ pub fn walk_jsonl(root: &Path) -> Vec<PathBuf> {
             }
         }
     }
-    out
+    Ok(JsonlDiscovery {
+        files: out,
+        skipped,
+    })
 }
 
 #[cfg(test)]
@@ -4536,5 +4924,306 @@ mod sealed_header_tests {
         let complete = super::file_session("codex", &mut &complete[..], "source").unwrap();
         assert!(complete.from_header);
         assert_eq!(complete.raw, "future-session");
+    }
+}
+
+#[cfg(test)]
+mod hostile_input_tests {
+    use super::*;
+    use crate::sdk::ReadLimits;
+
+    const LINE: &str = r#"{"type":"system","sessionId":"s"}"#;
+
+    fn limits(encoded_bytes: u64, per_batch: usize) -> ReadLimits {
+        ReadLimits {
+            encoded_bytes,
+            nesting_depth: 64,
+            decoded_records_per_batch: per_batch,
+            line_attempts: None,
+        }
+    }
+
+    fn run(
+        name: &str,
+        body: &str,
+        limits: &ReadLimits,
+    ) -> (AnalyticsStore, std::path::PathBuf, FileStats) {
+        let dir =
+            std::env::temp_dir().join(format!("dendro-hostile-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let store = AnalyticsStore::open_path(&dir.join("a.duckdb"), "key").unwrap();
+        let path = dir.join("claude.jsonl");
+        fs::write(&path, body).unwrap();
+        let stats = ingest_jsonl_limited(
+            &store,
+            "claude",
+            "claude",
+            &path,
+            None,
+            None,
+            || Ok(()),
+            limits,
+        )
+        .unwrap();
+        (store, path, stats)
+    }
+
+    #[test]
+    fn oversize_line_is_quarantined_and_following_lines_ingest() {
+        let big = "x".repeat(5000);
+        let body = format!("{LINE}\n{{\"pad\":\"{big}\"}}\n{LINE}\n");
+        let limits = limits(200, 1024);
+        let (store, path, stats) = run("oversize", &body, &limits);
+        assert_eq!(stats.records_read, 3);
+        let shown = path.display().to_string();
+        assert!(store
+            .has_warning(&shown, "encoded_record_exceeds_adapter_limit")
+            .unwrap());
+        let (_, offset, _) = store.source_state("claude").unwrap().unwrap();
+        assert_eq!(offset as usize, body.len());
+        // A re-run reads nothing new and does not move the watermark.
+        let again = ingest_jsonl_limited(
+            &store,
+            "claude",
+            "claude",
+            &path,
+            None,
+            None,
+            || Ok(()),
+            &limits,
+        )
+        .unwrap();
+        assert_eq!(again.records_read, 0);
+        let (_, offset, _) = store.source_state("claude").unwrap().unwrap();
+        assert_eq!(offset as usize, body.len());
+    }
+
+    #[test]
+    fn capped_line_reader_never_retains_more_than_the_limit() {
+        let body = format!("{}\nok\n", "y".repeat(100_000));
+        let mut reader = BufReader::with_capacity(64, body.as_bytes());
+        let mut hasher = Sha256::new();
+        match read_capped_line(&mut reader, 50, &mut hasher).unwrap() {
+            CappedLine::Oversize { len } => assert_eq!(len, 100_001),
+            _ => panic!("expected oversize"),
+        }
+        match read_capped_line(&mut reader, 50, &mut hasher).unwrap() {
+            CappedLine::Line(line) => assert_eq!(line, b"ok\n"),
+            _ => panic!("expected line"),
+        }
+        let mut whole = Sha256::new();
+        whole.update(body.as_bytes());
+        assert_eq!(hasher.finalize(), whole.finalize());
+    }
+
+    #[test]
+    fn unterminated_oversize_tail_is_not_committed() {
+        let body = format!("{LINE}\n{}", "z".repeat(5000));
+        let (store, _, _) = run("tail", &body, &limits(200, 1024));
+        let (_, offset, _) = store.source_state("claude").unwrap().unwrap();
+        assert_eq!(offset as usize, LINE.len() + 1);
+    }
+
+    #[test]
+    fn depth_64_is_accepted_and_65_is_quarantined() {
+        let nest = |n: usize| format!("{}{}", "[".repeat(n), "]".repeat(n));
+        let body = format!("{}\n{}\n", nest(64), nest(65));
+        let (store, path, stats) = run("depth", &body, &limits(8 * 1024, 1024));
+        assert_eq!(stats.records_read, 2);
+        let shown = path.display().to_string();
+        assert!(store
+            .has_warning(&shown, "nesting_depth_exceeds_limit")
+            .unwrap());
+        let only_64 = format!("{}\n", nest(64));
+        let (store, path, _) = run("depth64", &only_64, &limits(8 * 1024, 1024));
+        assert!(!store
+            .has_warning(&path.display().to_string(), "nesting_depth_exceeds_limit")
+            .unwrap());
+        // Brackets inside strings do not count.
+        let quoted = format!("{{\"s\":\"{}\"}}\n", "[".repeat(200));
+        let (store, path, _) = run("depthstr", &quoted, &limits(8 * 1024, 1024));
+        assert!(!store
+            .has_warning(&path.display().to_string(), "nesting_depth_exceeds_limit")
+            .unwrap());
+    }
+
+    #[test]
+    fn batch_cap_continues_without_losing_records() {
+        let body = format!("{LINE}\n").repeat(10);
+        let (store, _, stats) = run("batch", &body, &limits(8 * 1024, 3));
+        assert_eq!(stats.records_read, 10);
+        let (_, offset, _) = store.source_state("claude").unwrap().unwrap();
+        assert_eq!(offset as usize, body.len());
+    }
+
+    fn read_facts(store: &AnalyticsStore) -> String {
+        let mut usage: Vec<_> = store
+            .load_usage()
+            .unwrap()
+            .iter()
+            .map(|fact| format!("{fact:?}"))
+            .collect();
+        let mut tools: Vec<_> = store
+            .load_tools()
+            .unwrap()
+            .iter()
+            .map(|fact| format!("{fact:?}"))
+            .collect();
+        let mut messages: Vec<_> = store
+            .load_messages()
+            .unwrap()
+            .iter()
+            .map(|fact| format!("{fact:?}"))
+            .collect();
+        usage.sort();
+        tools.sort();
+        messages.sort();
+        format!("{usage:#?}\n{tools:#?}\n{messages:#?}")
+    }
+
+    /// Tool calls and their results fall on opposite sides of a batch cap, and
+    /// every fourth call fails, so pairing has to survive the batch boundary.
+    fn conversation(rounds: usize) -> String {
+        let mut body = String::new();
+        for round in 0..rounds {
+            let failed = round % 4 == 0;
+            body.push_str(&format!(
+                "{{\"type\":\"assistant\",\"sessionId\":\"s\",\"timestamp\":\"2026-10-09T00:00:01Z\",\"message\":{{\"id\":\"a{round}\",\"role\":\"assistant\",\"content\":[{{\"type\":\"tool_use\",\"id\":\"t{round}\",\"name\":\"Read\",\"input\":{{\"file_path\":\"f{round}\"}}}}],\"usage\":{{\"input_tokens\":3,\"output_tokens\":4,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}}}}\n"
+            ));
+            body.push_str(&format!(
+                "{{\"type\":\"user\",\"sessionId\":\"s\",\"timestamp\":\"2026-10-09T00:00:02Z\",\"message\":{{\"role\":\"user\",\"content\":[{{\"type\":\"tool_result\",\"tool_use_id\":\"t{round}\",\"is_error\":{failed},\"content\":\"ok\"}}]}}}}\n"
+            ));
+            body.push_str(
+                "{\"type\":\"user\",\"sessionId\":\"s\",\"timestamp\":\"2026-10-09T00:00:03Z\",\"message\":{\"role\":\"user\",\"content\":\"hello\"}}\n",
+            );
+        }
+        body
+    }
+
+    fn parsed_lines() -> u64 {
+        PARSED_LINES.with(|parsed| parsed.get())
+    }
+
+    #[test]
+    fn a_multi_batch_read_matches_a_single_batch_read_and_parses_each_line_once() {
+        // Many small batches against one batch over the same file.
+        let rounds = 40;
+        let body = conversation(rounds);
+        let lines = body.lines().count() as u64;
+        let before = parsed_lines();
+        let (batched, path, stats) = run("many-batches", &body, &limits(8 * 1024, 7));
+        let batched_parses = parsed_lines() - before;
+        let before = parsed_lines();
+        let (single, _, whole) = run("one-batch", &body, &limits(8 * 1024, 1 << 20));
+        let single_parses = parsed_lines() - before;
+        assert_eq!(batched_parses, lines, "every line is parsed exactly once");
+        assert_eq!(single_parses, lines);
+        assert_eq!(stats.records_read, whole.records_read);
+        assert_eq!(stats.usage_records, whole.usage_records);
+        assert_eq!(read_facts(&batched), read_facts(&single));
+        let failed = batched
+            .load_tools()
+            .unwrap()
+            .iter()
+            .filter(|tool| tool.failed == Some(true))
+            .count();
+        assert_eq!(failed, rounds.div_ceil(4));
+        let (_, offset, digest) = batched.source_state("claude").unwrap().unwrap();
+        assert_eq!(offset as usize, body.len());
+        assert_eq!(
+            digest,
+            single.source_state("claude").unwrap().unwrap().2,
+            "the carried hash equals a whole-file hash"
+        );
+        // An idle re-run reads the prefix once and adds nothing.
+        let again = ingest_jsonl_limited(
+            &batched,
+            "claude",
+            "claude",
+            &path,
+            None,
+            None,
+            || Ok(()),
+            &limits(8 * 1024, 7),
+        )
+        .unwrap();
+        assert_eq!(again.records_read, 0);
+        assert_eq!(read_facts(&batched), read_facts(&single));
+    }
+
+    #[cfg(any(windows, target_os = "linux"))]
+    #[test]
+    fn idle_reruns_of_a_defective_file_add_no_warning_rows() {
+        let body = format!("{LINE}\nnot-json\n{LINE}\n");
+        // A private root: only the staged open serves direct runtime queries.
+        let root = dendro_core::platform_v1::create_user_private_root_with_choice(
+            "dendro-idle-",
+            &dendro_core::platform_v1::StorageRootChoice::UserProfile,
+        )
+        .unwrap();
+        let db = root.path().join("a.duckdb");
+        drop(AnalyticsStore::open_path(&db, "key").unwrap());
+        let store = AnalyticsStore::open_staged(&db).unwrap();
+        let path = root.path().join("claude.jsonl");
+        fs::write(&path, &body).unwrap();
+        let first = ingest_jsonl_limited(
+            &store,
+            "claude",
+            "claude",
+            &path,
+            None,
+            None,
+            || Ok(()),
+            &limits(8 * 1024, 1024),
+        )
+        .unwrap();
+        assert!(first.coverage.partial);
+        let rerun = |store: &AnalyticsStore| {
+            ingest_jsonl_limited(
+                store,
+                "claude",
+                "claude",
+                &path,
+                None,
+                None,
+                || Ok(()),
+                &limits(8 * 1024, 1024),
+            )
+            .unwrap()
+        };
+        let rows = store.warning_count().unwrap();
+        assert!(rows > 0);
+        for _ in 0..2 {
+            let again = rerun(&store);
+            assert_eq!(again.records_read, 0);
+        }
+        assert_eq!(store.warning_count().unwrap(), rows);
+        // New bytes that are defective in the same generation add no second
+        // partial-generation row.
+        let mut file = fs::OpenOptions::new().append(true).open(&path).unwrap();
+        std::io::Write::write_all(&mut file, b"still-not-json\n").unwrap();
+        let grown = rerun(&store);
+        assert_eq!(grown.records_read, 1);
+        let partial_rows: i64 = store
+            .with_private_connection(|conn| {
+                Ok(conn.query_row(
+                    "SELECT COUNT(*) FROM warnings WHERE reason LIKE 'coverage-partial generation=%'",
+                    [],
+                    |row| row.get(0),
+                )?)
+            })
+            .unwrap();
+        assert_eq!(partial_rows, 1);
+    }
+
+    #[test]
+    fn registry_limits_never_exceed_the_global_ceilings() {
+        for source in ["claude", "codex", "pi", "grok", "unknown"] {
+            let limits = crate::capture_registry_v1::Registry::reader_limits(source);
+            assert!(limits.encoded_bytes <= crate::sdk::GLOBAL_MAX_RECORD_BYTES);
+            assert!(limits.nesting_depth <= crate::sdk::GLOBAL_MAX_DEPTH);
+            assert!(limits.decoded_records_per_batch <= crate::sdk::GLOBAL_MAX_BATCH_RECORDS);
+        }
     }
 }

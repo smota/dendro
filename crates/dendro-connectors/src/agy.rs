@@ -6,8 +6,11 @@ use std::path::{Path, PathBuf};
 pub struct AgyConnector;
 
 impl AgyConnector {
-    pub const fn availability(&self) -> crate::capture_registry_v1::Availability {
-        crate::capture_registry_v1::Availability::ParserPending
+    pub fn availability(&self) -> crate::capture_registry_v1::Availability {
+        crate::capture_registry_v1::Registry::builtin()
+            .descriptor("agy")
+            .map(crate::capture_registry_v1::Descriptor::availability)
+            .expect("agy is a builtin capture reader")
     }
     pub fn new() -> Self {
         Self

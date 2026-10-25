@@ -41,6 +41,25 @@ pub struct ToolFact {
     pub generation: i64,
 }
 
+/// Safe metadata of one conversation message: who, which way, what kind of
+/// content, and where in the source. It never carries message text, tool
+/// input, paths or content; the vocabulary is the domain contract's enums.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MessageFact {
+    pub source_key: String,
+    pub harness: String,
+    /// None when the record names no session; no neighbouring session is borrowed.
+    pub native_session: Option<String>,
+    pub ts: Option<DateTime<Utc>>,
+    /// Source order: the record's line within the source generation.
+    pub seq: i64,
+    pub role: crate::domain_v1::MessageRole,
+    pub direction: crate::domain_v1::Direction,
+    pub modalities: std::collections::BTreeSet<crate::domain_v1::Modality>,
+    pub grain: crate::domain_v1::Grain,
+    pub generation: i64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IdentityFact {
     pub source_key: String,

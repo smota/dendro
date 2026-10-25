@@ -18,8 +18,39 @@ pub(crate) enum Format {
     Devin,
 }
 
+/// Kinds `ExportConnector::cursor` accepts. `unsupported-cursor-record` is not a kind.
+pub(crate) const CURSOR_RECORD_KINDS: &[&str] =
+    &["assistant", "result", "system", "tool_call", "user"];
+/// Cascade hook names and transcript `type` values `ExportConnector::windsurf` accepts.
+pub(crate) const WINDSURF_RECORD_KINDS: &[&str] = &[
+    "code_action",
+    "planner_response",
+    "post_cascade_response",
+    "post_cascade_response_with_transcript",
+    "post_mcp_tool_use",
+    "post_read_code",
+    "post_run_command",
+    "post_write_code",
+    "user_input",
+];
+/// Goose message roles and content `type` values. The offset-0 header is positional, not a kind.
+pub(crate) const GOOSE_RECORD_KINDS: &[&str] = &[
+    "assistant",
+    "document",
+    "image",
+    "text",
+    "thinking",
+    "toolRequest",
+    "toolResponse",
+    "user",
+];
+/// ATIF step `source` values `ExportConnector::devin` accepts.
+pub(crate) const DEVIN_RECORD_KINDS: &[&str] = &["agent", "system", "user"];
+
 /// Facts preserve unknown timestamps and absent usage; raw transcripts are never returned.
 pub struct ExportBatch {
+    pub complete: bool,
+    pub coverage: crate::sdk::Coverage,
     pub usage: Vec<UsageFact>,
     pub tools: Vec<ToolFact>,
     pub warnings: Vec<&'static str>,
@@ -45,6 +76,9 @@ impl ExportConnector {
     pub(crate) fn discover(&self) -> Result<Vec<PathBuf>> {
         self.root.discover()
     }
+    pub(crate) fn inspect_discovery(&self) -> Result<crate::sdk::DiscoveryListing> {
+        self.root.inspect_discovery()
+    }
     pub(crate) fn read_batch(&self, path: &Path, prior: Option<&Watermark>) -> Result<ExportBatch> {
         ensure!(!self.key.is_empty(), "export privacy key must not be empty");
         self.read_batch_with_cutoff(path, prior, None)
@@ -55,7 +89,10 @@ impl ExportConnector {
         prior: Option<&Watermark>,
         cutoff: Option<&dendro_core::FileCutoff>,
     ) -> Result<ExportBatch> {
-        let raw = self.root.read_batch_with_cutoff(path, prior, cutoff)?;
+        let limits = crate::capture_registry_v1::Registry::reader_limits(self.harness);
+        let raw = self
+            .root
+            .read_bounded(path, prior, cutoff, &limits, |_| true)?;
         if matches!(self.format, Format::Goose) && prior.is_none() && raw.watermark.byte_offset > 0
         {
             ensure!(
@@ -64,6 +101,8 @@ impl ExportConnector {
             );
         }
         let mut batch = ExportBatch {
+            complete: raw.complete,
+            coverage: raw.coverage,
             baseline: dendro_core::FileBaselineAttempt {
                 attempted_at: Utc::now().to_rfc3339(),
                 metadata: raw.metadata,
@@ -85,13 +124,70 @@ impl ExportConnector {
                 .push("devin-atif-export-only-not-cloud-webhooks"),
         }
         for (offset, value) in raw.records {
-            match self.format {
-                Format::Cursor => self.cursor(&value, offset, &mut batch)?,
-                Format::Windsurf => self.windsurf(&value, offset, &mut batch)?,
-                Format::Goose => self.goose(&value, offset, &mut batch)?,
-                Format::Devin => self.devin(&value, offset, &mut batch)?,
+            let usage_before = batch.usage.len();
+            let tools_before = batch.tools.len();
+            let before = batch.usage.len() + batch.tools.len();
+            let warning_start = batch.warnings.len();
+            let result = (|| -> Result<()> {
+                ensure!(
+                    value.get("version").is_none()
+                        && (matches!(self.format, Format::Devin)
+                            || value.get("schema_version").is_none()),
+                    "unsupported export version"
+                );
+                ensure!(
+                    [
+                        "units",
+                        "unit",
+                        "token_unit",
+                        "sessionId",
+                        "schemaVersion",
+                        "toolCall"
+                    ]
+                    .iter()
+                    .all(|field| value.get(field).is_none()),
+                    "unsupported export units or aliases"
+                );
+                validate_usage_metadata(&value)?;
+                match self.format {
+                    Format::Cursor => self.cursor(&value, offset, &mut batch),
+                    Format::Windsurf => self.windsurf(&value, offset, &mut batch),
+                    Format::Goose => self.goose(&value, offset, &mut batch),
+                    Format::Devin => self.devin(&value, offset, &mut batch),
+                }
+            })();
+            if let Err(error) = result {
+                // A failed record cannot leave half of its projection behind.
+                batch.usage.truncate(usage_before);
+                batch.tools.truncate(tools_before);
+                if batch.coverage.projected + batch.coverage.not_projected == 0 {
+                    let reason = refusal_reason(&error.to_string());
+                    account_refusal(&mut batch.coverage, reason);
+                    return Err(anyhow::Error::new(ExportRefused(
+                        reason,
+                        batch.coverage,
+                        batch.warnings,
+                    ))
+                    .context(error.to_string()));
+                }
+                let reason = refusal_reason(&error.to_string());
+                account_refusal(&mut batch.coverage, reason);
+                batch.warnings.push(reason);
+                continue;
+            }
+            let unsupported = batch.warnings[warning_start..]
+                .iter()
+                .any(|reason| reason.starts_with("unsupported-"));
+            batch.coverage.partial |= unsupported;
+            if batch.usage.len() + batch.tools.len() > before {
+                batch.coverage.projected += 1;
+            } else if unsupported {
+                batch.coverage.unknown_kind += 1;
+            } else {
+                batch.coverage.not_projected += 1;
             }
         }
+        batch.complete &= !batch.coverage.partial;
         if batch.usage.is_empty() && prior.is_none() {
             batch.warnings.push("token-usage-no-data");
         }
@@ -357,6 +453,7 @@ impl ExportConnector {
                 .as_str()
                 .and_then(dendro_core::parse_utc_time);
             if let Some(metrics) = step.get("metrics").filter(|v| !v.is_null()) {
+                validate_usage_metadata(metrics)?;
                 let input = counter(metrics, "prompt_tokens")?;
                 let output = counter(metrics, "completion_tokens")?;
                 // ATIF does not guarantee cached-token inclusion semantics across exporters.
@@ -459,18 +556,29 @@ impl ExportConnector {
         path: &Path,
     ) -> Result<Vec<&'static str>> {
         self.ingest_file_with_cutoff(store, path, None)
-            .map(|(warnings, _)| warnings)
+            .map(|(warnings, _, _)| warnings)
     }
     pub(crate) fn ingest_file_with_cutoff(
         &self,
         store: &AnalyticsStore,
         path: &Path,
         cutoff: Option<&dendro_core::FileCutoff>,
-    ) -> Result<(Vec<&'static str>, Watermark)> {
+    ) -> Result<(Vec<&'static str>, Watermark, crate::sdk::Coverage)> {
         ensure!(!self.key.is_empty(), "export privacy key must not be empty");
-        let resolved = path
-            .canonicalize()
-            .map_err(|_| anyhow::anyhow!("export unavailable"))?;
+        let resolved = path.canonicalize().map_err(|_| {
+            if cutoff.is_some() {
+                anyhow::anyhow!("mismatch: export unavailable at cutoff")
+            } else {
+                anyhow::Error::new(ExportRefused(
+                    "export_unavailable",
+                    crate::sdk::Coverage {
+                        partial: true,
+                        ..Default::default()
+                    },
+                    Vec::new(),
+                ))
+            }
+        })?;
         let identity = hex::encode(Sha256::digest(resolved.as_os_str().as_encoded_bytes()));
         let source = dendro_core::opaque_id(
             &self.key,
@@ -486,10 +594,49 @@ impl ExportConnector {
                 session_id: Some(digest),
             });
         let mut warnings = std::collections::BTreeSet::new();
+        let mut coverage = crate::sdk::Coverage {
+            partial: prior.is_some() && store.has_warning(&source, "coverage-partial")?,
+            ..Default::default()
+        };
         loop {
-            let batch = self.read_batch_with_cutoff(path, prior.as_ref(), cutoff)?;
+            let batch = match self.read_batch_with_cutoff(path, prior.as_ref(), cutoff) {
+                Ok(batch) => batch,
+                Err(error) if cutoff.is_some() || error.is::<dendro_core::Interrupted>() => {
+                    return Err(error)
+                }
+                Err(error) => {
+                    let mut refused = coverage;
+                    let reason = if let Some(failure) = error.downcast_ref::<ExportRefused>() {
+                        refused.merge(failure.1);
+                        for reason in &failure.2 {
+                            store.record_warning(&dendro_core::WarningNote {
+                                path: source.clone(),
+                                line: None,
+                                reason: (*reason).into(),
+                            })?;
+                        }
+                        failure.0
+                    } else {
+                        let reason = refusal_reason(&error.to_string());
+                        account_refusal(&mut refused, reason);
+                        reason
+                    };
+                    refused.partial = true;
+                    store.record_warning(&dendro_core::WarningNote {
+                        path: source.clone(),
+                        line: None,
+                        reason: refused.summary(),
+                    })?;
+                    return Err(anyhow::Error::new(ExportRefused(
+                        reason,
+                        refused,
+                        Vec::new(),
+                    )));
+                }
+            };
+            coverage.merge(batch.coverage);
             let old_offset = prior.as_ref().map_or(0, |w| w.byte_offset);
-            warnings.extend(batch.warnings);
+            warnings.extend(batch.warnings.iter().copied());
             store.commit_file_batch_observed(
                 &source,
                 self.harness,
@@ -502,12 +649,47 @@ impl ExportConnector {
                 &batch.tools,
                 &[],
                 &dendro_core::ReaderState {
-                    complete: false,
+                    complete: batch.complete && !coverage.partial,
                     native_session: None,
                 },
                 &batch.baseline,
             )?;
-            let done = batch.watermark.byte_offset == old_offset;
+            let unsupported = batch
+                .warnings
+                .iter()
+                .any(|reason| reason.starts_with("unsupported-"));
+            for reason in batch.warnings {
+                store.record_warning(&dendro_core::WarningNote {
+                    path: source.clone(),
+                    line: None,
+                    reason: reason.into(),
+                })?;
+            }
+            if batch.coverage.unknown_kind
+                + batch.coverage.unsupported_version
+                + batch.coverage.quarantined_oversize
+                + batch.coverage.quarantined_depth
+                + batch.coverage.malformed
+                + batch.coverage.unsupported_schema
+                != 0
+                || unsupported
+            {
+                store.record_warning(&dendro_core::WarningNote {
+                    path: source.clone(),
+                    line: None,
+                    reason: "coverage-partial".into(),
+                })?;
+            }
+            let mut progress = coverage;
+            progress.partial |= !batch.complete;
+            store.record_warning(&dendro_core::WarningNote {
+                path: source.clone(),
+                line: None,
+                reason: progress.summary(),
+            })?;
+            let done = batch.complete
+                || batch.coverage.held_tail != 0
+                || batch.watermark.byte_offset == old_offset;
             prior = Some(batch.watermark);
             if done {
                 break;
@@ -516,8 +698,79 @@ impl ExportConnector {
         Ok((
             warnings.into_iter().collect(),
             prior.expect("at least one batch"),
+            coverage,
         ))
     }
+}
+/// Input-reader failures may be refused without swallowing storage failures.
+#[derive(Debug)]
+pub(crate) struct ExportRefused(
+    pub &'static str,
+    pub crate::sdk::Coverage,
+    pub Vec<&'static str>,
+);
+impl std::fmt::Display for ExportRefused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "export refused: {} {}", self.0, self.1.summary())
+    }
+}
+impl std::error::Error for ExportRefused {}
+fn refusal_reason(message: &str) -> &'static str {
+    if message.contains("version") || message.contains("ATIF-v") {
+        "unsupported_version"
+    } else if message.contains("1 MiB") {
+        "quarantined_oversize"
+    } else if message.contains("truncated") || message.contains("prefix changed") {
+        "source_changed"
+    } else if message.contains("units") || message.contains("aliases") {
+        "unsupported_units_or_aliases"
+    } else if message.contains("role")
+        || message.contains("source")
+        || message.contains("lifecycle")
+    {
+        "unknown_kind"
+    } else {
+        "unsupported_schema_or_unreadable_export"
+    }
+}
+fn account_refusal(coverage: &mut crate::sdk::Coverage, reason: &str) {
+    coverage.partial = true;
+    match reason {
+        "unsupported_version" => coverage.unsupported_version += 1,
+        "unknown_kind" => coverage.unknown_kind += 1,
+        "quarantined_oversize" => coverage.quarantined_oversize += 1,
+        "unsupported_units_or_aliases" | "unsupported_schema_or_unreadable_export" => {
+            coverage.unsupported_schema += 1;
+        }
+        _ => {}
+    }
+}
+fn validate_usage_metadata(value: &Value) -> Result<()> {
+    for metadata in std::iter::once(value).chain(
+        ["usage", "metrics", "token_usage"]
+            .iter()
+            .filter_map(|field| value.get(field)),
+    ) {
+        ensure!(
+            [
+                "units",
+                "unit",
+                "token_unit",
+                "token_units",
+                "cost_unit",
+                "currency",
+                "inputTokens",
+                "outputTokens",
+                "promptTokens",
+                "completionTokens",
+                "cachedTokens",
+            ]
+            .iter()
+            .all(|field| metadata.get(field).is_none()),
+            "unsupported export units or aliases"
+        );
+    }
+    Ok(())
 }
 fn required_str<'a>(value: &'a Value, field: &str) -> Result<&'a str> {
     value[field]

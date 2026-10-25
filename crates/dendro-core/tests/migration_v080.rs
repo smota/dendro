@@ -364,6 +364,39 @@ fn t04_01_02_05_06_23_stage_preserves_schema3_bundle() {
     cleanup_root(&root);
 }
 
+/// A schema3 database that already holds message metadata migrates it like any
+/// other legacy table: nothing in the migration is specific to `message_facts`.
+#[test]
+fn message_facts_table_migrates_as_a_generic_legacy_table() {
+    let fixture = Fixture::build(false);
+    let conn = Connection::open(&fixture.database).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS message_facts (
+            source_key VARCHAR PRIMARY KEY, harness VARCHAR NOT NULL, native_session VARCHAR,
+            ts TIMESTAMP, seq BIGINT NOT NULL, role VARCHAR NOT NULL, direction VARCHAR NOT NULL,
+            modalities VARCHAR NOT NULL, grain VARCHAR NOT NULL, generation BIGINT NOT NULL,
+            source_id VARCHAR NOT NULL);
+         INSERT INTO message_facts VALUES
+            ('m:1', 'claude', NULL, NULL, 1, 'user', 'inbound', 'text', 'message', 1, 'src');
+         CHECKPOINT",
+    )
+    .unwrap();
+    drop(conn);
+    let before = sha256_path(&fixture.database);
+    let candidate = migrate(fixture.request()).unwrap();
+    assert_eq!(sha256_path(&fixture.database), before);
+    let staged = mig_ro(&candidate.database_path);
+    assert_eq!(scalar_i64(&staged, "SELECT COUNT(*) FROM message_facts"), 1);
+    assert_eq!(
+        scalar_i64(&staged, "SELECT COUNT(*) FROM legacy_message_facts"),
+        1
+    );
+    let root = candidate.root.path().to_path_buf();
+    drop(staged);
+    drop(candidate);
+    cleanup_root(&root);
+}
+
 #[test]
 fn t04_03_missing_key_refuses() {
     let fixture = Fixture::build(false);

@@ -44,6 +44,351 @@ impl Drop for Fixture {
     }
 }
 const KEY: &[u8] = b"synthetic-test-key";
+
+fn read_export(
+    name: &str,
+    fixture: &Fixture,
+    prior: Option<&dendro_core::Watermark>,
+) -> anyhow::Result<dendro_connectors::exports::ExportBatch> {
+    match name {
+        "cursor" => CursorConnector::new(&fixture.dir, KEY).read_batch(&fixture.file, prior),
+        "windsurf" => WindsurfConnector::new(&fixture.dir, KEY).read_batch(&fixture.file, prior),
+        "goose" => GooseConnector::new(&fixture.dir, KEY).read_batch(&fixture.file, prior),
+        "devin" => DevinConnector::new(&fixture.dir, KEY).read_batch(&fixture.file, prior),
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn every_export_reader_reports_versions_units_aliases_malformed_and_truncation() {
+    for (name, bytes) in [
+        (
+            "cursor",
+            include_bytes!("fixtures/exports/cursor.jsonl").as_slice(),
+        ),
+        (
+            "windsurf",
+            include_bytes!("fixtures/exports/windsurf.jsonl").as_slice(),
+        ),
+        (
+            "goose",
+            include_bytes!("fixtures/exports/goose.jsonl").as_slice(),
+        ),
+        (
+            "devin",
+            include_bytes!("fixtures/exports/devin.jsonl").as_slice(),
+        ),
+    ] {
+        let fixture = Fixture::new(bytes);
+        let valid = read_export(name, &fixture, None).unwrap();
+        assert!(valid.complete, "{name} fixture must be complete");
+        for (field, value) in [
+            ("version", "99"),
+            ("units", "bytes"),
+            ("sessionId", "alias"),
+        ] {
+            let first = bytes.split(|byte| *byte == b'\n').next().unwrap();
+            let mut record: serde_json::Value = serde_json::from_slice(first).unwrap();
+            record[field] = value.into();
+            let mut body = serde_json::to_vec(&record).unwrap();
+            body.push(b'\n');
+            fs::write(&fixture.file, body).unwrap();
+            assert!(read_export(name, &fixture, None).is_err(), "{name} {field}");
+        }
+        for (container, field) in [
+            ("usage", "units"),
+            ("metrics", "currency"),
+            ("token_usage", "inputTokens"),
+        ] {
+            let first = bytes.split(|byte| *byte == b'\n').next().unwrap();
+            let mut record: serde_json::Value = serde_json::from_slice(first).unwrap();
+            record[container] = serde_json::json!({field: "unknown"});
+            let mut body = serde_json::to_vec(&record).unwrap();
+            body.push(b'\n');
+            fs::write(&fixture.file, body).unwrap();
+            assert!(
+                read_export(name, &fixture, None).is_err(),
+                "{name} nested {field}"
+            );
+        }
+        if name == "devin" {
+            let mut record: serde_json::Value =
+                serde_json::from_slice(bytes.split(|byte| *byte == b'\n').next().unwrap()).unwrap();
+            record["steps"][0]["source"] = "agent".into();
+            record["steps"][0]["metrics"] =
+                serde_json::json!({"prompt_tokens": 1, "completion_tokens": 2, "unit": "seconds"});
+            let mut body = serde_json::to_vec(&record).unwrap();
+            body.push(b'\n');
+            fs::write(&fixture.file, body).unwrap();
+            assert!(read_export(name, &fixture, None).is_err());
+        }
+        fs::write(&fixture.file, b"not-json\n").unwrap();
+        match read_export(name, &fixture, None) {
+            Ok(batch) => {
+                assert!(!batch.complete, "{name} malformed");
+                assert_eq!(batch.coverage.malformed, 1, "{name}");
+            }
+            Err(_) => assert_eq!(name, "goose", "only Goose requires an offset-zero header"),
+        }
+        fs::write(&fixture.file, bytes).unwrap();
+        fixture.append(b"{\"held\":");
+        let held = read_export(name, &fixture, None).unwrap();
+        assert!(!held.complete, "{name} held tail");
+        assert_eq!(held.coverage.held_tail, 1);
+        assert!(held.coverage.summary().contains("held_tail=1"));
+        fs::write(&fixture.file, b"{").unwrap();
+        assert!(
+            read_export(name, &fixture, Some(&valid.watermark)).is_err(),
+            "{name} truncation"
+        );
+    }
+}
+
+#[test]
+fn native_unknown_kinds_count_each_record_and_persist_partial_coverage() {
+    let fixture = Fixture::new(b"{\"type\":\"future_kind\"}\n{\"type\":\"future_kind\"}\n");
+    let store = AnalyticsStore::open_in_memory("synthetic").unwrap();
+    let stats = dendro_connectors::stream::ingest_jsonl_with_key(
+        &store,
+        "native-unknown",
+        "claude",
+        &fixture.file,
+        Some(KEY),
+    )
+    .unwrap();
+    assert_eq!(stats.coverage.unknown_kind, 2);
+    assert_eq!(stats.coverage.projected, 0);
+    assert!(stats.coverage.partial);
+    let resumed = dendro_connectors::stream::ingest_jsonl_with_key(
+        &store,
+        "native-unknown",
+        "claude",
+        &fixture.file,
+        Some(KEY),
+    )
+    .unwrap();
+    assert_eq!(resumed.records_read, 0);
+    assert_eq!(resumed.coverage.unknown_kind, 0);
+    assert!(resumed.coverage.partial);
+    assert!(!store.load_source_coverage().unwrap()[0].complete);
+    assert!(store
+        .has_warning(
+            &fixture.file.display().to_string(),
+            &stats.coverage.summary()
+        )
+        .unwrap());
+}
+
+#[test]
+fn staged_ingest_continues_after_refused_export_and_failed_source() {
+    use dendro_connectors::{ingest_staged_with_manifest, SourceRoot};
+    let fixture = Fixture::new(include_bytes!("fixtures/exports/devin.jsonl"));
+    fs::write(
+        fixture.dir.join("bad.jsonl"),
+        b"{\"schema_version\":\"ATIF-v99\"}\n",
+    )
+    .unwrap();
+    let db_root = dendro_core::platform_v1::create_user_private_root_with_choice(
+        "dendro-coverage-fixture-",
+        &dendro_core::platform_v1::StorageRootChoice::UserProfile,
+    )
+    .unwrap();
+    let db = db_root.path().join("analytics.duckdb");
+    drop(AnalyticsStore::open_path(&db, &dendro_core::key_id(KEY)).unwrap());
+    let roots = [
+        SourceRoot {
+            name: "cursor".into(),
+            path: fixture.file.clone(),
+        },
+        SourceRoot {
+            name: "devin".into(),
+            path: fixture.dir.clone(),
+        },
+    ];
+    let (notes, manifest) = ingest_staged_with_manifest(&db, &roots, false, KEY, None).unwrap();
+    assert!(notes
+        .iter()
+        .any(|note| note.contains("cursor coverage=refused reason=export_discovery_failed")));
+    assert!(!notes.iter().any(|note| note.contains("cursor files=0")));
+    assert!(notes
+        .iter()
+        .any(|note| note.contains("coverage=refused reason=unsupported_version")));
+    assert!(notes
+        .iter()
+        .any(|note| note.contains("devin files=1 refused=1") && note.contains("coverage=partial")));
+    assert_eq!(manifest.files.len(), 1);
+    let store = AnalyticsStore::open_existing(&db, &dendro_core::key_id(KEY)).unwrap();
+    assert_eq!(store.load_usage().unwrap().len(), 1);
+    assert_eq!(store.load_tools().unwrap().len(), 1);
+}
+#[test]
+fn native_tool_only_projection_and_tail_completion_are_truthful() {
+    let fixture = Fixture::new(b"{\"type\":\"assistant\",\"sessionId\":\"s\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"id\":\"c\",\"name\":\"Read\",\"input\":{}}]}}\n");
+    let store = AnalyticsStore::open_in_memory("synthetic").unwrap();
+    let read = || {
+        dendro_connectors::stream::ingest_jsonl_with_key(
+            &store,
+            "tool-only",
+            "claude",
+            &fixture.file,
+            Some(KEY),
+        )
+        .unwrap()
+    };
+    let first = read();
+    assert_eq!(first.coverage.projected, 1);
+    assert_eq!(first.coverage.not_projected, 0);
+    assert_eq!(store.load_tools().unwrap().len(), 1);
+    assert!(first.coverage.partial);
+    assert!(store
+        .has_warning(&fixture.file.display().to_string(), "missing-usage")
+        .unwrap());
+
+    let tail_fixture = Fixture::new(b"{\"type\":\"system\",\"sessionId\":\"s\"}\n");
+    let tail_store = AnalyticsStore::open_in_memory("synthetic").unwrap();
+    let read_tail = || {
+        dendro_connectors::stream::ingest_jsonl_with_key(
+            &tail_store,
+            "tail-only",
+            "claude",
+            &tail_fixture.file,
+            Some(KEY),
+        )
+        .unwrap()
+    };
+    read_tail();
+    tail_fixture.append(b"{\"type\":\"system\",\"sessionId\":\"s\"}");
+    let held = read_tail();
+    assert!(held.coverage.partial);
+    assert_eq!(held.coverage.held_tail, 1);
+    assert!(!tail_store.load_source_coverage().unwrap()[0].complete);
+    tail_fixture.append(b"\n");
+    let completed = read_tail();
+    assert!(!completed.coverage.partial);
+    assert_eq!(completed.coverage.held_tail, 0);
+    assert!(tail_store.load_source_coverage().unwrap()[0].complete);
+}
+
+const CURSOR_TOOL: &str = "{\"session_id\":\"s\",\"type\":\"tool_call\",\"subtype\":\"completed\",\"call_id\":\"c\",\"tool_call\":{\"readToolCall\":{}}}\n";
+
+#[test]
+fn export_defects_persist_on_resume_and_tail_only_partial_resolves() {
+    let fixture = Fixture::new(
+        format!("{CURSOR_TOOL}not-json\n{{\"session_id\":\"s\",\"type\":\"future\"}}\n").as_bytes(),
+    );
+    let store = AnalyticsStore::open_in_memory("synthetic").unwrap();
+    let connector = CursorConnector::new(&fixture.dir, KEY);
+    connector.ingest_file(&store, &fixture.file).unwrap();
+    connector.ingest_file(&store, &fixture.file).unwrap();
+    let source = &store.load_sources().unwrap()[0].0;
+    assert!(store.has_warning(source, "coverage-partial").unwrap());
+    let expected = dendro_connectors::sdk::Coverage {
+        partial: true,
+        ..Default::default()
+    };
+    assert!(store.has_warning(source, &expected.summary()).unwrap());
+    assert_eq!(store.load_tools().unwrap().len(), 1);
+
+    let tail =
+        Fixture::new(format!("{CURSOR_TOOL}{{\"session_id\":\"s\",\"type\":\"user\"}}").as_bytes());
+    let store = AnalyticsStore::open_in_memory("synthetic").unwrap();
+    let connector = CursorConnector::new(&tail.dir, KEY);
+    let first = connector.read_batch(&tail.file, None).unwrap();
+    connector.ingest_file(&store, &tail.file).unwrap();
+    let source = &store.load_sources().unwrap()[0].0;
+    assert!(store
+        .has_warning(source, &first.coverage.summary())
+        .unwrap());
+    assert!(!store.has_warning(source, "coverage-partial").unwrap());
+    tail.append(b"\n");
+    let completed = connector
+        .read_batch(&tail.file, Some(&first.watermark))
+        .unwrap();
+    assert!(completed.complete);
+    connector.ingest_file(&store, &tail.file).unwrap();
+    assert!(store
+        .has_warning(source, &completed.coverage.summary())
+        .unwrap());
+}
+
+#[test]
+fn export_same_batch_errors_keep_good_records_and_later_refusal_keeps_counts() {
+    let mixed = Fixture::new(format!("{CURSOR_TOOL}{{\"version\":99}}\n{CURSOR_TOOL}").as_bytes());
+    let batch = CursorConnector::new(&mixed.dir, KEY)
+        .read_batch(&mixed.file, None)
+        .unwrap();
+    assert!(!batch.complete);
+    assert_eq!(batch.tools.len(), 2);
+    assert_eq!(batch.coverage.projected, 2);
+    assert_eq!(batch.coverage.unsupported_version, 1);
+
+    let body = format!(
+        "{}not-json\n{{\"session_id\":\"s\",\"type\":\"future\"}}\n{{}}\n",
+        CURSOR_TOOL.repeat(128)
+    );
+    let fixture = Fixture::new(body.as_bytes());
+    let store = AnalyticsStore::open_in_memory("synthetic").unwrap();
+    let error = CursorConnector::new(&fixture.dir, KEY)
+        .ingest_file(&store, &fixture.file)
+        .unwrap_err()
+        .to_string();
+    for expected in [
+        "projected=128",
+        "unknown_kind=1",
+        "malformed=1",
+        "unsupported_schema=1",
+        "coverage=partial",
+    ] {
+        assert!(error.contains(expected), "{error}");
+    }
+    assert_eq!(store.load_tools().unwrap().len(), 128);
+    let source = &store.load_sources().unwrap()[0].0;
+    assert!(store.has_warning(source, "malformed-json-record").unwrap());
+    assert!(store
+        .has_warning(source, "unsupported-cursor-record")
+        .unwrap());
+}
+
+#[test]
+fn mixed_goose_record_counts_its_projection_and_preserves_partial_on_resume() {
+    let fixture = Fixture::new(b"{\"working_dir\":\"/synthetic\",\"message_count\":1,\"input_tokens\":0,\"output_tokens\":0}\n{\"role\":\"assistant\",\"content\":[{\"type\":\"toolRequest\",\"id\":\"c\",\"toolCall\":{\"status\":\"success\",\"value\":{\"name\":\"developer__shell\"}}},{\"type\":\"future\"}]}\n");
+    let connector = GooseConnector::new(&fixture.dir, KEY);
+    let batch = connector.read_batch(&fixture.file, None).unwrap();
+    assert!(!batch.complete);
+    assert_eq!(batch.coverage.projected, 2);
+    assert_eq!(batch.coverage.unknown_kind, 0);
+    assert_eq!(batch.tools.len(), 1);
+    let store = AnalyticsStore::open_in_memory("synthetic").unwrap();
+    connector.ingest_file(&store, &fixture.file).unwrap();
+    connector.ingest_file(&store, &fixture.file).unwrap();
+    let source = &store.load_sources().unwrap()[0].0;
+    assert!(store.has_warning(source, "coverage-partial").unwrap());
+}
+
+#[test]
+fn discovery_retains_each_refused_export_candidate() {
+    let fixture = Fixture::new(b"{}\n");
+    let store = AnalyticsStore::open_in_memory("synthetic").unwrap();
+    let error = CursorConnector::new(&fixture.dir, KEY)
+        .ingest_file(&store, &fixture.dir.join("missing.jsonl"))
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("coverage=partial"));
+    assert!(!error.contains("coverage=complete"));
+    fs::create_dir(fixture.dir.join("a.jsonl")).unwrap();
+    fs::create_dir(fixture.dir.join("b.jsonl")).unwrap();
+    let listing = ExportRoot::new(&fixture.dir).inspect_discovery().unwrap();
+    assert_eq!(
+        listing.paths.as_slice(),
+        std::slice::from_ref(&fixture.file)
+    );
+    assert_eq!(listing.refused.len(), 2);
+    assert!(listing
+        .refused
+        .iter()
+        .all(|(_, reason)| *reason == "export must be a regular file"));
+}
+
 #[test]
 fn partial_malformed_and_appended_lines_preserve_exact_offsets() {
     let fixture = Fixture::new(b"{}\nnot-json\n{\"tail\":");

@@ -5,6 +5,9 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::path::Path;
 
+mod builtin;
+pub(crate) use builtin::verified_export;
+
 pub const CONTRACT: &str = "dendro.capture.contribution/v1";
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Admission {
@@ -42,6 +45,36 @@ pub struct Descriptor {
 }
 impl Descriptor {
     pub fn validate(&self) -> Result<(), &'static str> {
+        self.refuse_contract_and_ceilings()?;
+        if self.availability() != Availability::Implemented {
+            return Err("source_not_admitted");
+        }
+        self.refuse_missing_fixture()?;
+        self.refuse_export_bounds()?;
+        self.refuse_native_size()
+    }
+    /// Production readers compiled into `Registry::builtin`.
+    ///
+    /// The fixture digest binds `Contribution::project` to exact conformance
+    /// bytes. These readers do not project through that trait — ingest sends
+    /// them to the native JSONL or verified-export parsers — so requiring a
+    /// digest would freeze an unbound claim. Every other refusal stays:
+    /// contract, dynamic loading, ceilings, export bounds, blocked sources,
+    /// and native record-size admission. A `ParserPending` reader may be
+    /// named so dispatch can report present-not-parsed; `validate` still
+    /// refuses to enroll one as a contribution.
+    fn validate_production(&self) -> Result<(), &'static str> {
+        self.refuse_contract_and_ceilings()?;
+        if self.availability() == Availability::SourceBlocked {
+            return Err("source_not_admitted");
+        }
+        self.refuse_export_bounds()?;
+        if self.availability() == Availability::Implemented {
+            self.refuse_native_size()?;
+        }
+        Ok(())
+    }
+    fn refuse_contract_and_ceilings(&self) -> Result<(), &'static str> {
         if self.contract != CONTRACT {
             return Err("incompatible_contribution_contract");
         }
@@ -54,9 +87,9 @@ impl Descriptor {
         {
             return Err("descriptor_looser_than_admitted_adapter_limit");
         }
-        if self.availability() != Availability::Implemented {
-            return Err("source_not_admitted");
-        }
+        Ok(())
+    }
+    fn refuse_missing_fixture(&self) -> Result<(), &'static str> {
         if !self
             .fixture_digest
             .is_some_and(|s| s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit()))
@@ -68,6 +101,9 @@ impl Descriptor {
         }) {
             return Err("missing_conformance_fixture");
         }
+        Ok(())
+    }
+    fn refuse_export_bounds(&self) -> Result<(), &'static str> {
         // Export contracts keep their admitted tighter bounds. No vendor grammar is inferred.
         if ["cursor", "windsurf", "goose", "devin", "agy"]
             .iter()
@@ -79,6 +115,9 @@ impl Descriptor {
         {
             return Err("descriptor_looser_than_admitted_adapter_limit");
         }
+        Ok(())
+    }
+    fn refuse_native_size(&self) -> Result<(), &'static str> {
         if self.is_native() && self.admitted_native_record_bytes.is_none() {
             return Err("native_record_size_not_admitted");
         }
@@ -91,9 +130,11 @@ impl Descriptor {
         Ok(())
     }
     /// Internal cause is distinct from the frozen persisted refusal code.
+    /// Availability is the descriptor's admission. Linux strace and Windows
+    /// ETW stay blocked by source id even when the admission says implemented.
+    /// Grok is not a special case: an implemented grok descriptor is implemented.
     pub fn availability(&self) -> Availability {
-        if self.source_id.eq_ignore_ascii_case("grok") || self.admission == Admission::ParserPending
-        {
+        if self.admission == Admission::ParserPending {
             Availability::ParserPending
         } else if [
             "linux strace",
@@ -112,8 +153,12 @@ impl Descriptor {
             Availability::Implemented
         }
     }
-    fn is_native(&self) -> bool {
-        ["claude", "codex", "pi", "openrig", "grok"]
+    /// Native source ids, including OpenRig. OpenRig is not a builtin capture
+    /// reader — ingest keeps its lifecycle path — but the frozen size gate
+    /// still treats that name as native. The id list lives with the builtin
+    /// table so dispatch and the size gate share one set.
+    pub(crate) fn is_native(&self) -> bool {
+        builtin::NATIVE_SOURCE_IDS
             .iter()
             .any(|source| self.source_id.eq_ignore_ascii_case(source))
     }
@@ -132,6 +177,16 @@ impl Descriptor {
     }
 }
 
+/// How ingest reads a source named by the builtin registry.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReaderRoute {
+    NativeJsonl,
+    VerifiedExport,
+    /// Known source whose parser is not admitted. Ingest reports present-not-parsed.
+    PresentNotParsed,
+    Unsupported,
+}
+
 /// Standing registration takes statically compiled adapters; there is no dynamic loader.
 pub struct Registry {
     descriptors: &'static [Descriptor],
@@ -141,15 +196,57 @@ impl Registry {
         for descriptor in descriptors {
             descriptor.validate()?;
         }
-        for (index, descriptor) in descriptors.iter().enumerate() {
-            if descriptors[..index]
-                .iter()
-                .any(|d| d.source_id == descriptor.source_id)
-            {
-                return Err("incompatible_contribution_contract");
-            }
-        }
+        reject_duplicate_sources(descriptors)?;
         Ok(Self { descriptors })
+    }
+    fn from_production(descriptors: &'static [Descriptor]) -> Result<Self, &'static str> {
+        for descriptor in descriptors {
+            descriptor.validate_production()?;
+        }
+        reject_duplicate_sources(descriptors)?;
+        Ok(Self { descriptors })
+    }
+    pub fn descriptors(&self) -> &'static [Descriptor] {
+        self.descriptors
+    }
+    /// Ceilings for a registered reader. A missing id gets the global ceiling.
+    /// A descriptor may only tighten those ceilings.
+    pub fn reader_limits(source_id: &str) -> crate::sdk::ReadLimits {
+        use crate::sdk::{
+            ReadLimits, GLOBAL_MAX_BATCH_RECORDS, GLOBAL_MAX_DEPTH, GLOBAL_MAX_RECORD_BYTES,
+        };
+        let limits = Self::builtin()
+            .descriptor(source_id)
+            .map(|descriptor| descriptor.limits)
+            .unwrap_or(ReadLimits {
+                encoded_bytes: GLOBAL_MAX_RECORD_BYTES,
+                nesting_depth: GLOBAL_MAX_DEPTH,
+                decoded_records_per_batch: GLOBAL_MAX_BATCH_RECORDS,
+                line_attempts: None,
+            });
+        ReadLimits {
+            encoded_bytes: limits.encoded_bytes.min(GLOBAL_MAX_RECORD_BYTES),
+            nesting_depth: limits.nesting_depth.min(GLOBAL_MAX_DEPTH),
+            decoded_records_per_batch: limits
+                .decoded_records_per_batch
+                .min(GLOBAL_MAX_BATCH_RECORDS),
+            line_attempts: limits
+                .line_attempts
+                .map(|attempts| attempts.min(GLOBAL_MAX_BATCH_RECORDS)),
+        }
+    }
+    /// Native JSONL, verified export, or present-not-parsed. Unknown names,
+    /// including OpenRig, are `Unsupported` here; ingest handles OpenRig itself.
+    pub fn route(&self, source_id: &str) -> ReaderRoute {
+        let Some(descriptor) = self.descriptor(source_id) else {
+            return ReaderRoute::Unsupported;
+        };
+        match descriptor.availability() {
+            Availability::ParserPending => ReaderRoute::PresentNotParsed,
+            Availability::SourceBlocked => ReaderRoute::Unsupported,
+            Availability::Implemented if descriptor.is_native() => ReaderRoute::NativeJsonl,
+            Availability::Implemented => ReaderRoute::VerifiedExport,
+        }
     }
     /// Enforces standing registration for callers that do not use the trusted low-level API.
     pub fn capture<A: Contribution>(
@@ -169,6 +266,18 @@ impl Registry {
     pub fn descriptor(&self, source_id: &str) -> Option<&Descriptor> {
         self.descriptors.iter().find(|d| d.source_id == source_id)
     }
+}
+
+fn reject_duplicate_sources(descriptors: &[Descriptor]) -> Result<(), &'static str> {
+    for (index, descriptor) in descriptors.iter().enumerate() {
+        if descriptors[..index]
+            .iter()
+            .any(|d| d.source_id == descriptor.source_id)
+        {
+            return Err("incompatible_contribution_contract");
+        }
+    }
+    Ok(())
 }
 
 pub enum Projection<F> {
@@ -193,6 +302,7 @@ pub struct Counts {
     pub decoded: usize,
     pub projected: usize,
     pub recognized_unprojected: usize,
+    pub unprojected_reasons: std::collections::BTreeMap<&'static str, usize>,
     pub unsupported_schema: usize,
     pub quarantined: usize,
     pub unrecognized: usize,
@@ -303,12 +413,29 @@ pub fn capture<A: Contribution>(
     report.counts.whitespace_lines = batch.whitespace_lines;
     report.counts.malformed = batch.malformed;
     report.counts.quarantined = batch.quarantined;
+    for (reason, count) in [
+        ("quarantined_oversize", batch.coverage.quarantined_oversize),
+        ("quarantined_depth", batch.coverage.quarantined_depth),
+        ("malformed", batch.coverage.malformed),
+    ] {
+        if count != 0 {
+            report
+                .counts
+                .unprojected_reasons
+                .insert(reason, count as usize);
+        }
+    }
     for reason in batch.warnings {
         push_reason(&mut report.reasons, reason);
     }
     for (_, value) in batch.records {
         if !schema_supported(descriptor, &value) {
             report.counts.unsupported_schema += 1;
+            *report
+                .counts
+                .unprojected_reasons
+                .entry("unsupported_version")
+                .or_default() += 1;
             cursor.stopped_schema = true;
             push_reason(&mut report.reasons, "unsupported_schema");
             break;
@@ -319,16 +446,36 @@ pub fn capture<A: Contribution>(
                 report.facts.push(fact);
                 report.counts.projected += 1;
             }
-            Projection::RecognizedUnprojected => report.counts.recognized_unprojected += 1,
+            Projection::RecognizedUnprojected => {
+                report.counts.recognized_unprojected += 1;
+                *report
+                    .counts
+                    .unprojected_reasons
+                    .entry("no_projectable_fact")
+                    .or_default() += 1;
+            }
             Projection::Unrecognized => {
                 report.counts.unrecognized += 1;
+                *report
+                    .counts
+                    .unprojected_reasons
+                    .entry("unknown_kind")
+                    .or_default() += 1;
                 push_reason(&mut report.reasons, "unsupported_schema");
             }
             Projection::Quarantined => {
                 report.counts.quarantined += 1;
+                *report
+                    .counts
+                    .unprojected_reasons
+                    .entry("malformed")
+                    .or_default() += 1;
                 push_reason(&mut report.reasons, "malformed-json-record");
             }
         }
+    }
+    for (reason, count) in &report.counts.unprojected_reasons {
+        *cursor.counts.unprojected_reasons.entry(reason).or_default() += count;
     }
     cursor.counts.decoded += report.counts.decoded;
     cursor.counts.projected += report.counts.projected;

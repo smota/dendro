@@ -6,8 +6,11 @@ use std::path::{Path, PathBuf};
 pub struct GrokConnector;
 
 impl GrokConnector {
-    pub const fn availability(&self) -> crate::capture_registry_v1::Availability {
-        crate::capture_registry_v1::Availability::Implemented
+    pub fn availability(&self) -> crate::capture_registry_v1::Availability {
+        crate::capture_registry_v1::Registry::builtin()
+            .descriptor("grok")
+            .map(crate::capture_registry_v1::Descriptor::availability)
+            .expect("grok is a builtin capture reader")
     }
     pub fn new() -> Self {
         Self

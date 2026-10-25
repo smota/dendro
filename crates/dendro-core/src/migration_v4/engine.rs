@@ -553,6 +553,9 @@ fn semantic_schema() -> Result<Connection, MigrationError> {
     let conn = Connection::open_in_memory()?;
     conn.execute_batch(include_str!("../semantic.sql"))?;
     conn.execute_batch("CREATE TABLE dendro_semantic_snapshot (report JSON, signature VARCHAR, refreshed_at TIMESTAMP); CREATE TABLE dendro_semantic_provenance (source_key VARCHAR PRIMARY KEY); CREATE TABLE dendro_semantic_state (id INTEGER PRIMARY KEY, dirty BOOLEAN NOT NULL); CREATE VIEW dendro_semantic_guard AS SELECT CASE WHEN NOT dirty THEN true ELSE error('Insufficient data: semantic snapshot is stale; refresh required') END AS fresh FROM dendro_semantic_state WHERE id = 1")?;
+    // Additive, lazily created by the first message-metadata commit; admitted
+    // only with its exact expected columns (compared like the semantic tables).
+    conn.execute_batch(crate::storage::AnalyticsStore::MESSAGE_FACTS_SCHEMA)?;
     conn.execute_batch(include_str!("../semantic_views.sql"))?;
     Ok(conn)
 }
