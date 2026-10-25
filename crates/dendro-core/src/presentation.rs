@@ -107,6 +107,24 @@ impl ReadRequest {
 fn rows(v: &Value) -> impl Iterator<Item = &Value> {
     v.as_array().into_iter().flatten()
 }
+fn cost_text(v: &Value) -> String {
+    match v["status"].as_str() {
+        Some("complete") => match v["usd"].as_f64().filter(|n| n.is_finite()) {
+            Some(amount) => amount.to_string(),
+            None => "Unavailable".into(),
+        },
+        Some("partial") => format!("partial ({} unknown)", number(&v["unknown_rows"])),
+        Some("unknown") => format!("unknown ({} unknown)", number(&v["unknown_rows"])),
+        _ => "Unavailable".into(),
+    }
+}
+fn category_cell(v: &Value) -> String {
+    if v.is_string() {
+        label(v)
+    } else {
+        number(v)
+    }
+}
 fn number(v: &Value) -> String {
     if let Some(n) = v.as_u64() {
         return n.to_string();
@@ -249,6 +267,28 @@ pub fn human(report: &Value, markdown: bool) -> String {
         ],
         vec!["Recorded tokens".into(), number(&p["tokens"])],
         vec![
+            "Input uncached".into(),
+            category_cell(&p["token_categories"]["input_uncached"]),
+        ],
+        vec![
+            "Output".into(),
+            category_cell(&p["token_categories"]["output"]),
+        ],
+        vec![
+            "Cache read".into(),
+            category_cell(&p["token_categories"]["cache_read"]),
+        ],
+        vec![
+            "Cache write".into(),
+            category_cell(&p["token_categories"]["cache_write"]),
+        ],
+        vec![
+            "Reasoning".into(),
+            category_cell(&p["token_categories"]["reasoning"]),
+        ],
+        vec!["Observed cost USD".into(), cost_text(&p["observed_cost"])],
+        vec!["Estimated cost USD".into(), cost_text(&p["estimated_cost"])],
+        vec![
             "Effective parallelism".into(),
             number(&p["fleet_concurrency"]["effective_parallelism"]),
         ],
@@ -274,6 +314,37 @@ pub fn human(report: &Value, markdown: bool) -> String {
             &seats,
             markdown,
         ));
+    }
+    let roots: Vec<_> = rows(&p["sessions"])
+        .filter(|row| row.get("inclusive").is_some())
+        .map(|row| {
+            vec![
+                label(&row["session"]),
+                number(&row["tokens"]),
+                cost_text(&row["observed_cost"]),
+                cost_text(&row["estimated_cost"]),
+                number(&row["inclusive"]["tokens"]),
+                cost_text(&row["inclusive"]["observed_cost"]),
+                cost_text(&row["inclusive"]["estimated_cost"]),
+            ]
+        })
+        .collect();
+    if !roots.is_empty() {
+        out.push('\n');
+        out.push_str(&table(
+            &[
+                "Session",
+                "Exclusive tokens",
+                "Observed cost",
+                "Estimated cost",
+                "Inclusive tokens",
+                "Inclusive observed",
+                "Inclusive estimated",
+            ],
+            &roots,
+            markdown,
+        ));
+        out.push_str("Inclusive (with sub-agents) totals are non-additive across root sessions.\n");
     }
     let pairs: Vec<_> = rows(&p["pair_medians"])
         .map(|r| {
@@ -1228,6 +1299,19 @@ fn project_rows(
             .collect(),
     )
 }
+fn project_cost(v: &Value) -> Value {
+    let status = match v["status"].as_str() {
+        Some("complete") => "complete",
+        Some("partial") => "partial",
+        _ => "unknown",
+    };
+    json!({
+        "status": status,
+        "usd": v["usd"].as_f64().filter(|amount| amount.is_finite()),
+        "unknown_rows": v["unknown_rows"].as_u64().unwrap_or(0),
+        "known_rows": v["known_rows"].as_u64().unwrap_or(0),
+    })
+}
 fn time(v: &Value) -> Value {
     v.as_str()
         .and_then(crate::parse_utc_time)
@@ -1375,6 +1459,8 @@ pub fn public_projection(report: &Value) -> Value {
             &["input_uncached", "cache_read", "cache_write", "output"],
         )),
     );
+    out.insert("observed_cost".into(), project_cost(&p["observed_cost"]));
+    out.insert("estimated_cost".into(), project_cost(&p["estimated_cost"]));
     let mut concurrency = nums(&p["fleet_concurrency"], &["effective_parallelism"]);
     concurrency.insert(
         "histogram".into(),
