@@ -3,12 +3,14 @@
 pub mod agy;
 pub mod claude;
 pub mod codex;
+mod dangerous_command;
 pub mod grok;
 pub mod ingest;
 mod lineage;
 mod messages;
 pub mod openrig;
 pub mod pi;
+mod security_facts;
 pub mod snapshot;
 pub mod stream;
 

@@ -558,6 +558,7 @@ fn semantic_schema() -> Result<Connection, MigrationError> {
     conn.execute_batch(crate::storage::AnalyticsStore::MESSAGE_FACTS_SCHEMA)?;
     conn.execute_batch(crate::storage::AnalyticsStore::PROCESS_SAMPLES_SCHEMA)?;
     conn.execute_batch(crate::storage::AnalyticsStore::SESSION_EDGES_SCHEMA)?;
+    conn.execute_batch(crate::storage::AnalyticsStore::SECURITY_FACTS_SCHEMA)?;
     conn.execute_batch(include_str!("../semantic_views.sql"))?;
     Ok(conn)
 }

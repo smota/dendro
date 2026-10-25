@@ -241,6 +241,22 @@ impl AnalyticsStore {
         generation BIGINT NOT NULL
     )";
 
+    /// Explicit security-field observations. Additive and idempotent; no schema bump.
+    /// Not an authority verdict: `security_v1` is unchanged. Values are a closed
+    /// vocabulary; command text is never a column.
+    pub(super) const SECURITY_FACTS_SCHEMA: &'static str =
+        "CREATE TABLE IF NOT EXISTS security_facts (
+        source_key VARCHAR PRIMARY KEY,
+        source_id VARCHAR NOT NULL,
+        harness VARCHAR NOT NULL,
+        native_session VARCHAR,
+        ts TIMESTAMP,
+        kind VARCHAR NOT NULL,
+        value VARCHAR NOT NULL,
+        source_field VARCHAR NOT NULL,
+        generation BIGINT NOT NULL
+    )";
+
     pub(super) const SEMANTIC_STATE_SCHEMA: &'static str = "CREATE TABLE IF NOT EXISTS dendro_semantic_state (id INTEGER PRIMARY KEY, dirty BOOLEAN NOT NULL); INSERT INTO dendro_semantic_state VALUES (1, TRUE) ON CONFLICT DO NOTHING";
 
     pub(super) fn invalidate_semantic(&self) -> Result<()> {
@@ -572,6 +588,7 @@ impl AnalyticsStore {
         self.conn.execute_batch(Self::MESSAGE_FACTS_SCHEMA)?;
         self.conn.execute_batch(Self::PROCESS_SAMPLES_SCHEMA)?;
         self.conn.execute_batch(Self::SESSION_EDGES_SCHEMA)?;
+        self.conn.execute_batch(Self::SECURITY_FACTS_SCHEMA)?;
         self.conn.execute_batch(openrig_provenance::SCHEMA)?;
         self.conn.execute(
             "INSERT INTO dendro_meta (schema_version, key_id) VALUES (?, ?)",
@@ -1235,6 +1252,68 @@ impl AnalyticsStore {
         drop(stmt);
         tx.commit()?;
         Ok(())
+    }
+
+    /// Insert explicit security observations. A repeat of `source_key` is the same observation.
+    pub fn commit_security_facts(&self, facts: &[SecurityFact]) -> Result<()> {
+        if facts.is_empty() {
+            return Ok(());
+        }
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute_batch(Self::SECURITY_FACTS_SCHEMA)?;
+        let mut stmt = tx.prepare(
+            "INSERT INTO security_facts
+             VALUES (?, ?, ?, ?, CAST(? AS TIMESTAMP), ?, ?, ?, ?)
+             ON CONFLICT (source_key) DO NOTHING",
+        )?;
+        for fact in facts {
+            admit_security_fact(&fact.kind, &fact.value, &fact.source_field)?;
+            stmt.execute(params![
+                redact(&fact.source_key),
+                redact(&fact.source_id),
+                redact(&fact.harness),
+                fact.native_session.as_deref().map(redact),
+                fact.ts.map(|ts| ts.to_rfc3339()),
+                fact.kind.as_str(),
+                fact.value.as_str(),
+                fact.source_field.as_str(),
+                fact.generation,
+            ])?;
+        }
+        drop(stmt);
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn load_security_facts(&self) -> Result<Vec<SecurityFact>> {
+        let exists: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'security_facts'",
+            [],
+            |row| row.get(0),
+        )?;
+        if exists == 0 {
+            return Ok(Vec::new());
+        }
+        let mut stmt = self.conn.prepare(
+            "SELECT source_key, source_id, harness, native_session, CAST(ts AS VARCHAR),
+                    kind, value, source_field, generation
+             FROM security_facts ORDER BY source_key",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let ts: Option<String> = row.get(4)?;
+            Ok(SecurityFact {
+                source_key: row.get(0)?,
+                source_id: row.get(1)?,
+                harness: row.get(2)?,
+                native_session: row.get(3)?,
+                ts: ts.as_deref().and_then(parse_utc_time),
+                kind: row.get(5)?,
+                value: row.get(6)?,
+                source_field: row.get(7)?,
+                generation: row.get(8)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
     pub fn session_edge_parent(&self, source_key: &str) -> Result<Option<String>> {
@@ -2183,6 +2262,56 @@ fn session_link(edge: &SessionEdgeFact) -> crate::session_lineage::SessionLink {
         child_session: edge.child_session.clone(),
         relation: edge.relation.clone(),
         status: edge.status.clone(),
+    }
+}
+
+fn admit_security_fact(kind: &str, value: &str, source_field: &str) -> Result<()> {
+    let value_ok = match kind {
+        "permission_mode" => matches!(
+            value,
+            "default" | "auto" | "acceptEdits" | "plan" | "bypassPermissions" | "other"
+        ),
+        "permission_decision" => matches!(value, "allow" | "deny" | "other"),
+        "sandbox_policy" => matches!(
+            value,
+            "danger-full-access" | "read-only" | "workspace-write" | "true" | "false" | "other"
+        ),
+        "approval_policy" => matches!(value, "never" | "on-request" | "other"),
+        "permission_profile" => value == "other",
+        "approved_prefix_count" => !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()),
+        "sandbox_override_requested" => value == "true",
+        "dangerous_command" => matches!(
+            value,
+            "recursive_delete"
+                | "pipe_to_shell"
+                | "force_push"
+                | "chmod_world_writable"
+                | "sudo"
+                | "disk_write_device"
+                | "credential_file_access"
+                | "network_exfil_pattern"
+        ),
+        _ => false,
+    };
+    let field_ok = matches!(
+        source_field,
+        "permissionMode"
+            | "permissionDecision"
+            | "sandboxed"
+            | "payload.approval_policy"
+            | "payload.sandbox_policy.type"
+            | "payload.permission_profile.type"
+            | "payload.state.permissions.approved_command_prefixes"
+            | "dangerouslyDisableSandbox"
+            | "input.command"
+            | "arguments.command"
+            | "arguments.cmd"
+            | "command"
+    );
+    if value_ok && field_ok {
+        Ok(())
+    } else {
+        anyhow::bail!("security fact kind, value, or source field is outside the closed vocabulary")
     }
 }
 

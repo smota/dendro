@@ -152,6 +152,28 @@ pub struct ReaderState {
     pub native_session: Option<String>,
 }
 
+/// One observed security field from a harness record.
+///
+/// These rows are observations of explicit source fields. They are not authority
+/// verdicts and they are not inputs to `security_v1::assess_authority`. That
+/// assessment stays `NotAssessed` without a policy layer; a grant alone is never
+/// effective authority. `value` is a closed vocabulary for `kind` (`other` when
+/// the source value is outside it, or a digit count for approved prefixes).
+/// Command text and approved command words are never stored.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SecurityFact {
+    pub source_key: String,
+    pub source_id: String,
+    pub harness: String,
+    /// Sealed like `usage_facts.native_session`. None when the record names no session.
+    pub native_session: Option<String>,
+    pub ts: Option<DateTime<Utc>>,
+    pub kind: String,
+    pub value: String,
+    pub source_field: String,
+    pub generation: i64,
+}
+
 /// One explicit session parent→child link. Session ids use the same sealing as `native_session`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionEdgeFact {
