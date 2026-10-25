@@ -201,3 +201,52 @@ fn pi_classifies_parsed_bash_and_grok_emits_nothing() {
     let facts = store.load_security_facts().unwrap();
     assert!(facts.iter().all(|fact| fact.harness != "grok"));
 }
+
+#[test]
+fn resumed_mode_change_is_not_dropped_and_a_repeat_stays_one_fact() {
+    use std::io::Write;
+    let scratch = Scratch::new();
+    let path = scratch.file(
+        "claude.jsonl",
+        concat!(
+            r#"{"type":"permission-mode","sessionId":"s1","timestamp":"2026-10-25T00:00:00Z","permissionMode":"default"}"#,
+            "\n",
+            r#"{"type":"permission-mode","sessionId":"s1","timestamp":"2026-10-25T00:00:01Z","permissionMode":"plan"}"#,
+            "\n",
+        ),
+    );
+    let store = AnalyticsStore::open_in_memory("key").unwrap();
+    ingest(&store, "claude", &path);
+    assert_eq!(
+        kinds(&store.load_security_facts().unwrap(), "permission_mode"),
+        vec!["default", "plan"]
+    );
+    let mut file = fs::OpenOptions::new().append(true).open(&path).unwrap();
+    writeln!(
+        file,
+        r#"{{"type":"permission-mode","sessionId":"s1","timestamp":"2026-10-25T00:00:02Z","permissionMode":"acceptEdits"}}"#
+    )
+    .unwrap();
+    file.sync_all().unwrap();
+    drop(file);
+    ingest(&store, "claude", &path);
+    assert_eq!(
+        kinds(&store.load_security_facts().unwrap(), "permission_mode"),
+        vec!["default", "plan", "acceptEdits"]
+    );
+    let mut file = fs::OpenOptions::new().append(true).open(&path).unwrap();
+    writeln!(
+        file,
+        r#"{{"type":"permission-mode","sessionId":"s1","timestamp":"2026-10-25T00:00:03Z","permissionMode":"acceptEdits"}}"#
+    )
+    .unwrap();
+    file.sync_all().unwrap();
+    drop(file);
+    ingest(&store, "claude", &path);
+    let facts = store.load_security_facts().unwrap();
+    assert_eq!(
+        kinds(&facts, "permission_mode"),
+        vec!["default", "plan", "acceptEdits"]
+    );
+    assert_eq!(facts.len(), 3);
+}

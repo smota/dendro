@@ -32,6 +32,9 @@ struct Buckets {
     /// Set when one line carries its own model (Grok `modelUsage` keys).
     /// Empty means the file-level attribution still applies.
     model: Option<String>,
+    /// When set, do not fill `model` from the file summary. A turn-level cost
+    /// row uses this so the unsplit total is not attributed to one model.
+    keep_model: bool,
 }
 
 #[derive(Default)]
@@ -426,6 +429,7 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
     let mut session_edges: Vec<dendro_core::SessionEdgeFact> = Vec::new();
     let mut security_facts: Vec<dendro_core::SecurityFact> = Vec::new();
     let mut security_dedupe = crate::security_facts::PolicyDedupe::default();
+    security_dedupe.seed_from(&store.load_security_facts()?, source_id, generation);
     let mut open_agents = crate::lineage::OpenAgents::default();
     let mut tool_categories: Vec<(String, ToolCategory)> = Vec::new();
     let mut seen_messages = HashSet::new();
@@ -800,10 +804,14 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
                         } else {
                             format!("{source_id}:{generation}:{line_no}")
                         };
-                        let model = bucket
-                            .model
-                            .clone()
-                            .or_else(|| usage_attribution.model.clone());
+                        let model = if bucket.keep_model {
+                            bucket.model.clone()
+                        } else {
+                            bucket
+                                .model
+                                .clone()
+                                .or_else(|| usage_attribution.model.clone())
+                        };
                         usage_models.push((
                             source_key.clone(),
                             model,
@@ -1482,6 +1490,7 @@ fn parse_codex(value: &Value, counters: &mut CodexCounters) -> Result<Option<Buc
         prior_output_tokens: priors.map(|p| p.3),
         prior_reasoning_output_tokens: priors.map(|p| p.4),
         model: None,
+        keep_model: false,
     }))
 }
 
@@ -1518,6 +1527,7 @@ fn parse_claude(value: &Value) -> Result<Option<Buckets>, String> {
         prior_output_tokens: None,
         prior_reasoning_output_tokens: None,
         model: None,
+        keep_model: false,
     }))
 }
 
@@ -1548,7 +1558,31 @@ fn parse_pi(value: &Value) -> Result<Option<Buckets>, String> {
         prior_output_tokens: None,
         prior_reasoning_output_tokens: None,
         model: None,
+        keep_model: false,
     }))
+}
+
+/// xAI `costUsdTicks` scale: 1 USD = 10^10 ticks. Raw ticks are not a column;
+/// [`grok_observed_usd`] stores observed USD in `currency_total`. Change this
+/// constant if the provider scale changes.
+pub const GROK_USD_TICKS_PER_USD: i64 = 10_000_000_000;
+
+fn grok_observed_usd(usage: &Value) -> Result<Option<f64>, String> {
+    match usage.get("costUsdTicks") {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => {
+            let ticks = value.as_i64().ok_or("non-integer-costUsdTicks")?;
+            if ticks < 0 {
+                return Err("negative-costUsdTicks".into());
+            }
+            // Ticks stay out of the row. USD = ticks / GROK_USD_TICKS_PER_USD.
+            let usd = (ticks as f64) / (GROK_USD_TICKS_PER_USD as f64);
+            if !usd.is_finite() {
+                return Err("non-finite-costUsdTicks".into());
+            }
+            Ok(Some(usd))
+        }
+    }
 }
 
 /// One usage row per model inside `turn_completed`. The parent usage object is
@@ -1576,6 +1610,7 @@ fn parse_grok(value: &Value) -> Result<(Vec<Buckets>, Vec<String>), String> {
         .and_then(Value::as_str)
         .unwrap_or("grok-session");
     let ts = grok_timestamp(value);
+    let parent_cost = grok_observed_usd(usage);
     if let Some(models) = usage.get("modelUsage").and_then(Value::as_object) {
         if !models.is_empty() {
             let mut rows = Vec::new();
@@ -1587,14 +1622,74 @@ fn parse_grok(value: &Value) -> Result<(Vec<Buckets>, Vec<String>), String> {
                 }
                 let model = safe_attribution_token(name).then(|| name.clone());
                 match grok_usage_row(part, session, ts, model) {
-                    Ok(row) => rows.push(row),
+                    Ok((row, warning)) => {
+                        if let Some(reason) = warning {
+                            skipped.push(reason);
+                        }
+                        rows.push(row);
+                    }
                     Err(reason) => skipped.push(reason),
                 }
+            }
+            if let Err(reason) = &parent_cost {
+                skipped.push(reason.clone());
+            }
+            // Per-model `costUsdTicks` wins. With exactly one model and no
+            // model cost, the parent ticks belong to that model. With several
+            // models and no per-model cost, the parent ticks stay on one
+            // zero-token row and are not divided. A mix of priced and unpriced
+            // models also refuses the split: the parent total is not stored again.
+            let parent_usd = parent_cost.as_ref().ok().copied().flatten();
+            let any_priced = rows.iter().any(|row| row.currency_total.is_some());
+            if !any_priced {
+                if rows.len() == 1 && skipped.is_empty() && rows[0].currency_total.is_none() {
+                    if let Some(cost) = parent_usd {
+                        rows[0].currency_total = Some(cost);
+                    }
+                } else if let Some(cost) = parent_usd {
+                    if rows.len() > 1 || !skipped.is_empty() {
+                        skipped.push("cost_not_attributable".into());
+                        rows.push(grok_turn_cost(session, ts, cost));
+                    }
+                }
+            } else if parent_usd.is_some()
+                && rows.iter().any(|row| row.currency_total.is_none())
+                && (rows.len() > 1 || !skipped.is_empty())
+            {
+                skipped.push("cost_not_attributable".into());
             }
             return Ok((rows, skipped));
         }
     }
-    grok_usage_row(usage, session, ts, None).map(|row| (vec![row], Vec::new()))
+    match grok_usage_row(usage, session, ts, None) {
+        Ok((row, warning)) => Ok((vec![row], warning.into_iter().collect())),
+        Err(reason) => Err(reason),
+    }
+}
+
+/// Turn-level observed cost with no token columns, so model rows are not given
+/// an invented share. `keep_model` stops summary attribution from pinning the
+/// cost to one model name.
+fn grok_turn_cost(session: &str, ts: Option<chrono::DateTime<chrono::Utc>>, usd: f64) -> Buckets {
+    Buckets {
+        input_uncached: 0,
+        output: 0,
+        cache_read: 0,
+        cache_write: 0,
+        reasoning: 0,
+        currency_total: Some(usd),
+        message_id: None,
+        native_session: session.to_string(),
+        ts,
+        predecessor_reason: None,
+        prior_input_tokens: None,
+        prior_cached_input_tokens: None,
+        prior_cache_write_input_tokens: None,
+        prior_output_tokens: None,
+        prior_reasoning_output_tokens: None,
+        model: None,
+        keep_model: true,
+    }
 }
 
 /// `inputTokens` is the prompt total: sampled turns have
@@ -1619,7 +1714,7 @@ fn grok_usage_row(
     session: &str,
     ts: Option<chrono::DateTime<chrono::Utc>>,
     model: Option<String>,
-) -> Result<Buckets, String> {
+) -> Result<(Buckets, Option<String>), String> {
     let input = json_i64(usage, "inputTokens")?;
     let cache_read = json_i64(usage, "cachedReadTokens")?;
     let cache_write = json_i64_or_zero(usage, "cacheCreationTokens")?;
@@ -1630,24 +1725,32 @@ fn grok_usage_row(
     if input_uncached < 0 {
         return Err("negative-exclusive-input".into());
     }
-    Ok(Buckets {
-        input_uncached,
-        output: json_i64(usage, "outputTokens")?,
-        cache_read,
-        cache_write,
-        reasoning: json_i64_or_zero(usage, "reasoningTokens")?,
-        currency_total: None,
-        message_id: None,
-        native_session: session.to_string(),
-        ts,
-        predecessor_reason: None,
-        prior_input_tokens: None,
-        prior_cached_input_tokens: None,
-        prior_cache_write_input_tokens: None,
-        prior_output_tokens: None,
-        prior_reasoning_output_tokens: None,
-        model,
-    })
+    let (currency_total, warning) = match grok_observed_usd(usage) {
+        Ok(cost) => (cost, None),
+        Err(reason) => (None, Some(reason)),
+    };
+    Ok((
+        Buckets {
+            input_uncached,
+            output: json_i64(usage, "outputTokens")?,
+            cache_read,
+            cache_write,
+            reasoning: json_i64_or_zero(usage, "reasoningTokens")?,
+            currency_total,
+            message_id: None,
+            native_session: session.to_string(),
+            ts,
+            predecessor_reason: None,
+            prior_input_tokens: None,
+            prior_cached_input_tokens: None,
+            prior_cache_write_input_tokens: None,
+            prior_output_tokens: None,
+            prior_reasoning_output_tokens: None,
+            model,
+            keep_model: false,
+        },
+        warning,
+    ))
 }
 
 fn grok_timestamp(value: &Value) -> Option<chrono::DateTime<chrono::Utc>> {
@@ -2384,6 +2487,94 @@ pub fn file_sha256(path: &Path) -> Result<String> {
 mod tests {
     use super::*;
     use rusqlite::OpenFlags;
+    use serde_json::json;
+
+    #[test]
+    fn grok_cost_usd_ticks_divide_by_1e10() {
+        // Raw integer ticks are not stored. 1_208_611_600 ticks is the
+        // observed cost on a real turn (~31k input, ~49k output).
+        let usage = json!({"costUsdTicks": 1_208_611_600});
+        let usd = grok_observed_usd(&usage).unwrap().unwrap();
+        assert_eq!(usd, 1_208_611_600.0 / (GROK_USD_TICKS_PER_USD as f64));
+        assert_eq!(GROK_USD_TICKS_PER_USD, 10_000_000_000);
+    }
+
+    #[test]
+    fn grok_single_model_without_its_own_ticks_takes_the_turn_cost() {
+        let value = json!({
+            "method": "_x.ai/session/update",
+            "params": {
+                "sessionId": "s",
+                "update": {
+                    "sessionUpdate": "turn_completed",
+                    "usage": {
+                        "inputTokens": 10,
+                        "outputTokens": 2,
+                        "cachedReadTokens": 0,
+                        "costUsdTicks": 2_000_000_000,
+                        "modelUsage": {
+                            "grok-4.7-build-fast": {
+                                "inputTokens": 10,
+                                "outputTokens": 2,
+                                "cachedReadTokens": 0
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        let (rows, warnings) = parse_grok(&value).unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].currency_total, Some(0.2));
+        assert_eq!(rows[0].input_uncached, 10);
+    }
+
+    #[test]
+    fn grok_multi_model_turn_cost_is_not_split() {
+        let value = json!({
+            "method": "_x.ai/session/update",
+            "params": {
+                "sessionId": "s",
+                "update": {
+                    "sessionUpdate": "turn_completed",
+                    "usage": {
+                        "inputTokens": 30,
+                        "outputTokens": 3,
+                        "cachedReadTokens": 0,
+                        "costUsdTicks": 5_000_000_000i64,
+                        "modelUsage": {
+                            "grok-a": {
+                                "inputTokens": 10,
+                                "outputTokens": 1,
+                                "cachedReadTokens": 0
+                            },
+                            "grok-b": {
+                                "inputTokens": 20,
+                                "outputTokens": 2,
+                                "cachedReadTokens": 0
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        let (rows, warnings) = parse_grok(&value).unwrap();
+        assert!(warnings
+            .iter()
+            .any(|reason| reason == "cost_not_attributable"));
+        assert!(rows
+            .iter()
+            .filter(|row| row.model.is_some())
+            .all(|row| row.currency_total.is_none()));
+        let turn: Vec<_> = rows.iter().filter(|row| row.model.is_none()).collect();
+        assert_eq!(turn.len(), 1);
+        assert_eq!(turn[0].currency_total, Some(0.5));
+        assert_eq!(turn[0].input_uncached, 0);
+        assert_eq!(turn[0].output, 0);
+        let tokens: i64 = rows.iter().map(|row| row.input_uncached + row.output).sum();
+        assert_eq!(tokens, 33);
+    }
     use std::io::Write;
 
     #[test]

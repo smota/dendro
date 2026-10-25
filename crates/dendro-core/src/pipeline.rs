@@ -287,6 +287,40 @@ impl Categories {
     }
 }
 
+fn cost_json(rollup: crate::accounting_v1::CostRollup) -> Value {
+    json!({
+        "status": match rollup.status {
+            crate::accounting_v1::CostStatus::Complete => "complete",
+            crate::accounting_v1::CostStatus::Partial => "partial",
+            crate::accounting_v1::CostStatus::Unknown => "unknown",
+        },
+        "usd": rollup.total_usd(),
+        "unknown_rows": rollup.unknown_rows,
+        "known_rows": rollup.known_rows,
+    })
+}
+
+fn usage_slice(row: &crate::UsageFact, model: Option<&str>) -> crate::accounting_v1::UsageSlice {
+    crate::accounting_v1::UsageSlice {
+        source_key: row.source_key.clone(),
+        harness: row.harness.clone(),
+        session: row.native_session.clone(),
+        input_uncached: row.input_uncached,
+        output: row.output,
+        cache_read: row.cache_read,
+        cache_write: row.cache_write,
+        reasoning: row.reasoning,
+        observed_usd: row.currency_total.filter(|amount| amount.is_finite()),
+        estimated_usd: crate::accounting_v1::estimate_usd(
+            model,
+            row.input_uncached,
+            row.output,
+            row.cache_read,
+            row.cache_write,
+        ),
+    }
+}
+
 pub fn opaque_session(key: &[u8], harness: &str, native: &str) -> String {
     opaque_id(key, "session", &format!("{harness}\n{native}"))
 }
@@ -1332,6 +1366,36 @@ fn evaluate_report_snapshot(
         slot.0.add(row);
         slot.1 += 1;
     }
+    let usage_models = store.load_usage_models()?;
+    let slices: Vec<_> = usage
+        .iter()
+        .map(|row| {
+            let model = usage_models
+                .get(&row.source_key)
+                .and_then(|(model, _)| model.as_deref());
+            usage_slice(row, model)
+        })
+        .collect();
+    let fleet_cost = crate::accounting_v1::fleet(&slices);
+    let exclusive_cost = crate::accounting_v1::exclusive_sessions(&slices);
+    let lineage = store
+        .load_session_edges()?
+        .into_iter()
+        .map(|edge| crate::accounting_v1::SessionLink {
+            harness: edge.harness,
+            parent_session: edge.parent_session,
+            child_session: edge.child_session,
+        })
+        .collect::<Vec<_>>();
+    let inclusive_cost = crate::accounting_v1::inclusive_roots(&slices, &lineage);
+    let exclusive_by_session = exclusive_cost
+        .iter()
+        .map(|session| ((session.harness.clone(), session.session.clone()), session))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let inclusive_by_session = inclusive_cost
+        .iter()
+        .map(|session| ((session.harness.clone(), session.session.clone()), session))
+        .collect::<std::collections::BTreeMap<_, _>>();
     let mut session_untimestamped =
         std::collections::BTreeMap::<(String, String), (usize, i64)>::new();
     for row in &untimestamped {
@@ -1371,6 +1435,31 @@ fn evaluate_report_snapshot(
                 row["pi_origin"] = json!(origin_str);
             }
             row["period_records"] = json!(records);
+            let exclusive = exclusive_by_session
+                .get(&key)
+                .map(|session| session.population.clone())
+                .unwrap_or_else(crate::accounting_v1::Population::empty);
+            row["observed_cost"] = cost_json(exclusive.observed);
+            row["estimated_cost"] = cost_json(exclusive.estimated);
+            if let Some(inclusive) = inclusive_by_session.get(&key) {
+                let tokens = inclusive.population.tokens;
+                row["inclusive"] = json!({
+                    "label": inclusive.label,
+                    "non_additive": inclusive.non_additive,
+                    "input_uncached": tokens.input_uncached,
+                    "output": tokens.output,
+                    "cache_read": tokens.cache_read,
+                    "cache_write": tokens.cache_write,
+                    "tokens": tokens.tokens(),
+                    "reasoning": if harness == "claude" {
+                        json!("not recorded")
+                    } else {
+                        json!(tokens.reasoning)
+                    },
+                    "observed_cost": cost_json(inclusive.population.observed),
+                    "estimated_cost": cost_json(inclusive.population.estimated),
+                });
+            }
             row["discovered_by"] = json!(found_by.get(&key).cloned().unwrap_or_default());
             row["untimestamped"] = json!({
                 "records": untimestamped_records,
@@ -1492,6 +1581,9 @@ fn evaluate_report_snapshot(
             "status": if *discovered_count == 0 { "no data" } else { "ok" },
         })).collect::<Vec<_>>(),
         "tokens": tokens,
+        "observed_cost": cost_json(fleet_cost.observed),
+        "estimated_cost": cost_json(fleet_cost.estimated),
+        "cost_rule": "observed and estimated are never added; unknown is not zero; inclusive session totals are non-additive",
         "m1_yield": metrics::m1_yield(tokens, nonreturn),
         "m1_by_seat": m1_by_seat,
         "k2_closed_item": metrics::K2_CLOSED_ITEM,
@@ -2238,6 +2330,9 @@ pub fn trace_json_with_analysis_physical(
         "outcome_coverage_exclusions": payload["outcome_coverage_exclusions"],
         "tool_loop_trace": evaluation.loop_trace,
         "tokens": payload["tokens"],
+        "observed_cost": payload["observed_cost"],
+        "estimated_cost": payload["estimated_cost"],
+        "cost_rule": payload["cost_rule"],
         "token_categories": payload["token_categories"],
         "seat_token_categories": payload["seat_token_categories"],
         "unlinked_tokens": payload["unlinked_tokens"],
@@ -3171,6 +3266,16 @@ mod tests {
             );
         }
         assert_eq!(p["token_categories"]["reasoning"], 8);
+        assert_eq!(p["observed_cost"]["status"], "unknown");
+        assert_eq!(p["estimated_cost"]["status"], "unknown");
+        assert_eq!(p["observed_cost"]["usd"], Value::Null);
+        assert_eq!(p["observed_cost"]["unknown_rows"], p["usage_rows"]);
+        assert_eq!(
+            find("c1")["inclusive"]["label"],
+            "inclusive (with sub-agents)"
+        );
+        assert_eq!(find("c1")["inclusive"]["non_additive"], true);
+        assert_eq!(find("c1")["inclusive"]["tokens"], find("c1")["tokens"]);
         let not_linked = |row: &Value| row["status"] != "linked";
         assert_eq!(
             session_sum(&rows, "tokens", &not_linked),

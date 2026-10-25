@@ -140,7 +140,12 @@ fn fixture_usage_per_turn_and_model_and_joined_tools() {
         assert_eq!(row.cache_read, cache_read);
         assert_eq!(row.cache_write, cache_write);
         assert_eq!(row.reasoning, reasoning);
-        assert_eq!(row.currency_total, None);
+        let ticks = if seq == 10 { 1234 } else { 1876 };
+        // Raw `costUsdTicks` are not stored. USD = ticks / 1e10.
+        assert_eq!(
+            row.currency_total,
+            Some(ticks as f64 / dendro_connectors::stream::GROK_USD_TICKS_PER_USD as f64)
+        );
         assert_eq!(row.message_id, None);
         assert_eq!(row.ts.unwrap().timestamp(), secs);
     }
@@ -422,6 +427,77 @@ fn one_invalid_model_usage_keeps_sibling_models() {
     );
     assert_eq!(note_coverage(&notes), "partial");
     assert!(!store.load_source_coverage().unwrap()[0].complete);
+}
+
+#[test]
+fn multi_model_turn_without_per_model_cost_is_not_split() {
+    let scratch = Scratch::new();
+    let db = database(&scratch);
+    let updates = copy_fixture(&scratch.0);
+    append_line(
+        &updates,
+        turn(
+            json!({
+                "sessionUpdate": "turn_completed",
+                "usage": {
+                    "inputTokens": 30,
+                    "outputTokens": 3,
+                    "cachedReadTokens": 0,
+                    "costUsdTicks": 5_000_000_000i64,
+                    "modelUsage": {
+                        "grok-4.7-build-fast": {
+                            "inputTokens": 10,
+                            "outputTokens": 1,
+                            "cachedReadTokens": 0
+                        },
+                        "grok-4-other": {
+                            "inputTokens": 20,
+                            "outputTokens": 2,
+                            "cachedReadTokens": 0
+                        }
+                    }
+                }
+            }),
+            1_770_000_006,
+        ),
+    );
+    ingest(&db, &scratch);
+    let store = store(&db);
+    let added: Vec<_> = store
+        .load_usage()
+        .unwrap()
+        .into_iter()
+        .filter(|row| row.seq == 22)
+        .collect();
+    assert_eq!(added.len(), 3);
+    let models = store.load_usage_models().unwrap();
+    let mut named = 0;
+    let mut turn_rows = 0;
+    for row in &added {
+        let model = models
+            .get(&row.source_key)
+            .and_then(|(model, _)| model.as_deref());
+        if model.is_some() {
+            assert_eq!(row.currency_total, None);
+            named += 1;
+        } else {
+            assert_eq!(row.currency_total, Some(0.5));
+            assert_eq!(
+                row.input_uncached + row.output + row.cache_read + row.cache_write,
+                0
+            );
+            turn_rows += 1;
+        }
+    }
+    assert_eq!(named, 2);
+    assert_eq!(turn_rows, 1);
+    let reasons = store.warning_reasons().unwrap();
+    assert!(
+        reasons
+            .iter()
+            .any(|reason| reason == "cost_not_attributable"),
+        "{reasons:?}"
+    );
 }
 
 #[test]

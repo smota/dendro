@@ -2285,6 +2285,7 @@ fn admit_security_fact(kind: &str, value: &str, source_field: &str) -> Result<()
             "recursive_delete"
                 | "pipe_to_shell"
                 | "force_push"
+                | "force_push_with_lease"
                 | "chmod_world_writable"
                 | "sudo"
                 | "disk_write_device"

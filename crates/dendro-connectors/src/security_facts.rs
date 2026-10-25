@@ -9,8 +9,43 @@ use crate::dangerous_command;
 
 #[derive(Debug, Default)]
 pub(crate) struct PolicyDedupe {
-    last: HashMap<(String, String, String), String>,
-    ordinal: HashMap<(String, String, String), u32>,
+    /// Last emitted value per sealed session and policy kind.
+    last: HashMap<(String, String), String>,
+}
+
+impl PolicyDedupe {
+    /// Resume must not treat the next record as the first observation.
+    /// The stored row with the greatest line number wins for each pair.
+    pub(crate) fn seed_from(
+        &mut self,
+        facts: &[dendro_core::SecurityFact],
+        source_id: &str,
+        generation: i64,
+    ) {
+        let mut best: HashMap<(String, String), (i64, String)> = HashMap::new();
+        for fact in facts {
+            if fact.source_id != source_id
+                || fact.generation != generation
+                || !is_policy_kind(&fact.kind)
+            {
+                continue;
+            }
+            let Some(line) = policy_line(&fact.source_key) else {
+                continue;
+            };
+            let key = (
+                fact.native_session.clone().unwrap_or_default(),
+                fact.kind.clone(),
+            );
+            if best.get(&key).is_some_and(|(prior, _)| *prior > line) {
+                continue;
+            }
+            best.insert(key, (line, fact.value.clone()));
+        }
+        for (key, (_, value)) in best {
+            self.last.insert(key, value);
+        }
+    }
 }
 
 pub(crate) struct ObserveCtx<'a> {
@@ -326,27 +361,43 @@ fn emit_policy(
     source_field: &str,
 ) {
     let sealed = sealed_session(ctx, session);
-    let key = (sealed.clone(), kind.to_string(), source_field.to_string());
+    let key = (sealed.clone(), kind.to_string());
     if dedupe.last.get(&key).is_some_and(|prior| prior == value) {
         return;
     }
-    dedupe.last.insert(key.clone(), value.to_string());
-    let ordinal = {
-        let slot = dedupe.ordinal.entry(key).or_insert(0);
-        *slot += 1;
-        *slot
-    };
+    dedupe.last.insert(key, value.to_string());
     out.push(fact(
         ctx,
         format!(
-            "{}:{}:security:{kind}:{source_field}:{ordinal}:{sealed}",
-            ctx.source_id, ctx.generation
+            "{}:{}:security:{kind}:{source_field}:{}",
+            ctx.source_id, ctx.generation, ctx.line_no
         ),
         session_column(&sealed),
         kind,
         value,
         source_field,
     ));
+}
+
+fn is_policy_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "permission_mode"
+            | "permission_decision"
+            | "sandbox_policy"
+            | "approval_policy"
+            | "permission_profile"
+            | "approved_prefix_count"
+    )
+}
+
+/// Policy keys end with the source line. Command keys do not parse as a line.
+fn policy_line(source_key: &str) -> Option<i64> {
+    let (head, line) = source_key.rsplit_once(':')?;
+    if !head.contains(":security:") {
+        return None;
+    }
+    line.parse().ok()
 }
 
 fn session_column(sealed: &str) -> Option<String> {
