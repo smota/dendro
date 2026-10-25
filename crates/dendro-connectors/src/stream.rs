@@ -426,6 +426,7 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
     let mut session_edges: Vec<dendro_core::SessionEdgeFact> = Vec::new();
     let mut security_facts: Vec<dendro_core::SecurityFact> = Vec::new();
     let mut security_dedupe = crate::security_facts::PolicyDedupe::default();
+    security_dedupe.seed_from(&store.load_security_facts()?, source_id, generation);
     let mut open_agents = crate::lineage::OpenAgents::default();
     let mut tool_categories: Vec<(String, ToolCategory)> = Vec::new();
     let mut seen_messages = HashSet::new();

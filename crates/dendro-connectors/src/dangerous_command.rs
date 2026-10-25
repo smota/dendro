@@ -8,6 +8,7 @@ pub(crate) enum DangerousCommand {
     RecursiveDelete,
     PipeToShell,
     ForcePush,
+    ForcePushWithLease,
     ChmodWorldWritable,
     Sudo,
     DiskWriteDevice,
@@ -21,6 +22,7 @@ impl DangerousCommand {
             DangerousCommand::RecursiveDelete => "recursive_delete",
             DangerousCommand::PipeToShell => "pipe_to_shell",
             DangerousCommand::ForcePush => "force_push",
+            DangerousCommand::ForcePushWithLease => "force_push_with_lease",
             DangerousCommand::ChmodWorldWritable => "chmod_world_writable",
             DangerousCommand::Sudo => "sudo",
             DangerousCommand::DiskWriteDevice => "disk_write_device",
@@ -91,8 +93,8 @@ fn classify_simple(tokens: &[String], depth: u8, out: &mut BTreeSet<DangerousCom
     if cmd == "rm" && rm_recursive(tokens) {
         out.insert(DangerousCommand::RecursiveDelete);
     }
-    if cmd == "git" && git_force_push(tokens) {
-        out.insert(DangerousCommand::ForcePush);
+    if cmd == "git" {
+        git_push_categories(tokens, out);
     }
     if cmd == "chmod" && chmod_world_writable(tokens) {
         out.insert(DangerousCommand::ChmodWorldWritable);
@@ -365,22 +367,30 @@ fn rm_recursive(tokens: &[String]) -> bool {
     false
 }
 
-fn git_force_push(tokens: &[String]) -> bool {
+fn git_push_categories(tokens: &[String], out: &mut BTreeSet<DangerousCommand>) {
     let mut saw_push = false;
-    let mut saw_force = false;
+    let mut force = false;
+    let mut lease = false;
     for token in tokens.iter().skip(1) {
         if token == "push" {
             saw_push = true;
         }
-        if token == "--force"
-            || token == "-f"
-            || token == "--force-with-lease"
-            || token.starts_with("--force-with-lease=")
-        {
-            saw_force = true;
+        if token == "--force" || token == "-f" {
+            force = true;
+        }
+        if token == "--force-with-lease" || token.starts_with("--force-with-lease=") {
+            lease = true;
         }
     }
-    saw_push && saw_force
+    if !saw_push {
+        return;
+    }
+    if force {
+        out.insert(DangerousCommand::ForcePush);
+    }
+    if lease {
+        out.insert(DangerousCommand::ForcePushWithLease);
+    }
 }
 
 fn chmod_world_writable(tokens: &[String]) -> bool {
@@ -592,7 +602,11 @@ mod tests {
             ("cd /tmp && rm -rf ./target", vec!["recursive_delete"]),
             ("git push --force", vec!["force_push"]),
             ("git push -f origin main", vec!["force_push"]),
-            ("git push --force-with-lease", vec!["force_push"]),
+            ("git push --force-with-lease", vec!["force_push_with_lease"]),
+            (
+                "git push --force-with-lease=origin/main",
+                vec!["force_push_with_lease"],
+            ),
             ("git push origin main", vec![]),
             ("echo \"git push --force\"", vec![]),
             ("chmod 777 file", vec!["chmod_world_writable"]),
