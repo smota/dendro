@@ -428,6 +428,172 @@ fn watch_flushes_on_stop_and_once_takes_a_single_tick() {
 }
 
 #[test]
+fn a_flush_that_fails_twice_then_succeeds_keeps_every_sample_once() {
+    let mut fake = Fake::default();
+    fake.add(10, Some(1), 100, "claude", true);
+    let mut c = collector(fake, Config::default());
+    let stop = AtomicBool::new(false);
+    let mut calls = 0;
+    let mut saved = Vec::new();
+    let summary = watch(
+        &mut c,
+        Duration::ZERO,
+        Some(Duration::from_secs(2)),
+        false,
+        Duration::ZERO,
+        &stop,
+        |batch| {
+            calls += 1;
+            if calls <= 2 {
+                return Err(anyhow::anyhow!("database is locked"));
+            }
+            saved.extend(batch.samples.iter().map(|s| s.seq));
+            stop.store(true, Ordering::Relaxed);
+            Ok(())
+        },
+    )
+    .unwrap();
+    assert_eq!(saved, vec![0, 1, 2]);
+    assert_eq!(summary.samples, saved.len());
+    assert!(
+        calls < 6,
+        "flush retried instead of spinning, calls={calls}"
+    );
+
+    // Stop / once / the end of the watch retries the final flush in place.
+    let mut c = collector(
+        {
+            let mut fake = Fake::default();
+            fake.add(10, Some(1), 100, "claude", true);
+            fake
+        },
+        Config::default(),
+    );
+    let mut calls = 0;
+    let mut saved = Vec::new();
+    let summary = watch(
+        &mut c,
+        Duration::from_secs(60),
+        None,
+        true,
+        Duration::from_secs(60),
+        &AtomicBool::new(false),
+        |batch| {
+            calls += 1;
+            if calls <= 2 {
+                return Err(anyhow::anyhow!("disk full"));
+            }
+            saved.extend(batch.samples.iter().map(|s| s.seq));
+            Ok(())
+        },
+    )
+    .unwrap();
+    assert_eq!(calls, 3);
+    assert_eq!(saved, vec![0]);
+    assert_eq!(summary.samples, 1);
+}
+
+#[test]
+fn an_unreadable_counter_is_not_a_reset() {
+    let mut fake = Fake::default();
+    fake.add(10, Some(1), 100, "claude", true);
+    let mut c = collector(fake, Config::default());
+    c.tick(t(1));
+    c.source.metrics.insert(
+        10,
+        RawMetrics {
+            cpu_time_us: Some(1_000),
+            rss_bytes: Some(4096),
+            limits: [VisibilityLimit::PermissionDenied].into(),
+            ..RawMetrics::default()
+        },
+    );
+    c.tick(t(2));
+    c.source.metrics.insert(
+        10,
+        RawMetrics {
+            cpu_time_us: Some(1_000),
+            rss_bytes: Some(4096),
+            disk_read_bytes: Some(5),
+            disk_write_bytes: Some(20),
+            ..RawMetrics::default()
+        },
+    );
+    c.tick(t(3));
+    let samples = c.drain().samples;
+    assert!(samples[1]
+        .visibility_limits
+        .contains(&VisibilityLimit::PermissionDenied));
+    assert!(
+        !samples[1]
+            .visibility_limits
+            .contains(&VisibilityLimit::CounterReset),
+        "a counter that became unreadable is not a reset"
+    );
+    assert_eq!(samples[1].disk_read_bytes, None);
+    assert!(samples[2]
+        .visibility_limits
+        .contains(&VisibilityLimit::CounterReset));
+}
+
+#[test]
+fn ended_roots_drop_cwd_and_exited_pids_leave_refused() {
+    let mut fake = Fake::default();
+    fake.add(10, Some(1), 100, "claude", true);
+    fake.cwds.insert(10, PathBuf::from(SECRET_CWD));
+    fake.add(11, Some(10), 101, "worker", true);
+    let mut c = collector(
+        fake,
+        Config {
+            max_tracked: 1,
+            ..Config::default()
+        },
+    );
+    c.tick(t(1));
+    assert_eq!(c.cwds.len(), 1);
+    assert!(c.refused.contains(&(11, 101)));
+    c.source.remove(10);
+    c.source.remove(11);
+    c.tick(t(2));
+    assert!(
+        c.refused.is_empty(),
+        "a pid that has exited is not kept in the refusal set"
+    );
+    let batch = c.drain();
+    assert!(
+        c.cwds.is_empty(),
+        "an ended root does not keep its working directory"
+    );
+    let root = batch.identities.iter().find(|i| i.pid == 10).unwrap();
+    assert_eq!(root.ended_at, Some(t(2)));
+    assert_eq!(
+        batch.cwds.get(&root.identity_key),
+        Some(&PathBuf::from(SECRET_CWD))
+    );
+}
+
+#[test]
+fn a_transient_unreadable_start_is_not_pid_reuse() {
+    let mut fake = Fake::default();
+    fake.add(10, Some(1), 100, "claude", true);
+    let mut c = collector(fake, Config::default());
+    c.tick(t(1));
+    let key = c.tracked.get(&10).unwrap().fact.identity_key.clone();
+    c.drain();
+    c.source.add(10, Some(1), 0, "claude", true);
+    c.tick(t(2));
+    assert_eq!(tracked_pids(&c), vec![10]);
+    let fact = &c.tracked.get(&10).unwrap().fact;
+    assert_eq!(fact.identity_key, key);
+    assert_eq!(fact.start_time_unix_s, 100);
+    assert_eq!(fact.ended_at, None);
+    assert!(c
+        .dirty
+        .values()
+        .all(|f| f.ended_at.is_none() && f.identity_key == key));
+}
+
+#[test]
 fn a_pinned_root_claims_the_tracking_bound_before_name_matches() {
     let mut fake = Fake::default();
     fake.add(10, Some(1), 100, "claude", true); // older harness match
