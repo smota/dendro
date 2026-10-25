@@ -20,6 +20,13 @@ impl Fixture {
         Self::build_with_schema(false)
     }
     fn build_with_schema(production: bool) -> Self {
+        Self::build_variant(production, false)
+    }
+    /// `main` never created `message_facts`; it appears lazily on first ingest.
+    fn build_main_style() -> Self {
+        Self::build_variant(true, true)
+    }
+    fn build_variant(production: bool, without_message_facts: bool) -> Self {
         let native = if cfg!(windows) {
             p::NativePlatform::Windows
         } else {
@@ -41,6 +48,11 @@ impl Fixture {
                     .unwrap();
             store.checkpoint().unwrap();
             drop(store);
+            if without_message_facts {
+                let conn = Connection::open(&db).unwrap();
+                conn.execute_batch("DROP TABLE message_facts; CHECKPOINT;")
+                    .unwrap();
+            }
         } else {
             let conn = Connection::open(&db).unwrap();
             #[cfg(unix)]
@@ -123,6 +135,118 @@ fn unsupported_candidate_schema_is_refused_before_pointer_switch() {
     drop(selected);
     assert_eq!(reopen(&fixture).selection().sha256, before.sha256);
     fixture.assert_unchanged();
+}
+
+#[test]
+fn selected_ingest_of_messages_publishes_on_a_main_era_schema3_source() {
+    use dendro_core::domain_v1::{Direction, Grain, MessageRole, Modality};
+    use dendro_core::{
+        AnalyticsStore, CodexCounters, FileBaselineAttempt, MessageFact, ReaderState,
+    };
+    let fixture = Fixture::build_main_style();
+    let selected = binding::migrate_logical_db(&fixture.db, &fixture.choice()).unwrap();
+    assert_eq!(table_count(&selected.database, "message_facts"), 0);
+    let fact = |seq: i64, role, direction| MessageFact {
+        source_key: format!("claude:msg-{seq}"),
+        harness: "claude".into(),
+        native_session: Some("native-M".into()),
+        ts: None,
+        seq,
+        role,
+        direction,
+        modalities: [Modality::Text].into_iter().collect(),
+        grain: Grain::Message,
+        generation: 1,
+    };
+    let messages = [
+        fact(1, MessageRole::User, Direction::Inbound),
+        fact(2, MessageRole::Assistant, Direction::Outbound),
+    ];
+    let updated = binding::mutate_selected(&selected, |staged, _| {
+        let store = AnalyticsStore::open_staged(staged)?;
+        store.commit_file_batch_observed_messages(
+            "src-M",
+            "claude",
+            "m.jsonl",
+            1,
+            10,
+            "hash",
+            None::<&CodexCounters>,
+            &[],
+            &[],
+            &messages,
+            &[],
+            &ReaderState {
+                complete: true,
+                native_session: Some("native-M".into()),
+            },
+            &FileBaselineAttempt {
+                attempted_at: "2026-10-22T00:00:00Z".into(),
+                metadata: None,
+            },
+        )?;
+        store.checkpoint()?;
+        Ok(())
+    })
+    .expect("lazily created message_facts must not invalidate schema4 custody");
+    assert_eq!(table_count(&updated.database, "message_facts"), 2);
+    drop(updated);
+    drop(selected);
+    assert_eq!(table_count(&reopen(&fixture).database, "message_facts"), 2);
+    let (restored, _) =
+        binding::rollback_logical_db(&fixture.db, &fixture.choice(), false).unwrap();
+    assert_eq!(schema(&restored.database), 3);
+    assert_eq!(m::sha256_file(&restored.database).unwrap(), fixture.db_hash);
+    fixture.assert_unchanged();
+}
+
+#[test]
+fn schema4_validator_refuses_a_malformed_message_facts_table() {
+    let fixture = Fixture::build_main_style();
+    let selected = binding::migrate_logical_db(&fixture.db, &fixture.choice()).unwrap();
+    let source = selected
+        .custody
+        .bundle()
+        .path()
+        .join("schema3-preimage.duckdb");
+    let key = selected
+        .custody
+        .bundle()
+        .path()
+        .join("schema3-preimage.key");
+    let copy = fixture.root.path().join("bad-message-facts.duckdb");
+    std::fs::copy(&selected.database, &copy).unwrap();
+    let conn = Connection::open(&copy).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE message_facts (source_key VARCHAR, body VARCHAR); CHECKPOINT;",
+    )
+    .unwrap();
+    drop(conn);
+    assert!(m::validate_selected_schema4(&copy, &source, &key).is_err());
+}
+
+fn table_count(path: &Path, table: &str) -> i64 {
+    let conn = Connection::open_with_flags(
+        path,
+        duckdb::Config::default()
+            .access_mode(duckdb::AccessMode::ReadOnly)
+            .unwrap(),
+    )
+    .unwrap();
+    let exists: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = ?",
+            [table],
+            |row| row.get(0),
+        )
+        .unwrap();
+    if exists == 0 {
+        return 0;
+    }
+    conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+        row.get(0)
+    })
+    .unwrap()
 }
 
 #[test]

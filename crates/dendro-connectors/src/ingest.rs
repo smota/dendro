@@ -94,8 +94,8 @@ pub fn ingest_staged_with_manifest(
             name => {
                 match Registry::builtin().route(name) {
                     ReaderRoute::NativeJsonl => {
-                        let mut files = match stream::walk_jsonl_checked(&root.path) {
-                            Ok(files) => files,
+                        let discovery = match stream::walk_jsonl_checked(&root.path) {
+                            Ok(discovery) => discovery,
                             Err(_) if sealed.is_none() => {
                                 let reason = "coverage=refused reason=native_discovery_failed";
                                 store.record_warning(&dendro_core::WarningNote {
@@ -108,6 +108,13 @@ pub fn ingest_staged_with_manifest(
                             }
                             Err(error) => return Err(error),
                         };
+                        if sealed.is_some() && discovery.skipped != 0 {
+                            return Err(anyhow::anyhow!(
+                                "native discovery skipped unreadable entries during sealed replay"
+                            ));
+                        }
+                        let skipped = discovery.skipped;
+                        let mut files = discovery.files;
                         if root.name == "grok" {
                             // Session stream only. Sibling jsonl files hold prompts and
                             // file text; `summary.json` is read beside `updates.jsonl`.
@@ -173,6 +180,22 @@ pub fn ingest_staged_with_manifest(
                             notes.push(format!("{shown} file={id} {}", stats.coverage.summary()));
                         }
                         read.coverage.partial |= refused != 0;
+                        if skipped != 0 {
+                            // The readable files were ingested; the bad entries were not.
+                            read.coverage.partial = true;
+                            let id = manifest_source_id(root, &root.path);
+                            let reason = format!(
+                                "coverage=partial reason=native_entry_unreadable skipped={skipped}"
+                            );
+                            if !store.has_warning(&id, &reason)? {
+                                store.record_warning(&dendro_core::WarningNote {
+                                    path: id,
+                                    line: None,
+                                    reason: reason.clone(),
+                                })?;
+                            }
+                            notes.push(format!("{shown} {reason}"));
+                        }
                         let coverage = if root.name == "codex" {
                             " tool_calls=not read"
                         } else {
@@ -1670,6 +1693,74 @@ mod tests {
                 &notes,
                 "claude files=1",
                 &["records_read=1", "usage_records=1"]
+            ),
+            "{notes:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn one_uninspectable_entry_skips_that_entry_not_the_whole_native_root() {
+        #[cfg(any(windows, target_os = "linux"))]
+        let fixture_root = dendro_core::platform_v1::create_user_private_root_with_choice(
+            "dendro-ingest-skip-",
+            &dendro_core::platform_v1::StorageRootChoice::UserProfile,
+        )
+        .expect("explicit UserProfile staged ingest fixture");
+        #[cfg(any(windows, target_os = "linux"))]
+        let dir = fixture_root.path().to_path_buf();
+        #[cfg(not(any(windows, target_os = "linux")))]
+        let dir = std::env::temp_dir().join(format!("dendro-ingest-skip-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("claude")).unwrap();
+        let db = dir.join("analytics.duckdb");
+        drop(AnalyticsStore::open_path(&db, "key").unwrap());
+        let line = "{\"type\":\"assistant\",\"sessionId\":\"s\",\"timestamp\":\"2026-10-09T01:00:00Z\",\"message\":{\"id\":\"m1\",\"usage\":{\"input_tokens\":5,\"output_tokens\":0,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}
+";
+        std::fs::write(dir.join("claude").join("good.jsonl"), line).unwrap();
+        // This entry vanishes between the directory listing and its inspection.
+        let vanished = dir.join("claude").join("vanished.jsonl");
+        std::fs::write(&vanished, line).unwrap();
+        stream::make_uninspectable(Some(vanished));
+        let roots = [SourceRoot {
+            name: "claude".into(),
+            path: dir.join("claude"),
+        }];
+        let result = ingest_staged(&db, &roots, false, b"skip-key");
+        stream::make_uninspectable(None);
+        let notes = result.expect("one bad entry must not refuse the root");
+        assert!(
+            note_has(&notes, "claude files=1", &["coverage=partial"]),
+            "{notes:?}"
+        );
+        assert!(
+            notes
+                .iter()
+                .all(|note| !note.contains("native_discovery_failed")),
+            "{notes:?}"
+        );
+        let store = AnalyticsStore::open_path(&db, "key").unwrap();
+        assert_eq!(
+            store.load_usage().unwrap().len(),
+            1,
+            "the readable file ingested"
+        );
+        assert!(store
+            .warning_reasons()
+            .unwrap()
+            .iter()
+            .any(|reason| reason.contains("native_entry_unreadable skipped=1")));
+        drop(store);
+        // A root that cannot be listed at all is still refused, not silently empty.
+        let missing = [SourceRoot {
+            name: "claude".into(),
+            path: dir.join("no-such-claude-root"),
+        }];
+        let notes = ingest_staged(&db, &missing, false, b"skip-key").unwrap();
+        assert!(
+            note_has(
+                &notes,
+                "claude missing",
+                &["coverage=refused", "source_missing"]
             ),
             "{notes:?}"
         );
