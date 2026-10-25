@@ -2571,7 +2571,7 @@ mod insights_cli_tests {
         let json = render_insights(&results, true).unwrap();
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         let rows = value.as_array().unwrap();
-        assert_eq!(rows.len(), 3);
+        assert_eq!(rows.len(), dendro_core::insight_v1::REFERENCE.len());
         let mut ids = Vec::new();
         for row in rows {
             ids.push(row["id"].as_str().unwrap().to_string());
@@ -2586,7 +2586,7 @@ mod insights_cli_tests {
             assert!(row["coverage"].is_string());
             assert!(row["evidence"].as_array().unwrap().is_empty());
         }
-        assert_eq!(ids, vec!["I02", "I04", "I18"]);
+        assert_eq!(ids, vec!["I02", "I04", "I08", "I09", "I14", "I18"]);
         let text = render_insights(&results, false).unwrap();
         assert!(text.contains("I02") && text.contains("refused"));
         assert!(!text.trim_start().starts_with('['));
