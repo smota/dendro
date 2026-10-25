@@ -1068,7 +1068,11 @@ fn session_edge_fact(
     parent_raw: &str,
 ) -> dendro_core::SessionEdgeFact {
     dendro_core::SessionEdgeFact {
-        source_key: format!("{source_id}:lineage:{}", edge.body),
+        // `body` holds raw child/attempt ids; seal it like the session columns.
+        source_key: format!(
+            "{source_id}:lineage:{}",
+            seal_session(tool_key, harness, &edge.body)
+        ),
         source_id: source_id.to_string(),
         harness: harness.to_string(),
         parent_session: seal_session(tool_key, harness, parent_raw),
