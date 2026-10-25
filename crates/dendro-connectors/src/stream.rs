@@ -424,6 +424,8 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
     let mut tools = Vec::new();
     let mut messages: Vec<MessageFact> = Vec::new();
     let mut session_edges: Vec<dendro_core::SessionEdgeFact> = Vec::new();
+    let mut security_facts: Vec<dendro_core::SecurityFact> = Vec::new();
+    let mut security_dedupe = crate::security_facts::PolicyDedupe::default();
     let mut open_agents = crate::lineage::OpenAgents::default();
     let mut tool_categories: Vec<(String, ToolCategory)> = Vec::new();
     let mut seen_messages = HashSet::new();
@@ -667,6 +669,20 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
                 }
                 continue;
             }
+            crate::security_facts::observe(
+                &crate::security_facts::ObserveCtx {
+                    harness,
+                    source_id,
+                    generation,
+                    line_no,
+                    tool_key,
+                    file_session: file_session.as_ref().map(|session| session.raw.as_str()),
+                    ts: timestamp_of(&value),
+                },
+                &value,
+                &mut security_dedupe,
+                &mut security_facts,
+            );
             let mut projected_tool = tools.len() > tools_before;
             if let Some(scan) = tool_scan.as_mut() {
                 let before = scan.calls.len() + scan.results.len() + scan.skills.len();
@@ -939,6 +955,7 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
             &baseline,
         )?;
         store.commit_session_edges(&session_edges)?;
+        store.commit_security_facts(&security_facts)?;
         store.record_tool_categories(&tool_categories)?;
         store.record_usage_models(&usage_models)?;
         for note in &warnings {
@@ -957,6 +974,7 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
         tools.clear();
         messages.clear();
         session_edges.clear();
+        security_facts.clear();
         warnings.clear();
         tool_categories.clear();
         usage_models.clear();

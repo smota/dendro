@@ -53,7 +53,8 @@ impl Fixture {
                 // `main` created none of the additive tables either.
                 conn.execute_batch(
                     "DROP TABLE message_facts; DROP TABLE process_samples;
-                     DROP TABLE process_identities; DROP TABLE session_edges; CHECKPOINT;",
+                     DROP TABLE process_identities; DROP TABLE session_edges;
+                     DROP TABLE security_facts; CHECKPOINT;",
                 )
                 .unwrap();
             }
@@ -530,6 +531,88 @@ fn schema4_validator_refuses_a_malformed_session_edges_table() {
     let conn = Connection::open(&copy).unwrap();
     conn.execute_batch(
         "CREATE TABLE session_edges (source_key VARCHAR, body VARCHAR); CHECKPOINT;",
+    )
+    .unwrap();
+    drop(conn);
+    assert!(m::validate_selected_schema4(&copy, &source, &key).is_err());
+}
+
+#[test]
+fn selected_security_facts_publish_on_a_main_era_schema3_source() {
+    use chrono::{TimeZone, Utc};
+    use dendro_core::{AnalyticsStore, SecurityFact};
+    let fixture = Fixture::build_main_style();
+    let selected = binding::migrate_logical_db(&fixture.db, &fixture.choice()).unwrap();
+    assert_eq!(table_count(&selected.database, "security_facts"), 0);
+    let observed = Utc.with_ymd_and_hms(2026, 10, 25, 0, 0, 0).unwrap();
+    let fact = SecurityFact {
+        source_key: "src:security:permission_mode:1".into(),
+        source_id: "src".into(),
+        harness: "claude".into(),
+        native_session: Some("sess".into()),
+        ts: Some(observed),
+        kind: "permission_mode".into(),
+        value: "plan".into(),
+        source_field: "permissionMode".into(),
+        generation: 1,
+    };
+    let updated = binding::mutate_selected(&selected, |staged, _| {
+        let store = AnalyticsStore::open_staged(staged)?;
+        store.commit_security_facts(std::slice::from_ref(&fact))?;
+        store.checkpoint()?;
+        Ok(())
+    })
+    .expect("lazily created security_facts must not invalidate schema4 custody");
+    assert_eq!(table_count(&updated.database, "security_facts"), 1);
+    drop(updated);
+    drop(selected);
+    let reopened = reopen(&fixture);
+    assert_eq!(table_count(&reopened.database, "security_facts"), 1);
+    let conn = Connection::open_with_flags(
+        &reopened.database,
+        duckdb::Config::default()
+            .access_mode(duckdb::AccessMode::ReadOnly)
+            .unwrap(),
+    )
+    .unwrap();
+    let (kind, value, field): (String, String, String) = conn
+        .query_row(
+            "SELECT kind, value, source_field FROM security_facts WHERE source_key = ?",
+            ["src:security:permission_mode:1"],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(kind, "permission_mode");
+    assert_eq!(value, "plan");
+    assert_eq!(field, "permissionMode");
+    drop(conn);
+    drop(reopened);
+    let (restored, _) =
+        binding::rollback_logical_db(&fixture.db, &fixture.choice(), false).unwrap();
+    assert_eq!(schema(&restored.database), 3);
+    assert_eq!(m::sha256_file(&restored.database).unwrap(), fixture.db_hash);
+    fixture.assert_unchanged();
+}
+
+#[test]
+fn schema4_validator_refuses_a_malformed_security_facts_table() {
+    let fixture = Fixture::build_main_style();
+    let selected = binding::migrate_logical_db(&fixture.db, &fixture.choice()).unwrap();
+    let source = selected
+        .custody
+        .bundle()
+        .path()
+        .join("schema3-preimage.duckdb");
+    let key = selected
+        .custody
+        .bundle()
+        .path()
+        .join("schema3-preimage.key");
+    let copy = fixture.root.path().join("bad-security-facts.duckdb");
+    std::fs::copy(&selected.database, &copy).unwrap();
+    let conn = Connection::open(&copy).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE security_facts (source_key VARCHAR, body VARCHAR); CHECKPOINT;",
     )
     .unwrap();
     drop(conn);
