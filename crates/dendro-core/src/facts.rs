@@ -277,3 +277,51 @@ pub struct QueueItemMeta {
     pub phase_tags: Vec<String>,
     pub parent_qitem_id: Option<String>,
 }
+
+/// One observed process instance. Metadata only: the executable name, never a
+/// path, argument vector, environment or working-directory text. The working
+/// directory survives only as a keyed fingerprint, for session linking.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProcessIdentityFact {
+    /// Keyed opaque id of (platform, pid, start time): stable across watches.
+    pub identity_key: String,
+    /// Identity of the harness root this process belongs to (itself for a root).
+    pub root_key: String,
+    pub pid: u32,
+    pub parent_pid: Option<u32>,
+    /// `linux` or `windows`: names the clock/marker family of `start_time_unix_s`.
+    pub platform: String,
+    /// Process creation time as whole Unix seconds (the finest the sampler reads).
+    pub start_time_unix_s: i64,
+    pub exe_name: String,
+    /// Matched harness name; set on roots only.
+    pub harness: Option<String>,
+    pub cwd_fingerprint: Option<String>,
+    /// Native session this root was linked to on real evidence; otherwise None.
+    pub session_link: Option<String>,
+    pub environment_kind: crate::domain_v1::EnvironmentKind,
+    pub isolation_hint: String,
+    pub first_seen: DateTime<Utc>,
+    pub last_seen: DateTime<Utc>,
+    pub ended_at: Option<DateTime<Utc>>,
+    pub visibility_limits: std::collections::BTreeSet<crate::domain_v1::VisibilityLimit>,
+}
+
+/// One resource sample. An unreadable value is `None` plus a visibility limit,
+/// never zero.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProcessSampleFact {
+    pub watch_id: String,
+    pub identity_key: String,
+    pub seq: i64,
+    pub ts: DateTime<Utc>,
+    /// Total CPU time (user + system) in microseconds: `Unit::Microseconds`.
+    pub cpu_time_us: Option<i64>,
+    /// Resident set (Linux) or working set (Windows); `rss_unit` says which.
+    pub rss_bytes: Option<i64>,
+    pub rss_unit: crate::domain_v1::Unit,
+    pub disk_read_bytes: Option<i64>,
+    pub disk_write_bytes: Option<i64>,
+    pub capture_method: crate::domain_v1::CaptureMethod,
+    pub visibility_limits: std::collections::BTreeSet<crate::domain_v1::VisibilityLimit>,
+}

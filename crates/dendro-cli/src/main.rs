@@ -299,6 +299,27 @@ enum Commands {
         #[arg(long, value_parser = ["text", "json"])]
         format: Option<String>,
     },
+    /// Sample agent processes (CPU, memory, disk, exit) into the analytics database.
+    #[command(next_help_heading = "Ingest")]
+    Watch {
+        #[arg(short, long, default_value = "dendro.duckdb", hide_default_value = true, help = DEFAULT_DB_HELP)]
+        db: PathBuf,
+        /// Time between samples, for example 500ms, 1s or 2m.
+        #[arg(long, default_value = "1s", value_parser = parse_watch_duration)]
+        interval: Duration,
+        /// Stop after this long. Without it, watch runs until Ctrl-C.
+        #[arg(long, value_parser = parse_watch_duration)]
+        duration: Option<Duration>,
+        /// Take one sample of everything found, then stop.
+        #[arg(long)]
+        once: bool,
+        /// Executable name of a harness to track (repeatable). Defaults to claude, codex, grok, pi.
+        #[arg(long)]
+        harness: Vec<String>,
+        /// How often collected samples are written to the database.
+        #[arg(long, default_value = "60s", value_parser = parse_watch_duration)]
+        flush_every: Duration,
+    },
     /// Ingest local harness roots into an analytics database.
     #[command(next_help_heading = "Ingest")]
     Run {
@@ -465,6 +486,111 @@ async fn run_ingest(
     std::process::exit(stop_cooperatively(worker, events, cause).await);
 }
 
+/// `500ms`, `30s`, `5m` or `1h`; never zero.
+fn parse_watch_duration(value: &str) -> Result<Duration, String> {
+    let (digits, unit_ms) = if let Some(n) = value.strip_suffix("ms") {
+        (n, 1)
+    } else if let Some(n) = value.strip_suffix('s') {
+        (n, 1_000)
+    } else if let Some(n) = value.strip_suffix('m') {
+        (n, 60_000)
+    } else if let Some(n) = value.strip_suffix('h') {
+        (n, 3_600_000)
+    } else {
+        return Err("expected a duration such as 500ms, 1s, 5m or 1h".into());
+    };
+    let millis = digits
+        .parse::<u64>()
+        .ok()
+        .and_then(|n| n.checked_mul(unit_ms))
+        .filter(|n| *n > 0)
+        .ok_or("expected a positive duration such as 500ms, 1s, 5m or 1h")?;
+    Ok(Duration::from_millis(millis))
+}
+
+async fn run_watch(
+    db: PathBuf,
+    interval: Duration,
+    duration: Option<Duration>,
+    once: bool,
+    harness: Vec<String>,
+    flush_every: Duration,
+) -> Result<serde_json::Value> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let stop = std::sync::Arc::new(AtomicBool::new(false));
+    let mut events = ShutdownEvents::new()?;
+    let worker_stop = stop.clone();
+    let mut worker = tokio::task::spawn_blocking(move || {
+        watch_blocking(
+            &db,
+            interval,
+            duration,
+            once,
+            harness,
+            flush_every,
+            &worker_stop,
+        )
+    });
+    tokio::select! {
+        joined = &mut worker => return joined?,
+        _ = events.next() => {}
+    }
+    // Ctrl-C ends sampling; what was collected is still written.
+    stop.store(true, Ordering::Relaxed);
+    eprintln!("dendro: stopping; writing collected samples");
+    worker.await?
+}
+
+fn watch_blocking(
+    db: &std::path::Path,
+    interval: Duration,
+    duration: Option<Duration>,
+    once: bool,
+    harness: Vec<String>,
+    flush_every: Duration,
+    stop: &std::sync::atomic::AtomicBool,
+) -> Result<serde_json::Value> {
+    use dendro_connectors::environment_v1 as env;
+    let mut config = env::Config::default();
+    if !harness.is_empty() {
+        config.harnesses = harness;
+    }
+    let mut collector =
+        env::Collector::new(env::SysinfoSource::new(), config, env::detect_isolation());
+    // Sampling never waits on the database: each flush is one guarded,
+    // transactional publication of the batch collected since the last one.
+    let summary = env::watch(
+        &mut collector,
+        interval,
+        duration,
+        once,
+        flush_every,
+        stop,
+        |batch| {
+            if batch.identities.is_empty() && batch.samples.is_empty() {
+                return Ok(());
+            }
+            dendro_core::run_locked_with_manifest(db, &[], &[], None, None, |staged, key, _| {
+                // No harness session records a working directory yet, so no
+                // session candidates exist and roots stay unlinked.
+                let sealed = batch.seal(key, &[]);
+                let store = dendro_core::AnalyticsStore::open_staged(staged)?;
+                store.commit_process_samples(&sealed.identities, &sealed.samples)?;
+                store.checkpoint()?;
+                Ok((Vec::new(), dendro_core::CutoffManifest::default()))
+            })?;
+            Ok(())
+        },
+    )?;
+    Ok(serde_json::json!({
+        "status": "watched",
+        "ticks": summary.ticks,
+        "identity_updates": summary.identities,
+        "samples": summary.samples,
+        "refused_by_cap": summary.refused_by_cap,
+    }))
+}
+
 fn database_slot(command: &mut Commands) -> Option<&mut PathBuf> {
     match command {
         Commands::RecoverSelection { db, .. }
@@ -472,6 +598,7 @@ fn database_slot(command: &mut Commands) -> Option<&mut PathBuf> {
         | Commands::Rollback { db }
         | Commands::Status { db, .. }
         | Commands::Run { db, .. }
+        | Commands::Watch { db, .. }
         | Commands::Report { db, .. }
         | Commands::Trace { db, .. } => Some(db),
         Commands::Assert { scope, .. } | Commands::IssueDraft { scope, .. } => Some(&mut scope.db),
@@ -942,6 +1069,18 @@ async fn main() -> Result<()> {
             );
             eprintln!("{verdict}");
             std::process::exit(verdict["exit_code"].as_i64().unwrap_or(3) as i32);
+        }
+        Commands::Watch {
+            db,
+            interval,
+            duration,
+            once,
+            harness,
+            flush_every,
+        } => {
+            let summary = run_watch(db, interval, duration, once, harness, flush_every).await?;
+            println!("{summary}");
+            return Ok(());
         }
         Commands::Run {
             db,

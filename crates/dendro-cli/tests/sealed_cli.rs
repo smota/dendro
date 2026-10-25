@@ -1217,3 +1217,81 @@ fn first_openrig_run_aligns_owned_stage_before_logical_pointer_exists() {
         .selected()
         .is_some());
 }
+
+#[cfg(any(windows, target_os = "linux"))]
+#[test]
+fn watch_once_samples_a_named_process_into_a_migrated_schema4_database() {
+    struct Sleeper(std::process::Child);
+    impl Drop for Sleeper {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    let scratch = Scratch::new();
+    let logical = scratch.0.join("watch.duckdb");
+    let key_path = PathBuf::from(format!("{}.key", logical.display()));
+    let key = dendro_core::output::load_or_create_key(&key_path, true).unwrap();
+    let legacy = dendro_core::AnalyticsStore::open_path(&logical, &key.id).unwrap();
+    legacy.checkpoint().unwrap();
+    drop(legacy);
+    let migrated = command()
+        .args(["migrate", "--db"])
+        .arg(&logical)
+        .output()
+        .unwrap();
+    assert!(migrated.status.success(), "{}", error(&migrated));
+
+    #[cfg(windows)]
+    let (name, mut sleeper) = ("ping", Command::new("ping"));
+    #[cfg(windows)]
+    sleeper.args(["-n", "30", "127.0.0.1"]);
+    #[cfg(not(windows))]
+    let (name, mut sleeper) = ("sleep", Command::new("sleep"));
+    #[cfg(not(windows))]
+    sleeper.arg("30");
+    let sleeper = Sleeper(
+        sleeper
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+
+    let output = command()
+        .args(["watch", "--once", "--harness", name, "--db"])
+        .arg(&logical)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", error(&output));
+    let summary: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(summary["status"], "watched");
+    assert_eq!(summary["ticks"], 1);
+    assert!(summary["samples"].as_i64().unwrap() >= 1, "{summary}");
+
+    let selected = dendro_core::presentation::ReadRequest::open(&logical).unwrap();
+    let store = selected.open_store().unwrap();
+    let count = |table: &str, filter: &str| -> i64 {
+        store
+            .with_private_connection(|conn| {
+                Ok(conn.query_row(
+                    &format!("SELECT COUNT(*) FROM {table} WHERE {filter}"),
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )?)
+            })
+            .unwrap()
+    };
+    assert!(count("process_samples", "rss_bytes > 0") >= 1);
+    assert!(
+        count(
+            "process_identities",
+            &format!("pid = {} AND ended_at IS NULL", sleeper.0.id())
+        ) == 1
+    );
+    // Nothing from the watched process's command line or directory is stored.
+    assert_eq!(
+        count("process_identities", "exe_name LIKE '%127.0.0.1%'"),
+        0
+    );
+}
