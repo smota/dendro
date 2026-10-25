@@ -5,6 +5,7 @@ pub mod claude;
 pub mod codex;
 pub mod grok;
 pub mod ingest;
+mod lineage;
 mod messages;
 pub mod openrig;
 pub mod pi;

@@ -1,0 +1,2 @@
+{"type":"assistant","sessionId":"parent-session","agentId":"child-agent","isSidechain":true,"parentUuid":"11111111-2222-3333-4444-555555555555","timestamp":"2026-10-25T00:00:01Z","message":{"id":"m-child","role":"assistant","content":[{"type":"text","text":"CANARY_SIDECHAIN_TEXT"}],"usage":{"input_tokens":5,"output_tokens":2,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}
+{"type":"system","sessionId":"parent-session","isSidechain":true,"parentUuid":"22222222-2222-3333-4444-555555555555","timestamp":"2026-10-25T00:00:02Z"}

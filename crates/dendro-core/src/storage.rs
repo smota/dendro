@@ -225,6 +225,22 @@ impl AnalyticsStore {
         PRIMARY KEY (watch_id, identity_key, seq)
     )";
 
+    /// Explicit session parent→child links. Additive and idempotent; no schema bump.
+    /// Session ids are sealed the same way as `usage_facts.native_session`.
+    pub(super) const SESSION_EDGES_SCHEMA: &'static str =
+        "CREATE TABLE IF NOT EXISTS session_edges (
+        source_key VARCHAR PRIMARY KEY,
+        source_id VARCHAR NOT NULL,
+        harness VARCHAR NOT NULL,
+        parent_session VARCHAR NOT NULL,
+        child_session VARCHAR NOT NULL,
+        relation VARCHAR NOT NULL,
+        status VARCHAR NOT NULL,
+        observed_at TIMESTAMP,
+        evidence_kind VARCHAR NOT NULL,
+        generation BIGINT NOT NULL
+    )";
+
     pub(super) const SEMANTIC_STATE_SCHEMA: &'static str = "CREATE TABLE IF NOT EXISTS dendro_semantic_state (id INTEGER PRIMARY KEY, dirty BOOLEAN NOT NULL); INSERT INTO dendro_semantic_state VALUES (1, TRUE) ON CONFLICT DO NOTHING";
 
     pub(super) fn invalidate_semantic(&self) -> Result<()> {
@@ -555,6 +571,7 @@ impl AnalyticsStore {
         self.conn.execute_batch(FILE_BASELINES_SCHEMA)?;
         self.conn.execute_batch(Self::MESSAGE_FACTS_SCHEMA)?;
         self.conn.execute_batch(Self::PROCESS_SAMPLES_SCHEMA)?;
+        self.conn.execute_batch(Self::SESSION_EDGES_SCHEMA)?;
         self.conn.execute_batch(openrig_provenance::SCHEMA)?;
         self.conn.execute(
             "INSERT INTO dendro_meta (schema_version, key_id) VALUES (?, ?)",
@@ -1163,6 +1180,144 @@ impl AnalyticsStore {
         }
         tx.commit()?;
         Ok(())
+    }
+
+    /// Upsert explicit session links. A later `started` does not erase `finished` or `failed`.
+    pub fn commit_session_edges(&self, edges: &[SessionEdgeFact]) -> Result<()> {
+        if edges.is_empty() {
+            return Ok(());
+        }
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute_batch(Self::SESSION_EDGES_SCHEMA)?;
+        let mut stmt = tx.prepare(
+            "INSERT INTO session_edges
+             VALUES (?, ?, ?, ?, ?, ?, ?, CAST(? AS TIMESTAMP), ?, ?)
+             ON CONFLICT (source_key) DO UPDATE SET
+                parent_session = excluded.parent_session,
+                child_session = excluded.child_session,
+                relation = excluded.relation,
+                status = CASE
+                    WHEN session_edges.status IN ('finished', 'failed') AND excluded.status = 'started'
+                    THEN session_edges.status ELSE excluded.status END,
+                observed_at = CASE
+                    WHEN session_edges.status IN ('finished', 'failed') AND excluded.status = 'started'
+                    THEN session_edges.observed_at ELSE excluded.observed_at END,
+                evidence_kind = CASE
+                    WHEN session_edges.status IN ('finished', 'failed') AND excluded.status = 'started'
+                    THEN session_edges.evidence_kind ELSE excluded.evidence_kind END,
+                generation = CASE
+                    WHEN session_edges.status IN ('finished', 'failed') AND excluded.status = 'started'
+                    THEN session_edges.generation ELSE excluded.generation END",
+        )?;
+        for edge in edges {
+            if !crate::domain_v1::WorkRelation::is_wire_kind(&edge.relation) {
+                anyhow::bail!("session edge relation is not a work-relation wire name");
+            }
+            let status = match edge.status.as_str() {
+                "started" | "finished" | "failed" | "unknown" => edge.status.as_str(),
+                _ => anyhow::bail!(
+                    "session edge status must be started, finished, failed, or unknown"
+                ),
+            };
+            stmt.execute(params![
+                redact(&edge.source_key),
+                redact(&edge.source_id),
+                redact(&edge.harness),
+                redact(&edge.parent_session),
+                redact(&edge.child_session),
+                redact(&edge.relation),
+                status,
+                edge.observed_at.map(|ts| ts.to_rfc3339()),
+                redact(&edge.evidence_kind),
+                edge.generation,
+            ])?;
+        }
+        drop(stmt);
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn session_edge_parent(&self, source_key: &str) -> Result<Option<String>> {
+        let exists: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'session_edges'",
+            [],
+            |row| row.get(0),
+        )?;
+        if exists == 0 {
+            return Ok(None);
+        }
+        let mut stmt = self
+            .conn
+            .prepare("SELECT parent_session FROM session_edges WHERE source_key = ?")?;
+        let mut rows = stmt.query(params![source_key])?;
+        match rows.next()? {
+            Some(row) => Ok(Some(row.get(0)?)),
+            None => Ok(None),
+        }
+    }
+
+    pub fn load_session_edges(&self) -> Result<Vec<SessionEdgeFact>> {
+        let exists: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'session_edges'",
+            [],
+            |row| row.get(0),
+        )?;
+        if exists == 0 {
+            return Ok(Vec::new());
+        }
+        let mut stmt = self.conn.prepare(
+            "SELECT source_key, source_id, harness, parent_session, child_session, relation,
+                    status, CAST(observed_at AS VARCHAR), evidence_kind, generation
+             FROM session_edges ORDER BY source_key",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let observed: Option<String> = row.get(7)?;
+            Ok(SessionEdgeFact {
+                source_key: row.get(0)?,
+                source_id: row.get(1)?,
+                harness: row.get(2)?,
+                parent_session: row.get(3)?,
+                child_session: row.get(4)?,
+                relation: row.get(5)?,
+                status: row.get(6)?,
+                observed_at: observed.as_deref().and_then(parse_utc_time),
+                evidence_kind: row.get(8)?,
+                generation: row.get(9)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    pub fn children_of(&self, harness: &str, parent_session: &str) -> Result<Vec<SessionEdgeFact>> {
+        let edges = self.load_session_edges()?;
+        let links: Vec<_> = edges
+            .iter()
+            .filter(|edge| edge.harness == harness)
+            .map(session_link)
+            .collect();
+        let kids = crate::session_lineage::children_of(&links, parent_session);
+        Ok(edges
+            .into_iter()
+            .filter(|edge| {
+                edge.harness == harness
+                    && edge.parent_session == parent_session
+                    && kids.iter().any(|child| *child == edge.child_session)
+            })
+            .collect())
+    }
+
+    pub fn lineage_roots(
+        &self,
+        harness: &str,
+        session: &str,
+    ) -> Result<crate::session_lineage::LineageRoots> {
+        let edges = self.load_session_edges()?;
+        let links: Vec<_> = edges
+            .iter()
+            .filter(|edge| edge.harness == harness)
+            .map(session_link)
+            .collect();
+        Ok(crate::session_lineage::lineage_roots(&links, session))
     }
 
     pub fn record_tool_categories(&self, categories: &[(String, ToolCategory)]) -> Result<()> {
@@ -2022,6 +2177,15 @@ impl AnalyticsStore {
 
 /// Parses RFC 3339, or a zone-less `YYYY-MM-DD HH:MM:SS[.f]` read as UTC
 /// (the OpenRig `events.created_at` form).
+fn session_link(edge: &SessionEdgeFact) -> crate::session_lineage::SessionLink {
+    crate::session_lineage::SessionLink {
+        parent_session: edge.parent_session.clone(),
+        child_session: edge.child_session.clone(),
+        relation: edge.relation.clone(),
+        status: edge.status.clone(),
+    }
+}
+
 pub fn parse_utc_time(value: &str) -> Option<chrono::DateTime<chrono::Utc>> {
     if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(value) {
         return Some(parsed.with_timezone(&chrono::Utc));

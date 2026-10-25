@@ -152,6 +152,21 @@ pub struct ReaderState {
     pub native_session: Option<String>,
 }
 
+/// One explicit session parent→child link. Session ids use the same sealing as `native_session`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionEdgeFact {
+    pub source_key: String,
+    pub source_id: String,
+    pub harness: String,
+    pub parent_session: String,
+    pub child_session: String,
+    pub relation: String,
+    pub status: String,
+    pub observed_at: Option<DateTime<Utc>>,
+    pub evidence_kind: String,
+    pub generation: i64,
+}
+
 #[derive(Debug, Clone)]
 pub struct SourceCoverage {
     pub source_id: String,
