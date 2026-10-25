@@ -76,6 +76,14 @@ fn validate_reader_schema(conn: &Connection, version: i32, key_id: &str) -> Resu
     Ok(())
 }
 
+/// The domain contract's snake_case wire spelling of a closed enum value.
+fn wire_name<T: serde::Serialize>(value: &T) -> Result<String> {
+    match serde_json::to_value(value)? {
+        serde_json::Value::String(name) => Ok(name),
+        _ => Err(anyhow!("enum has no string wire name")),
+    }
+}
+
 /// Legacy entry point retained so the untouched watcher/CLI still typecheck.
 /// It does not create or migrate the pre-R1 tables.
 pub struct DuckDbStorage;
@@ -161,6 +169,23 @@ impl AnalyticsStore {
     }
 
     // Derived cache state only: canonical fact schemas remain unchanged.
+    /// Message metadata only (role, direction, modality, order): never text.
+    /// Additive and idempotent, like the file baselines; no schema bump.
+    pub(super) const MESSAGE_FACTS_SCHEMA: &'static str =
+        "CREATE TABLE IF NOT EXISTS message_facts (
+        source_key VARCHAR PRIMARY KEY,
+        harness VARCHAR NOT NULL,
+        native_session VARCHAR,
+        ts TIMESTAMP,
+        seq BIGINT NOT NULL,
+        role VARCHAR NOT NULL,
+        direction VARCHAR NOT NULL,
+        modalities VARCHAR NOT NULL,
+        grain VARCHAR NOT NULL,
+        generation BIGINT NOT NULL,
+        source_id VARCHAR NOT NULL
+    )";
+
     pub(super) const SEMANTIC_STATE_SCHEMA: &'static str = "CREATE TABLE IF NOT EXISTS dendro_semantic_state (id INTEGER PRIMARY KEY, dirty BOOLEAN NOT NULL); INSERT INTO dendro_semantic_state VALUES (1, TRUE) ON CONFLICT DO NOTHING";
 
     pub(super) fn invalidate_semantic(&self) -> Result<()> {
@@ -489,6 +514,7 @@ impl AnalyticsStore {
         )?;
         self.conn.execute_batch(Self::SEMANTIC_STATE_SCHEMA)?;
         self.conn.execute_batch(FILE_BASELINES_SCHEMA)?;
+        self.conn.execute_batch(Self::MESSAGE_FACTS_SCHEMA)?;
         self.conn.execute_batch(openrig_provenance::SCHEMA)?;
         self.conn.execute(
             "INSERT INTO dendro_meta (schema_version, key_id) VALUES (?, ?)",
@@ -622,6 +648,7 @@ impl AnalyticsStore {
             counters,
             usages,
             tools,
+            &[],
             settled,
             None,
             None,
@@ -654,6 +681,7 @@ impl AnalyticsStore {
             counters,
             usages,
             tools,
+            &[],
             settled,
             Some(reader),
             None,
@@ -678,6 +706,42 @@ impl AnalyticsStore {
         reader: &ReaderState,
         baseline: &FileBaselineAttempt,
     ) -> Result<()> {
+        self.commit_file_batch_observed_messages(
+            source_id,
+            harness,
+            display_path,
+            generation,
+            byte_offset,
+            prefix_sha256,
+            counters,
+            usages,
+            tools,
+            &[],
+            settled,
+            reader,
+            baseline,
+        )
+    }
+
+    /// As `commit_file_batch_observed`, and in the same transaction stores the
+    /// safe message metadata of the accepted batch.
+    #[allow(clippy::too_many_arguments)]
+    pub fn commit_file_batch_observed_messages(
+        &self,
+        source_id: &str,
+        harness: &str,
+        display_path: &str,
+        generation: i64,
+        byte_offset: i64,
+        prefix_sha256: &str,
+        counters: Option<&CodexCounters>,
+        usages: &[UsageFact],
+        tools: &[ToolFact],
+        messages: &[MessageFact],
+        settled: &[(String, Option<bool>)],
+        reader: &ReaderState,
+        baseline: &FileBaselineAttempt,
+    ) -> Result<()> {
         self.commit_file_batch_internal(
             source_id,
             harness,
@@ -688,6 +752,7 @@ impl AnalyticsStore {
             counters,
             usages,
             tools,
+            messages,
             settled,
             Some(reader),
             Some(baseline),
@@ -709,6 +774,7 @@ impl AnalyticsStore {
         counters: Option<&CodexCounters>,
         usages: &[UsageFact],
         tools: &[ToolFact],
+        messages: &[MessageFact],
         settled: &[(String, Option<bool>)],
         reader: Option<&ReaderState>,
         baseline: Option<&FileBaselineAttempt>,
@@ -884,6 +950,33 @@ impl AnalyticsStore {
                  ON CONFLICT (source_key) DO NOTHING;
                  DROP TABLE tool_stage",
             )?;
+        }
+        if !messages.is_empty() {
+            tx.execute_batch(Self::MESSAGE_FACTS_SCHEMA)?;
+            let mut stmt = tx.prepare(
+                "INSERT INTO message_facts
+                 VALUES (?, ?, ?, CAST(? AS TIMESTAMP), ?, ?, ?, ?, ?, ?, ?)
+                 ON CONFLICT (source_key) DO NOTHING",
+            )?;
+            for m in messages {
+                stmt.execute(params![
+                    redact(&m.source_key),
+                    redact(&m.harness),
+                    m.native_session.as_deref().map(redact),
+                    m.ts.map(|t| t.to_rfc3339()),
+                    m.seq,
+                    wire_name(&m.role)?,
+                    wire_name(&m.direction)?,
+                    m.modalities
+                        .iter()
+                        .map(wire_name)
+                        .collect::<Result<Vec<_>>>()?
+                        .join(","),
+                    wire_name(&m.grain)?,
+                    m.generation,
+                    redact(source_id),
+                ])?;
+            }
         }
         // A tool result appended after its call was stored settles the call's
         // outcome again from every result seen so far (#37).
@@ -1563,6 +1656,68 @@ impl AnalyticsStore {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
+    /// Stored message metadata in source order. A table never written is empty.
+    /// A stored word outside the domain vocabulary is an error, not a guess.
+    pub fn load_messages(&self) -> Result<Vec<MessageFact>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT 1 FROM information_schema.tables WHERE table_schema = 'main' AND table_name = 'message_facts'",
+        )?;
+        if !stmt.exists([])? {
+            return Ok(Vec::new());
+        }
+        fn word<T: serde::de::DeserializeOwned>(raw: &str) -> Result<T> {
+            Ok(serde_json::from_value(serde_json::Value::String(
+                raw.to_string(),
+            ))?)
+        }
+        let mut stmt = self.conn.prepare(
+            "SELECT source_key, harness, native_session, CAST(ts AS VARCHAR), seq, role, direction, modalities, grain, generation
+             FROM message_facts ORDER BY source_id, generation, seq, source_key",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, i64>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, String>(6)?,
+                row.get::<_, String>(7)?,
+                row.get::<_, String>(8)?,
+                row.get::<_, i64>(9)?,
+            ))
+        })?;
+        let mut messages = Vec::new();
+        for row in rows {
+            let (
+                source_key,
+                harness,
+                native_session,
+                ts,
+                seq,
+                role,
+                direction,
+                modalities,
+                grain,
+                generation,
+            ) = row?;
+            messages.push(MessageFact {
+                source_key,
+                harness,
+                native_session,
+                ts: ts.as_deref().and_then(parse_utc_time),
+                seq,
+                role: word(&role)?,
+                direction: word(&direction)?,
+                modalities: modalities.split(',').map(word).collect::<Result<_>>()?,
+                grain: word(&grain)?,
+                generation,
+            });
+        }
+        Ok(messages)
+    }
+
     /// Applied reader state for the committed prefix, never a filesystem probe.
     pub fn load_source_coverage(&self) -> Result<Vec<SourceCoverage>> {
         let mut stmt = self.conn.prepare(
@@ -1922,6 +2077,7 @@ mod tests {
                 20,
                 "new",
                 None,
+                &[],
                 &[],
                 &[],
                 &[],
@@ -2870,6 +3026,7 @@ mod tests {
                 Some(&counters),
                 std::slice::from_ref(&usage),
                 std::slice::from_ref(&fact),
+                &[],
                 &[],
                 Some(&reader),
                 None,

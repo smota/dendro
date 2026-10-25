@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use dendro_core::file_metadata::{observe_path, FileMetadata};
 use dendro_core::{
-    classify_tool_invocation, tool_fingerprint, AnalyticsStore, CodexCounters, SkillFact,
-    ToolCategory, ToolFact, UsageFact, WarningNote,
+    classify_tool_invocation, tool_fingerprint, AnalyticsStore, CodexCounters, MessageFact,
+    SkillFact, ToolCategory, ToolFact, UsageFact, WarningNote,
 };
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -427,6 +427,7 @@ fn ingest_jsonl_one_batch<F: FnOnce() -> Result<()>>(
     let mut usage_models = Vec::new();
     let mut usage_attribution = UsageAttribution::default();
     let mut tools = Vec::new();
+    let mut messages: Vec<MessageFact> = Vec::new();
     let mut tool_categories: Vec<(String, ToolCategory)> = Vec::new();
     let mut seen_messages = HashSet::new();
     let mut unknown_types = HashSet::new();
@@ -667,13 +668,41 @@ fn ingest_jsonl_one_batch<F: FnOnce() -> Result<()>>(
             scan.observe(line_no, text, &value);
             projected_tool |= scan.calls.len() + scan.results.len() + scan.skills.len() > before;
         }
+        // Safe message metadata only: role, direction, modality, source order.
+        let projected_message = match crate::messages::observe(harness, &value) {
+            Some(obs) => {
+                let session = file_session
+                    .as_ref()
+                    .map(|session| session.raw.as_str())
+                    .or(obs.session.as_deref())
+                    .map(|raw| seal_session(tool_key, harness, raw));
+                messages.push(MessageFact {
+                    source_key: format!("{source_id}:{generation}:{line_no}:message"),
+                    harness: harness.to_string(),
+                    native_session: session,
+                    ts: if harness == "grok" {
+                        grok_timestamp(&value)
+                    } else {
+                        timestamp_of(&value)
+                    },
+                    seq: line_no,
+                    role: obs.role,
+                    direction: obs.direction,
+                    modalities: obs.modalities,
+                    grain: obs.grain,
+                    generation,
+                });
+                true
+            }
+            None => false,
+        };
         match parse_value(harness, &value, &mut counters) {
             Ok((buckets, partial)) => {
                 if !partial.is_empty() {
                     reader_complete = false;
                     coverage_defect = true;
                 }
-                if projected_tool || !buckets.is_empty() {
+                if projected_tool || projected_message || !buckets.is_empty() {
                     coverage.projected += 1;
                 } else if !partial.is_empty() {
                     coverage.unsupported_schema += 1;
@@ -849,7 +878,7 @@ fn ingest_jsonl_one_batch<F: FnOnce() -> Result<()>>(
             .unwrap_or_else(|| chrono::Utc::now().to_rfc3339()),
         metadata,
     };
-    store.commit_file_batch_observed(
+    store.commit_file_batch_observed_messages(
         source_id,
         harness,
         &path.display().to_string(),
@@ -863,6 +892,7 @@ fn ingest_jsonl_one_batch<F: FnOnce() -> Result<()>>(
         },
         &usages,
         &tools,
+        &messages,
         &settled,
         &dendro_core::ReaderState {
             complete: reader_complete,
