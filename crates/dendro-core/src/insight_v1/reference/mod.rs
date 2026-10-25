@@ -1,6 +1,9 @@
 //! Compiled reference insights. Add one module and one `REFERENCE` line.
 mod i02_tokens;
 mod i04_cost;
+mod i08_action_failure;
+mod i09_lineage_shape;
+mod i14_resources;
 mod i18_coverage;
 
 use super::contract::Insight;
@@ -10,6 +13,9 @@ use crate::domain_v1::Identifier;
 pub static REFERENCE: &[&dyn Insight] = &[
     &i02_tokens::INSIGHT as &dyn Insight,
     &i04_cost::INSIGHT as &dyn Insight,
+    &i08_action_failure::INSIGHT as &dyn Insight,
+    &i09_lineage_shape::INSIGHT as &dyn Insight,
+    &i14_resources::INSIGHT as &dyn Insight,
     &i18_coverage::INSIGHT as &dyn Insight,
 ];
 
