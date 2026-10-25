@@ -44,7 +44,7 @@ Command Groups:
   Start        status, run
   Cockpit      dashboard, ui
   Ask          ask
-  Reports      report, trace
+  Reports      report, trace, insights
   Analysis     simulate, portfolio
   Governance   assert, issue-draft
   Cache        materialize, export, init-nao
@@ -356,6 +356,19 @@ enum Commands {
     },
     #[command(flatten, next_help_heading = "Cockpit, Ask & Analysis")]
     Extensions(extensions::Commands),
+    /// Run each compiled reference insight against the selected database.
+    #[command(next_help_heading = "Report")]
+    Insights {
+        #[arg(long, default_value = "dendro.duckdb", hide_default_value = true, help = DEFAULT_DB_HELP)]
+        db: PathBuf,
+        /// Print the result array instead of the text table.
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        harness: Option<String>,
+        #[arg(long)]
+        session: Option<String>,
+    },
     /// Print an Operational Intelligence report.
     #[command(next_help_heading = "Report")]
     Report {
@@ -779,7 +792,8 @@ fn database_slot(command: &mut Commands) -> Option<&mut PathBuf> {
         | Commands::Watch { db, .. }
         | Commands::RunAgent { db, .. }
         | Commands::Report { db, .. }
-        | Commands::Trace { db, .. } => Some(db),
+        | Commands::Trace { db, .. }
+        | Commands::Insights { db, .. } => Some(db),
         Commands::Assert { scope, .. } | Commands::IssueDraft { scope, .. } => Some(&mut scope.db),
         Commands::Extensions(extension) => match extension {
             extensions::Commands::Dashboard { db, .. }
@@ -1444,9 +1458,44 @@ async fn main() -> Result<()> {
             .await??;
             println!("{report}");
         }
+        Commands::Insights {
+            db,
+            json,
+            harness,
+            session,
+        } => {
+            let results = tokio::task::spawn_blocking(
+                move || -> Result<Vec<dendro_core::insight_v1::InsightResult>> {
+                    let request = dendro_core::presentation::ReadRequest::open(&db)?;
+                    let store = request.open_store()?;
+                    Ok(dendro_core::insight_v1::evaluate(
+                        &store,
+                        &dendro_core::insight_v1::Scope {
+                            harness,
+                            session,
+                            from: None,
+                            to: None,
+                        },
+                    ))
+                },
+            )
+            .await??;
+            println!("{}", render_insights(&results, json)?);
+        }
     }
 
     Ok(())
+}
+
+fn render_insights(
+    results: &[dendro_core::insight_v1::InsightResult],
+    json: bool,
+) -> Result<String> {
+    if json {
+        Ok(serde_json::to_string(results)?)
+    } else {
+        Ok(dendro_core::insight_v1::format_text(results))
+    }
 }
 
 /// Native `STATUS_CONTROL_C_EXIT`. This is a Windows console status, not a Unix signal.
@@ -2484,5 +2533,62 @@ mod advisory_cli_tests {
         ] {
             assert!(Cli::try_parse_from(["dendro", "report", "advisory", flag, value]).is_err());
         }
+    }
+}
+
+#[cfg(test)]
+mod insights_cli_tests {
+    use super::*;
+
+    #[test]
+    fn insights_json_shape_lists_each_registered_result() {
+        let cli = Cli::try_parse_from([
+            "dendro",
+            "insights",
+            "--json",
+            "--harness",
+            "claude",
+            "--session",
+            "s",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Insights {
+                json,
+                harness,
+                session,
+                ..
+            } => {
+                assert!(json);
+                assert_eq!(harness.as_deref(), Some("claude"));
+                assert_eq!(session.as_deref(), Some("s"));
+            }
+            _ => panic!("expected insights"),
+        }
+        let store = dendro_core::AnalyticsStore::open_in_memory("insights-cli").unwrap();
+        let results =
+            dendro_core::insight_v1::evaluate(&store, &dendro_core::insight_v1::Scope::default());
+        let json = render_insights(&results, true).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let rows = value.as_array().unwrap();
+        assert_eq!(rows.len(), dendro_core::insight_v1::REFERENCE.len());
+        let mut ids = Vec::new();
+        for row in rows {
+            ids.push(row["id"].as_str().unwrap().to_string());
+            assert!(row["version"].as_str().unwrap().contains('.'));
+            assert!(row["name"].is_string());
+            assert!(row["domain"].is_string());
+            assert_eq!(row["status"]["state"], "refused");
+            assert_eq!(row["status"]["reason"], "empty population");
+            assert!(row["population"]["what"].is_string());
+            assert_eq!(row["population"]["n"], 0);
+            assert!(row["measures"].as_array().unwrap().is_empty());
+            assert!(row["coverage"].is_string());
+            assert!(row["evidence"].as_array().unwrap().is_empty());
+        }
+        assert_eq!(ids, vec!["I02", "I04", "I08", "I09", "I14", "I18"]);
+        let text = render_insights(&results, false).unwrap();
+        assert!(text.contains("I02") && text.contains("refused"));
+        assert!(!text.trim_start().starts_with('['));
     }
 }
