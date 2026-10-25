@@ -38,6 +38,12 @@ pub const DEFAULT_HARNESSES: &[&str] = &["claude", "codex", "grok", "pi"];
 /// A session links to a root only when its first record falls in
 /// `[start - 1s, start + LINK_WINDOW_S]`.
 const LINK_WINDOW_S: i64 = 60;
+/// Interval flushes that fail in a row before the watch stops and reports
+/// how many samples are still unsaved.
+const MAX_CONSECUTIVE_FLUSH_FAILURES: u32 = 5;
+/// Stop, once, and the end of a watch retry the last flush this many times.
+const FINAL_FLUSH_ATTEMPTS: u32 = 3;
+const FINAL_FLUSH_BACKOFF: Duration = Duration::from_millis(50);
 
 #[derive(Clone, Debug)]
 pub struct RawProcess {
@@ -203,7 +209,9 @@ fn platform() -> (&'static str, CaptureMethod, Unit) {
 struct Tracked {
     fact: ProcessIdentityFact,
     samples: usize,
-    last: Option<(u64, u64, u64)>,
+    /// Last CPU, disk-read and disk-write totals that were actually readable.
+    /// `None` is not a zero baseline and is never compared.
+    last: (Option<u64>, Option<u64>, Option<u64>),
 }
 
 /// What one flush holds, still unkeyed: ids are placeholders and root working
@@ -315,14 +323,23 @@ impl<S: ProcessSource> Collector<S> {
         self.summary.ticks += 1;
         let scan = self.source.scan();
         let live: BTreeMap<u32, &RawProcess> = scan.iter().map(|p| (p.pid, p)).collect();
+        // Refusals are only for processes still in this scan, so a long watch
+        // does not keep every pid it ever declined.
+        self.refused.retain(|(pid, start_s)| {
+            live.get(pid)
+                .is_some_and(|p| p.start_s == 0 || p.start_s == *start_s)
+        });
         // A pid now carrying another start time is a reused pid: the old
-        // process exited, the new one is judged afresh below.
+        // process exited, the new one is judged afresh below. 0 means the
+        // start time was unreadable this tick: keep the identity, do not end
+        // it, and do not open a new one.
         let gone: Vec<u32> = self
             .tracked
             .iter()
-            .filter(|(pid, t)| {
-                live.get(pid)
-                    .is_none_or(|p| p.start_s != t.fact.start_time_unix_s)
+            .filter(|(pid, t)| match live.get(pid) {
+                None => true,
+                Some(p) if p.start_s == 0 => false,
+                Some(p) => p.start_s != t.fact.start_time_unix_s,
             })
             .map(|(pid, _)| *pid)
             .collect();
@@ -444,7 +461,7 @@ impl<S: ProcessSource> Collector<S> {
             Tracked {
                 fact,
                 samples: 0,
-                last: None,
+                last: (None, None, None),
             },
         );
     }
@@ -468,19 +485,21 @@ impl<S: ProcessSource> Collector<S> {
                 ..RawMetrics::default()
             });
             let mut limits = m.limits;
-            let counters = (
-                m.cpu_time_us.unwrap_or(0),
-                m.disk_read_bytes.unwrap_or(0),
-                m.disk_write_bytes.unwrap_or(0),
+            // Compare a counter only when this sample and the previous one
+            // both actually read it. An unreadable field is not a reset.
+            let (prev_cpu, prev_read, prev_write) = t.last;
+            let fell = |now, prev| matches!((now, prev), (Some(now), Some(prev)) if now < prev);
+            if fell(m.cpu_time_us, prev_cpu)
+                || fell(m.disk_read_bytes, prev_read)
+                || fell(m.disk_write_bytes, prev_write)
+            {
+                limits.insert(VisibilityLimit::CounterReset);
+            }
+            t.last = (
+                m.cpu_time_us.or(prev_cpu),
+                m.disk_read_bytes.or(prev_read),
+                m.disk_write_bytes.or(prev_write),
             );
-            if let Some((cpu, read, write)) = t.last {
-                if counters.0 < cpu || counters.1 < read || counters.2 < write {
-                    limits.insert(VisibilityLimit::CounterReset);
-                }
-            }
-            if m.cpu_time_us.is_some() {
-                t.last = Some(counters);
-            }
             self.samples.push(ProcessSampleFact {
                 watch_id: self.watch_id.clone(),
                 identity_key: t.fact.identity_key.clone(),
@@ -513,6 +532,13 @@ impl<S: ProcessSource> Collector<S> {
                 ))
             })
             .collect();
+        // The ending batch still carries the directory; the collector does not
+        // keep it after the root has ended.
+        for i in &identities {
+            if i.ended_at.is_some() {
+                self.cwds.remove(&i.identity_key);
+            }
+        }
         let batch = Batch {
             identities,
             samples: std::mem::take(&mut self.samples),
@@ -522,11 +548,66 @@ impl<S: ProcessSource> Collector<S> {
         self.summary.samples += batch.samples.len();
         batch
     }
+
+    /// Put a batch `drain` already counted back, so a failed flush loses nothing.
+    fn restore_unflushed(&mut self, batch: Batch) {
+        self.summary.identities = self
+            .summary
+            .identities
+            .saturating_sub(batch.identities.len());
+        self.summary.samples = self.summary.samples.saturating_sub(batch.samples.len());
+        for (key, cwd) in batch.cwds {
+            self.cwds.entry(key).or_insert(cwd);
+        }
+        for fact in batch.identities {
+            self.dirty.insert(fact.identity_key.clone(), fact);
+        }
+        let mut samples = batch.samples;
+        samples.append(&mut self.samples);
+        self.samples = samples;
+    }
+
+    fn sample_buffer_limit(&self) -> usize {
+        self.config
+            .max_tracked
+            .saturating_mul(self.config.max_samples)
+    }
+}
+
+enum FlushAttempt {
+    Saved,
+    Held(anyhow::Error),
+}
+
+/// Publish one batch. On error the same rows are back in the collector.
+fn publish<S: ProcessSource>(
+    collector: &mut Collector<S>,
+    flush: &mut impl FnMut(Batch) -> anyhow::Result<()>,
+) -> anyhow::Result<FlushAttempt> {
+    let batch = collector.drain();
+    let replay = Batch {
+        identities: batch.identities.clone(),
+        samples: batch.samples.clone(),
+        cwds: batch.cwds.clone(),
+    };
+    match flush(batch) {
+        Ok(()) => Ok(FlushAttempt::Saved),
+        Err(err) => {
+            collector.restore_unflushed(replay);
+            Ok(FlushAttempt::Held(err))
+        }
+    }
+}
+
+fn unsaved_samples(n: usize, failures: u32, err: &anyhow::Error) -> anyhow::Error {
+    anyhow::anyhow!("{n} samples were not saved after {failures} consecutive flush failures: {err}")
 }
 
 /// Sample until `duration` elapses, `stop` is set, or after one tick when
 /// `once`. Publishes through `flush` every `flush_every` and once at the end,
-/// so a stop request still flushes what was collected.
+/// so a stop request still flushes what was collected. A failed flush keeps
+/// the batch and tries again next interval; the final flush retries briefly
+/// before giving up.
 pub fn watch<S: ProcessSource>(
     collector: &mut Collector<S>,
     interval: Duration,
@@ -538,6 +619,11 @@ pub fn watch<S: ProcessSource>(
 ) -> anyhow::Result<WatchSummary> {
     let started = Instant::now();
     let mut last_flush = started;
+    let mut consecutive_flush_failures = 0u32;
+    let give_up = |collector: &Collector<S>, failures: u32| {
+        failures >= MAX_CONSECUTIVE_FLUSH_FAILURES
+            || collector.samples.len() > collector.sample_buffer_limit()
+    };
     loop {
         let tick_started = Instant::now();
         collector.tick(Utc::now());
@@ -545,7 +631,24 @@ pub fn watch<S: ProcessSource>(
             break;
         }
         if last_flush.elapsed() >= flush_every {
-            flush(collector.drain())?;
+            match publish(collector, &mut flush)? {
+                FlushAttempt::Saved => consecutive_flush_failures = 0,
+                FlushAttempt::Held(err) => {
+                    consecutive_flush_failures += 1;
+                    let unsaved = collector.samples.len();
+                    tracing::warn!(
+                        "process sample flush failed ({} in a row, {} samples kept): {}",
+                        consecutive_flush_failures,
+                        unsaved,
+                        err
+                    );
+                    if give_up(collector, consecutive_flush_failures) {
+                        return Err(unsaved_samples(unsaved, consecutive_flush_failures, &err));
+                    }
+                }
+            }
+            // Restart the interval on failure too, so the retry waits for it
+            // instead of running again on the next tick.
             last_flush = Instant::now();
         }
         // Sleep in short steps so a stop request is noticed promptly.
@@ -560,7 +663,30 @@ pub fn watch<S: ProcessSource>(
             break;
         }
     }
-    flush(collector.drain())?;
+    let mut warned = false;
+    for attempt in 0..FINAL_FLUSH_ATTEMPTS {
+        match publish(collector, &mut flush)? {
+            FlushAttempt::Saved => break,
+            FlushAttempt::Held(err) => {
+                consecutive_flush_failures += 1;
+                let unsaved = collector.samples.len();
+                if !warned {
+                    tracing::warn!(
+                        "final process sample flush failed ({} samples kept); retrying: {}",
+                        unsaved,
+                        err
+                    );
+                    warned = true;
+                }
+                if give_up(collector, consecutive_flush_failures)
+                    || attempt + 1 == FINAL_FLUSH_ATTEMPTS
+                {
+                    return Err(unsaved_samples(unsaved, consecutive_flush_failures, &err));
+                }
+                std::thread::sleep(FINAL_FLUSH_BACKOFF);
+            }
+        }
+    }
     Ok(collector.summary())
 }
 

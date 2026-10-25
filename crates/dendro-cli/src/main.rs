@@ -557,8 +557,9 @@ fn watch_blocking(
     }
     let mut collector =
         env::Collector::new(env::SysinfoSource::new(), config, env::detect_isolation());
-    // Sampling never waits on the database: each flush is one guarded,
-    // transactional publication of the batch collected since the last one.
+    // Each flush runs on this sampling thread and the sampler waits for it:
+    // one guarded, transactional publication of the batch collected since
+    // the last one.
     let summary = env::watch(
         &mut collector,
         interval,
