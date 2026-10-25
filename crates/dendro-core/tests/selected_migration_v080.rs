@@ -50,8 +50,12 @@ impl Fixture {
             drop(store);
             if without_message_facts {
                 let conn = Connection::open(&db).unwrap();
-                conn.execute_batch("DROP TABLE message_facts; CHECKPOINT;")
-                    .unwrap();
+                // `main` created none of the additive tables either.
+                conn.execute_batch(
+                    "DROP TABLE message_facts; DROP TABLE process_samples;
+                     DROP TABLE process_identities; CHECKPOINT;",
+                )
+                .unwrap();
             }
         } else {
             let conn = Connection::open(&db).unwrap();
@@ -198,6 +202,99 @@ fn selected_ingest_of_messages_publishes_on_a_main_era_schema3_source() {
     assert_eq!(schema(&restored.database), 3);
     assert_eq!(m::sha256_file(&restored.database).unwrap(), fixture.db_hash);
     fixture.assert_unchanged();
+}
+
+#[test]
+fn selected_process_samples_publish_on_a_main_era_schema3_source() {
+    use chrono::{TimeZone, Utc};
+    use dendro_core::domain_v1::{CaptureMethod, EnvironmentKind, Unit, VisibilityLimit};
+    use dendro_core::{AnalyticsStore, ProcessIdentityFact, ProcessSampleFact};
+    let fixture = Fixture::build_main_style();
+    let selected = binding::migrate_logical_db(&fixture.db, &fixture.choice()).unwrap();
+    assert_eq!(table_count(&selected.database, "process_identities"), 0);
+    assert_eq!(table_count(&selected.database, "process_samples"), 0);
+    let now = Utc.with_ymd_and_hms(2026, 10, 25, 0, 0, 0).unwrap();
+    let identity = ProcessIdentityFact {
+        identity_key: "id-1".into(),
+        root_key: "id-1".into(),
+        pid: 42,
+        parent_pid: Some(1),
+        platform: "linux".into(),
+        start_time_unix_s: 1_800_000_000,
+        exe_name: "claude".into(),
+        harness: Some("claude".into()),
+        cwd_fingerprint: None,
+        session_link: None,
+        environment_kind: EnvironmentKind::Unknown,
+        isolation_hint: "undetected".into(),
+        first_seen: now,
+        last_seen: now,
+        ended_at: None,
+        visibility_limits: Default::default(),
+    };
+    let sample = |seq: i64, rss: Option<i64>| ProcessSampleFact {
+        watch_id: "watch-1".into(),
+        identity_key: "id-1".into(),
+        seq,
+        ts: now,
+        cpu_time_us: rss.map(|_| 1_000),
+        rss_bytes: rss,
+        rss_unit: Unit::LinuxRssBytes,
+        disk_read_bytes: None,
+        disk_write_bytes: None,
+        capture_method: CaptureMethod::Procfs,
+        visibility_limits: if rss.is_none() {
+            [VisibilityLimit::PermissionDenied].into()
+        } else {
+            Default::default()
+        },
+    };
+    let samples = [sample(0, Some(4096)), sample(1, None)];
+    let updated = binding::mutate_selected(&selected, |staged, _| {
+        let store = AnalyticsStore::open_staged(staged)?;
+        store.commit_process_samples(std::slice::from_ref(&identity), &samples)?;
+        store.checkpoint()?;
+        Ok(())
+    })
+    .expect("lazily created process tables must not invalidate schema4 custody");
+    assert_eq!(table_count(&updated.database, "process_identities"), 1);
+    assert_eq!(table_count(&updated.database, "process_samples"), 2);
+    drop(updated);
+    drop(selected);
+    assert_eq!(
+        table_count(&reopen(&fixture).database, "process_samples"),
+        2
+    );
+    let (restored, _) =
+        binding::rollback_logical_db(&fixture.db, &fixture.choice(), false).unwrap();
+    assert_eq!(schema(&restored.database), 3);
+    assert_eq!(m::sha256_file(&restored.database).unwrap(), fixture.db_hash);
+    fixture.assert_unchanged();
+}
+
+#[test]
+fn schema4_validator_refuses_a_malformed_process_samples_table() {
+    let fixture = Fixture::build_main_style();
+    let selected = binding::migrate_logical_db(&fixture.db, &fixture.choice()).unwrap();
+    let source = selected
+        .custody
+        .bundle()
+        .path()
+        .join("schema3-preimage.duckdb");
+    let key = selected
+        .custody
+        .bundle()
+        .path()
+        .join("schema3-preimage.key");
+    let copy = fixture.root.path().join("bad-process-samples.duckdb");
+    std::fs::copy(&selected.database, &copy).unwrap();
+    let conn = Connection::open(&copy).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE process_samples (identity_key VARCHAR, argv VARCHAR); CHECKPOINT;",
+    )
+    .unwrap();
+    drop(conn);
+    assert!(m::validate_selected_schema4(&copy, &source, &key).is_err());
 }
 
 #[test]

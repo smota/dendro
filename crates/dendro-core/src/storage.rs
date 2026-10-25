@@ -186,6 +186,43 @@ impl AnalyticsStore {
         source_id VARCHAR NOT NULL
     )";
 
+    /// Unprivileged process/resource sampling (names and numbers only: no
+    /// path, argument, environment or working-directory text). Additive and
+    /// idempotent, like `message_facts`; no schema bump.
+    pub(super) const PROCESS_SAMPLES_SCHEMA: &'static str =
+        "CREATE TABLE IF NOT EXISTS process_identities (
+        identity_key VARCHAR PRIMARY KEY,
+        root_key VARCHAR NOT NULL,
+        pid BIGINT NOT NULL,
+        parent_pid BIGINT,
+        platform VARCHAR NOT NULL,
+        start_time_unix_s BIGINT NOT NULL,
+        exe_name VARCHAR NOT NULL,
+        harness VARCHAR,
+        cwd_fingerprint VARCHAR,
+        session_link VARCHAR,
+        environment_kind VARCHAR NOT NULL,
+        isolation_hint VARCHAR NOT NULL,
+        first_seen TIMESTAMP NOT NULL,
+        last_seen TIMESTAMP NOT NULL,
+        ended_at TIMESTAMP,
+        visibility_limits VARCHAR NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS process_samples (
+        watch_id VARCHAR NOT NULL,
+        identity_key VARCHAR NOT NULL,
+        seq BIGINT NOT NULL,
+        ts TIMESTAMP NOT NULL,
+        cpu_time_us BIGINT,
+        rss_bytes BIGINT,
+        rss_unit VARCHAR NOT NULL,
+        disk_read_bytes BIGINT,
+        disk_write_bytes BIGINT,
+        capture_method VARCHAR NOT NULL,
+        visibility_limits VARCHAR NOT NULL,
+        PRIMARY KEY (watch_id, identity_key, seq)
+    )";
+
     pub(super) const SEMANTIC_STATE_SCHEMA: &'static str = "CREATE TABLE IF NOT EXISTS dendro_semantic_state (id INTEGER PRIMARY KEY, dirty BOOLEAN NOT NULL); INSERT INTO dendro_semantic_state VALUES (1, TRUE) ON CONFLICT DO NOTHING";
 
     pub(super) fn invalidate_semantic(&self) -> Result<()> {
@@ -515,6 +552,7 @@ impl AnalyticsStore {
         self.conn.execute_batch(Self::SEMANTIC_STATE_SCHEMA)?;
         self.conn.execute_batch(FILE_BASELINES_SCHEMA)?;
         self.conn.execute_batch(Self::MESSAGE_FACTS_SCHEMA)?;
+        self.conn.execute_batch(Self::PROCESS_SAMPLES_SCHEMA)?;
         self.conn.execute_batch(openrig_provenance::SCHEMA)?;
         self.conn.execute(
             "INSERT INTO dendro_meta (schema_version, key_id) VALUES (?, ?)",
@@ -1015,6 +1053,83 @@ impl AnalyticsStore {
             )?;
         }
         checkpoint(FileBatchStage::BeforeCommit)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Publish process identities and samples in one transaction. Identities
+    /// upsert (exit and last-seen move forward, first-seen never does); samples
+    /// are keyed by (watch, identity, seq) and never overwritten.
+    pub fn commit_process_samples(
+        &self,
+        identities: &[ProcessIdentityFact],
+        samples: &[ProcessSampleFact],
+    ) -> Result<()> {
+        if identities.is_empty() && samples.is_empty() {
+            return Ok(());
+        }
+        let limits = |set: &std::collections::BTreeSet<crate::domain_v1::VisibilityLimit>| {
+            set.iter()
+                .map(wire_name)
+                .collect::<Result<Vec<_>>>()
+                .map(|names| names.join(","))
+        };
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute_batch(Self::PROCESS_SAMPLES_SCHEMA)?;
+        {
+            let mut stmt = tx.prepare(
+                "INSERT INTO process_identities
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                         CAST(? AS TIMESTAMP), CAST(? AS TIMESTAMP), CAST(? AS TIMESTAMP), ?)
+                 ON CONFLICT (identity_key) DO UPDATE SET
+                     last_seen = excluded.last_seen,
+                     ended_at = excluded.ended_at,
+                     session_link = COALESCE(excluded.session_link, process_identities.session_link),
+                     visibility_limits = excluded.visibility_limits",
+            )?;
+            for i in identities {
+                stmt.execute(params![
+                    redact(&i.identity_key),
+                    redact(&i.root_key),
+                    i64::from(i.pid),
+                    i.parent_pid.map(i64::from),
+                    redact(&i.platform),
+                    i.start_time_unix_s,
+                    redact(&i.exe_name),
+                    i.harness.as_deref().map(redact),
+                    i.cwd_fingerprint.as_deref().map(redact),
+                    i.session_link.as_deref().map(redact),
+                    wire_name(&i.environment_kind)?,
+                    redact(&i.isolation_hint),
+                    i.first_seen.to_rfc3339(),
+                    i.last_seen.to_rfc3339(),
+                    i.ended_at.map(|t| t.to_rfc3339()),
+                    limits(&i.visibility_limits)?,
+                ])?;
+            }
+        }
+        {
+            let mut stmt = tx.prepare(
+                "INSERT INTO process_samples
+                 VALUES (?, ?, ?, CAST(? AS TIMESTAMP), ?, ?, ?, ?, ?, ?, ?)
+                 ON CONFLICT (watch_id, identity_key, seq) DO NOTHING",
+            )?;
+            for s in samples {
+                stmt.execute(params![
+                    redact(&s.watch_id),
+                    redact(&s.identity_key),
+                    s.seq,
+                    s.ts.to_rfc3339(),
+                    s.cpu_time_us,
+                    s.rss_bytes,
+                    wire_name(&s.rss_unit)?,
+                    s.disk_read_bytes,
+                    s.disk_write_bytes,
+                    wire_name(&s.capture_method)?,
+                    limits(&s.visibility_limits)?,
+                ])?;
+            }
+        }
         tx.commit()?;
         Ok(())
     }
