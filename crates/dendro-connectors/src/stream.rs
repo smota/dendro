@@ -228,11 +228,14 @@ fn ingest_jsonl_limited(
             break;
         }
     }
-    store.record_warning(&WarningNote {
-        path: path.display().to_string(),
-        line: None,
-        reason: total.coverage.summary(),
-    })?;
+    // Only partial coverage is a warning; a complete read is not a defect.
+    if total.coverage.partial {
+        store.record_warning(&WarningNote {
+            path: path.display().to_string(),
+            line: None,
+            reason: total.coverage.summary(),
+        })?;
+    }
     Ok(total)
 }
 

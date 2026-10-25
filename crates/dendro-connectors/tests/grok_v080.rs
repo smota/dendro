@@ -120,12 +120,8 @@ fn fixture_usage_per_turn_and_model_and_joined_tools() {
     let db = database(&scratch);
     copy_fixture(&scratch.0);
     let notes = ingest(&db, &scratch);
-    assert!(
-        notes
-            .iter()
-            .any(|note| note == "grok files=1 records_read=21 usage_records=2"),
-        "{notes:?}"
-    );
+    assert_aggregate(&notes, 21, 2);
+    assert_eq!(note_coverage(&notes), "complete");
     let store = store(&db);
     let usage = store.load_usage().unwrap();
     assert_eq!(usage.len(), 2);
@@ -220,12 +216,7 @@ fn appending_a_line_reingests_only_the_new_turn() {
     writeln!(file, "{line}").unwrap();
     drop(file);
     let notes = ingest(&db, &scratch);
-    assert!(
-        notes
-            .iter()
-            .any(|note| note == "grok files=1 records_read=1 usage_records=1"),
-        "{notes:?}"
-    );
+    assert_aggregate(&notes, 1, 1);
     let usage = store(&db).load_usage().unwrap();
     assert_eq!(usage.len(), 3);
     let added = usage.last().unwrap();
@@ -237,12 +228,7 @@ fn appending_a_line_reingests_only_the_new_turn() {
     assert_eq!(added.reasoning, 4);
     assert_eq!(usage.iter().map(|row| row.input_uncached).sum::<i64>(), 780);
     let again = ingest(&db, &scratch);
-    assert!(
-        again
-            .iter()
-            .any(|note| note == "grok files=1 records_read=0 usage_records=0"),
-        "{again:?}"
-    );
+    assert_aggregate(&again, 0, 0);
     assert_eq!(store(&db).load_usage().unwrap().len(), 3);
 }
 
@@ -266,12 +252,8 @@ fn malformed_line_and_unknown_kind_are_counted_not_fatal() {
     writeln!(file, "{unknown}").unwrap();
     drop(file);
     let notes = ingest(&db, &scratch);
-    assert!(
-        notes
-            .iter()
-            .any(|note| note == "grok files=1 records_read=2 usage_records=0"),
-        "{notes:?}"
-    );
+    assert_aggregate(&notes, 2, 0);
+    assert_eq!(note_coverage(&notes), "partial");
     let store = store(&db);
     assert_eq!(store.load_usage().unwrap().len(), before);
     let reasons = store.warning_reasons().unwrap();
@@ -282,6 +264,29 @@ fn malformed_line_and_unknown_kind_are_counted_not_fatal() {
     let coverage = store.load_source_coverage().unwrap();
     assert_eq!(coverage.len(), 1);
     assert!(!coverage[0].complete);
+}
+
+/// The grok aggregate note carries these counts (plus refused/coverage fields).
+fn assert_aggregate(notes: &[String], records_read: u64, usage_records: u64) {
+    let counts = format!("records_read={records_read} usage_records={usage_records}");
+    assert!(
+        notes
+            .iter()
+            .any(|n| n.starts_with("grok files=1 ") && n.contains(&counts)),
+        "{notes:?}"
+    );
+}
+
+fn note_coverage(notes: &[String]) -> &str {
+    let n = notes
+        .iter()
+        .find(|n| n.starts_with("grok files="))
+        .expect("aggregate note");
+    if n.contains("coverage=partial") {
+        "partial"
+    } else {
+        "complete"
+    }
 }
 
 fn append_line(updates: &Path, value: serde_json::Value) {
@@ -313,12 +318,7 @@ fn turn_completed_without_usage_is_counted_and_not_warned() {
         ),
     );
     let notes = ingest(&db, &scratch);
-    assert!(
-        notes
-            .iter()
-            .any(|note| note == "grok files=1 records_read=22 usage_records=2"),
-        "{notes:?}"
-    );
+    assert_aggregate(&notes, 22, 2);
     let store = store(&db);
     assert_eq!(store.load_usage().unwrap().len(), 2);
     assert!(
@@ -364,7 +364,11 @@ fn absent_reasoning_and_cache_creation_default_to_zero() {
     assert_eq!(added.cache_read, 30);
     assert_eq!(added.cache_write, 0);
     assert_eq!(added.reasoning, 0);
-    assert!(store(&db).warning_reasons().unwrap().is_empty());
+    assert!(
+        store(&db).warning_reasons().unwrap().is_empty(),
+        "{:?}",
+        store(&db).warning_reasons().unwrap()
+    );
 }
 
 #[test]
@@ -400,12 +404,7 @@ fn one_invalid_model_usage_keeps_sibling_models() {
         ),
     );
     let notes = ingest(&db, &scratch);
-    assert!(
-        notes
-            .iter()
-            .any(|note| note == "grok files=1 records_read=22 usage_records=3"),
-        "{notes:?}"
-    );
+    assert_aggregate(&notes, 22, 3);
     let store = store(&db);
     let usage = store.load_usage().unwrap();
     assert_eq!(usage.len(), 3);
@@ -416,8 +415,13 @@ fn one_invalid_model_usage_keeps_sibling_models() {
     assert_eq!(added.reasoning, 1);
     assert_eq!(added.cache_write, 0);
     let reasons = store.warning_reasons().unwrap();
-    assert_eq!(reasons, vec!["missing-inputTokens".to_string()]);
-    assert!(store.load_source_coverage().unwrap()[0].complete);
+    // The invalid entry is dropped, so the source is truthfully partial.
+    assert!(
+        reasons.iter().any(|r| r == "missing-inputTokens"),
+        "{reasons:?}"
+    );
+    assert_eq!(note_coverage(&notes), "partial");
+    assert!(!store.load_source_coverage().unwrap()[0].complete);
 }
 
 #[test]

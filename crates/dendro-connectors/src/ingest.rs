@@ -1568,6 +1568,13 @@ mod tests {
         seats
     }
 
+    /// A note starting with `prefix` that contains every field in `fields`.
+    fn note_has(notes: &[String], prefix: &str, fields: &[&str]) -> bool {
+        notes
+            .iter()
+            .any(|n| n.starts_with(prefix) && fields.iter().all(|f| n.contains(f)))
+    }
+
     #[test]
     fn ac1_counts_records_read_per_harness_and_a_missing_root_warns_and_continues() {
         #[cfg(any(windows, target_os = "linux"))]
@@ -1615,10 +1622,21 @@ mod tests {
         let key = b"ac1-count-key";
         let notes = ingest_staged(&db, &roots, false, key).unwrap();
         assert!(
-            notes.contains(&"claude files=1 records_read=3 usage_records=1".to_string()),
+            note_has(
+                &notes,
+                "claude files=1",
+                &["records_read=3", "usage_records=1", "coverage=partial"]
+            ),
             "{notes:?}"
         );
-        assert!(notes.contains(&"codex missing".to_string()), "{notes:?}");
+        assert!(
+            note_has(
+                &notes,
+                "codex missing",
+                &["coverage=refused", "reason=source_missing"]
+            ),
+            "{notes:?}"
+        );
         let store = AnalyticsStore::open_path(&db, "key").unwrap();
         assert!(store
             .warning_reasons()
@@ -1630,7 +1648,11 @@ mod tests {
         // Unchanged file: nothing is read again.
         let notes = ingest_staged(&db, &roots, false, key).unwrap();
         assert!(
-            notes.contains(&"claude files=1 records_read=0 usage_records=0".to_string()),
+            note_has(
+                &notes,
+                "claude files=1",
+                &["records_read=0", "usage_records=0"]
+            ),
             "{notes:?}"
         );
         // Completing the partial line makes it exactly one new record.
@@ -1644,7 +1666,11 @@ mod tests {
         .unwrap();
         let notes = ingest_staged(&db, &roots, false, key).unwrap();
         assert!(
-            notes.contains(&"claude files=1 records_read=1 usage_records=1".to_string()),
+            note_has(
+                &notes,
+                "claude files=1",
+                &["records_read=1", "usage_records=1"]
+            ),
             "{notes:?}"
         );
         let _ = std::fs::remove_dir_all(&dir);
@@ -1687,22 +1713,50 @@ mod tests {
             path: dir.join("absent"),
         });
         let notes = ingest_staged(&db, &roots, false, b"dispatch-key").unwrap();
-        assert_eq!(
-            notes,
-            vec![
-                "claude files=0 records_read=0 usage_records=0".to_string(),
-                "codex files=0 records_read=0 usage_records=0 tool_calls=not read".to_string(),
-                "pi files=0 records_read=0 usage_records=0".to_string(),
-                "grok files=0 records_read=0 usage_records=0".to_string(),
-                "cursor files=0 format=verified-export-only native-storage=unsupported".to_string(),
-                "windsurf files=0 format=verified-export-only native-storage=unsupported"
-                    .to_string(),
-                "goose files=0 format=verified-export-only native-storage=unsupported".to_string(),
-                "devin files=0 format=verified-export-only native-storage=unsupported".to_string(),
-                "agy present-not-parsed".to_string(),
-                "custom unsupported".to_string(),
-                "absent missing".to_string(),
-            ]
+        assert_eq!(notes.len(), 11, "{notes:?}");
+        for h in ["claude", "pi", "grok"] {
+            assert!(
+                note_has(
+                    &notes,
+                    &format!("{h} files=0"),
+                    &["records_read=0", "usage_records=0"]
+                ),
+                "{notes:?}"
+            );
+        }
+        assert!(
+            note_has(
+                &notes,
+                "codex files=0",
+                &["records_read=0", "usage_records=0", "tool_calls=not read"]
+            ),
+            "{notes:?}"
+        );
+        for h in ["cursor", "windsurf", "goose", "devin"] {
+            assert!(
+                note_has(
+                    &notes,
+                    &format!("{h} files=0"),
+                    &["format=verified-export-only", "native-storage=unsupported"]
+                ),
+                "{notes:?}"
+            );
+        }
+        assert!(
+            notes.contains(&"agy present-not-parsed".to_string()),
+            "{notes:?}"
+        );
+        assert!(
+            notes.contains(&"custom unsupported".to_string()),
+            "{notes:?}"
+        );
+        assert!(
+            note_has(
+                &notes,
+                "absent missing",
+                &["coverage=refused", "reason=source_missing"]
+            ),
+            "{notes:?}"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -2171,10 +2225,21 @@ mod tests {
         assert_eq!(manifest.files.len(), 2);
         assert_ne!(manifest.files[0].source_id, manifest.files[1].source_id);
 
-        let pi_notes: Vec<_> = notes.iter().filter(|n| n.starts_with("pi ")).collect();
-        assert_eq!(pi_notes.len(), 2);
-        assert!(pi_notes[0].contains("files=1 records_read=2 usage_records=1"));
-        assert!(pi_notes[1].contains("files=1 records_read=2 usage_records=1"));
+        // Aggregate lines only (per-file lines read "pi file=<hash> ...").
+        let pi_notes: Vec<_> = notes
+            .iter()
+            .filter(|n| n.starts_with("pi files="))
+            .collect();
+        assert_eq!(pi_notes.len(), 2, "{notes:?}");
+        for n in pi_notes {
+            assert!(
+                n.contains("files=1")
+                    && n.contains("records_read=2")
+                    && n.contains("usage_records=1")
+                    && n.contains("coverage=complete"),
+                "{n}"
+            );
+        }
 
         let store = AnalyticsStore::open_path(&db, "key").unwrap();
         let sources = store.load_sources().unwrap();
