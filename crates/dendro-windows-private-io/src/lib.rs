@@ -323,7 +323,7 @@ impl StagingSource {
         }
         let next = destination.duplicate()?;
         self.check(false)?;
-        ffi::rename(&self.file, &destination.file, &name.0, false)?;
+        self.rename_held(destination, name, false)?;
         self.parent = next;
         self.check(false)
     }
@@ -347,7 +347,30 @@ impl StagingSource {
         self.file.sync_all()?;
         // Check immediately before mutation; same-user/privileged races remain out of scope.
         self.check(false)?;
-        ffi::rename(&self.file, &destination.file, &name.0, true)
+        self.rename_held(destination, name, true)
+    }
+    /// Another process briefly holding the new file (scanner, indexer) refuses the
+    /// rename with ERROR_SHARING_VIOLATION. Retry a bounded number of times,
+    /// re-checking custody before every attempt.
+    fn rename_held(
+        &self,
+        destination: &VerifiedDirectory,
+        name: &ChildName,
+        replace: bool,
+    ) -> io::Result<()> {
+        const ERROR_SHARING_VIOLATION: i32 = 32;
+        let mut delay = std::time::Duration::from_millis(20);
+        for _ in 0..8 {
+            match ffi::rename(&self.file, &destination.file, &name.0, replace) {
+                Err(e) if e.raw_os_error() == Some(ERROR_SHARING_VIOLATION) => {
+                    std::thread::sleep(delay);
+                    delay *= 2;
+                    self.check(false)?;
+                }
+                other => return other,
+            }
+        }
+        ffi::rename(&self.file, &destination.file, &name.0, replace)
     }
     pub fn set_delete(&mut self, delete: bool) -> io::Result<()> {
         self.check(!delete)?;
