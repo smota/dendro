@@ -361,6 +361,17 @@ fn link_or_reparse(meta: &fs::Metadata) -> bool {
     }
 }
 
+fn offline_dashboard(
+    request: &dendro_core::presentation::ReadRequest,
+    mut report: serde_json::Value,
+    from: &str,
+    to: &str,
+) -> Result<String> {
+    let store = request.open_store()?;
+    dendro_core::presentation::attach_dashboard_surface(&mut report, &store, from, to)?;
+    dendro_core::presentation::offline_html(&report)
+}
+
 pub async fn run(command: Commands) -> Result<()> {
     let ui_request = match &command {
         Commands::Ui {
@@ -563,7 +574,7 @@ pub async fn run(command: Commands) -> Result<()> {
                     &from,
                     &to,
                 )?;
-                let html = dendro_core::presentation::offline_html(&report)?;
+                let html = offline_dashboard(&request, report, &from, &to)?;
                 write_new_private_output_with(&output, html.as_bytes(), |file, data| {
                     file.write_all(data)
                 })?;
@@ -595,7 +606,7 @@ pub async fn run(command: Commands) -> Result<()> {
                     &from,
                     &to,
                 )?;
-                let html_str = dendro_core::presentation::offline_html(&report)?;
+                let html_str = offline_dashboard(&request, report, &from, &to)?;
                 write_new_private_output_with(&output, html_str.as_bytes(), |file, data| {
                     file.write_all(data)
                 })?;
@@ -877,5 +888,28 @@ mod tests {
             false
         )
         .is_err());
+    }
+
+    #[test]
+    fn dashboard_html_embeds_refused_insights_for_empty_store() {
+        let dir = TempDir::new("insights");
+        let db = dir.0.join("empty.duckdb");
+        dendro_core::AnalyticsStore::open_path(&db, "insights")
+            .unwrap()
+            .checkpoint()
+            .unwrap();
+        let request = dendro_core::presentation::ReadRequest::open(&db).unwrap();
+        let html = offline_dashboard(
+            &request,
+            json!({"metric":"decisions","payload":{"product":"AI Fleet Intelligence"}}),
+            "2026-01-01T00:00:00Z",
+            "2026-01-02T00:00:00Z",
+        )
+        .unwrap();
+        assert!(html.contains("\"id\":\"I09\""));
+        assert!(html.contains("\"state\":\"refused\""));
+        assert!(html.contains("empty population"));
+        assert!(!html.contains("<script>alert"));
+        assert!(html.contains("\"state\":\"computed\""));
     }
 }

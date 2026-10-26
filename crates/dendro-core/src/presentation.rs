@@ -532,6 +532,11 @@ fn database_status_request(request: &ReadRequest, rig: Option<&str>) -> Result<V
             "db": db_display,
             "status": "not_initialized",
             "remediation": format!("dendro dashboard --db {} --auto-ingest", db_display),
+            "message_facts": {"rows": 0, "table": "not created"},
+            "process_identities": {"rows": 0, "table": "not created"},
+            "process_samples": {"rows": 0, "table": "not created"},
+            "session_edges": {"rows": 0, "table": "not created"},
+            "security_facts": {"rows": 0, "table": "not created"},
             "next_commands": [
                 format!("dendro run --db {}", db_display),
                 format!("dendro dashboard --db {} --auto-ingest", db_display)
@@ -583,6 +588,11 @@ fn database_status_request(request: &ReadRequest, rig: Option<&str>) -> Result<V
     let activity_rows: i64 =
         conn.query_row("SELECT COUNT(*) FROM activity_facts", [], |r| r.get(0))?;
     let queue_rows: i64 = conn.query_row("SELECT COUNT(*) FROM queue_facts", [], |r| r.get(0))?;
+    let message_facts = fact_table_rows(conn, "message_facts")?;
+    let process_identities = fact_table_rows(conn, "process_identities")?;
+    let process_samples = fact_table_rows(conn, "process_samples")?;
+    let session_edges = fact_table_rows(conn, "session_edges")?;
+    let security_facts = fact_table_rows(conn, "security_facts")?;
     let mut rig_stmt =
         conn.prepare("SELECT DISTINCT rig FROM identity_facts WHERE rig <> '' ORDER BY rig")?;
     let rigs: Vec<String> = rig_stmt
@@ -657,6 +667,11 @@ fn database_status_request(request: &ReadRequest, rig: Option<&str>) -> Result<V
         "usage_rows": usage_rows,
         "activity_rows": activity_rows,
         "queue_rows": queue_rows,
+        "message_facts": message_facts,
+        "process_identities": process_identities,
+        "process_samples": process_samples,
+        "session_edges": session_edges,
+        "security_facts": security_facts,
         "rigs": rigs,
         "seats": seats,
         "entity_breakdown": entity_breakdown,
@@ -1069,6 +1084,14 @@ pub fn human_status(status: &Value) -> String {
     ));
     if !status["exists"].as_bool().unwrap_or(false) {
         out.push_str("  State: NOT INITIALIZED (analytics database does not exist yet)\n");
+        out.push_str(&format!(
+            "  Fact tables: message_facts={} · process_identities={} · process_samples={} · session_edges={} · security_facts={}\n",
+            fact_table_text(&status["message_facts"]),
+            fact_table_text(&status["process_identities"]),
+            fact_table_text(&status["process_samples"]),
+            fact_table_text(&status["session_edges"]),
+            fact_table_text(&status["security_facts"])
+        ));
         append_discovered_sources(&mut out, status);
         append_topology(&mut out, status);
         append_quickstart(&mut out, status);
@@ -1083,6 +1106,14 @@ pub fn human_status(status: &Value) -> String {
         number(&status["usage_rows"]),
         number(&status["activity_rows"]),
         number(&status["queue_rows"])
+    ));
+    out.push_str(&format!(
+        "  Fact tables: message_facts={} · process_identities={} · process_samples={} · session_edges={} · security_facts={}\n",
+        fact_table_text(&status["message_facts"]),
+        fact_table_text(&status["process_identities"]),
+        fact_table_text(&status["process_samples"]),
+        fact_table_text(&status["session_edges"]),
+        fact_table_text(&status["security_facts"])
     ));
     if let Some(rig) = status.get("selected_rig").and_then(|v| v.as_str()) {
         out.push_str(&format!("  Selected rig: {rig}\n"));
@@ -1318,6 +1349,391 @@ fn time(v: &Value) -> Value {
         .map(|t| json!(t.to_rfc3339()))
         .unwrap_or(Value::Null)
 }
+fn fact_table_exists(conn: &duckdb::Connection, table: &str) -> Result<bool> {
+    let exists: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'main' AND table_name = ?",
+        duckdb::params![table],
+        |row| row.get(0),
+    )?;
+    Ok(exists > 0)
+}
+
+/// Row count for one additive fact table. `rows` is 0 when the table was never created;
+/// `table` is `not created` in that case and `present` otherwise.
+fn fact_table_rows(conn: &duckdb::Connection, table: &str) -> Result<Value> {
+    if !fact_table_exists(conn, table)? {
+        return Ok(json!({"rows": 0, "table": "not created"}));
+    }
+    let sql = match table {
+        "message_facts" => "SELECT COUNT(*) FROM message_facts",
+        "process_identities" => "SELECT COUNT(*) FROM process_identities",
+        "process_samples" => "SELECT COUNT(*) FROM process_samples",
+        "session_edges" => "SELECT COUNT(*) FROM session_edges",
+        "security_facts" => "SELECT COUNT(*) FROM security_facts",
+        _ => bail!("unknown fact table"),
+    };
+    let rows: i64 = conn.query_row(sql, [], |row| row.get(0))?;
+    Ok(json!({"rows": rows, "table": "present"}))
+}
+
+fn fact_table_text(value: &Value) -> String {
+    match value["table"].as_str() {
+        Some("not created") => "not created".into(),
+        Some("present") => number(&value["rows"]),
+        _ => "unknown".into(),
+    }
+}
+
+fn closed_token(value: &str, max: usize) -> bool {
+    !value.is_empty()
+        && value.len() <= max
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-' | b':'))
+}
+
+fn public_id_segment(segment: &str) -> bool {
+    matches!(
+        segment,
+        "I02"
+            | "I04"
+            | "I08"
+            | "I09"
+            | "I14"
+            | "I18"
+            | "relation"
+            | "status"
+            | "multi_parent_children"
+            | "roots"
+            | "max_depth"
+            | "cycles"
+            | "unresolved_parents"
+            | "attribution"
+            | "launched"
+            | "discovered"
+            | "cpu_unreadable_trees"
+            | "cpu_time_delta_us"
+            | "max_rss"
+            | "disk_read_delta_bytes"
+            | "disk_write_delta_bytes"
+            | "failure_rate"
+            | "unprojected"
+            | "refused"
+            | "settled"
+            | "unsettled"
+            | "failed"
+    ) || (segment.len() <= 24
+        && segment
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'_' | b'-'))
+        && segment
+            .bytes()
+            .any(|b| !b.is_ascii_hexdigit() && b != b'_' && b != b'-'))
+}
+
+/// Keep fixed insight id words. Alias every other segment so session ids and paths stay out.
+fn project_measure_id(raw: &str, aliases: &mut BTreeMap<String, String>) -> Option<String> {
+    if raw.is_empty() || raw.len() > 200 {
+        return None;
+    }
+    let mut parts = Vec::new();
+    for segment in raw.split('.') {
+        if segment.is_empty() || segment.len() > 80 {
+            return None;
+        }
+        if public_id_segment(segment) {
+            parts.push(segment.to_string());
+            continue;
+        }
+        let alias = if let Some(existing) = aliases.get(segment) {
+            existing.clone()
+        } else {
+            let alias = format!("S{}", aliases.len() + 1);
+            aliases.insert(segment.to_string(), alias.clone());
+            alias
+        };
+        parts.push(alias);
+    }
+    Some(parts.join("."))
+}
+
+fn project_number(value: &Value) -> Value {
+    if let Some(number) = value.as_i64() {
+        return json!(number);
+    }
+    value
+        .as_f64()
+        .filter(|number| number.is_finite())
+        .map_or(Value::Null, |number| json!(number))
+}
+
+fn project_status(value: &Value) -> Value {
+    let raw = value["state"].as_str().unwrap_or("");
+    let state = if matches!(raw, "computed" | "partial" | "refused") {
+        raw
+    } else {
+        "unknown"
+    };
+    let reason = value["reason"].as_str().filter(|reason| {
+        !reason.is_empty()
+            && reason.len() <= 200
+            && !reason.contains('/')
+            && !reason.contains('\\')
+            && reason.chars().all(|ch| !ch.is_control())
+    });
+    match (state, reason) {
+        ("computed", _) => json!({"state": "computed"}),
+        ("unknown", _) => json!({"state": "unknown"}),
+        (_, Some(reason)) => json!({"state": state, "reason": reason}),
+        _ => json!({"state": state}),
+    }
+}
+
+fn project_population(value: &Value) -> Value {
+    let what = value["what"]
+        .as_str()
+        .filter(|what| closed_token(what, 64))
+        .unwrap_or("unknown");
+    let n = value["n"].as_u64().map_or(Value::Null, Value::from);
+    json!({"what": what, "n": n})
+}
+
+fn project_insight(row: &Value, aliases: &mut BTreeMap<String, String>) -> Option<Value> {
+    let id = row["id"].as_str()?;
+    if !matches!(id, "I02" | "I04" | "I08" | "I09" | "I14" | "I18") {
+        return None;
+    }
+    let name = row["name"].as_str().filter(|name| closed_token(name, 80))?;
+    let version = row["version"].as_str().filter(|version| {
+        closed_token(version, 16) && version.bytes().all(|b| b.is_ascii_digit() || b == b'.')
+    })?;
+    let domain = match row["domain"].as_str() {
+        Some(domain @ ("model" | "harness" | "coordination" | "environment" | "security")) => {
+            domain
+        }
+        _ => return None,
+    };
+    let mut measures = Vec::new();
+    for measure in rows(&row["measures"]).take(50_000) {
+        let Some(id) = measure["id"]
+            .as_str()
+            .and_then(|id| project_measure_id(id, aliases))
+        else {
+            continue;
+        };
+        let name = measure["name"]
+            .as_str()
+            .filter(|name| closed_token(name, 80))
+            .unwrap_or("measure");
+        let unit = measure["unit"]
+            .as_str()
+            .filter(|unit| closed_token(unit, 32))
+            .unwrap_or("unknown");
+        measures.push(json!({
+            "id": id,
+            "name": name,
+            "value": project_number(&measure["value"]),
+            "unit": unit,
+        }));
+    }
+    let coverage = row["coverage"]
+        .as_str()
+        .filter(|coverage| {
+            !coverage.is_empty()
+                && coverage.len() <= 240
+                && !coverage.contains(['/', '\\', '<', '>', '&'])
+                && coverage.chars().all(|ch| !ch.is_control())
+        })
+        .unwrap_or("");
+    Some(json!({
+        "id": id,
+        "name": name,
+        "version": version,
+        "domain": domain,
+        "status": project_status(&row["status"]),
+        "population": project_population(&row["population"]),
+        "measures": measures,
+        "coverage": coverage,
+        "evidence": [],
+    }))
+}
+
+fn project_insights(raw: &Value) -> Value {
+    let mut aliases = BTreeMap::new();
+    Value::Array(
+        rows(raw)
+            .take(50_000)
+            .filter_map(|row| project_insight(row, &mut aliases))
+            .collect(),
+    )
+}
+
+fn insight_summary(insights: &Value, id: &str) -> Value {
+    let Some(row) = insights
+        .as_array()
+        .and_then(|rows| rows.iter().find(|row| row["id"].as_str() == Some(id)))
+    else {
+        return json!({
+            "id": id,
+            "status": {"state": "refused", "reason": "not evaluated"},
+            "population": {"what": "unknown", "n": null},
+            "measures": [],
+        });
+    };
+    json!({
+        "id": row["id"].clone(),
+        "name": row["name"].clone(),
+        "status": row["status"].clone(),
+        "population": row["population"].clone(),
+        "measures": row["measures"].clone(),
+    })
+}
+
+fn admitted_security(kind: &str, value: &str) -> bool {
+    match kind {
+        "permission_mode" => matches!(
+            value,
+            "default" | "auto" | "acceptEdits" | "plan" | "bypassPermissions" | "other"
+        ),
+        "permission_decision" => matches!(value, "allow" | "deny" | "other"),
+        "sandbox_policy" => matches!(
+            value,
+            "danger-full-access" | "read-only" | "workspace-write" | "true" | "false" | "other"
+        ),
+        "approval_policy" => matches!(value, "never" | "on-request" | "other"),
+        "permission_profile" => value == "other",
+        "approved_prefix_count" => {
+            !value.is_empty() && value.len() <= 18 && value.bytes().all(|b| b.is_ascii_digit())
+        }
+        "sandbox_override_requested" => value == "true",
+        "dangerous_command" => matches!(
+            value,
+            "recursive_delete"
+                | "pipe_to_shell"
+                | "force_push"
+                | "force_push_with_lease"
+                | "chmod_world_writable"
+                | "sudo"
+                | "disk_write_device"
+                | "credential_file_access"
+                | "network_exfil_pattern"
+        ),
+        _ => false,
+    }
+}
+
+fn project_security(value: &Value) -> Value {
+    if !value.is_object() {
+        return json!({
+            "status": {"state": "refused", "reason": "not evaluated"},
+            "population": {"what": "security_facts", "n": null},
+            "counts": [],
+        });
+    }
+    let status = project_status(&value["status"]);
+    let state = status["state"].as_str().unwrap_or("unknown");
+    let population = project_population(&value["population"]);
+    if state != "computed" && state != "partial" {
+        return json!({"status": status, "population": population, "counts": []});
+    }
+    let mut counts = Vec::new();
+    let mut dropped = false;
+    for row in rows(&value["counts"]).take(50_000) {
+        let Some(kind) = row["kind"].as_str() else {
+            dropped = true;
+            continue;
+        };
+        let Some(label) = row["value"].as_str() else {
+            dropped = true;
+            continue;
+        };
+        let Some(n) = row["n"].as_i64().filter(|n| *n >= 0) else {
+            dropped = true;
+            continue;
+        };
+        if !admitted_security(kind, label) {
+            dropped = true;
+            continue;
+        }
+        counts.push(json!({"kind": kind, "value": label, "n": n}));
+    }
+    let status = if dropped && state == "computed" {
+        json!({"state": "partial", "reason": "value outside closed vocabulary"})
+    } else {
+        status
+    };
+    json!({"status": status, "population": population, "counts": counts})
+}
+
+fn security_summary(conn: &duckdb::Connection) -> Result<Value> {
+    if !fact_table_exists(conn, "security_facts")? {
+        return Ok(json!({
+            "status": {"state": "refused", "reason": "not created"},
+            "population": {"what": "security_facts", "n": null},
+            "counts": [],
+        }));
+    }
+    let total: i64 = conn.query_row("SELECT COUNT(*) FROM security_facts", [], |row| row.get(0))?;
+    let mut stmt = conn.prepare(
+        "SELECT kind, value, COUNT(*) FROM security_facts GROUP BY kind, value ORDER BY kind, value",
+    )?;
+    let grouped = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, i64>(2)?,
+        ))
+    })?;
+    let mut counts = Vec::new();
+    let mut dropped = false;
+    for row in grouped {
+        let (kind, value, n) = row?;
+        if n < 0 || !admitted_security(&kind, &value) {
+            dropped = true;
+            continue;
+        }
+        counts.push(json!({"kind": kind, "value": value, "n": n}));
+    }
+    let status = if dropped {
+        json!({"state": "partial", "reason": "value outside closed vocabulary"})
+    } else {
+        json!({"state": "computed"})
+    };
+    Ok(json!({
+        "status": status,
+        "population": {"what": "security_facts", "n": total},
+        "counts": counts,
+    }))
+}
+
+/// Copy canonical `insight_v1` results and closed security counts onto a report payload.
+/// Measures are not recomputed here.
+pub fn attach_dashboard_surface(
+    report: &mut Value,
+    store: &crate::AnalyticsStore,
+    from: &str,
+    to: &str,
+) -> Result<()> {
+    let scope = crate::insight_v1::Scope {
+        harness: None,
+        session: None,
+        from: Some(from.to_string()).filter(|value| !value.is_empty()),
+        to: Some(to.to_string()).filter(|value| !value.is_empty()),
+    };
+    let results = crate::insight_v1::evaluate(store, &scope);
+    let insights = serde_json::to_value(&results)?;
+    let security = security_summary(store.connection())?;
+    let Some(payload) = report
+        .get_mut("payload")
+        .and_then(|value| value.as_object_mut())
+    else {
+        bail!("report payload is missing");
+    };
+    payload.insert("insights".into(), insights);
+    payload.insert("security".into(), security);
+    Ok(())
+}
+
 /// Sanitizes the serialized payload itself. Native labels, locators and arbitrary strings never enter HTML.
 pub fn public_projection(report: &Value) -> Value {
     let p = &report["payload"];
@@ -1502,6 +1918,11 @@ pub fn public_projection(report: &Value) -> Value {
         };
     }
     out.insert("ring_boundaries".into(), json!({"edges":boundaries}));
+    let insights = project_insights(&p["insights"]);
+    out.insert("lineage".into(), insight_summary(&insights, "I09"));
+    out.insert("environment".into(), insight_summary(&insights, "I14"));
+    out.insert("insights".into(), insights);
+    out.insert("security".into(), project_security(&p["security"]));
     json!({"metric":"decisions","payload":out})
 }
 pub fn offline_html(report: &Value) -> Result<String> {
@@ -2070,5 +2491,321 @@ mod tests {
         });
         let empty_text = human_status(&empty);
         assert!(empty_text.contains("State: EMPTY · usage=0 · activity=0 · queue=0"));
+        assert!(empty_text.contains("message_facts=unknown"));
+    }
+
+    fn scratch_dir(prefix: &str) -> std::path::PathBuf {
+        #[cfg(any(windows, target_os = "linux"))]
+        {
+            crate::platform_v1::create_user_private_root_with_choice(
+                prefix,
+                &crate::platform_v1::StorageRootChoice::UserProfile,
+            )
+            .unwrap()
+            .path()
+            .to_path_buf()
+        }
+        #[cfg(not(any(windows, target_os = "linux")))]
+        {
+            let dir = std::env::temp_dir().join(format!(
+                "{prefix}{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            dir
+        }
+    }
+
+    #[test]
+    fn dashboard_payload_keeps_insight_status_and_escapes_hostile_text() {
+        let hostile = "partial <script>alert(1)<script>";
+        let report = json!({
+            "payload": {
+                "insights": [
+                    {
+                        "id": "I09",
+                        "name": "work.lineage_shape",
+                        "version": "1.0.0",
+                        "domain": "coordination",
+                        "status": {"state": "partial", "reason": hostile},
+                        "population": {"what": "session_edges", "n": 2},
+                        "measures": [
+                            {"id": "I09.max_depth", "name": "max_depth", "value": null, "unit": "edges"},
+                            {"id": "I09.roots", "name": "roots", "value": 1, "unit": "sessions"},
+                            {"id": "I09.relation.spawn", "name": "relation.spawn", "value": 2, "unit": "edges"}
+                        ],
+                        "coverage": "explicit session_edges only",
+                        "evidence": ["/private/path", "ghp_canary", hostile]
+                    },
+                    {
+                        "id": "I14",
+                        "name": "environment.resources",
+                        "version": "1.0.0",
+                        "domain": "environment",
+                        "status": {"state": "refused", "reason": "empty population"},
+                        "population": {"what": "process_samples", "n": 0},
+                        "measures": [],
+                        "coverage": "process samples",
+                        "evidence": ["root-key-/etc/passwd"]
+                    }
+                ],
+                "security": {
+                    "status": {"state": "computed"},
+                    "population": {"what": "security_facts", "n": 2},
+                    "counts": [
+                        {"kind": "permission_mode", "value": "plan", "n": 1},
+                        {"kind": "permission_mode", "value": "</script>/secret", "n": 1},
+                        {"kind": "note", "value": "free text", "n": 4}
+                    ]
+                }
+            }
+        });
+        let projected = public_projection(&report);
+        let payload = &projected["payload"];
+        assert_eq!(payload["lineage"]["status"]["state"], "partial");
+        assert_eq!(payload["lineage"]["status"]["reason"], hostile);
+        assert!(payload["lineage"]["measures"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|measure| measure["id"] == "I09.max_depth" && measure["value"].is_null()));
+        assert_eq!(payload["environment"]["status"]["state"], "refused");
+        assert!(payload["environment"]["measures"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        assert!(payload["insights"][0]["evidence"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        assert_eq!(payload["security"]["status"]["state"], "partial");
+        assert_eq!(payload["security"]["counts"].as_array().unwrap().len(), 1);
+        assert_eq!(payload["security"]["counts"][0]["value"], "plan");
+        assert_eq!(payload["security"]["counts"][0]["n"], 1);
+        assert_eq!(payload["security"]["population"]["n"], 2);
+        let html = offline_html(&report).unwrap();
+        assert!(html.contains("\\u003cscript\\u003ealert(1)\\u003cscript\\u003e"));
+        assert!(!html.contains("<script>alert(1)<script>"));
+        assert!(!html.contains("/private/path"));
+        assert!(!html.contains("ghp_canary"));
+        assert!(!html.contains("/etc/passwd"));
+        assert!(!html.contains("free text"));
+
+        let empty = public_projection(&json!({"payload": {}}));
+        assert!(empty["payload"]["insights"].as_array().unwrap().is_empty());
+        assert_eq!(empty["payload"]["lineage"]["status"]["state"], "refused");
+        assert_eq!(
+            empty["payload"]["lineage"]["status"]["reason"],
+            "not evaluated"
+        );
+        assert!(empty["payload"]["lineage"]["population"]["n"].is_null());
+        assert!(empty["payload"]["lineage"]["measures"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            empty["payload"]["environment"]["status"]["state"],
+            "refused"
+        );
+        assert_eq!(empty["payload"]["security"]["status"]["state"], "refused");
+        assert!(empty["payload"]["security"]["population"]["n"].is_null());
+        assert!(empty["payload"]["security"]["counts"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn attach_dashboard_surface_renders_canonical_partial_empty_and_missing_table() {
+        let store = crate::AnalyticsStore::open_in_memory("dash-surface").unwrap();
+        store
+            .connection()
+            .execute(
+                "INSERT INTO session_edges (source_key, source_id, harness, parent_session, child_session, relation, status, observed_at, evidence_kind, generation) VALUES (?, ?, ?, ?, ?, ?, ?, CAST(? AS TIMESTAMP), ?, ?)",
+                duckdb::params!["ghp_canary/private/path", "src", "pi", "", "child-1", "spawn", "observed", "2026-01-01 12:00:00", "explicit", 1i64],
+            )
+            .unwrap();
+        let mut report = json!({"metric": "decisions", "payload": {}});
+        attach_dashboard_surface(
+            &mut report,
+            &store,
+            "2026-01-01T00:00:00Z",
+            "2026-01-02T00:00:00Z",
+        )
+        .unwrap();
+        let projected = public_projection(&report);
+        assert_eq!(
+            projected["payload"]["lineage"]["status"]["state"],
+            "partial"
+        );
+        assert!(projected["payload"]["lineage"]["measures"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|measure| measure["name"] == "max_depth" && measure["value"].is_null()));
+        assert!(projected["payload"]["lineage"]["measures"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|measure| measure["name"] == "unresolved_parents" && measure["value"] == 1));
+        assert_eq!(
+            projected["payload"]["environment"]["status"]["state"],
+            "refused"
+        );
+        assert_eq!(
+            projected["payload"]["security"]["status"]["state"],
+            "computed"
+        );
+        assert_eq!(projected["payload"]["security"]["population"]["n"], 0);
+        assert!(projected["payload"]["security"]["counts"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        let html = offline_html(&report).unwrap();
+        assert!(!html.contains("ghp_canary"));
+        assert!(!html.contains("/private/path"));
+
+        store
+            .connection()
+            .execute_batch("DROP TABLE security_facts")
+            .unwrap();
+        let mut missing = json!({"metric": "decisions", "payload": {}});
+        attach_dashboard_surface(
+            &mut missing,
+            &store,
+            "2026-01-01T00:00:00Z",
+            "2026-01-02T00:00:00Z",
+        )
+        .unwrap();
+        let missing = public_projection(&missing);
+        assert_eq!(missing["payload"]["security"]["status"]["state"], "refused");
+        assert_eq!(
+            missing["payload"]["security"]["status"]["reason"],
+            "not created"
+        );
+        assert!(missing["payload"]["security"]["population"]["n"].is_null());
+        assert!(missing["payload"]["security"]["counts"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+
+        let empty_store = crate::AnalyticsStore::open_in_memory("dash-empty").unwrap();
+        let mut empty = json!({"metric": "decisions", "payload": {}});
+        attach_dashboard_surface(
+            &mut empty,
+            &empty_store,
+            "2026-01-01T00:00:00Z",
+            "2026-01-02T00:00:00Z",
+        )
+        .unwrap();
+        let empty = public_projection(&empty);
+        let insights = empty["payload"]["insights"].as_array().unwrap();
+        assert!(!insights.is_empty());
+        assert!(insights
+            .iter()
+            .all(|row| row["status"]["state"] == "refused"));
+        assert!(insights
+            .iter()
+            .all(|row| row["evidence"].as_array().unwrap().is_empty()));
+        assert_eq!(
+            empty["payload"]["lineage"]["status"]["reason"],
+            "empty population"
+        );
+    }
+
+    #[test]
+    fn database_status_counts_fact_tables_and_labels_missing_ones() {
+        let present_dir = scratch_dir("dendro-facts-present-");
+        let present_db = present_dir.join("present.duckdb");
+        let present = crate::AnalyticsStore::open_path(&present_db, "facts").unwrap();
+        present
+            .connection()
+            .execute(
+                "INSERT INTO message_facts (source_key, harness, native_session, ts, seq, role, direction, modalities, grain, generation, source_id) VALUES (?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?)",
+                duckdb::params!["m1", "pi", 1i64, "user", "inbound", "text", "turn", 1i64, "src"],
+            )
+            .unwrap();
+        present
+            .connection()
+            .execute(
+                "INSERT INTO process_identities (identity_key, root_key, pid, platform, start_time_unix_s, exe_name, environment_kind, isolation_hint, first_seen, last_seen, visibility_limits) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS TIMESTAMP), CAST(? AS TIMESTAMP), ?)",
+                duckdb::params!["id1", "root1", 1i64, "test", 0i64, "exe", "host", "none", "2026-01-01 00:00:00", "2026-01-01 00:00:00", ""],
+            )
+            .unwrap();
+        present
+            .connection()
+            .execute(
+                "INSERT INTO process_samples (watch_id, identity_key, seq, ts, rss_unit, capture_method, visibility_limits) VALUES (?, ?, ?, CAST(? AS TIMESTAMP), ?, ?, ?)",
+                duckdb::params!["w1", "id1", 1i64, "2026-01-01 00:00:00", "bytes", "sample", ""],
+            )
+            .unwrap();
+        present
+            .connection()
+            .execute(
+                "INSERT INTO session_edges (source_key, source_id, harness, parent_session, child_session, relation, status, evidence_kind, generation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                duckdb::params!["e1", "src", "pi", "parent", "child", "spawn", "observed", "explicit", 1i64],
+            )
+            .unwrap();
+        present
+            .connection()
+            .execute(
+                "INSERT INTO security_facts (source_key, source_id, harness, kind, value, source_field, generation) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                duckdb::params!["s1", "src", "pi", "permission_mode", "plan", "permissionMode", 1i64],
+            )
+            .unwrap();
+        present.checkpoint().unwrap();
+        drop(present);
+        let status = database_status(&present_db, None).unwrap();
+        for (key, rows) in [
+            ("message_facts", 1),
+            ("process_identities", 1),
+            ("process_samples", 1),
+            ("session_edges", 1),
+            ("security_facts", 1),
+        ] {
+            assert_eq!(status[key]["table"], "present", "{key}");
+            assert_eq!(status[key]["rows"], rows, "{key}");
+        }
+        let rendered = human_status(&status);
+        assert!(rendered.contains("security_facts=1"));
+        assert!(!rendered.contains("security_facts=not created"));
+        let _ = std::fs::remove_dir_all(&present_dir);
+
+        let missing_dir = scratch_dir("dendro-facts-missing-");
+        let missing_db = missing_dir.join("missing.duckdb");
+        let missing = crate::AnalyticsStore::open_path(&missing_db, "facts").unwrap();
+        missing
+            .connection()
+            .execute_batch(
+                "DROP TABLE IF EXISTS message_facts;
+                 DROP TABLE IF EXISTS process_samples;
+                 DROP TABLE IF EXISTS process_identities;
+                 DROP TABLE IF EXISTS session_edges;
+                 DROP TABLE IF EXISTS security_facts",
+            )
+            .unwrap();
+        missing.checkpoint().unwrap();
+        drop(missing);
+        let status = database_status(&missing_db, None).unwrap();
+        for key in [
+            "message_facts",
+            "process_identities",
+            "process_samples",
+            "session_edges",
+            "security_facts",
+        ] {
+            assert_eq!(status[key]["table"], "not created", "{key}");
+            assert_eq!(status[key]["rows"], 0, "{key}");
+        }
+        let rendered = human_status(&status);
+        assert!(rendered.contains("message_facts=not created"));
+        assert!(rendered.contains("security_facts=not created"));
+        assert!(!rendered.contains("security_facts=0"));
+        let _ = std::fs::remove_dir_all(&missing_dir);
     }
 }
