@@ -12,6 +12,10 @@ databases:
       - "main.v_handoff_rework_analysis"
       - "main.v_mission_token_burn"
       - "main.v_executive_governance"
+      - "main.v_message_mix"
+      - "main.v_subagent_lineage"
+      - "main.v_security_posture"
+      - "main.v_process_resources"
       - "main.dendro_semantic_provenance"
       - "main.dendro_semantic_usage"
     allow_listed_only: true
