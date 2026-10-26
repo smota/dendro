@@ -26,3 +26,20 @@ CREATE OR REPLACE TABLE dendro_semantic_executive (
  cross_slice_cache_bleed JSON, task_intake_overhead JSON, issue_lineage JSON,
  vortex_loops JSON, ring_boundaries JSON
 );
+CREATE OR REPLACE TABLE dendro_semantic_message_mix (
+ harness VARCHAR, native_session VARCHAR, role VARCHAR, direction VARCHAR, modality VARCHAR,
+ message_count BIGINT, source_keys VARCHAR[]
+);
+CREATE OR REPLACE TABLE dendro_semantic_subagent_lineage (
+ harness VARCHAR, parent_session VARCHAR, child_count BIGINT, edge_count BIGINT,
+ started_count BIGINT, finished_count BIGINT, failed_count BIGINT, unknown_count BIGINT,
+ child_sessions VARCHAR[], relations VARCHAR[], source_keys VARCHAR[]
+);
+CREATE OR REPLACE TABLE dendro_semantic_security_posture (
+ harness VARCHAR, kind VARCHAR, value VARCHAR, observation_count BIGINT,
+ session_count BIGINT, source_keys VARCHAR[]
+);
+CREATE OR REPLACE TABLE dendro_semantic_process_resources (
+ root_key VARCHAR, harness VARCHAR, attribution VARCHAR, rss_unit VARCHAR,
+ process_count BIGINT, max_rss_bytes BIGINT, sample_count BIGINT, source_keys VARCHAR[]
+);

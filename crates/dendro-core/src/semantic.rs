@@ -9,11 +9,15 @@ use std::{
     path::{Component, Path},
 };
 
-pub const VIEWS: [&str; 4] = [
+pub const VIEWS: [&str; 8] = [
     "v_seat_idle_ranking",
     "v_handoff_rework_analysis",
     "v_mission_token_burn",
     "v_executive_governance",
+    "v_message_mix",
+    "v_subagent_lineage",
+    "v_security_posture",
+    "v_process_resources",
 ];
 // Fixed SQL: identifiers and expressions never come from a conversational request.
 const BASE_SIGNATURE: &str = "SELECT kind, count(*) n, CAST(bit_xor(h) AS VARCHAR) digest FROM (
@@ -31,7 +35,7 @@ SELECT 'skill_facts' kind, hash(t) h FROM skill_facts t UNION ALL
 SELECT 'destination_snapshots' kind, hash(t) h FROM destination_snapshots t UNION ALL
 SELECT 'source_files' kind, hash(t) h FROM source_files t) GROUP BY kind";
 
-const OPTIONAL_SIGNATURES: [(&str, &str); 3] = [
+const OPTIONAL_SIGNATURES: [(&str, &str); 8] = [
     (
         "file_source_baselines",
         "SELECT count(*) n, CAST(bit_xor(hash(t)) AS VARCHAR) digest FROM file_source_baselines t HAVING count(*) > 0",
@@ -43,6 +47,26 @@ const OPTIONAL_SIGNATURES: [(&str, &str); 3] = [
     (
         "mutable_source_disclosures",
         "SELECT count(*) n, CAST(bit_xor(hash(t)) AS VARCHAR) digest FROM mutable_source_disclosures t HAVING count(*) > 0",
+    ),
+    (
+        "message_facts",
+        "SELECT count(*) n, CAST(bit_xor(hash(t)) AS VARCHAR) digest FROM message_facts t HAVING count(*) > 0",
+    ),
+    (
+        "process_identities",
+        "SELECT count(*) n, CAST(bit_xor(hash(t)) AS VARCHAR) digest FROM process_identities t HAVING count(*) > 0",
+    ),
+    (
+        "process_samples",
+        "SELECT count(*) n, CAST(bit_xor(hash(t)) AS VARCHAR) digest FROM process_samples t HAVING count(*) > 0",
+    ),
+    (
+        "session_edges",
+        "SELECT count(*) n, CAST(bit_xor(hash(t)) AS VARCHAR) digest FROM session_edges t HAVING count(*) > 0",
+    ),
+    (
+        "security_facts",
+        "SELECT count(*) n, CAST(bit_xor(hash(t)) AS VARCHAR) digest FROM security_facts t HAVING count(*) > 0",
     ),
 ];
 
@@ -372,9 +396,185 @@ fn materialize(store: &AnalyticsStore, report: &Value, sig: &str) -> Result<()> 
     c.execute("INSERT INTO dendro_semantic_executive VALUES (?, CAST(CAST(? AS JSON) AS VARCHAR[]), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",params![p.to_string(),serde_json::to_string(&keys)?,p["m1_yield"].to_string(),p["m1_by_seat"].to_string(),p["m2_return_rate"].to_string(),p["m3_rework_chains"].to_string(),p["token_categories"].to_string(),p["link_rates"].to_string(),p["fleet_concurrency"].to_string(),p["watchdog_recovery"].to_string(),p["four_eyes_independence"].to_string(),p["context_compactions"].to_string(),p["cross_slice_cache_bleed"].to_string(),p["task_intake_overhead"].to_string(),p["issue_lineage"].to_string(),p["handoff_friction"]["vortex_loops"].to_string(),p["ring_boundaries"].to_string()])?;
     stage("executive_row", started);
     let started = std::time::Instant::now();
+    materialize_optional_fact_tables(c)?;
+    stage("optional_fact_rows", started);
+    let started = std::time::Instant::now();
     c.execute_batch("UPDATE dendro_semantic_state SET dirty = FALSE WHERE id = 1; CREATE OR REPLACE VIEW dendro_semantic_guard AS SELECT CASE WHEN NOT dirty THEN true ELSE error('Insufficient data: semantic snapshot is stale; refresh required') END AS fresh FROM dendro_semantic_state WHERE id = 1")?;
     c.execute_batch(include_str!("semantic_views.sql"))?;
     stage("group_and_views", started);
+    Ok(())
+}
+
+fn table_exists(c: &duckdb::Connection, table: &str) -> Result<bool> {
+    let exists: i64 = c.query_row(
+        "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'main' AND table_name = ?",
+        params![table],
+        |r| r.get(0),
+    )?;
+    Ok(exists > 0)
+}
+
+fn column_exists(c: &duckdb::Connection, table: &str, column: &str) -> Result<bool> {
+    let exists: i64 = c.query_row(
+        "SELECT count(*) FROM information_schema.columns WHERE table_schema = 'main' AND table_name = ? AND column_name = ?",
+        params![table, column],
+        |r| r.get(0),
+    )?;
+    Ok(exists > 0)
+}
+
+fn materialize_optional_fact_tables(c: &duckdb::Connection) -> Result<()> {
+    if table_exists(c, "message_facts")? {
+        c.execute_batch(
+            "INSERT INTO dendro_semantic_message_mix
+             SELECT harness,
+                    native_session,
+                    role,
+                    direction,
+                    modalities AS modality,
+                    COUNT(*)::BIGINT AS message_count,
+                    list(source_key ORDER BY source_key) AS source_keys
+             FROM message_facts
+             GROUP BY harness, native_session, role, direction, modalities
+             ORDER BY harness, native_session NULLS LAST, role, direction, modality",
+        )?;
+    }
+    if table_exists(c, "session_edges")? {
+        c.execute_batch(
+            "INSERT INTO dendro_semantic_subagent_lineage
+             SELECT harness,
+                    parent_session,
+                    COUNT(DISTINCT CASE WHEN child_session <> '' THEN child_session END)::BIGINT AS child_count,
+                    COUNT(*)::BIGINT AS edge_count,
+                    (COUNT(*) FILTER (WHERE status = 'started'))::BIGINT AS started_count,
+                    (COUNT(*) FILTER (WHERE status = 'finished'))::BIGINT AS finished_count,
+                    (COUNT(*) FILTER (WHERE status = 'failed'))::BIGINT AS failed_count,
+                    (COUNT(*) FILTER (WHERE status = 'unknown'))::BIGINT AS unknown_count,
+                    COALESCE(list(DISTINCT child_session ORDER BY child_session) FILTER (WHERE child_session <> ''), []) AS child_sessions,
+                    list(DISTINCT relation ORDER BY relation) AS relations,
+                    list(source_key ORDER BY source_key) AS source_keys
+             FROM session_edges
+             GROUP BY harness, parent_session
+             ORDER BY harness, parent_session",
+        )?;
+    }
+    if table_exists(c, "security_facts")? {
+        c.execute_batch(
+            "INSERT INTO dendro_semantic_security_posture
+             SELECT harness,
+                    kind,
+                    value,
+                    COUNT(*)::BIGINT AS observation_count,
+                    COUNT(DISTINCT native_session)::BIGINT AS session_count,
+                    list(source_key ORDER BY source_key) AS source_keys
+             FROM security_facts
+             WHERE (kind = 'permission_mode' AND value IN ('default', 'auto', 'acceptEdits', 'plan', 'bypassPermissions', 'other'))
+                OR (kind = 'permission_decision' AND value IN ('allow', 'deny', 'other'))
+                OR (kind = 'sandbox_policy' AND value IN ('danger-full-access', 'read-only', 'workspace-write', 'true', 'false', 'other'))
+                OR (kind = 'approval_policy' AND value IN ('never', 'on-request', 'other'))
+                OR (kind = 'permission_profile' AND value = 'other')
+                OR (kind = 'approved_prefix_count' AND regexp_full_match(value, '[0-9]+'))
+                OR (kind = 'sandbox_override_requested' AND value = 'true')
+                OR (kind = 'dangerous_command' AND value IN (
+                    'recursive_delete', 'pipe_to_shell', 'force_push', 'force_push_with_lease',
+                    'chmod_world_writable', 'sudo', 'disk_write_device', 'credential_file_access',
+                    'network_exfil_pattern'
+                ))
+             GROUP BY harness, kind, value
+             ORDER BY harness, kind, value",
+        )?;
+    }
+    if table_exists(c, "process_identities")? {
+        let has_attribution = column_exists(c, "process_identities", "attribution")?;
+        let has_samples = table_exists(c, "process_samples")?;
+        let sql = match (has_attribution, has_samples) {
+            (true, true) => {
+                "INSERT INTO dendro_semantic_process_resources
+                 WITH trees AS (
+                     SELECT root_key,
+                            COALESCE(MAX(harness) FILTER (WHERE identity_key = root_key AND harness <> ''), MAX(harness) FILTER (WHERE harness <> '')) AS harness,
+                            COALESCE(MAX(attribution) FILTER (WHERE identity_key = root_key AND attribution IN ('launched', 'discovered')), MAX(attribution) FILTER (WHERE attribution IN ('launched', 'discovered'))) AS attribution,
+                            COUNT(DISTINCT identity_key)::BIGINT AS process_count,
+                            list(DISTINCT identity_key ORDER BY identity_key) AS source_keys
+                     FROM process_identities
+                     GROUP BY root_key
+                 ),
+                 samples_by_unit AS (
+                     SELECT pi.root_key,
+                            ps.rss_unit,
+                            COUNT(*)::BIGINT AS sample_count,
+                            CASE WHEN COUNT(*) = COUNT(ps.rss_bytes) THEN MAX(ps.rss_bytes)::BIGINT ELSE NULL END AS max_rss_bytes
+                     FROM process_identities pi
+                     JOIN process_samples ps ON ps.identity_key = pi.identity_key
+                     GROUP BY pi.root_key, ps.rss_unit
+                 )
+                 SELECT t.root_key, t.harness, t.attribution, s.rss_unit,
+                        t.process_count, s.max_rss_bytes,
+                        COALESCE(s.sample_count, 0)::BIGINT AS sample_count,
+                        t.source_keys
+                 FROM trees t
+                 LEFT JOIN samples_by_unit s ON s.root_key = t.root_key
+                 ORDER BY t.root_key, s.rss_unit NULLS LAST"
+            }
+            (false, true) => {
+                "INSERT INTO dendro_semantic_process_resources
+                 WITH trees AS (
+                     SELECT root_key,
+                            COALESCE(MAX(harness) FILTER (WHERE identity_key = root_key AND harness <> ''), MAX(harness) FILTER (WHERE harness <> '')) AS harness,
+                            CAST(NULL AS VARCHAR) AS attribution,
+                            COUNT(DISTINCT identity_key)::BIGINT AS process_count,
+                            list(DISTINCT identity_key ORDER BY identity_key) AS source_keys
+                     FROM process_identities
+                     GROUP BY root_key
+                 ),
+                 samples_by_unit AS (
+                     SELECT pi.root_key,
+                            ps.rss_unit,
+                            COUNT(*)::BIGINT AS sample_count,
+                            CASE WHEN COUNT(*) = COUNT(ps.rss_bytes) THEN MAX(ps.rss_bytes)::BIGINT ELSE NULL END AS max_rss_bytes
+                     FROM process_identities pi
+                     JOIN process_samples ps ON ps.identity_key = pi.identity_key
+                     GROUP BY pi.root_key, ps.rss_unit
+                 )
+                 SELECT t.root_key, t.harness, t.attribution, s.rss_unit,
+                        t.process_count, s.max_rss_bytes,
+                        COALESCE(s.sample_count, 0)::BIGINT AS sample_count,
+                        t.source_keys
+                 FROM trees t
+                 LEFT JOIN samples_by_unit s ON s.root_key = t.root_key
+                 ORDER BY t.root_key, s.rss_unit NULLS LAST"
+            }
+            (true, false) => {
+                "INSERT INTO dendro_semantic_process_resources
+                 SELECT root_key,
+                        COALESCE(MAX(harness) FILTER (WHERE identity_key = root_key AND harness <> ''), MAX(harness) FILTER (WHERE harness <> '')) AS harness,
+                        COALESCE(MAX(attribution) FILTER (WHERE identity_key = root_key AND attribution IN ('launched', 'discovered')), MAX(attribution) FILTER (WHERE attribution IN ('launched', 'discovered'))) AS attribution,
+                        CAST(NULL AS VARCHAR) AS rss_unit,
+                        COUNT(DISTINCT identity_key)::BIGINT AS process_count,
+                        CAST(NULL AS BIGINT) AS max_rss_bytes,
+                        0::BIGINT AS sample_count,
+                        list(DISTINCT identity_key ORDER BY identity_key) AS source_keys
+                 FROM process_identities
+                 GROUP BY root_key
+                 ORDER BY root_key"
+            }
+            (false, false) => {
+                "INSERT INTO dendro_semantic_process_resources
+                 SELECT root_key,
+                        COALESCE(MAX(harness) FILTER (WHERE identity_key = root_key AND harness <> ''), MAX(harness) FILTER (WHERE harness <> '')) AS harness,
+                        CAST(NULL AS VARCHAR) AS attribution,
+                        CAST(NULL AS VARCHAR) AS rss_unit,
+                        COUNT(DISTINCT identity_key)::BIGINT AS process_count,
+                        CAST(NULL AS BIGINT) AS max_rss_bytes,
+                        0::BIGINT AS sample_count,
+                        list(DISTINCT identity_key ORDER BY identity_key) AS source_keys
+                 FROM process_identities
+                 GROUP BY root_key
+                 ORDER BY root_key"
+            }
+        };
+        c.execute_batch(sql)?;
+    }
     Ok(())
 }
 
@@ -1375,5 +1575,601 @@ mod tests {
         assert!(refused["supported_examples"].as_array().is_some());
         let explain = answer_from_report(&report, "explain rework", None);
         assert_eq!(explain["status"], "insufficient_data");
+    }
+
+    fn minimal_report() -> Value {
+        json!({
+            "metric": "decisions",
+            "definition_version": "acceptance-r1-a1",
+            "payload": {
+                "rig": "test-rig",
+                "from": "2026-10-01T00:00:00Z",
+                "to": "2026-10-02T00:00:00Z",
+                "activity": [],
+                "activity_events": [],
+                "demand_events": [],
+                "m1_by_seat": [],
+                "handoff_friction": {"pairs": [], "vortex_loops": []},
+                "trace_inputs": [],
+                "issue_lineage": {"records": []},
+                "m1_yield": null,
+                "m2_return_rate": null,
+                "m3_rework_chains": 0,
+                "token_categories": {},
+                "link_rates": [],
+                "fleet_concurrency": {},
+                "watchdog_recovery": {},
+                "four_eyes_independence": {},
+                "context_compactions": {},
+                "cross_slice_cache_bleed": {},
+                "task_intake_overhead": {},
+                "ring_boundaries": {}
+            }
+        })
+    }
+
+    #[test]
+    fn new_fact_views_build_on_empty_store_and_when_lazy_tables_are_absent() -> Result<()> {
+        let store = AnalyticsStore::open_in_memory("empty-views")?;
+        let report = minimal_report();
+        let c = store.connection();
+        materialize(&store, &report, &signature(&store)?)?;
+        for (view, query) in [
+            (
+                "v_seat_idle_ranking",
+                "SELECT count(*) FROM v_seat_idle_ranking",
+            ),
+            (
+                "v_handoff_rework_analysis",
+                "SELECT count(*) FROM v_handoff_rework_analysis",
+            ),
+            (
+                "v_mission_token_burn",
+                "SELECT count(*) FROM v_mission_token_burn",
+            ),
+            (
+                "v_executive_governance",
+                "SELECT count(*) FROM v_executive_governance",
+            ),
+            ("v_message_mix", "SELECT count(*) FROM v_message_mix"),
+            (
+                "v_subagent_lineage",
+                "SELECT count(*) FROM v_subagent_lineage",
+            ),
+            (
+                "v_security_posture",
+                "SELECT count(*) FROM v_security_posture",
+            ),
+            (
+                "v_process_resources",
+                "SELECT count(*) FROM v_process_resources",
+            ),
+        ] {
+            let count: i64 = c.query_row(query, [], |r| r.get(0))?;
+            if view != "v_executive_governance" {
+                assert_eq!(count, 0, "expected empty view {view}");
+            } else {
+                assert_eq!(count, 1);
+            }
+        }
+        c.execute_batch(
+            "DROP TABLE message_facts;
+             DROP TABLE session_edges;
+             DROP TABLE security_facts;
+             DROP TABLE process_samples;
+             DROP TABLE process_identities;",
+        )?;
+        let absent_sig = signature(&store)?;
+        assert!(absent_sig.contains("message_facts:absent"));
+        assert!(absent_sig.contains("session_edges:absent"));
+        assert!(absent_sig.contains("security_facts:absent"));
+        assert!(absent_sig.contains("process_identities:absent"));
+        assert!(absent_sig.contains("process_samples:absent"));
+        materialize(&store, &report, &absent_sig)?;
+        for (view, query) in [
+            ("v_message_mix", "SELECT count(*) FROM v_message_mix"),
+            (
+                "v_subagent_lineage",
+                "SELECT count(*) FROM v_subagent_lineage",
+            ),
+            (
+                "v_security_posture",
+                "SELECT count(*) FROM v_security_posture",
+            ),
+            (
+                "v_process_resources",
+                "SELECT count(*) FROM v_process_resources",
+            ),
+        ] {
+            let count: i64 = c.query_row(query, [], |r| r.get(0))?;
+            assert_eq!(
+                count, 0,
+                "expected 0 rows when lazy table is absent for {view}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    #[allow(clippy::type_complexity)]
+    fn new_fact_views_populate_exact_expected_rows_and_preserve_unknown_and_stale_states(
+    ) -> Result<()> {
+        use crate::domain_v1::{
+            CaptureMethod, Direction, EnvironmentKind, Grain, MessageRole, Modality, Unit,
+            VisibilityLimit,
+        };
+        use crate::facts::{
+            MessageFact, ProcessIdentityFact, ProcessSampleFact, ReaderState, SecurityFact,
+            SessionEdgeFact,
+        };
+        use crate::storage::FileBaselineAttempt;
+
+        let store = AnalyticsStore::open_in_memory("populated-views")?;
+        let ts = chrono::DateTime::parse_from_rfc3339("2026-10-01T00:05:00Z")?
+            .with_timezone(&chrono::Utc);
+
+        store.commit_file_batch_observed_messages(
+            "src-msg",
+            "claude",
+            "session.jsonl",
+            1,
+            128,
+            &"a".repeat(64),
+            None,
+            &[],
+            &[],
+            &[
+                MessageFact {
+                    source_key: "msg:1".into(),
+                    harness: "claude".into(),
+                    native_session: Some("sess-1".into()),
+                    ts: Some(ts),
+                    seq: 1,
+                    role: MessageRole::User,
+                    direction: Direction::Inbound,
+                    modalities: BTreeSet::from([Modality::Text]),
+                    grain: Grain::Message,
+                    generation: 1,
+                },
+                MessageFact {
+                    source_key: "msg:2".into(),
+                    harness: "claude".into(),
+                    native_session: Some("sess-1".into()),
+                    ts: Some(ts),
+                    seq: 2,
+                    role: MessageRole::User,
+                    direction: Direction::Inbound,
+                    modalities: BTreeSet::from([Modality::Text]),
+                    grain: Grain::Message,
+                    generation: 1,
+                },
+                MessageFact {
+                    source_key: "msg:3".into(),
+                    harness: "claude".into(),
+                    native_session: Some("sess-1".into()),
+                    ts: Some(ts),
+                    seq: 3,
+                    role: MessageRole::Assistant,
+                    direction: Direction::Outbound,
+                    modalities: BTreeSet::from([Modality::Text, Modality::Structured]),
+                    grain: Grain::Message,
+                    generation: 1,
+                },
+            ],
+            &[],
+            &ReaderState {
+                complete: true,
+                native_session: Some("sess-1".into()),
+            },
+            &FileBaselineAttempt {
+                attempted_at: "2026-10-01T00:05:00Z".into(),
+                metadata: None,
+            },
+        )?;
+
+        store.commit_session_edges(&[
+            SessionEdgeFact {
+                source_key: "edge:1".into(),
+                source_id: "src-edge".into(),
+                harness: "claude".into(),
+                parent_session: "root-a".into(),
+                child_session: "child-1".into(),
+                relation: "spawn".into(),
+                status: "finished".into(),
+                observed_at: Some(ts),
+                evidence_kind: "explicit".into(),
+                generation: 1,
+            },
+            SessionEdgeFact {
+                source_key: "edge:2".into(),
+                source_id: "src-edge".into(),
+                harness: "claude".into(),
+                parent_session: "root-a".into(),
+                child_session: "child-2".into(),
+                relation: "delegate_existing".into(),
+                status: "failed".into(),
+                observed_at: None,
+                evidence_kind: "explicit".into(),
+                generation: 1,
+            },
+            SessionEdgeFact {
+                source_key: "edge:3".into(),
+                source_id: "src-edge".into(),
+                harness: "codex".into(),
+                parent_session: "root-b".into(),
+                child_session: "child-3".into(),
+                relation: "spawn".into(),
+                status: "started".into(),
+                observed_at: Some(ts),
+                evidence_kind: "explicit".into(),
+                generation: 1,
+            },
+        ])?;
+
+        store.commit_security_facts(&[
+            SecurityFact {
+                source_key: "sec:1".into(),
+                source_id: "src-sec".into(),
+                harness: "claude".into(),
+                native_session: Some("sess-1".into()),
+                ts: Some(ts),
+                kind: "permission_mode".into(),
+                value: "auto".into(),
+                source_field: "permissionMode".into(),
+                generation: 1,
+            },
+            SecurityFact {
+                source_key: "sec:2".into(),
+                source_id: "src-sec".into(),
+                harness: "claude".into(),
+                native_session: Some("sess-2".into()),
+                ts: Some(ts),
+                kind: "permission_mode".into(),
+                value: "auto".into(),
+                source_field: "permissionMode".into(),
+                generation: 1,
+            },
+            SecurityFact {
+                source_key: "sec:3".into(),
+                source_id: "src-sec".into(),
+                harness: "codex".into(),
+                native_session: Some("sess-3".into()),
+                ts: None,
+                kind: "dangerous_command".into(),
+                value: "force_push".into(),
+                source_field: "command".into(),
+                generation: 1,
+            },
+        ])?;
+        // Direct out-of-vocabulary row must be excluded by closed-vocabulary filter.
+        store.connection().execute(
+            "INSERT INTO security_facts VALUES ('sec:bad', 'src-sec', 'claude', 'sess-1', NULL, 'dangerous_command', 'raw_command_text', 'command', 1)",
+            [],
+        )?;
+
+        store.commit_process_samples(
+            &[
+                ProcessIdentityFact {
+                    identity_key: "proc-root-1".into(),
+                    root_key: "proc-root-1".into(),
+                    pid: 100,
+                    parent_pid: Some(1),
+                    platform: "linux".into(),
+                    start_time_unix_s: 1_700_000_000,
+                    exe_name: "claude".into(),
+                    harness: Some("claude".into()),
+                    cwd_fingerprint: None,
+                    session_link: Some("sess-1".into()),
+                    environment_kind: EnvironmentKind::Host,
+                    isolation_hint: "none".into(),
+                    first_seen: ts,
+                    last_seen: ts,
+                    ended_at: None,
+                    visibility_limits: BTreeSet::new(),
+                    attribution: Some("launched".into()),
+                },
+                ProcessIdentityFact {
+                    identity_key: "proc-child-1".into(),
+                    root_key: "proc-root-1".into(),
+                    pid: 101,
+                    parent_pid: Some(100),
+                    platform: "linux".into(),
+                    start_time_unix_s: 1_700_000_001,
+                    exe_name: "cargo".into(),
+                    harness: None,
+                    cwd_fingerprint: None,
+                    session_link: None,
+                    environment_kind: EnvironmentKind::Host,
+                    isolation_hint: "none".into(),
+                    first_seen: ts,
+                    last_seen: ts,
+                    ended_at: None,
+                    visibility_limits: BTreeSet::new(),
+                    attribution: None,
+                },
+                ProcessIdentityFact {
+                    identity_key: "proc-root-unreadable".into(),
+                    root_key: "proc-root-unreadable".into(),
+                    pid: 200,
+                    parent_pid: Some(1),
+                    platform: "windows".into(),
+                    start_time_unix_s: 1_700_000_002,
+                    exe_name: "codex".into(),
+                    harness: Some("codex".into()),
+                    cwd_fingerprint: None,
+                    session_link: None,
+                    environment_kind: EnvironmentKind::Host,
+                    isolation_hint: "none".into(),
+                    first_seen: ts,
+                    last_seen: ts,
+                    ended_at: None,
+                    visibility_limits: BTreeSet::from([VisibilityLimit::PermissionDenied]),
+                    attribution: Some("discovered".into()),
+                },
+            ],
+            &[
+                ProcessSampleFact {
+                    watch_id: "w1".into(),
+                    identity_key: "proc-root-1".into(),
+                    seq: 1,
+                    ts,
+                    cpu_time_us: Some(1000),
+                    rss_bytes: Some(4096),
+                    rss_unit: Unit::LinuxRssBytes,
+                    disk_read_bytes: Some(0),
+                    disk_write_bytes: Some(0),
+                    capture_method: CaptureMethod::Procfs,
+                    visibility_limits: BTreeSet::new(),
+                },
+                ProcessSampleFact {
+                    watch_id: "w1".into(),
+                    identity_key: "proc-child-1".into(),
+                    seq: 2,
+                    ts,
+                    cpu_time_us: Some(500),
+                    rss_bytes: Some(8192),
+                    rss_unit: Unit::LinuxRssBytes,
+                    disk_read_bytes: Some(0),
+                    disk_write_bytes: Some(0),
+                    capture_method: CaptureMethod::Procfs,
+                    visibility_limits: BTreeSet::new(),
+                },
+                ProcessSampleFact {
+                    watch_id: "w1".into(),
+                    identity_key: "proc-root-unreadable".into(),
+                    seq: 1,
+                    ts,
+                    cpu_time_us: None,
+                    rss_bytes: None,
+                    rss_unit: Unit::WindowsWorkingSetBytes,
+                    disk_read_bytes: None,
+                    disk_write_bytes: None,
+                    capture_method: CaptureMethod::WindowsProcessApi,
+                    visibility_limits: BTreeSet::from([VisibilityLimit::PermissionDenied]),
+                },
+            ],
+        )?;
+
+        let report = minimal_report();
+        let before_sig = signature(&store)?;
+        let c = store.connection();
+        materialize(&store, &report, &before_sig)?;
+
+        let mut stmt = c.prepare(
+            "SELECT harness, native_session, role, direction, modality, message_count, rig, window_from, window_to
+             FROM v_message_mix ORDER BY modality",
+        )?;
+        let msg_rows: Vec<(
+            String,
+            Option<String>,
+            String,
+            String,
+            String,
+            i64,
+            Option<String>,
+            String,
+            String,
+        )> = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(4)?,
+                    r.get(5)?,
+                    r.get(6)?,
+                    r.get(7)?,
+                    r.get(8)?,
+                ))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        assert_eq!(
+            msg_rows,
+            vec![
+                (
+                    "claude".into(),
+                    Some("sess-1".into()),
+                    "user".into(),
+                    "inbound".into(),
+                    "text".into(),
+                    2,
+                    Some("test-rig".into()),
+                    "2026-10-01T00:00:00Z".into(),
+                    "2026-10-02T00:00:00Z".into(),
+                ),
+                (
+                    "claude".into(),
+                    Some("sess-1".into()),
+                    "assistant".into(),
+                    "outbound".into(),
+                    "text,structured".into(),
+                    1,
+                    Some("test-rig".into()),
+                    "2026-10-01T00:00:00Z".into(),
+                    "2026-10-02T00:00:00Z".into(),
+                ),
+            ]
+        );
+
+        let mut stmt = c.prepare(
+            "SELECT harness, parent_session, child_count, edge_count, started_count, finished_count, failed_count, unknown_count
+             FROM v_subagent_lineage ORDER BY harness, parent_session",
+        )?;
+        let lineage_rows: Vec<(String, String, i64, i64, i64, i64, i64, i64)> = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(4)?,
+                    r.get(5)?,
+                    r.get(6)?,
+                    r.get(7)?,
+                ))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        assert_eq!(
+            lineage_rows,
+            vec![
+                ("claude".into(), "root-a".into(), 2, 2, 0, 1, 1, 0),
+                ("codex".into(), "root-b".into(), 1, 1, 1, 0, 0, 0),
+            ]
+        );
+
+        let mut stmt = c.prepare(
+            "SELECT harness, kind, value, observation_count, session_count
+             FROM v_security_posture ORDER BY harness, kind, value",
+        )?;
+        let sec_rows: Vec<(String, String, String, i64, i64)> = stmt
+            .query_map([], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        assert_eq!(
+            sec_rows,
+            vec![
+                (
+                    "claude".into(),
+                    "permission_mode".into(),
+                    "auto".into(),
+                    2,
+                    2
+                ),
+                (
+                    "codex".into(),
+                    "dangerous_command".into(),
+                    "force_push".into(),
+                    1,
+                    1
+                ),
+            ]
+        );
+
+        let mut stmt = c.prepare(
+            "SELECT root_key, harness, attribution, rss_unit, process_count, max_rss_bytes, sample_count
+             FROM v_process_resources ORDER BY root_key, rss_unit",
+        )?;
+        let proc_rows: Vec<(
+            String,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            i64,
+            Option<i64>,
+            i64,
+        )> = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(4)?,
+                    r.get(5)?,
+                    r.get(6)?,
+                ))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        assert_eq!(
+            proc_rows,
+            vec![
+                (
+                    "proc-root-1".into(),
+                    Some("claude".into()),
+                    Some("launched".into()),
+                    Some("linux_rss_bytes".into()),
+                    2,
+                    Some(8192),
+                    2,
+                ),
+                (
+                    "proc-root-unreadable".into(),
+                    Some("codex".into()),
+                    Some("discovered".into()),
+                    Some("windows_working_set_bytes".into()),
+                    1,
+                    None,
+                    1,
+                ),
+            ]
+        );
+        let cpu_cols: i64 = c.query_row(
+            "SELECT count(*) FROM information_schema.columns WHERE table_name = 'v_process_resources' AND column_name LIKE '%cpu%'",
+            [],
+            |r| r.get(0),
+        )?;
+        assert_eq!(
+            cpu_cols, 0,
+            "CPU deltas must not be computed or exposed in v_process_resources"
+        );
+
+        // Error state: dirty semantic guard refuses reads on all four new views.
+        c.execute_batch("UPDATE dendro_semantic_state SET dirty = TRUE WHERE id = 1")?;
+        for (view, query) in [
+            ("v_message_mix", "SELECT count(*) FROM v_message_mix"),
+            (
+                "v_subagent_lineage",
+                "SELECT count(*) FROM v_subagent_lineage",
+            ),
+            (
+                "v_security_posture",
+                "SELECT count(*) FROM v_security_posture",
+            ),
+            (
+                "v_process_resources",
+                "SELECT count(*) FROM v_process_resources",
+            ),
+        ] {
+            let err = c.query_row(query, [], |r| r.get::<_, i64>(0)).unwrap_err();
+            assert!(
+                err.to_string().contains("semantic snapshot is stale"),
+                "expected stale guard error for {view}, got {err}"
+            );
+        }
+
+        // Signature changes when lazy tables are modified.
+        store.commit_security_facts(&[SecurityFact {
+            source_key: "sec:4".into(),
+            source_id: "src-sec".into(),
+            harness: "claude".into(),
+            native_session: Some("sess-4".into()),
+            ts: Some(ts),
+            kind: "approval_policy".into(),
+            value: "never".into(),
+            source_field: "payload.approval_policy".into(),
+            generation: 1,
+        }])?;
+        assert_ne!(signature(&store)?, before_sig);
+
+        let models_yaml = include_str!("../../../templates/nao/semantic_models.yaml");
+        for view in VIEWS {
+            assert!(
+                models_yaml.contains(view),
+                "missing {view} in semantic_models.yaml"
+            );
+        }
+        Ok(())
     }
 }
