@@ -498,9 +498,16 @@ mod tests {
             |_, _, _| panic!("ingest must not run before publication admission"),
         )
         .unwrap_err();
+        // Which check fires first depends on the host's %TEMP% ancestors: an
+        // untrusted ancestor, or (trusted ancestors, e.g. hosted CI) the absent parent.
         #[cfg(windows)]
         assert!(
-            error.to_string().contains("untrusted_ancestor_replacement"),
+            error.to_string().contains("untrusted_ancestor_replacement")
+                || error.chain().any(|cause| matches!(
+                    cause.downcast_ref::<crate::platform_v1::PlatformError>(),
+                    Some(crate::platform_v1::PlatformError::Io(io))
+                        if io.kind() == std::io::ErrorKind::NotFound
+                )),
             "{error}"
         );
         #[cfg(target_os = "linux")]
