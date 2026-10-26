@@ -11,20 +11,44 @@ refresh:
 models:
   - name: seat_idle_ranking
     table: v_seat_idle_ranking
+    description: Canonical per-seat activity durations and M1 yield from the decisions report payload (activity and m1_by_seat).
     dimensions: [seat_id, rig, window_from, window_to, definition_version]
     columns: [observed_secs, active_secs, idle_with_work_secs, idle_between_work_secs, waiting_external_secs, unknown_secs, unparked_container_secs, leaf_stall_secs, ceremony_ratio, tool_categories, m1, source_keys, row_json]
   - name: handoff_rework_analysis
     table: v_handoff_rework_analysis
+    description: Canonical seat-pair handoff counts, rework returns, and wait/execution turnaround medians from the decisions report payload (handoff_friction.pairs).
     dimensions: [from_seat, to_seat, rig, window_from, window_to, ring_boundary]
     columns: [handoffs, rework_returns, return_rate, wait_median_ms, exec_turnaround_median_ms, source_keys, row_json]
   - name: mission_token_burn
     table: v_mission_token_burn
+    description: Canonical four-category token totals grouped by seat, model, effort, attribution bucket, and mission/issue/phase arrays from trace_inputs and issue_lineage.
     dimensions: [seat_id, model, effort, attribution_bucket, missions, issues, phases, rig, window_from, window_to]
     columns: [input_uncached, output, cache_read, cache_write, source_keys]
   - name: executive_governance
     table: v_executive_governance
+    description: Canonical fleet-level governance scorecard and metrics projected directly from the decisions report payload.
     dimensions: [rig, window_from, window_to, definition_version]
     columns: [m1_yield, m1_by_seat, m2_return_rate, m3_rework_chains, token_categories, link_rates, fleet_concurrency, watchdog_recovery, four_eyes_independence, context_compactions, cross_slice_cache_bleed, task_intake_overhead, issue_lineage, vortex_loops, ring_boundaries, source_keys, row_json]
+  - name: message_mix
+    table: v_message_mix
+    description: Canonical per-harness and per-session message counts by role, direction, and modality from message_facts (metadata only; never message text). ALL-TIME counts — window_from/window_to label the snapshot but do not filter these rows.
+    dimensions: [harness, native_session, role, direction, modality, rig, window_from, window_to, definition_version]
+    columns: [message_count, source_keys]
+  - name: subagent_lineage
+    table: v_subagent_lineage
+    description: Canonical per-parent-session child counts and edge status counts from explicit session_edges; recursive depth, cycle, and unresolved-parent verdicts come from canonical insight I09 (work.lineage_shape). ALL-TIME counts — window_from/window_to label the snapshot but do not filter these rows; I09 is windowed.
+    dimensions: [harness, parent_session, rig, window_from, window_to, definition_version]
+    columns: [child_count, edge_count, started_count, finished_count, failed_count, unknown_count, child_sessions, relations, source_keys]
+  - name: security_posture
+    table: v_security_posture
+    description: Canonical security observation counts by harness, kind, and closed-vocabulary value from security_facts (explicit source-field observations only, never command text or authority verdicts). ALL-TIME counts — window_from/window_to label the snapshot but do not filter these rows.
+    dimensions: [harness, kind, value, rig, window_from, window_to, definition_version]
+    columns: [observation_count, session_count, source_keys]
+  - name: process_resources
+    table: v_process_resources
+    description: Canonical per-root_key and per-harness process count, max RSS per rss_unit, sample count, and attribution from process_identities and process_samples; monotonic CPU and disk deltas come from canonical insight I14 (environment.resources) and are never recomputed in SQL. ALL-TIME counts — window_from/window_to label the snapshot but do not filter these rows; I14 is windowed.
+    dimensions: [root_key, harness, attribution, rss_unit, rig, window_from, window_to, definition_version]
+    columns: [process_count, max_rss_bytes, sample_count, source_keys]
 prompts:
   file: prompts.md
   patterns: [Compare, Rank, Explain, Verify, Trace, HonestLimits]

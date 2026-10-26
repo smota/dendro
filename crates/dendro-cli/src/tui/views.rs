@@ -1,8 +1,9 @@
-//! Screen-by-screen rendering for the 6 TUI tabs and 4 Porter-Duff RGBA translucent modals.
+//! Screen-by-screen rendering for the TUI tabs and 4 Porter-Duff RGBA translucent modals.
 use crate::tui::{
     compositor::{apply_rgba_backdrop, sanitize_tui_str, Rgba, Theme},
-    AppModal, AppState, HeatmapMetric, SeatGroupMode, SeatViewMode, TabId,
+    AppModal, AppState, HeatmapMetric, InsightDepth, SeatGroupMode, SeatViewMode, TabId,
 };
+use dendro_core::insight_v1::{InsightDomain, InsightResult, InsightStatus, MeasureValue};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
@@ -17,6 +18,28 @@ const BRAILLE_SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "
 
 fn rows(v: &Value) -> impl Iterator<Item = &Value> {
     v.as_array().into_iter().flatten()
+}
+
+/// Renders a cost object already stored on the report. Null usd stays unmarked.
+fn fmt_report_cost(label: &str, value: &Value) -> String {
+    let status = match value["status"].as_str() {
+        Some("complete") => "complete",
+        Some("partial") => "partial",
+        Some("unknown") => "unknown",
+        Some(other) => return format!("{label}: {}", sanitize_tui_str(other)),
+        None => "unknown",
+    };
+    if status == "complete" {
+        match value["usd"].as_f64().filter(|amount| amount.is_finite()) {
+            Some(amount) => format!("{label}: complete {amount} usd"),
+            None => format!("{label}: complete unavailable"),
+        }
+    } else {
+        match value["unknown_rows"].as_u64() {
+            Some(rows) => format!("{label}: {status} ({rows} unknown rows)"),
+            None => format!("{label}: {status}"),
+        }
+    }
 }
 
 fn fmt_num(v: &Value) -> String {
@@ -236,7 +259,9 @@ pub fn render_app(frame: &mut Frame, state: &mut AppState, theme: &Theme) {
     render_header(frame, chunks[0], state, theme);
     render_tabs(frame, chunks[1], state, theme);
 
-    if state.report.is_none() {
+    let insights_ready = state.active_tab == TabId::Insights
+        && (state.insights.is_some() || state.insights_error.is_some());
+    if state.report.is_none() && !insights_ready {
         render_skeleton_loading(frame, chunks[2], state, theme);
     } else {
         match state.active_tab {
@@ -246,6 +271,7 @@ pub fn render_app(frame: &mut Frame, state: &mut AppState, theme: &Theme) {
             TabId::Tokens => render_tokens_tab(frame, chunks[2], state, theme),
             TabId::Simulate => render_simulate_tab(frame, chunks[2], state, theme),
             TabId::Trace => render_trace_tab(frame, chunks[2], state, theme),
+            TabId::Insights => render_insights_tab(frame, chunks[2], state, theme),
         }
     }
 
@@ -317,6 +343,7 @@ fn render_tabs(frame: &mut Frame, area: Rect, state: &AppState, theme: &Theme) {
         "[4] Tokens & Cache",
         "[5] Topology Simulator",
         "[6] Trace & Spotlights",
+        "[7] Insights",
     ];
     let tabs = Tabs::new(titles.iter().copied().map(Line::from).collect::<Vec<_>>())
         .select(state.active_tab.index())
@@ -1212,6 +1239,16 @@ fn render_tokens_tab(frame: &mut Frame, area: Rect, state: &mut AppState, theme:
         " Context Compaction Events: {}",
         rows(&p["context_compactions"]["events"]).count()
     )));
+    right_lines.push(Line::from(""));
+    right_lines.push(Line::from(Span::styled(
+        "Cost (report values; unknown is not zero)",
+        theme.accent(),
+    )));
+    right_lines.push(Line::from(fmt_report_cost("Observed", &p["observed_cost"])));
+    right_lines.push(Line::from(fmt_report_cost(
+        "Estimated",
+        &p["estimated_cost"],
+    )));
 
     frame.render_widget(
         Paragraph::new(right_lines)
@@ -1640,6 +1677,278 @@ fn render_trace_tab(frame: &mut Frame, area: Rect, state: &AppState, theme: &The
     );
 }
 
+fn domain_name(domain: InsightDomain) -> &'static str {
+    match domain {
+        InsightDomain::Model => "model",
+        InsightDomain::Harness => "harness",
+        InsightDomain::Coordination => "coordination",
+        InsightDomain::Environment => "environment",
+        InsightDomain::Security => "security",
+    }
+}
+
+fn status_label(status: &InsightStatus) -> String {
+    match status {
+        InsightStatus::Computed => "computed".to_string(),
+        InsightStatus::Partial { reason } => {
+            format!("partial ({})", sanitize_tui_str(reason))
+        }
+        InsightStatus::Refused { reason } => {
+            format!("refused ({})", sanitize_tui_str(reason))
+        }
+    }
+}
+
+fn fmt_measure_value(value: Option<MeasureValue>) -> String {
+    match value {
+        Some(MeasureValue::Int(number)) => number.to_string(),
+        Some(MeasureValue::Float(number)) if number.is_finite() => number.to_string(),
+        _ => "unknown".to_string(),
+    }
+}
+
+fn population_label(result: &InsightResult) -> String {
+    match result.status {
+        InsightStatus::Refused { .. } => "—".to_string(),
+        _ => format!(
+            "{} n={}",
+            sanitize_tui_str(&result.population.what),
+            result.population.n
+        ),
+    }
+}
+
+fn measures_label(result: &InsightResult) -> String {
+    if result.measures.is_empty() {
+        return "—".to_string();
+    }
+    result
+        .measures
+        .iter()
+        .map(|measure| {
+            format!(
+                "{} {} {}",
+                sanitize_tui_str(&measure.name),
+                fmt_measure_value(measure.value),
+                sanitize_tui_str(&measure.unit)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+fn domain_status_label(rows: &[InsightResult]) -> String {
+    if rows.is_empty() {
+        return "unknown (no registered insight)".to_string();
+    }
+    let mut computed = 0u64;
+    let mut partial = 0u64;
+    let mut refused = 0u64;
+    for row in rows {
+        match row.status {
+            InsightStatus::Computed => computed += 1,
+            InsightStatus::Partial { .. } => partial += 1,
+            InsightStatus::Refused { .. } => refused += 1,
+        }
+    }
+    if computed > 0 && partial == 0 && refused == 0 {
+        "computed".to_string()
+    } else if refused > 0 && computed == 0 && partial == 0 {
+        "refused".to_string()
+    } else if partial > 0 && computed == 0 && refused == 0 {
+        "partial".to_string()
+    } else {
+        format!("partial ({computed} computed, {partial} partial, {refused} refused)")
+    }
+}
+
+fn render_insights_tab(frame: &mut Frame, area: Rect, state: &mut AppState, theme: &Theme) {
+    let (title, lines) = if let Some(error) = state
+        .insights_error
+        .as_deref()
+        .filter(|_| state.insights.is_none())
+    {
+        (
+            " Insights unavailable ",
+            vec![
+                Line::from(Span::styled(
+                    "error: insight store did not return results",
+                    theme.breach(),
+                )),
+                Line::from(sanitize_tui_str(error)),
+                Line::from(Span::styled(
+                    "Refused, partial, and unknown stay unmarked. They are not zero.",
+                    theme.unavailable(),
+                )),
+            ],
+        )
+    } else if state.insights.is_none() {
+        (
+            " Insights ",
+            vec![Line::from(Span::styled(
+                "Insights not loaded yet.",
+                theme.muted(),
+            ))],
+        )
+    } else {
+        let title = match state.insight_depth {
+            InsightDepth::Domain => " Insights · domains (L0)  [Enter/Right] open ",
+            InsightDepth::Insight => " Insights · per insight (L1)  [Enter/Right] measures ",
+            InsightDepth::Measure => " Insights · measures (L2)  [Enter] JSON ",
+        };
+        (title, insight_rows(state, theme))
+    };
+
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(
+                Block::default()
+                    .title(title)
+                    .borders(Borders::ALL)
+                    .border_style(theme.border(true)),
+            )
+            .wrap(Wrap { trim: false }),
+        area,
+    );
+}
+
+fn insight_rows(state: &mut AppState, theme: &Theme) -> Vec<Line<'static>> {
+    let domains = super::insight_domains();
+    let mut lines = vec![Line::from(Span::styled(
+        "id      name                      domain          status                         population          measures",
+        theme.muted(),
+    ))];
+    match state.insight_depth {
+        InsightDepth::Domain => {
+            let len = domains.len();
+            if len > 0 && state.insight_cursor >= len {
+                state.insight_cursor = len - 1;
+            }
+            for (index, domain) in domains.iter().copied().enumerate() {
+                let rows = state.domain_results(domain);
+                let count = if rows.is_empty() {
+                    "—".to_string()
+                } else {
+                    format!("{} insights", rows.len())
+                };
+                lines.push(insight_line(
+                    index == state.insight_cursor,
+                    format!(
+                        "{:<8}{:<26}{:<16}{:<31}{:<20}—",
+                        "—",
+                        "—",
+                        domain_name(domain),
+                        domain_status_label(&rows),
+                        count
+                    ),
+                    &domain_status_label(&rows),
+                    theme,
+                ));
+            }
+            lines.push(Line::from(Span::styled(
+                "[Enter/Right] per-insight   [Left] back   population is not summed",
+                theme.muted(),
+            )));
+        }
+        InsightDepth::Insight => {
+            let domain = state.insight_domain.unwrap_or(InsightDomain::Model);
+            let rows = state.domain_results(domain);
+            if !rows.is_empty() && state.insight_cursor >= rows.len() {
+                state.insight_cursor = rows.len() - 1;
+            }
+            if rows.is_empty() {
+                lines.push(Line::from("no insights in this domain"));
+            }
+            for (index, result) in rows.iter().enumerate() {
+                lines.push(insight_line(
+                    index == state.insight_cursor,
+                    format!(
+                        "{:<8}{:<26}{:<16}{:<31}{:<20}{}",
+                        sanitize_tui_str(result.id),
+                        sanitize_tui_str(result.name),
+                        domain_name(result.domain),
+                        status_label(&result.status),
+                        population_label(result),
+                        measures_label(result)
+                    ),
+                    &status_label(&result.status),
+                    theme,
+                ));
+            }
+            lines.push(Line::from(Span::styled(
+                "[Enter/Right] measures   [Left] domains",
+                theme.muted(),
+            )));
+        }
+        InsightDepth::Measure => {
+            let Some(result) = state.selected_insight() else {
+                lines.push(Line::from("no insight selected"));
+                return lines;
+            };
+            lines.push(insight_line(
+                false,
+                format!(
+                    "{:<8}{:<26}{:<16}{:<31}{:<20}{}",
+                    sanitize_tui_str(result.id),
+                    sanitize_tui_str(result.name),
+                    domain_name(result.domain),
+                    status_label(&result.status),
+                    population_label(&result),
+                    "—"
+                ),
+                &status_label(&result.status),
+                theme,
+            ));
+            if result.measures.is_empty() {
+                lines.push(Line::from(
+                    "no measures — refused, partial, and unknown are not zero",
+                ));
+            } else if state.insight_cursor >= result.measures.len() {
+                state.insight_cursor = result.measures.len() - 1;
+            }
+            for (index, measure) in result.measures.iter().enumerate() {
+                let value = format!(
+                    "{} {}",
+                    fmt_measure_value(measure.value),
+                    sanitize_tui_str(&measure.unit)
+                );
+                lines.push(insight_line(
+                    index == state.insight_cursor,
+                    format!(
+                        "{:<8}{:<26}{:<16}{:<31}{:<20}{value}",
+                        sanitize_tui_str(&measure.id),
+                        sanitize_tui_str(&measure.name),
+                        domain_name(result.domain),
+                        "—",
+                        "—",
+                    ),
+                    &fmt_measure_value(measure.value),
+                    theme,
+                ));
+            }
+            lines.push(Line::from(Span::styled(
+                "[Enter] JSON detail   [Left] per-insight",
+                theme.muted(),
+            )));
+        }
+    }
+    lines
+}
+
+fn insight_line(selected: bool, text: String, status: &str, theme: &Theme) -> Line<'static> {
+    let style = if selected {
+        Style::default().add_modifier(Modifier::REVERSED)
+    } else if status.starts_with("computed") {
+        Style::default()
+    } else if status.starts_with("partial") {
+        theme.warn()
+    } else {
+        theme.unavailable()
+    };
+    let marker = if selected { "› " } else { "  " };
+    Line::from(Span::styled(format!("{marker}{text}"), style))
+}
+
 fn render_footer(frame: &mut Frame, area: Rect, state: &AppState, theme: &Theme) {
     let ask_preview = if let Some((q, ans_summary)) = &state.last_nao_answer {
         format!(
@@ -1653,7 +1962,7 @@ fn render_footer(frame: &mut Frame, area: Rect, state: &AppState, theme: &Theme)
     let lines = vec![
         Line::from(Span::styled(ask_preview, theme.accent())),
         Line::from(Span::styled(
-            " [Tab/1-6] Screens  [↑/↓/j/k] Navigate  [/] Filter  [r] Rig  [w] Window  [i] Issue Draft  [?] Help  [q] Quit",
+            " [Tab/1-7] Screens  [↑/↓/j/k] Navigate  [/] Filter  [r] Rig  [w] Window  [i] Issue Draft  [?] Help  [q] Quit",
             theme.muted(),
         )),
     ];
@@ -1672,7 +1981,8 @@ fn render_modal(frame: &mut Frame, area: Rect, state: &AppState, modal: &AppModa
                     theme.accent(),
                 )),
                 Line::from(""),
-                Line::from("  [1] - [6] / [Tab]   Switch between the 6 analytical & simulation screens"),
+                Line::from("  [1] - [7] / [Tab]   Switch screens. [7] Insights: Enter/Right deepens, Left backs out"),
+                Line::from("  Insights levels:    L0 domain, L1 insight, L2 measures, L3 JSON detail"),
                 Line::from("  [↑/↓] or [j/k]      Navigate rows in tables, spotlights, or simulator seats"),
                 Line::from("  [/]                 Live fuzzy filter on canonical seats"),
                 Line::from("  [x]                 Toggle hidden qitem-* queue endpoints & system gates"),
