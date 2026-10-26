@@ -31,22 +31,22 @@ models:
     columns: [m1_yield, m1_by_seat, m2_return_rate, m3_rework_chains, token_categories, link_rates, fleet_concurrency, watchdog_recovery, four_eyes_independence, context_compactions, cross_slice_cache_bleed, task_intake_overhead, issue_lineage, vortex_loops, ring_boundaries, source_keys, row_json]
   - name: message_mix
     table: v_message_mix
-    description: Canonical per-harness and per-session message counts by role, direction, and modality from message_facts (metadata only; never message text).
+    description: Canonical per-harness and per-session message counts by role, direction, and modality from message_facts (metadata only; never message text). ALL-TIME counts — window_from/window_to label the snapshot but do not filter these rows.
     dimensions: [harness, native_session, role, direction, modality, rig, window_from, window_to, definition_version]
     columns: [message_count, source_keys]
   - name: subagent_lineage
     table: v_subagent_lineage
-    description: Canonical per-parent-session child counts and edge status counts from explicit session_edges; recursive depth, cycle, and unresolved-parent verdicts come from canonical insight I09 (work.lineage_shape).
+    description: Canonical per-parent-session child counts and edge status counts from explicit session_edges; recursive depth, cycle, and unresolved-parent verdicts come from canonical insight I09 (work.lineage_shape). ALL-TIME counts — window_from/window_to label the snapshot but do not filter these rows; I09 is windowed.
     dimensions: [harness, parent_session, rig, window_from, window_to, definition_version]
     columns: [child_count, edge_count, started_count, finished_count, failed_count, unknown_count, child_sessions, relations, source_keys]
   - name: security_posture
     table: v_security_posture
-    description: Canonical security observation counts by harness, kind, and closed-vocabulary value from security_facts (explicit source-field observations only, never command text or authority verdicts).
+    description: Canonical security observation counts by harness, kind, and closed-vocabulary value from security_facts (explicit source-field observations only, never command text or authority verdicts). ALL-TIME counts — window_from/window_to label the snapshot but do not filter these rows.
     dimensions: [harness, kind, value, rig, window_from, window_to, definition_version]
     columns: [observation_count, session_count, source_keys]
   - name: process_resources
     table: v_process_resources
-    description: Canonical per-root_key and per-harness process count, max RSS per rss_unit, sample count, and attribution from process_identities and process_samples; monotonic CPU and disk deltas come from canonical insight I14 (environment.resources) and are never recomputed in SQL.
+    description: Canonical per-root_key and per-harness process count, max RSS per rss_unit, sample count, and attribution from process_identities and process_samples; monotonic CPU and disk deltas come from canonical insight I14 (environment.resources) and are never recomputed in SQL. ALL-TIME counts — window_from/window_to label the snapshot but do not filter these rows; I14 is windowed.
     dimensions: [root_key, harness, attribution, rss_unit, rig, window_from, window_to, definition_version]
     columns: [process_count, max_rss_bytes, sample_count, source_keys]
 prompts:
