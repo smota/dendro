@@ -171,7 +171,10 @@ fn samples_a_real_process_tree_once_and_stores_no_paths() {
     let identities: i64 = conn
         .query_row("SELECT COUNT(*) FROM process_identities", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(identities as usize, sealed.identities.len());
+    // Repeated `--once` passes re-seal the same identity; storage upserts by key.
+    let distinct: std::collections::BTreeSet<_> =
+        sealed.identities.iter().map(|i| &i.identity_key).collect();
+    assert_eq!(identities as usize, distinct.len());
     let samples: i64 = conn
         .query_row("SELECT COUNT(*) FROM process_samples", [], |r| r.get(0))
         .unwrap();

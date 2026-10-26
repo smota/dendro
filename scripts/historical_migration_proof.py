@@ -182,6 +182,52 @@ def main():
         assert sha(produced_migration["selected_rollback_database"]) == stable_selected, "old anchor write changed selected immutable data"
         result["old_anchor_negative_control"]["selected_database_unchanged"] = True
         assert canonical_sha(frozen) == ORACLE
+        # Explicit --db is admitted only when its parent is a private root (mode 0700).
+        # That folder is $XDG_DATA_HOME/dendro inside the isolated HOME, not an ordinary scratch directory.
+        smoke_root = home / ".local/share/dendro"
+        smoke_root.mkdir(mode=0o700)
+        os.chmod(smoke_root, 0o700)
+        smoke_steps = {}
+
+        def smoke(name, argv, cwd=None, runtime=False, target_kind=None):
+            process = run(name, argv, cwd=cwd, runtime=runtime, target_kind=target_kind)
+            smoke_steps[name] = process.returncode
+            return process
+
+        smoke("candidate-cli-build", ["cargo", "build", *build_flags, "-p", "dendro-cli"], current, target_kind="candidate")
+        candidate = scratch / "dendro-candidate"
+        shutil.copy2(targets["candidate"] / "debug/dendro", candidate)
+        candidate_version = smoke("candidate-version", [candidate, "--version"], runtime=True).stdout.strip()
+        assert candidate_version == "dendro 0.8.0"
+        smoke_logs = scratch / "candidate-smoke-logs"
+        smoke_logs.mkdir(mode=0o700)
+        os.chmod(smoke_logs, 0o700)
+        def synthetic_line(session, message, ts, input_tokens, output_tokens):
+            return json.dumps({"type": "assistant", "sessionId": session, "timestamp": ts, "message": {"id": message, "model": "proof-model", "content": [], "usage": {"input_tokens": input_tokens, "output_tokens": output_tokens, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}}}) + "\n"
+        (smoke_logs / "session.jsonl").write_text(synthetic_line("candidate-smoke", "candidate-message-1", "2026-10-22T00:02:00Z", 11, 4))
+        smoke_db = smoke_root / "candidate-smoke.duckdb"
+        smoke("candidate-smoke-historical-ingest", [binary, "run", "--db", smoke_db, "--root", f"claude={smoke_logs}"], runtime=True)
+        report_before = json.loads(smoke("candidate-smoke-report-before", [binary, "report", "tokens", "--db", smoke_db, "--window", "all"], runtime=True).stdout)
+        migrated = json.loads(smoke("candidate-migrate", [candidate, "migrate", "--db", smoke_db], runtime=True).stdout)
+        assert migrated["status"] == "schema4_selected" and migrated["schema_version"] == 4 and migrated["schema3_preimage_retained"] is True
+        with (smoke_logs / "session.jsonl").open("a") as handle:
+            handle.write(synthetic_line("candidate-smoke-later", "candidate-message-2", "2026-10-22T00:03:00Z", 5, 1))
+        smoke("candidate-run", [candidate, "run", "--db", smoke_db, "--root", f"claude={smoke_logs}"], runtime=True)
+        # Insights JSON is `--json` (an array). Status JSON is `--format json`.
+        insight_rows = json.loads(smoke("candidate-insights", [candidate, "insights", "--db", smoke_db, "--json"], runtime=True).stdout)
+        assert [row["id"] for row in insight_rows] == ["I02", "I04", "I08", "I09", "I14", "I18"]
+        status_doc = json.loads(smoke("candidate-status", [candidate, "status", "--db", smoke_db, "--format", "json"], runtime=True).stdout)
+        assert status_doc["exists"] is True and isinstance(status_doc["discovered_sources"], list)
+        rolled = json.loads(smoke("candidate-rollback", [candidate, "rollback", "--db", smoke_db], runtime=True).stdout)
+        assert rolled["status"] == "schema3_selected" and rolled["schema_version"] == 3
+        loss = rolled["loss_receipt"]
+        # Rollback passes logs_present=false and selects the preserved schema3 preimage, excluding later schema4-only usage, so totals match the pre-migration report, not the later run.
+        assert loss["pointer_changed"] is True and loss["failed_schema4_retained_private"] is True and loss["destructive_downmigration"] is False
+        assert loss["selected_bundle"] == "preserved_schema3" and loss["replay_available"] is False
+        assert loss["unresolved_loss"] is True and loss["full_continuity_claim"] is False and loss["new_usage_fact_count"] >= 1
+        report_after = json.loads(smoke("candidate-smoke-report-rollback", [binary, "report", "tokens", "--db", smoke_db, "--window", "all"], runtime=True).stdout)
+        assert report_after == report_before, "rollback did not restore the schema3 preimage facts"
+        result["candidate_cli_smoke"] = {"version": candidate_version, "db": str(smoke_db), "report_before": report_before, "report_after_rollback": report_after, "migrate_status": migrated["status"], "rollback_status": rolled["status"], "reference_insight_ids": [row["id"] for row in insight_rows], "loss_receipt": {"pointer_changed": loss["pointer_changed"], "failed_schema4_retained_private": loss["failed_schema4_retained_private"], "destructive_downmigration": loss["destructive_downmigration"], "selected_bundle": loss["selected_bundle"], "replay_available": loss["replay_available"], "unresolved_loss": loss["unresolved_loss"], "full_continuity_claim": loss["full_continuity_claim"], "excluded_fact_count": loss["excluded_fact_count"], "new_usage_fact_count": loss["new_usage_fact_count"]}, "steps": smoke_steps}
         result["passed"] = True
     finally:
         result["commands"] = commands

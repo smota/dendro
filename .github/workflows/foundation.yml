@@ -1,6 +1,6 @@
-name: Native Linux foundation
+name: Native foundation
 
-# Bounded foundation evidence, not the complete T27 release matrix.
+# Release gates: four Rust gates on native Windows and Linux, plus the Linux historical upgrade/rollback proof.
 on:
   push:
     branches: [codex/foundation-completion]
@@ -51,6 +51,31 @@ jobs:
           path: ${{ runner.temp }}/dendro-foundation-${{ github.run_id }}-${{ github.run_attempt }}-receipts/
           if-no-files-found: error
           retention-days: 7
+  native-windows:
+    runs-on: windows-2022
+    timeout-minutes: 120
+    env:
+      RUSTUP_TOOLCHAIN: 1.98.1
+      CARGO_BUILD_JOBS: 2
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
+      RUST_TEST_THREADS: 2
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Install pinned native Rust toolchain
+        shell: pwsh
+        run: rustup toolchain install 1.98.1 --profile minimal --component rustfmt --component clippy
+      - name: Execute four Rust gates on native Windows
+        shell: pwsh
+        run: |
+          cargo fmt --check; if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo check --workspace --locked; if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo clippy --workspace --locked -- -D warnings; if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo test --workspace --locked; if ($LASTEXITCODE) { exit $LASTEXITCODE }
   native-linux:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
