@@ -104,15 +104,23 @@ fn native_staging_rework() -> Result<(), Box<dyn std::error::Error>> {
     assert!(VerifiedDirectory::from_held(&File::open(root.join("base.txt"))?).is_err());
     println!("PASS unverified/unprotected and wrong-kind parents rejected");
     let me = win_custody::current_user_sid_string()?;
+    let step = |label: &'static str| move |e: std::io::Error| format!("{label}: {e:?}");
     let admin = ffi::fixture_directory(
         &raw,
         &name("admin").0,
         &format!("O:{me}D:P(A;OICI;FA;;;{me})(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"),
-    )?;
-    let admin_parent = VerifiedDirectory::from_held(&admin)?;
-    let mut admin_source = admin_parent.create_source(&name("admin-source.txt"))?;
-    admin_source.write_all(b"trusted host")?;
-    admin_source.publish_replace(&admin_parent, &name("admin-published.txt"))?;
+    )
+    .map_err(step("admin fixture_directory"))?;
+    let admin_parent = VerifiedDirectory::from_held(&admin).map_err(step("admin from_held"))?;
+    let mut admin_source = admin_parent
+        .create_source(&name("admin-source.txt"))
+        .map_err(step("admin create_source"))?;
+    admin_source
+        .write_all(b"trusted host")
+        .map_err(step("admin write_all"))?;
+    admin_source
+        .publish_replace(&admin_parent, &name("admin-published.txt"))
+        .map_err(step("admin publish_replace"))?;
     println!("PASS Administrators grant accepted consistently with FROZEN_HOST");
     let conditional = ffi::fixture_directory(
         &raw,
