@@ -10,6 +10,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use dendro_core::insight_v1::{InsightDomain, InsightResult};
 use dendro_core::presentation::{classify_entity_id, EntityKind};
 use futures::StreamExt;
 use ratatui::{backend::CrosstermBackend, widgets::TableState, Terminal};
@@ -32,6 +33,7 @@ pub enum TabId {
     Tokens,
     Simulate,
     Trace,
+    Insights,
 }
 
 impl TabId {
@@ -43,6 +45,7 @@ impl TabId {
             Self::Tokens => 3,
             Self::Simulate => 4,
             Self::Trace => 5,
+            Self::Insights => 6,
         }
     }
 
@@ -53,20 +56,41 @@ impl TabId {
             Self::Handoffs => Self::Tokens,
             Self::Tokens => Self::Simulate,
             Self::Simulate => Self::Trace,
-            Self::Trace => Self::Pulse,
+            Self::Trace => Self::Insights,
+            Self::Insights => Self::Pulse,
         }
     }
 
     pub fn prev(self) -> Self {
         match self {
-            Self::Pulse => Self::Trace,
+            Self::Pulse => Self::Insights,
             Self::Seats => Self::Pulse,
             Self::Handoffs => Self::Seats,
             Self::Tokens => Self::Handoffs,
             Self::Simulate => Self::Tokens,
             Self::Trace => Self::Simulate,
+            Self::Insights => Self::Trace,
         }
     }
+}
+
+/// Insights disclosure. L3 is the existing DetailJson modal, not a fourth screen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum InsightDepth {
+    #[default]
+    Domain,
+    Insight,
+    Measure,
+}
+
+fn insight_domains() -> [InsightDomain; 5] {
+    [
+        InsightDomain::Model,
+        InsightDomain::Harness,
+        InsightDomain::Coordination,
+        InsightDomain::Environment,
+        InsightDomain::Security,
+    ]
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -123,6 +147,8 @@ pub enum WorkerEvent {
         from: String,
         to: String,
         mode: String,
+        insights: Option<Vec<InsightResult>>,
+        insights_error: Option<String>,
     },
     TraceReady {
         metric_id: String,
@@ -179,6 +205,13 @@ pub struct AppState {
     pub sim_cursor: usize,
     pub sim_scenario: dendro_core::simulation::Scenario,
     pub sim_result: Option<Value>,
+    pub insights: Option<Vec<InsightResult>>,
+    pub insights_error: Option<String>,
+    pub insight_depth: InsightDepth,
+    pub insight_cursor: usize,
+    pub insight_domain: Option<InsightDomain>,
+    /// Insight row chosen at L1. L2 moves `insight_cursor` over measures.
+    pub insight_index: usize,
 }
 
 impl AppState {
@@ -228,7 +261,123 @@ impl AppState {
             sim_cursor: 0,
             sim_scenario: dendro_core::simulation::Scenario::default(),
             sim_result: None,
+            insights: None,
+            insights_error: None,
+            insight_depth: InsightDepth::Domain,
+            insight_cursor: 0,
+            insight_domain: None,
+            insight_index: 0,
         }
+    }
+
+    fn reset_insight_focus(&mut self) {
+        self.insight_depth = InsightDepth::Domain;
+        self.insight_cursor = 0;
+        self.insight_domain = None;
+        self.insight_index = 0;
+    }
+
+    fn domain_results(&self, domain: InsightDomain) -> Vec<InsightResult> {
+        self.insights
+            .as_ref()
+            .map(|rows| {
+                rows.iter()
+                    .filter(|row| row.domain == domain)
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn selected_insight(&self) -> Option<InsightResult> {
+        let domain = self.insight_domain?;
+        let rows = self.domain_results(domain);
+        if rows.is_empty() {
+            return None;
+        }
+        let index = match self.insight_depth {
+            InsightDepth::Measure => self.insight_index,
+            _ => self.insight_cursor,
+        };
+        rows.get(index.min(rows.len() - 1)).cloned()
+    }
+
+    fn insight_list_len(&self) -> usize {
+        if self.insights.is_none() {
+            return 0;
+        }
+        match self.insight_depth {
+            InsightDepth::Domain => insight_domains().len(),
+            InsightDepth::Insight => self
+                .insight_domain
+                .map(|domain| self.domain_results(domain).len())
+                .unwrap_or(0),
+            InsightDepth::Measure => self
+                .selected_insight()
+                .map(|result| result.measures.len())
+                .unwrap_or(0),
+        }
+    }
+
+    fn drill_insight(&mut self) {
+        if self.insights.is_none() {
+            return;
+        }
+        let domains = insight_domains();
+        match self.insight_depth {
+            InsightDepth::Domain => {
+                let cursor = self.insight_cursor.min(domains.len().saturating_sub(1));
+                let domain = domains[cursor];
+                if self.domain_results(domain).is_empty() {
+                    return;
+                }
+                self.insight_domain = Some(domain);
+                self.insight_depth = InsightDepth::Insight;
+                self.insight_cursor = 0;
+                self.insight_index = 0;
+            }
+            InsightDepth::Insight => {
+                let rows = self
+                    .insight_domain
+                    .map(|domain| self.domain_results(domain))
+                    .unwrap_or_default();
+                if rows.is_empty() {
+                    return;
+                }
+                self.insight_index = self.insight_cursor.min(rows.len() - 1);
+                self.insight_cursor = 0;
+                self.insight_depth = InsightDepth::Measure;
+            }
+            InsightDepth::Measure => self.open_selected_insight_json(),
+        }
+    }
+
+    fn back_insight(&mut self) {
+        match self.insight_depth {
+            InsightDepth::Measure => {
+                self.insight_depth = InsightDepth::Insight;
+                self.insight_cursor = self.insight_index;
+            }
+            InsightDepth::Insight => {
+                let domain = self.insight_domain;
+                self.insight_depth = InsightDepth::Domain;
+                self.insight_cursor = domain
+                    .and_then(|domain| insight_domains().iter().position(|item| *item == domain))
+                    .unwrap_or(0);
+            }
+            InsightDepth::Domain => {}
+        }
+    }
+
+    fn open_selected_insight_json(&mut self) {
+        let Some(result) = self.selected_insight() else {
+            return;
+        };
+        let pretty = serde_json::to_string_pretty(&result).unwrap_or_default();
+        self.modal = Some(AppModal::DetailJson(
+            format!("Insight {}", result.id),
+            pretty,
+        ));
     }
 
     pub fn filtered_activity_rows(&self) -> Vec<Value> {
@@ -494,6 +643,20 @@ fn spawn_hydration(
                 &to,
             )?;
             report["window_resolution"] = serde_json::json!(mode.clone());
+            // Rig is not an insight scope field. Evaluate the resolved window only.
+            let insights_scope = dendro_core::insight_v1::Scope {
+                harness: None,
+                session: None,
+                from: Some(from.clone()).filter(|value| !value.is_empty()),
+                to: Some(to.clone()).filter(|value| !value.is_empty()),
+            };
+            let (insights, insights_error) = match request.open_store() {
+                Ok(store) => (
+                    Some(dendro_core::insight_v1::evaluate(&store, &insights_scope)),
+                    None,
+                ),
+                Err(error) => (None, Some(dendro_core::redact(&error.to_string()))),
+            };
             let _ = tx.blocking_send(WorkerEvent::ReportReady {
                 report: Arc::new(report),
                 request,
@@ -501,6 +664,8 @@ fn spawn_hydration(
                 from,
                 to,
                 mode,
+                insights,
+                insights_error,
             });
             Ok(())
         })();
@@ -772,6 +937,13 @@ pub async fn run_interactive_or_once(
             Some(ev) = worker_rx.recv() => {
                 match ev {
                     WorkerEvent::StatusReady { status, from, to, mode } => {
+                        state.insights = None;
+                        state.insights_error = status
+                            .get("error")
+                            .and_then(|value| value.as_str())
+                            .map(str::to_owned)
+                            .or_else(|| Some("unavailable".to_string()));
+                        state.reset_insight_focus();
                         state.status = Some(status);
                         state.resolved_from = from;
                         state.resolved_to = to;
@@ -781,7 +953,16 @@ pub async fn run_interactive_or_once(
                         state.read_request = None;
                         state.traces.clear();
                     }
-                    WorkerEvent::ReportReady { report, request, status, from, to, mode } => {
+                    WorkerEvent::ReportReady {
+                        report,
+                        request,
+                        status,
+                        from,
+                        to,
+                        mode,
+                        insights,
+                        insights_error,
+                    } => {
                         state.traces.clear();
                         state.read_request = Some(request);
                         state.report = Some(report);
@@ -789,6 +970,9 @@ pub async fn run_interactive_or_once(
                         state.resolved_from = from;
                         state.resolved_to = to;
                         state.window_mode = Some(mode);
+                        state.insights = insights;
+                        state.insights_error = insights_error;
+                        state.reset_insight_focus();
                         state.loading_stage = None;
                         state.recompute_simulation();
                         if !theme.no_color {
@@ -942,6 +1126,16 @@ fn handle_key_event(
             state.active_tab = TabId::Seats;
             state.filter_input_mode = true;
         }
+        KeyCode::Char('7') => {
+            state.active_tab = TabId::Insights;
+            trigger_transition(effects);
+        }
+        KeyCode::Right | KeyCode::Enter if state.active_tab == TabId::Insights => {
+            state.drill_insight();
+        }
+        KeyCode::Left if state.active_tab == TabId::Insights => {
+            state.back_insight();
+        }
         KeyCode::Tab | KeyCode::Right if state.active_tab != TabId::Simulate => {
             state.active_tab = state.active_tab.next();
             if state.active_tab == TabId::Trace
@@ -1027,6 +1221,8 @@ fn handle_key_event(
             } else if state.active_tab == TabId::Simulate {
                 state.clamp_sim_cursor();
                 state.sim_cursor = state.sim_cursor.saturating_sub(1);
+            } else if state.active_tab == TabId::Insights {
+                state.insight_cursor = state.insight_cursor.saturating_sub(1);
             } else {
                 state.selected_seat = state.selected_seat.saturating_sub(1);
             }
@@ -1046,6 +1242,9 @@ fn handle_key_event(
             } else if state.active_tab == TabId::Seats {
                 let max = state.active_seat_rows().len().saturating_sub(1);
                 state.selected_seat = (state.selected_seat + 1).min(max);
+            } else if state.active_tab == TabId::Insights {
+                let max = state.insight_list_len().saturating_sub(1);
+                state.insight_cursor = (state.insight_cursor + 1).min(max);
             } else {
                 let max = state.filtered_activity_rows().len().saturating_sub(1);
                 state.selected_seat = (state.selected_seat + 1).min(max);
@@ -1288,6 +1487,7 @@ mod tests {
                 TabId::Tokens,
                 TabId::Simulate,
                 TabId::Trace,
+                TabId::Insights,
             ] {
                 state.active_tab = tab;
                 terminal
@@ -1397,5 +1597,251 @@ mod tests {
         activate_sim_cursor(&mut state);
         assert!(state.sim_scenario.boundary_reset_threshold.is_none());
         assert!(state.sim_scenario.boundary.is_none());
+    }
+
+    fn screen_text(state: &mut AppState) -> String {
+        let backend = TestBackend::new(180, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let theme = Theme { no_color: true };
+        terminal
+            .draw(|frame| views::render_app(frame, state, &theme))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let mut text = String::new();
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width {
+                text.push_str(buffer[(x, y)].symbol());
+            }
+            text.push('\n');
+        }
+        text
+    }
+
+    fn press(state: &mut AppState, code: KeyCode) {
+        let (tx, _rx) = tokio::sync::mpsc::channel(1);
+        let mut effects: EffectManager<()> = EffectManager::default();
+        let theme = Theme { no_color: true };
+        let _ = handle_key_event(
+            state,
+            crossterm::event::KeyEvent::new(code, KeyModifiers::NONE),
+            &tx,
+            &mut effects,
+            &theme,
+        );
+    }
+
+    fn cost_insight() -> InsightResult {
+        use dendro_core::insight_v1::{InsightPopulation, InsightStatus, Measure, MeasureValue};
+        InsightResult {
+            id: "I04",
+            name: "model.cost",
+            version: "v1",
+            domain: InsightDomain::Model,
+            status: InsightStatus::Computed,
+            population: InsightPopulation {
+                what: "usage_facts".into(),
+                n: 3,
+            },
+            measures: vec![
+                Measure {
+                    id: "m.cost".into(),
+                    name: "cost".into(),
+                    value: Some(MeasureValue::Float(1.5)),
+                    unit: "usd".into(),
+                    basis: "status=complete".into(),
+                },
+                Measure {
+                    id: "m.gap".into(),
+                    name: "gap".into(),
+                    value: None,
+                    unit: "usd".into(),
+                    basis: "unknown".into(),
+                },
+            ],
+            coverage: "usage_facts".into(),
+            evidence: vec![],
+        }
+    }
+
+    fn refused_insight(
+        id: &'static str,
+        name: &'static str,
+        domain: InsightDomain,
+    ) -> InsightResult {
+        use dendro_core::insight_v1::InsightPopulation;
+        InsightResult {
+            id,
+            name,
+            version: "v1",
+            domain,
+            status: dendro_core::insight_v1::InsightStatus::Refused {
+                reason: "empty population".into(),
+            },
+            population: InsightPopulation {
+                what: "usage_facts".into(),
+                n: 0,
+            },
+            measures: vec![],
+            coverage: "empty population".into(),
+            evidence: vec![],
+        }
+    }
+
+    fn report_with_costs() -> Arc<Value> {
+        let mut report = (*sample_report()).clone();
+        report["payload"]["observed_cost"] = json!({
+            "status": "complete",
+            "usd": 2.5,
+            "unknown_rows": 0,
+            "known_rows": 3
+        });
+        report["payload"]["estimated_cost"] = json!({
+            "status": "partial",
+            "usd": null,
+            "unknown_rows": 4,
+            "known_rows": 1
+        });
+        Arc::new(report)
+    }
+
+    #[test]
+    fn insights_tab_renders_populated_results_and_report_costs() {
+        let mut state = AppState::new(
+            PathBuf::from("dendro.duckdb"),
+            None,
+            "7d".into(),
+            None,
+            None,
+        );
+        state.loading_stage = None;
+        state.report = Some(report_with_costs());
+        state.insights = Some(vec![cost_insight()]);
+        state.active_tab = TabId::Tokens;
+        let tokens = screen_text(&mut state);
+        assert!(tokens.contains("Observed: complete 2.5 usd"), "{tokens}");
+        assert!(
+            tokens.contains("Estimated: partial (4 unknown rows)"),
+            "{tokens}"
+        );
+        assert!(!tokens.contains("Estimated: partial 0"), "{tokens}");
+        assert!(!tokens.contains("Estimated: 0"), "{tokens}");
+
+        press(&mut state, KeyCode::Char('7'));
+        assert_eq!(state.active_tab, TabId::Insights);
+        let domains = screen_text(&mut state);
+        assert!(domains.contains("model"), "{domains}");
+        assert!(domains.contains("computed"), "{domains}");
+        assert!(
+            domains.contains("unknown (no registered insight)"),
+            "{domains}"
+        );
+        assert!(!domains.contains("n=0"), "{domains}");
+
+        press(&mut state, KeyCode::Enter);
+        assert_eq!(state.insight_depth, InsightDepth::Insight);
+        let insights = screen_text(&mut state);
+        assert!(insights.contains("I04"), "{insights}");
+        assert!(insights.contains("model.cost"), "{insights}");
+        assert!(insights.contains("usage_facts n=3"), "{insights}");
+        assert!(insights.contains("cost 1.5 usd"), "{insights}");
+        assert!(insights.contains("gap unknown usd"), "{insights}");
+        assert!(!insights.contains("gap 0"), "{insights}");
+        assert!(!insights.contains("gap unknown 0"), "{insights}");
+
+        press(&mut state, KeyCode::Right);
+        assert_eq!(state.insight_depth, InsightDepth::Measure);
+        let measures = screen_text(&mut state);
+        assert!(measures.contains("1.5 usd"), "{measures}");
+        assert!(measures.contains("unknown usd"), "{measures}");
+        assert!(!measures.contains("unknown 0"), "{measures}");
+
+        press(&mut state, KeyCode::Enter);
+        assert!(matches!(state.modal, Some(AppModal::DetailJson(_, _))));
+        let detail = screen_text(&mut state);
+        assert!(detail.contains("I04"), "{detail}");
+        assert!(detail.contains("computed"), "{detail}");
+        assert!(detail.contains("v1"), "{detail}");
+        assert!(detail.contains("null"), "{detail}");
+    }
+
+    #[test]
+    fn insights_tab_renders_all_refused_results_as_refused() {
+        let mut state = AppState::new(
+            PathBuf::from("dendro.duckdb"),
+            None,
+            "7d".into(),
+            None,
+            None,
+        );
+        state.loading_stage = None;
+        state.report = Some(sample_report());
+        state.insights = Some(vec![
+            refused_insight("I02", "model.tokens.direct", InsightDomain::Model),
+            refused_insight("I04", "model.cost", InsightDomain::Model),
+            refused_insight("I08", "harness.action_failure", InsightDomain::Harness),
+            refused_insight("I09", "work.lineage_shape", InsightDomain::Coordination),
+            refused_insight("I14", "environment.resources", InsightDomain::Environment),
+            refused_insight("I18", "coverage.source", InsightDomain::Environment),
+        ]);
+        state.active_tab = TabId::Insights;
+        let domains = screen_text(&mut state);
+        assert!(domains.contains("refused"), "{domains}");
+        assert!(
+            domains.contains("unknown (no registered insight)"),
+            "{domains}"
+        );
+        assert!(!domains.contains("n=0"), "{domains}");
+        assert!(!domains.contains("0 usd"), "{domains}");
+
+        state.drill_insight();
+        let insights = screen_text(&mut state);
+        assert!(
+            insights.contains("refused (empty population)"),
+            "{insights}"
+        );
+        assert!(insights.contains("I02"), "{insights}");
+        assert!(insights.contains('—'), "{insights}");
+        assert!(!insights.contains("n=0"), "{insights}");
+        assert!(!insights.contains("0 usd"), "{insights}");
+
+        state.drill_insight();
+        let measures = screen_text(&mut state);
+        assert!(
+            measures.contains("no measures — refused, partial, and unknown are not zero"),
+            "{measures}"
+        );
+        assert!(!measures.contains("n=0"), "{measures}");
+        assert!(!measures.contains("0 usd"), "{measures}");
+    }
+
+    #[test]
+    fn insights_tab_renders_store_error_without_invented_numbers() {
+        let mut state = AppState::new(
+            PathBuf::from("dendro.duckdb"),
+            None,
+            "7d".into(),
+            None,
+            None,
+        );
+        state.loading_stage = None;
+        state.report = None;
+        state.status = Some(json!({"status": "unavailable", "error": "store read failed"}));
+        state.insights = None;
+        state.insights_error = Some("store read failed".into());
+        state.active_tab = TabId::Insights;
+        let text = screen_text(&mut state);
+        assert!(
+            text.contains("error: insight store did not return results"),
+            "{text}"
+        );
+        assert!(text.contains("store read failed"), "{text}");
+        assert!(text.contains("[7] Insights"), "{text}");
+        assert!(!text.contains("computed"), "{text}");
+        assert!(!text.contains("n=0"), "{text}");
+        assert!(!text.contains("0 usd"), "{text}");
+        assert!(!text.contains("0.0"), "{text}");
+        state.drill_insight();
+        assert!(state.modal.is_none());
+        assert_eq!(state.insight_depth, InsightDepth::Domain);
     }
 }
