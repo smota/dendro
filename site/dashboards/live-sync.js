@@ -77,7 +77,9 @@
     function hideLivePanel() {
       if (typeof document === 'undefined' || typeof document.getElementById !== 'function') return;
       var panel = document.getElementById('live-duckdb-panel');
-      if (panel) panel.hidden = true;
+      if (!panel) return;
+      if (typeof panel.getAttribute === 'function' && panel.getAttribute('data-keep-visible') === 'true') return;
+      panel.hidden = true;
     }
 
     function ensureLivePanel() {
@@ -380,6 +382,213 @@
       }
     };
   }
+
+  function mountProductShell() {
+    try {
+      if (typeof document === 'undefined' || !document.body) return;
+      if (typeof document.createElement !== 'function') return;
+      if (typeof document.querySelector === 'function' && document.querySelector('.dendro-sidebar')) return;
+
+      var styleLink = typeof document.querySelector === 'function' ? document.querySelector('link[rel="stylesheet"]') : null;
+      var styleHref = styleLink && styleLink.getAttribute ? (styleLink.getAttribute('href') || '') : '';
+      var nested = styleHref.indexOf('../style.css') !== -1;
+      var dash = nested ? '../' : '';
+      var root = nested ? '../../' : '../';
+      function viewHref(name) {
+        return (nested ? '' : 'views/') + name;
+      }
+
+      var path = (typeof window !== 'undefined' && window.location && window.location.pathname) ? window.location.pathname : '';
+      var here = path.split('/').pop() || '';
+
+      var groups = [
+        { label: 'Overview', items: [
+          { href: dash + 'index.html', label: 'Intelligence Hub' },
+          { href: root + 'viewer.html', label: 'Fleet Explorer' }
+        ]},
+        { label: 'Active Intelligence', items: [
+          { href: viewHref('trajectory_vortex.html'), label: 'Trajectory Vortex' },
+          { href: viewHref('schema_drift.html'), label: 'Schema Drift' },
+          { href: viewHref('authority_blast_radius.html'), label: 'Blast Radius' },
+          { href: viewHref('counterfactual_routing.html'), label: 'Counterfactual Routing' }
+        ]},
+        { label: 'Model Layer', items: [
+          { href: viewHref('cost_and_loops.html'), label: 'Token & Cost Burn' },
+          { href: viewHref('message_mix.html'), label: 'Message & Turn Mix' }
+        ]},
+        { label: 'Harness Layer', items: [
+          { href: viewHref('subagent_lineage.html'), label: 'Subagent Lineage' },
+          { href: viewHref('process_resources.html'), label: 'Process & Resources' }
+        ]},
+        { label: 'Coordination', items: [
+          { href: viewHref('seat_dynamics.html'), label: 'Actor Activity & Yield' },
+          { href: viewHref('handoff_flow.html'), label: 'Handoff & Rework' },
+          { href: viewHref('executive_governance.html'), label: 'Governance Scorecard' }
+        ]},
+        { label: 'Environment', items: [
+          { href: viewHref('security_posture.html'), label: 'Security Posture' }
+        ]}
+      ];
+
+      document.body.classList.add('dendro-shell');
+
+      var sidebar = document.createElement('aside');
+      sidebar.className = 'dendro-sidebar';
+      sidebar.setAttribute('aria-label', 'Dendro');
+
+      var brand = document.createElement('a');
+      brand.className = 'dendro-sidebar-brand';
+      brand.href = dash + 'index.html';
+      var mark = document.createElement('span');
+      mark.className = 'dendro-sidebar-mark';
+      mark.innerHTML = '<svg class="brand-mark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="28" height="28" role="img" aria-label="Dendro mark"><rect x="6" y="6" width="116" height="116" rx="26" fill="#0E1714" stroke="#243B33" stroke-width="3"/><g stroke="#29443A" stroke-width="3" stroke-linecap="round"><line x1="64" y1="14" x2="64" y2="24"/><line x1="64" y1="104" x2="64" y2="114"/><line x1="14" y1="64" x2="24" y2="64"/><line x1="104" y1="64" x2="114" y2="64"/></g><circle cx="64" cy="64" r="42" fill="none" stroke="#10B981" stroke-width="7" stroke-linecap="round" stroke-dasharray="212 52" transform="rotate(-35 64 64)"/><circle cx="64" cy="64" r="29" fill="none" stroke="#06B6D4" stroke-width="6.5" stroke-linecap="round" stroke-dasharray="138 44" transform="rotate(40 64 64)"/><circle cx="64" cy="64" r="17" fill="none" stroke="#F2A541" stroke-width="6" stroke-linecap="round" stroke-dasharray="78 29" transform="rotate(-110 64 64)"/><circle cx="64" cy="64" r="6.5" fill="#F4EFE6"/></svg>';
+      var word = document.createElement('span');
+      word.className = 'dendro-word';
+      var name = document.createElement('strong');
+      name.textContent = 'Dendro';
+      var badge = document.createElement('span');
+      badge.className = 'dendro-version';
+      badge.textContent = 'v0.8 Intelligence';
+      word.appendChild(name);
+      word.appendChild(badge);
+      brand.appendChild(mark);
+      brand.appendChild(word);
+
+      var closeBtn = document.createElement('button');
+      closeBtn.type = 'button';
+      closeBtn.className = 'dendro-sidebar-close';
+      closeBtn.textContent = 'Close';
+
+      var brandRow = document.createElement('div');
+      brandRow.className = 'dendro-sidebar-brandrow';
+      brandRow.appendChild(brand);
+      brandRow.appendChild(closeBtn);
+      sidebar.appendChild(brandRow);
+
+      var nav = document.createElement('nav');
+      nav.className = 'dendro-sidenav';
+      nav.setAttribute('aria-label', 'Intelligence views');
+      groups.forEach(function (group) {
+        var label = document.createElement('div');
+        label.className = 'dendro-nav-label';
+        label.textContent = group.label;
+        nav.appendChild(label);
+        group.items.forEach(function (item) {
+          var link = document.createElement('a');
+          link.className = 'dendro-nav-link';
+          link.href = item.href;
+          link.textContent = item.label;
+          var target = item.href.split('/').pop();
+          if (here && target === here) {
+            link.classList.add('is-active');
+            link.setAttribute('aria-current', 'page');
+          }
+          nav.appendChild(link);
+        });
+      });
+      sidebar.appendChild(nav);
+
+      var foot = document.createElement('div');
+      foot.className = 'dendro-sidebar-foot';
+      foot.textContent = 'DuckDB 2.0 LTS · Local-First';
+      sidebar.appendChild(foot);
+
+      var backdrop = document.createElement('div');
+      backdrop.className = 'dendro-sidebar-backdrop';
+      backdrop.hidden = true;
+
+      function setOpen(open) {
+        sidebar.classList.toggle('is-open', open);
+        backdrop.classList.toggle('is-open', open);
+        backdrop.hidden = !open;
+        var toggle = document.getElementById('dendro-sidebar-toggle');
+        if (toggle) {
+          toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+          toggle.setAttribute('aria-label', open ? 'Close navigation' : 'Open navigation');
+        }
+      }
+
+      closeBtn.addEventListener('click', function () { setOpen(false); });
+      backdrop.addEventListener('click', function () { setOpen(false); });
+
+      if (typeof document.querySelector === 'function') {
+        var navLeft = document.querySelector('.telemetry-nav .nav-left');
+        if (navLeft && !document.getElementById('dendro-sidebar-toggle')) {
+          var toggle = document.createElement('button');
+          toggle.type = 'button';
+          toggle.id = 'dendro-sidebar-toggle';
+          toggle.className = 'dendro-sidebar-toggle';
+          toggle.setAttribute('aria-label', 'Open navigation');
+          toggle.setAttribute('aria-expanded', 'false');
+          var burger = document.createElement('span');
+          burger.className = 'dendro-burger';
+          burger.setAttribute('aria-hidden', 'true');
+          toggle.appendChild(burger);
+          toggle.addEventListener('click', function () {
+            setOpen(!sidebar.classList.contains('is-open'));
+          });
+          navLeft.insertBefore(toggle, navLeft.firstChild);
+        }
+
+        var navRight = document.querySelector('.telemetry-nav .nav-right');
+        if (navRight && !document.getElementById('nav-search-trigger')) {
+          var searchBtn = document.createElement('button');
+          searchBtn.type = 'button';
+          searchBtn.id = 'nav-search-trigger';
+          searchBtn.className = 'nav-search-trigger';
+          searchBtn.title = 'Focus search';
+          var searchLabel = document.createElement('span');
+          searchLabel.textContent = 'Search';
+          var kbd = document.createElement('kbd');
+          kbd.textContent = '/';
+          searchBtn.appendChild(searchLabel);
+          searchBtn.appendChild(kbd);
+          searchBtn.addEventListener('click', focusShellSearch);
+          navRight.insertBefore(searchBtn, navRight.firstChild);
+        }
+
+        if (navRight && !navRight.querySelector('a[href*="viewer.html"]')) {
+          var explorer = document.createElement('a');
+          explorer.className = 'nav-action-btn';
+          explorer.href = root + 'viewer.html';
+          explorer.textContent = 'Fleet Explorer';
+          navRight.appendChild(explorer);
+        }
+      }
+
+      document.body.insertBefore(backdrop, document.body.firstChild);
+      document.body.insertBefore(sidebar, document.body.firstChild);
+
+      if (typeof document.addEventListener === 'function' && !document.body.getAttribute('data-dendro-keys')) {
+        document.body.setAttribute('data-dendro-keys', '1');
+        document.addEventListener('keydown', function (event) {
+          if (!event || event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return;
+          var target = event.target;
+          if (!target || !target.tagName) return;
+          var tag = target.tagName;
+          if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable) return;
+          if (focusShellSearch()) event.preventDefault();
+        });
+      }
+    } catch (err) {
+      if (typeof console !== 'undefined' && console.warn) console.warn('Dendro shell skipped', err);
+    }
+  }
+
+  function focusShellSearch() {
+    if (typeof document === 'undefined' || typeof document.getElementById !== 'function') return false;
+    var search = document.getElementById('view-search')
+      || document.getElementById('seat-search')
+      || document.getElementById('table-search');
+    if (!search && typeof document.querySelector === 'function') {
+      search = document.querySelector('main input[type="text"]');
+    }
+    if (!search || typeof search.focus !== 'function') return false;
+    search.focus();
+    return true;
+  }
+
+  mountProductShell();
 
   global.attachLiveSync = attachLiveSync;
 })(typeof window !== 'undefined' ? window : this);

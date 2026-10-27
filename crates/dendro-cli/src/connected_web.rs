@@ -19,6 +19,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tracing::{info, warn};
 
+const NO_CACHE_HEADERS: &str =
+    "Cache-Control: no-store, no-cache, must-revalidate, max-age=0\r\nPragma: no-cache\r\nExpires: 0\r\n";
+
 /// Validates that a bind address is strictly a loopback address.
 pub fn validate_dashboard_bind_address(addr_str: &str) -> Result<SocketAddr> {
     let resolved = if let Some(rest) = addr_str.strip_prefix("localhost:") {
@@ -568,35 +571,122 @@ pub fn execute_live_query(
     }
 }
 
-fn enrich_row_actor_scope_aliases(map: &mut serde_json::Map<String, serde_json::Value>) {
-    if let Some(seat) = map.get("seat").cloned() {
-        if !map.contains_key("actor_id") {
-            map.insert("actor_id".to_string(), seat);
+fn enrich_and_reorder_row(
+    view_name: &str,
+    mut map: serde_json::Map<String, serde_json::Value>,
+) -> serde_json::Map<String, serde_json::Value> {
+    let is_target = matches!(
+        view_name,
+        "executive_governance"
+            | "v_executive_governance"
+            | "seat_dynamics"
+            | "v_seat_idle_ranking"
+            | "handoff_flow"
+            | "v_handoff_rework_analysis"
+            | "cost_and_loops"
+            | "v_mission_token_burn"
+    );
+
+    // 1. Resolve scope_id
+    let scope_val = map
+        .get("scope_id")
+        .or_else(|| map.get("scope"))
+        .or_else(|| map.get("rig"))
+        .cloned()
+        .or_else(|| {
+            if is_target {
+                Some(serde_json::Value::String("default".to_string()))
+            } else {
+                None
+            }
+        });
+
+    // 2. Resolve actor_id
+    let actor_val = map
+        .get("actor_id")
+        .or_else(|| map.get("seat_id"))
+        .or_else(|| map.get("seat"))
+        .cloned();
+
+    // 3. Resolve from_actor
+    let from_actor_val = map
+        .get("from_actor")
+        .or_else(|| map.get("from_seat"))
+        .or_else(|| map.get("source_seat"))
+        .or_else(|| map.get("from"))
+        .cloned();
+
+    // 4. Resolve to_actor
+    let to_actor_val = map
+        .get("to_actor")
+        .or_else(|| map.get("to_seat"))
+        .or_else(|| map.get("dest_seat"))
+        .or_else(|| map.get("to"))
+        .cloned();
+
+    let mut new_map = serde_json::Map::new();
+
+    // Place scope_id first
+    if let Some(scope) = scope_val {
+        new_map.insert("scope_id".to_string(), scope);
+    }
+
+    // Place actor identifiers next
+    if let Some(actor) = actor_val {
+        new_map.insert("actor_id".to_string(), actor);
+    }
+    if let Some(from_a) = from_actor_val {
+        new_map.insert("from_actor".to_string(), from_a);
+    }
+    if let Some(to_a) = to_actor_val {
+        new_map.insert("to_actor".to_string(), to_a);
+    }
+
+    // Standard columns (excluding keys we already handled or want deferred to the end)
+    const EXCLUDED_KEYS: &[&str] = &[
+        "scope_id",
+        "actor_id",
+        "from_actor",
+        "to_actor",
+        "rig",
+        "scope",
+        "seat",
+        "seat_id",
+        "from_seat",
+        "to_seat",
+        "source_seat",
+        "dest_seat",
+        "from",
+        "to",
+    ];
+
+    for (k, v) in map.iter() {
+        if !EXCLUDED_KEYS.contains(&k.as_str()) {
+            new_map.insert(k.clone(), v.clone());
         }
     }
-    if let Some(seat_id) = map.get("seat_id").cloned() {
-        if !map.contains_key("actor_id") {
-            map.insert("actor_id".to_string(), seat_id);
+
+    // Append raw/legacy keys after the clean actor/scope/metrics columns
+    const LEGACY_APPEND_ORDER: &[&str] = &[
+        "scope",
+        "rig",
+        "seat",
+        "seat_id",
+        "from_seat",
+        "to_seat",
+        "source_seat",
+        "dest_seat",
+        "from",
+        "to",
+    ];
+
+    for key in LEGACY_APPEND_ORDER {
+        if let Some(val) = map.remove(*key) {
+            new_map.insert(key.to_string(), val);
         }
     }
-    if let Some(from) = map.get("from").cloned() {
-        if !map.contains_key("from_actor") {
-            map.insert("from_actor".to_string(), from);
-        }
-    }
-    if let Some(to) = map.get("to").cloned() {
-        if !map.contains_key("to_actor") {
-            map.insert("to_actor".to_string(), to);
-        }
-    }
-    if let Some(rig) = map.get("rig").cloned() {
-        if !map.contains_key("scope_id") {
-            map.insert("scope_id".to_string(), rig.clone());
-        }
-        if !map.contains_key("scope") {
-            map.insert("scope".to_string(), rig);
-        }
-    }
+
+    new_map
 }
 
 fn query_uncapped_view_or_fallback(
@@ -621,8 +711,9 @@ fn query_uncapped_view_or_fallback(
                     let v_ref = row.get_ref(i).unwrap_or(duckdb::types::ValueRef::Null);
                     map.insert(name, crate::serve_v1::value_ref_to_json(v_ref));
                 }
-                enrich_row_actor_scope_aliases(&mut map);
-                Ok(serde_json::Value::Object(map))
+                Ok(serde_json::Value::Object(enrich_and_reorder_row(
+                    view_name, map,
+                )))
             }) {
                 let results: Vec<serde_json::Value> = mapped.filter_map(Result::ok).collect();
                 if !results.is_empty() {
@@ -653,8 +744,9 @@ fn query_uncapped_view_or_fallback(
                         let v_ref = row.get_ref(i).unwrap_or(duckdb::types::ValueRef::Null);
                         map.insert(name, crate::serve_v1::value_ref_to_json(v_ref));
                     }
-                    enrich_row_actor_scope_aliases(&mut map);
-                    Ok(serde_json::Value::Object(map))
+                    Ok(serde_json::Value::Object(enrich_and_reorder_row(
+                        view_name, map,
+                    )))
                 })?;
                 return Ok(mapped.filter_map(Result::ok).collect());
             }
@@ -678,8 +770,9 @@ fn query_uncapped_view_or_fallback(
                         let v_ref = row.get_ref(i).unwrap_or(duckdb::types::ValueRef::Null);
                         map.insert(name, crate::serve_v1::value_ref_to_json(v_ref));
                     }
-                    enrich_row_actor_scope_aliases(&mut map);
-                    Ok(serde_json::Value::Object(map))
+                    Ok(serde_json::Value::Object(enrich_and_reorder_row(
+                        view_name, map,
+                    )))
                 })?;
                 return Ok(mapped.filter_map(Result::ok).collect());
             }
@@ -703,8 +796,9 @@ fn query_uncapped_view_or_fallback(
                         let v_ref = row.get_ref(i).unwrap_or(duckdb::types::ValueRef::Null);
                         map.insert(name, crate::serve_v1::value_ref_to_json(v_ref));
                     }
-                    enrich_row_actor_scope_aliases(&mut map);
-                    Ok(serde_json::Value::Object(map))
+                    Ok(serde_json::Value::Object(enrich_and_reorder_row(
+                        view_name, map,
+                    )))
                 })?;
                 return Ok(mapped.filter_map(Result::ok).collect());
             }
@@ -728,8 +822,9 @@ fn query_uncapped_view_or_fallback(
                         let v_ref = row.get_ref(i).unwrap_or(duckdb::types::ValueRef::Null);
                         map.insert(name, crate::serve_v1::value_ref_to_json(v_ref));
                     }
-                    enrich_row_actor_scope_aliases(&mut map);
-                    Ok(serde_json::Value::Object(map))
+                    Ok(serde_json::Value::Object(enrich_and_reorder_row(
+                        view_name, map,
+                    )))
                 })?;
                 return Ok(mapped.filter_map(Result::ok).collect());
             }
@@ -753,8 +848,84 @@ fn query_uncapped_view_or_fallback(
                         let v_ref = row.get_ref(i).unwrap_or(duckdb::types::ValueRef::Null);
                         map.insert(name, crate::serve_v1::value_ref_to_json(v_ref));
                     }
-                    enrich_row_actor_scope_aliases(&mut map);
-                    Ok(serde_json::Value::Object(map))
+                    Ok(serde_json::Value::Object(enrich_and_reorder_row(
+                        view_name, map,
+                    )))
+                })?;
+                return Ok(mapped.filter_map(Result::ok).collect());
+            }
+        }
+        "v_handoff_rework_analysis" => {
+            let has_handoff: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM information_schema.tables WHERE lower(table_name) = 'dendro_semantic_handoffs'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+            if has_handoff > 0 {
+                let mut stmt = conn.prepare(
+                    "SELECT from_seat, to_seat, handoffs, rework_returns, return_rate, wait_median_ms, exec_turnaround_median_ms, ring_boundary FROM dendro_semantic_handoffs",
+                )?;
+                let mapped = stmt.query_map([], |row| {
+                    let mut map = serde_json::Map::new();
+                    let col_names = row.as_ref().column_names();
+                    for (i, name) in col_names.into_iter().enumerate() {
+                        let v_ref = row.get_ref(i).unwrap_or(duckdb::types::ValueRef::Null);
+                        map.insert(name, crate::serve_v1::value_ref_to_json(v_ref));
+                    }
+                    Ok(serde_json::Value::Object(enrich_and_reorder_row(
+                        view_name, map,
+                    )))
+                })?;
+                return Ok(mapped.filter_map(Result::ok).collect());
+            }
+
+            let has_queue: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM information_schema.tables WHERE lower(table_name) = 'queue_facts'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+            if has_queue > 0 {
+                let mut stmt = conn.prepare(
+                    "SELECT source_seat AS from_seat, dest_seat AS to_seat, COUNT(*)::BIGINT AS handoffs, (COUNT(*) FILTER (WHERE is_recovery))::BIGINT AS rework_returns FROM queue_facts GROUP BY source_seat, dest_seat",
+                )?;
+                let mapped = stmt.query_map([], |row| {
+                    let mut map = serde_json::Map::new();
+                    let col_names = row.as_ref().column_names();
+                    for (i, name) in col_names.into_iter().enumerate() {
+                        let v_ref = row.get_ref(i).unwrap_or(duckdb::types::ValueRef::Null);
+                        map.insert(name, crate::serve_v1::value_ref_to_json(v_ref));
+                    }
+                    Ok(serde_json::Value::Object(enrich_and_reorder_row(
+                        view_name, map,
+                    )))
+                })?;
+                return Ok(mapped.filter_map(Result::ok).collect());
+            }
+        }
+        "v_executive_governance" => {
+            let has_exec: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM information_schema.tables WHERE lower(table_name) = 'dendro_semantic_executive'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+            if has_exec > 0 {
+                let mut stmt = conn.prepare("SELECT * FROM dendro_semantic_executive")?;
+                let mapped = stmt.query_map([], |row| {
+                    let mut map = serde_json::Map::new();
+                    let col_names = row.as_ref().column_names();
+                    for (i, name) in col_names.into_iter().enumerate() {
+                        let v_ref = row.get_ref(i).unwrap_or(duckdb::types::ValueRef::Null);
+                        map.insert(name, crate::serve_v1::value_ref_to_json(v_ref));
+                    }
+                    Ok(serde_json::Value::Object(enrich_and_reorder_row(
+                        view_name, map,
+                    )))
                 })?;
                 return Ok(mapped.filter_map(Result::ok).collect());
             }
@@ -892,7 +1063,7 @@ async fn handle_http_connection(
 
         let body = serde_json::to_vec(&payload)?;
         let header = format!(
-            "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n",
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\n{NO_CACHE_HEADERS}Connection: close\r\n\r\n",
             body.len()
         );
         stream.write_all(header.as_bytes()).await?;
@@ -909,7 +1080,9 @@ async fn handle_http_connection(
         let query_rig = params.get("rig").cloned().or_else(|| rig.clone());
         let query_window = params.get("window").cloned().or_else(|| window.clone());
 
-        let header = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: keep-alive\r\nAccess-Control-Allow-Origin: *\r\n\r\n";
+        let header = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n{NO_CACHE_HEADERS}Connection: keep-alive\r\nAccess-Control-Allow-Origin: *\r\n\r\n"
+        );
         stream.write_all(header.as_bytes()).await?;
 
         let initial_payload = match execute_live_query(
@@ -972,7 +1145,7 @@ async fn handle_http_connection(
         if let Ok(content) = tokio::fs::read(&file_path).await {
             let mime = mime_type_for_path(&file_path);
             let header = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: {mime}\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n",
+                "HTTP/1.1 200 OK\r\nContent-Type: {mime}\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\n{NO_CACHE_HEADERS}Connection: close\r\n\r\n",
                 content.len()
             );
             stream.write_all(header.as_bytes()).await?;
@@ -983,8 +1156,9 @@ async fn handle_http_connection(
         }
     }
 
-    let not_found =
-        "HTTP/1.1 404 Not Found\r\nContent-Length: 9\r\nConnection: close\r\n\r\nNot Found";
+    let not_found = format!(
+        "HTTP/1.1 404 Not Found\r\nContent-Length: 9\r\n{NO_CACHE_HEADERS}Connection: close\r\n\r\nNot Found"
+    );
     stream.write_all(not_found.as_bytes()).await?;
     Ok(())
 }

@@ -14,13 +14,13 @@ document.addEventListener('DOMContentLoaded', () => {
   function update(){
     const input=Object.fromEntries(Object.entries(fields).map(([key,id])=>[key,Number(document.getElementById(id).value)]));
     const r=modelScenario(input);
-    write('seatsVal',`${input.seats} seats`);write('missionsVal',`${input.missions} missions`);
+    write('seatsVal',`${input.seats} actors`);write('missionsVal',`${input.missions} missions`);
     write('tokensPerMissionVal',`${input.tokensK}k tokens`);write('reworkRateVal',`${input.reworkPercent}%`);
     write('tokenCostVal',`$${input.costPerMillion} / 1M`);write('hoursVal',`${input.hours} hours`);write('reductionVal',`${input.reduction}%`);
     write('reworkChainsVal',`${format(r.returned)} expected returns`);write('reworkTokensVal',`${format(r.tokenMillions)}M tokens`);
     write('reworkCostVal',`$${r.cost.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} USD`);
     write('hoursSavedVal',`${format(r.hours)} hours / month`);write('capacityVal',`${format(r.capacity)}%`);
-    write('seatLoadVal',`${format(r.missionsPerSeat)} missions per seat / month, assuming an even workload.`);
+    write('seatLoadVal',`${format(r.missionsPerSeat)} missions per actor / month, assuming an even workload.`);
   }
   if(Object.values(fields).every(id=>document.getElementById(id))){Object.values(fields).forEach(id=>document.getElementById(id).addEventListener('input',update));update();}
 });

@@ -209,6 +209,9 @@ async fn test_connected_dashboard_server_full_lifecycle() {
     // 7. Test Uncapped View Query: message_mix (GET /api/query?view=message_mix)
     let (headers, body) = http_get(local_addr, "/api/query?view=message_mix").await;
     assert!(headers.starts_with("HTTP/1.1 200 OK"));
+    assert!(headers.contains("Cache-Control: no-store, no-cache, must-revalidate, max-age=0"));
+    assert!(headers.contains("Pragma: no-cache"));
+    assert!(headers.contains("Expires: 0"));
     let msg_json: serde_json::Value =
         serde_json::from_slice(&body).expect("message_mix response must be valid JSON");
     assert_eq!(msg_json["live"], serde_json::json!(true));
@@ -220,6 +223,9 @@ async fn test_connected_dashboard_server_full_lifecycle() {
     // Asserts all 60 rows returned with zero 50-row cap
     let (headers, body) = http_get(local_addr, "/api/query?view=cost_and_loops").await;
     assert!(headers.starts_with("HTTP/1.1 200 OK"));
+    assert!(headers.contains("Cache-Control: no-store, no-cache, must-revalidate, max-age=0"));
+    assert!(headers.contains("Pragma: no-cache"));
+    assert!(headers.contains("Expires: 0"));
     let cost_json: serde_json::Value =
         serde_json::from_slice(&body).expect("cost_and_loops response must be valid JSON");
     assert_eq!(cost_json["live"], serde_json::json!(true));
@@ -227,8 +233,21 @@ async fn test_connected_dashboard_server_full_lifecycle() {
         cost_json["table_counts"]["usage_facts"],
         serde_json::json!(60)
     );
+    let cost_rows = cost_json["rows"].as_array().expect("rows must be an array");
+    assert!(!cost_rows.is_empty());
+    assert_eq!(
+        cost_rows[0].as_object().unwrap().keys().next().unwrap(),
+        "scope_id"
+    );
 
-    // 9. Test Live SSE Stream (GET /api/events?view=hub)
+    // 9. Test Static file headers (GET /dashboards/index.html)
+    let (stat_headers, _) = http_get(local_addr, "/dashboards/index.html").await;
+    assert!(stat_headers.starts_with("HTTP/1.1 200 OK"));
+    assert!(stat_headers.contains("Cache-Control: no-store, no-cache, must-revalidate, max-age=0"));
+    assert!(stat_headers.contains("Pragma: no-cache"));
+    assert!(stat_headers.contains("Expires: 0"));
+
+    // 10. Test Live SSE Stream (GET /api/events?view=hub)
     let mut sse_stream = TcpStream::connect(local_addr).await.unwrap();
     let sse_req = format!(
         "GET /api/events?view=hub HTTP/1.1\r\nHost: {local_addr}\r\nConnection: close\r\n\r\n"
@@ -247,6 +266,9 @@ async fn test_connected_dashboard_server_full_lifecycle() {
 
     assert!(sse_text.contains("HTTP/1.1 200 OK"));
     assert!(sse_text.contains("Content-Type: text/event-stream"));
+    assert!(sse_text.contains("Cache-Control: no-store, no-cache, must-revalidate, max-age=0"));
+    assert!(sse_text.contains("Pragma: no-cache"));
+    assert!(sse_text.contains("Expires: 0"));
     assert!(sse_text.contains("data: "));
     assert!(sse_text.contains("\"live\":true") || sse_text.contains("\"live\": true"));
 

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Dendro · Dashboard Entryway & Multi-View Hub</title>
+  <title>Dendro · Fleet Intelligence</title>
   <meta name="description" content="Local-first Dendro v0.8.0 intelligence hub. Telemetry across Model, Harness, Coordination &amp; Lineage, and Environment &amp; Security layers.">
   <link rel="stylesheet" href="style.css">
 </head>
@@ -12,12 +12,22 @@
   <header class="telemetry-nav">
     <div class="nav-left">
       <a href="../index.html" class="brand-link" title="Dendro Home">
-        <span class="brand-icon">D</span>
-        <span>Dendro<span style="font-weight:400;color:var(--text-muted);font-size:0.85rem;margin-left:6px;">Cockpit</span></span>
+        <svg class="brand-mark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="28" height="28" role="img" aria-label="Dendro mark">
+    <rect x="6" y="6" width="116" height="116" rx="26" fill="#0E1714" stroke="#243B33" stroke-width="3"/>
+    <g stroke="#29443A" stroke-width="3" stroke-linecap="round">
+      <line x1="64" y1="14" x2="64" y2="24"/><line x1="64" y1="104" x2="64" y2="114"/>
+      <line x1="14" y1="64" x2="24" y2="64"/><line x1="104" y1="64" x2="114" y2="64"/>
+    </g>
+    <circle cx="64" cy="64" r="42" fill="none" stroke="#10B981" stroke-width="7" stroke-linecap="round" stroke-dasharray="212 52" transform="rotate(-35 64 64)"/>
+    <circle cx="64" cy="64" r="29" fill="none" stroke="#06B6D4" stroke-width="6.5" stroke-linecap="round" stroke-dasharray="138 44" transform="rotate(40 64 64)"/>
+    <circle cx="64" cy="64" r="17" fill="none" stroke="#F2A541" stroke-width="6" stroke-linecap="round" stroke-dasharray="78 29" transform="rotate(-110 64 64)"/>
+    <circle cx="64" cy="64" r="6.5" fill="#F4EFE6"/>
+  </svg>
+        <span class="brand-word">Dendro</span>
       </a>
       <div class="nav-breadcrumbs" aria-label="Breadcrumbs">
         <span class="separator">/</span>
-        <span class="current">Dashboards Hub</span>
+        <span class="current">Intelligence Hub</span>
       </div>
     </div>
     <div class="nav-right">
@@ -39,64 +49,79 @@
   </header>
 
   <main class="telemetry-layout">
-    <!-- Hero Header -->
-    <section class="hero-header">
-      <div class="hero-eyebrow">
-        <span>●</span> Intelligence Layers · Obsidian Edition · v0.8.0
+    <!-- Product hero -->
+    <section class="hero-header product-hero">
+      <div class="product-hero-brand">
+        <svg class="brand-mark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="44" height="44" role="img" aria-label="Dendro mark">
+    <rect x="6" y="6" width="116" height="116" rx="26" fill="#0E1714" stroke="#243B33" stroke-width="3"/>
+    <g stroke="#29443A" stroke-width="3" stroke-linecap="round">
+      <line x1="64" y1="14" x2="64" y2="24"/><line x1="64" y1="104" x2="64" y2="114"/>
+      <line x1="14" y1="64" x2="24" y2="64"/><line x1="104" y1="64" x2="114" y2="64"/>
+    </g>
+    <circle cx="64" cy="64" r="42" fill="none" stroke="#10B981" stroke-width="7" stroke-linecap="round" stroke-dasharray="212 52" transform="rotate(-35 64 64)"/>
+    <circle cx="64" cy="64" r="29" fill="none" stroke="#06B6D4" stroke-width="6.5" stroke-linecap="round" stroke-dasharray="138 44" transform="rotate(40 64 64)"/>
+    <circle cx="64" cy="64" r="17" fill="none" stroke="#F2A541" stroke-width="6" stroke-linecap="round" stroke-dasharray="78 29" transform="rotate(-110 64 64)"/>
+    <circle cx="64" cy="64" r="6.5" fill="#F4EFE6"/>
+  </svg>
+        <div>
+          <h1 class="hero-title">Dendro Fleet Intelligence <span class="version-badge">0.8.0</span></h1>
+          <p class="hero-subtitle">Read the agentic stack across Model, Harness, Coordination &amp; Lineage, and Environment &amp; Security.</p>
+        </div>
       </div>
-      <h1 class="hero-title">Dashboard Entryway & Multi-View Hub</h1>
-      <p class="hero-subtitle">
-        Read the agentic stack across Model, Harness, Coordination &amp; Lineage, and Environment &amp; Security. Domain views count messages, lineage, security observations, and process resources.
-      </p>
+      <div class="product-hero-actions">
+        <p id="hub-recorded-window" class="window-pill">Recorded window: illustrative snapshot</p>
+        <a href="../viewer.html" class="nav-action-btn">Fleet Explorer</a>
+      </div>
     </section>
 
     <!-- KPI Aggregate Banner -->
-    <section class="kpi-grid" aria-label="Layer key performance indicators">
+    <section class="kpi-grid" aria-label="Executive pulse">
       <article class="kpi-card accent-cyan">
         <div class="kpi-label" id="kpi-tokens-label">Model tokens (I02)</div>
         <div class="kpi-value" id="kpi-tokens">14.24M</div>
         <div class="kpi-meta" id="kpi-tokens-meta">
-          <span>Disjoint components</span> · <span style="color:var(--accent-cyan);">No inferred currency</span>
+          <span class="badge badge-info">Disjoint</span>
+          <span>No inferred currency</span>
         </div>
       </article>
-
       <article class="kpi-card accent-emerald">
-        <div class="kpi-label" id="kpi-seats-label">8 Active Actors</div>
+        <div class="kpi-label" id="kpi-seats-label">Active actors</div>
         <div class="kpi-value" id="kpi-seats">8</div>
         <div class="kpi-meta" id="kpi-seats-meta">
-          <span class="badge badge-info">Coordination Layer</span> · <span>observed active actors</span>
+          <span class="badge badge-info">Coordination</span>
+          <span>observed active actors</span>
         </div>
+        <div class="kpi-split">
+          <span class="kpi-label" id="kpi-concurrency-label">Observed concurrency</span>
+          <span class="kpi-inline" id="kpi-concurrency">2.84x</span>
+        </div>
+        <div class="kpi-meta" id="kpi-concurrency-meta">k active actors</div>
       </article>
-
-      <article class="kpi-card accent-purple">
+      <article class="kpi-card accent-amber">
         <div class="kpi-label" id="kpi-yield-label">Session yield</div>
         <div class="kpi-value" id="kpi-yield">78.4K <small style="font-size:0.9rem;font-weight:500;">tok/deliv</small></div>
         <div class="kpi-meta" id="kpi-yield-meta">
-          <span>Canonical M1 when linked</span> · <span style="color:var(--purple-protocol);">Null is not zero</span>
+          <span class="badge badge-info">Canonical M1</span>
+          <span>Null is not zero</span>
         </div>
       </article>
-
-      <article class="kpi-card accent-amber">
+      <article class="kpi-card accent-rose">
         <div class="kpi-label" id="kpi-friction-label">Work handoff rework</div>
         <div class="kpi-value" id="kpi-friction">12.9%</div>
         <div class="kpi-meta" id="kpi-friction-meta">
-          <span>32 rework returns</span> · <span style="color:var(--amber-friction);">18 recorded pairs</span>
-        </div>
-      </article>
-
-      <article class="kpi-card accent-rose">
-        <div class="kpi-label" id="kpi-concurrency-label">Observed concurrency</div>
-        <div class="kpi-value" id="kpi-concurrency">2.84x</div>
-        <div class="kpi-meta" id="kpi-concurrency-meta">
-          <span class="badge badge-info">Coordination Layer</span> · <span>k active actors</span>
+          <span class="badge badge-warn">32 rework returns</span>
+          <span>18 recorded pairs</span>
         </div>
       </article>
     </section>
 
-    <section id="hub-telemetry" class="hub-telemetry" aria-label="Fleet fact telemetry">
-      <div class="hub-telemetry-surface">
-        <h2>Fleet fact telemetry</h2>
-        <p id="hub-recorded-window">Recorded window: illustrative snapshot</p>
+    <section id="live-duckdb-panel" class="live-duckdb-panel console-panel" data-keep-visible="true" aria-label="DuckDB telemetry and harness breakdown">
+      <div class="live-duckdb-surface">
+        <div class="console-panel-head">
+          <h2 class="live-duckdb-title">DuckDB telemetry</h2>
+          <p id="live-duckdb-window" class="window-pill">Recorded window: —</p>
+        </div>
+        <p id="live-duckdb-totals">Total rows: —</p>
         <p id="hub-row-count">Total rows: —</p>
         <p id="hub-harnesses">Harnesses: —</p>
         <ul class="fact-counts" id="hub-fact-counts">
@@ -109,7 +134,384 @@
           <li>Tool facts <span id="fact-tool_facts">—</span></li>
           <li>Skill facts <span id="fact-skill_facts">—</span></li>
         </ul>
-        <div id="hub-layer-summaries" class="layer-summaries">
+        <ul id="live-duckdb-facts" class="fact-counts"></ul>
+        <div class="live-duckdb-scroll">
+          <table class="telemetry-table">
+            <thead id="live-duckdb-head"></thead>
+            <tbody id="live-duckdb-body"></tbody>
+          </table>
+        </div>
+        
+      </div>
+    </section>
+
+    <!-- Filter and Search Toolbar -->
+    <section class="filter-toolbar" aria-label="Dashboard views filter">
+      <div class="search-box">
+        <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input type="text" id="view-search" class="search-input" placeholder="Search views, insights, or SQL" aria-label="Search dashboard views">
+        <kbd class="search-kbd" aria-hidden="true">/</kbd>
+      </div>
+      <div class="filter-chips" role="tablist" aria-label="Intelligence layer filter">
+        <button class="filter-chip active" data-category="all" type="button">All</button>
+        <button class="filter-chip" data-category="intelligence" type="button">Active Intelligence</button>
+        <button class="filter-chip" data-category="model" type="button">Model</button>
+        <button class="filter-chip" data-category="harness" type="button">Harness</button>
+        <button class="filter-chip" data-category="coordination" type="button">Coordination</button>
+        <button class="filter-chip" data-category="environment" type="button">Environment</button>
+      </div>
+    </section>
+
+    
+    <!-- Dashboard Views Grid -->
+    <section id="views-container" class="views-grid" aria-label="Dashboard Views Directory">
+      <a href="views/message_mix.html" class="view-card" data-category="model harness" data-keywords="message mix I02 I08 model harness role direction modality no body capture">
+        <div>
+          <div class="view-card-header">
+            <span class="view-card-tag tag-cyan">Model · Harness</span>
+            <span class="view-card-sql">v_message_mix</span>
+          </div>
+          <h2 class="view-card-title">
+            <span>Model &amp; Harness Message Mix</span>
+            <span class="arrow">Open Console →</span>
+          </h2>
+          <p class="view-card-desc">
+            Message and capability telemetry across harnesses and models. Counts by role, direction, and modality. Message bodies are never captured. I02 accounts tokens. I08 accounts settled action failure. All-time counts — window_from/window_to label the snapshot but do not filter.
+          </p>
+        </div>
+        <div class="view-card-preview-stats">
+          <div class="preview-stat">
+            <span class="preview-stat-label">I02</span>
+            <span class="preview-stat-value">tokens.direct</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">I08</span>
+            <span class="preview-stat-value">action_failure</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">Bodies</span>
+            <span class="preview-stat-value" style="color:var(--emerald-yield);">Not stored</span>
+          </div>
+        </div>
+      </a>
+
+      <a href="views/cost_and_loops.html" class="view-card" data-category="model adapter" data-keywords="I02 I04 model token cost accounting cache read write output actor session">
+        <div>
+          <div class="view-card-header">
+            <span class="view-card-tag tag-cyan">Model Layer</span>
+            <span class="view-card-sql">v_mission_token_burn</span>
+          </div>
+          <h2 class="view-card-title">
+            <span>Model Token &amp; Cost Accounting (I02 / I04)</span>
+            <span class="arrow">Open Console →</span>
+          </h2>
+          <p class="view-card-desc">
+            Token and cost attribution across models, tasks, and actors. Unknown cost is never treated as zero.
+          </p>
+        </div>
+        <div class="view-card-preview-stats">
+          <div class="preview-stat">
+            <span class="preview-stat-label">Cache read</span>
+            <span class="preview-stat-value" style="color:var(--emerald-yield);">76.8%</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">I04 cost</span>
+            <span class="preview-stat-value" style="color:var(--accent-cyan);">Unknown</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">Adapter</span>
+            <span class="preview-stat-value">Actor / Session</span>
+          </div>
+        </div>
+      </a>
+
+      <a href="views/subagent_lineage.html" class="view-card" data-category="coordination" data-keywords="I09 work lineage shape subagent spawn delegate handoff return root caller">
+        <div>
+          <div class="view-card-header">
+            <span class="view-card-tag tag-amber">Coordination</span>
+            <span class="view-card-sql">v_subagent_lineage</span>
+          </div>
+          <h2 class="view-card-title">
+            <span>Sub-Agent &amp; Work Lineage Graph</span>
+            <span class="arrow">Open Console →</span>
+          </h2>
+          <p class="view-card-desc">
+            Direct parent-child session counts from v_subagent_lineage; depth, cycle, and unresolved-parent verdicts come from canonical insight I09 (missing parents remain unresolved and are never imputed as roots). All-time counts — window_from/window_to label the snapshot but do not filter.
+          </p>
+        </div>
+        <div class="view-card-preview-stats">
+          <div class="preview-stat">
+            <span class="preview-stat-label">Insight</span>
+            <span class="preview-stat-value">I09</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">Edges</span>
+            <span class="preview-stat-value">Explicit only</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">Roots</span>
+            <span class="preview-stat-value" style="color:var(--amber-friction);">Traced</span>
+          </div>
+        </div>
+      </a>
+
+      <a href="views/handoff_flow.html" class="view-card" data-category="coordination adapter" data-keywords="work handoff rework friction return rate queue wait sender actor receiver actor">
+        <div>
+          <div class="view-card-header">
+            <span class="view-card-tag tag-amber">Coordination</span>
+            <span class="view-card-sql">v_handoff_rework_analysis</span>
+          </div>
+          <h2 class="view-card-title">
+            <span>Work Handoff &amp; Rework Friction</span>
+            <span class="arrow">Open Console →</span>
+          </h2>
+          <p class="view-card-desc">
+            Sender and receiver actor pairs across queue handoffs and return loops. The counts are queue flow, not token attribution.
+          </p>
+        </div>
+        <div class="view-card-preview-stats">
+          <div class="preview-stat">
+            <span class="preview-stat-label">Pairs</span>
+            <span class="preview-stat-value">18</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">Return rate</span>
+            <span class="preview-stat-value" style="color:var(--amber-friction);">12.9%</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">Adapter</span>
+            <span class="preview-stat-value">Actor / Session</span>
+          </div>
+        </div>
+      </a>
+
+      <a href="views/seat_dynamics.html" class="view-card" data-category="harness adapter" data-keywords="actor activity session yield idle ceremony harness">
+        <div>
+          <div class="view-card-header">
+            <span class="view-card-tag tag-emerald">Harness Layer</span>
+            <span class="view-card-sql">v_seat_idle_ranking</span>
+          </div>
+          <h2 class="view-card-title">
+            <span>Actor Activity &amp; Session Yield</span>
+            <span class="arrow">Open Console →</span>
+          </h2>
+          <p class="view-card-desc">
+            Observed actor time split into active execution, idle-with-work, container hold, and leaf stall, plus session yield. Partitioned by actor and session across execution bands.
+          </p>
+        </div>
+        <div class="view-card-preview-stats">
+          <div class="preview-stat">
+            <span class="preview-stat-label">Active ratio</span>
+            <span class="preview-stat-value" style="color:var(--emerald-yield);">68.4%</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">Ceremony</span>
+            <span class="preview-stat-value" style="color:var(--accent-cyan);">11.8%</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">Adapter</span>
+            <span class="preview-stat-value">Actor / Session</span>
+          </div>
+        </div>
+      </a>
+
+      <a href="views/security_posture.html" class="view-card" data-category="environment" data-keywords="security posture policy grant approval attempt effective_authority effect closed vocabulary">
+        <div>
+          <div class="view-card-header">
+            <span class="view-card-tag tag-purple">Environment · Security</span>
+            <span class="view-card-sql">v_security_posture</span>
+          </div>
+          <h2 class="view-card-title">
+            <span>Security &amp; Authority Posture</span>
+            <span class="arrow">Open Console →</span>
+          </h2>
+          <p class="view-card-desc">
+            Closed-vocabulary observations across policy, grant, approval, attempt, effective authority, and effect. A grant is not effective authority. Command text is never stored. All-time counts — window_from/window_to label the snapshot but do not filter.
+          </p>
+        </div>
+        <div class="view-card-preview-stats">
+          <div class="preview-stat">
+            <span class="preview-stat-label">Kinds</span>
+            <span class="preview-stat-value">Closed</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">Authority</span>
+            <span class="preview-stat-value" style="color:var(--amber-friction);">Not inferred</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">Text</span>
+            <span class="preview-stat-value" style="color:var(--emerald-yield);">Omitted</span>
+          </div>
+        </div>
+      </a>
+
+      <a href="views/process_resources.html" class="view-card" data-category="environment" data-keywords="I14 I18 environment resources coverage source max rss process scope process attribution">
+        <div>
+          <div class="view-card-header">
+            <span class="view-card-tag tag-purple">Environment</span>
+            <span class="view-card-sql">v_process_resources</span>
+          </div>
+          <h2 class="view-card-title">
+            <span>Environment &amp; Process Resources</span>
+            <span class="arrow">Open Console →</span>
+          </h2>
+          <p class="view-card-desc">
+            I14 environment.resources is CPU deltas and max sampled RSS. I18 coverage.source counts sources. Max RSS per unit, process scope, and process attribution. The SQL view does not recompute CPU or coverage. All-time counts — window_from/window_to label the snapshot but do not filter.
+          </p>
+        </div>
+        <div class="view-card-preview-stats">
+          <div class="preview-stat">
+            <span class="preview-stat-label">I14</span>
+            <span class="preview-stat-value">resources</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">I18</span>
+            <span class="preview-stat-value">coverage</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">CPU in SQL</span>
+            <span class="preview-stat-value" style="color:var(--emerald-yield);">Absent</span>
+          </div>
+        </div>
+      </a>
+
+      <a href="views/executive_governance.html" class="view-card" data-category="environment adapter" data-keywords="governance verification scorecard peer review watchdog vortex scope">
+        <div>
+          <div class="view-card-header">
+            <span class="view-card-tag tag-purple">Verification</span>
+            <span class="view-card-sql">v_executive_governance</span>
+          </div>
+          <h2 class="view-card-title">
+            <span>Governance &amp; Verification Scorecard</span>
+            <span class="arrow">Open Console →</span>
+          </h2>
+          <p class="view-card-desc">
+            Verification evidence for recovery, vortex loops, cache bleed, and independent peer review.
+          </p>
+        </div>
+        <div class="view-card-preview-stats">
+          <div class="preview-stat">
+            <span class="preview-stat-label">Peer Review</span>
+            <span class="preview-stat-value">Adapter</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">Vortex</span>
+            <span class="preview-stat-value" style="color:var(--emerald-yield);">0 loops</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">Watchdog</span>
+            <span class="preview-stat-value" style="color:var(--purple-protocol);">12 resumes</span>
+          </div>
+        </div>
+      </a>
+
+
+      <a href="views/trajectory_vortex.html" class="view-card" data-category="harness" data-group="intelligence" data-keywords="trajectory vortex I22 harness cosine distance cohort trip not a cause">
+        <div>
+          <div class="view-card-header">
+            <span class="view-card-tag tag-emerald">Harness</span>
+            <span class="view-card-sql">v_trajectory_vortex</span>
+          </div>
+          <h2 class="view-card-title">
+            <span>Trajectory Vortex (I22)</span>
+            <span class="arrow">Open Console →</span>
+          </h2>
+          <p class="view-card-desc">
+            Distance from the cohort of completed sessions. A trip is not a cause. All-time counts — window_from/window_to label the snapshot but do not filter.
+          </p>
+        </div>
+      </a>
+
+      <a href="views/schema_drift.html" class="view-card" data-category="harness" data-group="intelligence" data-keywords="schema drift I23 harness envelope shape keys added removed retyped">
+        <div>
+          <div class="view-card-header">
+            <span class="view-card-tag tag-emerald">Harness</span>
+            <span class="view-card-sql">v_schema_drift</span>
+          </div>
+          <h2 class="view-card-title">
+            <span>Schema Drift (I23)</span>
+            <span class="arrow">Open Console →</span>
+          </h2>
+          <p class="view-card-desc">
+            L1 distance of envelope shape distributions, plus keys added, removed, and retyped. A short sample is insufficient_sample. All-time counts — window_from/window_to label the snapshot but do not filter.
+          </p>
+        </div>
+      </a>
+
+      <a href="views/authority_blast_radius.html" class="view-card" data-category="environment" data-group="intelligence" data-keywords="authority blast radius I24 security evidenced reachability dependency exposure">
+        <div>
+          <div class="view-card-header">
+            <span class="view-card-tag tag-slate">Security</span>
+            <span class="view-card-sql">v_authority_blast_radius</span>
+          </div>
+          <h2 class="view-card-title">
+            <span>Authority Blast Radius (I24)</span>
+            <span class="arrow">Open Console →</span>
+          </h2>
+          <p class="view-card-desc">
+            Downstream sessions on evidenced edges only. The count is dependency exposure, not inherited authority. All-time counts — window_from/window_to label the snapshot but do not filter.
+          </p>
+        </div>
+      </a>
+
+      <a href="views/counterfactual_routing.html" class="view-card" data-category="model" data-group="intelligence" data-keywords="counterfactual routing I25 model pinned tier simulation not an effect">
+        <div>
+          <div class="view-card-header">
+            <span class="view-card-tag tag-cyan">Model</span>
+            <span class="view-card-sql">v_counterfactual_routing</span>
+          </div>
+          <h2 class="view-card-title">
+            <span>Counterfactual Routing (I25)</span>
+            <span class="arrow">Open Console →</span>
+          </h2>
+          <p class="view-card-desc">
+            Simulated fast-tier cost from an operator-pinned table. It is not an effect and not a routing change. All-time counts — window_from/window_to label the snapshot but do not filter.
+          </p>
+        </div>
+      </a>
+
+      <a href="../viewer.html" class="view-card" data-category="model harness coordination environment adapter" data-keywords="explorer sankey timeline heatmap offline insights layers actor session">
+        <div>
+          <div class="view-card-header">
+            <span class="view-card-tag tag-slate">Explorer · Canvas</span>
+            <span class="view-card-sql">Offline Standalone Canvas</span>
+          </div>
+          <h2 class="view-card-title">
+            <span>Cross-layer Stack Explorer</span>
+            <span class="arrow">Open Console →</span>
+          </h2>
+          <p class="view-card-desc">
+            Offline and connected reader for actors, sessions, work lineage, model accounting, and security posture.
+          </p>
+        </div>
+        <div class="view-card-preview-stats">
+          <div class="preview-stat">
+            <span class="preview-stat-label">Mode</span>
+            <span class="preview-stat-value" style="color:var(--accent-cyan);">Zero Server</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">Sankey Ribbons</span>
+            <span class="preview-stat-value">Interactive</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">Privacy</span>
+            <span class="preview-stat-value" style="color:var(--emerald-yield);">Scrubbed</span>
+          </div>
+        </div>
+      </a>
+    </section>
+
+    <!-- Empty State for Search Filter -->
+    <div id="no-views-msg" style="display:none;padding:40px;text-align:center;color:var(--text-muted);background:var(--surface-card);border:1px dashed var(--border-subtle);border-radius:12px;">
+      <p style="font-size:1.1rem;margin-bottom:6px;">No dashboard views match your search criteria.</p>
+      <p style="font-size:0.85rem;">Try clearing the search or selecting All.</p>
+    </div>
+    <section class="architecture-layers" aria-label="Architecture layers">
+      <div class="section-head">
+        <h2>Architecture layers</h2>
+        <p class="architecture-note">All Layers stay addressable. Counts roll through Model Layer, Harness Layer, Coordination &amp; Lineage, Environment &amp; Security, and Coordination &amp; Topology.</p>
+      </div>
+      <div id="hub-layer-summaries" class="layer-summaries">
           <article>
             <h3>Model Layer</h3>
             <p id="layer-model">usage_facts —</p>
@@ -127,7 +529,6 @@
             <p id="layer-environment">security_facts —</p>
           </article>
         </div>
-      </div>
     </section>
 
     <section id="persona-questions" aria-label="Persona questions">
@@ -146,6 +547,7 @@
       </ol>
     </section>
 
+    
     <section id="compiled-insights" class="insights-strip" aria-label="Compiled Insights Strip (insight_v1)">
       <div class="insights-strip-head">
         <h2>Compiled Insights Strip (insight_v1)</h2>
@@ -282,366 +684,8 @@
       </div>
     </section>
 
-    <!-- Filter and Search Toolbar -->
-    <section class="filter-toolbar" aria-label="Dashboard views filter">
-      <div class="search-box">
-        <span class="search-icon">🔍</span>
-        <input type="text" id="view-search" class="search-input" placeholder="Search layers (message mix, lineage, tokens, security, RSS)..." aria-label="Search dashboard views">
-      </div>
-      <div class="filter-chips" role="tablist" aria-label="Intelligence layer filter">
-        <button class="filter-chip active" data-category="all" type="button">All Layers</button>
-        <button class="filter-chip" data-category="model" type="button">Model Layer</button>
-        <button class="filter-chip" data-category="harness" type="button">Harness Layer</button>
-        <button class="filter-chip" data-category="coordination" type="button">Coordination &amp; Lineage</button>
-        <button class="filter-chip" data-category="environment" type="button">Environment &amp; Security</button>
-        <button class="filter-chip" data-category="adapter" type="button">Coordination &amp; Topology</button>
-      </div>
-    </section>
-
-    <!-- Dashboard Views Grid -->
-    <section id="views-container" class="views-grid" aria-label="Dashboard Views Directory">
-      <a href="views/message_mix.html" class="view-card" data-category="model harness" data-keywords="message mix I02 I08 model harness role direction modality no body capture">
-        <div>
-          <div class="view-card-header">
-            <span class="view-card-tag tag-cyan">Model · Harness</span>
-            <span class="view-card-sql">v_message_mix</span>
-          </div>
-          <h2 class="view-card-title">
-            <span>Model &amp; Harness Message Mix</span>
-            <span class="arrow">→</span>
-          </h2>
-          <p class="view-card-desc">
-            Message and capability telemetry across harnesses and models. Counts by role, direction, and modality. Message bodies are never captured. I02 accounts tokens. I08 accounts settled action failure. All-time counts — window_from/window_to label the snapshot but do not filter.
-          </p>
-        </div>
-        <div class="view-card-preview-stats">
-          <div class="preview-stat">
-            <span class="preview-stat-label">I02</span>
-            <span class="preview-stat-value">tokens.direct</span>
-          </div>
-          <div class="preview-stat">
-            <span class="preview-stat-label">I08</span>
-            <span class="preview-stat-value">action_failure</span>
-          </div>
-          <div class="preview-stat">
-            <span class="preview-stat-label">Bodies</span>
-            <span class="preview-stat-value" style="color:var(--emerald-yield);">Not stored</span>
-          </div>
-        </div>
-      </a>
-
-      <a href="views/cost_and_loops.html" class="view-card" data-category="model adapter" data-keywords="I02 I04 model token cost accounting cache read write output actor session">
-        <div>
-          <div class="view-card-header">
-            <span class="view-card-tag tag-cyan">Model Layer</span>
-            <span class="view-card-sql">v_mission_token_burn</span>
-          </div>
-          <h2 class="view-card-title">
-            <span>Model Token &amp; Cost Accounting (I02 / I04)</span>
-            <span class="arrow">→</span>
-          </h2>
-          <p class="view-card-desc">
-            Token and cost attribution across models, tasks, and actors. Unknown cost is never treated as zero.
-          </p>
-        </div>
-        <div class="view-card-preview-stats">
-          <div class="preview-stat">
-            <span class="preview-stat-label">Cache read</span>
-            <span class="preview-stat-value" style="color:var(--emerald-yield);">76.8%</span>
-          </div>
-          <div class="preview-stat">
-            <span class="preview-stat-label">I04 cost</span>
-            <span class="preview-stat-value" style="color:var(--accent-cyan);">Unknown</span>
-          </div>
-          <div class="preview-stat">
-            <span class="preview-stat-label">Adapter</span>
-            <span class="preview-stat-value">Actor / Session</span>
-          </div>
-        </div>
-      </a>
-
-      <a href="views/subagent_lineage.html" class="view-card" data-category="coordination" data-keywords="I09 work lineage shape subagent spawn delegate handoff return root caller">
-        <div>
-          <div class="view-card-header">
-            <span class="view-card-tag tag-amber">Coordination</span>
-            <span class="view-card-sql">v_subagent_lineage</span>
-          </div>
-          <h2 class="view-card-title">
-            <span>Sub-Agent &amp; Work Lineage Graph</span>
-            <span class="arrow">→</span>
-          </h2>
-          <p class="view-card-desc">
-            Direct parent-child session counts from v_subagent_lineage; depth, cycle, and unresolved-parent verdicts come from canonical insight I09 (missing parents remain unresolved and are never imputed as roots). All-time counts — window_from/window_to label the snapshot but do not filter.
-          </p>
-        </div>
-        <div class="view-card-preview-stats">
-          <div class="preview-stat">
-            <span class="preview-stat-label">Insight</span>
-            <span class="preview-stat-value">I09</span>
-          </div>
-          <div class="preview-stat">
-            <span class="preview-stat-label">Edges</span>
-            <span class="preview-stat-value">Explicit only</span>
-          </div>
-          <div class="preview-stat">
-            <span class="preview-stat-label">Roots</span>
-            <span class="preview-stat-value" style="color:var(--amber-friction);">Traced</span>
-          </div>
-        </div>
-      </a>
-
-      <a href="views/handoff_flow.html" class="view-card" data-category="coordination adapter" data-keywords="work handoff rework friction return rate queue wait sender actor receiver actor">
-        <div>
-          <div class="view-card-header">
-            <span class="view-card-tag tag-amber">Coordination</span>
-            <span class="view-card-sql">v_handoff_rework_analysis</span>
-          </div>
-          <h2 class="view-card-title">
-            <span>Work Handoff &amp; Rework Friction</span>
-            <span class="arrow">→</span>
-          </h2>
-          <p class="view-card-desc">
-            Sender and receiver actor pairs across queue handoffs and return loops. The counts are queue flow, not token attribution.
-          </p>
-        </div>
-        <div class="view-card-preview-stats">
-          <div class="preview-stat">
-            <span class="preview-stat-label">Pairs</span>
-            <span class="preview-stat-value">18</span>
-          </div>
-          <div class="preview-stat">
-            <span class="preview-stat-label">Return rate</span>
-            <span class="preview-stat-value" style="color:var(--amber-friction);">12.9%</span>
-          </div>
-          <div class="preview-stat">
-            <span class="preview-stat-label">Adapter</span>
-            <span class="preview-stat-value">Actor / Session</span>
-          </div>
-        </div>
-      </a>
-
-      <a href="views/seat_dynamics.html" class="view-card" data-category="harness adapter" data-keywords="actor activity session yield idle ceremony harness">
-        <div>
-          <div class="view-card-header">
-            <span class="view-card-tag tag-emerald">Harness Layer</span>
-            <span class="view-card-sql">v_seat_idle_ranking</span>
-          </div>
-          <h2 class="view-card-title">
-            <span>Actor Activity &amp; Session Yield</span>
-            <span class="arrow">→</span>
-          </h2>
-          <p class="view-card-desc">
-            Observed actor time split into active execution, idle-with-work, container hold, and leaf stall, plus session yield. Partitioned by actor and session across execution bands.
-          </p>
-        </div>
-        <div class="view-card-preview-stats">
-          <div class="preview-stat">
-            <span class="preview-stat-label">Active ratio</span>
-            <span class="preview-stat-value" style="color:var(--emerald-yield);">68.4%</span>
-          </div>
-          <div class="preview-stat">
-            <span class="preview-stat-label">Ceremony</span>
-            <span class="preview-stat-value" style="color:var(--accent-cyan);">11.8%</span>
-          </div>
-          <div class="preview-stat">
-            <span class="preview-stat-label">Adapter</span>
-            <span class="preview-stat-value">Actor / Session</span>
-          </div>
-        </div>
-      </a>
-
-      <a href="views/security_posture.html" class="view-card" data-category="environment" data-keywords="security posture policy grant approval attempt effective_authority effect closed vocabulary">
-        <div>
-          <div class="view-card-header">
-            <span class="view-card-tag tag-purple">Environment · Security</span>
-            <span class="view-card-sql">v_security_posture</span>
-          </div>
-          <h2 class="view-card-title">
-            <span>Security &amp; Authority Posture</span>
-            <span class="arrow">→</span>
-          </h2>
-          <p class="view-card-desc">
-            Closed-vocabulary observations across policy, grant, approval, attempt, effective authority, and effect. A grant is not effective authority. Command text is never stored. All-time counts — window_from/window_to label the snapshot but do not filter.
-          </p>
-        </div>
-        <div class="view-card-preview-stats">
-          <div class="preview-stat">
-            <span class="preview-stat-label">Kinds</span>
-            <span class="preview-stat-value">Closed</span>
-          </div>
-          <div class="preview-stat">
-            <span class="preview-stat-label">Authority</span>
-            <span class="preview-stat-value" style="color:var(--amber-friction);">Not inferred</span>
-          </div>
-          <div class="preview-stat">
-            <span class="preview-stat-label">Text</span>
-            <span class="preview-stat-value" style="color:var(--emerald-yield);">Omitted</span>
-          </div>
-        </div>
-      </a>
-
-      <a href="views/process_resources.html" class="view-card" data-category="environment" data-keywords="I14 I18 environment resources coverage source max rss process scope process attribution">
-        <div>
-          <div class="view-card-header">
-            <span class="view-card-tag tag-purple">Environment</span>
-            <span class="view-card-sql">v_process_resources</span>
-          </div>
-          <h2 class="view-card-title">
-            <span>Environment &amp; Process Resources</span>
-            <span class="arrow">→</span>
-          </h2>
-          <p class="view-card-desc">
-            I14 environment.resources is CPU deltas and max sampled RSS. I18 coverage.source counts sources. Max RSS per unit, process scope, and process attribution. The SQL view does not recompute CPU or coverage. All-time counts — window_from/window_to label the snapshot but do not filter.
-          </p>
-        </div>
-        <div class="view-card-preview-stats">
-          <div class="preview-stat">
-            <span class="preview-stat-label">I14</span>
-            <span class="preview-stat-value">resources</span>
-          </div>
-          <div class="preview-stat">
-            <span class="preview-stat-label">I18</span>
-            <span class="preview-stat-value">coverage</span>
-          </div>
-          <div class="preview-stat">
-            <span class="preview-stat-label">CPU in SQL</span>
-            <span class="preview-stat-value" style="color:var(--emerald-yield);">Absent</span>
-          </div>
-        </div>
-      </a>
-
-      <a href="views/executive_governance.html" class="view-card" data-category="environment adapter" data-keywords="governance verification scorecard peer review watchdog vortex scope">
-        <div>
-          <div class="view-card-header">
-            <span class="view-card-tag tag-purple">Verification</span>
-            <span class="view-card-sql">v_executive_governance</span>
-          </div>
-          <h2 class="view-card-title">
-            <span>Governance &amp; Verification Scorecard</span>
-            <span class="arrow">→</span>
-          </h2>
-          <p class="view-card-desc">
-            Verification evidence for recovery, vortex loops, cache bleed, and independent peer review.
-          </p>
-        </div>
-        <div class="view-card-preview-stats">
-          <div class="preview-stat">
-            <span class="preview-stat-label">Peer Review</span>
-            <span class="preview-stat-value">Adapter</span>
-          </div>
-          <div class="preview-stat">
-            <span class="preview-stat-label">Vortex</span>
-            <span class="preview-stat-value" style="color:var(--emerald-yield);">0 loops</span>
-          </div>
-          <div class="preview-stat">
-            <span class="preview-stat-label">Watchdog</span>
-            <span class="preview-stat-value" style="color:var(--purple-protocol);">12 resumes</span>
-          </div>
-        </div>
-      </a>
-
-
-      <a href="views/trajectory_vortex.html" class="view-card" data-category="harness" data-keywords="trajectory vortex I22 harness cosine distance cohort trip not a cause">
-        <div>
-          <div class="view-card-header">
-            <span class="view-card-tag tag-emerald">Harness</span>
-            <span class="view-card-sql">v_trajectory_vortex</span>
-          </div>
-          <h2 class="view-card-title">
-            <span>Trajectory Vortex (I22)</span>
-            <span class="arrow">→</span>
-          </h2>
-          <p class="view-card-desc">
-            Distance from the cohort of completed sessions. A trip is not a cause. All-time counts — window_from/window_to label the snapshot but do not filter.
-          </p>
-        </div>
-      </a>
-
-      <a href="views/schema_drift.html" class="view-card" data-category="harness" data-keywords="schema drift I23 harness envelope shape keys added removed retyped">
-        <div>
-          <div class="view-card-header">
-            <span class="view-card-tag tag-emerald">Harness</span>
-            <span class="view-card-sql">v_schema_drift</span>
-          </div>
-          <h2 class="view-card-title">
-            <span>Schema Drift (I23)</span>
-            <span class="arrow">→</span>
-          </h2>
-          <p class="view-card-desc">
-            L1 distance of envelope shape distributions, plus keys added, removed, and retyped. A short sample is insufficient_sample. All-time counts — window_from/window_to label the snapshot but do not filter.
-          </p>
-        </div>
-      </a>
-
-      <a href="views/authority_blast_radius.html" class="view-card" data-category="environment" data-keywords="authority blast radius I24 security evidenced reachability dependency exposure">
-        <div>
-          <div class="view-card-header">
-            <span class="view-card-tag tag-slate">Security</span>
-            <span class="view-card-sql">v_authority_blast_radius</span>
-          </div>
-          <h2 class="view-card-title">
-            <span>Authority Blast Radius (I24)</span>
-            <span class="arrow">→</span>
-          </h2>
-          <p class="view-card-desc">
-            Downstream sessions on evidenced edges only. The count is dependency exposure, not inherited authority. All-time counts — window_from/window_to label the snapshot but do not filter.
-          </p>
-        </div>
-      </a>
-
-      <a href="views/counterfactual_routing.html" class="view-card" data-category="model" data-keywords="counterfactual routing I25 model pinned tier simulation not an effect">
-        <div>
-          <div class="view-card-header">
-            <span class="view-card-tag tag-cyan">Model</span>
-            <span class="view-card-sql">v_counterfactual_routing</span>
-          </div>
-          <h2 class="view-card-title">
-            <span>Counterfactual Routing (I25)</span>
-            <span class="arrow">→</span>
-          </h2>
-          <p class="view-card-desc">
-            Simulated fast-tier cost from an operator-pinned table. It is not an effect and not a routing change. All-time counts — window_from/window_to label the snapshot but do not filter.
-          </p>
-        </div>
-      </a>
-
-      <a href="../viewer.html" class="view-card" data-category="model harness coordination environment adapter" data-keywords="explorer sankey timeline heatmap offline insights layers actor session">
-        <div>
-          <div class="view-card-header">
-            <span class="view-card-tag tag-slate">Explorer · Canvas</span>
-            <span class="view-card-sql">Offline Standalone Canvas</span>
-          </div>
-          <h2 class="view-card-title">
-            <span>Cross-layer Stack Explorer</span>
-            <span class="arrow">↗</span>
-          </h2>
-          <p class="view-card-desc">
-            Offline and connected reader for actors, sessions, work lineage, model accounting, and security posture.
-          </p>
-        </div>
-        <div class="view-card-preview-stats">
-          <div class="preview-stat">
-            <span class="preview-stat-label">Mode</span>
-            <span class="preview-stat-value" style="color:var(--accent-cyan);">Zero Server</span>
-          </div>
-          <div class="preview-stat">
-            <span class="preview-stat-label">Sankey Ribbons</span>
-            <span class="preview-stat-value">Interactive</span>
-          </div>
-          <div class="preview-stat">
-            <span class="preview-stat-label">Privacy</span>
-            <span class="preview-stat-value" style="color:var(--emerald-yield);">Scrubbed</span>
-          </div>
-        </div>
-      </a>
-    </section>
-
-    <!-- Empty State for Search Filter -->
-    <div id="no-views-msg" style="display:none;padding:40px;text-align:center;color:var(--text-muted);background:var(--surface-card);border:1px dashed var(--border-subtle);border-radius:12px;">
-      <p style="font-size:1.1rem;margin-bottom:6px;">No dashboard views match your search criteria.</p>
-      <p style="font-size:0.85rem;">Try clearing the search query or selecting "All Layers".</p>
-    </div>
-  </main>
+    
+      </main>
 
   <!-- Embedded Snapshot Data -->
   <script id="dendro-data" type="application/json">
@@ -693,7 +737,8 @@ function display_status(status, reason) {
         const desc = card.querySelector('.view-card-desc')?.textContent.toLowerCase() || '';
 
         const layers = (cat || '').split(/\s+/);
-        const matchesCat = (activeCategory === 'all' || layers.includes(activeCategory));
+        const group = card.getAttribute('data-group') || '';
+        const matchesCat = (activeCategory === 'all' || layers.includes(activeCategory) || (activeCategory === 'intelligence' && group === 'intelligence'));
         const matchesQuery = !q || kw.includes(q) || title.includes(q) || desc.includes(q);
 
         if (matchesCat && matchesQuery) {

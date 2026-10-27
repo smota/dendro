@@ -100,7 +100,7 @@
 
         <div class="dendro-calc-grid">
           <form class="dendro-calc-form" id="calc-form" aria-label="Fleet rework scenario inputs" onsubmit="return false;">
-            <label>Active seats / agents <input id="seats" type="number" min="1" max="200" value="6"></label>
+            <label>Active actors / agents <input id="seats" type="number" min="1" max="200" value="6"></label>
             <label>Missions per week <input id="missions" type="number" min="1" max="2000" value="40"></label>
             <label>Avg tokens per mission (k) <input id="tokensK" type="number" min="10" max="10000" value="450"></label>
             <label>Current rework rate (%) <input id="reworkPercent" type="number" min="0" max="100" value="25"></label>
@@ -146,7 +146,7 @@
               </tr>
               <tr>
                 <td><strong>Did the workflow converge?</strong></td>
-                <td>First-pass completions versus multi-pass return loops between seats, plus median handoff wait and execution durations.</td>
+                <td>First-pass completions versus multi-pass return loops between actors, plus median handoff wait and execution durations.</td>
                 <td>Claims about whether the underlying product strategy or architecture was right.</td>
               </tr>
               <tr>
@@ -156,7 +156,7 @@
               </tr>
               <tr>
                 <td><strong>Can I share a report safely?</strong></td>
-                <td>Offline HTML viewer with automatic seat aliasing (<code>Seat 1</code>, <code>Seat 2</code>) and scrubbing of paths, prompts, and tokens.</td>
+                <td>Offline HTML viewer with automatic actor aliasing (<code>Actor 1</code>, <code>Actor 2</code>) and scrubbing of paths, prompts, and tokens.</td>
                 <td>Silent background uploads to any hosted telemetry cloud.</td>
               </tr>
             </tbody>
