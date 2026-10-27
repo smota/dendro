@@ -49,6 +49,26 @@ models:
     description: Canonical per-root_key and per-harness process count, max RSS per rss_unit, sample count, and attribution from process_identities and process_samples; monotonic CPU and disk deltas come from canonical insight I14 (environment.resources) and are never recomputed in SQL. ALL-TIME counts — window_from/window_to label the snapshot but do not filter these rows; I14 is windowed.
     dimensions: [root_key, harness, attribution, rss_unit, rig, window_from, window_to, definition_version]
     columns: [process_count, max_rss_bytes, sample_count, source_keys]
+  - name: trajectory_vortex
+    table: v_trajectory_vortex
+    description: Reserved trajectory rows for I22 harness.trajectory_vortex. A trip is distance from the cohort, not a cause. ALL-TIME rows — window_from/window_to label the snapshot but do not filter these rows. CPU stays on I14. Cost stays on I04.
+    dimensions: [harness, session_key, status, reason, rig, window_from, window_to, definition_version]
+    columns: [turn_k, cosine_distance, self_transition_rate, tripped, source_keys]
+  - name: schema_drift
+    table: v_schema_drift
+    description: Reserved envelope-shape drift rows for I23 harness.schema_drift. Short samples use reason insufficient_sample. ALL-TIME rows — window_from/window_to label the snapshot but do not filter these rows.
+    dimensions: [harness, harness_version, status, reason, rig, window_from, window_to, definition_version]
+    columns: [l1_distance, keys_added, keys_removed, keys_retyped, source_keys]
+  - name: authority_blast_radius
+    table: v_authority_blast_radius
+    description: Reserved evidenced-only reachability rows for I24 security.authority_blast_radius. The count is dependency exposure, not inherited or effective authority. ALL-TIME rows — window_from/window_to label the snapshot but do not filter these rows.
+    dimensions: [harness, origin_session, status, reason, rig, window_from, window_to, definition_version]
+    columns: [downstream_sessions, max_hop, cycles_touched, non_claim, source_keys]
+  - name: counterfactual_routing
+    table: v_counterfactual_routing
+    description: Reserved counterfactual rows for I25 model.counterfactual_routing. The simulation is not an effect and not a routing change. ALL-TIME rows — window_from/window_to label the snapshot but do not filter these rows. Observed cost stays on I04.
+    dimensions: [harness, session_key, status, reason, rig, window_from, window_to, definition_version]
+    columns: [cache_bleed_inflection, simulated_cost, simulated_context_pressure, source_keys]
 prompts:
   file: prompts.md
   patterns: [Compare, Rank, Explain, Verify, Trace, HonestLimits]

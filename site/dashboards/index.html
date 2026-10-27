@@ -23,7 +23,7 @@
     <div class="nav-right">
       <div id="dual-serving-indicator" class="dual-serving-badge snapshot">
         <span class="pulse-dot"></span>
-        <span id="dual-serving-text">ILLUSTRATIVE SNAPSHOT · LIVE SYNC READY</span>
+        <span id="dual-serving-text">ILLUSTRATIVE SNAPSHOT</span>
       </div>
       <button id="btn-refresh" class="nav-action-btn" type="button" title="Refresh local data snapshot">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
@@ -93,42 +93,155 @@
       </article>
     </section>
 
+    <section id="persona-questions" aria-label="Persona questions">
+      <div class="insights-strip-head">
+        <h2>Persona questions</h2>
+        <p>At most seven headline questions. The compiled strip below is the I01–I25 catalog index, not this headline list.</p>
+      </div>
+      <ol>
+        <li data-persona-question="I02">Where do direct model tokens go when cache is kept separate?</li>
+        <li data-persona-question="I04">Which observed model cost is known, and which estimate stays unknown?</li>
+        <li data-persona-question="I08">Which harness actions failed after they settled?</li>
+        <li data-persona-question="I09">Where does work lineage stop, cycle, or leave a parent unresolved?</li>
+        <li data-persona-question="I14">Which placements account for CPU time and sampled memory?</li>
+        <li data-persona-question="I24">Which downstream sessions does an evidenced grant reach?</li>
+        <li data-persona-question="I22">Is a trajectory trip a cause, or only a distance from the cohort?</li>
+      </ol>
+    </section>
+
     <section id="compiled-insights" class="insights-strip" aria-label="Compiled Insights Strip (insight_v1)">
       <div class="insights-strip-head">
         <h2>Compiled Insights Strip (insight_v1)</h2>
-        <p>Six v0.8.0 reference insights. L0 is the domain disclosure. Status is the insight_v1 contract. This strip does not recompute measures.</p>
+        <p>Catalog index I01–I25. L0 is status, finding, practical meaning, scope, and missingness. This strip does not recompute measures.</p>
       </div>
       <div class="insight-grid">
-        <article class="insight-card">
+    <!-- @vnext-insight-catalog -->
+        <article class="insight-card" data-insight-id="I01">
+          <div class="insight-id">I01 <span class="view-card-tag tag-cyan">L0 · Model</span></div>
+          <div class="insight-name">model.invocations</div>
+          <p class="insight-formula">Count distinct evidenced call IDs. Usage-only rows are separate. No admitted call facts → not_observable. The presenter does not recompute this measure.</p>
+        </article>
+        <article class="insight-card" data-insight-id="I02">
           <div class="insight-id">I02 <span class="view-card-tag tag-cyan">L0 · Model</span></div>
           <div class="insight-name">model.tokens.direct</div>
           <p class="insight-formula">Status: Computed when usage rows exist; Refused on an empty population or a failed store read. Formula: disjoint sums of input_uncached, cache_write, cache_read, and output per model. Reasoning stays inside output and is not added again. cache_read_ratio_of_sums and cache_read_mean_of_ratios are separate measures.</p>
         </article>
-        <article class="insight-card">
+        <article class="insight-card" data-insight-id="I03">
+          <div class="insight-id">I03 <span class="view-card-tag tag-cyan">L0 · Model</span></div>
+          <div class="insight-name">model.tokens.inclusive</div>
+          <p class="insight-formula">Inclusive sum over the reachable observation union. Nonadditive. Incomplete nonnegative lineage is a lower bound. Ambiguous duplicates refuse the canonical total.</p>
+        </article>
+        <article class="insight-card" data-insight-id="I04">
           <div class="insight-id">I04 <span class="view-card-tag tag-cyan">L0 · Model</span></div>
           <div class="insight-name">model.cost</div>
           <p class="insight-formula">Status: Computed, or Partial when observed or estimated USD is unknown. Formula: observed_usd and estimated_usd stay on separate measures and are never added. Unknown is not zero. The pricing table ships empty, so estimates stay unknown.</p>
         </article>
-        <article class="insight-card">
+        <article class="insight-card" data-insight-id="I05">
+          <div class="insight-id">I05 <span class="view-card-tag tag-cyan">L0 · Model</span></div>
+          <div class="insight-name">model.configuration_divergence</div>
+          <p class="insight-formula">Observed bindings that differ from contemporaneous desired bindings, or from paired observed bindings. Unknown values are excluded and counted. Missing paired population → not_observable.</p>
+        </article>
+        <article class="insight-card" data-insight-id="I06">
+          <div class="insight-id">I06 <span class="view-card-tag tag-emerald">L0 · Harness</span></div>
+          <div class="insight-name">harness.capability_funnel</div>
+          <p class="insight-formula">Distinct loaded and invoked capability IDs, and the invoked∩loaded / loaded rate. Absent loaded evidence refuses the rate. Actions still count.</p>
+        </article>
+        <article class="insight-card" data-insight-id="I07">
+          <div class="insight-id">I07 <span class="view-card-tag tag-emerald">L0 · Harness</span></div>
+          <div class="insight-name">harness.context_pressure</div>
+          <p class="insight-formula">Evidenced context-used / context-limit at invocation. Prompt tokens do not substitute. A missing limit refuses the ratio.</p>
+        </article>
+        <article class="insight-card" data-insight-id="I08">
           <div class="insight-id">I08 <span class="view-card-tag tag-emerald">L0 · Harness</span></div>
           <div class="insight-name">harness.action_failure</div>
           <p class="insight-formula">Status: Computed, or Partial when unsettled actions remain. Formula: failed divided by settled terminal actions (failed IS NOT NULL). Unsettled actions (failed IS NULL) are counted separately and are never treated as success.</p>
         </article>
-        <article class="insight-card">
+        <article class="insight-card" data-insight-id="I09">
           <div class="insight-id">I09 <span class="view-card-tag tag-amber">L0 · Coordination</span></div>
           <div class="insight-name">work.lineage_shape</div>
           <p class="insight-formula">Status: Computed, or Partial when a parent is unresolved or a cycle stops the walk. Formula: explicit session_edges only. Relations include spawn, delegate, handoff, and return. Roots, depth, and diamonds are measured. Cycles are flagged. Unresolved parents are counted and never invented as roots.</p>
         </article>
-        <article class="insight-card">
+        <article class="insight-card" data-insight-id="I10">
+          <div class="insight-id">I10 <span class="view-card-tag tag-amber">L0 · Coordination</span></div>
+          <div class="insight-name">work.duration</div>
+          <p class="insight-formula">Wall union, summed attempt-seconds, and summed/wall. Half-open same-clock segments. A censored contribution is partial. wall=0 refuses the concurrency ratio.</p>
+        </article>
+        <article class="insight-card" data-insight-id="I11">
+          <div class="insight-id">I11 <span class="view-card-tag tag-amber">L0 · Coordination</span></div>
+          <div class="insight-name">work.shared_allocation</div>
+          <p class="insight-formula">Shared usage, weighted beneficiaries, and residual. Rational weights are ≥ 0 and sum ≤ 1. Absent policy leaves the shared bucket.</p>
+        </article>
+        <article class="insight-card" data-insight-id="I12">
+          <div class="insight-id">I12 <span class="view-card-tag tag-amber">L0 · Coordination</span></div>
+          <div class="insight-name">coord.queue_wait</div>
+          <p class="insight-formula">Sum or median of ready-to-start elapsed intervals, and a separate wall union. Missing ready, start, or cross-clock uncertainty refuses the affected intervals.</p>
+        </article>
+        <article class="insight-card" data-insight-id="I13">
+          <div class="insight-id">I13 <span class="view-card-tag tag-purple">L0 · Environment</span></div>
+          <div class="insight-name">environment.placement</div>
+          <p class="insight-formula">Distinct incarnations and placement intervals by locus, plus same-label rebuild count. An unknown incarnation gets an unresolved count.</p>
+        </article>
+        <article class="insight-card" data-insight-id="I14">
           <div class="insight-id">I14 <span class="view-card-tag tag-purple">L0 · Environment</span></div>
           <div class="insight-name">environment.resources</div>
           <p class="insight-formula">Status: Computed when identities and samples exist; Refused on an empty population. Formula: CPU deltas and max sampled RSS. Per root_key and harness, sum CPU deltas on readable non-decreasing samples and take the max sampled RSS per rss_unit, with launched versus discovered attribution. RSS units are never mixed.</p>
         </article>
-        <article class="insight-card">
+        <article class="insight-card" data-insight-id="I15">
+          <div class="insight-id">I15 <span class="view-card-tag tag-purple">L0 · Environment</span></div>
+          <div class="insight-name">environment.effects</div>
+          <p class="insight-formula">Normalized successful and failed syscall counts by operation and resource class. An unmatched call has an unknown result. No trace → not_observable.</p>
+        </article>
+        <article class="insight-card" data-insight-id="I16">
+          <div class="insight-id">I16 <span class="view-card-tag tag-slate">L0 · Security</span></div>
+          <div class="insight-name">security.isolation</div>
+          <p class="insight-formula">Paired declared / configured / tested dimension comparisons. A lone declaration is insufficient. Namespace equality is configuration, not a universal verification.</p>
+        </article>
+        <article class="insight-card" data-insight-id="I17">
+          <div class="insight-id">I17 <span class="view-card-tag tag-slate">L0 · Security</span></div>
+          <div class="insight-name">security.authority</div>
+          <p class="insight-formula">Comparator counts of consistent, mismatch, and insufficient by an explicit rule. No applicable policy → NOT_ASSESSED, never a zero violation count.</p>
+        </article>
+        <article class="insight-card" data-insight-id="I18">
           <div class="insight-id">I18 <span class="view-card-tag tag-purple">L0 · Environment</span></div>
           <div class="insight-name">coverage.source</div>
           <p class="insight-formula">Status: Computed for an unwindowed scope; Refused when a from or to bound is set. Formula: read, projected, unprojected-by-reason, and refused counts per source. A missing source is not a zero.</p>
         </article>
+        <article class="insight-card" data-insight-id="I19">
+          <div class="insight-id">I19 <span class="view-card-tag tag-amber">L0 · Coordination</span></div>
+          <div class="insight-name">outcome.acceptance</div>
+          <p class="insight-formula">Currently accepted eligible work / rule-eligible evaluated work, with attempt success kept separate. No acceptance rule → not_observable.</p>
+        </article>
+        <article class="insight-card" data-insight-id="I20">
+          <div class="insight-id">I20 <span class="view-card-tag tag-amber">L0 · Coordination</span></div>
+          <div class="insight-name">outcome.resource_efficiency</div>
+          <p class="insight-formula">Matched-population cost / accepted work, and a separate mean of per-work ratios. Zero accepted is null, not infinity. Cost stays on I04.</p>
+        </article>
+        <article class="insight-card" data-insight-id="I21">
+          <div class="insight-id">I21 <span class="view-card-tag tag-cyan">L0 · Model</span></div>
+          <div class="insight-name">comparison.descriptive</div>
+          <p class="insight-formula">Stratified difference of same-version measures. Match clock basis, grain, accounting, units, and coverage. Biased or unmatched selection → noncomparable.</p>
+        </article>
+        <article class="insight-card" data-insight-id="I22">
+          <div class="insight-id">I22 <span class="view-card-tag tag-emerald">L0 · Harness</span></div>
+          <div class="insight-name">harness.trajectory_vortex</div>
+          <p class="insight-formula">Distance from the cohort centroid of completed sessions. A trip is not a cause. L1 assumptions block that reading. The SQL trigger only marks the session dirty.</p>
+        </article>
+        <article class="insight-card" data-insight-id="I23">
+          <div class="insight-id">I23 <span class="view-card-tag tag-emerald">L0 · Harness</span></div>
+          <div class="insight-name">harness.schema_drift</div>
+          <p class="insight-formula">L1 distance of envelope_shape key-path and variant_type distributions, plus keys added, removed, and retyped. A short sample is reason insufficient_sample and badge insufficient_evidence.</p>
+        </article>
+        <article class="insight-card" data-insight-id="I24">
+          <div class="insight-id">I24 <span class="view-card-tag tag-slate">L0 · Security</span></div>
+          <div class="insight-name">security.authority_blast_radius</div>
+          <p class="insight-formula">Downstream sessions on status = evidenced edges only. The count is dependency exposure, not inherited or effective authority. PageRank is not an input.</p>
+        </article>
+        <article class="insight-card" data-insight-id="I25">
+          <div class="insight-id">I25 <span class="view-card-tag tag-cyan">L0 · Model</span></div>
+          <div class="insight-name">model.counterfactual_routing</div>
+          <p class="insight-formula">Simulated fast-tier cost and context pressure from an operator-pinned tier table. It is not an effect and not a routing change. An unpinned cohort or tier profile refuses the simulation and keeps observed I02.</p>
+        </article>
+    <!-- @vnext-insight-catalog-end -->
       </div>
     </section>
 
@@ -390,6 +503,71 @@
         </div>
       </a>
 
+
+      <a href="views/trajectory_vortex.html" class="view-card" data-category="harness" data-keywords="trajectory vortex I22 harness cosine distance cohort trip not a cause">
+        <div>
+          <div class="view-card-header">
+            <span class="view-card-tag tag-emerald">Harness</span>
+            <span class="view-card-sql">v_trajectory_vortex</span>
+          </div>
+          <h2 class="view-card-title">
+            <span>Trajectory Vortex (I22)</span>
+            <span class="arrow">→</span>
+          </h2>
+          <p class="view-card-desc">
+            Distance from the cohort of completed sessions. A trip is not a cause. All-time counts — window_from/window_to label the snapshot but do not filter.
+          </p>
+        </div>
+      </a>
+
+      <a href="views/schema_drift.html" class="view-card" data-category="harness" data-keywords="schema drift I23 harness envelope shape keys added removed retyped">
+        <div>
+          <div class="view-card-header">
+            <span class="view-card-tag tag-emerald">Harness</span>
+            <span class="view-card-sql">v_schema_drift</span>
+          </div>
+          <h2 class="view-card-title">
+            <span>Schema Drift (I23)</span>
+            <span class="arrow">→</span>
+          </h2>
+          <p class="view-card-desc">
+            L1 distance of envelope shape distributions, plus keys added, removed, and retyped. A short sample is insufficient_sample. All-time counts — window_from/window_to label the snapshot but do not filter.
+          </p>
+        </div>
+      </a>
+
+      <a href="views/authority_blast_radius.html" class="view-card" data-category="environment" data-keywords="authority blast radius I24 security evidenced reachability dependency exposure">
+        <div>
+          <div class="view-card-header">
+            <span class="view-card-tag tag-slate">Security</span>
+            <span class="view-card-sql">v_authority_blast_radius</span>
+          </div>
+          <h2 class="view-card-title">
+            <span>Authority Blast Radius (I24)</span>
+            <span class="arrow">→</span>
+          </h2>
+          <p class="view-card-desc">
+            Downstream sessions on evidenced edges only. The count is dependency exposure, not inherited authority. All-time counts — window_from/window_to label the snapshot but do not filter.
+          </p>
+        </div>
+      </a>
+
+      <a href="views/counterfactual_routing.html" class="view-card" data-category="model" data-keywords="counterfactual routing I25 model pinned tier simulation not an effect">
+        <div>
+          <div class="view-card-header">
+            <span class="view-card-tag tag-cyan">Model</span>
+            <span class="view-card-sql">v_counterfactual_routing</span>
+          </div>
+          <h2 class="view-card-title">
+            <span>Counterfactual Routing (I25)</span>
+            <span class="arrow">→</span>
+          </h2>
+          <p class="view-card-desc">
+            Simulated fast-tier cost from an operator-pinned table. It is not an effect and not a routing change. All-time counts — window_from/window_to label the snapshot but do not filter.
+          </p>
+        </div>
+      </a>
+
       <a href="../viewer.html" class="view-card" data-category="model harness coordination environment adapter" data-keywords="explorer sankey timeline heatmap offline insights layers openrig">
         <div>
           <div class="view-card-header">
@@ -448,6 +626,18 @@
   <script src="live-sync.js"></script>
   <script>
     'use strict';
+function display_status(status, reason) {
+  const reasonCode = typeof reason === 'string' ? reason : '';
+  if (reasonCode === 'not_observable' || reasonCode === 'insufficient_sample') return 'insufficient_evidence';
+  if (reasonCode === 'not_applicable' || reasonCode === 'NOT_ASSESSED') return 'not_applicable';
+  if (reasonCode === 'threshold_exceeded') return 'partial';
+  if (reasonCode === 'noncomparable') return 'insufficient_evidence';
+  const name = typeof status === 'string' ? status : '';
+  if (name === 'Computed' || name === 'computed') return 'ok';
+  if (name === 'Partial' || name === 'partial') return 'partial';
+  if (name === 'Refused' || name === 'refused') return 'refused';
+  return 'refused';
+}
     // Interactive search and category filtering
     const searchInput = document.getElementById('view-search');
     const categoryChips = document.querySelectorAll('.filter-chip');

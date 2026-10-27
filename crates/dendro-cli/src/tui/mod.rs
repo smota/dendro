@@ -83,6 +83,38 @@ pub enum InsightDepth {
     Measure,
 }
 
+/// Presentation catalog `(id, name, domain)` for I01–I25.
+/// Computed rows still come from `insight_v1::evaluate`.
+pub const VNEXT_INSIGHT_INDEX: &[(&str, &str, &str)] = &[
+    // @vnext-insight-catalog
+    ("I01", "model.invocations", "model"),
+    ("I02", "model.tokens.direct", "model"),
+    ("I03", "model.tokens.inclusive", "model"),
+    ("I04", "model.cost", "model"),
+    ("I05", "model.configuration_divergence", "model"),
+    ("I06", "harness.capability_funnel", "harness"),
+    ("I07", "harness.context_pressure", "harness"),
+    ("I08", "harness.action_failure", "harness"),
+    ("I09", "work.lineage_shape", "coordination"),
+    ("I10", "work.duration", "coordination"),
+    ("I11", "work.shared_allocation", "coordination"),
+    ("I12", "coord.queue_wait", "coordination"),
+    ("I13", "environment.placement", "environment"),
+    ("I14", "environment.resources", "environment"),
+    ("I15", "environment.effects", "environment"),
+    ("I16", "security.isolation", "security"),
+    ("I17", "security.authority", "security"),
+    ("I18", "coverage.source", "environment"),
+    ("I19", "outcome.acceptance", "coordination"),
+    ("I20", "outcome.resource_efficiency", "coordination"),
+    ("I21", "comparison.descriptive", "model"),
+    ("I22", "harness.trajectory_vortex", "harness"),
+    ("I23", "harness.schema_drift", "harness"),
+    ("I24", "security.authority_blast_radius", "security"),
+    ("I25", "model.counterfactual_routing", "model"),
+    // @vnext-insight-catalog-end
+];
+
 fn insight_domains() -> [InsightDomain; 5] {
     [
         InsightDomain::Model,
@@ -375,7 +407,7 @@ impl AppState {
         };
         let pretty = serde_json::to_string_pretty(&result).unwrap_or_default();
         self.modal = Some(AppModal::DetailJson(
-            format!("Insight {}", result.id),
+            format!("Insight {} · L3 formula, population (what, included, excluded), exclusions, and cutoff", result.id),
             pretty,
         ));
     }

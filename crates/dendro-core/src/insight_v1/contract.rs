@@ -187,6 +187,164 @@ pub struct InsightResult {
     pub evidence: Vec<String>,
 }
 
+/// One progressive-disclosure level from DESIGN.md section 6.
+/// Presenters read these fields. They do not recompute the answer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Disclosure {
+    pub level: &'static str,
+    pub fields: Vec<(&'static str, String)>,
+}
+
+/// Total map from `InsightStatus` plus its reason to one A14 badge token.
+/// First matching row wins. Storage stays `InsightStatus`; this is display only.
+pub fn display_status(status: &InsightStatus) -> &'static str {
+    let reason = match status {
+        InsightStatus::Computed => None,
+        InsightStatus::Partial { reason } | InsightStatus::Refused { reason } => {
+            Some(reason.as_str())
+        }
+    };
+    match reason {
+        Some("not_observable" | "insufficient_sample") => "insufficient_evidence",
+        Some("not_applicable" | "NOT_ASSESSED") => "not_applicable",
+        Some("threshold_exceeded") => "partial",
+        Some("noncomparable") => "insufficient_evidence",
+        _ => match status {
+            InsightStatus::Computed => "ok",
+            InsightStatus::Partial { .. } => "partial",
+            InsightStatus::Refused { .. } => "refused",
+        },
+    }
+}
+
+impl InsightResult {
+    /// L0: status, finding, practical meaning, scope, and missingness.
+    pub fn disclosure_l0(&self) -> Disclosure {
+        Disclosure {
+            level: "L0",
+            fields: vec![
+                ("status", status_label(&self.status)),
+                ("finding", format!("{} {}", self.id, self.name)),
+                (
+                    "practical_meaning",
+                    coverage_body(&self.coverage).to_string(),
+                ),
+                ("scope", domain_name(self.domain).to_string()),
+                ("missingness", missingness(&self.status)),
+            ],
+        }
+    }
+
+    /// L1: assumptions and alternative explanations.
+    pub fn disclosure_l1(&self) -> Disclosure {
+        Disclosure {
+            level: "L1",
+            fields: vec![
+                (
+                    "assumptions",
+                    coverage_label(&self.coverage, "assumption")
+                        .unwrap_or_else(|| "none recorded on this answer".to_string()),
+                ),
+                (
+                    "alternatives",
+                    coverage_label(&self.coverage, "alternative")
+                        .unwrap_or_else(|| "none recorded on this answer".to_string()),
+                ),
+            ],
+        }
+    }
+
+    /// L2: safe evidence IDs and source versions.
+    pub fn disclosure_l2(&self) -> Disclosure {
+        Disclosure {
+            level: "L2",
+            fields: vec![
+                (
+                    "evidence_ids",
+                    if self.evidence.is_empty() {
+                        "none".to_string()
+                    } else {
+                        self.evidence.join(" ")
+                    },
+                ),
+                ("source_versions", self.version.to_string()),
+            ],
+        }
+    }
+
+    /// L3: formula, population, exclusions, and cutoff.
+    pub fn disclosure_l3(&self) -> Disclosure {
+        let formula = coverage_label(&self.coverage, "formula").unwrap_or_else(|| {
+            if self.measures.is_empty() {
+                "no measure formula on a refused or empty answer".to_string()
+            } else {
+                self.measures
+                    .iter()
+                    .map(|measure| format!("{}: {}", measure.id, measure.basis))
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            }
+        });
+        let excluded = self
+            .measures
+            .iter()
+            .find(|measure| measure.name == "excluded")
+            .map(|measure| match measure.value {
+                Some(value) => value.to_string(),
+                None => "unknown".to_string(),
+            })
+            .unwrap_or_else(|| "not separately counted".to_string());
+        Disclosure {
+            level: "L3",
+            fields: vec![
+                ("formula", formula),
+                ("population_what", self.population.what.clone()),
+                ("population_included", self.population.n.to_string()),
+                ("population_excluded", excluded),
+                ("exclusions", missingness(&self.status)),
+                (
+                    "cutoff",
+                    "caller scope window is half-open [from, to); this answer does not invent a cutoff"
+                        .to_string(),
+                ),
+            ],
+        }
+    }
+}
+
+fn status_label(status: &InsightStatus) -> String {
+    match status {
+        InsightStatus::Computed => "computed".to_string(),
+        InsightStatus::Partial { reason } => format!("partial ({reason})"),
+        InsightStatus::Refused { reason } => format!("refused ({reason})"),
+    }
+}
+
+fn missingness(status: &InsightStatus) -> String {
+    match status {
+        InsightStatus::Computed => "none".to_string(),
+        InsightStatus::Partial { reason } | InsightStatus::Refused { reason } => reason.clone(),
+    }
+}
+
+fn coverage_body(coverage: &str) -> &str {
+    coverage
+        .split(" | ")
+        .find(|part| !part.contains(':') || part.starts_with("practical:"))
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .unwrap_or(coverage)
+}
+
+fn coverage_label(coverage: &str, label: &str) -> Option<String> {
+    let prefix = format!("{label}: ");
+    coverage.split(" | ").find_map(|part| {
+        part.trim()
+            .strip_prefix(&prefix)
+            .map(|rest| rest.trim().to_string())
+    })
+}
+
 pub(crate) fn refused(insight: &dyn Insight, reason: &str, what: &str) -> InsightResult {
     InsightResult {
         id: insight.id(),

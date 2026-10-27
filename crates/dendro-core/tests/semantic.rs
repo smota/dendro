@@ -323,21 +323,13 @@ fn natural_aliases_supported_intents_and_window_bounds_work() -> anyhow::Result<
             "Trace & HonestLimits",
         ]
     );
-    let views: Vec<&str> = intents["semantic_views"]
+    let views: std::collections::BTreeSet<&str> = intents["semantic_views"]
         .as_array()
         .unwrap()
         .iter()
         .filter_map(|item| item["view"].as_str())
         .collect();
-    assert_eq!(
-        views,
-        vec![
-            "v_message_mix",
-            "v_subagent_lineage",
-            "v_security_posture",
-            "v_process_resources",
-        ]
-    );
+    assert_eq!(views, semantic::VIEWS.into_iter().collect());
 
     let (from, to, mode) = dendro_core::presentation::resolve_window(
         &f.db,
@@ -423,4 +415,207 @@ fn natural_aliases_supported_intents_and_window_bounds_work() -> anyhow::Result<
     assert_eq!(unknown["status"], "insufficient_data");
     assert!(unknown["supported_examples"].is_array());
     Ok(())
+}
+
+fn repo_root() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("repo root")
+}
+
+fn read_repo(rel: &str) -> String {
+    std::fs::read_to_string(repo_root().join(rel)).unwrap_or_else(|err| panic!("read {rel}: {err}"))
+}
+
+fn marker_block(text: &str) -> &str {
+    let start = text
+        .find("@vnext-insight-catalog")
+        .expect("catalog start marker");
+    let end = text
+        .find("@vnext-insight-catalog-end")
+        .expect("catalog end marker");
+    assert!(end > start);
+    &text[start..end]
+}
+
+fn insight_ids(text: &str) -> std::collections::BTreeSet<String> {
+    let block = marker_block(text);
+    let bytes = block.as_bytes();
+    let mut ids = std::collections::BTreeSet::new();
+    let mut index = 0;
+    while index + 3 <= bytes.len() {
+        let prev_ok = index == 0 || !bytes[index - 1].is_ascii_alphanumeric();
+        let next_ok = index + 3 == bytes.len() || !bytes[index + 3].is_ascii_alphanumeric();
+        if prev_ok
+            && next_ok
+            && bytes[index] == b'I'
+            && bytes[index + 1].is_ascii_digit()
+            && bytes[index + 2].is_ascii_digit()
+        {
+            let id = &block[index..index + 3];
+            if ("I01"..="I25").contains(&id) {
+                ids.insert(id.to_string());
+            }
+        }
+        index += 1;
+    }
+    ids
+}
+
+fn view_names(text: &str) -> std::collections::BTreeSet<String> {
+    let bytes = text.as_bytes();
+    let mut names = std::collections::BTreeSet::new();
+    let mut index = 0;
+    while index + 2 < bytes.len() {
+        if bytes[index] == b'v' && bytes[index + 1] == b'_' {
+            let start = index;
+            index += 2;
+            while index < bytes.len()
+                && (bytes[index].is_ascii_lowercase()
+                    || bytes[index].is_ascii_digit()
+                    || bytes[index] == b'_')
+            {
+                index += 1;
+            }
+            if index > start + 2 {
+                names.insert(text[start..index].to_string());
+            }
+            continue;
+        }
+        index += 1;
+    }
+    names
+}
+
+#[test]
+fn vnext_insight_catalog_and_nao_views_match() {
+    let expected: std::collections::BTreeSet<String> =
+        (1..=25).map(|n| format!("I{n:02}")).collect();
+    let registry = insight_ids(&read_repo(
+        "crates/dendro-core/src/insight_v1/reference/mod.rs",
+    ));
+    let presentation = insight_ids(&read_repo("crates/dendro-core/src/presentation.rs"));
+    let viewer = insight_ids(&read_repo("site/viewer.html"));
+    let index = insight_ids(&read_repo("site/dashboards/index.html"));
+    let tui = insight_ids(&read_repo("crates/dendro-cli/src/tui/mod.rs"));
+    assert_eq!(registry, expected);
+    assert_eq!(presentation, expected);
+    assert_eq!(viewer, expected);
+    assert_eq!(index, expected);
+    assert_eq!(tui, expected);
+    let admitted: std::collections::BTreeSet<String> =
+        dendro_core::presentation::admitted_vnext_insight_ids()
+            .iter()
+            .map(|id| (*id).to_string())
+            .collect();
+    let compiled: std::collections::BTreeSet<String> =
+        dendro_core::insight_v1::reference::all_insight_ids()
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+    assert_eq!(admitted, expected);
+    assert_eq!(compiled, expected);
+
+    let views_rs = read_repo("crates/dendro-cli/src/tui/views.rs");
+    let tui_mod = read_repo("crates/dendro-cli/src/tui/mod.rs");
+    for label in [
+        "status, finding, practical meaning, scope, and missingness",
+        "assumptions and alternatives",
+        "safe evidence IDs and source versions",
+        "formula, population (what, included, excluded), exclusions, and cutoff",
+    ] {
+        assert!(views_rs.contains(label), "{label}");
+        assert!(
+            tui_mod.contains(label) || views_rs.contains(label),
+            "{label}"
+        );
+    }
+    assert!(views_rs.contains("VNEXT_INSIGHT_INDEX"));
+
+    let intents = semantic::supported_intents();
+    assert_eq!(intents["intents"].as_array().unwrap().len(), 6);
+    let catalog: std::collections::BTreeSet<&str> = intents["semantic_views"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|item| item["view"].as_str())
+        .collect();
+    let views: std::collections::BTreeSet<&str> = semantic::VIEWS.into_iter().collect();
+    assert_eq!(catalog, views);
+    let expected_views: std::collections::BTreeSet<String> =
+        views.iter().map(|name| (*name).to_string()).collect();
+    for rel in [
+        "crates/dendro-core/src/semantic_views.sql",
+        "crates/dendro-core/src/semantic.rs",
+        "templates/nao/semantic_models.yaml",
+        "templates/nao/nao_config.yaml",
+        "templates/nao/prompts.md",
+        "docs/NAO_SEMANTIC.md",
+    ] {
+        assert_eq!(view_names(&read_repo(rel)), expected_views, "{rel}");
+    }
+    let mut yaml_views = std::collections::BTreeSet::new();
+    for entry in std::fs::read_dir(repo_root().join("templates/nao/dashboards")).unwrap() {
+        let entry = entry.unwrap();
+        if entry.path().extension().and_then(|ext| ext.to_str()) != Some("yaml") {
+            continue;
+        }
+        yaml_views.extend(view_names(&std::fs::read_to_string(entry.path()).unwrap()));
+    }
+    assert_eq!(yaml_views, expected_views);
+    let mut html_views = std::collections::BTreeSet::new();
+    for entry in std::fs::read_dir(repo_root().join("site/dashboards/views")).unwrap() {
+        let entry = entry.unwrap();
+        if entry.path().extension().and_then(|ext| ext.to_str()) != Some("html") {
+            continue;
+        }
+        html_views.extend(view_names(&std::fs::read_to_string(entry.path()).unwrap()));
+    }
+    assert_eq!(html_views, expected_views);
+
+    let sql = read_repo("crates/dendro-core/src/semantic.sql");
+    for table in [
+        "dendro_semantic_trajectory_vortex",
+        "dendro_semantic_schema_drift",
+        "dendro_semantic_authority_blast_radius",
+        "dendro_semantic_counterfactual_routing",
+    ] {
+        assert!(sql.contains(table), "{table}");
+    }
+
+    let css = read_repo("site/dashboards/style.css");
+    let viewer = read_repo("site/viewer.html");
+    let index_html = read_repo("site/dashboards/index.html");
+    assert!(css.contains("--bg-obsidian: #0A0D12"));
+    assert!(css.contains("--bg-surface: #11161F"));
+    assert!(viewer.contains("--bg-obsidian:#0A0D12"));
+    assert!(viewer.contains("--bg-surface:#11161F"));
+    assert!(!css.to_ascii_lowercase().contains("#090d16"));
+    assert!(!css.to_ascii_lowercase().contains("#0f1927"));
+    assert!(!viewer.to_ascii_lowercase().contains("#090d16"));
+    assert!(!index_html.contains("ILLUSTRATIVE SNAPSHOT · LIVE SYNC READY"));
+    assert!(index_html.contains("ILLUSTRATIVE SNAPSHOT"));
+    assert!(!index_html.contains("LIVE DUCKDB"));
+    let live = read_repo("site/dashboards/live-sync.js");
+    assert!(live.contains("SNAPSHOT_BADGE = 'ILLUSTRATIVE SNAPSHOT'"));
+    assert!(live.contains("LIVE_BADGE = 'LIVE DUCKDB'"));
+    assert!(!live.contains("LIVE SYNC READY"));
+
+    assert_eq!(
+        dendro_core::presentation::display_status("Refused", "not_observable"),
+        "insufficient_evidence"
+    );
+    assert_eq!(
+        dendro_core::presentation::display_status("Refused", "insufficient_sample"),
+        "insufficient_evidence"
+    );
+    assert_eq!(
+        dendro_core::presentation::display_status("Computed", "threshold_exceeded"),
+        "partial"
+    );
+    assert_eq!(
+        dendro_core::presentation::display_status("Refused", "threshold_exceeded"),
+        "partial"
+    );
 }

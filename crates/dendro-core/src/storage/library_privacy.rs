@@ -106,6 +106,42 @@ impl PrivateLibraryRuntime {
     /// DuckDB reads those during `open`, including WAL replay. `configure`
     /// still applies `allowed_configs` / `lock_configuration` afterwards.
     pub(crate) fn open(&self, read_only: bool) -> Result<Connection> {
+        self.open_with(read_only, None)
+    }
+
+    /// Keeps a version-68 file on the v1.5.6 storage compatibility value.
+    /// The setting is applied before `lock_configuration` and is not added to
+    /// `allowed_configs`, so ordinary later sessions cannot change it.
+    pub(crate) fn open_preserving_v156(&self, read_only: bool) -> Result<Connection> {
+        self.open_with(read_only, Some("v1.5.6"))
+    }
+
+    /// Attaches the existing file in a private session at DuckDB 2.0 storage.
+    /// `Connection::open` keeps an existing file on its header version.
+    /// `ATTACH ... (STORAGE_VERSION 'v2.0.0')` is the upgrade path, and the
+    /// returned connection's default catalog is that attached database.
+    pub(crate) fn attach_upgrading_v200(&self) -> Result<Connection> {
+        let spill = native_path(self.0.spill.path())?;
+        let extensions = native_path(self.0.extensions.path())?;
+        let config = duckdb::Config::default()
+            .with("temp_directory", &spill)?
+            .with("extension_directory", &extensions)?
+            .with("autoinstall_known_extensions", "false")?
+            .with("autoload_known_extensions", "false")?;
+        let conn = Connection::open_with_flags(":memory:", config)?;
+        self.configure_with(&conn, None)?;
+        let path = native_path(&self.0.database)?.replace('\'', "''");
+        conn.execute_batch(&format!(
+            "ATTACH '{path}' AS dendro_cutover (STORAGE_VERSION 'v2.0.0'); USE dendro_cutover;"
+        ))?;
+        Ok(conn)
+    }
+
+    fn open_with(
+        &self,
+        read_only: bool,
+        storage_compatibility: Option<&str>,
+    ) -> Result<Connection> {
         let mut config = duckdb::Config::default();
         if read_only {
             config = config.access_mode(duckdb::AccessMode::ReadOnly)?;
@@ -117,11 +153,18 @@ impl PrivateLibraryRuntime {
             .with("extension_directory", &extensions)?
             .with("autoinstall_known_extensions", "false")?
             .with("autoload_known_extensions", "false")?;
+        if let Some(version) = storage_compatibility {
+            config = config.with("storage_compatibility_version", version)?;
+        }
         let conn = Connection::open_with_flags(&self.0.database, config)?;
-        self.configure(&conn)?;
+        self.configure_with(&conn, storage_compatibility)?;
         Ok(conn)
     }
+    #[allow(dead_code)]
     pub(crate) fn configure(&self, conn: &Connection) -> Result<()> {
+        self.configure_with(conn, None)
+    }
+    fn configure_with(&self, conn: &Connection, storage_compatibility: Option<&str>) -> Result<()> {
         if setting(conn, "lock_configuration")? != "true" {
             if !setting(conn, "access_mode")?.eq_ignore_ascii_case("read_only")
                 && self.0.database_parent.is_none()
@@ -132,7 +175,15 @@ impl PrivateLibraryRuntime {
             // freshly created native paths; never interpolate user SQL.
             let spill = native_path(self.0.spill.path())?.replace('\'', "''");
             let extensions = native_path(self.0.extensions.path())?.replace('\'', "''");
-            conn.execute_batch(&format!("SET temp_directory='{spill}'; SET extension_directory='{extensions}'; SET autoinstall_known_extensions=false; SET autoload_known_extensions=false; SET allowed_configs=['memory_limit','threads','preserve_insertion_order']; SET lock_configuration=true;"))?;
+            let compat = match storage_compatibility {
+                Some("v1.5.6") => "SET storage_compatibility_version='v1.5.6'; ",
+                Some("v2.0.0") => "SET storage_compatibility_version='v2.0.0'; ",
+                Some(_) => {
+                    bail!("storage compatibility version is not a frozen v1.5.6 or v2.0.0 literal")
+                }
+                None => "",
+            };
+            conn.execute_batch(&format!("{compat}SET temp_directory='{spill}'; SET extension_directory='{extensions}'; SET autoinstall_known_extensions=false; SET autoload_known_extensions=false; SET allowed_configs=['memory_limit','threads','preserve_insertion_order']; SET lock_configuration=true;"))?;
         }
         self.verify(conn)
     }

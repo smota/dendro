@@ -25,15 +25,18 @@
     const badge = document.getElementById(config.badgeId);
     const badgeText = document.getElementById(config.badgeTextId);
 
-    function updateBadge(mode, label) {
+    var SNAPSHOT_BADGE = 'ILLUSTRATIVE SNAPSHOT';
+    var LIVE_BADGE = 'LIVE DUCKDB';
+
+    function updateBadge(mode) {
       if (!badge) return;
       badge.classList.remove('live', 'snapshot');
       if (mode === 'live') {
         badge.classList.add('live');
-        if (badgeText) badgeText.textContent = label || 'LIVE SSE · STREAMING ACTIVE';
+        if (badgeText) badgeText.textContent = LIVE_BADGE;
       } else {
         badge.classList.add('snapshot');
-        if (badgeText) badgeText.textContent = label || 'ILLUSTRATIVE SNAPSHOT · LIVE SYNC READY';
+        if (badgeText) badgeText.textContent = SNAPSHOT_BADGE;
       }
     }
 
@@ -65,7 +68,7 @@
     const isHttp = window.location.protocol.startsWith('http');
 
     if (!isHttp) {
-      updateBadge('snapshot', 'ILLUSTRATIVE SNAPSHOT · LIVE SYNC READY');
+      updateBadge('snapshot');
       const data = loadEmbeddedData();
       if (data) triggerData(data, 'embedded-snapshot');
       return {
@@ -86,13 +89,16 @@
         sse = new EventSource(url);
 
         sse.onopen = function() {
-          isLive = true;
-          updateBadge('live', 'LIVE SSE · STREAMING ACTIVE');
+          // The socket is up. The page is still showing the static snapshot
+          // until a live payload hydrates, so the badge stays ILLUSTRATIVE SNAPSHOT.
         };
 
         sse.onmessage = function(event) {
           try {
             const data = JSON.parse(event.data);
+            if (data == null) return;
+            isLive = true;
+            updateBadge('live');
             triggerData(data, 'sse');
           } catch (err) {
             console.warn('Dendro: SSE payload parse failed', err);
@@ -114,7 +120,7 @@
     }
 
     function startPolling() {
-      updateBadge('snapshot', 'POLLING DUCKDB · LOCAL SERVER');
+      updateBadge('snapshot');
       pollOnce();
       if (!pollTimer && config.pollInterval > 0) {
         pollTimer = setInterval(pollOnce, config.pollInterval);
@@ -127,11 +133,15 @@
         const res = await fetch(url, { cache: 'no-store' });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        updateBadge('live', 'LIVE HTTP · LOCAL DUCKDB ACTIVE');
-        triggerData(data, 'poll');
+        if (data !== null && data !== undefined) {
+          isLive = true;
+          updateBadge('live');
+          triggerData(data, 'poll');
+        }
       } catch (err) {
         // Fall back to embedded data
-        updateBadge('snapshot', 'ILLUSTRATIVE SNAPSHOT · LIVE SYNC READY');
+        isLive = false;
+        updateBadge('snapshot');
         const data = loadEmbeddedData();
         if (data) triggerData(data, 'embedded-snapshot');
       }

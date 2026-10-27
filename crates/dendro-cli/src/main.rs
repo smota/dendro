@@ -1,6 +1,8 @@
 #![deny(unsafe_code)]
 
+pub mod advise_v1;
 mod extensions;
+pub mod serve_v1;
 pub mod tui;
 
 use anyhow::Result;
@@ -368,6 +370,36 @@ enum Commands {
         harness: Option<String>,
         #[arg(long)]
         session: Option<String>,
+    },
+    /// Single-owner daemon holding the exclusive raw DuckDB session.
+    #[command(next_help_heading = "Server")]
+    Serve {
+        #[arg(long, default_value = "dendro.duckdb", hide_default_value = true, help = DEFAULT_DB_HELP)]
+        db: PathBuf,
+        #[arg(long)]
+        socket: Option<PathBuf>,
+        #[arg(long)]
+        once: bool,
+    },
+    /// Pre-flight operational intelligence advisor for AI fleets.
+    #[command(next_help_heading = "Pre-Flight Advisory")]
+    Advise {
+        #[arg(long, default_value = "dendro.duckdb", hide_default_value = true, help = DEFAULT_DB_HELP)]
+        db: PathBuf,
+        #[arg(long, default_value = "")]
+        question: String,
+        #[arg(long)]
+        harness: Option<String>,
+        #[arg(long)]
+        skill: Option<String>,
+        #[arg(long)]
+        session: Option<String>,
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        mcp_schema: bool,
+        #[arg(long)]
+        budget_ms: Option<u64>,
     },
     /// Print an Operational Intelligence report.
     #[command(next_help_heading = "Report")]
@@ -793,7 +825,9 @@ fn database_slot(command: &mut Commands) -> Option<&mut PathBuf> {
         | Commands::RunAgent { db, .. }
         | Commands::Report { db, .. }
         | Commands::Trace { db, .. }
-        | Commands::Insights { db, .. } => Some(db),
+        | Commands::Insights { db, .. }
+        | Commands::Serve { db, .. }
+        | Commands::Advise { db, .. } => Some(db),
         Commands::Assert { scope, .. } | Commands::IssueDraft { scope, .. } => Some(&mut scope.db),
         Commands::Extensions(extension) => match extension {
             extensions::Commands::Dashboard { db, .. }
@@ -813,6 +847,15 @@ fn database_slot(command: &mut Commands) -> Option<&mut PathBuf> {
 
 #[cfg(any(windows, target_os = "linux"))]
 fn command_opens_database(command: &Commands) -> bool {
+    if matches!(
+        command,
+        Commands::Advise {
+            mcp_schema: true,
+            ..
+        }
+    ) {
+        return false;
+    }
     !matches!(
         command,
         Commands::StorageInit
@@ -1481,6 +1524,54 @@ async fn main() -> Result<()> {
             )
             .await??;
             println!("{}", render_insights(&results, json)?);
+        }
+        Commands::Serve { db, socket, once } => {
+            let daemon = serve_v1::QuackOwnerDaemon::open(db, socket)?;
+            daemon.serve(once).await?;
+        }
+        Commands::Advise {
+            db,
+            question,
+            harness,
+            skill,
+            session,
+            json,
+            mcp_schema,
+            budget_ms,
+        } => {
+            if mcp_schema {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&advise_v1::mcp_tool_schema())?
+                );
+                return Ok(());
+            }
+            let results =
+                tokio::task::spawn_blocking(move || -> Result<advise_v1::AdviseResponse> {
+                    let request = dendro_core::presentation::ReadRequest::open(&db)?;
+                    let store = request.open_store()?;
+                    let req = advise_v1::AdviseRequest {
+                        question,
+                        harness,
+                        skill,
+                        session,
+                        budget_ms,
+                    };
+                    Ok(advise_v1::evaluate_advise(&store, &req))
+                })
+                .await??;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&results)?);
+            } else {
+                println!("Question:     {}", results.question);
+                println!("Result Code:  {}", results.result_code);
+                println!("Badge:        {:?}", results.display_badge);
+                if let Some(unc) = results.uncertainty {
+                    println!("Uncertainty:  {:?}", unc);
+                }
+                println!("Sample Count: {}", results.sample_count);
+                println!("Details:      {}", results.details);
+            }
         }
     }
 

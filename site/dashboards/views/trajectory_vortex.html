@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dendro · Trajectory Vortex (I22)</title>
+  <meta name="description" content="I22 harness.trajectory_vortex. A trip is distance from the cohort, not a cause.">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <header class="telemetry-nav">
+    <div class="nav-left">
+      <a href="../index.html" class="brand-link" title="Dashboards Hub">
+        <span class="brand-icon">D</span>
+        <span>Dendro<span style="font-weight:400;color:var(--text-muted);font-size:0.85rem;margin-left:6px;">Harness</span></span>
+      </a>
+      <div class="nav-breadcrumbs" aria-label="Breadcrumbs">
+        <span class="separator">/</span>
+        <a href="../index.html" style="color:var(--text-secondary);">Dashboards</a>
+        <span class="separator">/</span>
+        <span class="current">Trajectory Vortex (I22)</span>
+      </div>
+    </div>
+    <div class="nav-right">
+      <div id="dual-serving-indicator" class="dual-serving-badge snapshot">
+        <span class="pulse-dot"></span>
+        <span id="dual-serving-text">ILLUSTRATIVE SNAPSHOT</span>
+      </div>
+      <button id="btn-refresh" class="nav-action-btn" type="button" title="Refresh snapshot">
+        <span>Refresh</span>
+      </button>
+      <a href="../index.html" class="nav-action-btn"><span>← Back to Dashboards Hub</span></a>
+    </div>
+  </header>
+  <main class="telemetry-layout">
+    <section class="hero-header">
+      <div class="hero-eyebrow"><span>●</span> Harness · SQL View: <code>v_trajectory_vortex</code></div>
+      <h1 class="hero-title">Trajectory Vortex (I22)</h1>
+      <p class="hero-subtitle">I22 harness.trajectory_vortex. A trip is distance from the cohort, not a cause.</p>
+      <p class="hero-subtitle">All-time counts — window_from/window_to label the snapshot but do not filter.</p>
+    </section>
+    <section class="table-panel">
+      <div class="table-panel-header">
+        <div class="table-panel-title">
+          <span>v_trajectory_vortex rows</span>
+          <span class="badge badge-info" id="record-count-badge">0 Rows</span>
+        </div>
+      </div>
+      <div class="table-container">
+        <table class="telemetry-table">
+          <thead><tr><th>Harness</th><th>Session</th><th class="num">Turn k</th><th class="num">Cosine distance</th><th class="num">Self-transition</th><th>Tripped</th><th>Status</th><th>Reason</th></tr></thead>
+          <tbody id="view-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+    <div class="query-box">
+      <div class="query-box-title">Underlying DuckDB Query</div>
+      <code>SELECT * FROM v_trajectory_vortex ORDER BY harness, session_key</code>
+    </div>
+  </main>
+  <script id="dendro-data" type="application/json">
+  {
+    "product": "AI Fleet Intelligence",
+    "view": "v_trajectory_vortex",
+    "rows": [
+      {"harness": "claude", "session_key": "s-1", "turn_k": 3, "cosine_distance": 0.42, "self_transition_rate": 0.91, "tripped": "no", "status": "Refused", "reason": "insufficient_sample"}
+    ]
+  }
+  </script>
+  <script src="../live-sync.js"></script>
+  <script>
+    'use strict';
+    function cell(text, className) {
+      const td = document.createElement('td');
+      if (className) td.className = className;
+      td.textContent = text == null || text === '' ? '—' : String(text);
+      return td;
+    }
+    function render(data) {
+      const rows = Array.isArray(data && data.rows) ? data.rows : [];
+      document.getElementById('record-count-badge').textContent = rows.length + (rows.length === 1 ? ' Row' : ' Rows');
+      const tbody = document.getElementById('view-tbody');
+      tbody.replaceChildren();
+      if (!rows.length) {
+        const tr = document.createElement('tr');
+        const td = cell('No rows in this snapshot.');
+        td.colSpan = 8;
+        tr.append(td);
+        tbody.append(tr);
+        return;
+      }
+      rows.forEach(row => {
+        const tr = document.createElement('tr');
+        tr.append(cell(row.harness), cell(row.session_key), cell(row.turn_k, 'num'), cell(row.cosine_distance, 'num'), cell(row.self_transition_rate, 'num'), cell(row.tripped), cell(row.status), cell(row.reason));
+        tbody.append(tr);
+      });
+    }
+    const sync = attachLiveSync({ viewId: 'trajectory_vortex', onData: render });
+    document.getElementById('btn-refresh').addEventListener('click', () => sync.refresh());
+    render(JSON.parse(document.getElementById('dendro-data').textContent));
+  </script>
+</body>
+</html>

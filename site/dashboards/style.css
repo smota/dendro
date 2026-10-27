@@ -7,11 +7,13 @@
   color-scheme: dark;
 
   /* Obsidian Telemetry Color Palette */
-  --surface-base: #090d16;
-  --surface-card: #0f1927;
+  --bg-obsidian: #0A0D12;
+  --bg-surface: #11161F;
+  --surface-base: var(--bg-obsidian);
+  --surface-card: var(--bg-surface);
   --surface-card-hover: #142236;
   --surface-card-active: #18283e;
-  --surface-overlay: rgba(15, 25, 39, 0.85);
+  --surface-overlay: rgba(17, 22, 31, 0.85);
   --surface-input: #0c1420;
 
   --border-subtle: #1c2d42;

@@ -1815,9 +1815,11 @@ fn render_insights_tab(frame: &mut Frame, area: Rect, state: &mut AppState, them
         )
     } else {
         let title = match state.insight_depth {
-            InsightDepth::Domain => " Insights · domains (L0)  [Enter/Right] open ",
-            InsightDepth::Insight => " Insights · per insight (L1)  [Enter/Right] measures ",
-            InsightDepth::Measure => " Insights · measures (L2)  [Enter] JSON ",
+            InsightDepth::Domain => {
+                " Insights · L0 status, finding, practical meaning, scope, and missingness "
+            }
+            InsightDepth::Insight => " Insights · L1 assumptions and alternatives ",
+            InsightDepth::Measure => " Insights · L2 safe evidence IDs and source versions ",
         };
         (title, insight_rows(state, theme))
     };
@@ -1879,6 +1881,13 @@ fn insight_rows(state: &mut AppState, theme: &Theme) -> Vec<Line<'static>> {
                 ));
             }
             lines.push(Line::from(Span::styled(
+                "L0 status, finding, practical meaning, scope, and missingness",
+                theme.muted(),
+            )));
+            for (id, name, domain) in super::VNEXT_INSIGHT_INDEX {
+                lines.push(Line::from(format!("{id}  {name}  {domain}")));
+            }
+            lines.push(Line::from(Span::styled(
                 "[Enter/Right] per-insight   [Left] back   population is not summed",
                 theme.muted(),
             )));
@@ -1908,6 +1917,10 @@ fn insight_rows(state: &mut AppState, theme: &Theme) -> Vec<Line<'static>> {
                     theme,
                 ));
             }
+            lines.push(Line::from(Span::styled(
+                "L1 assumptions and alternatives",
+                theme.muted(),
+            )));
             lines.push(Line::from(Span::styled(
                 "[Enter/Right] measures   [Left] domains",
                 theme.muted(),
@@ -1959,6 +1972,14 @@ fn insight_rows(state: &mut AppState, theme: &Theme) -> Vec<Line<'static>> {
                     theme,
                 ));
             }
+            lines.push(Line::from(Span::styled(
+                "L2 safe evidence IDs and source versions",
+                theme.muted(),
+            )));
+            lines.push(Line::from(Span::styled(
+                "L3 formula, population (what, included, excluded), exclusions, and cutoff",
+                theme.muted(),
+            )));
             lines.push(Line::from(Span::styled(
                 "[Enter] JSON detail   [Left] per-insight",
                 theme.muted(),
@@ -2015,7 +2036,7 @@ fn render_modal(frame: &mut Frame, area: Rect, state: &AppState, modal: &AppModa
                 )),
                 Line::from(""),
                 Line::from("  [1] - [7] / [Tab]   Switch screens. [7] Insights: Enter/Right deepens, Left backs out"),
-                Line::from("  Insights levels:    L0 domain, L1 insight, L2 measures, L3 JSON detail"),
+                Line::from("  Insights levels:    L0 status, finding, practical meaning, scope, and missingness; L1 assumptions and alternatives; L2 safe evidence IDs and source versions; L3 formula, population (what, included, excluded), exclusions, and cutoff"),
                 Line::from("  Insight domains:    Model, Harness, Coordination, Environment, Security"),
                 Line::from("  [r] Rig             OpenRig adapter scope (<role>@<rig>), not an insight domain"),
                 Line::from("  [↑/↓] or [j/k]      Navigate rows in tables, spotlights, or simulator seats"),

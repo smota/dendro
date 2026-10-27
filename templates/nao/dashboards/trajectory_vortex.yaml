@@ -1,0 +1,6 @@
+dashboard:
+  id: trajectory_vortex
+  title: "Trajectory Vortex (I22)"
+queries:
+  - id: vortex
+    sql: SELECT * FROM v_trajectory_vortex ORDER BY harness, session_key

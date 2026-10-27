@@ -214,3 +214,34 @@ When Pi usage or Pi source files exist, the coverage section includes:
 
 With no `--root`, `dendro run` configures two Pi roots: `$OPENRIG_HOME/state/pi` (default `~/.openrig/state/pi`) and `~/.pi/agent/sessions`. Distinct Pi roots are both kept. Identical paths are deduplicated. A session file is still one native session (K10). Linkage to a seat still requires identity facts; standalone Pi usage stays in `standalone_usage` until it links.
 
+## Canonical CLI Subcommand Reference (`A15` Parity)
+
+The table below catalogs every subcommand declared in `crates/dendro-cli/src/main.rs` and `crates/dendro-cli/src/extensions.rs`. Every command adheres to the local-first private filesystem and single-owner DuckDB 2.0 concurrency contract.
+
+| Subcommand | Origin | Category | Description | Primary Flags & Options |
+|:---|:---|:---|:---|:---|
+| `storage-init` | `main.rs` | Storage | Create or verify the private default data folder and print its canonical path. | `--storage-root <path>` |
+| `recover-selection` | `main.rs` | Storage | Reconcile a prepared selection under its recorded writer/publisher locks. Returns JSON status. | `--db <path>`, `--cutoff <path>` |
+| `migrate` | `main.rs` | Storage | Explicitly select a validated schema migration (v4 / v5) while retaining previous custody. | `--db <path>` |
+| `rollback` | `main.rs` | Storage | Select retained schema preimage (`dendro.duckdb.pre-v200.bak`) and preserve loss receipt. | `--db <path>` |
+| `status` | `main.rs` | Ingest/Scope | Inspect coverage, discovered harness roots, fleet topology, and next commands. | `--db <path>`, `--rig <rig>`, `--format <text\|json>` |
+| `watch` | `main.rs` | Ingest | Sample agent processes (CPU, memory, disk, exit) into the analytics database. | `--db <path>`, `--interval <dur>`, `--duration <dur>`, `--once`, `--harness <name>`, `--flush-every <dur>` |
+| `run-agent` | `main.rs` | Ingest | Launch an agent process and sample that process tree from its exact PID. | `--db <path>`, `--harness <name>`, `--interval <dur>`, `--flush-every <dur>`, `-- <command>` |
+| `run` | `main.rs` | Ingest | Ingest local harness roots into the analytics DuckDB database with private staging. | `--db <path>`, `--root <spec>`, `--frozen`, `--write-manifest`/`--manifest-out <path>`, `--sealed <path>` |
+| `serve` | `main.rs` | Engine | Start trusted single-owner daemon holding raw DuckDB/`quack` connection over local IPC (`0700` socket / Named Pipe). | `--db <path>`, `--socket <path>`, `--idle-timeout <dur>` |
+| `advise` | `main.rs` | Advisory | Operator pre-flight advisor and MCP server answering 4 canonical questions within warm $\le 15\text{ms}$ budget. | `--db <path>`, `--question <id>`, `--format <text\|json>` |
+| `insights` | `main.rs` | Report | Run each compiled reference insight (`I01`–`I25`) against the selected database. | `--db <path>`, `--json`, `--harness <name>`, `--session <id>` |
+| `report` | `main.rs` | Report | Print an Operational Intelligence report (`links`, `activity`, `handoffs`, `tokens`, `decisions`). | `<kind>`, `--format <fmt>`, `--viz`, `--anomaly <kind>`, `--friction`, `--db <path>`, `--rig <rig>`, `--window <w>`, `--from <utc>`, `--to <utc>` |
+| `trace` | `main.rs` | Trace | Print trace inputs, source keys, and intermediate calculations for one metric ID. | `--metric-id <id>`, `--db <path>`, `--rig <rig>`, `--window <w>`, `--from <utc>`, `--to <utc>` |
+| `assert` | `main.rs` | Governance | Emit an advisory CI verdict: 0 pass, 2 breach, 3 insufficient evidence. | `--db <path>`, `--rig <rig>`, `--window <w>`, `--max-rework-rate <r>`, `--max-idle-rate <r>` |
+| `issue-draft` | `main.rs` | Governance | Draft local Markdown issue describing observed fleet operational debt. | `--db <path>`, `--metric <m>`, `--usd-per-million <val>`, `--publish`, `--repo <owner/repo>` |
+| `dashboard` | `extensions.rs` | Cockpit | Open the 6-screen interactive terminal cockpit or export offline HTML. | `--db <path>`, `--rig <rig>`, `--window <w>`, `--html [path]`, `--once`, `--auto-ingest` |
+| `ui` | `extensions.rs` | Cockpit | Open the interactive terminal cockpit for an explicit window. | `--db <path>`, `--rig <rig>`, `--window <w>`, `--once`, `--auto-ingest` |
+| `ask` | `extensions.rs` | Question | Answer a supported natural language fleet question via semantic intent matching. | `[query]`, `--question <q>`, `--db <path>`, `--baseline <path>`, `--window <w>`, `--format <text\|json>`, `--list-intents`, `--no-refresh` |
+| `simulate` | `extensions.rs` | Analysis | Run deterministic historical what-ifs over a canonical decisions report (`simulate topology`). | `topology`, `--db <path>`, `--rig <rig>`, `--window <w>`, `--scenario <path>`, `--remove <seats>`, `--replacement-seat <seat>`, `--direct-handoffs` |
+| `portfolio` | `extensions.rs` | Analysis | Aggregate explicitly mapped, independently ingested analytics databases across rigs. | `--sources <path>`, `--source-dir <dirs>`, `--from <utc>`, `--to <utc>`, `--format <fmt>`, `--pending-threshold-secs <sec>` |
+| `materialize` | `extensions.rs` | Cache | Refresh the canonical, explicitly scoped Nao projection cache. | `--db <path>`, `--rig <rig>`, `--window <w>`, `--from <utc>`, `--to <utc>` |
+| `export` | `extensions.rs` | Cache | Export a scrubbed, self-contained offline visualization. | `--db <path>`, `--rig <rig>`, `--window <w>`, `--format <fmt>`, `--output <path>` |
+| `init-nao` | `extensions.rs` | Cache | Create a Nao snapshot scaffold and report integration status. Existing directories are preserved. | `--db <path>`, `--output`/`--target <path>` |
+
+

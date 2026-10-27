@@ -305,6 +305,34 @@ impl AnalyticsStore {
         Ok(store)
     }
 
+    /// Schema-4 shadow files stay on DuckDB storage compatibility `v1.5.6`
+    /// (storage version 68) so a later 2.0 cutover is a separate write.
+    pub(crate) fn open_path_preserving_v156(path: &Path, key_id: &str) -> Result<Self> {
+        if path.exists() {
+            return Self::open_existing(path, key_id);
+        }
+        let config = duckdb::Config::default().with("storage_compatibility_version", "v1.5.6")?;
+        let conn = Connection::open_with_flags(path, config)?;
+        #[cfg(target_os = "linux")]
+        restrict_new_linux_database(path)?;
+        let store = Self {
+            conn,
+            key_id: key_id.to_string(),
+            openrig_rows: RefCell::new(None),
+            openrig_pending: RefCell::new(None),
+            canonical_write_active: std::cell::Cell::new(false),
+            #[cfg(any(windows, target_os = "linux"))]
+            _custody: None,
+            #[cfg(any(windows, target_os = "linux"))]
+            runtime: None,
+        };
+        store.create_schema()?;
+        store
+            .conn
+            .execute_batch("SET storage_compatibility_version='v1.5.6'; CHECKPOINT;")?;
+        Ok(store)
+    }
+
     pub fn open_path(path: &Path, key_id: &str) -> Result<Self> {
         if path.exists() {
             return Self::open_existing(path, key_id);

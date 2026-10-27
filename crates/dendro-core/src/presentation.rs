@@ -1392,16 +1392,47 @@ fn closed_token(value: &str, max: usize) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-' | b':'))
 }
 
+/// Insight ids a dashboard may show. Computed analyzers stay on `insight_v1::REFERENCE`.
+pub fn admitted_vnext_insight_ids() -> &'static [&'static str] {
+    &[
+        // @vnext-insight-catalog
+        "I01", "I02", "I03", "I04", "I05", "I06", "I07", "I08", "I09", "I10", "I11", "I12", "I13",
+        "I14", "I15", "I16", "I17", "I18", "I19", "I20", "I21", "I22", "I23", "I24",
+        "I25",
+        // @vnext-insight-catalog-end
+    ]
+}
+
+/// Map `InsightStatus` plus reason to one badge token. First matching row wins.
+/// `not_observable` and `insufficient_sample` win over `Refused`.
+pub fn display_status(status: &str, reason: &str) -> &'static str {
+    if reason == "not_observable" || reason == "insufficient_sample" {
+        return "insufficient_evidence";
+    }
+    if reason == "not_applicable" || reason == "NOT_ASSESSED" {
+        return "not_applicable";
+    }
+    if reason == "threshold_exceeded" {
+        return "partial";
+    }
+    if reason == "noncomparable" {
+        return "insufficient_evidence";
+    }
+    match status {
+        "Computed" | "computed" => "ok",
+        "Partial" | "partial" => "partial",
+        "Refused" | "refused" => "refused",
+        _ => "refused",
+    }
+}
+
 fn public_id_segment(segment: &str) -> bool {
+    if admitted_vnext_insight_ids().contains(&segment) {
+        return true;
+    }
     matches!(
         segment,
-        "I02"
-            | "I04"
-            | "I08"
-            | "I09"
-            | "I14"
-            | "I18"
-            | "relation"
+        "relation"
             | "status"
             | "multi_parent_children"
             | "roots"
@@ -1500,7 +1531,7 @@ fn project_population(value: &Value) -> Value {
 
 fn project_insight(row: &Value, aliases: &mut BTreeMap<String, String>) -> Option<Value> {
     let id = row["id"].as_str()?;
-    if !matches!(id, "I02" | "I04" | "I08" | "I09" | "I14" | "I18") {
+    if !admitted_vnext_insight_ids().contains(&id) {
         return None;
     }
     let name = row["name"].as_str().filter(|name| closed_token(name, 80))?;

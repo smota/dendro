@@ -16,6 +16,10 @@ databases:
       - "main.v_subagent_lineage"
       - "main.v_security_posture"
       - "main.v_process_resources"
+      - "main.v_trajectory_vortex"
+      - "main.v_schema_drift"
+      - "main.v_authority_blast_radius"
+      - "main.v_counterfactual_routing"
       - "main.dendro_semantic_provenance"
       - "main.dendro_semantic_usage"
     allow_listed_only: true

@@ -202,3 +202,241 @@ test('viewer strips untrusted free-text secrets from insights and security',()=>
  assert.match(v.nodes.get('security').textContent,/workspace-write/);
  assert.doesNotMatch(v.nodes.get('lineage').textContent,/super-secret-value/);
 });
+
+const EXPECTED_INSIGHT_IDS = Array.from({length:25},(_,i)=>`I${String(i+1).padStart(2,'0')}`);
+const L0 = 'status, finding, practical meaning, scope, and missingness';
+const L1 = 'assumptions and alternatives';
+const L2 = 'safe evidence IDs and source versions';
+const L3 = 'formula, population (what, included, excluded), exclusions, and cutoff';
+
+function markerBlock(text, file) {
+ const start = text.indexOf('@vnext-insight-catalog');
+ const end = text.indexOf('@vnext-insight-catalog-end');
+ assert.ok(start >= 0 && end > start, `catalog markers missing in ${file}`);
+ return text.slice(start, end);
+}
+function insightIds(text, file) {
+ const ids = [...markerBlock(text, file).matchAll(/\bI(?:0[1-9]|1\d|2[0-5])\b/g)].map(match => match[0]);
+ return [...new Set(ids)].sort();
+}
+function viewNames(text) {
+ return [...new Set([...text.matchAll(/\bv_[a-z0-9_]+/g)].map(match => match[0]))].sort();
+}
+function displayStatusFrom(source, file) {
+ const start = source.indexOf('function display_status');
+ const end = source.indexOf('\n}', start);
+ assert.ok(start >= 0 && end > start, `display_status missing in ${file}`);
+ const context = vm.createContext({});
+ vm.runInContext(source.slice(start, end + 2), context);
+ return (status, reason) => vm.runInContext(`display_status(${JSON.stringify(status)}, ${JSON.stringify(reason)})`, context);
+}
+
+test('vNext insight ids, Nao views, obsidian tokens, and exclusive badges', () => {
+ const root = path.join(__dirname, '..');
+ const readRoot = rel => fs.readFileSync(path.join(root, rel), 'utf8');
+ const catalogs = {
+  registry: insightIds(readRoot('crates/dendro-core/src/insight_v1/reference/mod.rs'), 'reference'),
+  presentation: insightIds(readRoot('crates/dendro-core/src/presentation.rs'), 'presentation'),
+  viewer: insightIds(read('viewer.html'), 'viewer'),
+  index: insightIds(read('dashboards/index.html'), 'index'),
+  tui: insightIds(readRoot('crates/dendro-cli/src/tui/mod.rs'), 'tui'),
+ };
+ for (const [name, ids] of Object.entries(catalogs)) {
+  assert.deepEqual(ids, EXPECTED_INSIGHT_IDS, name);
+ }
+ const viewsRs = readRoot('crates/dendro-cli/src/tui/views.rs');
+ const tuiMod = readRoot('crates/dendro-cli/src/tui/mod.rs');
+ assert.match(viewsRs, /VNEXT_INSIGHT_INDEX/);
+ [L0, L1, L2, L3].forEach(label => {
+  assert.ok(viewsRs.includes(label), label);
+  assert.ok(tuiMod.includes(label) || viewsRs.includes(label), label);
+ });
+ assert.ok(tuiMod.includes(L3));
+
+ const indexHtml = read('dashboards/index.html');
+ assert.equal((indexHtml.match(/data-persona-question="/g) || []).length, 7);
+ assert.equal((indexHtml.match(/data-insight-id="I/g) || []).length, 25);
+ assert.match(indexHtml, /href="views\/trajectory_vortex.html"[^>]*data-category="harness"/);
+ assert.match(indexHtml, /href="views\/schema_drift.html"[^>]*data-category="harness"/);
+ assert.match(indexHtml, /href="views\/authority_blast_radius.html"[^>]*data-category="environment"/);
+ assert.match(indexHtml, /href="views\/counterfactual_routing.html"[^>]*data-category="model"/);
+ assert.match(indexHtml, /Compiled Insights Strip \(insight_v1\)/);
+
+ const viewFiles = [
+  'crates/dendro-core/src/semantic_views.sql',
+  'crates/dendro-core/src/semantic.rs',
+  'templates/nao/semantic_models.yaml',
+  'templates/nao/nao_config.yaml',
+  'templates/nao/prompts.md',
+  'docs/NAO_SEMANTIC.md',
+ ];
+ const expectedViews = viewNames(readRoot(viewFiles[0]));
+ assert.equal(expectedViews.length, 12);
+ viewFiles.forEach(rel => assert.deepEqual(viewNames(readRoot(rel)), expectedViews, rel));
+ const yamlViews = new Set();
+ for (const file of fs.readdirSync(path.join(root, 'templates/nao/dashboards'))) {
+  if (!file.endsWith('.yaml')) continue;
+  viewNames(fs.readFileSync(path.join(root, 'templates/nao/dashboards', file), 'utf8')).forEach(name => yamlViews.add(name));
+ }
+ assert.deepEqual([...yamlViews].sort(), expectedViews);
+ const htmlViews = new Set();
+ for (const file of fs.readdirSync(path.join(__dirname, 'dashboards/views'))) {
+  if (!file.endsWith('.html')) continue;
+  const html = read(`dashboards/views/${file}`);
+  assert.doesNotMatch(html, /<(?:script|link|img|iframe)[^>]+(?:src|href)="https?:/i);
+  viewNames(html).forEach(name => htmlViews.add(name));
+ }
+ assert.deepEqual([...htmlViews].sort(), expectedViews);
+ ['trajectory_vortex', 'schema_drift', 'authority_blast_radius', 'counterfactual_routing'].forEach(slug => {
+  const html = read(`dashboards/views/${slug}.html`);
+  assert.match(html, /All-time counts — window_from\/window_to label the snapshot but do not filter\./);
+  assert.match(html, /ILLUSTRATIVE SNAPSHOT/);
+  assert.doesNotMatch(html, /LIVE DUCKDB/);
+ });
+ assert.match(read('dashboards/views/trajectory_vortex.html'), /not a cause/);
+ assert.match(read('dashboards/views/schema_drift.html'), /insufficient_sample/);
+ assert.match(read('dashboards/views/authority_blast_radius.html'), /dependency exposure/);
+ assert.match(read('dashboards/views/counterfactual_routing.html'), /not an effect/);
+
+ const css = read('dashboards/style.css');
+ const viewerHtml = read('viewer.html');
+ assert.match(css, /--bg-obsidian:\s*#0A0D12/);
+ assert.match(css, /--bg-surface:\s*#11161F/);
+ assert.match(viewerHtml, /--bg-obsidian:#0A0D12/);
+ assert.match(viewerHtml, /--bg-surface:#11161F/);
+ assert.doesNotMatch(css, /#090d16|#0f1927/i);
+ assert.doesNotMatch(viewerHtml, /#090d16|#0f1927/i);
+ const htmlFiles = ['viewer.html', 'dashboards/index.html', ...fs.readdirSync(path.join(__dirname, 'dashboards/views')).filter(name => name.endsWith('.html')).map(name => `dashboards/views/${name}`)];
+ htmlFiles.forEach(rel => {
+  const html = read(rel);
+  assert.match(html, /ILLUSTRATIVE SNAPSHOT/);
+  assert.doesNotMatch(html, /LIVE DUCKDB/);
+  assert.doesNotMatch(html, /ILLUSTRATIVE SNAPSHOT · LIVE SYNC READY/);
+  assert.doesNotMatch(html, /#090d16|#0f1927/i);
+ });
+ const live = read('dashboards/live-sync.js');
+ assert.match(live, /SNAPSHOT_BADGE = 'ILLUSTRATIVE SNAPSHOT'/);
+ assert.match(live, /LIVE_BADGE = 'LIVE DUCKDB'/);
+ assert.match(live, /badgeText\.textContent = LIVE_BADGE/);
+ assert.match(live, /badgeText\.textContent = SNAPSHOT_BADGE/);
+ assert.doesNotMatch(live, /LIVE SYNC READY|LIVE SSE|POLLING DUCKDB|LIVE HTTP/);
+
+ for (const rel of ['viewer.html', 'dashboards/index.html']) {
+  const fn = displayStatusFrom(read(rel), rel);
+  assert.equal(fn('Refused', 'not_observable'), 'insufficient_evidence');
+  assert.equal(fn('Refused', 'insufficient_sample'), 'insufficient_evidence');
+  assert.equal(fn('Computed', 'threshold_exceeded'), 'partial');
+  assert.equal(fn('Refused', 'threshold_exceeded'), 'partial');
+  assert.equal(fn('Computed', ''), 'ok');
+  assert.equal(fn('Refused', ''), 'refused');
+ }
+});
+
+test('live poll treats JSON null as not live, a non-null object as live, and a later failure as not live', { timeout: 5000 }, async () => {
+ function makeClassList() {
+  const names = new Set();
+  return {
+   add(...items) { for (const item of items) names.add(item); },
+   remove(...items) { for (const item of items) names.delete(item); },
+   contains(item) { return names.has(item); }
+  };
+ }
+ const badge = { classList: makeClassList() };
+ const badgeText = { textContent: '' };
+ const calls = [];
+ const context = vm.createContext({
+  window: { location: { protocol: 'http:' } },
+  document: {
+   getElementById(id) {
+    if (id === 'dual-serving-indicator') return badge;
+    if (id === 'dual-serving-text') return badgeText;
+    return null;
+   }
+  },
+  EventSource: function EventSource() { this.close = function() {}; },
+  setInterval() { return 1; },
+  clearInterval() {},
+  setTimeout,
+  queueMicrotask,
+  console,
+  calls,
+  badge
+ });
+ vm.runInContext(read('dashboards/live-sync.js'), context);
+ const raw = await vm.runInContext(`(async () => {
+  let payload = null;
+  let fail = false;
+  globalThis.fetch = function() {
+   let markSettled;
+   globalThis.__pollDone = new Promise(resolve => { markSettled = resolve; });
+   if (fail) {
+    const rejected = Promise.reject(new Error('poll failed'));
+    rejected.catch(() => queueMicrotask(markSettled));
+    return rejected;
+   }
+   return Promise.resolve({
+    ok: true,
+    json() {
+     const parsed = Promise.resolve(payload);
+     parsed.then(() => queueMicrotask(markSettled));
+     return parsed;
+    }
+   });
+  };
+  async function awaitPoll() {
+   await Promise.race([
+    globalThis.__pollDone,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('poll did not settle')), 1000))
+   ]);
+  }
+  async function exercise(next) {
+   payload = next;
+   fail = false;
+   calls.length = 0;
+   badge.classList.remove('live', 'snapshot');
+   const handle = window.attachLiveSync({
+    onData(data, source) { calls.push({ data: data, source: source }); }
+   });
+   handle.refresh();
+   await awaitPoll();
+   return {
+    isLive: handle.isLive,
+    live: badge.classList.contains('live'),
+    poll: calls.filter(call => call.source === 'poll')
+   };
+  }
+  const nullCase = await exercise(null);
+  const liveCase = await exercise({ ok: true });
+  payload = { ok: true };
+  fail = false;
+  calls.length = 0;
+  badge.classList.remove('live', 'snapshot');
+  const handle = window.attachLiveSync({
+   onData(data, source) { calls.push({ data: data, source: source }); }
+  });
+  handle.refresh();
+  await awaitPoll();
+  const wasLive = handle.isLive;
+  fail = true;
+  handle.refresh();
+  await awaitPoll();
+  const failedAfterLive = {
+   wasLive: wasLive,
+   isLive: handle.isLive,
+   live: badge.classList.contains('live')
+  };
+  return JSON.stringify({ nullCase, liveCase, failedAfterLive });
+ })()`, context);
+ const result = JSON.parse(raw);
+ assert.equal(result.nullCase.isLive, false);
+ assert.equal(result.nullCase.live, false);
+ assert.deepEqual(result.nullCase.poll, []);
+ assert.equal(result.liveCase.isLive, true);
+ assert.equal(result.liveCase.live, true);
+ assert.equal(result.liveCase.poll.length, 1);
+ assert.deepEqual(result.liveCase.poll[0].data, { ok: true });
+ assert.equal(result.liveCase.poll[0].source, 'poll');
+ assert.equal(result.failedAfterLive.wasLive, true);
+ assert.equal(result.failedAfterLive.isLive, false);
+ assert.equal(result.failedAfterLive.live, false);
+});

@@ -9,7 +9,7 @@ use std::{
     path::{Component, Path},
 };
 
-pub const VIEWS: [&str; 8] = [
+pub const VIEWS: [&str; 12] = [
     "v_seat_idle_ranking",
     "v_handoff_rework_analysis",
     "v_mission_token_burn",
@@ -18,6 +18,10 @@ pub const VIEWS: [&str; 8] = [
     "v_subagent_lineage",
     "v_security_posture",
     "v_process_resources",
+    "v_trajectory_vortex",
+    "v_schema_drift",
+    "v_authority_blast_radius",
+    "v_counterfactual_routing",
 ];
 // Fixed SQL: identifiers and expressions never come from a conversational request.
 const BASE_SIGNATURE: &str = "SELECT kind, count(*) n, CAST(bit_xor(h) AS VARCHAR) digest FROM (
@@ -806,14 +810,75 @@ fn v08_semantic_views() -> Value {
             "aggregation": "counts, max, and group-by",
             "window": "all-time",
             "limit": "process tree and RSS sample summaries; I14 environment.resources is CPU deltas and max sampled RSS; cost stays on I04"
+        },
+        {
+            "view": "v_seat_idle_ranking",
+            "domain": "harness",
+            "aggregation": "sums and group-by",
+            "window": "half-open snapshot",
+            "limit": "seat activity from the canonical decisions report; OpenRig adapter binding"
+        },
+        {
+            "view": "v_handoff_rework_analysis",
+            "domain": "coordination",
+            "aggregation": "counts and medians",
+            "window": "half-open snapshot",
+            "limit": "recorded handoff pairs; not a causal rework claim"
+        },
+        {
+            "view": "v_mission_token_burn",
+            "domain": "model",
+            "insight": "I02",
+            "aggregation": "sums and group-by",
+            "window": "half-open snapshot",
+            "limit": "four token components; cost stays on I04; do not unnest arrays and sum"
+        },
+        {
+            "view": "v_executive_governance",
+            "domain": "environment",
+            "aggregation": "canonical payload",
+            "window": "half-open snapshot",
+            "limit": "governance evidence from one decisions report; four-eyes is an OpenRig adapter binding"
+        },
+        {
+            "view": "v_trajectory_vortex",
+            "domain": "harness",
+            "insight": "I22",
+            "aggregation": "counts and group-by",
+            "window": "all-time",
+            "limit": "reserved trajectory rows for harness.trajectory_vortex; a trip is not a cause; CPU stays on I14; cost stays on I04"
+        },
+        {
+            "view": "v_schema_drift",
+            "domain": "harness",
+            "insight": "I23",
+            "aggregation": "counts and group-by",
+            "window": "all-time",
+            "limit": "reserved envelope-shape drift rows for harness.schema_drift; short samples stay insufficient_sample"
+        },
+        {
+            "view": "v_authority_blast_radius",
+            "domain": "security",
+            "insight": "I24",
+            "aggregation": "counts and group-by",
+            "window": "all-time",
+            "limit": "reserved evidenced-only reachability rows; dependency exposure, not inherited authority"
+        },
+        {
+            "view": "v_counterfactual_routing",
+            "domain": "model",
+            "insight": "I25",
+            "aggregation": "counts and group-by",
+            "window": "all-time",
+            "limit": "reserved counterfactual rows for model.counterfactual_routing; not an effect and not a routing change; cost stays on I04"
         }
     ])
 }
 
 /// Catalog of supported conversational intents and copy-pasteable example phrases.
 ///
-/// `intents` is the six ask phrases. `semantic_views` names the four v0.8.0 count
-/// projections. [`answer_physical`] does not route questions onto those views.
+/// `intents` is the six ask phrases. `semantic_views` names every entry in [`VIEWS`].
+/// [`answer_physical`] does not route questions onto the count projections.
 pub fn supported_intents() -> Value {
     json!({
         "intents": [
@@ -1689,6 +1754,19 @@ mod tests {
             (
                 "v_process_resources",
                 "SELECT count(*) FROM v_process_resources",
+            ),
+            (
+                "v_trajectory_vortex",
+                "SELECT count(*) FROM v_trajectory_vortex",
+            ),
+            ("v_schema_drift", "SELECT count(*) FROM v_schema_drift"),
+            (
+                "v_authority_blast_radius",
+                "SELECT count(*) FROM v_authority_blast_radius",
+            ),
+            (
+                "v_counterfactual_routing",
+                "SELECT count(*) FROM v_counterfactual_routing",
             ),
         ] {
             let count: i64 = c.query_row(query, [], |r| r.get(0))?;

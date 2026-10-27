@@ -48,6 +48,19 @@ Rig, seat, and four-eyes fields in these views are OpenRig adapter bindings. The
 
 The operator pages that read these templates use domain headings (model token and cost accounting, work handoff friction, actor activity and session yield, governance and verification) and badge seat, rig, and four-eyes columns as OpenRig adapter bindings.
 
+## Active intelligence projections (`vNext`)
+
+These four views are reserved for analyzers I22–I25. They are counts and group-by rows, not a second formula. `window_from` / `window_to` label the snapshot and do not filter rows. The half-open window rule applies when the Nao-windows work lands. CPU stays on `I14`. Cost stays on `I04`. A missing table yields an empty projection, not a measured zero.
+
+| Projection | Dashboard template | Id | Title | Query |
+| --- | --- | --- | --- | --- |
+| `v_trajectory_vortex` | `templates/nao/dashboards/trajectory_vortex.yaml` | `trajectory_vortex` | Trajectory Vortex (I22) | `SELECT * FROM v_trajectory_vortex ORDER BY harness, session_key` |
+| `v_schema_drift` | `templates/nao/dashboards/schema_drift.yaml` | `schema_drift` | Schema Drift (I23) | `SELECT * FROM v_schema_drift ORDER BY l1_distance DESC, harness, harness_version` |
+| `v_authority_blast_radius` | `templates/nao/dashboards/authority_blast_radius.yaml` | `authority_blast_radius` | Authority Blast Radius (I24) | `SELECT * FROM v_authority_blast_radius ORDER BY downstream_sessions DESC, harness, origin_session` |
+| `v_counterfactual_routing` | `templates/nao/dashboards/counterfactual_routing.yaml` | `counterfactual_routing` | Counterfactual Routing (I25) | `SELECT * FROM v_counterfactual_routing ORDER BY harness, session_key` |
+
+`v_trajectory_vortex` holds distance and self-transition rows for `I22` `harness.trajectory_vortex`. A trip is not a cause. `v_schema_drift` holds L1 distance and added, removed, and retyped key counts for `I23` `harness.schema_drift`. A short sample is reason `insufficient_sample`. `v_authority_blast_radius` holds evidenced-only downstream counts for `I24` `security.authority_blast_radius`. That count is dependency exposure, not inherited or effective authority. `v_counterfactual_routing` holds the labeled simulation for `I25` `model.counterfactual_routing`. It is not an effect and not a routing change.
+
 ## Two-tier intent routing (`v0.7.0`)
 
 `dendro ask` does not generate SQL from the question. Routing has two tiers, then a suggestion list when both miss.

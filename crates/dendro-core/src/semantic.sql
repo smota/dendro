@@ -43,3 +43,19 @@ CREATE OR REPLACE TABLE dendro_semantic_process_resources (
  root_key VARCHAR, harness VARCHAR, attribution VARCHAR, rss_unit VARCHAR,
  process_count BIGINT, max_rss_bytes BIGINT, sample_count BIGINT, source_keys VARCHAR[]
 );
+CREATE OR REPLACE TABLE dendro_semantic_trajectory_vortex (
+ harness VARCHAR, session_key VARCHAR, turn_k BIGINT, cosine_distance DOUBLE,
+ self_transition_rate DOUBLE, tripped VARCHAR, status VARCHAR, reason VARCHAR, source_keys VARCHAR[]
+);
+CREATE OR REPLACE TABLE dendro_semantic_schema_drift (
+ harness VARCHAR, harness_version VARCHAR, l1_distance DOUBLE, keys_added BIGINT,
+ keys_removed BIGINT, keys_retyped BIGINT, status VARCHAR, reason VARCHAR, source_keys VARCHAR[]
+);
+CREATE OR REPLACE TABLE dendro_semantic_authority_blast_radius (
+ harness VARCHAR, origin_session VARCHAR, downstream_sessions BIGINT, max_hop BIGINT,
+ cycles_touched BIGINT, status VARCHAR, reason VARCHAR, non_claim VARCHAR, source_keys VARCHAR[]
+);
+CREATE OR REPLACE TABLE dendro_semantic_counterfactual_routing (
+ harness VARCHAR, session_key VARCHAR, cache_bleed_inflection DOUBLE, simulated_cost DOUBLE,
+ simulated_context_pressure DOUBLE, status VARCHAR, reason VARCHAR, source_keys VARCHAR[]
+);
