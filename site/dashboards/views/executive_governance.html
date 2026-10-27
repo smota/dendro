@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Dendro · Executive Governance & Multi-Rig Audit</title>
-  <meta name="description" content="Canonical governance scorecard and multi-rig audit derived from DuckDB view v_executive_governance. Four-eyes independence, watchdog recovery, and vortex loops.">
+  <title>Dendro · Governance & Verification Scorecard</title>
+  <meta name="description" content="Governance and verification scorecard from v_executive_governance. Rig, seat, and four-eyes fields are an OpenRig adapter binding.">
   <link rel="stylesheet" href="../style.css">
 </head>
 <body>
@@ -19,13 +19,13 @@
         <span class="separator">/</span>
         <a href="../index.html" style="color:var(--text-secondary);">Dashboards</a>
         <span class="separator">/</span>
-        <span class="current">Executive Governance</span>
+        <span class="current">Governance &amp; Verification Scorecard</span>
       </div>
     </div>
     <div class="nav-right">
       <div id="dual-serving-indicator" class="dual-serving-badge snapshot">
         <span class="pulse-dot"></span>
-        <span id="dual-serving-text">LOCAL DUCKDB READY · SNAPSHOT MODE</span>
+        <span id="dual-serving-text">ILLUSTRATIVE SNAPSHOT · LIVE SYNC READY</span>
       </div>
       <button id="btn-refresh" class="nav-action-btn" type="button" title="Refresh scorecard snapshot">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
@@ -41,18 +41,19 @@
     <!-- Header -->
     <section class="hero-header">
       <div class="hero-eyebrow">
-        <span>●</span> Canonical Scorecard · SQL View: <code>v_executive_governance</code>
+        <span>●</span> Verification · SQL View: <code>v_executive_governance</code>
       </div>
-      <h1 class="hero-title">Executive Governance & Multi-Rig Audit</h1>
+      <h1 class="hero-title">Governance &amp; Verification Scorecard</h1>
       <p class="hero-subtitle">
-        High-assurance fleet governance evidence. Verifies Four-Eyes reviewer independence (no self-review), automated watchdog stall recovery, circular vortex loop prevention, and cross-slice context isolation across multi-rig topologies.
+        Verification evidence for recovery, vortex loops, compaction, and cross-slice cache bleed. These rows come from the canonical decisions report. They are not the closed security vocabulary.
       </p>
+      <p class="adapter-note"><span class="badge badge-info">OpenRig Adapter Binding</span> Rig scope, seat yield, and four-eyes independence are OpenRig platform fields.</p>
     </section>
 
     <!-- Top KPI Scorecards -->
     <section class="kpi-grid" aria-label="Governance Scorecards">
       <article class="kpi-card accent-emerald">
-        <div class="kpi-label">Four-Eyes Independence</div>
+        <div class="kpi-label">Four-Eyes Independence <span class="badge badge-info">OpenRig Adapter Binding</span></div>
         <div class="kpi-value" id="kpi-four-eyes">100% PASS</div>
         <div class="kpi-meta">
           <span class="badge badge-pass">VERIFIED</span> · <span>0 self-review violations</span>
@@ -202,7 +203,7 @@
               <th class="sortable">Observation Window</th>
               <th class="sortable">Definition Version</th>
               <th class="sortable num">M1 Yield (tok/item)</th>
-              <th class="sortable">Four-Eyes Separation</th>
+              <th class="sortable">Four-Eyes Separation <span class="badge badge-info">OpenRig Adapter Binding</span></th>
               <th class="sortable">Watchdog Resumes</th>
               <th class="sortable">Vortex Loops</th>
               <th class="sortable num">Compactions</th>
@@ -260,6 +261,14 @@
     const tableSearch = document.getElementById('table-search');
     let currentRecords = [];
 
+    function escapeHtml(s) {
+      return String(s ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+    }
+    function csvCell(value) {
+      let s = value == null ? '' : String(value);
+      if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+      return '"' + s.replace(/"/g, '""') + '"';
+    }
     const formatNum = n => typeof n === 'number' ? n.toLocaleString(undefined, { maximumFractionDigits: 1 }) : '—';
 
     function renderScorecard(data) {
@@ -301,9 +310,9 @@
         const windowSpan = `${r.window_from ? r.window_from.slice(5, 10) : '—'} → ${r.window_to ? r.window_to.slice(5, 10) : '—'}`;
 
         tr.innerHTML = `
-          <td><strong><code>${r.rig || 'default-fleet'}</code></strong></td>
-          <td style="font-family:var(--font-mono);font-size:0.82rem;">${windowSpan}</td>
-          <td><code>${r.definition_version || 'v1'}</code></td>
+          <td><strong><code>${escapeHtml(r.rig || 'default-fleet')}</code></strong></td>
+          <td style="font-family:var(--font-mono);font-size:0.82rem;">${escapeHtml(windowSpan)}</td>
+          <td><code>${escapeHtml(r.definition_version || 'v1')}</code></td>
           <td class="num">${formatNum(r.m1_yield)}</td>
           <td><span class="badge ${fourEyesPass ? 'badge-pass' : 'badge-fail'}">${fourEyesPass ? '100% COMPLIANT' : 'VIOLATION'}</span></td>
           <td><span class="badge badge-pass">${r.watchdog_recovery?.total_resumes || 0} Resumed</span></td>
@@ -323,7 +332,7 @@
       const rows = currentRecords.map(r => [
         r.rig, r.window_from, r.window_to, r.definition_version, r.m1_yield, r.vortex_loops, r.context_compactions, r.fresh
       ]);
-      const csv = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
+      const csv = [headers.map(csvCell).join(','), ...rows.map(row => row.map(csvCell).join(','))].join('\n');
       const blob = new Blob([csv], { type: 'text/csv' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');

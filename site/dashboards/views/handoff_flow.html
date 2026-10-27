@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Dendro · Handoff Flow & Friction Matrix</title>
-  <meta name="description" content="Pairwise handoff analytics, rework loops, wait turnarounds, and ring boundaries derived from DuckDB view v_handoff_rework_analysis.">
+  <title>Dendro · Work Handoff & Rework Friction</title>
+  <meta name="description" content="Work handoff and rework friction from v_handoff_rework_analysis. Seat pair columns are an OpenRig adapter binding.">
   <link rel="stylesheet" href="../style.css">
 </head>
 <body>
@@ -19,13 +19,13 @@
         <span class="separator">/</span>
         <a href="../index.html" style="color:var(--text-secondary);">Dashboards</a>
         <span class="separator">/</span>
-        <span class="current">Handoff Flow &amp; Friction</span>
+        <span class="current">Work Handoff &amp; Rework Friction</span>
       </div>
     </div>
     <div class="nav-right">
       <div id="dual-serving-indicator" class="dual-serving-badge snapshot">
         <span class="pulse-dot"></span>
-        <span id="dual-serving-text">LOCAL DUCKDB READY · SNAPSHOT MODE</span>
+        <span id="dual-serving-text">ILLUSTRATIVE SNAPSHOT · LIVE SYNC READY</span>
       </div>
       <button id="btn-refresh" class="nav-action-btn" type="button" title="Refresh handoff snapshot">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
@@ -41,12 +41,13 @@
     <!-- Header -->
     <section class="hero-header">
       <div class="hero-eyebrow">
-        <span>●</span> Pairwise Queue Dynamics · SQL View: <code>v_handoff_rework_analysis</code>
+        <span>●</span> Coordination · SQL View: <code>v_handoff_rework_analysis</code>
       </div>
-      <h1 class="hero-title">Handoff Flow &amp; Friction Matrix</h1>
+      <h1 class="hero-title">Work Handoff &amp; Rework Friction</h1>
       <p class="hero-subtitle">
-        Empirical evidence of queue transition dynamics. Measures rework return loops (items returned for fix), wait turnaround delays before work pickup, and ring boundary crossings between worker seats and supervisory planes.
+        Recorded work transfers, rework returns, and wait or execution medians. Counts are queue flow, not token cost or delivered value. From-seat, to-seat, and rig boundary fields are an OpenRig adapter binding.
       </p>
+      <p class="adapter-note"><span class="badge badge-info">OpenRig Adapter Binding</span> Seat pair columns name OpenRig seats when that adapter recorded the handoff.</p>
     </section>
 
     <!-- Top KPI Banner -->
@@ -129,8 +130,8 @@
         <table class="telemetry-table" id="handoff-table">
           <thead>
             <tr>
-              <th class="sortable" data-col="from_seat">From Seat</th>
-              <th class="sortable" data-col="to_seat">To Seat</th>
+              <th class="sortable" data-col="from_seat">From Seat <span class="badge badge-info">OpenRig Adapter Binding</span></th>
+              <th class="sortable" data-col="to_seat">To Seat <span class="badge badge-info">OpenRig Adapter Binding</span></th>
               <th class="sortable num" data-col="handoffs">Handoffs</th>
               <th class="sortable num" data-col="rework_returns">Rework Returns ▾</th>
               <th class="sortable num" data-col="return_rate">Return Rate (%)</th>
@@ -266,6 +267,14 @@
 
     const formatNum = n => typeof n === 'number' ? n.toLocaleString(undefined, { maximumFractionDigits: 1 }) : '—';
     const formatPct = n => typeof n === 'number' ? (n * 100).toFixed(1) + '%' : '—';
+    function escapeHtml(s) {
+      return String(s ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+    }
+    function csvCell(value) {
+      let s = value == null ? '' : String(value);
+      if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+      return '"' + s.replace(/"/g, '""') + '"';
+    }
     const msToSec = ms => typeof ms === 'number' ? (ms / 1000).toFixed(1) + 's' : '—';
 
     function renderView(data) {
@@ -400,14 +409,14 @@
         else if (p.ring_boundary === 'in_ring') boundaryBadge = 'tag-cyan';
 
         tr.innerHTML = `
-          <td><strong><code>${p.from_seat}</code></strong></td>
-          <td><strong><code>${p.to_seat}</code></strong></td>
+          <td><strong><code>${escapeHtml(p.from_seat)}</code></strong></td>
+          <td><strong><code>${escapeHtml(p.to_seat)}</code></strong></td>
           <td class="num">${formatNum(p.handoffs)}</td>
           <td class="num" style="color:var(--rose-rework);font-weight:700;">${formatNum(p.rework_returns)}</td>
-          <td class="num" style="color:${(p.return_rate || 0) > 0.15 ? 'var(--rose-rework)' : 'var(--text-primary)'};">${ratePct}</td>
-          <td class="num">${msToSec(p.wait_median_ms)}</td>
-          <td class="num">${msToSec(p.exec_turnaround_median_ms)}</td>
-          <td><span class="view-card-tag ${boundaryBadge}">${p.ring_boundary || 'unknown'}</span></td>
+          <td class="num" style="color:${(p.return_rate || 0) > 0.15 ? 'var(--rose-rework)' : 'var(--text-primary)'};">${escapeHtml(ratePct)}</td>
+          <td class="num">${escapeHtml(msToSec(p.wait_median_ms))}</td>
+          <td class="num">${escapeHtml(msToSec(p.exec_turnaround_median_ms))}</td>
+          <td><span class="view-card-tag ${boundaryBadge}">${escapeHtml(p.ring_boundary || 'unknown')}</span></td>
         `;
         tbody.appendChild(tr);
       });
@@ -426,9 +435,15 @@
           sortAsc = false;
         }
         document.querySelectorAll('#handoff-table th.sortable').forEach(h => {
-          h.textContent = h.textContent.replace(/[ ▴▾]/g, '');
+          Array.from(h.childNodes).forEach(node => {
+            if (node.nodeType === 3) node.textContent = node.textContent.replace(/[▴▾]/g, '').replace(/\s+$/g, '');
+          });
+          h.querySelectorAll('.sort-mark').forEach(mark => mark.remove());
         });
-        th.textContent = `${th.textContent} ${sortAsc ? '▴' : '▾'}`;
+        const mark = document.createElement('span');
+        mark.className = 'sort-mark';
+        mark.textContent = sortAsc ? ' ▴' : ' ▾';
+        th.append(mark);
         renderTable();
       });
     });
@@ -439,7 +454,7 @@
       const rows = currentPairs.map(p => [
         p.from_seat, p.to_seat, p.handoffs, p.rework_returns, p.return_rate, p.wait_median_ms, p.exec_turnaround_median_ms, p.ring_boundary
       ]);
-      const csv = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
+      const csv = [headers.map(csvCell).join(','), ...rows.map(row => row.map(csvCell).join(','))].join('\n');
       const blob = new Blob([csv], { type: 'text/csv' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');

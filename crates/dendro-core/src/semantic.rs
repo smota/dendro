@@ -773,7 +773,47 @@ pub fn suggest_closest_intents(question: &str) -> Vec<Value> {
     scored.into_iter().map(|(_, item)| item).collect()
 }
 
+/// Count projections added in v0.8.0. They are catalog metadata, not ask phrases.
+/// Conversational routing stays on the six `intents` entries.
+fn v08_semantic_views() -> Value {
+    json!([
+        {
+            "view": "v_message_mix",
+            "domain": "harness",
+            "aggregation": "counts and group-by",
+            "window": "all-time",
+            "limit": "message metadata counts only; never message text"
+        },
+        {
+            "view": "v_subagent_lineage",
+            "domain": "coordination",
+            "insight": "I09",
+            "aggregation": "counts and group-by",
+            "window": "all-time",
+            "limit": "parent-child session lineage counts; depth and cycle verdicts stay on I09"
+        },
+        {
+            "view": "v_security_posture",
+            "domain": "security",
+            "aggregation": "counts and group-by",
+            "window": "all-time",
+            "limit": "closed-vocabulary security observations; never command text or authority verdicts"
+        },
+        {
+            "view": "v_process_resources",
+            "domain": "environment",
+            "insight": "I14",
+            "aggregation": "counts, max, and group-by",
+            "window": "all-time",
+            "limit": "process tree and RSS sample summaries; I14 environment.resources is CPU deltas and max sampled RSS; cost stays on I04"
+        }
+    ])
+}
+
 /// Catalog of supported conversational intents and copy-pasteable example phrases.
+///
+/// `intents` is the six ask phrases. `semantic_views` names the four v0.8.0 count
+/// projections. [`answer_physical`] does not route questions onto those views.
 pub fn supported_intents() -> Value {
     json!({
         "intents": [
@@ -830,7 +870,8 @@ pub fn supported_intents() -> Value {
                 ],
                 "view": "dendro_semantic_provenance"
             }
-        ]
+        ],
+        "semantic_views": v08_semantic_views()
     })
 }
 
@@ -871,6 +912,11 @@ pub fn answer(db: &Path, question: &str, baseline: Option<&Value>) -> Result<Val
 }
 
 /// Physical read: caller retains selection custody.
+///
+/// Rank reads `v_seat_idle_ranking` and Explain reads the handoff payload backed by
+/// `v_handoff_rework_analysis`. The v0.8.0 views `v_message_mix`, `v_subagent_lineage`,
+/// `v_security_posture`, and `v_process_resources` are count projections listed in
+/// [`supported_intents`] `semantic_views`; they are not conversational phrases.
 pub fn answer_physical(db: &Path, question: &str, baseline: Option<&Value>) -> Result<Value> {
     let s = AnalyticsStore::open_read_only(db)?;
     s.connection().execute_batch("BEGIN TRANSACTION")?;

@@ -33,7 +33,7 @@
         if (badgeText) badgeText.textContent = label || 'LIVE SSE · STREAMING ACTIVE';
       } else {
         badge.classList.add('snapshot');
-        if (badgeText) badgeText.textContent = label || 'LOCAL DUCKDB READY · SNAPSHOT';
+        if (badgeText) badgeText.textContent = label || 'ILLUSTRATIVE SNAPSHOT · LIVE SYNC READY';
       }
     }
 
@@ -65,7 +65,7 @@
     const isHttp = window.location.protocol.startsWith('http');
 
     if (!isHttp) {
-      updateBadge('snapshot', 'LOCAL DUCKDB READY · SNAPSHOT MODE');
+      updateBadge('snapshot', 'ILLUSTRATIVE SNAPSHOT · LIVE SYNC READY');
       const data = loadEmbeddedData();
       if (data) triggerData(data, 'embedded-snapshot');
       return {
@@ -131,7 +131,7 @@
         triggerData(data, 'poll');
       } catch (err) {
         // Fall back to embedded data
-        updateBadge('snapshot', 'LOCAL DUCKDB READY · SNAPSHOT MODE');
+        updateBadge('snapshot', 'ILLUSTRATIVE SNAPSHOT · LIVE SYNC READY');
         const data = loadEmbeddedData();
         if (data) triggerData(data, 'embedded-snapshot');
       }

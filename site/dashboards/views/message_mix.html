@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dendro · Model & Harness Message Mix</title>
+  <meta name="description" content="Message and capability telemetry from v_message_mix. Surfaces I02 and I08 without message body capture.">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <header class="telemetry-nav">
+    <div class="nav-left">
+      <a href="../index.html" class="brand-link" title="Dashboards Hub">
+        <span class="brand-icon">D</span>
+        <span>Dendro<span style="font-weight:400;color:var(--text-muted);font-size:0.85rem;margin-left:6px;">Messages</span></span>
+      </a>
+      <div class="nav-breadcrumbs" aria-label="Breadcrumbs">
+        <span class="separator">/</span>
+        <a href="../index.html" style="color:var(--text-secondary);">Dashboards</a>
+        <span class="separator">/</span>
+        <span class="current">Model &amp; Harness Message Mix</span>
+      </div>
+    </div>
+    <div class="nav-right">
+      <div id="dual-serving-indicator" class="dual-serving-badge snapshot">
+        <span class="pulse-dot"></span>
+        <span id="dual-serving-text">ILLUSTRATIVE SNAPSHOT · LIVE SYNC READY</span>
+      </div>
+      <button id="btn-refresh" class="nav-action-btn" type="button" title="Refresh message mix snapshot">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+        <span>Refresh</span>
+      </button>
+      <a href="../index.html" class="nav-action-btn" title="Back to Dashboards Hub"><span>← Back to Dashboards Hub</span></a>
+    </div>
+  </header>
+
+  <main class="telemetry-layout">
+    <section class="hero-header">
+      <div class="hero-eyebrow"><span>●</span> Model · Harness · SQL View: <code>v_message_mix</code></div>
+      <h1 class="hero-title">Model &amp; Harness Message Mix</h1>
+      <p class="hero-subtitle">
+        Counts of message metadata by harness, session, role, direction, and modality. Bodies are not captured. I02 accounts disjoint tokens. I08 accounts settled action failure. Neither number is recomputed on this page.
+      </p>
+      <p class="hero-subtitle">All-time counts — window_from/window_to label the snapshot but do not filter.</p>
+    </section>
+
+    <section class="kpi-grid" aria-label="Message mix indicators">
+      <article class="kpi-card accent-cyan">
+        <div class="kpi-label">Messages counted</div>
+        <div class="kpi-value" id="kpi-messages">—</div>
+        <div class="kpi-meta"><span>Metadata only</span> · <span style="color:var(--accent-cyan);">No body text</span></div>
+      </article>
+      <article class="kpi-card accent-emerald">
+        <div class="kpi-label">Harnesses</div>
+        <div class="kpi-value" id="kpi-harnesses">—</div>
+        <div class="kpi-meta"><span>Group key</span> · <span>native session stays sealed in exports</span></div>
+      </article>
+      <article class="kpi-card accent-purple">
+        <div class="kpi-label">I02 L0 · Model</div>
+        <div class="kpi-value" id="kpi-i02">Computed</div>
+        <div class="kpi-meta"><span>model.tokens.direct</span> · <span>Refused if usage is empty</span></div>
+      </article>
+      <article class="kpi-card accent-amber">
+        <div class="kpi-label">I08 L0 · Harness</div>
+        <div class="kpi-value" id="kpi-i08">Partial</div>
+        <div class="kpi-meta"><span>harness.action_failure</span> · <span>Unsettled ≠ success</span></div>
+      </article>
+    </section>
+
+    <section class="lane-grid" aria-label="Insight formulas">
+      <article class="lane-card">
+        <h3>I02 model.tokens.direct</h3>
+        <p>Disjoint sums of input_uncached, cache_write, cache_read, and output. Reasoning is included in output and is not part of the disjoint sum. Cache-read ratio of sums and mean of ratios are separate measures.</p>
+      </article>
+      <article class="lane-card">
+        <h3>I08 harness.action_failure</h3>
+        <p>Failed divided by settled terminal actions. Unsettled rows, where failed is null, are counted apart and are never treated as succeeded. This view does not store tool arguments.</p>
+      </article>
+    </section>
+
+    <section class="viz-panel" aria-label="Message mix by modality">
+      <div class="viz-panel-header">
+        <div>
+          <h2 class="viz-title">Modality mix by harness</h2>
+          <p class="viz-subtitle">Widths are message_count shares. They are not tokens and not failure rates.</p>
+        </div>
+      </div>
+      <div id="mix-bars"></div>
+    </section>
+
+    <section class="table-panel">
+      <div class="table-panel-header">
+        <div class="table-panel-title">
+          <span>v_message_mix rows</span>
+          <span class="badge badge-info" id="record-count-badge">0 Rows</span>
+        </div>
+      </div>
+      <div class="table-container">
+        <table class="telemetry-table">
+          <thead>
+            <tr>
+              <th>Harness</th>
+              <th>Native session</th>
+              <th>Role</th>
+              <th>Direction</th>
+              <th>Modality</th>
+              <th class="num">Message count</th>
+            </tr>
+          </thead>
+          <tbody id="mix-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="query-box">
+      <div class="query-box-title">Underlying DuckDB Query</div>
+      <code>SELECT * FROM v_message_mix ORDER BY message_count DESC, harness, native_session;</code>
+    </div>
+  </main>
+
+  <script id="dendro-data" type="application/json">
+  {
+    "product": "AI Fleet Intelligence",
+    "view": "v_message_mix",
+    "insights": {
+      "I02": {"id": "I02", "name": "model.tokens.direct", "domain": "model", "status": "Computed"},
+      "I08": {"id": "I08", "name": "harness.action_failure", "domain": "harness", "status": "Partial"}
+    },
+    "rows": [
+      {"harness": "claude", "native_session": "session-a", "role": "user", "direction": "inbound", "modality": "text", "message_count": 18},
+      {"harness": "claude", "native_session": "session-a", "role": "assistant", "direction": "outbound", "modality": "text", "message_count": 14},
+      {"harness": "codex", "native_session": "session-b", "role": "assistant", "direction": "outbound", "modality": "tool_use", "message_count": 9},
+      {"harness": "codex", "native_session": "session-b", "role": "user", "direction": "inbound", "modality": "tool_result", "message_count": 9},
+      {"harness": "grok", "native_session": "session-c", "role": "assistant", "direction": "outbound", "modality": "structured", "message_count": 2},
+      {"harness": "grok", "native_session": "session-c", "role": "user", "direction": "inbound", "modality": "text", "message_count": 6}
+    ]
+  }
+  </script>
+  <script src="../live-sync.js"></script>
+  <script>
+    'use strict';
+    const bars = document.getElementById('mix-bars');
+    const tbody = document.getElementById('mix-tbody');
+
+    function cell(text, className) {
+      const td = document.createElement('td');
+      if (className) td.className = className;
+      td.textContent = text;
+      return td;
+    }
+
+    function render(data) {
+      const rows = Array.isArray(data && data.rows) ? data.rows : [];
+      const total = rows.reduce((n, row) => n + (Number(row.message_count) || 0), 0);
+      const harnesses = new Set(rows.map(row => row.harness || 'unknown'));
+      document.getElementById('kpi-messages').textContent = total.toLocaleString();
+      document.getElementById('kpi-harnesses').textContent = String(harnesses.size);
+      if (data && data.insights && data.insights.I02) document.getElementById('kpi-i02').textContent = data.insights.I02.status || '—';
+      if (data && data.insights && data.insights.I08) document.getElementById('kpi-i08').textContent = data.insights.I08.status || '—';
+      document.getElementById('record-count-badge').textContent = rows.length + (rows.length === 1 ? ' Row' : ' Rows');
+
+      bars.replaceChildren();
+      const byHarness = new Map();
+      rows.forEach(row => {
+        const key = row.harness || 'unknown';
+        if (!byHarness.has(key)) byHarness.set(key, []);
+        byHarness.get(key).push(row);
+      });
+      if (!byHarness.size) {
+        const empty = document.createElement('p');
+        empty.style.color = 'var(--text-muted)';
+        empty.style.padding = '16px';
+        empty.textContent = 'No message metadata in this snapshot.';
+        bars.append(empty);
+      }
+      byHarness.forEach((group, harness) => {
+        const sum = group.reduce((n, row) => n + (Number(row.message_count) || 0), 0) || 1;
+        const wrap = document.createElement('div');
+        wrap.className = 'activity-band-group';
+        const label = document.createElement('div');
+        label.className = 'activity-band-label';
+        const name = document.createElement('strong');
+        name.textContent = harness;
+        label.append(name);
+        const bar = document.createElement('div');
+        bar.className = 'activity-band-bar';
+        group.forEach(row => {
+          const seg = document.createElement('div');
+          seg.className = 'segment';
+          const pct = ((Number(row.message_count) || 0) / sum) * 100;
+          seg.style.width = pct + '%';
+          seg.style.background = row.direction === 'inbound' ? 'var(--accent-cyan)' : 'var(--emerald-yield)';
+          seg.title = (row.modality || 'unknown') + ': ' + (row.message_count || 0);
+          bar.append(seg);
+        });
+        wrap.append(label, bar);
+        bars.append(wrap);
+      });
+
+      tbody.replaceChildren();
+      if (!rows.length) {
+        const tr = document.createElement('tr');
+        const td = cell('No message rows. An empty projection is not a measured zero.', '');
+        td.colSpan = 6;
+        tr.append(td);
+        tbody.append(tr);
+        return;
+      }
+      rows.forEach(row => {
+        const tr = document.createElement('tr');
+        tr.append(
+          cell(row.harness || '—'),
+          cell(row.native_session || '—'),
+          cell(row.role || '—'),
+          cell(row.direction || '—'),
+          cell(row.modality || '—'),
+          cell(String(row.message_count ?? '—'), 'num')
+        );
+        tbody.append(tr);
+      });
+    }
+
+    const sync = attachLiveSync({
+      viewId: 'message_mix',
+      onData: function (data) { render(data); }
+    });
+    document.getElementById('btn-refresh').addEventListener('click', () => sync.refresh());
+    render(JSON.parse(document.getElementById('dendro-data').textContent));
+  </script>
+</body>
+</html>

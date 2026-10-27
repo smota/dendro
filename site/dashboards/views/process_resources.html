@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dendro · Environment & Process Resources</title>
+  <meta name="description" content="Process scope and max RSS from v_process_resources. I14 owns CPU and disk deltas. I18 owns source coverage. RSS units are never mixed.">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <header class="telemetry-nav">
+    <div class="nav-left">
+      <a href="../index.html" class="brand-link" title="Dashboards Hub">
+        <span class="brand-icon">D</span>
+        <span>Dendro<span style="font-weight:400;color:var(--text-muted);font-size:0.85rem;margin-left:6px;">Environment</span></span>
+      </a>
+      <div class="nav-breadcrumbs" aria-label="Breadcrumbs">
+        <span class="separator">/</span>
+        <a href="../index.html" style="color:var(--text-secondary);">Dashboards</a>
+        <span class="separator">/</span>
+        <span class="current">Environment &amp; Process Resources</span>
+      </div>
+    </div>
+    <div class="nav-right">
+      <div id="dual-serving-indicator" class="dual-serving-badge snapshot">
+        <span class="pulse-dot"></span>
+        <span id="dual-serving-text">ILLUSTRATIVE SNAPSHOT · LIVE SYNC READY</span>
+      </div>
+      <button id="btn-refresh" class="nav-action-btn" type="button" title="Refresh process snapshot">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+        <span>Refresh</span>
+      </button>
+      <a href="../index.html" class="nav-action-btn"><span>← Back to Dashboards Hub</span></a>
+    </div>
+  </header>
+
+  <main class="telemetry-layout">
+    <section class="hero-header">
+      <div class="hero-eyebrow"><span>●</span> Environment · I14 / I18 · SQL View: <code>v_process_resources</code></div>
+      <h1 class="hero-title">Environment &amp; Process Resources</h1>
+      <p class="hero-subtitle">
+        Process scope, max RSS, and process attribution from process identities and samples. I14 is CPU deltas and max sampled RSS. I18 counts read, projected, unprojected, and refused sources. This SQL view does not recompute CPU or coverage.
+      </p>
+      <p class="hero-subtitle">All-time counts — window_from/window_to label the snapshot but do not filter.</p>
+    </section>
+
+    <section class="kpi-grid" aria-label="Environment indicators">
+      <article class="kpi-card accent-purple">
+        <div class="kpi-label">Max RSS</div>
+        <div class="kpi-value" id="kpi-rss">—</div>
+        <div class="kpi-meta"><span id="kpi-rss-unit">rss_unit kept</span> · <span>Units are never mixed</span></div>
+      </article>
+      <article class="kpi-card accent-cyan">
+        <div class="kpi-label">Process scope</div>
+        <div class="kpi-value" id="kpi-procs">—</div>
+        <div class="kpi-meta"><span>Unique process_count</span> · <span>Deduped by root, harness, and attribution</span></div>
+      </article>
+      <article class="kpi-card accent-emerald">
+        <div class="kpi-label">I14 L0 · Environment</div>
+        <div class="kpi-value" id="kpi-i14">Refused</div>
+        <div class="kpi-meta"><span>environment.resources</span> · <span>CPU stays here</span></div>
+      </article>
+      <article class="kpi-card accent-amber">
+        <div class="kpi-label">I18 L0 · Environment</div>
+        <div class="kpi-value" id="kpi-i18">Computed</div>
+        <div class="kpi-meta"><span>coverage.source</span> · <span>Windowed scope refuses</span></div>
+      </article>
+    </section>
+
+    <section class="lane-grid" aria-label="Process attribution">
+      <article class="lane-card"><h3>Process scope</h3><p>process_count under one root_key and harness. Rows that share a root, harness, and attribution across rss_unit values are counted once.</p></article>
+      <article class="lane-card"><h3>Max RSS</h3><p>max_rss_bytes only where rss_unit is bytes. Units are never mixed.</p></article>
+      <article class="lane-card"><h3>Process attribution</h3><p>attribution is launched or discovered. That is process attribution, not a sandbox verdict.</p></article>
+      <article class="lane-card"><h3>I18 coverage.source</h3><p>Read, projected, unprojected-by-reason, and refused counts per source. A missing file is not zero.</p></article>
+    </section>
+
+    <section class="viz-panel" aria-label="Max RSS by root">
+      <div class="viz-panel-header">
+        <div>
+          <h2 class="viz-title">Max RSS by root and unit</h2>
+          <p class="viz-subtitle">Each bar is one rss_unit. Bars are not comparable across units.</p>
+        </div>
+      </div>
+      <div id="rss-bars"></div>
+    </section>
+
+    <section class="table-panel">
+      <div class="table-panel-header">
+        <div class="table-panel-title">
+          <span>v_process_resources rows</span>
+          <span class="badge badge-info" id="record-count-badge">0 Rows</span>
+        </div>
+      </div>
+      <div class="table-container">
+        <table class="telemetry-table">
+          <thead>
+            <tr>
+              <th>Root key</th>
+              <th>Harness</th>
+              <th>Process attribution</th>
+              <th>RSS unit</th>
+              <th class="num">Processes</th>
+              <th class="num">Max RSS bytes</th>
+              <th class="num">Samples</th>
+            </tr>
+          </thead>
+          <tbody id="resource-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="query-box">
+      <div class="query-box-title">Underlying DuckDB Query</div>
+      <code>SELECT * FROM v_process_resources ORDER BY max_rss_bytes DESC, harness, root_key;</code>
+    </div>
+  </main>
+
+  <script id="dendro-data" type="application/json">
+  {
+    "product": "AI Fleet Intelligence",
+    "view": "v_process_resources",
+    "insights": {
+      "I14": {"id": "I14", "name": "environment.resources", "domain": "environment", "status": "Refused", "reason": "empty population in this illustration"},
+      "I18": {"id": "I18", "name": "coverage.source", "domain": "environment", "status": "Computed", "read": 4, "projected": 3, "unprojected": 1, "refused": 0}
+    },
+    "rows": [
+      {"root_key": "root-a", "harness": "claude", "attribution": "launched", "rss_unit": "bytes", "process_count": 3, "max_rss_bytes": 734003200, "sample_count": 8},
+      {"root_key": "root-b", "harness": "codex", "attribution": "discovered", "rss_unit": "bytes", "process_count": 1, "max_rss_bytes": 188743680, "sample_count": 2}
+    ]
+  }
+  </script>
+  <script src="../live-sync.js"></script>
+  <script>
+    'use strict';
+    function cell(text, className) {
+      const td = document.createElement('td');
+      if (className) td.className = className;
+      td.textContent = text == null || text === '' ? '—' : String(text);
+      return td;
+    }
+    function formatBytes(n) {
+      if (typeof n !== 'number') return '—';
+      if (n >= 1048576) return (n / 1048576).toFixed(1) + ' MiB';
+      if (n >= 1024) return (n / 1024).toFixed(1) + ' KiB';
+      return n + ' B';
+    }
+    function render(data) {
+      const rows = Array.isArray(data && data.rows) ? data.rows : [];
+      const byteRows = rows.filter(row => row.rss_unit === 'bytes');
+      const processGroups = new Map();
+      rows.forEach(row => {
+        const key = [row.root_key || '', row.harness || '', row.attribution || ''].join('\0');
+        const count = Number(row.process_count) || 0;
+        const prev = processGroups.get(key);
+        if (prev === undefined || count > prev) processGroups.set(key, count);
+      });
+      const procs = Array.from(processGroups.values()).reduce((n, count) => n + count, 0);
+      let top = null;
+      byteRows.forEach(row => {
+        if (typeof row.max_rss_bytes === 'number' && (!top || row.max_rss_bytes > top.max_rss_bytes)) top = row;
+      });
+      document.getElementById('kpi-procs').textContent = procs.toLocaleString();
+      document.getElementById('kpi-rss').textContent = top ? formatBytes(top.max_rss_bytes) : '—';
+      document.getElementById('kpi-rss-unit').textContent = top ? 'bytes · Units are never mixed' : 'no byte sample · Units are never mixed';
+      if (data && data.insights && data.insights.I14) document.getElementById('kpi-i14').textContent = data.insights.I14.status || '—';
+      if (data && data.insights && data.insights.I18) document.getElementById('kpi-i18').textContent = data.insights.I18.status || '—';
+      document.getElementById('record-count-badge').textContent = rows.length + (rows.length === 1 ? ' Row' : ' Rows');
+      const host = document.getElementById('rss-bars');
+      host.replaceChildren();
+      const groups = new Map();
+      rows.forEach(row => {
+        const unit = row.rss_unit || 'unknown';
+        if (!groups.has(unit)) groups.set(unit, []);
+        groups.get(unit).push(row);
+      });
+      if (!groups.size) {
+        const p = document.createElement('p');
+        p.textContent = 'No process samples. I14 stays refused until identities and samples exist.';
+        p.style.color = 'var(--text-muted)';
+        p.style.padding = '16px';
+        host.append(p);
+      }
+      groups.forEach((group, unit) => {
+        const max = Math.max(1, ...group.map(row => Number(row.max_rss_bytes) || 0));
+        group.forEach(row => {
+          const wrap = document.createElement('div');
+          wrap.className = 'activity-band-group';
+          const label = document.createElement('div');
+          label.className = 'activity-band-label';
+          const strong = document.createElement('strong');
+          strong.textContent = (row.root_key || 'root') + ' · ' + unit;
+          label.append(strong);
+          const bar = document.createElement('div');
+          bar.className = 'activity-band-bar';
+          const seg = document.createElement('div');
+          seg.className = 'segment';
+          seg.style.width = ((Number(row.max_rss_bytes) || 0) / max * 100) + '%';
+          seg.style.background = row.attribution === 'launched' ? 'var(--purple-protocol)' : 'var(--accent-cyan)';
+          bar.append(seg);
+          wrap.append(label, bar);
+          host.append(wrap);
+        });
+      });
+      const tbody = document.getElementById('resource-tbody');
+      tbody.replaceChildren();
+      rows.forEach(row => {
+        const tr = document.createElement('tr');
+        tr.append(
+          cell(row.root_key),
+          cell(row.harness),
+          cell(row.attribution),
+          cell(row.rss_unit),
+          cell(row.process_count, 'num'),
+          cell(typeof row.max_rss_bytes === 'number' ? row.max_rss_bytes.toLocaleString() : '—', 'num'),
+          cell(row.sample_count, 'num')
+        );
+        tbody.append(tr);
+      });
+    }
+    const sync = attachLiveSync({ viewId: 'process_resources', onData: render });
+    document.getElementById('btn-refresh').addEventListener('click', () => sync.refresh());
+    render(JSON.parse(document.getElementById('dendro-data').textContent));
+  </script>
+</body>
+</html>

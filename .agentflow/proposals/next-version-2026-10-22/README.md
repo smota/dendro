@@ -14,6 +14,7 @@ The user has instructed implementation of these full revised contracts, scope, o
 | Architect: what exactly do facts and answers mean? | [DESIGN.md](DESIGN.md) |
 | Dispatcher/worker: which inputs, paths and tests apply? | [tasks.json](tasks.json), then [EXECUTION.md](EXECUTION.md) |
 | Reviewer: what could make a plausible answer wrong? | [ADVERSARIAL.md](ADVERSARIAL.md) |
+| vNext owner: what does Goal 9 add after v0.8.0? | [ADDENDUM-DUCKDB2-AND-INTELLIGENCE.md](ADDENDUM-DUCKDB2-AND-INTELLIGENCE.md) |
 
 The JSON DAG alone defines task dependencies. Document sections explain contracts, not a competing schedule. Each release requirement maps to task acceptance IDs. Proposed module paths and test targets are reservations to create during authorized delivery, not claims they exist today.
 
@@ -41,3 +42,17 @@ Native feasibility is owned work: B02 pins toolchain/dependency/permission evide
 The new v0.8.0 scope uses direct local agents, permitted by the owner clarification on issue526 comment6200530869; rigs are not required. This does not resume unrelated backlog or reset historical G2. Local generated run/worker IDs identify only current implementation records, never authenticated historical seats/fences. B00 direct-core acceptance depends on reviewed bootstrap/path-control evidence; seat-manifest restoration remains a separate governance hold and does not gate authorized direct task leases; process-local distribution inspection evidence is recorded with its dependency-overlay limits.
 
 Core admission is partitioned from release-only source/native holds: reviewed structural bootstrap assertions are frozen and ready for fresh-worker typed construction. Full numeric/source/native acceptance remains incomplete; no scope is removed.
+
+## vNext addendum (not part of the v0.8.0 DAG)
+
+[ADDENDUM-DUCKDB2-AND-INTELLIGENCE.md](ADDENDUM-DUCKDB2-AND-INTELLIGENCE.md) is the normative Goal 9 / vNext contract (authored 2026-10-27). It does not change the packet inventory above and it does not edit `tasks.json`. `DESIGN.md` still defines I01–I21. `SCOPE-TRIMMED.md` still defines what v0.8.0 built.
+
+| Requirement | Acceptance | Registers |
+|---|---|---|
+| `R29` DuckDB 2.0.0 LTS, storage 69, schema 5, quack single-owner | `A01`–`A03` | Crate pin `~1.20000.0`, backup `dendro.duckdb.pre-v200.bak`, private quack boundary |
+| `R30` `VARIANT`, triggers, `duckpgq`, `fts`, trajectory, DuckLake 1.1 | `A04`–`A07` | Body-free envelope, tripwire outbox, extension-free lineage fallback |
+| `R31` Insights I01–I25 and `dendro advise` | `A08`–`A12` | Fifteen remaining `DESIGN.md` insights, `I22`–`I25`, advisory separated from governance |
+| `R32` Presentation parity | `A13`–`A14` | Dashboards, viewer, TUI, Obsidian visual tokens |
+| `R33` Documentation and Nao catalog parity | `A15` | Same-change docs plus `site/site.test.cjs` and `semantic.rs` |
+
+Backlog rows for these IDs live under Goal 9 in `docs/BACKLOG.md`. None of `A01`–`A15` is done by publishing this page.

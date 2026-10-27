@@ -62,9 +62,13 @@ test('dashboards hub and multi-view suite exist, are offline standalone with liv
  assert.match(indexHtml,/views\/seat_dynamics\.html/);
  assert.match(indexHtml,/views\/handoff_flow\.html/);
  assert.match(indexHtml,/views\/cost_and_loops\.html/);
+ assert.match(indexHtml,/views\/message_mix\.html/);
+ assert.match(indexHtml,/views\/subagent_lineage\.html/);
+ assert.match(indexHtml,/views\/security_posture\.html/);
+ assert.match(indexHtml,/views\/process_resources\.html/);
  assert.match(indexHtml,/\.\.\/viewer\.html/);
 
- ['executive_governance','seat_dynamics','handoff_flow','cost_and_loops'].forEach(v=>{
+ ['executive_governance','seat_dynamics','handoff_flow','cost_and_loops','message_mix','subagent_lineage','security_posture','process_resources'].forEach(v=>{
   const viewHtml=read(`dashboards/views/${v}.html`);
   assert.match(viewHtml,/<script id="dendro-data" type="application\/json">/);
   assert.match(viewHtml,/attachLiveSync/);
@@ -73,4 +77,128 @@ test('dashboards hub and multi-view suite exist, are offline standalone with liv
 
  const siteIndex=read('index.html');
  assert.match(siteIndex,/dashboards\/index\.html/);
+});
+
+test('v0.8.0 layer abstraction, six insights, and eight dashboard projections',()=>{
+ const indexHtml=read('dashboards/index.html');
+ const siteIndex=read('index.html');
+ const viewerHtml=read('viewer.html');
+ assert.match(siteIndex,/v0\.8\.0/);
+ assert.match(indexHtml,/0\.8\.0/);
+ assert.doesNotMatch(indexHtml,/0\.7\.0/);
+ ['All Layers','Model Layer','Harness Layer','Coordination &amp; Lineage','Environment &amp; Security','Platform Adapter (OpenRig)'].forEach(label=>assert.match(indexHtml,new RegExp(label.replace(/[()]/g,'\\$&'))));
+ assert.match(indexHtml,/Compiled Insights Strip \(insight_v1\)/);
+ ['I02','I04','I08','I09','I14','I18'].forEach(id=>assert.match(indexHtml,new RegExp(id)));
+ ['model\\.tokens\\.direct','model\\.cost','harness\\.action_failure','work\\.lineage_shape','environment\\.resources','coverage\\.source'].forEach(name=>assert.match(indexHtml,new RegExp(name)));
+ assert.match(indexHtml,/Model Token &amp; Cost Accounting \(I02 \/ I04\)/);
+ assert.match(indexHtml,/Work Handoff &amp; Rework Friction/);
+ assert.match(indexHtml,/Actor Activity &amp; Session Yield/);
+ assert.match(indexHtml,/Governance &amp; Verification Scorecard/);
+ ['cost_and_loops','handoff_flow','seat_dynamics','executive_governance'].forEach(view=>{
+  assert.match(read(`dashboards/views/${view}.html`),/OpenRig Adapter Binding/);
+ });
+ const queries={
+  message_mix:'v_message_mix',
+  subagent_lineage:'v_subagent_lineage',
+  security_posture:'v_security_posture',
+  process_resources:'v_process_resources'
+ };
+ Object.entries(queries).forEach(([view,sql])=>{
+  const html=read(`dashboards/views/${view}.html`);
+  assert.match(html,new RegExp(sql));
+  assert.match(html,/live-sync\.js/);
+  assert.match(html,/style\.css/);
+ });
+ assert.match(read('dashboards/views/message_mix.html'),/I02/);
+ assert.match(read('dashboards/views/message_mix.html'),/I08/);
+ assert.match(read('dashboards/views/subagent_lineage.html'),/I09/);
+ assert.match(read('dashboards/views/security_posture.html'),/effective_authority/);
+ assert.match(read('dashboards/views/process_resources.html'),/I14/);
+ assert.match(read('dashboards/views/process_resources.html'),/I18/);
+ assert.match(viewerHtml,/Read your agentic stack across Model, Harness, Coordination, and Environment layers — with OpenRig adapter bindings when present/);
+ ['id="pulse"','id="flow"','id="insights"','id="bands"','id="tokens"','id="lineage"','id="environment"','id="security"','id="inspection"'].forEach(id=>assert.match(viewerHtml,new RegExp(id)));
+ const v=viewer();
+ const insights=v.nodes.get('insight-list').textContent;
+ ['I02','I04','I08','I09','I14','I18','model.tokens.direct','model.cost','harness.action_failure','work.lineage_shape','environment.resources','coverage.source','model','harness','coordination','environment'].forEach(token=>assert.match(insights,new RegExp(token.replace(/\./g,'\\.'))));
+ assert.match(v.nodes.get('lineage').textContent,/I09/);
+ assert.match(v.nodes.get('environment').textContent,/I14/);
+ assert.match(v.nodes.get('security').textContent,/sandbox_policy/);
+ const root=path.join(__dirname,'..');
+ const templates=[
+  ['message_mix.yaml','message_mix','v_message_mix'],
+  ['subagent_lineage.yaml','subagent_lineage','v_subagent_lineage'],
+  ['security_posture.yaml','security_posture','v_security_posture'],
+  ['process_resources.yaml','process_resources','v_process_resources'],
+  ['cost_and_loops.yaml','token_lineage','v_mission_token_burn'],
+  ['handoff_flow.yaml','handoff_flow','v_handoff_rework_analysis'],
+  ['seat_dynamics.yaml','seat_dynamics','v_seat_idle_ranking'],
+  ['executive_governance.yaml','executive_governance','v_executive_governance']
+ ];
+ const caveat='All-time counts — window_from/window_to label the snapshot but do not filter.';
+ ['message_mix','subagent_lineage','security_posture','process_resources'].forEach(view=>{
+  assert.match(read(`dashboards/views/${view}.html`),new RegExp(caveat.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
+ });
+ assert.match(indexHtml,new RegExp(caveat.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
+ const resources=read('dashboards/views/process_resources.html');
+ assert.match(resources,/Process attribution/);
+ assert.doesNotMatch(resources,/Isolation stage/);
+ assert.match(resources,/rss_unit === 'bytes'/);
+ assert.match(resources,/Units are never mixed/);
+ const doc=fs.readFileSync(path.join(root,'docs/NAO_SEMANTIC.md'),'utf8');
+ templates.forEach(([file,id,view])=>{
+  const yaml=fs.readFileSync(path.join(root,'templates/nao/dashboards',file),'utf8');
+  assert.match(yaml,new RegExp(`id: ${id}`));
+  assert.match(yaml,new RegExp(view));
+  assert.match(doc,new RegExp(view));
+  assert.match(doc,new RegExp(file.replace('.','\\.')));
+ });
+ assert.match(doc,/4GB DuckDB memory cap/);
+ assert.match(doc,/CPU deltas and max sampled RSS/);
+ assert.match(fs.readFileSync(path.join(root,'crates/dendro-core/src/semantic.rs'),'utf8'),/CPU deltas and max sampled RSS/);
+});
+
+test('viewer strips untrusted free-text secrets from insights and security',()=>{
+ const v=viewer();
+ const rendered=()=>[...v.nodes.values()].map(node=>node.textContent).join('\n');
+ const demoHtml=rendered();
+ assert.ok(!/redacted/i.test(demoHtml));
+ assert.match(demoHtml,/actions/);
+ assert.match(demoHtml,/sessions/);
+ const canaries=['sk-ant-api03-AbC123','ghp_canaryAbC123','sk-live-abc123','xai-canaryToken99','unlisted_custom_slug'];
+ for(const canary of canaries){
+  const payload=structuredClone(v.run('DEMO'));
+  payload.insights.forEach(row=>{
+   row.status={state:'partial',reason:canary};
+   row.population.what=canary;
+   row.measures=[{id:canary,name:canary,value:1,unit:canary}];
+  });
+  payload.security={status:{state:'partial',reason:canary},population:{what:canary,n:1},counts:[{kind:canary,value:canary,n:1},{kind:'sandbox_policy',value:canary,n:1},{kind:'approved_prefix_count',value:canary,n:1}]};
+  v.context.payload=payload;
+  v.run("load(payload,'privacy check')");
+  const shown=rendered()+(v.run('JSON.stringify(project(payload))')||'');
+  assert.doesNotMatch(shown,new RegExp(canary.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
+ }
+ v.run("load(DEMO,'Synthetic demo')");
+ const secret='super-secret-value';
+ const payload={
+  product:'AI Fleet Intelligence',
+  insights:[{
+   id:'I02',name:secret,version:'1.0.0',domain:'model',status:{state:'computed',reason:secret},
+   population:{what:secret,n:1},
+   measures:[{id:'I02.input_uncached',name:secret,value:1,unit:secret}]
+  },{
+   id:secret,name:'model.cost',version:'1.0.0',domain:'model',status:{state:'computed'},
+   population:{what:'usage_facts',n:1},measures:[]
+  }],
+  lineage:{id:'I09',name:secret,domain:'coordination',status:{state:'partial',reason:'unresolved parent session'},population:{what:secret,n:2},measures:[{id:'I09.max_depth',name:'max_depth',value:1,unit:secret}]},
+  security:{status:{state:'computed'},population:{what:secret,n:1},counts:[{kind:secret,value:'workspace-write',n:1},{kind:'sandbox_policy',value:secret,n:1},{kind:'sandbox_policy',value:'workspace-write',n:2}]}
+ };
+ v.context.payload=payload;
+ v.run("load(payload,'privacy check')");
+ const secretHtml=['insight-list','lineage','environment','security','status'].map(id=>v.nodes.get(id).textContent).join('\n');
+ assert.doesNotMatch(secretHtml,/super-secret-value/);
+ assert.match(v.nodes.get('insight-list').textContent,/redacted/);
+ assert.match(v.nodes.get('security').textContent,/sandbox_policy/);
+ assert.match(v.nodes.get('security').textContent,/workspace-write/);
+ assert.doesNotMatch(v.nodes.get('lineage').textContent,/super-secret-value/);
 });

@@ -1,0 +1,6 @@
+dashboard:
+  id: security_posture
+  title: "Security & Authority Posture"
+queries:
+  - id: posture
+    sql: SELECT * FROM v_security_posture ORDER BY observation_count DESC, harness, kind

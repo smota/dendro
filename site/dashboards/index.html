@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dendro · Dashboard Entryway & Multi-View Hub</title>
-  <meta name="description" content="Local-first AI Fleet Intelligence Hub. Retrospective multi-view telemetry over seat dynamics, handoff friction, token economics, and executive governance.">
+  <meta name="description" content="Local-first Dendro v0.8.0 intelligence hub. Telemetry across Model, Harness, Coordination, and Environment layers, with OpenRig adapter bindings when present.">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -23,7 +23,7 @@
     <div class="nav-right">
       <div id="dual-serving-indicator" class="dual-serving-badge snapshot">
         <span class="pulse-dot"></span>
-        <span id="dual-serving-text">LOCAL DUCKDB READY · SNAPSHOT MODE</span>
+        <span id="dual-serving-text">ILLUSTRATIVE SNAPSHOT · LIVE SYNC READY</span>
       </div>
       <button id="btn-refresh" class="nav-action-btn" type="button" title="Refresh local data snapshot">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
@@ -42,212 +42,366 @@
     <!-- Hero Header -->
     <section class="hero-header">
       <div class="hero-eyebrow">
-        <span>●</span> Fleet Intelligence Telemetry · Obsidian Edition
+        <span>●</span> Intelligence Layers · Obsidian Edition · v0.8.0
       </div>
       <h1 class="hero-title">Dashboard Entryway & Multi-View Hub</h1>
       <p class="hero-subtitle">
-        Verifiable operational telemetry derived from local DuckDB views. Explore canonical governance scorecards, seat lifespan dynamics, pairwise handoff rework friction, and four-component token lineage.
+        Read the agentic stack across Model, Harness, Coordination, and Environment. Domain views count messages, lineage, security observations, and process resources. Rig, seat, and four-eyes fields stay marked as OpenRig adapter bindings.
       </p>
     </section>
 
     <!-- KPI Aggregate Banner -->
-    <section class="kpi-grid" aria-label="Fleet Key Performance Indicators">
+    <section class="kpi-grid" aria-label="Layer key performance indicators">
       <article class="kpi-card accent-cyan">
-        <div class="kpi-label">Total Recorded Tokens</div>
+        <div class="kpi-label">Model tokens (I02)</div>
         <div class="kpi-value" id="kpi-tokens">14.24M</div>
         <div class="kpi-meta">
-          <span>4-component lineage</span> · <span style="color:var(--accent-cyan);">100% accounted</span>
+          <span>Disjoint components</span> · <span style="color:var(--accent-cyan);">No inferred currency</span>
         </div>
       </article>
 
       <article class="kpi-card accent-emerald">
-        <div class="kpi-label">Active Seats in Fleet</div>
-        <div class="kpi-value" id="kpi-seats">8 Seats</div>
+        <div class="kpi-label">8 Active Actors / Seats</div>
+        <div class="kpi-value" id="kpi-seats">8</div>
         <div class="kpi-meta">
-          <span>0 unobserved lifespans</span> · <span style="color:var(--emerald-yield);">Full coverage</span>
+          <span class="badge badge-info">OpenRig Adapter Binding</span> · <span>seat count when present</span>
         </div>
       </article>
 
       <article class="kpi-card accent-purple">
-        <div class="kpi-label">Canonical M1 Fleet Yield</div>
+        <div class="kpi-label">Session yield</div>
         <div class="kpi-value" id="kpi-yield">78.4K <small style="font-size:0.9rem;font-weight:500;">tok/deliv</small></div>
         <div class="kpi-meta">
-          <span>182 nonreturned items</span> · <span style="color:var(--purple-protocol);">Strict audit</span>
+          <span>Canonical M1 when linked</span> · <span style="color:var(--purple-protocol);">Null is not zero</span>
         </div>
       </article>
 
       <article class="kpi-card accent-amber">
-        <div class="kpi-label">Handoff Friction Rate</div>
+        <div class="kpi-label">Work handoff rework</div>
         <div class="kpi-value" id="kpi-friction">12.9%</div>
         <div class="kpi-meta">
-          <span>32 rework returns</span> · <span style="color:var(--amber-friction);">18 active pairs</span>
+          <span>32 rework returns</span> · <span style="color:var(--amber-friction);">18 recorded pairs</span>
         </div>
       </article>
 
       <article class="kpi-card accent-rose">
-        <div class="kpi-label">Effective Concurrency</div>
+        <div class="kpi-label">Observed concurrency</div>
         <div class="kpi-value" id="kpi-concurrency">2.84x</div>
         <div class="kpi-meta">
-          <span>6.2 peak active seats</span> · <span style="color:var(--text-secondary);">k=1..8 dist</span>
+          <span class="badge badge-info">OpenRig Adapter Binding</span> · <span>k active seats</span>
         </div>
       </article>
+    </section>
+
+    <section id="compiled-insights" class="insights-strip" aria-label="Compiled Insights Strip (insight_v1)">
+      <div class="insights-strip-head">
+        <h2>Compiled Insights Strip (insight_v1)</h2>
+        <p>Six v0.8.0 reference insights. L0 is the domain disclosure. Status is the insight_v1 contract. This strip does not recompute measures.</p>
+      </div>
+      <div class="insight-grid">
+        <article class="insight-card">
+          <div class="insight-id">I02 <span class="view-card-tag tag-cyan">L0 · Model</span></div>
+          <div class="insight-name">model.tokens.direct</div>
+          <p class="insight-formula">Status: Computed when usage rows exist; Refused on an empty population or a failed store read. Formula: disjoint sums of input_uncached, cache_write, cache_read, and output per model. Reasoning stays inside output and is not added again. cache_read_ratio_of_sums and cache_read_mean_of_ratios are separate measures.</p>
+        </article>
+        <article class="insight-card">
+          <div class="insight-id">I04 <span class="view-card-tag tag-cyan">L0 · Model</span></div>
+          <div class="insight-name">model.cost</div>
+          <p class="insight-formula">Status: Computed, or Partial when observed or estimated USD is unknown. Formula: observed_usd and estimated_usd stay on separate measures and are never added. Unknown is not zero. The pricing table ships empty, so estimates stay unknown.</p>
+        </article>
+        <article class="insight-card">
+          <div class="insight-id">I08 <span class="view-card-tag tag-emerald">L0 · Harness</span></div>
+          <div class="insight-name">harness.action_failure</div>
+          <p class="insight-formula">Status: Computed, or Partial when unsettled actions remain. Formula: failed divided by settled terminal actions (failed IS NOT NULL). Unsettled actions (failed IS NULL) are counted separately and are never treated as success.</p>
+        </article>
+        <article class="insight-card">
+          <div class="insight-id">I09 <span class="view-card-tag tag-amber">L0 · Coordination</span></div>
+          <div class="insight-name">work.lineage_shape</div>
+          <p class="insight-formula">Status: Computed, or Partial when a parent is unresolved or a cycle stops the walk. Formula: explicit session_edges only. Relations include spawn, delegate, handoff, and return. Roots, depth, and diamonds are measured. Cycles are flagged. Unresolved parents are counted and never invented as roots.</p>
+        </article>
+        <article class="insight-card">
+          <div class="insight-id">I14 <span class="view-card-tag tag-purple">L0 · Environment</span></div>
+          <div class="insight-name">environment.resources</div>
+          <p class="insight-formula">Status: Computed when identities and samples exist; Refused on an empty population. Formula: CPU deltas and max sampled RSS. Per root_key and harness, sum CPU deltas on readable non-decreasing samples and take the max sampled RSS per rss_unit, with launched versus discovered attribution. RSS units are never mixed.</p>
+        </article>
+        <article class="insight-card">
+          <div class="insight-id">I18 <span class="view-card-tag tag-purple">L0 · Environment</span></div>
+          <div class="insight-name">coverage.source</div>
+          <p class="insight-formula">Status: Computed for an unwindowed scope; Refused when a from or to bound is set. Formula: read, projected, unprojected-by-reason, and refused counts per source. A missing source is not a zero.</p>
+        </article>
+      </div>
     </section>
 
     <!-- Filter and Search Toolbar -->
     <section class="filter-toolbar" aria-label="Dashboard views filter">
       <div class="search-box">
         <span class="search-icon">🔍</span>
-        <input type="text" id="view-search" class="search-input" placeholder="Search views by keyword (e.g. idle, token, rework, governance)..." aria-label="Search dashboard views">
+        <input type="text" id="view-search" class="search-input" placeholder="Search layers (message mix, lineage, tokens, security, RSS)..." aria-label="Search dashboard views">
       </div>
-      <div class="filter-chips" role="tablist" aria-label="Category filter">
-        <button class="filter-chip active" data-category="all" type="button">All Views (5)</button>
-        <button class="filter-chip" data-category="governance" type="button">Governance</button>
-        <button class="filter-chip" data-category="dynamics" type="button">Seat Dynamics</button>
-        <button class="filter-chip" data-category="handoffs" type="button">Handoff Friction</button>
-        <button class="filter-chip" data-category="economics" type="button">Token Economics</button>
-        <button class="filter-chip" data-category="explorer" type="button">Fleet Canvas</button>
+      <div class="filter-chips" role="tablist" aria-label="Intelligence layer filter">
+        <button class="filter-chip active" data-category="all" type="button">All Layers</button>
+        <button class="filter-chip" data-category="model" type="button">Model Layer</button>
+        <button class="filter-chip" data-category="harness" type="button">Harness Layer</button>
+        <button class="filter-chip" data-category="coordination" type="button">Coordination &amp; Lineage</button>
+        <button class="filter-chip" data-category="environment" type="button">Environment &amp; Security</button>
+        <button class="filter-chip" data-category="adapter" type="button">Platform Adapter (OpenRig)</button>
       </div>
     </section>
 
     <!-- Dashboard Views Grid -->
     <section id="views-container" class="views-grid" aria-label="Dashboard Views Directory">
-      <!-- 1. Executive Governance -->
-      <a href="views/executive_governance.html" class="view-card" data-category="governance" data-keywords="governance audit executive scorecard four-eyes watchdog vortex loop compliance multi-rig">
+      <a href="views/message_mix.html" class="view-card" data-category="model harness" data-keywords="message mix I02 I08 model harness role direction modality no body capture">
         <div>
           <div class="view-card-header">
-            <span class="view-card-tag tag-purple">Governance · Protocol</span>
-            <span class="view-card-sql">v_executive_governance</span>
+            <span class="view-card-tag tag-cyan">Model · Harness</span>
+            <span class="view-card-sql">v_message_mix</span>
           </div>
           <h2 class="view-card-title">
-            <span>Executive Governance & Multi-Rig Audit</span>
+            <span>Model &amp; Harness Message Mix</span>
             <span class="arrow">→</span>
           </h2>
           <p class="view-card-desc">
-            Canonical governance scorecard: independent Four-eyes review compliance, automated watchdog stall recoveries, vortex rework loop detection, and cross-slice cache bleed verification.
+            Message and capability telemetry across harnesses and models. Counts by role, direction, and modality. Message bodies are never captured. I02 accounts tokens. I08 accounts settled action failure. All-time counts — window_from/window_to label the snapshot but do not filter.
           </p>
         </div>
         <div class="view-card-preview-stats">
           <div class="preview-stat">
-            <span class="preview-stat-label">Four-Eyes</span>
-            <span class="preview-stat-value" style="color:var(--emerald-yield);">100% Pass</span>
+            <span class="preview-stat-label">I02</span>
+            <span class="preview-stat-value">tokens.direct</span>
           </div>
           <div class="preview-stat">
-            <span class="preview-stat-label">Vortex Loops</span>
-            <span class="preview-stat-value" style="color:var(--emerald-yield);">0 Loops</span>
+            <span class="preview-stat-label">I08</span>
+            <span class="preview-stat-value">action_failure</span>
           </div>
           <div class="preview-stat">
-            <span class="preview-stat-label">Watchdog</span>
-            <span class="preview-stat-value" style="color:var(--purple-protocol);">12 Resumes</span>
+            <span class="preview-stat-label">Bodies</span>
+            <span class="preview-stat-value" style="color:var(--emerald-yield);">Not stored</span>
           </div>
         </div>
       </a>
 
-      <!-- 2. Seat Dynamics & Yield -->
-      <a href="views/seat_dynamics.html" class="view-card" data-category="dynamics" data-keywords="seat dynamics idle ranking ceremony ratio active unparked container hold leaf stall engineering yield">
+      <a href="views/cost_and_loops.html" class="view-card" data-category="model adapter" data-keywords="I02 I04 model token cost accounting cache read write output seat openrig adapter">
         <div>
           <div class="view-card-header">
-            <span class="view-card-tag tag-emerald">Dynamics · Seat Audit</span>
-            <span class="view-card-sql">v_seat_idle_ranking</span>
-          </div>
-          <h2 class="view-card-title">
-            <span>Seat Dynamics & Idle Ranking</span>
-            <span class="arrow">→</span>
-          </h2>
-          <p class="view-card-desc">
-            Complete seat activity breakdown: observed lifespan partitioned into active execution, idle-with-work, unparked container holds, true leaf stalls, and ceremony vs engineering call overhead.
-          </p>
-        </div>
-        <div class="view-card-preview-stats">
-          <div class="preview-stat">
-            <span class="preview-stat-label">Top Idle</span>
-            <span class="preview-stat-value" style="color:var(--amber-friction);">Seat 1 (34m)</span>
-          </div>
-          <div class="preview-stat">
-            <span class="preview-stat-label">Avg Ceremony</span>
-            <span class="preview-stat-value" style="color:var(--accent-cyan);">11.8%</span>
-          </div>
-          <div class="preview-stat">
-            <span class="preview-stat-label">Active Ratio</span>
-            <span class="preview-stat-value" style="color:var(--emerald-yield);">68.4%</span>
-          </div>
-        </div>
-      </a>
-
-      <!-- 3. Handoff Flow & Friction -->
-      <a href="views/handoff_flow.html" class="view-card" data-category="handoffs" data-keywords="handoff flow friction rework return rate queue wait turnaround pairwise matrix ring boundary">
-        <div>
-          <div class="view-card-header">
-            <span class="view-card-tag tag-amber">Handoffs · Friction</span>
-            <span class="view-card-sql">v_handoff_rework_analysis</span>
-          </div>
-          <h2 class="view-card-title">
-            <span>Handoff Flow & Friction Matrix</span>
-            <span class="arrow">→</span>
-          </h2>
-          <p class="view-card-desc">
-            Pairwise queue handoff analytics: rework return rates, median turnaround wait times, execution durations, and cross-rig supervisory plane boundary classifications.
-          </p>
-        </div>
-        <div class="view-card-preview-stats">
-          <div class="preview-stat">
-            <span class="preview-stat-label">Pairwise Edges</span>
-            <span class="preview-stat-value">18 Pairs</span>
-          </div>
-          <div class="preview-stat">
-            <span class="preview-stat-label">Return Rate</span>
-            <span class="preview-stat-value" style="color:var(--amber-friction);">12.9%</span>
-          </div>
-          <div class="preview-stat">
-            <span class="preview-stat-label">Wait Median</span>
-            <span class="preview-stat-value" style="color:var(--accent-cyan);">42.5s</span>
-          </div>
-        </div>
-      </a>
-
-      <!-- 4. Token Lineage & Economics -->
-      <a href="views/cost_and_loops.html" class="view-card" data-category="economics" data-keywords="token lineage economics cost burn 4-component cache read write input uncached output task intake">
-        <div>
-          <div class="view-card-header">
-            <span class="view-card-tag tag-cyan">Economics · Lineage</span>
+            <span class="view-card-tag tag-cyan">Model Layer</span>
             <span class="view-card-sql">v_mission_token_burn</span>
           </div>
           <h2 class="view-card-title">
-            <span>Token Lineage & Economics</span>
+            <span>Model Token &amp; Cost Accounting (I02 / I04)</span>
             <span class="arrow">→</span>
           </h2>
           <p class="view-card-desc">
-            Four-component token accounting (input uncached, cache read, cache write, output), prompt cache hit efficiency, and analytical task-intake classification without synthetic currency assumptions.
+            Disjoint token components and separate observed versus estimated cost. Seat and mission columns are an OpenRig adapter binding when that platform recorded them. Unknown cost is not zero.
           </p>
         </div>
         <div class="view-card-preview-stats">
           <div class="preview-stat">
-            <span class="preview-stat-label">Cache Hit</span>
+            <span class="preview-stat-label">Cache read</span>
             <span class="preview-stat-value" style="color:var(--emerald-yield);">76.8%</span>
           </div>
           <div class="preview-stat">
-            <span class="preview-stat-label">Intake Ovhd</span>
-            <span class="preview-stat-value" style="color:var(--accent-cyan);">3.8%</span>
+            <span class="preview-stat-label">I04 cost</span>
+            <span class="preview-stat-value" style="color:var(--accent-cyan);">Unknown</span>
           </div>
           <div class="preview-stat">
-            <span class="preview-stat-label">Total Burn</span>
-            <span class="preview-stat-value">14.24M</span>
+            <span class="preview-stat-label">Adapter</span>
+            <span class="preview-stat-value">OpenRig seat</span>
           </div>
         </div>
       </a>
 
-      <!-- 5. Deep Fleet Explorer -->
-      <a href="../viewer.html" class="view-card" data-category="explorer" data-keywords="fleet explorer sankey timeline heatmap canvas offline interactive trace context compactions">
+      <a href="views/subagent_lineage.html" class="view-card" data-category="coordination" data-keywords="I09 work lineage shape subagent spawn delegate handoff return root caller">
+        <div>
+          <div class="view-card-header">
+            <span class="view-card-tag tag-amber">Coordination</span>
+            <span class="view-card-sql">v_subagent_lineage</span>
+          </div>
+          <h2 class="view-card-title">
+            <span>Sub-Agent &amp; Work Lineage Graph</span>
+            <span class="arrow">→</span>
+          </h2>
+          <p class="view-card-desc">
+            Direct parent-child session counts from v_subagent_lineage; depth, cycle, and unresolved-parent verdicts come from canonical insight I09 (missing parents remain unresolved and are never imputed as roots). All-time counts — window_from/window_to label the snapshot but do not filter.
+          </p>
+        </div>
+        <div class="view-card-preview-stats">
+          <div class="preview-stat">
+            <span class="preview-stat-label">Insight</span>
+            <span class="preview-stat-value">I09</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">Edges</span>
+            <span class="preview-stat-value">Explicit only</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">Roots</span>
+            <span class="preview-stat-value" style="color:var(--amber-friction);">Traced</span>
+          </div>
+        </div>
+      </a>
+
+      <a href="views/handoff_flow.html" class="view-card" data-category="coordination adapter" data-keywords="work handoff rework friction return rate queue wait from_seat to_seat openrig adapter">
+        <div>
+          <div class="view-card-header">
+            <span class="view-card-tag tag-amber">Coordination</span>
+            <span class="view-card-sql">v_handoff_rework_analysis</span>
+          </div>
+          <h2 class="view-card-title">
+            <span>Work Handoff &amp; Rework Friction</span>
+            <span class="arrow">→</span>
+          </h2>
+          <p class="view-card-desc">
+            Recorded work transfers, rework returns, and wait medians. From-seat and to-seat columns are an OpenRig adapter binding. The counts are queue flow, not token attribution.
+          </p>
+        </div>
+        <div class="view-card-preview-stats">
+          <div class="preview-stat">
+            <span class="preview-stat-label">Pairs</span>
+            <span class="preview-stat-value">18</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">Return rate</span>
+            <span class="preview-stat-value" style="color:var(--amber-friction);">12.9%</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">Adapter</span>
+            <span class="preview-stat-value">OpenRig seat</span>
+          </div>
+        </div>
+      </a>
+
+      <a href="views/seat_dynamics.html" class="view-card" data-category="harness adapter" data-keywords="actor activity session yield idle ceremony harness seat openrig adapter">
+        <div>
+          <div class="view-card-header">
+            <span class="view-card-tag tag-emerald">Harness Layer</span>
+            <span class="view-card-sql">v_seat_idle_ranking</span>
+          </div>
+          <h2 class="view-card-title">
+            <span>Actor Activity &amp; Session Yield</span>
+            <span class="arrow">→</span>
+          </h2>
+          <p class="view-card-desc">
+            Observed actor time split into active execution, idle-with-work, container hold, and leaf stall, plus session yield. The seat id is an OpenRig adapter binding.
+          </p>
+        </div>
+        <div class="view-card-preview-stats">
+          <div class="preview-stat">
+            <span class="preview-stat-label">Active ratio</span>
+            <span class="preview-stat-value" style="color:var(--emerald-yield);">68.4%</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">Ceremony</span>
+            <span class="preview-stat-value" style="color:var(--accent-cyan);">11.8%</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">Adapter</span>
+            <span class="preview-stat-value">OpenRig seat</span>
+          </div>
+        </div>
+      </a>
+
+      <a href="views/security_posture.html" class="view-card" data-category="environment" data-keywords="security posture policy grant approval attempt effective_authority effect closed vocabulary">
+        <div>
+          <div class="view-card-header">
+            <span class="view-card-tag tag-purple">Environment · Security</span>
+            <span class="view-card-sql">v_security_posture</span>
+          </div>
+          <h2 class="view-card-title">
+            <span>Security &amp; Authority Posture</span>
+            <span class="arrow">→</span>
+          </h2>
+          <p class="view-card-desc">
+            Closed-vocabulary observations across policy, grant, approval, attempt, effective authority, and effect. A grant is not effective authority. Command text is never stored. All-time counts — window_from/window_to label the snapshot but do not filter.
+          </p>
+        </div>
+        <div class="view-card-preview-stats">
+          <div class="preview-stat">
+            <span class="preview-stat-label">Kinds</span>
+            <span class="preview-stat-value">Closed</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">Authority</span>
+            <span class="preview-stat-value" style="color:var(--amber-friction);">Not inferred</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">Text</span>
+            <span class="preview-stat-value" style="color:var(--emerald-yield);">Omitted</span>
+          </div>
+        </div>
+      </a>
+
+      <a href="views/process_resources.html" class="view-card" data-category="environment" data-keywords="I14 I18 environment resources coverage source max rss process scope process attribution">
+        <div>
+          <div class="view-card-header">
+            <span class="view-card-tag tag-purple">Environment</span>
+            <span class="view-card-sql">v_process_resources</span>
+          </div>
+          <h2 class="view-card-title">
+            <span>Environment &amp; Process Resources</span>
+            <span class="arrow">→</span>
+          </h2>
+          <p class="view-card-desc">
+            I14 environment.resources is CPU deltas and max sampled RSS. I18 coverage.source counts sources. Max RSS per unit, process scope, and process attribution. The SQL view does not recompute CPU or coverage. All-time counts — window_from/window_to label the snapshot but do not filter.
+          </p>
+        </div>
+        <div class="view-card-preview-stats">
+          <div class="preview-stat">
+            <span class="preview-stat-label">I14</span>
+            <span class="preview-stat-value">resources</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">I18</span>
+            <span class="preview-stat-value">coverage</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">CPU in SQL</span>
+            <span class="preview-stat-value" style="color:var(--emerald-yield);">Absent</span>
+          </div>
+        </div>
+      </a>
+
+      <a href="views/executive_governance.html" class="view-card" data-category="environment adapter" data-keywords="governance verification scorecard four-eyes watchdog vortex openrig adapter rig">
+        <div>
+          <div class="view-card-header">
+            <span class="view-card-tag tag-purple">Verification</span>
+            <span class="view-card-sql">v_executive_governance</span>
+          </div>
+          <h2 class="view-card-title">
+            <span>Governance &amp; Verification Scorecard</span>
+            <span class="arrow">→</span>
+          </h2>
+          <p class="view-card-desc">
+            Verification evidence for recovery, vortex loops, and cache bleed. Four-eyes, rig, and seat fields are an OpenRig adapter binding, not the security vocabulary.
+          </p>
+        </div>
+        <div class="view-card-preview-stats">
+          <div class="preview-stat">
+            <span class="preview-stat-label">Four-eyes</span>
+            <span class="preview-stat-value">Adapter</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">Vortex</span>
+            <span class="preview-stat-value" style="color:var(--emerald-yield);">0 loops</span>
+          </div>
+          <div class="preview-stat">
+            <span class="preview-stat-label">Watchdog</span>
+            <span class="preview-stat-value" style="color:var(--purple-protocol);">12 resumes</span>
+          </div>
+        </div>
+      </a>
+
+      <a href="../viewer.html" class="view-card" data-category="model harness coordination environment adapter" data-keywords="explorer sankey timeline heatmap offline insights layers openrig">
         <div>
           <div class="view-card-header">
             <span class="view-card-tag tag-slate">Explorer · Canvas</span>
             <span class="view-card-sql">Offline Standalone Canvas</span>
           </div>
           <h2 class="view-card-title">
-            <span>Deep Fleet Explorer & Sankey</span>
+            <span>Cross-layer Stack Explorer</span>
             <span class="arrow">↗</span>
           </h2>
           <p class="view-card-desc">
-            Offline interactive visualizer: multi-seat shared activity timeline, dynamic Sankey handoff ribbons, 30×30 pair friction heatmap, and scrubbed seat evidence inspector.
+            Offline reader for actors, sessions, work lineage, model accounting, and environment or security. Seat labels are local aliases. OpenRig rig and seat fields stay adapter bindings.
           </p>
         </div>
         <div class="view-card-preview-stats">
@@ -270,7 +424,7 @@
     <!-- Empty State for Search Filter -->
     <div id="no-views-msg" style="display:none;padding:40px;text-align:center;color:var(--text-muted);background:var(--surface-card);border:1px dashed var(--border-subtle);border-radius:12px;">
       <p style="font-size:1.1rem;margin-bottom:6px;">No dashboard views match your search criteria.</p>
-      <p style="font-size:0.85rem;">Try clearing the search query or selecting "All Views".</p>
+      <p style="font-size:0.85rem;">Try clearing the search query or selecting "All Layers".</p>
     </div>
   </main>
 
@@ -278,7 +432,7 @@
   <script id="dendro-data" type="application/json">
   {
     "product": "AI Fleet Intelligence",
-    "version": "0.7.0",
+    "version": "0.8.0",
     "mode": "snapshot",
     "kpis": {
       "total_tokens": 14240000,
@@ -311,7 +465,8 @@
         const title = card.querySelector('.view-card-title')?.textContent.toLowerCase() || '';
         const desc = card.querySelector('.view-card-desc')?.textContent.toLowerCase() || '';
 
-        const matchesCat = (activeCategory === 'all' || cat === activeCategory);
+        const layers = (cat || '').split(/\s+/);
+        const matchesCat = (activeCategory === 'all' || layers.includes(activeCategory));
         const matchesQuery = !q || kw.includes(q) || title.includes(q) || desc.includes(q);
 
         if (matchesCat && matchesQuery) {
@@ -348,7 +503,7 @@
         document.getElementById('kpi-tokens').textContent = (k.total_tokens / 1000000).toFixed(2) + 'M';
       }
       if (k.active_seats !== undefined) {
-        document.getElementById('kpi-seats').textContent = k.active_seats + ' Seats';
+        document.getElementById('kpi-seats').textContent = String(k.active_seats);
       }
       if (k.m1_yield !== undefined) {
         document.getElementById('kpi-yield').innerHTML = (k.m1_yield / 1000).toFixed(1) + 'K <small style="font-size:0.9rem;font-weight:500;">tok/deliv</small>';

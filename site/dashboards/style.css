@@ -789,6 +789,90 @@ table.telemetry-table code {
   overflow-x: auto;
 }
 
+.insights-strip {
+  margin-bottom: 36px;
+}
+
+.insights-strip-head h2 {
+  font-size: 1.15rem;
+  font-weight: 800;
+  margin-bottom: 6px;
+}
+
+.insights-strip-head p {
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+  max-width: 860px;
+  margin-bottom: 14px;
+}
+
+.insight-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.insight-card {
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+
+.insight-id {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-weight: 800;
+  color: var(--accent-cyan);
+  margin-bottom: 4px;
+}
+
+.insight-name {
+  font-family: var(--font-mono);
+  font-size: 0.86rem;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.insight-formula {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.adapter-note {
+  margin-top: 12px;
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+}
+
+.lane-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 28px;
+}
+
+.lane-card {
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+
+.lane-card h3 {
+  font-size: 0.95rem;
+  margin-bottom: 6px;
+}
+
+.lane-card p {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
 .query-box-title {
   color: var(--text-muted);
   font-size: 0.75rem;

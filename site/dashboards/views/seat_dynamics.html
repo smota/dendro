@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Dendro · Seat Dynamics & Idle Ranking</title>
-  <meta name="description" content="Seat activity breakdown and idle ranking from DuckDB view v_seat_idle_ranking. Active duration, idle-with-work, container holds, and ceremony ratio.">
+  <title>Dendro · Actor Activity & Session Yield</title>
+  <meta name="description" content="Actor activity and session yield from v_seat_idle_ranking. Seat id is an OpenRig adapter binding.">
   <link rel="stylesheet" href="../style.css">
 </head>
 <body>
@@ -19,13 +19,13 @@
         <span class="separator">/</span>
         <a href="../index.html" style="color:var(--text-secondary);">Dashboards</a>
         <span class="separator">/</span>
-        <span class="current">Seat Dynamics & Yield</span>
+        <span class="current">Actor Activity &amp; Session Yield</span>
       </div>
     </div>
     <div class="nav-right">
       <div id="dual-serving-indicator" class="dual-serving-badge snapshot">
         <span class="pulse-dot"></span>
-        <span id="dual-serving-text">LOCAL DUCKDB READY · SNAPSHOT MODE</span>
+        <span id="dual-serving-text">ILLUSTRATIVE SNAPSHOT · LIVE SYNC READY</span>
       </div>
       <button id="btn-refresh" class="nav-action-btn" type="button" title="Refresh seat snapshot">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
@@ -41,12 +41,13 @@
     <!-- Header -->
     <section class="hero-header">
       <div class="hero-eyebrow">
-        <span>●</span> Seat Lifespan Breakdown · SQL View: <code>v_seat_idle_ranking</code>
+        <span>●</span> Harness Layer · SQL View: <code>v_seat_idle_ranking</code>
       </div>
-      <h1 class="hero-title">Seat Dynamics & Idle Ranking</h1>
+      <h1 class="hero-title">Actor Activity &amp; Session Yield</h1>
       <p class="hero-subtitle">
-        Empirical breakdown of observed seat lifespans. Distinguishes active execution from actionable idle-with-work (work was ready in queue), unparked container holds, true leaf stalls, and ceremony vs engineering tooling calls.
+        Observed actor time split into active execution, idle-with-work, unparked container hold, and leaf stall, with ceremony versus engineering calls and canonical session yield. A null yield is not a measured zero.
       </p>
+      <p class="adapter-note"><span class="badge badge-info">OpenRig Adapter Binding</span> Seat ID is the OpenRig seat key for this activity projection.</p>
     </section>
 
     <!-- Top KPI Banner -->
@@ -96,7 +97,7 @@
     <section class="viz-panel" aria-label="Seat Activity Breakdown Bands">
       <div class="viz-panel-header">
         <div>
-          <h2 class="viz-title">Seat Activity Duration Bands</h2>
+          <h2 class="viz-title">Actor Activity Duration Bands</h2>
           <p class="viz-subtitle">Aggregate observed duration per seat partitioned into discrete execution bands</p>
         </div>
         <div class="activity-legend">
@@ -129,7 +130,7 @@
         <table class="telemetry-table" id="seat-table">
           <thead>
             <tr>
-              <th class="sortable" data-col="seat_id">Seat ID</th>
+              <th class="sortable" data-col="seat_id">Seat ID <span class="badge badge-info">OpenRig Adapter Binding</span></th>
               <th class="sortable num" data-col="observed_secs">Observed (s)</th>
               <th class="sortable num" data-col="active_secs">Active (s)</th>
               <th class="sortable num" data-col="idle_with_work_secs">Idle w/ Work (s) ▾</th>
@@ -241,6 +242,14 @@
     let sortCol = 'idle_with_work_secs';
     let sortAsc = false;
 
+    function escapeHtml(s) {
+      return String(s ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+    }
+    function csvCell(value) {
+      let s = value == null ? '' : String(value);
+      if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+      return '"' + s.replace(/"/g, '""') + '"';
+    }
     const formatNum = n => typeof n === 'number' ? n.toLocaleString(undefined, { maximumFractionDigits: 1 }) : '—';
     const formatPct = n => typeof n === 'number' ? (n * 100).toFixed(1) + '%' : '—';
 
@@ -282,7 +291,7 @@
         group.className = 'activity-band-group';
         group.innerHTML = `
           <div class="activity-band-label">
-            <span><strong>${seat.seat_id}</strong> <small style="color:var(--text-muted);">(${formatNum(seat.observed_secs)}s observed)</small></span>
+            <span><strong>${escapeHtml(seat.seat_id)}</strong> <small style="color:var(--text-muted);">(${formatNum(seat.observed_secs)}s observed)</small></span>
             <span style="font-family:var(--font-mono);font-size:0.8rem;color:var(--text-secondary);">Active: ${activePct.toFixed(0)}% · Idle w/ Work: ${((idleWorkBase / total) * 100).toFixed(0)}%</span>
           </div>
           <div class="activity-band-bar">
@@ -320,7 +329,7 @@
         const tr = document.createElement('tr');
         const cerPct = seat.ceremony_ratio !== undefined ? (seat.ceremony_ratio * 100).toFixed(1) + '%' : '—';
         tr.innerHTML = `
-          <td><strong><code>${seat.seat_id}</code></strong></td>
+          <td><strong><code>${escapeHtml(seat.seat_id)}</code></strong></td>
           <td class="num">${formatNum(seat.observed_secs)}</td>
           <td class="num" style="color:var(--emerald-yield);">${formatNum(seat.active_secs)}</td>
           <td class="num" style="color:var(--amber-friction);font-weight:700;">${formatNum(seat.idle_with_work_secs)}</td>
@@ -346,9 +355,15 @@
           sortAsc = false;
         }
         document.querySelectorAll('#seat-table th.sortable').forEach(h => {
-          h.textContent = h.textContent.replace(/[ ▴▾]/g, '');
+          Array.from(h.childNodes).forEach(node => {
+            if (node.nodeType === 3) node.textContent = node.textContent.replace(/[▴▾]/g, '').replace(/\s+$/g, '');
+          });
+          h.querySelectorAll('.sort-mark').forEach(mark => mark.remove());
         });
-        th.textContent = `${th.textContent} ${sortAsc ? '▴' : '▾'}`;
+        const mark = document.createElement('span');
+        mark.className = 'sort-mark';
+        mark.textContent = sortAsc ? ' ▴' : ' ▾';
+        th.append(mark);
         renderTable();
       });
     });
@@ -359,7 +374,7 @@
       const rows = currentSeats.map(s => [
         s.seat_id, s.observed_secs, s.active_secs, s.idle_with_work_secs, s.idle_between_work_secs, s.unparked_container_secs, s.leaf_stall_secs, s.ceremony_ratio, s.m1_yield
       ]);
-      const csv = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
+      const csv = [headers.map(csvCell).join(','), ...rows.map(row => row.map(csvCell).join(','))].join('\n');
       const blob = new Blob([csv], { type: 'text/csv' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');

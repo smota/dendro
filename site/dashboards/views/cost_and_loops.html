@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Dendro · Token Lineage & Economics</title>
-  <meta name="description" content="Four-component token accounting, prompt cache efficiency, and task-intake attribution derived from DuckDB view v_mission_token_burn.">
+  <title>Dendro · Model Token & Cost Accounting (I02 / I04)</title>
+  <meta name="description" content="Model token and cost accounting for I02 and I04 from v_mission_token_burn. Seat columns are an OpenRig adapter binding.">
   <link rel="stylesheet" href="../style.css">
 </head>
 <body>
@@ -19,13 +19,13 @@
         <span class="separator">/</span>
         <a href="../index.html" style="color:var(--text-secondary);">Dashboards</a>
         <span class="separator">/</span>
-        <span class="current">Token Lineage &amp; Economics</span>
+        <span class="current">Model Token &amp; Cost Accounting (I02 / I04)</span>
       </div>
     </div>
     <div class="nav-right">
       <div id="dual-serving-indicator" class="dual-serving-badge snapshot">
         <span class="pulse-dot"></span>
-        <span id="dual-serving-text">LOCAL DUCKDB READY · SNAPSHOT MODE</span>
+        <span id="dual-serving-text">ILLUSTRATIVE SNAPSHOT · LIVE SYNC READY</span>
       </div>
       <button id="btn-refresh" class="nav-action-btn" type="button" title="Refresh economics snapshot">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
@@ -41,12 +41,13 @@
     <!-- Header -->
     <section class="hero-header">
       <div class="hero-eyebrow">
-        <span>●</span> 4-Component Lineage · SQL View: <code>v_mission_token_burn</code>
+        <span>●</span> Model Layer · I02 / I04 · SQL View: <code>v_mission_token_burn</code>
       </div>
-      <h1 class="hero-title">Token Lineage &amp; Economics</h1>
+      <h1 class="hero-title">Model Token &amp; Cost Accounting (I02 / I04)</h1>
       <p class="hero-subtitle">
-        Empirical token accounting across 4 distinct physical categories. Distinguishes fresh uncached inputs from prompt cache reads and cache writes, isolating analytical task-intake overhead without relying on speculative external fiat currency estimates.
+        Disjoint token components per model, plus observed and estimated cost kept apart. Reasoning stays inside output. Unknown cost is not zero. Seat, mission, and rig columns are an OpenRig adapter binding when that platform recorded them.
       </p>
+      <p class="adapter-note"><span class="badge badge-info">OpenRig Adapter Binding</span> Seat ID is the adapter’s actor key, not the primary model dimension.</p>
     </section>
 
     <!-- Top KPI Banner -->
@@ -60,7 +61,7 @@
       </article>
 
       <article class="kpi-card accent-emerald">
-        <div class="kpi-label">Cache Hit Ratio</div>
+        <div class="kpi-label">Cache Read Fraction of Input (I02)</div>
         <div class="kpi-value" id="kpi-cache-ratio">76.8%</div>
         <div class="kpi-meta">
           <span style="color:var(--emerald-yield);">10.94M read</span> · <span>Prompt cache reuse</span>
@@ -96,12 +97,12 @@
     <section class="viz-panel" aria-label="Token Mix Breakdown">
       <div class="viz-panel-header">
         <div>
-          <h2 class="viz-title">4-Component Token Distribution by Seat &amp; Model</h2>
+          <h2 class="viz-title">4-Component Token Distribution by Model</h2>
           <p class="viz-subtitle">Fresh uncached input vs cache reads vs cache writes vs generation output</p>
         </div>
         <div class="activity-legend">
           <div class="legend-item"><span class="legend-dot" style="background:var(--accent-cyan);"></span><span>Input Uncached</span></div>
-          <div class="legend-item"><span class="legend-dot" style="background:var(--emerald-yield);"></span><span>Cache Read (Saved)</span></div>
+          <div class="legend-item"><span class="legend-dot" style="background:var(--emerald-yield);"></span><span>Cache Read</span></div>
           <div class="legend-item"><span class="legend-dot" style="background:var(--purple-protocol);"></span><span>Cache Write</span></div>
           <div class="legend-item"><span class="legend-dot" style="background:var(--amber-friction);"></span><span>Generated Output</span></div>
         </div>
@@ -128,7 +129,7 @@
         <table class="telemetry-table" id="burn-table">
           <thead>
             <tr>
-              <th class="sortable" data-col="seat_id">Seat ID</th>
+              <th class="sortable" data-col="seat_id">Seat ID <span class="badge badge-info">OpenRig Adapter Binding</span></th>
               <th class="sortable" data-col="model">Model Family</th>
               <th class="sortable" data-col="effort">Effort</th>
               <th class="sortable" data-col="attribution_bucket">Attribution Bucket</th>
@@ -137,7 +138,7 @@
               <th class="sortable num" data-col="cache_write">Cache Write</th>
               <th class="sortable num" data-col="output">Output</th>
               <th class="sortable num" data-col="total_tokens">Total Tokens</th>
-              <th class="sortable num" data-col="cache_ratio">Cache Ratio (%)</th>
+              <th class="sortable num" data-col="cache_ratio">Cache Read Fraction of Input (I02)</th>
             </tr>
           </thead>
           <tbody id="burn-tbody">
@@ -237,6 +238,14 @@
     let sortCol = 'input_uncached';
     let sortAsc = false;
 
+    function escapeHtml(s) {
+      return String(s ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+    }
+    function csvCell(value) {
+      let s = value == null ? '' : String(value);
+      if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+      return '"' + s.replace(/"/g, '""') + '"';
+    }
     const formatNum = n => typeof n === 'number' ? n.toLocaleString(undefined, { maximumFractionDigits: 1 }) : '—';
     const formatShort = n => {
       if (typeof n !== 'number') return '—';
@@ -250,7 +259,7 @@
       if (data.summary) {
         const s = data.summary;
         if (s.total_tokens !== undefined) document.getElementById('kpi-total-tokens').textContent = formatShort(s.total_tokens);
-        if (s.cache_read_ratio !== undefined) document.getElementById('kpi-cache-ratio').textContent = (s.cache_read_ratio * 100).toFixed(1) + '%';
+        if (s.cache_read_ratio !== undefined && !(data.missions || []).length) document.getElementById('kpi-cache-ratio').textContent = (s.cache_read_ratio * 100).toFixed(1) + '%';
         if (s.fresh_input_tokens !== undefined) document.getElementById('kpi-fresh-input').textContent = formatShort(s.fresh_input_tokens);
         if (s.output_tokens !== undefined) document.getElementById('kpi-output-tokens').textContent = formatShort(s.output_tokens);
         if (s.task_intake_overhead_pct !== undefined) document.getElementById('kpi-intake-overhead').textContent = (s.task_intake_overhead_pct * 100).toFixed(1) + '%';
@@ -258,9 +267,15 @@
 
       currentMissions = (data.missions || []).map(m => {
         const total = (m.input_uncached || 0) + (m.cache_read || 0) + (m.cache_write || 0) + (m.output || 0);
-        const cacheRatio = total > 0 ? (m.cache_read || 0) / total : 0;
+        const inputDenom = (m.input_uncached || 0) + (m.cache_read || 0) + (m.cache_write || 0);
+        const cacheRatio = inputDenom > 0 ? (m.cache_read || 0) / inputDenom : 0;
         return { ...m, total_tokens: total, cache_ratio: cacheRatio };
       });
+      if (currentMissions.length) {
+        const inputDenom = currentMissions.reduce((n, m) => n + (m.input_uncached || 0) + (m.cache_read || 0) + (m.cache_write || 0), 0);
+        const cacheRead = currentMissions.reduce((n, m) => n + (m.cache_read || 0), 0);
+        document.getElementById('kpi-cache-ratio').textContent = ((inputDenom > 0 ? cacheRead / inputDenom : 0) * 100).toFixed(1) + '%';
+      }
 
       renderBars(currentMissions);
       renderTable();
@@ -284,14 +299,14 @@
         group.className = 'activity-band-group';
         group.innerHTML = `
           <div class="activity-band-label">
-            <span><strong>${m.seat_id}</strong> <small style="color:var(--text-muted);">(${m.model} · ${formatShort(m.total_tokens)} tok)</small></span>
+            <span><strong>${escapeHtml(m.seat_id)}</strong> <small style="color:var(--text-muted);">(${escapeHtml(m.model)} · ${formatShort(m.total_tokens)} tok)</small></span>
             <span style="font-family:var(--font-mono);font-size:0.8rem;color:var(--text-secondary);">Cache Read: ${readPct.toFixed(0)}% · Uncached: ${uncachedPct.toFixed(0)}% · Output: ${outputPct.toFixed(0)}%</span>
           </div>
           <div class="activity-band-bar">
-            <div class="segment" style="width:${uncachedPct}%;background:var(--accent-cyan);" title="Uncached Input: ${formatNum(m.input_uncached)} (${uncachedPct.toFixed(1)}%)"></div>
-            <div class="segment" style="width:${readPct}%;background:var(--emerald-yield);" title="Cache Read: ${formatNum(m.cache_read)} (${readPct.toFixed(1)}%)"></div>
-            <div class="segment" style="width:${writePct}%;background:var(--purple-protocol);" title="Cache Write: ${formatNum(m.cache_write)} (${writePct.toFixed(1)}%)"></div>
-            <div class="segment" style="width:${outputPct}%;background:var(--amber-friction);" title="Output: ${formatNum(m.output)} (${outputPct.toFixed(1)}%)"></div>
+            <div class="segment" style="width:${uncachedPct}%;background:var(--accent-cyan);" title="Uncached Input: ${escapeHtml(formatNum(m.input_uncached))} (${uncachedPct.toFixed(1)}%)"></div>
+            <div class="segment" style="width:${readPct}%;background:var(--emerald-yield);" title="Cache Read: ${escapeHtml(formatNum(m.cache_read))} (${readPct.toFixed(1)}%)"></div>
+            <div class="segment" style="width:${writePct}%;background:var(--purple-protocol);" title="Cache Write: ${escapeHtml(formatNum(m.cache_write))} (${writePct.toFixed(1)}%)"></div>
+            <div class="segment" style="width:${outputPct}%;background:var(--amber-friction);" title="Output: ${escapeHtml(formatNum(m.output))} (${outputPct.toFixed(1)}%)"></div>
           </div>
         `;
         tokenBarsContainer.appendChild(group);
@@ -325,10 +340,10 @@
         const tr = document.createElement('tr');
         const bucketTag = m.attribution_bucket === 'assigned_mission' ? 'tag-emerald' : 'tag-amber';
         tr.innerHTML = `
-          <td><strong><code>${m.seat_id}</code></strong></td>
-          <td><code>${m.model || 'unknown'}</code></td>
-          <td><span style="font-size:0.8rem;color:var(--text-secondary);text-transform:uppercase;">${m.effort || '—'}</span></td>
-          <td><span class="view-card-tag ${bucketTag}">${m.attribution_bucket || 'default'}</span></td>
+          <td><strong><code>${escapeHtml(m.seat_id)}</code></strong></td>
+          <td><code>${escapeHtml(m.model || 'unknown')}</code></td>
+          <td><span style="font-size:0.8rem;color:var(--text-secondary);text-transform:uppercase;">${escapeHtml(m.effort || '—')}</span></td>
+          <td><span class="view-card-tag ${bucketTag}">${escapeHtml(m.attribution_bucket || 'default')}</span></td>
           <td class="num" style="color:var(--accent-cyan);font-weight:600;">${formatNum(m.input_uncached)}</td>
           <td class="num" style="color:var(--emerald-yield);">${formatNum(m.cache_read)}</td>
           <td class="num" style="color:var(--purple-protocol);">${formatNum(m.cache_write)}</td>
@@ -352,9 +367,15 @@
           sortAsc = false;
         }
         document.querySelectorAll('#burn-table th.sortable').forEach(h => {
-          h.textContent = h.textContent.replace(/[ ▴▾]/g, '');
+          Array.from(h.childNodes).forEach(node => {
+            if (node.nodeType === 3) node.textContent = node.textContent.replace(/[▴▾]/g, '').replace(/\s+$/g, '');
+          });
+          h.querySelectorAll('.sort-mark').forEach(mark => mark.remove());
         });
-        th.textContent = `${th.textContent} ${sortAsc ? '▴' : '▾'}`;
+        const mark = document.createElement('span');
+        mark.className = 'sort-mark';
+        mark.textContent = sortAsc ? ' ▴' : ' ▾';
+        th.append(mark);
         renderTable();
       });
     });
@@ -365,7 +386,7 @@
       const rows = currentMissions.map(m => [
         m.seat_id, m.model, m.effort, m.attribution_bucket, m.input_uncached, m.cache_read, m.cache_write, m.output, m.total_tokens, (m.cache_ratio * 100).toFixed(1)
       ]);
-      const csv = [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
+      const csv = [headers.map(csvCell).join(','), ...rows.map(row => row.map(csvCell).join(','))].join('\n');
       const blob = new Blob([csv], { type: 'text/csv' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');

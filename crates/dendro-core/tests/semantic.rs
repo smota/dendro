@@ -306,6 +306,38 @@ fn natural_aliases_supported_intents_and_window_bounds_work() -> anyhow::Result<
     let f = fixture(10);
     let intents = semantic::supported_intents();
     assert_eq!(intents["intents"].as_array().unwrap().len(), 6);
+    let names: Vec<&str> = intents["intents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|item| item["intent"].as_str())
+        .collect();
+    assert_eq!(
+        names,
+        vec![
+            "Rank (Idle)",
+            "Rank (Yield / Token Burn)",
+            "Explain (Rework & Handoffs)",
+            "Compare (Before/After Baseline)",
+            "Verify (Topology Change)",
+            "Trace & HonestLimits",
+        ]
+    );
+    let views: Vec<&str> = intents["semantic_views"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|item| item["view"].as_str())
+        .collect();
+    assert_eq!(
+        views,
+        vec![
+            "v_message_mix",
+            "v_subagent_lineage",
+            "v_security_posture",
+            "v_process_resources",
+        ]
+    );
 
     let (from, to, mode) = dendro_core::presentation::resolve_window(
         &f.db,

@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dendro · Sub-Agent & Work Lineage Graph</title>
+  <meta name="description" content="Direct parent-child session counts from v_subagent_lineage. Depth, cycle, and unresolved-parent verdicts come from canonical insight I09. Missing parents remain unresolved and are never imputed as roots.">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <header class="telemetry-nav">
+    <div class="nav-left">
+      <a href="../index.html" class="brand-link" title="Dashboards Hub">
+        <span class="brand-icon">D</span>
+        <span>Dendro<span style="font-weight:400;color:var(--text-muted);font-size:0.85rem;margin-left:6px;">Lineage</span></span>
+      </a>
+      <div class="nav-breadcrumbs" aria-label="Breadcrumbs">
+        <span class="separator">/</span>
+        <a href="../index.html" style="color:var(--text-secondary);">Dashboards</a>
+        <span class="separator">/</span>
+        <span class="current">Sub-Agent &amp; Work Lineage Graph</span>
+      </div>
+    </div>
+    <div class="nav-right">
+      <div id="dual-serving-indicator" class="dual-serving-badge snapshot">
+        <span class="pulse-dot"></span>
+        <span id="dual-serving-text">ILLUSTRATIVE SNAPSHOT · LIVE SYNC READY</span>
+      </div>
+      <button id="btn-refresh" class="nav-action-btn" type="button" title="Refresh lineage snapshot">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+        <span>Refresh</span>
+      </button>
+      <a href="../index.html" class="nav-action-btn"><span>← Back to Dashboards Hub</span></a>
+    </div>
+  </header>
+
+  <main class="telemetry-layout">
+    <section class="hero-header">
+      <div class="hero-eyebrow"><span>●</span> Coordination · I09 · SQL View: <code>v_subagent_lineage</code></div>
+      <h1 class="hero-title">Sub-Agent &amp; Work Lineage Graph</h1>
+      <p class="hero-subtitle">
+        Direct parent-child session counts from v_subagent_lineage; depth, cycle, and unresolved-parent verdicts come from canonical insight I09 (missing parents remain unresolved and are never imputed as roots).
+      </p>
+      <p class="hero-subtitle">All-time counts — window_from/window_to label the snapshot but do not filter.</p>
+    </section>
+
+    <section class="kpi-grid" aria-label="Lineage indicators">
+      <article class="kpi-card accent-amber">
+        <div class="kpi-label">I09 L0 · Coordination</div>
+        <div class="kpi-value" id="kpi-status">Partial</div>
+        <div class="kpi-meta"><span>work.lineage_shape</span> · <span>Explicit edges only</span></div>
+      </article>
+      <article class="kpi-card accent-cyan">
+        <div class="kpi-label">Child sessions</div>
+        <div class="kpi-value" id="kpi-children">—</div>
+        <div class="kpi-meta"><span>Sum of child_count</span> · <span>Not a depth</span></div>
+      </article>
+      <article class="kpi-card accent-emerald">
+        <div class="kpi-label">Finished edges</div>
+        <div class="kpi-value" id="kpi-finished">—</div>
+        <div class="kpi-meta"><span>finished_count</span></div>
+      </article>
+      <article class="kpi-card accent-rose">
+        <div class="kpi-label">Failed or unknown</div>
+        <div class="kpi-value" id="kpi-failed">—</div>
+        <div class="kpi-meta"><span>failed_count + unknown_count</span> · <span>Unknown stays unknown</span></div>
+      </article>
+    </section>
+
+    <section class="lane-grid" aria-label="Lineage relations">
+      <article class="lane-card"><h3>spawn</h3><p>A caller starts a child session. The child counts toward that parent. Missing parents remain unresolved and are never imputed as roots.</p></article>
+      <article class="lane-card"><h3>delegate</h3><p>Work is handed to another session without treating the delegate as a new root.</p></article>
+      <article class="lane-card"><h3>handoff</h3><p>A recorded transfer along the lineage. Queue friction for OpenRig seats stays on the handoff view.</p></article>
+      <article class="lane-card"><h3>return</h3><p>The child reports back. A return is an edge status or relation, not a rework rate.</p></article>
+    </section>
+
+    <section class="viz-panel" aria-label="Children per parent">
+      <div class="viz-panel-header">
+        <div>
+          <h2 class="viz-title">Children traced under each parent session</h2>
+          <p class="viz-subtitle">Bar width is child_count. It is not max depth.</p>
+        </div>
+      </div>
+      <div id="lineage-bars"></div>
+    </section>
+
+    <section class="table-panel">
+      <div class="table-panel-header">
+        <div class="table-panel-title">
+          <span>v_subagent_lineage rows</span>
+          <span class="badge badge-info" id="record-count-badge">0 Rows</span>
+        </div>
+      </div>
+      <div class="table-container">
+        <table class="telemetry-table">
+          <thead>
+            <tr>
+              <th>Harness</th>
+              <th>Parent session</th>
+              <th>Relations</th>
+              <th class="num">Children</th>
+              <th class="num">Edges</th>
+              <th class="num">Started</th>
+              <th class="num">Finished</th>
+              <th class="num">Failed</th>
+              <th class="num">Unknown</th>
+            </tr>
+          </thead>
+          <tbody id="lineage-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="query-box">
+      <div class="query-box-title">Underlying DuckDB Query</div>
+      <code>SELECT * FROM v_subagent_lineage ORDER BY child_count DESC, harness, parent_session;</code>
+    </div>
+  </main>
+
+  <script id="dendro-data" type="application/json">
+  {
+    "product": "AI Fleet Intelligence",
+    "view": "v_subagent_lineage",
+    "insight": {"id": "I09", "name": "work.lineage_shape", "domain": "coordination", "status": "Partial"},
+    "rows": [
+      {"harness": "claude", "parent_session": "root-caller", "relations": "spawn,delegate", "child_count": 3, "edge_count": 4, "started_count": 1, "finished_count": 2, "failed_count": 1, "unknown_count": 0},
+      {"harness": "codex", "parent_session": "root-caller", "relations": "handoff,return", "child_count": 1, "edge_count": 2, "started_count": 0, "finished_count": 1, "failed_count": 0, "unknown_count": 1},
+      {"harness": "grok", "parent_session": "unresolved", "relations": "spawn", "child_count": 1, "edge_count": 1, "started_count": 0, "finished_count": 0, "failed_count": 0, "unknown_count": 1}
+    ]
+  }
+  </script>
+  <script src="../live-sync.js"></script>
+  <script>
+    'use strict';
+    function cell(text, className) {
+      const td = document.createElement('td');
+      if (className) td.className = className;
+      td.textContent = text == null || text === '' ? '—' : String(text);
+      return td;
+    }
+    function render(data) {
+      const rows = Array.isArray(data && data.rows) ? data.rows : [];
+      const sum = key => rows.reduce((n, row) => n + (Number(row[key]) || 0), 0);
+      document.getElementById('kpi-children').textContent = sum('child_count').toLocaleString();
+      document.getElementById('kpi-finished').textContent = sum('finished_count').toLocaleString();
+      document.getElementById('kpi-failed').textContent = (sum('failed_count') + sum('unknown_count')).toLocaleString();
+      if (data && data.insight && data.insight.status) document.getElementById('kpi-status').textContent = data.insight.status;
+      document.getElementById('record-count-badge').textContent = rows.length + (rows.length === 1 ? ' Row' : ' Rows');
+      const host = document.getElementById('lineage-bars');
+      host.replaceChildren();
+      const max = Math.max(1, ...rows.map(row => Number(row.child_count) || 0));
+      if (!rows.length) {
+        const p = document.createElement('p');
+        p.textContent = 'No lineage rows. Missing edges are not a single root.';
+        p.style.color = 'var(--text-muted)';
+        p.style.padding = '16px';
+        host.append(p);
+      }
+      rows.forEach(row => {
+        const wrap = document.createElement('div');
+        wrap.className = 'activity-band-group';
+        const label = document.createElement('div');
+        label.className = 'activity-band-label';
+        const strong = document.createElement('strong');
+        strong.textContent = (row.harness || 'unknown') + ' · ' + (row.parent_session || 'unresolved');
+        label.append(strong);
+        const bar = document.createElement('div');
+        bar.className = 'activity-band-bar';
+        const seg = document.createElement('div');
+        seg.className = 'segment';
+        seg.style.width = ((Number(row.child_count) || 0) / max * 100) + '%';
+        seg.style.background = 'var(--amber-friction)';
+        bar.append(seg);
+        wrap.append(label, bar);
+        host.append(wrap);
+      });
+      const tbody = document.getElementById('lineage-tbody');
+      tbody.replaceChildren();
+      if (!rows.length) {
+        const tr = document.createElement('tr');
+        const td = cell('No lineage rows. Missing edges are not a single root.');
+        td.colSpan = 9;
+        tr.append(td);
+        tbody.append(tr);
+        return;
+      }
+      rows.forEach(row => {
+        const tr = document.createElement('tr');
+        ['harness', 'parent_session', 'relations'].forEach(key => tr.append(cell(row[key])));
+        ['child_count', 'edge_count', 'started_count', 'finished_count', 'failed_count', 'unknown_count'].forEach(key => tr.append(cell(row[key], 'num')));
+        tbody.append(tr);
+      });
+    }
+    const sync = attachLiveSync({ viewId: 'subagent_lineage', onData: render });
+    document.getElementById('btn-refresh').addEventListener('click', () => sync.refresh());
+    render(JSON.parse(document.getElementById('dendro-data').textContent));
+  </script>
+</body>
+</html>

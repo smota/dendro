@@ -1,0 +1,6 @@
+dashboard:
+  id: message_mix
+  title: "Model & Harness Message Mix"
+queries:
+  - id: messages
+    sql: SELECT * FROM v_message_mix ORDER BY message_count DESC, harness, native_session

@@ -16,6 +16,11 @@ use std::collections::BTreeMap;
 
 const BRAILLE_SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
+/// Insight domains rendered in the cockpit chrome. OpenRig is the scope lens, not a domain.
+const DOMAIN_LEGEND: &str = "Domains: Model · Harness · Coordination · Environment · Security";
+const ADAPTER_LENS: &str =
+    "[r] Rig is the OpenRig adapter scope (<role>@<rig>), not an insight domain";
+
 fn rows(v: &Value) -> impl Iterator<Item = &Value> {
     v.as_array().into_iter().flatten()
 }
@@ -249,9 +254,9 @@ pub fn render_app(frame: &mut Frame, state: &mut AppState, theme: &Theme) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),
             Constraint::Length(2),
-            Constraint::Min(10),
+            Constraint::Length(3),
+            Constraint::Min(8),
             Constraint::Length(2),
         ])
         .split(area);
@@ -319,7 +324,7 @@ fn render_header(frame: &mut Frame, area: Rect, state: &AppState, theme: &Theme)
     };
 
     let line = Line::from(vec![
-        Span::styled(" DENDRO v0.7 ", theme.accent()),
+        Span::styled(" DENDRO v0.8 ", theme.accent()),
         Span::styled("│", theme.muted()),
         status_pill,
         Span::styled("│ ", theme.muted()),
@@ -332,10 +337,19 @@ fn render_header(frame: &mut Frame, area: Rect, state: &AppState, theme: &Theme)
         Span::styled("│ ", theme.muted()),
         Span::styled("[:] Ask Nao  [?] Help  [q] Quit", theme.muted()),
     ]);
-    frame.render_widget(Paragraph::new(line), area);
+    let lens = Line::from(Span::styled(format!(" {ADAPTER_LENS}"), theme.muted()));
+    frame.render_widget(Paragraph::new(vec![line, lens]), area);
 }
 
 fn render_tabs(frame: &mut Frame, area: Rect, state: &AppState, theme: &Theme) {
+    let parts = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
+        .split(area);
     let titles = [
         "[1] Pulse & Overview",
         "[2] Seats & Timeline",
@@ -347,14 +361,22 @@ fn render_tabs(frame: &mut Frame, area: Rect, state: &AppState, theme: &Theme) {
     ];
     let tabs = Tabs::new(titles.iter().copied().map(Line::from).collect::<Vec<_>>())
         .select(state.active_tab.index())
-        .block(
-            Block::default()
-                .borders(Borders::BOTTOM)
-                .border_style(theme.border(false)),
-        )
         .style(theme.muted())
         .highlight_style(theme.accent().add_modifier(Modifier::UNDERLINED));
-    frame.render_widget(tabs, area);
+    frame.render_widget(tabs, parts[0]);
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            format!(" {DOMAIN_LEGEND}"),
+            theme.muted(),
+        ))),
+        parts[1],
+    );
+    frame.render_widget(
+        Block::default()
+            .borders(Borders::BOTTOM)
+            .border_style(theme.border(false)),
+        parts[2],
+    );
 }
 
 fn render_skeleton_loading(frame: &mut Frame, area: Rect, state: &AppState, theme: &Theme) {
@@ -521,7 +543,7 @@ fn render_pulse_tab(frame: &mut Frame, area: Rect, state: &AppState, theme: &The
                 theme.accent(),
             )));
             left_lines.push(Line::from(format!(
-                " ● {} Canonical Agent Seats (<role>@<rig>)",
+                " ● {} Canonical Agent Seats (<role>@<rig>) · OpenRig adapter scope",
                 fmt_num(&eb["agent_seats_count"])
             )));
             left_lines.push(Line::from(format!(
@@ -1771,6 +1793,7 @@ fn render_insights_tab(frame: &mut Frame, area: Rect, state: &mut AppState, them
         (
             " Insights unavailable ",
             vec![
+                domain_legend_line(theme),
                 Line::from(Span::styled(
                     "error: insight store did not return results",
                     theme.breach(),
@@ -1785,10 +1808,10 @@ fn render_insights_tab(frame: &mut Frame, area: Rect, state: &mut AppState, them
     } else if state.insights.is_none() {
         (
             " Insights ",
-            vec![Line::from(Span::styled(
-                "Insights not loaded yet.",
-                theme.muted(),
-            ))],
+            vec![
+                domain_legend_line(theme),
+                Line::from(Span::styled("Insights not loaded yet.", theme.muted())),
+            ],
         )
     } else {
         let title = match state.insight_depth {
@@ -1812,12 +1835,22 @@ fn render_insights_tab(frame: &mut Frame, area: Rect, state: &mut AppState, them
     );
 }
 
+fn domain_legend_line(theme: &Theme) -> Line<'static> {
+    Line::from(Span::styled(
+        format!(" {DOMAIN_LEGEND}    {ADAPTER_LENS}"),
+        theme.muted(),
+    ))
+}
+
 fn insight_rows(state: &mut AppState, theme: &Theme) -> Vec<Line<'static>> {
     let domains = super::insight_domains();
-    let mut lines = vec![Line::from(Span::styled(
-        "id      name                      domain          status                         population          measures",
-        theme.muted(),
-    ))];
+    let mut lines = vec![
+        domain_legend_line(theme),
+        Line::from(Span::styled(
+            "id      name                      domain          status                         population          measures",
+            theme.muted(),
+        )),
+    ];
     match state.insight_depth {
         InsightDepth::Domain => {
             let len = domains.len();
@@ -1983,6 +2016,8 @@ fn render_modal(frame: &mut Frame, area: Rect, state: &AppState, modal: &AppModa
                 Line::from(""),
                 Line::from("  [1] - [7] / [Tab]   Switch screens. [7] Insights: Enter/Right deepens, Left backs out"),
                 Line::from("  Insights levels:    L0 domain, L1 insight, L2 measures, L3 JSON detail"),
+                Line::from("  Insight domains:    Model, Harness, Coordination, Environment, Security"),
+                Line::from("  [r] Rig             OpenRig adapter scope (<role>@<rig>), not an insight domain"),
                 Line::from("  [↑/↓] or [j/k]      Navigate rows in tables, spotlights, or simulator seats"),
                 Line::from("  [/]                 Live fuzzy filter on canonical seats"),
                 Line::from("  [x]                 Toggle hidden qitem-* queue endpoints & system gates"),

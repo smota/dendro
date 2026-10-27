@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dendro · Security & Authority Posture</title>
+  <meta name="description" content="Closed-vocabulary security observations from v_security_posture across policy, grant, approval, attempt, effective authority, and effect.">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <header class="telemetry-nav">
+    <div class="nav-left">
+      <a href="../index.html" class="brand-link" title="Dashboards Hub">
+        <span class="brand-icon">D</span>
+        <span>Dendro<span style="font-weight:400;color:var(--text-muted);font-size:0.85rem;margin-left:6px;">Security</span></span>
+      </a>
+      <div class="nav-breadcrumbs" aria-label="Breadcrumbs">
+        <span class="separator">/</span>
+        <a href="../index.html" style="color:var(--text-secondary);">Dashboards</a>
+        <span class="separator">/</span>
+        <span class="current">Security &amp; Authority Posture</span>
+      </div>
+    </div>
+    <div class="nav-right">
+      <div id="dual-serving-indicator" class="dual-serving-badge snapshot">
+        <span class="pulse-dot"></span>
+        <span id="dual-serving-text">ILLUSTRATIVE SNAPSHOT · LIVE SYNC READY</span>
+      </div>
+      <button id="btn-refresh" class="nav-action-btn" type="button" title="Refresh security snapshot">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+        <span>Refresh</span>
+      </button>
+      <a href="../index.html" class="nav-action-btn"><span>← Back to Dashboards Hub</span></a>
+    </div>
+  </header>
+
+  <main class="telemetry-layout">
+    <section class="hero-header">
+      <div class="hero-eyebrow"><span>●</span> Environment · Security · SQL View: <code>v_security_posture</code></div>
+      <h1 class="hero-title">Security &amp; Authority Posture</h1>
+      <p class="hero-subtitle">
+        Counts of explicit source-field observations. Values stay inside a closed vocabulary, with <code>other</code> when the source is outside it. Command text is never stored. A grant is not effective authority. An empty lane is not a measured zero.
+      </p>
+      <p class="hero-subtitle">All-time counts — window_from/window_to label the snapshot but do not filter.</p>
+    </section>
+
+    <section class="lane-grid" aria-label="Closed security vocabulary">
+      <article class="lane-card" data-lane="policy"><h3>policy</h3><p>permission_mode, sandbox_policy, and permission_profile.</p></article>
+      <article class="lane-card" data-lane="grant"><h3>grant</h3><p>permission_decision and approved_prefix_count. A grant does not confer effective authority.</p></article>
+      <article class="lane-card" data-lane="approval"><h3>approval</h3><p>approval_policy. This is an observed field, not a review verdict.</p></article>
+      <article class="lane-card" data-lane="attempt"><h3>attempt</h3><p>dangerous_command category and sandbox_override_requested. The command line is omitted.</p></article>
+      <article class="lane-card" data-lane="effective_authority"><h3>effective_authority</h3><p>Not inferred. Without a policy layer the assessment stays not assessed.</p></article>
+      <article class="lane-card" data-lane="effect"><h3>effect</h3><p>Not stored. Absence of an effect row does not mean the action had no effect.</p></article>
+    </section>
+
+    <section class="kpi-grid" aria-label="Security observation counts">
+      <article class="kpi-card accent-purple">
+        <div class="kpi-label">Observations</div>
+        <div class="kpi-value" id="kpi-observations">—</div>
+        <div class="kpi-meta"><span>observation_count</span></div>
+      </article>
+      <article class="kpi-card accent-cyan">
+        <div class="kpi-label">Max Sessions in Posture Bucket</div>
+        <div class="kpi-value" id="kpi-sessions">—</div>
+        <div class="kpi-meta"><span>max session_count</span> · <span>Overlapping rows are not summed</span></div>
+      </article>
+      <article class="kpi-card accent-amber">
+        <div class="kpi-label">Effective authority</div>
+        <div class="kpi-value">Not assessed</div>
+        <div class="kpi-meta"><span>Grant ≠ authority</span></div>
+      </article>
+      <article class="kpi-card accent-emerald">
+        <div class="kpi-label">Command text</div>
+        <div class="kpi-value">Omitted</div>
+        <div class="kpi-meta"><span>Category only</span></div>
+      </article>
+    </section>
+
+    <section class="table-panel">
+      <div class="table-panel-header">
+        <div class="table-panel-title">
+          <span>v_security_posture rows</span>
+          <span class="badge badge-info" id="record-count-badge">0 Rows</span>
+        </div>
+      </div>
+      <div class="table-container">
+        <table class="telemetry-table">
+          <thead>
+            <tr>
+              <th>Lane</th>
+              <th>Harness</th>
+              <th>Kind</th>
+              <th>Value</th>
+              <th class="num">Observations</th>
+              <th class="num">Sessions</th>
+            </tr>
+          </thead>
+          <tbody id="security-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="query-box">
+      <div class="query-box-title">Underlying DuckDB Query</div>
+      <code>SELECT * FROM v_security_posture ORDER BY observation_count DESC, harness, kind;</code>
+    </div>
+  </main>
+
+  <script id="dendro-data" type="application/json">
+  {
+    "product": "AI Fleet Intelligence",
+    "view": "v_security_posture",
+    "rows": [
+      {"harness": "claude", "kind": "permission_mode", "value": "default", "lane": "policy", "observation_count": 4, "session_count": 2},
+      {"harness": "codex", "kind": "sandbox_policy", "value": "workspace-write", "lane": "policy", "observation_count": 3, "session_count": 1},
+      {"harness": "claude", "kind": "permission_decision", "value": "allow", "lane": "grant", "observation_count": 2, "session_count": 1},
+      {"harness": "codex", "kind": "approval_policy", "value": "on-request", "lane": "approval", "observation_count": 2, "session_count": 1},
+      {"harness": "codex", "kind": "dangerous_command", "value": "force_push", "lane": "attempt", "observation_count": 1, "session_count": 1}
+    ]
+  }
+  </script>
+  <script src="../live-sync.js"></script>
+  <script>
+    'use strict';
+    const LANES = {
+      permission_mode: 'policy',
+      sandbox_policy: 'policy',
+      permission_profile: 'policy',
+      approval_policy: 'approval',
+      permission_decision: 'grant',
+      approved_prefix_count: 'grant',
+      dangerous_command: 'attempt',
+      sandbox_override_requested: 'attempt'
+    };
+    function cell(text, className) {
+      const td = document.createElement('td');
+      if (className) td.className = className;
+      td.textContent = text == null || text === '' ? '—' : String(text);
+      return td;
+    }
+    function render(data) {
+      const rows = (Array.isArray(data && data.rows) ? data.rows : []).map(row => ({
+        ...row,
+        lane: row.lane || LANES[row.kind] || 'unmapped'
+      }));
+      const observations = rows.reduce((n, row) => n + (Number(row.observation_count) || 0), 0);
+      const sessions = rows.reduce((max, row) => Math.max(max, Number(row.session_count) || 0), 0);
+      document.getElementById('kpi-observations').textContent = observations.toLocaleString();
+      document.getElementById('kpi-sessions').textContent = sessions.toLocaleString();
+      document.getElementById('record-count-badge').textContent = rows.length + (rows.length === 1 ? ' Row' : ' Rows');
+      const tbody = document.getElementById('security-tbody');
+      tbody.replaceChildren();
+      if (!rows.length) {
+        const tr = document.createElement('tr');
+        const td = cell('No admitted security observations.');
+        td.colSpan = 6;
+        tr.append(td);
+        tbody.append(tr);
+        return;
+      }
+      rows.forEach(row => {
+        const tr = document.createElement('tr');
+        tr.append(cell(row.lane), cell(row.harness), cell(row.kind), cell(row.value), cell(row.observation_count, 'num'), cell(row.session_count, 'num'));
+        tbody.append(tr);
+      });
+    }
+    const sync = attachLiveSync({ viewId: 'security_posture', onData: render });
+    document.getElementById('btn-refresh').addEventListener('click', () => sync.refresh());
+    render(JSON.parse(document.getElementById('dendro-data').textContent));
+  </script>
+</body>
+</html>

@@ -1729,6 +1729,17 @@ mod tests {
         press(&mut state, KeyCode::Char('7'));
         assert_eq!(state.active_tab, TabId::Insights);
         let domains = screen_text(&mut state);
+        assert!(domains.contains("DENDRO v0.8"), "{domains}");
+        assert!(domains.contains("Domains: Model"), "{domains}");
+        assert!(domains.contains("Harness"), "{domains}");
+        assert!(domains.contains("Coordination"), "{domains}");
+        assert!(domains.contains("Environment"), "{domains}");
+        assert!(domains.contains("Security"), "{domains}");
+        assert!(
+            domains.contains("[r] Rig is the OpenRig adapter scope (<role>@<rig>)"),
+            "{domains}"
+        );
+        assert!(domains.contains("[r] Rig:"), "{domains}");
         assert!(domains.contains("model"), "{domains}");
         assert!(domains.contains("computed"), "{domains}");
         assert!(
@@ -1836,6 +1847,12 @@ mod tests {
         );
         assert!(text.contains("store read failed"), "{text}");
         assert!(text.contains("[7] Insights"), "{text}");
+        assert!(text.contains("DENDRO v0.8"), "{text}");
+        assert!(text.contains("Domains: Model"), "{text}");
+        assert!(
+            text.contains("OpenRig adapter scope (<role>@<rig>)"),
+            "{text}"
+        );
         assert!(!text.contains("computed"), "{text}");
         assert!(!text.contains("n=0"), "{text}");
         assert!(!text.contains("0 usd"), "{text}");
