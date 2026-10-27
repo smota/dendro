@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dendro · Model Token & Cost Accounting (I02 / I04)</title>
-  <meta name="description" content="Model token and cost accounting for I02 and I04 from v_mission_token_burn. Seat columns are an OpenRig adapter binding.">
+  <meta name="description" content="Model token and cost accounting for I02 and I04 from v_mission_token_burn. Unknown cost is never treated as zero.">
   <link rel="stylesheet" href="../style.css">
 </head>
 <body>
@@ -45,9 +45,8 @@
       </div>
       <h1 class="hero-title">Model Token &amp; Cost Accounting (I02 / I04)</h1>
       <p class="hero-subtitle">
-        Disjoint token components per model, plus observed and estimated cost kept apart. Reasoning stays inside output. Unknown cost is not zero. Seat, mission, and rig columns are an OpenRig adapter binding when that platform recorded them.
+        Disjoint token components per model, plus observed and estimated cost kept apart. Reasoning stays inside output. Unknown cost is not zero. Task, actor, and model token accounting across invocations.
       </p>
-      <p class="adapter-note"><span class="badge badge-info">OpenRig Adapter Binding</span> Seat ID is the adapter’s actor key, not the primary model dimension.</p>
     </section>
 
     <!-- Top KPI Banner -->
@@ -117,11 +116,11 @@
     <section class="table-panel">
       <div class="table-panel-header">
         <div class="table-panel-title">
-          <span>Mission &amp; Seat Token Burn Records</span>
+          <span>Task &amp; Actor Token Burn Records</span>
           <span class="badge badge-info" id="record-count-badge">0 Rows</span>
         </div>
         <div class="table-panel-actions">
-          <input type="text" id="burn-search" class="search-input" style="padding:6px 12px;font-size:0.8rem;width:200px;" placeholder="Search seat or model...">
+          <input type="text" id="burn-search" class="search-input" style="padding:6px 12px;font-size:0.8rem;width:200px;" placeholder="Search actor or model...">
           <button id="btn-export-csv" class="nav-action-btn" type="button">Export CSV</button>
         </div>
       </div>
@@ -129,7 +128,7 @@
         <table class="telemetry-table" id="burn-table">
           <thead>
             <tr>
-              <th class="sortable" data-col="seat_id">Seat ID <span class="badge badge-info">OpenRig Adapter Binding</span></th>
+              <th class="sortable" data-col="seat_id">Actor ID</th>
               <th class="sortable" data-col="model">Model Family</th>
               <th class="sortable" data-col="effort">Effort</th>
               <th class="sortable" data-col="attribution_bucket">Attribution Bucket</th>
@@ -397,7 +396,7 @@
 
     document.getElementById('btn-export-csv').addEventListener('click', () => {
       if (!currentMissions.length) return;
-      const headers = ['SeatID', 'Model', 'Effort', 'AttributionBucket', 'InputUncached', 'CacheRead', 'CacheWrite', 'Output', 'TotalTokens', 'CacheRatioPct'];
+      const headers = ['ActorID', 'Model', 'Effort', 'AttributionBucket', 'InputUncached', 'CacheRead', 'CacheWrite', 'Output', 'TotalTokens', 'CacheRatioPct'];
       const rows = currentMissions.map(m => [
         m.seat_id, m.model, m.effort, m.attribution_bucket, m.input_uncached, m.cache_read, m.cache_write, m.output, m.total_tokens, (m.cache_ratio * 100).toFixed(1)
       ]);

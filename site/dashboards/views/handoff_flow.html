@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dendro · Work Handoff & Rework Friction</title>
-  <meta name="description" content="Work handoff and rework friction from v_handoff_rework_analysis. Seat pair columns are an OpenRig adapter binding.">
+  <meta name="description" content="Work handoff and rework friction from v_handoff_rework_analysis. Sender and receiver actor pairs across queue handoffs and return loops.">
   <link rel="stylesheet" href="../style.css">
 </head>
 <body>
@@ -45,9 +45,8 @@
       </div>
       <h1 class="hero-title">Work Handoff &amp; Rework Friction</h1>
       <p class="hero-subtitle">
-        Recorded work transfers, rework returns, and wait or execution medians. Counts are queue flow, not token cost or delivered value. From-seat, to-seat, and rig boundary fields are an OpenRig adapter binding.
+        Recorded work transfers, rework returns, and wait or execution medians. Counts are queue flow, not token cost or delivered value. Sender actor, receiver actor, and topology boundary fields.
       </p>
-      <p class="adapter-note"><span class="badge badge-info">OpenRig Adapter Binding</span> Seat pair columns name OpenRig seats when that adapter recorded the handoff.</p>
     </section>
 
     <!-- Top KPI Banner -->
@@ -88,7 +87,7 @@
         <div class="kpi-label">Boundary Crossings</div>
         <div class="kpi-value" id="kpi-boundaries">6 Seams</div>
         <div class="kpi-meta">
-          <span class="badge badge-info">CROSS-RIG</span> · <span>Isolated contexts</span>
+          <span class="badge badge-info">CROSS-SCOPE</span> · <span>Isolated contexts</span>
         </div>
       </article>
     </section>
@@ -98,7 +97,7 @@
       <div class="viz-panel-header">
         <div>
           <h2 class="viz-title">Pairwise Friction &amp; Return Heatmap</h2>
-          <p class="viz-subtitle">Rows indicate sender seat; columns indicate receiver. Color intensity indicates return friction rate.</p>
+          <p class="viz-subtitle">Rows indicate sender actor; columns indicate receiver. Color intensity indicates return friction rate.</p>
         </div>
         <div id="cell-detail-pill" class="badge badge-info" style="font-size:0.8rem;padding:4px 10px;">Hover or click a cell for pair evidence</div>
       </div>
@@ -119,10 +118,10 @@
           <select id="boundary-filter" class="search-input" style="padding:6px 10px;font-size:0.8rem;width:160px;">
             <option value="all">All Boundaries</option>
             <option value="in_ring">In Ring (local)</option>
-            <option value="cross_rig_seam">Cross Rig Seam</option>
+            <option value="cross_rig_seam">Cross-Scope Seam</option>
             <option value="supervisory_plane">Supervisory Plane</option>
           </select>
-          <input type="text" id="handoff-search" class="search-input" style="padding:6px 12px;font-size:0.8rem;width:180px;" placeholder="Search seat...">
+          <input type="text" id="handoff-search" class="search-input" style="padding:6px 12px;font-size:0.8rem;width:180px;" placeholder="Search actor...">
           <button id="btn-export-csv" class="nav-action-btn" type="button">Export CSV</button>
         </div>
       </div>
@@ -130,8 +129,8 @@
         <table class="telemetry-table" id="handoff-table">
           <thead>
             <tr>
-              <th class="sortable" data-col="from_seat">From Seat <span class="badge badge-info">OpenRig Adapter Binding</span></th>
-              <th class="sortable" data-col="to_seat">To Seat <span class="badge badge-info">OpenRig Adapter Binding</span></th>
+              <th class="sortable" data-col="from_seat">Sender Actor</th>
+              <th class="sortable" data-col="to_seat">Receiver Actor</th>
               <th class="sortable num" data-col="handoffs">Handoffs</th>
               <th class="sortable num" data-col="rework_returns">Rework Returns ▾</th>
               <th class="sortable num" data-col="return_rate">Return Rate (%)</th>
@@ -245,7 +244,7 @@
       },
       {
         "from_seat": "supervisory-steer",
-        "to_seat": "peer-rig-orchestrator",
+        "to_seat": "peer-scope-orchestrator",
         "handoffs": 6,
         "rework_returns": 0,
         "return_rate": 0.0,
@@ -327,7 +326,7 @@
       // Header row
       const thead = document.createElement('tr');
       const cornerTh = document.createElement('th');
-      cornerTh.textContent = 'From ↓ / To →';
+      cornerTh.textContent = 'Sender ↓ / Receiver →';
       thead.appendChild(cornerTh);
 
       seats.forEach(s => {
@@ -431,7 +430,7 @@
           <td class="num" style="color:${(p.return_rate || 0) > 0.15 ? 'var(--rose-rework)' : 'var(--text-primary)'};">${escapeHtml(ratePct)}</td>
           <td class="num">${escapeHtml(msToSec(p.wait_median_ms))}</td>
           <td class="num">${escapeHtml(msToSec(p.exec_turnaround_median_ms))}</td>
-          <td><span class="view-card-tag ${boundaryBadge}">${escapeHtml(p.ring_boundary || 'unknown')}</span></td>
+          <td><span class="view-card-tag ${boundaryBadge}">${escapeHtml(p.ring_boundary === 'cross_rig_seam' ? 'cross_scope_seam' : (p.ring_boundary || 'unknown'))}</span></td>
         `;
         tbody.appendChild(tr);
       });
@@ -465,9 +464,9 @@
 
     document.getElementById('btn-export-csv').addEventListener('click', () => {
       if (!currentPairs.length) return;
-      const headers = ['FromSeat', 'ToSeat', 'Handoffs', 'ReworkReturns', 'ReturnRate', 'WaitMedianMs', 'ExecMedianMs', 'RingBoundary'];
+      const headers = ['SenderActor', 'ReceiverActor', 'Handoffs', 'ReworkReturns', 'ReturnRate', 'WaitMedianMs', 'ExecMedianMs', 'RingBoundary'];
       const rows = currentPairs.map(p => [
-        p.from_seat, p.to_seat, p.handoffs, p.rework_returns, p.return_rate, p.wait_median_ms, p.exec_turnaround_median_ms, p.ring_boundary
+        p.from_seat, p.to_seat, p.handoffs, p.rework_returns, p.return_rate, p.wait_median_ms, p.exec_turnaround_median_ms, p.ring_boundary === 'cross_rig_seam' ? 'cross_scope_seam' : p.ring_boundary
       ]);
       const csv = [headers.map(csvCell).join(','), ...rows.map(row => row.map(csvCell).join(','))].join('\n');
       const blob = new Blob([csv], { type: 'text/csv' });

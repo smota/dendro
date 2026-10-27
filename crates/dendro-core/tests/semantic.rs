@@ -330,6 +330,13 @@ fn natural_aliases_supported_intents_and_window_bounds_work() -> anyhow::Result<
         .filter_map(|item| item["view"].as_str())
         .collect();
     assert_eq!(views, semantic::VIEWS.into_iter().collect());
+    let catalog = intents.to_string().to_ascii_lowercase();
+    assert!(
+        !catalog.contains("openrig")
+            && !catalog.contains("four-eyes")
+            && !catalog.contains("four_eyes"),
+        "semantic catalog still exposes adapter vocabulary"
+    );
 
     let (from, to, mode) = dendro_core::presentation::resolve_window(
         &f.db,

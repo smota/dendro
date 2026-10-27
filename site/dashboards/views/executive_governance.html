@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dendro · Governance & Verification Scorecard</title>
-  <meta name="description" content="Governance and verification scorecard from v_executive_governance. Rig, seat, and four-eyes fields are an OpenRig adapter binding.">
+  <meta name="description" content="Governance and verification scorecard from v_executive_governance. Verification evidence for recovery, vortex loops, cache bleed, and independent peer review.">
   <link rel="stylesheet" href="../style.css">
 </head>
 <body>
@@ -47,14 +47,13 @@
       <p class="hero-subtitle">
         Verification evidence for recovery, vortex loops, compaction, and cross-slice cache bleed. These rows come from the canonical decisions report. They are not the closed security vocabulary.
       </p>
-      <p class="adapter-note"><span class="badge badge-info">OpenRig Adapter Binding</span> Rig scope, seat yield, and four-eyes independence are OpenRig platform fields.</p>
     </section>
 
     <!-- Top KPI Scorecards -->
     <section class="kpi-grid" aria-label="Governance Scorecards">
       <article class="kpi-card accent-emerald">
-        <div class="kpi-label">Four-Eyes Independence <span class="badge badge-info">OpenRig Adapter Binding</span></div>
-        <div class="kpi-value" id="kpi-four-eyes">100% PASS</div>
+        <div class="kpi-label">Peer Review Independence</div>
+        <div class="kpi-value" id="kpi-peer-review">100% PASS</div>
         <div class="kpi-meta">
           <span class="badge badge-pass">VERIFIED</span> · <span>0 self-review violations</span>
         </div>
@@ -97,7 +96,7 @@
     <section class="viz-panel" aria-label="Governance Integrity Matrix">
       <div class="viz-panel-header">
         <div>
-          <h2 class="viz-title">Multi-Rig Governance Integrity Assessment</h2>
+          <h2 class="viz-title">Multi-Scope Governance Integrity Assessment</h2>
           <p class="viz-subtitle">Verifiable criteria evaluated across current observation window</p>
         </div>
         <span class="badge badge-pass" id="fleet-compliance-badge">FLEET COMPLIANCE: 100% PASS</span>
@@ -110,7 +109,7 @@
           <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;background:var(--surface-input);border:1px solid var(--border-subtle);border-radius:8px;">
             <div>
               <div style="font-size:0.9rem;font-weight:600;color:var(--text-primary);">Independent Reviewer Separation</div>
-              <div style="font-size:0.78rem;color:var(--text-muted);">Distinct author, tester, and reviewer seats</div>
+              <div style="font-size:0.78rem;color:var(--text-muted);">Distinct author, tester, and reviewer actors</div>
             </div>
             <span class="badge badge-pass">COMPLIANT</span>
           </div>
@@ -172,7 +171,7 @@
             <circle cx="55" cy="217" r="4" fill="#10b981"/>
             <circle cx="56" cy="102" r="4" fill="#10b981"/>
             <!-- Labels -->
-            <text x="170" y="22" text-anchor="middle" fill="#94a3b8" font-size="11" font-family="monospace">Four-Eyes (100%)</text>
+            <text x="170" y="22" text-anchor="middle" fill="#94a3b8" font-size="11" font-family="monospace">Peer Review (100%)</text>
             <text x="296" y="98" text-anchor="start" fill="#94a3b8" font-size="11" font-family="monospace">Watchdogs</text>
             <text x="296" y="225" text-anchor="start" fill="#94a3b8" font-size="11" font-family="monospace">Isolation</text>
             <text x="170" y="295" text-anchor="middle" fill="#94a3b8" font-size="11" font-family="monospace">No Vortex (0)</text>
@@ -199,11 +198,11 @@
         <table class="telemetry-table" id="governance-table">
           <thead>
             <tr>
-              <th class="sortable">Rig ID</th>
+              <th class="sortable">Scope ID</th>
               <th class="sortable">Observation Window</th>
               <th class="sortable">Definition Version</th>
               <th class="sortable num">M1 Yield (tok/item)</th>
-              <th class="sortable">Four-Eyes Separation <span class="badge badge-info">OpenRig Adapter Binding</span></th>
+              <th class="sortable">Peer Review Separation</th>
               <th class="sortable">Watchdog Resumes</th>
               <th class="sortable">Vortex Loops</th>
               <th class="sortable num">Compactions</th>
@@ -290,7 +289,7 @@
       if (!data) return;
       if (data.summary) {
         const s = data.summary;
-        if (s.four_eyes_status) document.getElementById('kpi-four-eyes').textContent = s.four_eyes_status;
+        if (s.four_eyes_status) document.getElementById('kpi-peer-review').textContent = s.four_eyes_status;
         if (s.watchdog_health) document.getElementById('kpi-watchdog').textContent = s.watchdog_health;
         if (s.vortex_loops !== undefined) document.getElementById('kpi-vortex').textContent = s.vortex_loops + ' LOOPS';
         if (s.m1_yield !== undefined) document.getElementById('kpi-m1').innerHTML = (s.m1_yield / 1000).toFixed(1) + 'K <small style="font-size:0.85rem;font-weight:500;">tok/deliv</small>';
@@ -343,7 +342,7 @@
 
     document.getElementById('btn-export-csv').addEventListener('click', () => {
       if (!currentRecords.length) return;
-      const headers = ['Rig', 'WindowFrom', 'WindowTo', 'DefinitionVersion', 'M1Yield', 'VortexLoops', 'Compactions', 'Fresh'];
+      const headers = ['Scope', 'WindowFrom', 'WindowTo', 'DefinitionVersion', 'M1Yield', 'VortexLoops', 'Compactions', 'Fresh'];
       const rows = currentRecords.map(r => [
         r.rig, r.window_from, r.window_to, r.definition_version, r.m1_yield, r.vortex_loops, r.context_compactions, r.fresh
       ]);

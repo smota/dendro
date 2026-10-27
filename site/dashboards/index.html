@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dendro · Dashboard Entryway & Multi-View Hub</title>
-  <meta name="description" content="Local-first Dendro v0.8.0 intelligence hub. Telemetry across Model, Harness, Coordination, and Environment layers, with OpenRig adapter bindings when present.">
+  <meta name="description" content="Local-first Dendro v0.8.0 intelligence hub. Telemetry across Model, Harness, Coordination &amp; Lineage, and Environment &amp; Security layers.">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -46,7 +46,7 @@
       </div>
       <h1 class="hero-title">Dashboard Entryway & Multi-View Hub</h1>
       <p class="hero-subtitle">
-        Read the agentic stack across Model, Harness, Coordination, and Environment. Domain views count messages, lineage, security observations, and process resources. Rig, seat, and four-eyes fields stay marked as OpenRig adapter bindings.
+        Read the agentic stack across Model, Harness, Coordination &amp; Lineage, and Environment &amp; Security. Domain views count messages, lineage, security observations, and process resources.
       </p>
     </section>
 
@@ -61,10 +61,10 @@
       </article>
 
       <article class="kpi-card accent-emerald">
-        <div class="kpi-label" id="kpi-seats-label">8 Active Actors / Seats</div>
+        <div class="kpi-label" id="kpi-seats-label">8 Active Actors</div>
         <div class="kpi-value" id="kpi-seats">8</div>
         <div class="kpi-meta" id="kpi-seats-meta">
-          <span class="badge badge-info">OpenRig Adapter Binding</span> · <span>seat count when present</span>
+          <span class="badge badge-info">Coordination Layer</span> · <span>observed active actors</span>
         </div>
       </article>
 
@@ -88,7 +88,7 @@
         <div class="kpi-label" id="kpi-concurrency-label">Observed concurrency</div>
         <div class="kpi-value" id="kpi-concurrency">2.84x</div>
         <div class="kpi-meta" id="kpi-concurrency-meta">
-          <span class="badge badge-info">OpenRig Adapter Binding</span> · <span>k active seats</span>
+          <span class="badge badge-info">Coordination Layer</span> · <span>k active actors</span>
         </div>
       </article>
     </section>
@@ -294,7 +294,7 @@
         <button class="filter-chip" data-category="harness" type="button">Harness Layer</button>
         <button class="filter-chip" data-category="coordination" type="button">Coordination &amp; Lineage</button>
         <button class="filter-chip" data-category="environment" type="button">Environment &amp; Security</button>
-        <button class="filter-chip" data-category="adapter" type="button">Platform Adapter (OpenRig)</button>
+        <button class="filter-chip" data-category="adapter" type="button">Coordination &amp; Topology</button>
       </div>
     </section>
 
@@ -330,7 +330,7 @@
         </div>
       </a>
 
-      <a href="views/cost_and_loops.html" class="view-card" data-category="model adapter" data-keywords="I02 I04 model token cost accounting cache read write output seat openrig adapter">
+      <a href="views/cost_and_loops.html" class="view-card" data-category="model adapter" data-keywords="I02 I04 model token cost accounting cache read write output actor session">
         <div>
           <div class="view-card-header">
             <span class="view-card-tag tag-cyan">Model Layer</span>
@@ -341,7 +341,7 @@
             <span class="arrow">→</span>
           </h2>
           <p class="view-card-desc">
-            Disjoint token components and separate observed versus estimated cost. Seat and mission columns are an OpenRig adapter binding when that platform recorded them. Unknown cost is not zero.
+            Token and cost attribution across models, tasks, and actors. Unknown cost is never treated as zero.
           </p>
         </div>
         <div class="view-card-preview-stats">
@@ -355,7 +355,7 @@
           </div>
           <div class="preview-stat">
             <span class="preview-stat-label">Adapter</span>
-            <span class="preview-stat-value">OpenRig seat</span>
+            <span class="preview-stat-value">Actor / Session</span>
           </div>
         </div>
       </a>
@@ -390,7 +390,7 @@
         </div>
       </a>
 
-      <a href="views/handoff_flow.html" class="view-card" data-category="coordination adapter" data-keywords="work handoff rework friction return rate queue wait from_seat to_seat openrig adapter">
+      <a href="views/handoff_flow.html" class="view-card" data-category="coordination adapter" data-keywords="work handoff rework friction return rate queue wait sender actor receiver actor">
         <div>
           <div class="view-card-header">
             <span class="view-card-tag tag-amber">Coordination</span>
@@ -401,7 +401,7 @@
             <span class="arrow">→</span>
           </h2>
           <p class="view-card-desc">
-            Recorded work transfers, rework returns, and wait medians. From-seat and to-seat columns are an OpenRig adapter binding. The counts are queue flow, not token attribution.
+            Sender and receiver actor pairs across queue handoffs and return loops. The counts are queue flow, not token attribution.
           </p>
         </div>
         <div class="view-card-preview-stats">
@@ -415,12 +415,12 @@
           </div>
           <div class="preview-stat">
             <span class="preview-stat-label">Adapter</span>
-            <span class="preview-stat-value">OpenRig seat</span>
+            <span class="preview-stat-value">Actor / Session</span>
           </div>
         </div>
       </a>
 
-      <a href="views/seat_dynamics.html" class="view-card" data-category="harness adapter" data-keywords="actor activity session yield idle ceremony harness seat openrig adapter">
+      <a href="views/seat_dynamics.html" class="view-card" data-category="harness adapter" data-keywords="actor activity session yield idle ceremony harness">
         <div>
           <div class="view-card-header">
             <span class="view-card-tag tag-emerald">Harness Layer</span>
@@ -431,7 +431,7 @@
             <span class="arrow">→</span>
           </h2>
           <p class="view-card-desc">
-            Observed actor time split into active execution, idle-with-work, container hold, and leaf stall, plus session yield. The seat id is an OpenRig adapter binding.
+            Observed actor time split into active execution, idle-with-work, container hold, and leaf stall, plus session yield. Partitioned by actor and session across execution bands.
           </p>
         </div>
         <div class="view-card-preview-stats">
@@ -445,7 +445,7 @@
           </div>
           <div class="preview-stat">
             <span class="preview-stat-label">Adapter</span>
-            <span class="preview-stat-value">OpenRig seat</span>
+            <span class="preview-stat-value">Actor / Session</span>
           </div>
         </div>
       </a>
@@ -510,7 +510,7 @@
         </div>
       </a>
 
-      <a href="views/executive_governance.html" class="view-card" data-category="environment adapter" data-keywords="governance verification scorecard four-eyes watchdog vortex openrig adapter rig">
+      <a href="views/executive_governance.html" class="view-card" data-category="environment adapter" data-keywords="governance verification scorecard peer review watchdog vortex scope">
         <div>
           <div class="view-card-header">
             <span class="view-card-tag tag-purple">Verification</span>
@@ -521,12 +521,12 @@
             <span class="arrow">→</span>
           </h2>
           <p class="view-card-desc">
-            Verification evidence for recovery, vortex loops, and cache bleed. Four-eyes, rig, and seat fields are an OpenRig adapter binding, not the security vocabulary.
+            Verification evidence for recovery, vortex loops, cache bleed, and independent peer review.
           </p>
         </div>
         <div class="view-card-preview-stats">
           <div class="preview-stat">
-            <span class="preview-stat-label">Four-eyes</span>
+            <span class="preview-stat-label">Peer Review</span>
             <span class="preview-stat-value">Adapter</span>
           </div>
           <div class="preview-stat">
@@ -605,7 +605,7 @@
         </div>
       </a>
 
-      <a href="../viewer.html" class="view-card" data-category="model harness coordination environment adapter" data-keywords="explorer sankey timeline heatmap offline insights layers openrig">
+      <a href="../viewer.html" class="view-card" data-category="model harness coordination environment adapter" data-keywords="explorer sankey timeline heatmap offline insights layers actor session">
         <div>
           <div class="view-card-header">
             <span class="view-card-tag tag-slate">Explorer · Canvas</span>
@@ -616,7 +616,7 @@
             <span class="arrow">↗</span>
           </h2>
           <p class="view-card-desc">
-            Offline reader for actors, sessions, work lineage, model accounting, and environment or security. Seat labels are local aliases. OpenRig rig and seat fields stay adapter bindings.
+            Offline and connected reader for actors, sessions, work lineage, model accounting, and security posture.
           </p>
         </div>
         <div class="view-card-preview-stats">

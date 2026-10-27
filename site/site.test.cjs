@@ -17,12 +17,12 @@ test('scenario retains fractional returns, uses fleet totals, and handles endpoi
  assert.equal(calculate({...assumptions,seats:50}).cost,12.5);assert.equal(calculate({...assumptions,reworkPercent:0}).cost,0);assert.equal(calculate({...assumptions,reduction:0}).hours,0);assert.equal(calculate({...assumptions,reworkPercent:100,reduction:100}).capacity,100);
 });
 test('synthetic demo renders SVG, timeline, local aliases, and numeric evidence',()=>{const v=viewer();assert.match(v.nodes.get('status').textContent,/Synthetic demo/);assert.equal(v.nodes.get('sankey').children[0].tag,'svg');assert.equal(v.nodes.get('timeline').children[0].tag,'svg');assert.match(v.nodes.get('inspection').textContent,/900,000/);assert.doesNotMatch(v.nodes.get('inspection').textContent,/builder/);
- const ribbon=v.nodes.get('sankey').children[0].children.find(c=>c.tag==='path');ribbon.listeners.click();assert.match(v.nodes.get('flow-detail').textContent,/Seat 1 → Seat 2: 2/);
+ const ribbon=v.nodes.get('sankey').children[0].children.find(c=>c.tag==='path');ribbon.listeners.click();assert.match(v.nodes.get('flow-detail').textContent,/Actor 1 → Actor 2: 2/);
 });
 test('real report envelope and trace inputs adapt without demo data',()=>{const v=viewer();v.run(`load({metric:'activity',payload:{product:'AI Fleet Intelligence',tokens:42,m1_by_seat:[{seat:'private-name',tokens:42,closed_items:0}] }},'test')`);assert.match(v.nodes.get('metrics').textContent,/42/);assert.match(v.nodes.get('timeline').textContent,/required/);assert.match(v.nodes.get('sankey').textContent,/No handoff/);assert.match(v.nodes.get('inspection').textContent,/Unavailable/);assert.doesNotMatch(v.nodes.get('inspection').textContent,/private-name|900,000/);
  v.run(`load({metric_id:'tokens',inputs:{tokens:7}},'trace')`);assert.match(v.nodes.get('metrics').textContent,/7/);assert.equal(v.nodes.get('seat').disabled,true);
 });
-test('projection excludes labels, secrets, source paths and nonnumeric injections',()=>{const v=viewer();const p=v.run(`project({product:'AI Fleet Intelligence',tokens:'<img src=x onerror=alert(1)>',m1_by_seat:[{seat:'sk-private-canary',tokens:5}],activity:[{seat:'sk-private-canary',source_key:'/private/canary',active_secs:-1}],command:'ghp_secret',metadata:{password:'canary'}})`);const serialized=JSON.stringify(p);assert.doesNotMatch(serialized,/sk-private|ghp_|canary|onerror|private/);assert.equal(p.total,null);assert.equal(p.activity[0].active_secs,null);assert.equal(p.seats[0].seat,'Seat 1');
+test('projection excludes labels, secrets, source paths and nonnumeric injections',()=>{const v=viewer();const p=v.run(`project({product:'AI Fleet Intelligence',tokens:'<img src=x onerror=alert(1)>',m1_by_seat:[{seat:'sk-private-canary',tokens:5}],activity:[{seat:'sk-private-canary',source_key:'/private/canary',active_secs:-1}],command:'ghp_secret',metadata:{password:'canary'}})`);const serialized=JSON.stringify(p);assert.doesNotMatch(serialized,/sk-private|ghp_|canary|onerror|private/);assert.equal(p.total,null);assert.equal(p.activity[0].active_secs,null);assert.equal(p.seats[0].seat,'Actor 1');
 });
 test('failed import reports generic JSON error and does not silently use demo',async()=>{const v=viewer();await v.nodes.get('file').listeners.change({target:{files:[{size:4,text:async()=>'{bad'}],value:'x'}});assert.match(v.nodes.get('status').textContent,/Invalid JSON/);await v.nodes.get('file').listeners.change({target:{files:[{size:11*1024*1024}],value:'x'}});assert.match(v.nodes.get('status').textContent,/10 MiB/);assert.throws(()=>v.run(`project({unexpected:1})`),/Unsupported JSON/);
 });
@@ -33,7 +33,7 @@ test('pair heatmap separates explicit zero from unknown and renders execution / 
 test('timestamped context-drop markers use only numeric counts and actual positions',()=>{const v=viewer();v.run(`load({product:'AI Fleet Intelligence',from:'2026-01-01T00:00:00Z',to:'2026-01-01T01:00:00Z',activity_events:[{seat:'a',ts:'2026-01-01T00:00:00Z',state:'running'}],context_compactions:{events:[{seat:'a',ts:'2026-01-01T00:30:00Z',pre_drop_context_tokens:325000,post_drop_context_tokens:34000,command:'private-canary'}]}},'test')`);const markers=v.nodes.get('timeline').children[0].children.filter(n=>n.tag==='line');assert.equal(markers.length,1);assert.equal(markers[0].attrs.x1,'545');assert.match(markers[0].textContent,/325,000 → 34,000/);assert.doesNotMatch(markers[0].textContent,/canary/);});
 test('existing CLI handoff report and trace fixtures render using their real envelopes',{skip:!process.env.DENDRO_SITE_FIXTURE_DIR},()=>{const v=viewer();for(const name of ['loops.handoffs.candidate.json','loops.trace.candidate.json']){const raw=JSON.parse(fs.readFileSync(path.join(process.env.DENDRO_SITE_FIXTURE_DIR,name),'utf8'));v.context.fixture=raw;v.run(`load(fixture,'verified fixture')`);assert.match(v.nodes.get('status').textContent,/verified fixture/);assert.doesNotMatch(v.nodes.get('status').textContent,/Synthetic/);}});
 
-test('committed native CLI fixture preserves actual numeric projection and aliased flows',()=>{const v=viewer();v.context.fixture=JSON.parse(read('fixtures/canonical-handoffs.json'));v.run("load(fixture,'native synthetic CLI fixture')");assert.equal(v.run('current.edges.length'),4);assert.equal(v.run('current.histogram[0].secs'),3600);assert.equal(v.run('current.pairs[0].exec_median'),9);assert.match(v.nodes.get('sankey').textContent,/Seat 1/);assert.match(v.nodes.get('concurrency').textContent,/3,600/);});
+test('committed native CLI fixture preserves actual numeric projection and aliased flows',()=>{const v=viewer();v.context.fixture=JSON.parse(read('fixtures/canonical-handoffs.json'));v.run("load(fixture,'native synthetic CLI fixture')");assert.equal(v.run('current.edges.length'),4);assert.equal(v.run('current.histogram[0].secs'),3600);assert.equal(v.run('current.pairs[0].exec_median'),9);assert.match(v.nodes.get('sankey').textContent,/Actor 1/);assert.match(v.nodes.get('concurrency').textContent,/3,600/);});
 test('parallel return ribbons have distinct geometry and absent life remains unknown',()=>{const v=viewer();v.run("load({product:'AI Fleet Intelligence',from:'2026-01-01T00:00:00Z',to:'2026-01-01T01:00:00Z',handoff_edges:[{from:'a',to:'b'},{from:'a',to:'b',is_return:true}],activity_events:[{seat:'a',ts:'2026-01-01T00:00:00Z',state:'running'}]},'test')");const paths=v.nodes.get('sankey').children[0].children.filter(n=>n.tag==='path');assert.notEqual(paths[0].attrs.d,paths[1].attrs.d);assert.equal(v.nodes.get('timeline').children[0].children.filter(n=>n.tag==='rect'&&n.attrs.fill==='#10b981').length,0);});
 
 test('source-backed container intervals render exact timeline positions without activity inference',()=>{const v=viewer();v.run("load({product:'AI Fleet Intelligence',from:'2026-01-01T00:00:00Z',to:'2026-01-01T01:00:00Z',advisory_idle_claimed:{intervals:[{seat:'private-seat',from:'2026-01-01T00:15:00Z',to:'2026-01-01T00:30:00Z',classification:'unparked_container_hold'}]}},'test')");const rects=v.nodes.get('timeline').children[0].children.filter(n=>n.tag==='rect'&&n.attrs.fill==='url(#container-hatch)');assert.equal(rects.length,1);assert.equal(Number(rects[0].attrs.x),332.5);assert.equal(Number(rects[0].attrs.width),212.5);assert.doesNotMatch(rects[0].textContent,/private-seat/);});
@@ -86,7 +86,7 @@ test('v0.8.0 layer abstraction, six insights, and eight dashboard projections',(
  assert.match(siteIndex,/v0\.8\.0/);
  assert.match(indexHtml,/0\.8\.0/);
  assert.doesNotMatch(indexHtml,/0\.7\.0/);
- ['All Layers','Model Layer','Harness Layer','Coordination &amp; Lineage','Environment &amp; Security','Platform Adapter (OpenRig)'].forEach(label=>assert.match(indexHtml,new RegExp(label.replace(/[()]/g,'\\$&'))));
+ ['All Layers','Model Layer','Harness Layer','Coordination &amp; Lineage','Environment &amp; Security','Coordination &amp; Topology'].forEach(label=>assert.match(indexHtml,new RegExp(label.replace(/[()]/g,'\\$&'))));
  assert.match(indexHtml,/Compiled Insights Strip \(insight_v1\)/);
  ['I02','I04','I08','I09','I14','I18'].forEach(id=>assert.match(indexHtml,new RegExp(id)));
  ['model\\.tokens\\.direct','model\\.cost','harness\\.action_failure','work\\.lineage_shape','environment\\.resources','coverage\\.source'].forEach(name=>assert.match(indexHtml,new RegExp(name)));
@@ -95,8 +95,9 @@ test('v0.8.0 layer abstraction, six insights, and eight dashboard projections',(
  assert.match(indexHtml,/Actor Activity &amp; Session Yield/);
  assert.match(indexHtml,/Governance &amp; Verification Scorecard/);
  ['cost_and_loops','handoff_flow','seat_dynamics','executive_governance'].forEach(view=>{
-  assert.match(read(`dashboards/views/${view}.html`),/OpenRig Adapter Binding/);
+  assert.doesNotMatch(read(`dashboards/views/${view}.html`),/OpenRig Adapter Binding/);
  });
+ assert.doesNotMatch(indexHtml,/OpenRig Adapter Binding/);
  const queries={
   message_mix:'v_message_mix',
   subagent_lineage:'v_subagent_lineage',
@@ -115,7 +116,9 @@ test('v0.8.0 layer abstraction, six insights, and eight dashboard projections',(
  assert.match(read('dashboards/views/security_posture.html'),/effective_authority/);
  assert.match(read('dashboards/views/process_resources.html'),/I14/);
  assert.match(read('dashboards/views/process_resources.html'),/I18/);
- assert.match(viewerHtml,/Read your agentic stack across Model, Harness, Coordination, and Environment layers — with OpenRig adapter bindings when present/);
+ assert.match(viewerHtml,/Read your agentic stack across Model, Harness, Coordination &amp; Lineage, and Environment &amp; Security layers/);
+ assert.match(viewerHtml,/Actors in evidence/);
+ assert.doesNotMatch(viewerHtml,/Seats in evidence|OpenRig/);
  ['id="pulse"','id="flow"','id="insights"','id="bands"','id="tokens"','id="lineage"','id="environment"','id="security"','id="inspection"'].forEach(id=>assert.match(viewerHtml,new RegExp(id)));
  const v=viewer();
  const insights=v.nodes.get('insight-list').textContent;

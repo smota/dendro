@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Dendro · Actor Activity & Session Yield</title>
-  <meta name="description" content="Actor activity and session yield from v_seat_idle_ranking. Seat id is an OpenRig adapter binding.">
+  <meta name="description" content="Actor activity and session yield from v_seat_idle_ranking. Partitioned by actor and session across execution bands.">
   <link rel="stylesheet" href="../style.css">
 </head>
 <body>
@@ -27,7 +27,7 @@
         <span class="pulse-dot"></span>
         <span id="dual-serving-text">ILLUSTRATIVE SNAPSHOT</span>
       </div>
-      <button id="btn-refresh" class="nav-action-btn" type="button" title="Refresh seat snapshot">
+      <button id="btn-refresh" class="nav-action-btn" type="button" title="Refresh actor snapshot">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
         <span>Refresh</span>
       </button>
@@ -45,13 +45,12 @@
       </div>
       <h1 class="hero-title">Actor Activity &amp; Session Yield</h1>
       <p class="hero-subtitle">
-        Observed actor time split into active execution, idle-with-work, unparked container hold, and leaf stall, with ceremony versus engineering calls and canonical session yield. A null yield is not a measured zero.
+        Observed actor time split into active execution, idle-with-work, unparked container hold, and leaf stall, with ceremony versus engineering calls and canonical session yield. A null yield is not a measured zero. Partitioned by actor and session across execution bands.
       </p>
-      <p class="adapter-note"><span class="badge badge-info">OpenRig Adapter Binding</span> Seat ID is the OpenRig seat key for this activity projection.</p>
     </section>
 
     <!-- Top KPI Banner -->
-    <section class="kpi-grid" aria-label="Seat Dynamics KPIs">
+    <section class="kpi-grid" aria-label="Actor Dynamics KPIs">
       <article class="kpi-card accent-emerald">
         <div class="kpi-label">Fleet Active Time</div>
         <div class="kpi-value" id="kpi-active-pct">68.4%</div>
@@ -72,7 +71,7 @@
         <div class="kpi-label">Unparked Container Holds</div>
         <div class="kpi-value" id="kpi-holds">450s</div>
         <div class="kpi-meta">
-          <span class="badge badge-warn">2 SEATS</span> · <span>Holding memory without work</span>
+          <span class="badge badge-warn">2 ACTORS</span> · <span>Holding memory without work</span>
         </div>
       </article>
 
@@ -94,11 +93,11 @@
     </section>
 
     <!-- Activity Bands Visualizer -->
-    <section class="viz-panel" aria-label="Seat Activity Breakdown Bands">
+    <section class="viz-panel" aria-label="Actor Activity Breakdown Bands">
       <div class="viz-panel-header">
         <div>
           <h2 class="viz-title">Actor Activity Duration Bands</h2>
-          <p class="viz-subtitle">Aggregate observed duration per seat partitioned into discrete execution bands</p>
+          <p class="viz-subtitle">Aggregate observed duration per actor partitioned into discrete execution bands</p>
         </div>
         <div class="activity-legend">
           <div class="legend-item"><span class="legend-dot" style="background:var(--emerald-yield);"></span><span>Active Execution</span></div>
@@ -118,11 +117,11 @@
     <section class="table-panel">
       <div class="table-panel-header">
         <div class="table-panel-title">
-          <span>Seat Idle &amp; Yield Ranking</span>
-          <span class="badge badge-info" id="seat-count-badge">0 Seats</span>
+          <span>Actor Idle &amp; Yield Ranking</span>
+          <span class="badge badge-info" id="seat-count-badge">0 Actors</span>
         </div>
         <div class="table-panel-actions">
-          <input type="text" id="seat-search" class="search-input" style="padding:6px 12px;font-size:0.8rem;width:200px;" placeholder="Search seat...">
+          <input type="text" id="seat-search" class="search-input" style="padding:6px 12px;font-size:0.8rem;width:200px;" placeholder="Search actor...">
           <button id="btn-export-csv" class="nav-action-btn" type="button">Export CSV</button>
         </div>
       </div>
@@ -130,7 +129,7 @@
         <table class="telemetry-table" id="seat-table">
           <thead>
             <tr>
-              <th class="sortable" data-col="seat_id">Seat ID <span class="badge badge-info">OpenRig Adapter Binding</span></th>
+              <th class="sortable" data-col="seat_id">Actor ID</th>
               <th class="sortable num" data-col="observed_secs">Observed (s)</th>
               <th class="sortable num" data-col="active_secs">Active (s)</th>
               <th class="sortable num" data-col="idle_with_work_secs">Idle w/ Work (s) ▾</th>
@@ -287,7 +286,7 @@
     function renderBands(seats) {
       bandsContainer.innerHTML = '';
       if (!seats.length) {
-        bandsContainer.innerHTML = '<p style="color:var(--text-muted);padding:16px;">No seat evidence available.</p>';
+        bandsContainer.innerHTML = '<p style="color:var(--text-muted);padding:16px;">No actor evidence available.</p>';
         return;
       }
 
@@ -333,10 +332,10 @@
         return sortAsc ? (va - vb) : (vb - va);
       });
 
-      document.getElementById('seat-count-badge').textContent = `${filtered.length} Seat${filtered.length === 1 ? '' : 's'}`;
+      document.getElementById('seat-count-badge').textContent = `${filtered.length} Actor${filtered.length === 1 ? '' : 's'}`;
 
       if (!filtered.length) {
-        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-muted);">No seats match filter.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-muted);">No actors match filter.</td></tr>';
         return;
       }
 
@@ -385,7 +384,7 @@
 
     document.getElementById('btn-export-csv').addEventListener('click', () => {
       if (!currentSeats.length) return;
-      const headers = ['SeatID', 'ObservedSecs', 'ActiveSecs', 'IdleWithWorkSecs', 'IdleWithoutWorkSecs', 'ContainerHoldsSecs', 'LeafStallsSecs', 'CeremonyRatio', 'M1Yield'];
+      const headers = ['ActorID', 'ObservedSecs', 'ActiveSecs', 'IdleWithWorkSecs', 'IdleWithoutWorkSecs', 'ContainerHoldsSecs', 'LeafStallsSecs', 'CeremonyRatio', 'M1Yield'];
       const rows = currentSeats.map(s => [
         s.seat_id, s.observed_secs, s.active_secs, s.idle_with_work_secs, s.idle_between_work_secs, s.unparked_container_secs, s.leaf_stall_secs, s.ceremony_ratio, s.m1_yield
       ]);

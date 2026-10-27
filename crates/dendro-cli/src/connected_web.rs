@@ -397,6 +397,7 @@ pub fn execute_live_query(
             }
 
             let mut rigs = Vec::new();
+            let mut scopes = Vec::new();
             if table_counts
                 .get("queue_facts")
                 .and_then(|v| v.as_i64())
@@ -407,13 +408,25 @@ pub fn execute_live_query(
                     "SELECT COALESCE(rig, 'default') as r, COUNT(DISTINCT seat)::BIGINT as s, COUNT(*)::BIGINT as q FROM queue_facts GROUP BY rig",
                 ) {
                     if let Ok(iter) = stmt.query_map([], |r| {
-                        Ok(serde_json::json!({
-                            "rig": r.get::<_, String>(0)?,
-                            "seats": r.get::<_, i64>(1)?,
-                            "queue_items": r.get::<_, i64>(2)?,
-                        }))
+                        Ok((
+                            r.get::<_, String>(0)?,
+                            r.get::<_, i64>(1)?,
+                            r.get::<_, i64>(2)?,
+                        ))
                     }) {
-                        rigs = iter.flatten().collect();
+                        for (r, s, q) in iter.flatten() {
+                            rigs.push(serde_json::json!({
+                                "rig": r,
+                                "seats": s,
+                                "queue_items": q,
+                            }));
+                            scopes.push(serde_json::json!({
+                                "scope": r,
+                                "scope_id": r,
+                                "actors": s,
+                                "queue_items": q,
+                            }));
+                        }
                     }
                 }
             }
@@ -452,11 +465,13 @@ pub fn execute_live_query(
                 "recorded_window": recorded_window,
                 "harnesses": harnesses,
                 "rigs": rigs,
+                "scopes": scopes,
                 "insights": insights_list,
                 "insights_by_id": insights_map,
                 "kpis": {
                     "total_tokens": total_tokens,
                     "active_seats": active_seats,
+                    "active_actors": active_seats,
                     "m1_yield": if active_seats > 0 { (total_tokens as f64) / (active_seats as f64) } else { 0.0 },
                     "handoff_friction_rate": 0.0,
                     "effective_concurrency": 1.0,
@@ -553,6 +568,37 @@ pub fn execute_live_query(
     }
 }
 
+fn enrich_row_actor_scope_aliases(map: &mut serde_json::Map<String, serde_json::Value>) {
+    if let Some(seat) = map.get("seat").cloned() {
+        if !map.contains_key("actor_id") {
+            map.insert("actor_id".to_string(), seat);
+        }
+    }
+    if let Some(seat_id) = map.get("seat_id").cloned() {
+        if !map.contains_key("actor_id") {
+            map.insert("actor_id".to_string(), seat_id);
+        }
+    }
+    if let Some(from) = map.get("from").cloned() {
+        if !map.contains_key("from_actor") {
+            map.insert("from_actor".to_string(), from);
+        }
+    }
+    if let Some(to) = map.get("to").cloned() {
+        if !map.contains_key("to_actor") {
+            map.insert("to_actor".to_string(), to);
+        }
+    }
+    if let Some(rig) = map.get("rig").cloned() {
+        if !map.contains_key("scope_id") {
+            map.insert("scope_id".to_string(), rig.clone());
+        }
+        if !map.contains_key("scope") {
+            map.insert("scope".to_string(), rig);
+        }
+    }
+}
+
 fn query_uncapped_view_or_fallback(
     conn: &duckdb::Connection,
     view_name: &str,
@@ -575,6 +621,7 @@ fn query_uncapped_view_or_fallback(
                     let v_ref = row.get_ref(i).unwrap_or(duckdb::types::ValueRef::Null);
                     map.insert(name, crate::serve_v1::value_ref_to_json(v_ref));
                 }
+                enrich_row_actor_scope_aliases(&mut map);
                 Ok(serde_json::Value::Object(map))
             }) {
                 let results: Vec<serde_json::Value> = mapped.filter_map(Result::ok).collect();
@@ -606,6 +653,7 @@ fn query_uncapped_view_or_fallback(
                         let v_ref = row.get_ref(i).unwrap_or(duckdb::types::ValueRef::Null);
                         map.insert(name, crate::serve_v1::value_ref_to_json(v_ref));
                     }
+                    enrich_row_actor_scope_aliases(&mut map);
                     Ok(serde_json::Value::Object(map))
                 })?;
                 return Ok(mapped.filter_map(Result::ok).collect());
@@ -630,6 +678,7 @@ fn query_uncapped_view_or_fallback(
                         let v_ref = row.get_ref(i).unwrap_or(duckdb::types::ValueRef::Null);
                         map.insert(name, crate::serve_v1::value_ref_to_json(v_ref));
                     }
+                    enrich_row_actor_scope_aliases(&mut map);
                     Ok(serde_json::Value::Object(map))
                 })?;
                 return Ok(mapped.filter_map(Result::ok).collect());
@@ -654,6 +703,7 @@ fn query_uncapped_view_or_fallback(
                         let v_ref = row.get_ref(i).unwrap_or(duckdb::types::ValueRef::Null);
                         map.insert(name, crate::serve_v1::value_ref_to_json(v_ref));
                     }
+                    enrich_row_actor_scope_aliases(&mut map);
                     Ok(serde_json::Value::Object(map))
                 })?;
                 return Ok(mapped.filter_map(Result::ok).collect());
@@ -678,6 +728,7 @@ fn query_uncapped_view_or_fallback(
                         let v_ref = row.get_ref(i).unwrap_or(duckdb::types::ValueRef::Null);
                         map.insert(name, crate::serve_v1::value_ref_to_json(v_ref));
                     }
+                    enrich_row_actor_scope_aliases(&mut map);
                     Ok(serde_json::Value::Object(map))
                 })?;
                 return Ok(mapped.filter_map(Result::ok).collect());
@@ -693,7 +744,7 @@ fn query_uncapped_view_or_fallback(
                 .unwrap_or(0);
             if has_act > 0 {
                 let mut stmt = conn.prepare(
-                    "SELECT seat, state, COUNT(*)::BIGINT as count FROM activity_facts GROUP BY seat, state",
+                    "SELECT seat, seat AS actor_id, state, COUNT(*)::BIGINT as count FROM activity_facts GROUP BY seat, state",
                 )?;
                 let mapped = stmt.query_map([], |row| {
                     let mut map = serde_json::Map::new();
@@ -702,6 +753,7 @@ fn query_uncapped_view_or_fallback(
                         let v_ref = row.get_ref(i).unwrap_or(duckdb::types::ValueRef::Null);
                         map.insert(name, crate::serve_v1::value_ref_to_json(v_ref));
                     }
+                    enrich_row_actor_scope_aliases(&mut map);
                     Ok(serde_json::Value::Object(map))
                 })?;
                 return Ok(mapped.filter_map(Result::ok).collect());

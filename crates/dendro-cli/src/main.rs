@@ -31,11 +31,11 @@ Quickstart Examples:
   dendro simulate topology --help
 
 Interactive TUI Shortcuts:
-  1 Pulse                  2 Seats & Timeline       3 Handoffs & Flow
+  1 Pulse                  2 Actors & Timeline      3 Handoffs & Flow
   4 Tokens & Cache         5 Topology Simulator     6 Trace & Spotlights
-  / filter seats           x show queue endpoints and system gates
+  / filter actors          x show queue endpoints and system gates
   m ribbon or timeline     v cycle the handoff heatmap metric
-  r cycle named rig        w cycle window (1h, 24h, 7d, 30d, all)
+  r cycle named scope      w cycle window (1h, 24h, 7d, 30d, all)
   : ask Nao                i preview an issue draft
   ? help                   q quit
 
@@ -55,7 +55,7 @@ Command Groups:
 
 #[derive(Parser)]
 #[command(name = "dendro")]
-#[command(about = "Dendro AI Fleet Intelligence. Operational Intelligence for seat, handoff, and token evidence. Fleet Governance stays with the operator.", long_about = None)]
+#[command(about = "Dendro AI Fleet Intelligence. Operational Intelligence for actor, session, handoff, and token evidence. Fleet Governance stays with the operator.", long_about = None)]
 #[command(version, after_help = AFTER_HELP)]
 struct Cli {
     /// Verified existing private storage root; default database becomes <root>/dendro.duckdb.

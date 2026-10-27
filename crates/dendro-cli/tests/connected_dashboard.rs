@@ -203,6 +203,8 @@ async fn test_connected_dashboard_server_full_lifecycle() {
     );
     assert!(!hub_json["harnesses"].as_array().unwrap().is_empty());
     assert!(hub_json["insights"].as_array().unwrap().len() >= 20);
+    assert!(hub_json["kpis"].get("active_actors").is_some());
+    assert!(hub_json["scopes"].is_array());
 
     // 7. Test Uncapped View Query: message_mix (GET /api/query?view=message_mix)
     let (headers, body) = http_get(local_addr, "/api/query?view=message_mix").await;

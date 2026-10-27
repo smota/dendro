@@ -816,7 +816,7 @@ fn v08_semantic_views() -> Value {
             "domain": "harness",
             "aggregation": "sums and group-by",
             "window": "half-open snapshot",
-            "limit": "seat activity from the canonical decisions report; OpenRig adapter binding"
+            "limit": "actor activity from the canonical decisions report"
         },
         {
             "view": "v_handoff_rework_analysis",
@@ -838,7 +838,7 @@ fn v08_semantic_views() -> Value {
             "domain": "environment",
             "aggregation": "canonical payload",
             "window": "half-open snapshot",
-            "limit": "governance evidence from one decisions report; four-eyes is an OpenRig adapter binding"
+            "limit": "governance evidence from one decisions report; peer review is independent verification"
         },
         {
             "view": "v_trajectory_vortex",

@@ -328,7 +328,7 @@ fn render_header(frame: &mut Frame, area: Rect, state: &AppState, theme: &Theme)
         Span::styled("│", theme.muted()),
         status_pill,
         Span::styled("│ ", theme.muted()),
-        Span::styled(format!("[r] Rig: {rig_label} ▾ "), theme.bg_base()),
+        Span::styled(format!("[r] Scope: {rig_label} ▾ "), theme.bg_base()),
         Span::styled("│ ", theme.muted()),
         Span::styled(
             format!("[w] Window: {win_label}{mode_badge} ▾ "),
@@ -352,7 +352,7 @@ fn render_tabs(frame: &mut Frame, area: Rect, state: &AppState, theme: &Theme) {
         .split(area);
     let titles = [
         "[1] Pulse & Overview",
-        "[2] Seats & Timeline",
+        "[2] Actors & Timeline",
         "[3] Handoffs & Flow",
         "[4] Tokens & Cache",
         "[5] Topology Simulator",
@@ -661,7 +661,7 @@ fn render_seats_tab(frame: &mut Frame, area: Rect, state: &mut AppState, theme: 
         SeatViewMode::Timeline => "Shared-Axis State Timeline",
     };
     let group_name = match state.seat_group_mode {
-        SeatGroupMode::BySeat => "Seat",
+        SeatGroupMode::BySeat => "Actor",
         SeatGroupMode::ByRig => "Team",
     };
     let filter_badge = if state.filter_input_mode || !state.seat_filter.is_empty() {
@@ -736,7 +736,7 @@ fn render_seats_tab(frame: &mut Frame, area: Rect, state: &mut AppState, theme: 
     // Right-hand Seat / Team Inspector
     let mut insp_lines = Vec::new();
     let inspector_title = match state.seat_group_mode {
-        SeatGroupMode::BySeat => " Synchronized Seat Inspector ",
+        SeatGroupMode::BySeat => " Synchronized Actor Inspector ",
         SeatGroupMode::ByRig => " Synchronized Team Inspector ",
     };
     if let Some(r) = filtered.get(state.selected_seat) {
@@ -756,7 +756,7 @@ fn render_seats_tab(frame: &mut Frame, area: Rect, state: &mut AppState, theme: 
             .filter(|n| n.is_finite() && *n > 0.0)
             .unwrap_or(band_total);
         let label = match state.seat_group_mode {
-            SeatGroupMode::BySeat => "Seat",
+            SeatGroupMode::BySeat => "Actor",
             SeatGroupMode::ByRig => "Team",
         };
         insp_lines.push(Line::from(vec![
@@ -832,7 +832,7 @@ fn render_seats_tab(frame: &mut Frame, area: Rect, state: &mut AppState, theme: 
         )));
     } else {
         insp_lines.push(Line::from(Span::styled(
-            "No matching seats in current scope.",
+            "No matching actors in current scope.",
             theme.unavailable(),
         )));
     }
@@ -1118,7 +1118,7 @@ fn render_tokens_tab(frame: &mut Frame, area: Rect, state: &mut AppState, theme:
     )
     .block(
         Block::default()
-            .title(" Per-Seat Token Consumption & M1 Yield  [↑/↓] ")
+            .title(" Per-Actor Token Consumption & M1 Yield  [↑/↓] ")
             .borders(Borders::ALL)
             .border_style(theme.border(true)),
     );

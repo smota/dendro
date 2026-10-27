@@ -46,11 +46,31 @@
       return null;
     }
 
+    function displayColumn(key) {
+      switch (key) {
+        case 'seat_id':
+        case 'seat':
+          return 'actor_id';
+        case 'from_seat':
+          return 'from_actor';
+        case 'to_seat':
+          return 'to_actor';
+        case 'rig':
+          return 'scope_id';
+        case 'four_eyes':
+        case 'four_eyes_status':
+          return 'peer_review';
+        default:
+          return key;
+      }
+    }
+
     function formatCell(value) {
       if (value == null) return '—';
       if (typeof value === 'object') {
         try { return JSON.stringify(value); } catch (err) { return '—'; }
       }
+      if (value === 'cross_rig_seam') return 'cross_scope_seam';
       return String(value);
     }
 
@@ -178,7 +198,7 @@
       } else {
         columns.forEach(function (key) {
           var th = document.createElement('th');
-          th.textContent = key;
+          th.textContent = displayColumn(key);
           headRow.append(th);
         });
       }

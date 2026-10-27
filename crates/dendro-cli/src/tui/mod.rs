@@ -1351,7 +1351,7 @@ fn handle_key_event(
                         }
                     }
                 };
-                state.loading_stage = Some("Switching rig scope...".into());
+                state.loading_stage = Some("Switching topology scope...".into());
                 spawn_hydration(
                     worker_tx.clone(),
                     state.db.clone(),
@@ -1381,7 +1381,7 @@ fn handle_key_event(
                 let seat = row["seat"].as_str().unwrap_or("Seat").to_owned();
                 let pretty = serde_json::to_string_pretty(row).unwrap_or_default();
                 state.modal = Some(AppModal::DetailJson(
-                    format!("Seat Evidence: {seat}"),
+                    format!("Actor Evidence: {seat}"),
                     pretty,
                 ));
             }
@@ -1771,7 +1771,7 @@ mod tests {
             domains.contains("[r] Rig is the OpenRig adapter scope (<role>@<rig>)"),
             "{domains}"
         );
-        assert!(domains.contains("[r] Rig:"), "{domains}");
+        assert!(domains.contains("[r] Scope:"), "{domains}");
         assert!(domains.contains("model"), "{domains}");
         assert!(domains.contains("computed"), "{domains}");
         assert!(
