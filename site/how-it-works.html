@@ -3,26 +3,74 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>How Dendro Works — Session Timelines, Rework Calculator &amp; Honest Boundaries</title>
-  <meta name="description" content="See how Dendro turns local AI coding transcripts into clear timeline bands, handoff maps, and rework cost estimates—without cloud uploads or vanity metrics.">
+  <title>How Dendro v0.8.0 Works — Dual Taxonomy, Operator Assumption Explorer &amp; Epistemic Boundaries</title>
+  <meta name="description" content="See how Dendro v0.8.0 reconstructs local AI coding transcripts into 4 architectural layers, 5 capability funnels, and 25 deterministic DuckDB insights—with zero cloud uploads.">
   <link rel="canonical" href="https://movetheneedle.info/dendro/how-it-works.html">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Move the Needle">
-  <meta property="og:title" content="How Dendro Works — Session Timelines, Rework Calculator &amp; Honest Boundaries">
-  <meta property="og:description" content="Explore how Dendro reconstructs multi-agent workflows, model your team's rework cost, and inspect its evidence boundaries.">
+  <meta property="og:title" content="How Dendro v0.8.0 Works — Dual Taxonomy, Operator Assumption Explorer &amp; Epistemic Boundaries">
+  <meta property="og:description" content="Explore how Dendro reconstructs multi-agent workflows across Model, Harness, Coordination, and Environment layers, and explore operator assumptions locally.">
   <meta property="og:url" content="https://movetheneedle.info/dendro/how-it-works.html">
-  <meta property="og:image" content="https://movetheneedle.info/dendro/assets/dendro-preview.gif">
-  <meta property="og:image:alt" content="Dendro workflow analysis and rework calculator.">
+  <meta property="og:image" content="https://movetheneedle.info/dendro/assets/screenshots/hub-stack-xray-3d.png">
+  <meta property="og:image:alt" content="Dendro v0.8.0 4-Layer Exploding Stack X-Ray and Dual Taxonomy architecture.">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="How Dendro Works — Session Timelines, Rework Calculator &amp; Honest Boundaries">
-  <meta name="twitter:description" content="Explore how Dendro reconstructs multi-agent workflows, model your team's rework cost, and inspect its evidence boundaries.">
-  <meta name="twitter:image" content="https://movetheneedle.info/dendro/assets/dendro-preview.gif">
-  <meta name="twitter:image:alt" content="Dendro workflow analysis and rework calculator.">
+  <meta name="twitter:title" content="How Dendro v0.8.0 Works — Dual Taxonomy, Operator Assumption Explorer &amp; Epistemic Boundaries">
+  <meta name="twitter:description" content="Explore how Dendro reconstructs multi-agent workflows across Model, Harness, Coordination, and Environment layers.">
+  <meta name="twitter:image" content="https://movetheneedle.info/dendro/assets/screenshots/hub-stack-xray-3d.png">
+  <meta name="twitter:image:alt" content="Dendro v0.8.0 4-Layer Exploding Stack X-Ray and Dual Taxonomy architecture.">
   <link rel="icon" type="image/svg+xml" href="assets/mark.svg">
   <link rel="icon" type="image/png" sizes="32x32" href="../assets/img/move-the-needle-icon-32.png">
   <link rel="apple-touch-icon" href="../assets/img/move-the-needle-icon-180.png">
   <link rel="stylesheet" href="../assets/css/product.css">
-  <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","name":"How Dendro Works","url":"https://movetheneedle.info/dendro/how-it-works.html","description":"How Dendro turns local AI coding transcripts into timeline bands, handoff maps, and rework cost estimates.","isPartOf":{"@type":"WebSite","name":"Move the Needle","url":"https://movetheneedle.info/"}}</script>
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","name":"How Dendro v0.8.0 Works","url":"https://movetheneedle.info/dendro/how-it-works.html","description":"How Dendro turns local AI coding transcripts into 4 architectural layers, 5 capability funnels, and operator scenario models.","isPartOf":{"@type":"WebSite","name":"Move the Needle","url":"https://movetheneedle.info/"}}</script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg-obsidian: #0A0D12;
+      --bg-canvas: #0B0D0E;
+      --bg-surface: #11161F;
+      --bg-surface-elevated: #161C27;
+      --border-subtle: #1F2735;
+      --border-highlight: #2A3649;
+      --text-primary: #F3EDE2;
+      --text-secondary: #9BA3AF;
+      --text-muted: #64748B;
+      --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --layer-model: #F2A541;
+      --layer-harness: #06B6D4;
+      --layer-coord: #10B981;
+      --layer-env: #8B5CF6;
+    }
+    body.theme-dendro {
+      background: var(--bg-obsidian);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+    }
+    .p-nav, .p-page-hero, .p-section, .p-section.alt, .p-footer {
+      background: var(--bg-obsidian);
+      color: var(--text-primary);
+      border-color: var(--border-subtle);
+    }
+    .p-section.alt { background: var(--bg-canvas); }
+    .p-card, .p-table {
+      background: var(--bg-surface);
+      border-color: var(--border-subtle);
+      color: var(--text-primary);
+    }
+    .p-card h3, .p-table td strong, .p-section-head h2 { color: var(--text-primary); }
+    .p-card p, .p-table td, .p-section-head p, .p-lead { color: var(--text-secondary); }
+    .dendro-calc-form, .dendro-calc-out {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-highlight);
+      color: var(--text-primary);
+    }
+    .dendro-calc-form label { color: var(--text-primary); }
+    .dendro-calc-form input[type="range"] { accent-color: var(--layer-model); padding: 0; border: none; background: transparent; }
+    .dendro-stat { background: var(--bg-obsidian); border: 1px solid var(--border-subtle); }
+    .dendro-stat span { color: var(--text-secondary); }
+    .dendro-stat strong { color: var(--layer-coord); }
+  </style>
 <!-- mtneedle:managed:start subsite-head v1 -->
 <link rel="stylesheet" href="../assets/css/umbrella.css">
 <!-- mtneedle:managed:end subsite-head -->
@@ -42,13 +90,14 @@
     <div class="p-wrap p-nav-inner">
       <a class="p-brand" href="./">
         <img src="assets/mark.svg" alt="Dendro mark" width="38" height="38">
-        <span>Dendro<small>The Flight Recorder · v0.7.0</small></span>
+        <span>Dendro<small>The Local-First Flight Recorder · v0.8.0</small></span>
       </a>
       <nav class="p-links" aria-label="Dendro navigation">
         <a href="./">Overview</a>
-        <a href="how-it-works.html" aria-current="page">How it works</a>
+        <a href="how-it-works.html" aria-current="page">How It Works</a>
+        <a href="get-started.html">Get Started</a>
+        <a href="dashboards/index.html">Dashboards</a>
         <a href="viewer.html">Fleet Explorer</a>
-        <a href="get-started.html">Get started</a>
         <a class="p-cta" href="https://github.com/smota/dendro">GitHub ↗</a>
       </nav>
     </div>
@@ -57,9 +106,9 @@
   <main id="main">
     <section class="p-page-hero">
       <div class="p-wrap">
-        <div class="p-eyebrow">How Dendro works</div>
-        <h1>From scattered local logs to clear operational answers.</h1>
-        <p class="p-lead">Every AI coding tool leaves behind local session files on your machine. Dendro reads those files incrementally, organizes them into a fast local analytical store, and lets you explore them visually or in plain English.</p>
+        <div class="p-eyebrow">How Dendro v0.8.0 Works</div>
+        <h1>From scattered local session logs to a 4-layer causal X-ray.</h1>
+        <p class="p-lead">Every AI coding harness leaves behind local session files on disk. Dendro discovers and ingests those footprints out-of-band into an embedded columnar DuckDB engine—classifying activity across 4 Canonical Architectural Layers and the 5-Layer Capability &amp; Execution Matrix.</p>
       </div>
     </section>
 
@@ -68,21 +117,21 @@
         <div class="p-grid-3">
           <article class="p-card">
             <span class="p-num">Step 01</span>
-            <span class="p-card-kicker">Read Local Transcripts</span>
-            <h3>No agents to wrap, no servers to run</h3>
-            <p>Dendro discovers existing session transcripts from Claude Code, Codex, Gemini/AGY, Grok, Pi, and OpenRig directly on disk. It reads only new lines as sessions grow.</p>
+            <span class="p-card-kicker">Passive Local Discovery</span>
+            <h3>Zero proxies, zero prompts, zero secrets</h3>
+            <p>Dendro reads existing transcripts from Claude Code, OpenAI Codex, Google AGY, xAI Grok CLI, and Pi (plus optional OpenRig, AgentFlow SDLC, and Meshloop adapters) directly on disk. Secret patterns (<code>sk-</code>, <code>ghp_</code>, <code>xai-</code>) are scrubbed before storage.</p>
           </article>
           <article class="p-card">
             <span class="p-num">Step 02</span>
-            <span class="p-card-kicker">Reconstruct the Timeline</span>
-            <h3>Separate work, waiting, and rework</h3>
-            <p>Each session is mapped into five clear time bands—active model/tool execution, waiting on a person, waiting on a peer handoff, stalled with work waiting, or parked—plus token and cache cost.</p>
+            <span class="p-card-kicker">Dual Taxonomy &amp; Schema 5</span>
+            <h3>4 Architectural Layers × 5 Capability Layers</h3>
+            <p>Sessions are partitioned into five disjoint activity bands (<code>active</code>, <code>waiting_on_human</code>, <code>idle_with_work</code>, <code>idle_without_work</code>, <code>unknown</code>), 5-part token accounting (<code>I02</code>), <code>FUNNEL I06</code> skills conversion, and 25 compiled insights (<code>I01</code>–<code>I25</code>).</p>
           </article>
           <article class="p-card">
             <span class="p-num">Step 03</span>
-            <span class="p-card-kicker">Explore &amp; Share</span>
-            <h3>Terminal cockpit, browser report, or plain English</h3>
-            <p>Browse live in the interactive terminal cockpit, ask questions in plain English, or export a privacy-scrubbed HTML report that opens offline in any browser.</p>
+            <span class="p-card-kicker">Ratatui TUI, Web Studio &amp; Nao</span>
+            <h3>Inspect in terminal, browser, or plain English</h3>
+            <p>Explore in the 6-screen Ratatui cockpit (<code>dendro cockpit</code>), serve the 12-view Connected Studio on loopback (<code>dendro dashboard</code>), or query 12 deterministic Nao views with <code>dendro ask</code>.</p>
           </article>
         </div>
       </div>
@@ -92,29 +141,44 @@
       <div class="p-wrap">
         <div class="p-section-head">
           <div>
-            <div class="p-eyebrow">Interactive Scenario Model</div>
-            <h2>Estimate the hidden cost of multi-agent rework.</h2>
+            <div class="p-eyebrow">Operator Assumption Explorer</div>
+            <h2>Capacity Scenario Calculator: Model Handoff Rework &amp; Actor Load.</h2>
           </div>
-          <p>When tasks bounce between roles or stall after context resets, token spend and engineering hours compound fast. Adjust the sliders below to model your team's workflow.</p>
+          <p>Explore how handoff return rates, token volume per mission, and engineering review loops interact across your active actors. Adjust the sliders below to explore your own team assumptions.</p>
         </div>
 
         <div class="dendro-calc-grid">
-          <form class="dendro-calc-form" id="calc-form" aria-label="Fleet rework scenario inputs" onsubmit="return false;">
-            <label>Active actors / agents <input id="seats" type="number" min="1" max="200" value="6"></label>
-            <label>Missions per week <input id="missions" type="number" min="1" max="2000" value="40"></label>
-            <label>Avg tokens per mission (k) <input id="tokensK" type="number" min="10" max="10000" value="450"></label>
-            <label>Current rework rate (%) <input id="reworkPercent" type="number" min="0" max="100" value="25"></label>
-            <label>Blended token cost ($ / 1M) <input id="costPerMillion" type="number" min="0.5" max="100" step="0.5" value="6"></label>
-            <label>Hours per rework loop <input id="hours" type="number" min="0.25" max="40" step="0.25" value="1.5"></label>
-            <label>Target rework reduction (%) <input id="reduction" type="number" min="0" max="100" value="35"></label>
+          <form class="dendro-calc-form" id="calc-form" aria-label="Operator Assumption Explorer inputs" onsubmit="return false;">
+            <label for="seatsInput">Active actors / agents (<span id="seatsVal">4 actors</span>)
+              <input id="seatsInput" type="range" min="1" max="100" step="1" value="4">
+            </label>
+            <label for="missionsInput">Monthly missions (<span id="missionsVal">25 missions</span>)
+              <input id="missionsInput" type="range" min="1" max="500" step="1" value="25">
+            </label>
+            <label for="tokensPerMissionInput">Avg tokens per mission (<span id="tokensPerMissionVal">400k tokens</span>)
+              <input id="tokensPerMissionInput" type="range" min="50" max="5000" step="50" value="400">
+            </label>
+            <label for="reworkRateInput">Estimated rework rate (<span id="reworkRateVal">25%</span>)
+              <input id="reworkRateInput" type="range" min="0" max="100" step="1" value="25">
+            </label>
+            <label for="tokenCostInput">Blended token cost (<span id="tokenCostVal">$5 / 1M</span>)
+              <input id="tokenCostInput" type="range" min="0.5" max="50" step="0.5" value="5">
+            </label>
+            <label for="hoursInput">Hours per rework loop (<span id="hoursVal">2 hours</span>)
+              <input id="hoursInput" type="range" min="0.25" max="24" step="0.25" value="2">
+            </label>
+            <label for="reductionInput" style="grid-column:1 / -1;">Target rework reduction (<span id="reductionVal">20%</span>)
+              <input id="reductionInput" type="range" min="0" max="100" step="1" value="20">
+            </label>
           </form>
           <div class="dendro-calc-out" id="calc-out" aria-live="polite">
-            <div class="dendro-stat"><span>Returned missions / week</span><strong id="out-returned">10.0</strong></div>
-            <div class="dendro-stat"><span>Reclaimable tokens / week</span><strong id="out-tokens">1.58M</strong></div>
-            <div class="dendro-stat"><span>Weekly token spend saved</span><strong id="out-cost">$9.45</strong></div>
-            <div class="dendro-stat"><span>Engineering hours reclaimed</span><strong id="out-hours">5.25 hrs</strong></div>
-            <div class="dendro-stat"><span>Effective capacity gain</span><strong id="out-capacity">+8.8%</strong></div>
-            <p class="dendro-calc-note">This calculator models your assumptions above—it is not a benchmark guarantee. Run Dendro on your own logs to measure your actual rework rate.</p>
+            <div class="dendro-stat"><span>Expected Handoff Returns</span><strong id="reworkChainsVal">6.25 expected returns</strong></div>
+            <div class="dendro-stat"><span>Diverted Rework Tokens</span><strong id="reworkTokensVal">2.5M tokens</strong></div>
+            <div class="dendro-stat"><span>Recoverable Token Spend</span><strong id="reworkCostVal">$12.50 USD</strong></div>
+            <div class="dendro-stat"><span>Engineering Hours Reclaimed</span><strong id="hoursSavedVal">2.5 hours / month</strong></div>
+            <div class="dendro-stat"><span>Fleet Capacity Unlocked</span><strong id="capacityVal">5%</strong></div>
+            <div class="dendro-stat"><span>Actor Workload Distribution</span><strong id="seatLoadVal" style="font-size:0.95rem;">6.25 missions per actor / month, assuming an even workload.</strong></div>
+            <p class="dendro-calc-note"><strong>Operator Assumption Explorer (Not Predicted ROI):</strong> All values represent direct arithmetic projections of your slider assumptions—never a synthetic benchmark or guaranteed ROI.</p>
           </div>
         </div>
       </div>
@@ -124,47 +188,48 @@
       <div class="p-wrap">
         <div class="p-section-head">
           <div>
-            <div class="p-eyebrow">Honest boundaries</div>
-            <h2>What Dendro proves—and what it refuses to guess.</h2>
+            <div class="p-eyebrow">Epistemic Honesty Boundaries</div>
+            <h2>What Dendro proves—and what it refuses to fabricate.</h2>
           </div>
-          <p>Trustworthy engineering telemetry starts by naming what the data can and cannot support.</p>
+          <p>Instrument-grade telemetry starts by naming what local evidence can establish and where mathematical boundaries sit.</p>
         </div>
         <div class="p-table-wrap">
           <table class="p-table">
             <thead>
               <tr>
-                <th scope="col">Question</th>
+                <th scope="col">Dimension</th>
                 <th scope="col">What Dendro reports from local evidence</th>
                 <th scope="col">What Dendro never fabricates</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td><strong>Where did the time go?</strong></td>
-                <td>Exact wall-clock breakdown across active execution, waiting on humans, waiting on peer handoffs, stalled queues, and parked time.</td>
-                <td>Subjective "developer focus" scores or surveillance keystroke tracking.</td>
+                <td><strong>Null ≠ Zero</strong></td>
+                <td>Five exclusive status badges (<code>ok</code>, <code>partial</code>, <code>insufficient_evidence</code>, <code>refused</code>, <code>not_applicable</code>) and hatched unobserved intervals.</td>
+                <td>Treating missing tables or unobserved intervals as zero activity.</td>
               </tr>
               <tr>
-                <td><strong>Did the workflow converge?</strong></td>
-                <td>First-pass completions versus multi-pass return loops between actors, plus median handoff wait and execution durations.</td>
-                <td>Claims about whether the underlying product strategy or architecture was right.</td>
+                <td><strong>Tokens ≠ Productivity</strong></td>
+                <td>5-part token breakdown (<code>input_uncached</code>, <code>cache_write</code>, <code>cache_read</code>, <code>output</code>, nested <code>reasoning</code>) and 96.9% cache read yield.</td>
+                <td>Correlating high token burn with high engineering output or developer value.</td>
               </tr>
               <tr>
-                <td><strong>Why did token costs spike?</strong></td>
-                <td>Model-level pricing, cache read/write ratios, and context-window drops pinpointed on the session timeline.</td>
-                <td>Speculative "ROI multiplier" claims or invented "hours saved vs. a human".</td>
+                <td><strong>Observed vs. Simulated Telemetry</strong></td>
+                <td>Direct DuckDB fact views and clearly labeled counterfactual simulations across <code>I22</code>–<code>I25</code> (such as <code>SIMULATED TIER TOTAL (COUNTERFACTUAL)</code>).</td>
+                <td>Presenting counterfactual routing simulations (<code>I25</code>) as live router mutations or guaranteed savings.</td>
               </tr>
               <tr>
-                <td><strong>Can I share a report safely?</strong></td>
-                <td>Offline HTML viewer with automatic actor aliasing (<code>Actor 1</code>, <code>Actor 2</code>) and scrubbing of paths, prompts, and tokens.</td>
-                <td>Silent background uploads to any hosted telemetry cloud.</td>
+                <td><strong>Privacy &amp; Exfiltration</strong></td>
+                <td>Offline HTML explorer with local actor aliasing (<code>Actor 1</code>, <code>Actor 2</code>) and redaction of paths, prompts, and tokens.</td>
+                <td>Persisting raw prompts, thoughts, or tool payloads, or uploading telemetry to any cloud server.</td>
               </tr>
             </tbody>
           </table>
         </div>
         <div class="p-actions">
-          <a class="p-btn primary" href="viewer.html">Inspect a live report in the Fleet Explorer →</a>
-          <a class="p-btn" href="get-started.html">Install &amp; run Dendro</a>
+          <a class="p-btn primary" href="dashboards/index.html">Explore Connected Studio Dashboards →</a>
+          <a class="p-btn" href="viewer.html">Inspect in Offline Fleet Explorer →</a>
+          <a class="p-btn" href="get-started.html">Install &amp; Run Dendro</a>
         </div>
       </div>
     </section>
@@ -172,12 +237,13 @@
 
   <footer class="p-footer">
     <div class="p-wrap p-footer-inner">
-      <div><strong>Dendro</strong> · MIT License · Built by Samuel Mota (<a href="../">Move the Needle</a>)</div>
+      <div><strong>Dendro v0.8.0</strong> · MIT License · Built by Samuel Mota (<a href="../">Move the Needle</a>)</div>
       <div class="p-footer-links">
         <a href="./">Overview</a>
-        <a href="how-it-works.html" aria-current="page">How it works</a>
+        <a href="how-it-works.html" aria-current="page">How It Works</a>
+        <a href="get-started.html">Get Started</a>
+        <a href="dashboards/index.html">Dashboards</a>
         <a href="viewer.html">Fleet Explorer</a>
-        <a href="get-started.html">Get started</a>
         <a href="https://github.com/smota/dendro">GitHub ↗</a>
       </div>
     </div>

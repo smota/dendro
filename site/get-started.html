@@ -3,26 +3,65 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Get Started with Dendro — Install &amp; Inspect Your AI Workflows</title>
-  <meta name="description" content="Install Dendro from source and inspect your local Claude Code, Codex, Gemini, Grok, Pi, or OpenRig session logs in under two minutes.">
+  <title>Get Started with Dendro v0.8.0 — Install &amp; Launch the Cockpit &amp; Studio</title>
+  <meta name="description" content="Install Dendro v0.8.0 via Cargo and inspect your local Claude Code, Codex, AGY, Grok CLI, and Pi session logs in the Ratatui TUI Cockpit or Connected Web Studio.">
   <link rel="canonical" href="https://movetheneedle.info/dendro/get-started.html">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Move the Needle">
-  <meta property="og:title" content="Get Started with Dendro — Install &amp; Inspect Your AI Workflows">
-  <meta property="og:description" content="Install Dendro and turn your existing local AI coding transcripts into clear session timelines, cost breakdowns, and offline browser reports.">
+  <meta property="og:title" content="Get Started with Dendro v0.8.0 — Install &amp; Launch the Cockpit &amp; Studio">
+  <meta property="og:description" content="Install Dendro v0.8.0 and turn your existing local AI coding transcripts into 4-layer causal timelines, 5-part token breakdowns, and offline browser reports.">
   <meta property="og:url" content="https://movetheneedle.info/dendro/get-started.html">
-  <meta property="og:image" content="https://movetheneedle.info/dendro/assets/dendro-preview.gif">
-  <meta property="og:image:alt" content="Dendro quickstart and terminal cockpit.">
+  <meta property="og:image" content="https://movetheneedle.info/dendro/assets/screenshots/hub-living-growth-rings.png">
+  <meta property="og:image:alt" content="Dendro v0.8.0 quickstart, Ratatui terminal cockpit, and Connected Web Studio.">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Get Started with Dendro — Install &amp; Inspect Your AI Workflows">
-  <meta name="twitter:description" content="Install Dendro and turn your existing local AI coding transcripts into clear session timelines and cost breakdowns.">
-  <meta name="twitter:image" content="https://movetheneedle.info/dendro/assets/dendro-preview.gif">
-  <meta name="twitter:image:alt" content="Dendro quickstart and terminal cockpit.">
+  <meta name="twitter:title" content="Get Started with Dendro v0.8.0 — Install &amp; Launch the Cockpit &amp; Studio">
+  <meta name="twitter:description" content="Install Dendro v0.8.0 and turn your existing local AI coding transcripts into 4-layer causal timelines and cost breakdowns.">
+  <meta name="twitter:image" content="https://movetheneedle.info/dendro/assets/screenshots/hub-living-growth-rings.png">
+  <meta name="twitter:image:alt" content="Dendro v0.8.0 quickstart, Ratatui terminal cockpit, and Connected Web Studio.">
   <link rel="icon" type="image/svg+xml" href="assets/mark.svg">
   <link rel="icon" type="image/png" sizes="32x32" href="../assets/img/move-the-needle-icon-32.png">
   <link rel="apple-touch-icon" href="../assets/img/move-the-needle-icon-180.png">
   <link rel="stylesheet" href="../assets/css/product.css">
-  <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","name":"Get Started with Dendro","url":"https://movetheneedle.info/dendro/get-started.html","description":"Install Dendro and inspect your local AI coding session logs.","isPartOf":{"@type":"WebSite","name":"Move the Needle","url":"https://movetheneedle.info/"}}</script>
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","name":"Get Started with Dendro v0.8.0","url":"https://movetheneedle.info/dendro/get-started.html","description":"Install Dendro v0.8.0 and inspect your local AI coding session logs.","isPartOf":{"@type":"WebSite","name":"Move the Needle","url":"https://movetheneedle.info/"}}</script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg-obsidian: #0A0D12;
+      --bg-canvas: #0B0D0E;
+      --bg-surface: #11161F;
+      --bg-surface-elevated: #161C27;
+      --border-subtle: #1F2735;
+      --border-highlight: #2A3649;
+      --text-primary: #F3EDE2;
+      --text-secondary: #9BA3AF;
+      --text-muted: #64748B;
+      --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --layer-model: #F2A541;
+      --layer-harness: #06B6D4;
+      --layer-coord: #10B981;
+      --layer-env: #8B5CF6;
+    }
+    body.theme-dendro {
+      background: var(--bg-obsidian);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+    }
+    .p-nav, .p-page-hero, .p-section, .p-section.alt, .p-footer {
+      background: var(--bg-obsidian);
+      color: var(--text-primary);
+      border-color: var(--border-subtle);
+    }
+    .p-section.alt { background: var(--bg-canvas); }
+    .p-step, .p-faq details {
+      background: var(--bg-surface);
+      border-color: var(--border-subtle);
+      color: var(--text-primary);
+    }
+    .p-step h3, .p-faq summary, .p-section-head h2 { color: var(--text-primary); }
+    .p-step p, .p-faq details p, .p-lead { color: var(--text-secondary); }
+    .p-step pre { background: var(--bg-obsidian); border: 1px solid var(--border-subtle); color: var(--text-primary); }
+  </style>
 <!-- mtneedle:managed:start subsite-head v1 -->
 <link rel="stylesheet" href="../assets/css/umbrella.css">
 <!-- mtneedle:managed:end subsite-head -->
@@ -42,13 +81,14 @@
     <div class="p-wrap p-nav-inner">
       <a class="p-brand" href="./">
         <img src="assets/mark.svg" alt="Dendro mark" width="38" height="38">
-        <span>Dendro<small>The Flight Recorder · v0.7.0</small></span>
+        <span>Dendro<small>The Local-First Flight Recorder · v0.8.0</small></span>
       </a>
       <nav class="p-links" aria-label="Dendro navigation">
         <a href="./">Overview</a>
-        <a href="how-it-works.html">How it works</a>
+        <a href="how-it-works.html">How It Works</a>
+        <a href="get-started.html" aria-current="page">Get Started</a>
+        <a href="dashboards/index.html">Dashboards</a>
         <a href="viewer.html">Fleet Explorer</a>
-        <a href="get-started.html" aria-current="page">Get started</a>
         <a class="p-cta" href="https://github.com/smota/dendro">GitHub ↗</a>
       </nav>
     </div>
@@ -57,9 +97,9 @@
   <main id="main">
     <section class="p-page-hero">
       <div class="p-wrap">
-        <div class="p-eyebrow">Get started</div>
-        <h1>Inspect your existing AI sessions in two minutes.</h1>
-        <p class="p-lead">Dendro reads the local session logs your coding agents have already written. You don't need to configure a server, create an account, or re-run your workflows to see your first report.</p>
+        <div class="p-eyebrow">Get Started · v0.8.0</div>
+        <h1>Inspect your existing AI sessions in 60 seconds.</h1>
+        <p class="p-lead">Dendro reads the local session footprints your coding agents have already written on disk. Zero runtime proxies to configure, zero cloud accounts to create, and zero prompt or secret persistence.</p>
       </div>
     </section>
 
@@ -67,38 +107,42 @@
       <div class="p-wrap">
         <div class="p-grid-3">
           <article class="p-step">
-            <span class="p-step-badge">1 · Install the CLI</span>
-            <h3>Build from source with Cargo</h3>
+            <span class="p-step-badge">1 · Install the Rust CLI</span>
+            <h3>Install via Cargo or build from source</h3>
             <p>Install the single Rust binary locally on Linux, macOS, or WSL2:</p>
-            <pre><code>git clone https://github.com/smota/dendro.git
-cd dendro
-cargo install --path crates/dendro-cli</code></pre>
+            <pre><code># Install via Cargo
+cargo install dendro-cli
+
+# Or build release binary from source
+git clone https://github.com/smota/dendro.git
+cd dendro &amp;&amp; cargo build --release --locked</code></pre>
           </article>
           <article class="p-step">
-            <span class="p-step-badge">2 · Open the Cockpit</span>
-            <h3>Sync your local logs and explore</h3>
-            <p>Ingest your existing agent transcripts and launch the interactive terminal cockpit:</p>
-            <pre><code># Ingest local session logs
-dendro sync
+            <span class="p-step-badge">2 · Ratatui Cockpit or Web Studio</span>
+            <h3>Launch the 6-screen TUI or Loopback Hub</h3>
+            <p>Explore in your terminal or serve the Connected Web Studio on loopback (<code>127.0.0.1:4242</code>):</p>
+            <pre><code># Launch the 6-screen Ratatui TUI Cockpit
+dendro cockpit
 
-# Launch the interactive TUI
-dendro tui</code></pre>
+# Serve Connected Studio on loopback only
+dendro dashboard --serve 127.0.0.1:4242 --site-dir ./site</code></pre>
           </article>
           <article class="p-step">
-            <span class="p-step-badge">3 · Export or Ask</span>
-            <h3>Share a report or ask in plain English</h3>
-            <p>Generate a self-contained browser report or query your session history directly:</p>
-            <pre><code># Export an offline HTML report
-dendro loops handoffs --html report.html
+            <span class="p-step-badge">3 · Advise, Ask &amp; Export</span>
+            <h3>Pre-flight checks, Nao queries &amp; offline reports</h3>
+            <p>Run sub-15ms pre-flight checks, deterministic semantic queries, or privacy-scrubbed exports:</p>
+            <pre><code># Sub-15ms pre-flight health oracle
+dendro advise
 
-# Ask a question in plain English
+# Deterministic Nao semantic query
 dendro ask "top cost by model this week"</code></pre>
           </article>
         </div>
 
         <div class="p-actions" style="margin-top:2.25rem;">
-          <a class="p-btn primary" href="viewer.html">Try the browser Fleet Explorer now (no install needed) →</a>
-          <a class="p-btn" href="https://github.com/smota/dendro">Read full documentation on GitHub ↗</a>
+          <a class="p-btn primary" href="dashboards/index.html">Open Connected Studio Dashboards →</a>
+          <a class="p-btn" href="viewer.html">Try Offline Fleet Explorer →</a>
+          <a class="p-btn" href="https://github.com/smota/dendro">Read Documentation on GitHub ↗</a>
         </div>
       </div>
     </section>
@@ -107,22 +151,22 @@ dendro ask "top cost by model this week"</code></pre>
       <div class="p-wrap">
         <div class="p-section-head">
           <div>
-            <div class="p-eyebrow">Frequently asked questions</div>
-            <h2>Common questions before you adopt.</h2>
+            <div class="p-eyebrow">Frequently Asked Questions</div>
+            <h2>Architecture, privacy &amp; harness compatibility.</h2>
           </div>
         </div>
         <div class="p-faq">
           <details open>
-            <summary>Does Dendro send any of my prompts, code, or session logs to the cloud?</summary>
-            <p>No. Everything runs locally on your machine against an embedded analytical database. Even when you export an HTML report for colleagues, Dendro strips prompts, file paths, and secrets and aliases actor names to <code>Actor 1</code>, <code>Actor 2</code>, and so on.</p>
+            <summary>Does Dendro ever persist or transmit my prompts, model responses, or secrets?</summary>
+            <p>Never. Dendro runs 100% locally against an embedded columnar DuckDB store. Prompts, model responses, chain-of-thought, tool arguments, and error payloads are excluded by design, and secret prefixes (<code>sk-</code>, <code>ghp_</code>, <code>gho_</code>, <code>xai-</code>, Bearer tokens) are redacted before storage. When exporting an offline HTML report, actor labels are aliased to <code>Actor 1</code>, <code>Actor 2</code>, etc.</p>
           </details>
           <details>
-            <summary>Do I need to install hooks before my agents run to get value?</summary>
-            <p>No. Dendro reads the historical transcript files that Claude Code, Codex, Gemini/AGY, Grok, Pi, and OpenRig already save on your disk. You immediately get visibility over past sessions from the moment you run <code>dendro sync</code>.</p>
+            <summary>Do I need to wrap my coding agents or install runtime proxies before sessions run?</summary>
+            <p>No. Dendro is a passive out-of-band flight recorder. It discovers and reads the standard session footprints that Claude Code, OpenAI Codex, Google AGY, xAI Grok CLI, and Pi already write to disk.</p>
           </details>
           <details>
-            <summary>Can I run Dendro alongside OpenRig, Meshloop, or AgentFlow?</summary>
-            <p>Yes. Dendro seamlessly correlates OpenRig rigs, seats, and missions, Meshloop worktrees, and AgentFlow SDLC handoffs directly from local execution logs, giving you end-to-end evidence across your entire topology.</p>
+            <summary>How do OpenRig, AgentFlow SDLC, and Meshloop fit into Dendro's data model?</summary>
+            <p>Dendro treats <strong>Fleets, Harnesses, Sessions, Actors, Tools, and Capabilities</strong> as the universal primary taxonomy across any coding workflow. OpenRig, AgentFlow SDLC, and Meshloop are supported as optional orchestration adapters when correlating multi-actor handoff chains, role gates, and isolated worktree runs.</p>
           </details>
         </div>
       </div>
@@ -131,12 +175,13 @@ dendro ask "top cost by model this week"</code></pre>
 
   <footer class="p-footer">
     <div class="p-wrap p-footer-inner">
-      <div><strong>Dendro</strong> · MIT License · Built by Samuel Mota (<a href="../">Move the Needle</a>)</div>
+      <div><strong>Dendro v0.8.0</strong> · MIT License · Built by Samuel Mota (<a href="../">Move the Needle</a>)</div>
       <div class="p-footer-links">
         <a href="./">Overview</a>
-        <a href="how-it-works.html">How it works</a>
+        <a href="how-it-works.html">How It Works</a>
+        <a href="get-started.html" aria-current="page">Get Started</a>
+        <a href="dashboards/index.html">Dashboards</a>
         <a href="viewer.html">Fleet Explorer</a>
-        <a href="get-started.html" aria-current="page">Get started</a>
         <a href="https://github.com/smota/dendro">GitHub ↗</a>
       </div>
     </div>
