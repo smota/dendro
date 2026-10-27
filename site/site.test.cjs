@@ -9,7 +9,7 @@ class Node {
 }
 const read=p=>fs.readFileSync(path.join(__dirname,p),'utf8');
 function viewer(){const html=read('viewer.html'),nodes=new Map(),tabs=['pulse','flow','trace'].map(id=>{const n=new Node('button');n.setAttribute('aria-controls',id);return n;});
- const document={getElementById(id){if(!nodes.has(id))nodes.set(id,new Node(id==='seat'?'select':'div'));return nodes.get(id);},createElement:tag=>new Node(tag),createElementNS:(_,tag)=>new Node(tag),querySelectorAll:()=>tabs};
+ const document={getElementById(id){if(!nodes.has(id))nodes.set(id,new Node(id==='seat'?'select':'div'));return nodes.get(id);},createElement:tag=>new Node(tag),createElementNS:(_,tag)=>new Node(tag),createTextNode:t=>{const n=new Node('#text');n.textContent=t;return n;},querySelectorAll:()=>tabs};
  document.getElementById('dendro-data').textContent='null';const context=vm.createContext({document,console});const script=html.match(/<script>\n([\s\S]*)<\/script>/)[1];vm.runInContext(script,context);return {context,nodes,tabs,run:code=>vm.runInContext(code,context)};}
 test('scenario retains fractional returns, uses fleet totals, and handles endpoints',()=>{const context=vm.createContext({document:{addEventListener(){}}});vm.runInContext(read('app.js'),context);
  const calculate=x=>vm.runInContext(`modelScenario(${JSON.stringify(x)})`,context);const assumptions={seats:4,missions:25,tokensK:400,reworkPercent:25,costPerMillion:5,hours:2,reduction:20};const r=calculate(assumptions);

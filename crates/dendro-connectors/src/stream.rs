@@ -3957,6 +3957,80 @@ mod tests {
         file.write_all(body.as_bytes()).unwrap();
     }
 
+    /// Directory on a filesystem `platform_v1` admits. `/tmp` is often tmpfs, which
+    /// is refused, and umask 0022 would otherwise leave the directory at 0755.
+    struct AdmittedTestDir {
+        path: PathBuf,
+        #[cfg(windows)]
+        _root: Option<dendro_core::platform_v1::PrivateRoot>,
+    }
+
+    impl AdmittedTestDir {
+        fn new(label: &str) -> Self {
+            #[cfg(windows)]
+            {
+                let root = dendro_core::platform_v1::create_user_private_root_with_choice(
+                    &format!("{label}-"),
+                    &dendro_core::platform_v1::StorageRootChoice::UserProfile,
+                )
+                .expect("explicit UserProfile staged ingest fixture");
+                let path = root.path().to_path_buf();
+                Self {
+                    path,
+                    _root: Some(root),
+                }
+            }
+            #[cfg(not(windows))]
+            {
+                let preferred =
+                    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/test-tmp");
+                // `..` is a ParentDir component, which platform_v1 refuses.
+                let base = if fs::create_dir_all(&preferred).is_ok() {
+                    fs::canonicalize(&preferred).unwrap_or(preferred)
+                } else {
+                    std::env::temp_dir()
+                };
+                let path = base.join(format!("{label}-{}", std::process::id()));
+                let _ = fs::remove_dir_all(&path);
+                fs::create_dir_all(&path).expect("admitted test directory");
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    fs::set_permissions(&path, fs::Permissions::from_mode(0o700))
+                        .expect("mode 0700 test directory");
+                }
+                Self { path }
+            }
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for AdmittedTestDir {
+        fn drop(&mut self) {
+            #[cfg(windows)]
+            drop(self._root.take());
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    /// Opens the staged database, then forces mode 0o600 when umask left it wider.
+    fn open_test_analytics(db_path: &Path) -> AnalyticsStore {
+        let store = AnalyticsStore::open_path(db_path, "key").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(db_path).unwrap().permissions().mode() & 0o777;
+            if mode != 0o600 {
+                fs::set_permissions(db_path, fs::Permissions::from_mode(0o600))
+                    .expect("mode 0600 test database");
+            }
+        }
+        store
+    }
+
     #[test]
     fn native_command_inputs_outputs_and_metadata_leave_no_canary_in_wal() {
         let dir = std::env::temp_dir().join(format!("dendro-command-wal-{}", std::process::id()));
@@ -4090,19 +4164,8 @@ mod tests {
 
     #[test]
     fn source_identity_activity_and_warning_paths_drop_credential_text() {
-        #[cfg(windows)]
-        let fixture_root = dendro_core::platform_v1::create_user_private_root_with_choice(
-            "dendro-ingest-fixture-",
-            &dendro_core::platform_v1::StorageRootChoice::UserProfile,
-        )
-        .expect("explicit UserProfile staged ingest fixture");
-        #[cfg(windows)]
-        let dir = fixture_root.path().to_path_buf();
-        #[cfg(not(windows))]
-        let dir = std::env::temp_dir().join(format!("dendro-source-cols-{}", std::process::id()));
-        #[cfg(not(windows))]
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
+        let scratch = AdmittedTestDir::new("dendro-source-cols");
+        let dir = scratch.path();
         let secret_dir = dir.join("sk-ant-ZZZPATH");
         fs::create_dir_all(&secret_dir).unwrap();
         let jsonl = secret_dir.join("session.jsonl");
@@ -4178,7 +4241,7 @@ mod tests {
         }
         drop(conn);
         let db_path = dir.join("analytics.duckdb");
-        drop(AnalyticsStore::open_path(&db_path, "key").unwrap());
+        drop(open_test_analytics(&db_path));
         let roots = [
             crate::SourceRoot {
                 name: "claude".into(),
@@ -4190,7 +4253,7 @@ mod tests {
             },
         ];
         crate::ingest_staged(&db_path, &roots, false, b"source-column-test-key").unwrap();
-        let db = AnalyticsStore::open_path(&db_path, "key").unwrap();
+        let db = open_test_analytics(&db_path);
         let activity = db.load_activity().unwrap();
         assert!(activity.iter().any(|row| row.state == "unknown"));
         assert!(activity.iter().all(|row| !row.state.contains("ZZZ")));
@@ -4229,24 +4292,12 @@ mod tests {
         for token in ["ZZZPATH", "ZZZSESS", "ZZZSTATE", "ZZZSEAT"] {
             assert!(!blob.contains(token), "{token}");
         }
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn source_message_closure_and_mission_drop_credential_text() {
-        #[cfg(windows)]
-        let fixture_root = dendro_core::platform_v1::create_user_private_root_with_choice(
-            "dendro-ingest-fixture-",
-            &dendro_core::platform_v1::StorageRootChoice::UserProfile,
-        )
-        .expect("explicit UserProfile staged ingest fixture");
-        #[cfg(windows)]
-        let dir = fixture_root.path().to_path_buf();
-        #[cfg(not(windows))]
-        let dir = std::env::temp_dir().join(format!("dendro-source-msg-{}", std::process::id()));
-        #[cfg(not(windows))]
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
+        let scratch = AdmittedTestDir::new("dendro-source-msg");
+        let dir = scratch.path();
         let claude = dir.join("claude");
         fs::create_dir_all(&claude).unwrap();
         write(
@@ -4290,7 +4341,7 @@ mod tests {
         .unwrap();
         drop(conn);
         let db_path = dir.join("analytics.duckdb");
-        drop(AnalyticsStore::open_path(&db_path, "key").unwrap());
+        drop(open_test_analytics(&db_path));
         let roots = [
             crate::SourceRoot {
                 name: "claude".into(),
@@ -4302,7 +4353,7 @@ mod tests {
             },
         ];
         crate::ingest_staged(&db_path, &roots, false, b"source-column-test-key").unwrap();
-        let db = AnalyticsStore::open_path(&db_path, "key").unwrap();
+        let db = open_test_analytics(&db_path);
         let usage = db.load_usage().unwrap();
         assert!(usage.iter().all(|row| !row
             .message_id
@@ -4341,24 +4392,12 @@ mod tests {
         for token in ["ZZZMSG", "ZZZREASON", "ZZZMISSION"] {
             assert!(!blob.contains(token), "{token}");
         }
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn source_identity_follows_path_not_directory_order() {
-        #[cfg(windows)]
-        let fixture_root = dendro_core::platform_v1::create_user_private_root_with_choice(
-            "dendro-ingest-fixture-",
-            &dendro_core::platform_v1::StorageRootChoice::UserProfile,
-        )
-        .expect("explicit UserProfile staged ingest fixture");
-        #[cfg(windows)]
-        let dir = fixture_root.path().to_path_buf();
-        #[cfg(not(windows))]
-        let dir = std::env::temp_dir().join(format!("dendro-source-id-{}", std::process::id()));
-        #[cfg(not(windows))]
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
+        let scratch = AdmittedTestDir::new("dendro-source-id");
+        let dir = scratch.path();
         let root = dir.join("codex");
         fs::create_dir_all(&root).unwrap();
         let line = |input: i64| {
@@ -4369,7 +4408,7 @@ mod tests {
         write(&root.join("a.jsonl"), &line(10));
         write(&root.join("b.jsonl"), &line(20));
         let db_path = dir.join("analytics.duckdb");
-        drop(AnalyticsStore::open_path(&db_path, "key").unwrap());
+        drop(open_test_analytics(&db_path));
         let roots = [crate::SourceRoot {
             name: "codex".into(),
             path: root.clone(),
@@ -4385,7 +4424,7 @@ mod tests {
             )
         };
         ingest();
-        let db = AnalyticsStore::open_path(&db_path, "key").unwrap();
+        let db = open_test_analytics(&db_path);
         let a = db.source_state(&id("a.jsonl")).unwrap().unwrap();
         let b = db.source_state(&id("b.jsonl")).unwrap().unwrap();
         assert!(db.source_state("codex:0").unwrap().is_none());
@@ -4397,7 +4436,7 @@ mod tests {
             .unwrap();
         extra.write_all(line(30).as_bytes()).unwrap();
         ingest();
-        let db = AnalyticsStore::open_path(&db_path, "key").unwrap();
+        let db = open_test_analytics(&db_path);
         let b_after = db.source_state(&id("b.jsonl")).unwrap().unwrap();
         assert_eq!(b_after.0, b.0);
         assert!(b_after.1 > b.1);
@@ -4406,7 +4445,7 @@ mod tests {
         fs::remove_file(root.join("a.jsonl")).unwrap();
         write(&root.join("c.jsonl"), &line(4));
         ingest();
-        let db = AnalyticsStore::open_path(&db_path, "key").unwrap();
+        let db = open_test_analytics(&db_path);
         assert!(db.source_state(&id("c.jsonl")).unwrap().is_some());
         assert!(db.source_state(&id("a.jsonl")).unwrap().is_some());
         assert_ne!(
@@ -4416,28 +4455,16 @@ mod tests {
         drop(db);
         write(&root.join("b.jsonl"), &line(1));
         ingest();
-        let db = AnalyticsStore::open_path(&db_path, "key").unwrap();
+        let db = open_test_analytics(&db_path);
         let replaced = db.source_state(&id("b.jsonl")).unwrap().unwrap();
         assert!(replaced.0 > b.0);
         drop(db);
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn same_relative_name_under_two_roots_does_not_share_a_watermark() {
-        #[cfg(windows)]
-        let fixture_root = dendro_core::platform_v1::create_user_private_root_with_choice(
-            "dendro-ingest-fixture-",
-            &dendro_core::platform_v1::StorageRootChoice::UserProfile,
-        )
-        .expect("explicit UserProfile staged ingest fixture");
-        #[cfg(windows)]
-        let dir = fixture_root.path().to_path_buf();
-        #[cfg(not(windows))]
-        let dir = std::env::temp_dir().join(format!("dendro-two-roots-{}", std::process::id()));
-        #[cfg(not(windows))]
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
+        let scratch = AdmittedTestDir::new("dendro-two-roots");
+        let dir = scratch.path();
         let left = dir.join("left");
         let right = dir.join("right");
         fs::create_dir_all(&left).unwrap();
@@ -4480,7 +4507,7 @@ mod tests {
         assert_ne!(secret_left_id, secret_right_id);
         assert!(!secret_left_id.contains("ZZZONE"));
         assert!(!secret_right_id.contains("ZZZTWO"));
-        drop(AnalyticsStore::open_path(&db_path, "key").unwrap());
+        drop(open_test_analytics(&db_path));
         let roots = [
             crate::SourceRoot {
                 name: "codex".into(),
@@ -4492,38 +4519,26 @@ mod tests {
             },
         ];
         crate::ingest_staged(&db_path, &roots, false, b"source-column-test-key").unwrap();
-        let db = AnalyticsStore::open_path(&db_path, "key").unwrap();
+        let db = open_test_analytics(&db_path);
         let left_state = db.source_state(&left_id).unwrap().unwrap();
         let right_state = db.source_state(&right_id).unwrap().unwrap();
         assert_ne!(left_state.2, right_state.2);
         drop(db);
         write(&left.join("x.jsonl"), &line(1));
         crate::ingest_staged(&db_path, &roots, false, b"source-column-test-key").unwrap();
-        let db = AnalyticsStore::open_path(&db_path, "key").unwrap();
+        let db = open_test_analytics(&db_path);
         assert!(db.source_state(&left_id).unwrap().unwrap().0 > left_state.0);
         assert_eq!(
             db.source_state(&right_id).unwrap().unwrap().0,
             right_state.0
         );
         drop(db);
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn source_hash_counter_snapshot_and_warning_reason_are_not_raw_secrets() {
-        #[cfg(windows)]
-        let fixture_root = dendro_core::platform_v1::create_user_private_root_with_choice(
-            "dendro-ingest-fixture-",
-            &dendro_core::platform_v1::StorageRootChoice::UserProfile,
-        )
-        .expect("explicit UserProfile staged ingest fixture");
-        #[cfg(windows)]
-        let dir = fixture_root.path().to_path_buf();
-        #[cfg(not(windows))]
-        let dir = std::env::temp_dir().join(format!("dendro-source-rest-{}", std::process::id()));
-        #[cfg(not(windows))]
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
+        let scratch = AdmittedTestDir::new("dendro-source-rest");
+        let dir = scratch.path();
         let codex = dir.join("codex");
         fs::create_dir_all(&codex).unwrap();
         write(
@@ -4555,7 +4570,7 @@ mod tests {
             &codex.join("rollout.jsonl"),
             b"source-column-test-key",
         );
-        drop(AnalyticsStore::open_path(&db_path, "key").unwrap());
+        drop(open_test_analytics(&db_path));
         let roots = [
             crate::SourceRoot {
                 name: "codex".into(),
@@ -4567,7 +4582,7 @@ mod tests {
             },
         ];
         crate::ingest_staged(&db_path, &roots, false, b"source-column-test-key").unwrap();
-        let db = AnalyticsStore::open_path(&db_path, "key").unwrap();
+        let db = open_test_analytics(&db_path);
         let state = db.source_state(&source_id).unwrap().unwrap();
         assert_eq!(state.2.len(), 64);
         assert!(state.2.chars().all(|ch| ch.is_ascii_hexdigit()));
@@ -4586,7 +4601,6 @@ mod tests {
         for token in ["ZZZLINE", "ZZZDEST"] {
             assert!(!blob.contains(token), "{token}");
         }
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

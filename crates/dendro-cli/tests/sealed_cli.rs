@@ -513,6 +513,11 @@ fn default_database_resolution_order() {
 
     let private_db = parent.join("dendro.duckdb");
     fs::write(&private_db, b"private-cwd-bytes").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&private_db, fs::Permissions::from_mode(0o600)).unwrap();
+    }
     let kept = with_default_parent(command(), &parent)
         .current_dir(&parent)
         .args(["status", "--format", "json"])
@@ -521,6 +526,7 @@ fn default_database_resolution_order() {
     let kept_err = error(&kept);
     assert!(!kept_err.contains("outside a private folder"), "{kept_err}");
     assert!(!kept_err.contains(copy_command_needle()), "{kept_err}");
+    assert!(!kept_err.contains("unix_mode_policy"), "{kept_err}");
     assert!(!default_file.exists());
     assert_eq!(fs::read(&private_db).unwrap(), b"private-cwd-bytes");
 
@@ -548,6 +554,11 @@ fn default_database_resolution_order() {
     assert_eq!(dir_names(&folder), before_explicit);
 
     fs::write(&default_file, b"default-bytes").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&default_file, fs::Permissions::from_mode(0o600)).unwrap();
+    }
     let preferred = with_default_parent(command(), &parent)
         .current_dir(&cwd)
         .args(["status", "--format", "json"])
@@ -556,6 +567,10 @@ fn default_database_resolution_order() {
     let preferred_err = error(&preferred);
     assert!(
         !preferred_err.contains("outside a private folder"),
+        "{preferred_err}"
+    );
+    assert!(
+        !preferred_err.contains("unix_mode_policy"),
         "{preferred_err}"
     );
     assert_eq!(fs::read(&legacy).unwrap(), b"legacy-bytes");

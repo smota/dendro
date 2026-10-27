@@ -2,6 +2,8 @@
 
 This document serves as the authoritative, human-readable index of **Dendro's Multi-Goal Product Backlog**, maintained autonomously under the **AgentFlow SDLC** governance framework.
 
+**Synced:** 2026-10-26. **Delivered through:** v0.8.0 on `main` (workspace `0.8.0`; newest git tag is `v0.6.0`). **Active backlog:** v0.9.0 / vNext (Goal 9).
+
 ## Backlog Fulfillment — 2026-10-19 (delivered on `main`)
 
 All Goal 1–Goal 5 backlog slices, post-checkpoint hardening (#59), and Rust 1.98 strict Clippy validation (#66) are delivered on `main` via [PR #56](https://github.com/smota/dendro/pull/56), [PR #57](https://github.com/smota/dendro/pull/57), [PR #58](https://github.com/smota/dendro/pull/58), and [PR #68](https://github.com/smota/dendro/pull/68). All 20 backlog issues and parent epics (#7–#10, #14–#21, #24–#29, #59, #66) are closed with verified receipts.
@@ -48,6 +50,30 @@ Clean delivery worktrees may be removed after merge. Source history is recoverab
                                     ▼
        ┌─────────────────────────────────────────────────────────┐
        │ GOAL 5 (v0.5): Optimization & Autonomous Fleet Tuning   │
+       └────────────────────────────┬────────────────────────────┘
+                                    │
+                                    ▼
+       ┌─────────────────────────────────────────────────────────┐
+       │ GOAL 6 (v0.6.0): Operator Usability & Smart Defaults    │
+       │ Status: RELEASED (2026-10-19, tag v0.6.0)               │
+       └────────────────────────────┬────────────────────────────┘
+                                    │
+                                    ▼
+       ┌─────────────────────────────────────────────────────────┐
+       │ GOAL 7 (v0.7.0): 6-Screen Ratatui Cockpit               │
+       │ Status: DELIVERED on main (2026-10-20, PR #73)          │
+       └────────────────────────────┬────────────────────────────┘
+                                    │
+                                    ▼
+       ┌─────────────────────────────────────────────────────────┐
+       │ GOAL 8 (v0.8.0): Schema 4, Privacy, Insights            │
+       │ Status: DELIVERED on main (2026-10-26, PRs #74-#90)     │
+       └────────────────────────────┬────────────────────────────┘
+                                    │
+                                    ▼
+       ┌─────────────────────────────────────────────────────────┐
+       │ GOAL 9 (v0.9.0 / vNext): Capture, Insights, Platforms   │
+       │ Status: ACTIVE BACKLOG                                  │
        └─────────────────────────────────────────────────────────┘
 ```
 
@@ -153,4 +179,86 @@ Clean delivery worktrees may be removed after merge. Source history is recoverab
 | **U6.3** | `feat(dashboard): One-Command Dashboard & Auto-Ingest` | `dendro dashboard` opens the interactive TUI (or `--once` snapshot / `--html [path]` offline web bundle) over the active DB window; `--auto-ingest` on `dashboard` and `ui` automatically ingests local logs when the DB is missing or not `ready` | Delivered (v0.6.0) |
 | **U6.4** | `feat(ask): Auto-Materializing Conversational Ask & Natural Aliases` | Positional `dendro ask "<question>"` (plus `--question` compatibility), automatic `semantic::refresh` when `dendro_semantic_snapshot` is missing or stale (unless `--no-refresh`), `--list-intents`, and natural whole-phrase aliases (`"highest idle"`, `"where do tokens go?"`, `"rework"`, `"verify"`, `"trace tokens"`, `"trace handoffs"`, `"known limits"`) | Delivered (v0.6.0) |
 | **U6.5** | `feat(tui): In-App Keyboard Help Overlay` | Pressing `?` or `h` inside `dendro ui` / `dendro dashboard` opens a self-contained keyboard & panel navigation guide | Delivered (v0.6.0) |
+
+---
+
+## 🎛️ Goal 7 (v0.7.0): Operator Surface & 6-Screen Ratatui Cockpit
+
+* **Status:** Delivered on `main` 2026-10-20 in [PR #73](https://github.com/smota/dendro/pull/73). [PR #71](https://github.com/smota/dendro/pull/71) is the v0.6.0 usability merge (tag `v0.6.0`) and [PR #72](https://github.com/smota/dendro/pull/72) is its docs update; both stay under Goal 6. Release notes name tag `v0.7.0`; that git tag is not in the repository. Package rules from v0.6.0 stand: missing stays unknown, logs are read-only, `#![deny(unsafe_code)]`, parameterized DuckDB.
+* **Objective:** Make the operator surface match evidence v0.6.0 already stored. Bare `dendro` is a sectioned fleet brief. `dendro dashboard` and `dendro ui` are a six-screen Ratatui cockpit. Ask routing is two explicit tiers. Pi ingest reads the OpenRig tree and the standalone `~/.pi/agent/sessions` tree, and status says which is which.
+
+### v0.7.0 Operator Surface & Delivery Matrix
+
+| Slice | Title | Capabilities Delivered | Status |
+| :--- | :--- | :--- | :--- |
+| **V7.1** | `feat(status): Sectioned Fleet Brief` | No-arg `dendro` runs `dendro status` with `=== DENDRO FLEET INTELLIGENCE ===`, `DATABASE & COVERAGE`, `DISCOVERED HARNESS SOURCES`, `FLEET TOPOLOGY (RIGS & AGENT SEATS)`, and `QUICKSTART & COMMANDS`. States are `NOT INITIALIZED`, `READY`, and `EMPTY` with usage, activity, and queue counts. `dendro status --format json` exposes `pi_breakdown` (`openrig_files`, `standalone_files`, `linked_usage`, `standalone_usage`) and `harnesses.pi`. Seats print per rig. `dendro --help` leads with status, run, cockpit, and ask, then reports, governance, and cache, and lists report kinds `links`, `activity`, `handoffs`, `tokens`, `decisions`, `advisory`, `anomalies`, `spotlights` | Delivered (#73) |
+| **V7.2** | `feat(hygiene): Entity Classifier for Status and Cockpit` | One classifier feeds status and the cockpit: agent seat `<role>@<rig>` when the rig is not a raw ULID; queue endpoint `qitem-…`; system or gate `external:…`, `system:…`, `…@system`, or exactly `system`, `steerer`, `steer-lead`; every other id is unlinked, including a 26-character Crockford ULID starting with `01`. Named rigs are listed. Ephemeral ULID rigs are a count (`+N ephemeral ULID`). Cockpit `x` shows or hides queue endpoints and gates. The default view stays on canonical agent seats | Delivered (#73) |
+| **V7.3** | `feat(tui): Six-Screen Ratatui Cockpit, TachyonFX, Porter-Duff Backdrop` | `dendro dashboard` and `dendro ui` render Pulse `1`, Seats & Timeline `2`, Handoffs & Flow `3`, Tokens & Cache `4`, Topology Simulator `5`, and Trace & Spotlights `6`. TachyonFX plays screen transitions. Modal overlays sit on a Porter-Duff RGBA backdrop (the OpenTUI-style compositor in `dendro-cli`). Keys: `/` filter seats, `x` hygiene, `m` ribbon or timeline, `v` cycle the handoff heatmap (return rate, count, wait median, exec median), `r` cycle named rigs, `w` cycle `1h` / `24h` / `7d` / `30d` / `all`, `:` or `a` ask Nao, `i` preview an issue draft, `?` or `h` help, `q` quit. `--once`, `--html`, `--auto-ingest`, and `--window` behave as in v0.6.0 | Delivered (#73) |
+| **V7.4** | `feat(ask): Two-Tier Nao Routing` | `dendro ask` refuses unknown questions. Tier 1 is an exact match on the normalized phrase (case, whitespace, trailing `?` or `.`). Tier 2 scores tokens for Rank, Explain, Compare, Verify, Trace, and HonestLimits. Unsupported qualifiers refuse first (mission or calendar words, SQL verbs, forecast or savings language, secrets, any token containing `@`). A miss returns `suggest_closest_intents`. Default format is text on a terminal and json otherwise. `--list-intents` prints JSON and does not need a database | Delivered (#73) |
+| **V7.5** | `feat(ingest): Dual-Root Pi Ingest` | Default roots are `$OPENRIG_HOME/state/pi` (or `~/.openrig/state/pi`) and `~/.pi/agent/sessions`. Two distinct `--root pi=<path>` values are both kept; the same path twice is deduplicated. A file under `.pi/agent/sessions` is a standalone file; other Pi files are OpenRig files. Usage whose `native_session` is in Pi `identity_facts` is linked usage; the rest is standalone usage. Session identity remains the v0.5.0 first-line header rule (K10). Standalone usage is not promoted to a seat | Delivered (#73) |
+
+---
+
+## 🏗️ Goal 8 (v0.8.0): Four-Domain Foundation, Schema 4, Private Storage, Capture Registry & Reference Insights
+
+* **Status:** Delivered on `main` 2026-10-26 via [PR #74](https://github.com/smota/dendro/pull/74) through [PR #90](https://github.com/smota/dendro/pull/90). Workspace version is `0.8.0`. [PR #90](https://github.com/smota/dendro/pull/90) records that the `v0.8.0` git tag and GitHub release were left for a separate go-ahead, so `docs/RELEASE_NOTES_v0.8.0.md` still says the release date is TBD. Scope for this goal is the trimmed v0.8.0 page `.agentflow/proposals/next-version-2026-10-22/SCOPE-TRIMMED.md` (2026-10-24).
+* **Objective:** Fleet intelligence on native Windows and Linux, with schema 4 on a private per-user DuckDB, a builtin capture registry, text-free message facts, unprivileged process samples, sub-agent lineage to the root caller, closed-vocabulary security facts, conserved accounting, and six reference insights on the operator surfaces. Missing observations stay unknown.
+
+### v0.8.0 Foundation & Delivery Matrix
+
+| Slice | Title | Capabilities Delivered | Status |
+| :--- | :--- | :--- | :--- |
+| **T03 / T12** | `domain_v1` vocabulary and session lineage | `domain_v1` is the typed vocabulary for later facts (`message_facts` uses it for `role`, `direction`, `modality`, source order, and `grain`). `lineage_v1` writes `session_edges` as `(parent, child, relation, status, evidence)` from explicit source fields only: Grok `subagent_spawned` / `subagent_finished`, Claude Code sidechains (`isSidechain: true`), and Codex `payload.source.subagent.thread_spawn.parent_thread_id` (Pi has no parent field). Non-explicit links count as `lineage_not_explicit`. Root-caller walks handle chains, diamonds, cycles, and missing parents. Coverage summaries gain `edges=<n>` | Delivered (#74, #76, #85) |
+| **T04 / T21** | `migration_v4` schema 3→4, rollback, and release smoke | `dendro migrate` and `dendro rollback` publish schema 3→4 with rollback and loss receipts. Five additive schema-4 tables (`message_facts`, `process_identities`, `process_samples`, `session_edges`, `security_facts`) are created lazily with an exact-column allow-list and sealed keys. [PR #90](https://github.com/smota/dendro/pull/90) runs the Linux historical smoke: build v0.7.0, ingest, then v0.8 `migrate`, `run`, `insights --json`, `status`, and `rollback`, and checks that v0.7 `report tokens` matches the pre-migration report. A blocking `native-windows` CI job covers fmt, check, clippy, and test. The hosted Windows cross-volume job stays non-blocking | Delivered (#76, #90) |
+| **B02 / T24** | `platform_v1` and `dendro-windows-private-io` | Native platform safety (`platform_v1`, crate `dendro-windows-private-io`) plus private storage. Defaults are `%LOCALAPPDATA%\Dendro\dendro.duckdb` on Windows and `$XDG_DATA_HOME/dendro/dendro.duckdb` (`~/.local/share/dendro`, mode `0700`) on Linux. An existing non-private folder is refused and left as it is. `dendro storage-init` with no flags creates or verifies the default folder. DuckDB `temp_directory`, `extension_directory`, and extension autoinstall/autoload are set at open time before WAL replay, then `lock_configuration`. Bundled `json` only. Linux publication uses `renameat2` `NOREPLACE` / `EXCHANGE`. Opening an ordinary or legacy database path is refused before open, with the default private path and an exact copy command (`Copy-Item` or `cp`, including `.wal`). Nothing is copied automatically | Delivered (#74, #76, #77, #78) |
+| **T05 / T18** | `capture_registry_v1` on the live path | `dendro run` routes every reader through `Registry::builtin()` for `claude`, `codex`, `pi`, `grok`, `cursor`, `windsurf`, `goose`, and `devin`. `agy` is registered as `pending`. Per-file coverage is `coverage=complete`, `partial`, or `refused`. One bad export file is refused while the rest of the run continues. A missing or failed source is `refused` | Delivered (#81, #89) |
+| **T06 / T07** | Claude, Codex, Pi, and export bounds, plus `message_facts` | Input ceilings are 8 MiB per record, JSON nesting depth ≤ 64, and ≤ 1024 decoded records per batch. Descriptor limits may only tighten those ceilings. `message_facts` stores text-free metadata (`role`, `direction`, `modality`, source order, `grain`) from Claude, Pi, Codex, and Grok | Delivered (#81) |
+| **T08** | Native Grok CLI session reader | Reads `~/.grok/sessions/<cwd>/<session>/updates.jsonl` (`USERPROFILE` / `HOME`) with byte-offset watermarking. One usage row per `modelUsage` (`cachedReadTokens` inside `inputTokens`, `reasoningTokens` inside output). Joins `tool_call` to `tool_call_update` by call id. Persists token integers, timestamps, tool names, and a keyed fingerprint of `rawInput` | Delivered (#80) |
+| **T10 / T25** | Linux and Windows process and resource sampler | `dendro watch [--interval 1s] [--duration] [--once] [--harness …] [--flush-every 60s]` samples `claude`, `codex`, `grok`, `pi`, and descendants via `sysinfo` 0.39 (`system` feature only): ≤ 64 tracked processes, ≤ 600 samples per process per watch. `dendro run-agent [--harness NAME] -- <command> [args...]` pins the child PID as the sampler root (`attribution = launched` vs `discovered`; `null` on descendants) and exits with the child's exit code. Stores the executable name only. Unreadable values are `NULL` with a visibility limit. Linux isolation hints cover `/.dockerenv`, cgroup markers, and WSL via `/proc/version`; otherwise `unknown` | Delivered (#82, #83, #84) |
+| **T13** | `security_facts` and `dangerous_command` | Explicit policy fields only, closed vocabularies (`other` for unknown). Claude: `permissionMode`, `permissionDecision.decision`, `sandboxed`, `dangerouslyDisableSandbox` → `sandbox_override_requested`. Codex `turn_context`: `approval_policy`, `sandbox_policy.type`, `permission_profile`, and a count of `approved_command_prefixes`. Pi bash command categories. Grok has no permission fields. Dangerous-command categories are `recursive_delete`, `pipe_to_shell`, `force_push`, `chmod_world_writable`, `sudo`, `disk_write_device`, `credential_file_access`, and `network_exfil_pattern` | Delivered (#86) |
+| **T14** | `accounting_v1` conservation | Observed cost is separate from estimated cost. Grok observed cost uses `costUsdTicks` via `GROK_USD_TICKS_PER_USD = 10^10`. A multi-model turn without per-model cost leaves each model row `None` and warns `cost_not_attributable`. The pricing table ships empty, so estimates are `null` (`unknown`). Totals over unknown cost are `partial` or `unknown` with `usd: null`. Fleet totals count each usage observation once. Exclusive session totals sum to the fleet total. Per-root inclusive totals are labelled non-additive. `accounting_v1::check_total_admission` admits these defined totals and refuses shared or legacy attribution, cumulative counters, duplicates, mixed currencies, and source-reported totals. Report JSON adds `observed_cost`, `estimated_cost`, `cost_rule`, and per-session `inclusive` | Delivered (#87) |
+| **T15 / T16** | Six reference insights | `dendro insights [--json] [--harness H] [--session S]` returns `Computed`, `Partial { reason }`, or `Refused { reason }`, with at most 5 sealed evidence keys. Shipped: `I02` `model.tokens.direct`, `I04` `model.cost`, `I08` `harness.action_failure`, `I09` `work.lineage_shape`, `I14` `environment.resources`, `I18` `coverage.source`. The catalog in `DESIGN.md` still defines I01–I21; the other fifteen are Goal 9 | Delivered (#88) |
+| **T17 / T19** | Insights screen, viewer, four Nao views, Obsidian entryway | TUI screen `[7]` Insights with L0–L3 disclosure (`domain` → `insight` → `measures` → `DetailJson`) and observed vs estimated cost on the Tokens screen. Dashboard payload adds `insights` (evidence cleared), `lineage` (`I09`), `environment` (`I14`), and `security`, rendered by offline `site/viewer.html` via `textContent`. The multi-view dashboard entryway is the Obsidian Edition telemetry page `site/dashboards/index.html` ("Fleet Intelligence Telemetry · Obsidian Edition"). `dendro status` reports row counts for the five new fact tables (`not created` in text when the lazy tables are absent; JSON still uses `rows: 0` in that case). Nao views `v_message_mix`, `v_subagent_lineage`, `v_security_posture`, and `v_process_resources` are counts, max, and group-by only (CPU and cost stay in `I14` and `I04`) and are all-time in v0.8.0 | Delivered (#89) |
+
+---
+
+## 🚧 Goal 9 (v0.9.0 / vNext): Active Backlog
+
+* **Status:** Active. Nothing in this goal is on `main` as a v0.9.0 deliverable. Open product defect: [#91](https://github.com/smota/dendro/issues/91).
+* **Objective:** Close the Windows publication failure and the private-path test gaps, then pick up capture and views that v0.8.0 left behind, the other fifteen reference insights from `DESIGN.md`, and a second platform binding beside OpenRig.
+
+### v0.9.0 / vNext Workplan
+
+| Priority | ID | Title | Scope | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| **P0** | [#91](https://github.com/smota/dendro/issues/91) | Windows `publish_replace` `ERROR_SHARING_VIOLATION` | `dendro-windows-private-io` test `tests::native_staging_rework` fails on GitHub-hosted `windows-2022` (`native-windows`, PR #90). After `create_source` and `write_all`, `publish_replace` on a folder whose SDDL grants the user, SYSTEM, and Administrators returns Win32 code 32 ("The process cannot access the file because it is being used by another process."). Deterministic on the elevated `runneradmin` runner (3 failures); passes locally. Handles in the test use share mode 7. A bounded retry (8 attempts, about 5s) was reverted (`ce2f6e3`, then `17c9300`). The same grant pattern exists on ordinary `%LOCALAPPDATA%` folders, so a SYSTEM holder can fail a real user's publish the same way | Active |
+| **P0** | test hardening | Umask and publication-mock hardening | Private-directory tests must assert mode `0700` under the CI umask (077 is called out in `dendro-cli` sealed tests) without changing the process umask. `platform_v1` and `migration_v4` already refuse ambient umask changes and refuse to re-permission an existing folder. Publication tests need to drive real `publish_replace` so a sharing violation like #91 is visible, including Linux `renameat2` `NOREPLACE` / `EXCHANGE` parity | Active |
+| **P1** | **T11** | Linux `strace` → `syscall_v1` | Deferred to v0.9 by `SCOPE-TRIMMED.md` (2026-10-24) until a real privileged producer specimen exists. Import is transient and bounded: identify call, return, PID, and time; keep allowlisted operation, status, count, and resource class; discard argument bodies. `DESIGN.md` requires a short-lived synthetic authorized Linux process through the admitted trace reader. Unprivileged process and resource facts already ship as T10 (Goal 8). Feeds `I15` `environment.effects`. Specimen gate B01-S (real Linux strace profile admission) was cut from v0.8.0 because it only existed to admit this importer | Deferred (v0.9.0) |
+| **P1** | **T26** | Windows ETW → `windows_events_v1` | Deferred to v0.9 by the same scope page, for the same specimen reason. `DESIGN.md` requires a genuine controlled Windows trace for a bound synthetic process and a frozen provider profile. The ETW profile is a separate event grammar from Linux `syscall_v1`. Specimen gates B01-W / B02-W were cut from v0.8.0 because they only existed to admit this importer | Deferred (v0.9.0) |
+| **P1** | **T09** | Native AGY adapter | Cut from v0.8.0 in `SCOPE-TRIMMED.md` ("AGY is not available") and left registered as `pending` in `Registry::builtin()`. `DESIGN.md` specifies the AGY export envelope (contract/version, source instance, record key, time, kind, typed payload; 1 MiB per line; batches ≤ 128) | Cut from v0.8.0 (ParserPending; unscheduled pending AGY format/specimens) |
+| **P1** | Nao windows | Half-open `[from, to)` on the four v0.8.0 semantic views | `v_message_mix`, `v_subagent_lineage`, `v_security_posture`, and `v_process_resources` report all-time counts in v0.8.0 (`docs/RELEASE_NOTES_v0.8.0.md`). Apply the `DESIGN.md` half-open window: include a whole atomic count when its evidenced attribution timestamp is inside `[from, to)`, and exclude it when the timestamp is outside. CPU and cost stay on `I14` and `I04` | Active (v0.8.0 known limit) |
+| **P2** | **I01, I03, I05–I07, I10–I13, I15–I17, I19–I21** | Remaining 15 reference insights | v0.8.0 shipped 6 of the 21 `DESIGN.md` version `1.0.0` definitions (`I02`, `I04`, `I08`, `I09`, `I14`, `I18`). Register and compute the other fifteen on captured facts, with the same `Computed` / `Partial` / `Refused` contract. `I15` waits on T11 and T26. Names and refusal conditions are in the catalog below | Active |
+| **P3** | platforms | Three-plane abstraction and a second platform connector | Split legacy OpenRig nouns that still sit in `dendro-core` into platform bindings, and add an AgentFlow / Meshloop connector beside the OpenRig binding. v0.8.0 `platform_v1` is the native Windows/Linux IO and publication layer, which is the substrate this split builds on. No second connector is in the v0.8.0 tree | Active (vNext) |
+
+### P2 catalog (not shipped in v0.8.0)
+
+Definitions below are the `DESIGN.md` section 5 rows. v0.8.0 names for the six shipped insights are in Goal 8.
+
+| ID | Name | Contract |
+| :--- | :--- | :--- |
+| **I01** | `model.invocations` | Count distinct evidenced call IDs. Call grain only; usage-only rows counted separately; no admitted call facts → `not_observable` |
+| **I03** | `model.tokens.inclusive` | Sum over the reachable observation union. Nonadditive. Incomplete nonnegative lineage → lower bound. Ambiguous duplicates refuse the canonical total |
+| **I05** | `model.configuration_divergence` | Observed bindings differing from contemporaneous desired bindings, or from paired observed bindings. Unknown desired or observed values are excluded and counted. Missing paired population → `not_observable` |
+| **I06** | `harness.capability_funnel` | Distinct loaded and invoked capability IDs, and the invoked∩loaded / loaded rate. Absent loaded evidence refuses the rate; actions still count |
+| **I07** | `harness.context_pressure` | Evidenced context-used / context-limit at invocation. Prompt tokens do not substitute. Missing limit refuses the ratio |
+| **I10** | `work.duration` | Wall union, summed attempt-seconds, and summed/wall. Half-open same-clock segments. Censored contribution is partial. `wall=0` refuses the concurrency ratio |
+| **I11** | `work.shared_allocation` | Shared usage, weighted beneficiaries, and residual. Rational weights ≥ 0 and sum ≤ 1. Absent policy leaves the shared bucket |
+| **I12** | `coord.queue_wait` | Sum or median of ready-to-start elapsed intervals, and a separate wall union. Missing ready, start, or cross-clock uncertainty refuses the affected intervals |
+| **I13** | `environment.placement` | Distinct incarnations and placement intervals by locus, plus same-label rebuild count. Unknown incarnation gets an unresolved count |
+| **I15** | `environment.effects` | Normalized successful and failed syscall counts by operation and resource class, from admitted T11/T26 traces. An unmatched call has an unknown result. No trace → `not_observable` |
+| **I16** | `security.isolation` | Paired declared / configured / tested dimension comparisons. A lone declaration is insufficient. Namespace equality is configuration, not a universal verification |
+| **I17** | `security.authority` | Comparator counts of consistent, mismatch, and insufficient by an explicit rule. No applicable policy → `NOT_ASSESSED` |
+| **I19** | `outcome.acceptance` | Currently accepted eligible work / rule-eligible evaluated work, with attempt success kept separate. Apply revocations and supersession. No acceptance rule → `not_observable` |
+| **I20** | `outcome.resource_efficiency` | Matched-population cost / accepted work, and a separate mean of per-work ratios. Zero accepted → null. The named mean excludes undefined terms and reports the count |
+| **I21** | `comparison.descriptive` | Stratified difference of same-version measures. Match clock basis, grain, accounting, units, and coverage. Biased or unmatched selection → `noncomparable` |
 
