@@ -1,47 +1,62 @@
-# Dendro — Product Specification (Phase 0)
+# Dendro Product Specification
 
-| Field | Value |
-| --- | --- |
-| Owner | `pm.manager` (`pm-manager@dendro-pm`) |
-| Sponsor | Sam |
-| Date | 2026-10-10 |
-| State | Sponsor Go-Ahead 2026-10-10 16:56Z. Phase 0 recorded (`dendro-r1-p0`). Acceptance frozen: `docs/ACCEPTANCE_R1.md` Amendment 1. |
-| Sources | `docs/INTAKE_BRIEFING.md`, `docs/research/openrig-discussion-1099.md`, local data |
-| Next owner | `pm.analyst` (Phase 1), then `dendro-dev` (Phase 2+) |
+Dendro is a local-first AI Fleet Intelligence engine and investigation studio. It connects model consumption, harness behavior, coordination, and environment evidence so operators can decide where to intervene, what to simplify, and which alternatives to test.
 
-`docs/ACCEPTANCE_R1.md` (Amendment 1) is the authoritative definition of R1 metrics and acceptance. Where this document and that one differ on metric meaning, that one wins.
+[Documentation Hub](README.md) · [Visual Product Tour](VISUAL_PRODUCT_TOUR.md) · [Architecture Blueprint](ARCHITECTURE.md)
 
----
+## Operator outcome
 
-## 0. Positioning
+> When my agent fleet becomes slow, expensive, or difficult to understand, I want to see where time, tokens, and rework went so I can change the topology, handoffs, or budget with evidence.
 
-**Dendro is AI Fleet Intelligence: an operational intelligence and governance engine for agent fleets.**
+Dendro serves applied-AI engineers, fleet architects, token economists, and security and governance leads. Its core job is to make execution legible across Claude Code, Codex, AGY, Grok, Pi, and OpenRig.
 
-- Approved framings: "AI Fleet Intelligence", "Operational Intelligence & Governance Engine", "Agentic Fleet Analytics & Decision Platform".
-- Banned: the word "telemetry" in positioning, docs, marketing and interfaces. Dendro is not a monitoring or APM product.
-- Why this fits the job: the operator does not want more signals. The operator wants a decision about topology, handoffs and budget (§2, O8). The product is judged by decisions, not by data collected.
+## Product experience
 
-Source: sponsor directive, 2026-10-10 17:58Z.
-
----
-
-## Apple-Grade Connected Dashboard Suite & Interactive Consoles (`vNext`)
-
-**Operator outcome:** Move from “something changed in my fleet” to a scoped investigation, with the window, evidence coverage, and uncertainty visible throughout. The connected suite is the browser presentation of Dendro's local-first flight recorder and Operational Intelligence engine. It complements the CLI, six-screen TUI, and offline exports; the R1 acceptance and metric definitions remain authoritative.
-
-| Experience | Product behavior | Operator benefit |
+| Experience | Product behavior | Decision it unlocks |
 | --- | --- | --- |
-| **Living Growth Rings** | 32 time buckets across Model, Harness, Coordination, and Environment, with anomaly scars | Recognize changes in the fleet's execution shape and choose a period to investigate. |
-| **Tactile Time Machine Scrubber** | Calendar presets (`today`, `24h`, `7d`, `30d`, `this_month`, `last_month`, `all`) and custom date ranges, with readable UTC labels such as **Oct 20 – Oct 27, 2026** | Move through recorded work with the active period visible. |
-| **Apple Health Story Highlights** | Concise findings that lead into the relevant operational views | Understand what changed, then inspect the supporting evidence. |
-| **4-Layer Stack X-Ray** | Anatomical Model → Harness → Coordination → Environment swimlanes, connective threads, and 3D isometric explode (`⌘E`) | Inspect relationships across the execution stack without treating visual proximity as causal proof. |
-| **5-Layer Capability Studio** | `agent-otel-bridge` capability intelligence across 10 behavioral tool families, harness primitives, declared/invoked skills, MCP servers/tools, and lifecycle hooks/guardrails; Capability Proportion Spectrum Bar and Bento Console Dock | Compare available capabilities with observed execution and open a focused investigation. |
-| **Multi-Dimensional Group-By Rollups** | Available harness/tool, capability/tool family, daily date, workspace/team, status/outcome dimensions, plus raw records | Find concentrations and inspect token components without losing the evidence context. |
-| **Bespoke SVG Consoles (`I22`–`I25`)** | Trajectory Vortex (**Orbital Phase-Space Attractor**), Schema Drift (**Schema DNA Fingerprint Ribbon**), Authority Blast Radius (**Radial Propagation Ripple Graph**), and Counterfactual Model Routing (**Split-Beam Route Comparator**) | Inspect behavioral loops, envelope drift, evidenced downstream exposure, and pinned routing scenarios. |
+| **Living Growth Rings** | Shows activity and anomalies across Model, Harness, Coordination, and Environment. | Choose the layer and period that need investigation. |
+| **Time Machine** | Carries calendar presets and custom ranges across connected views. | Focus on the work relevant to the question. |
+| **Story Highlights** | Summarizes patterns and links to the supporting layer. | Move from a fleet-wide finding to a focused inspection. |
+| **4-Layer Stack X-Ray** | Traces execution through flat swimlanes or a 3D isometric stack (`⌘E`). | Connect consumption, behavior, handoffs, and resource observations. |
+| **5-Layer Capability & Execution Intelligence** | Separates Tool Families, Harness Primitives, Skills (Declared vs. Invoked), MCP Servers & Tools, and Lifecycle Hooks & Guardrails. | See which capabilities reach execution and where adoption is dormant. |
+| **Operational Economics** | Separates cache reads, cache writes, fresh input, and output, with reasoning detail within output. Offers available harness, capability, date, workspace, and outcome groupings. | Find consumption concentrations before changing budgets or routing assumptions. |
+| **Active Intelligence** | Focuses investigation on repeated behavior, structural drift, dependency exposure, and routing scenarios. | Choose the next session, connector, boundary, or scenario to inspect. |
 
-The connected entry point is `dendro dashboard --serve <HOST:PORT> [--site-dir <DIR>]`, with loopback-only binding and typed `/api/live-summary` and `/api/live-view` presentation endpoints. The trusted single-owner daemon remains `dendro serve`. No prompts, agent thoughts, completions, tool arguments, or raw secrets enter the analytics store or browser payloads. Diagnostic views remain advisory, graph exposure does not establish inherited authority, and counterfactual routing does not establish actual savings. The suite changes neither fleet governance authority nor R1 acceptance.
+## Active Intelligence
 
-See the [Architecture Blueprint](ARCHITECTURE.md#45-connected-web-intelligence-studio--agent-otel-bridge-capability-layer), [CLI reference](CLI_R1.md#connected-web-intelligence-studio-vnext), and [Visual Product Tour](VISUAL_PRODUCT_TOUR.md).
+| Console | Operator use |
+| --- | --- |
+| **I22 · Trajectory Vortex** | Catch repetitive behavioral loops and stalled reasoning orbits before runaway token burn. |
+| **I23 · Schema Drift** | Spot structural shifts across harness versions when upgrades change telemetry shapes. |
+| **I24 · Authority Blast Radius** | Map downstream session reachability around a permission grant or failure to review dependency exposure. |
+| **I25 · Counterfactual Model Routing** | Test fast-tier thresholds and context-pressure inflections against recorded sessions without changing live traffic. |
+
+## Entry points
+
+- **Connected Web Studio:** `dendro dashboard --serve 127.0.0.1:4242` opens the visual investigation surface.
+- **Terminal Cockpit:** `dendro dashboard` explores activity, handoffs, consumption, topology, and traces.
+- **Conversational Queries:** `dendro ask` answers supported questions over local semantic projections.
+- **Reports & Traces:** `dendro report` and `dendro trace` provide repeatable results and evidence inspection.
+- **Offline Export:** `dendro dashboard --html ./fleet-dashboard.html` creates a self-contained snapshot.
+
+See the [Operator Guide](adoption/README.md) for first-run steps and the [CLI Reference](CLI_R1.md) for command contracts.
+
+## Trust and scope
+
+Dendro reads authorized local sources without changing them and keeps prompts, thoughts, responses, tool payloads, and secrets out of the analytics store. Results preserve observation windows, evidence coverage, and assumptions. Cost uses recorded currency or operator-pinned pricing; simulations remain labeled, and missing evidence stays visible.
+
+Fleet governance stays with the operator. Dendro provides evidence and advisory results; the operator decides whether to change routing, permissions, prompts, or topology. The [Architecture Blueprint](ARCHITECTURE.md#45-connected-web-intelligence-studio) defines the analytical sources and connected-view contracts.
+
+## Release and acceptance records
+
+The dated R1 record below preserves the original scope and subsequent sponsor decisions. It describes release history; the product overview above introduces the broader experience. [R1 Acceptance Contracts](ACCEPTANCE_R1.md), Amendment 1, remain authoritative for R1 metric meaning and acceptance.
+
+| Record field | Value |
+| --- | --- |
+| Original owner | `pm.manager` (`pm-manager@dendro-pm`) |
+| Sponsor | Sam |
+| Initial decision | Go-Ahead, 2026-10-10 16:56Z (`dendro-r1-p0`) |
+| Original sources | `INTAKE_BRIEFING.md`, `research/openrig-discussion-1099.md`, local data |
 
 ---
 

@@ -1,4 +1,4 @@
-# Dendro Technical Architecture & System Blueprint
+# Dendro System Architecture Blueprint
 
 Status: **Canonical vNext Architecture Blueprint**  
 Engine: **DuckDB 2.0.0 LTS (`~1.20000.0`, storage version 69)**  
@@ -7,9 +7,10 @@ Reference Standard: `DESIGN.md`, `ADDENDUM-DUCKDB2-AND-INTELLIGENCE.md`
 
 ---
 
-## 1. Executive Summary & Design Principles
+## 1. Design Principles
 
 Dendro is a local-first AI Fleet Intelligence engine written in **Rust**.
+
 - **Operational Intelligence is the evidence layer:** Dendro measures seats, handoffs, tool loops, token accounting, and delegation graphs across local agent runs.
 - **Fleet Governance stays with the operator:** Dendro computes evidence, advisory diagnostics, and anomaly indicators. It never autonomously alters agent prompts, kills sessions, or modifies execution routing.
 - **Strict Privacy Boundaries:** No user prompts, agent thoughts, response texts, arguments, or secrets (`sk-`, `ghp_`, Bearer tokens) are persisted to DuckDB or exported to dashboards.
@@ -19,7 +20,7 @@ Dendro is a local-first AI Fleet Intelligence engine written in **Rust**.
 
 ## 2. Four-Domain Architecture & Domain Topology
 
-Rather than organizing strictly around specific vendor or orchestrator nouns, Dendro structures telemetry across four canonical domains, with platform-specific frameworks integrated as explicit adapters:
+Dendro connects execution evidence across four domains. Platform adapters link those records to the operator’s fleet topology:
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
@@ -159,55 +160,39 @@ The advisory subsystem evaluates fleet operational health across four core quest
 - **Structured Uncertainty:** Encoded via the `AdviseUncertainty` enum (`sample_below_minimum`, `missing_denominator`, `noncomparable_mix`, `counterfactual_only`, `stale`).
 - **Strictly Advisory:** Results are pull-only operator metadata; they are never injected into live agent context windows.
 
-### 4.5. Connected Web Intelligence Studio & `agent-otel-bridge` Capability Layer
+### 4.5. Connected Web Intelligence Studio
 
-The Connected Web Server presents the local evidence engine through the browser:
+The browser studio presents the local evidence engine through a loopback server:
 
 ```sh
 dendro dashboard --serve 127.0.0.1:4242 --site-dir ./site
 ```
 
-The command form is `dendro dashboard --serve <HOST:PORT> [--site-dir <DIR>]`. It serves the studio and dashboard assets together with typed JSON presentation endpoints. Binding is restricted to loopback (`127.0.0.1`, `localhost`, or `[::1]`); external and wildcard addresses are refused. This HTTP presentation interface is distinct from the trusted daemon's local IPC and does not expose a raw DuckDB, `quack`, or SQL interface. Source records remain read-only, and browser payloads follow the same zero-content privacy boundary as reports.
+The command serves the studio and typed JSON presentation endpoints on `127.0.0.1`, `localhost`, or `[::1]`. Wildcard and external binds are refused. This presentation interface is distinct from the trusted daemon's local IPC. Browser payloads follow the same zero-content privacy boundary as reports.
 
-| Presentation endpoint | Role |
+| Endpoint | Role |
 | --- | --- |
-| `/api/query` | JSON query projection endpoint for the Hub and selected dashboard views, including summaries, rows, insight results, and groupings. |
-| `/api/events` | Server-Sent Events live invalidation stream, prompting clients to refresh their query projections. |
+| `/api/query` | Query projections for summaries, rows, insights, and groupings. |
+| `/api/events` | Server-Sent Events invalidation stream that prompts a view refresh. |
 
-**Tactile Time Machine Scrubber & Calendar Window Resolution.** The connected studio supports `today`, `24h`, `7d`, `30d`, `this_month`, `last_month`, `all`, and custom `YYYY-MM-DD..YYYY-MM-DD` selections. The server resolves the active UTC interval and returns machine-readable bounds alongside human-readable rounded UTC range labels, such as **Oct 20 – Oct 27, 2026**. A date-only custom end includes the selected calendar day by advancing the exclusive query boundary to the following midnight; timestamp ranges retain half-open semantics. Display labels do not replace exact query bounds. Connected calendar presets are a browser/API contract; the existing CLI `--window 1h|24h|7d|30d|all` contract retains its recorded-data anchoring and `window_resolution` disclosure.
+The **Time Machine** resolves calendar presets and custom date ranges into UTC query bounds. Date-only custom end dates include the selected day; timestamp intervals remain half-open. The selected period travels across connected views. CLI relative windows retain their recorded-data anchoring and `window_resolution` disclosure.
 
-In the **Live Connected Web Studio** (`dendro dashboard --serve`), `/api/query` is the JSON query projection endpoint and `/api/events` is the Server-Sent Events live invalidation stream. The Time Machine Scrubber actively filters live SQL queries (`WHERE timestamp >= ? AND timestamp < ?`) across the Hub and all 12 views. Presets `today`, `24h`, `7d`, `30d`, `this_month`, `last_month`, `all`, and custom `YYYY-MM-DD..YYYY-MM-DD` selections persist across navigation through URL query params and `localStorage`.
-
-In **Offline Materialized Nao Views** (`dendro materialize`), the four v0.8.0 domain views (`v_message_mix`, `v_subagent_lineage`, `v_security_posture`, `v_process_resources`) are all-time aggregates: `window_from` / `window_to` label the snapshot without filtering rows. The four OpenRig-compatibility views (`v_mission_token_burn`, `v_handoff_rework_analysis`, `v_seat_idle_ranking`, `v_executive_governance`) are scoped to the materialized `[from, to)` window.
-
-The live header pill reads **LIVE TELEMETRY**.
-
-The presentation has four complementary evidence surfaces:
-
-| Surface | Payload / representation | Operator use |
+| Surface | Representation | Operator use |
 | --- | --- | --- |
-| **Living Growth Rings** | `time_buckets`: **32** time buckets across **Model**, **Harness**, **Coordination**, **Environment**, with anomaly scar detection informed by anomaly markers | Read the fleet's changing shape, scrub time, and follow Apple Health Story Highlights into a focused investigation. Bucket values retain layer-specific meanings; observation coverage matters. |
-| **4-Layer Exploding Stack X-Ray** | `xray_lanes`: anatomical evidence lanes with connective Bezier threads and a 3D isometric explode view (`⌘E`) | Separate the layers, then inspect the records behind a visible connection. The Fleet Dimension Explorer groups **By Harness / Tool**, **By Layer**, or **By Date**. |
-| **Multi-Dimensional Group-By Engine** | `groupings`: named rollups over the selected view's available dimensions | Inspect **By Harness / Tool**, **By Capability / Tool Family**, **By Date (Daily)**, **By Workspace / Team**, **By Status / Outcome**, or **Raw Records**, where supported. |
-| **`agent-otel-bridge` 5-Layer Capability Intelligence** | `capability_intelligence`: `tool_families`, `primitives`, `skills`, `mcp`, `hooks`, with summary and coverage | Distinguish declared capabilities from observed execution; inspect proportions, outcomes, and failure patterns. |
+| **Living Growth Rings** | `time_buckets` across Model, Harness, Coordination, and Environment. | Locate a change and follow Story Highlights into an investigation. |
+| **4-Layer Stack X-Ray** | `xray_lanes` in swimlane or 3D isometric view (`⌘E`). | Trace relationships across execution layers. |
+| **Dimension Explorer** | `groupings` over the selected view's available dimensions. | Pivot by harness, capability, date, workspace, or outcome. |
+| **5-Layer Capability & Execution Intelligence** | `capability_intelligence`: `tool_families`, `primitives`, `skills`, `mcp`, `hooks`. | Compare available capabilities with observed execution. |
 
-Capability intelligence classifies tools into **10 behavioral tool families**: **Shell / Exec**, **Read / Inspect**, **Edit / Patch**, **Search / Grep**, **Subagent Spawn**, **MCP Call**, **Skill Load**, **Web / Fetch**, **Task / Queue**, and **Governance / Gate**. Those families form the first capability layer. The other four resolve **harness primitives**, **skills (declared vs. invoked)**, **MCP servers and tools**, and **lifecycle hooks and guardrails**. The Capability Proportion Spectrum Bar and Bento Console Dock expose these layers without adding prompt text, tool arguments, or model thoughts to the store.
+Capability intelligence spans **Tool Families**, **Harness Primitives**, **Skills**, **MCP Servers & Tools**, and **Lifecycle Hooks & Guardrails**. The behavioral families are Shell / Exec, Read / Inspect, Edit / Patch, Search / Grep, Subagent Spawn, MCP Call, Skill Load, Web / Fetch, Task / Queue, and Governance / Gate. Skill declarations and invocations remain distinct.
 
-The connected consoles have **two transparent resolution modes**:
+#### Analytical sources
 
-* **Mode A — Materialized Schema 5 Reference Views.** `v_trajectory_vortex` computes exact 32-dim `FLOAT[32]` `array_cosine_distance` (`I22`); `v_schema_drift` measures `VARIANT` envelope L1 structural drift across harness versions (`I23`); `v_authority_blast_radius` provides 8-hop `duckpgq` evidenced-only session reachability (`I24`); `v_counterfactual_routing` performs pinned-tier simulation (`I25`) and refuses when no pricing tier is pinned.
-* **Mode B — Live Windowed Fact-Table Fallbacks.** `intelligence_fallback` in `connected_web.rs` derives **labeled heuristic proxies** from `tool_facts`, `usage_facts`, `message_facts`, and `session_edges` for arbitrary live windows (`?window=7d`, `YYYY-MM-DD..YYYY-MM-DD`) or empty/unmaterialized Schema 5 tables. These keep the consoles diagnostically populated without claiming the reference measurements.
+Reference projections use `v_trajectory_vortex`, `v_schema_drift`, `v_authority_blast_radius`, and `v_counterfactual_routing`. These provide trajectory distance, versioned envelope drift, evidenced graph reachability, and operator-pinned routing simulations. The retrieval and graph sections above define their analytical contracts.
 
-| Console | Mode B proxy and limits |
-| --- | --- |
-| `I22` | Turn-length variance and self-transition proxy, clamped to `0.08..0.82`; trips at `>= 25` turns and `>= 0.55` self-transition. **"Not an embedding cosine measurement"**. |
-| `I23` | Daily metadata cohort buckets from `message_facts`; L1 proxy clamped at `0.45`, with `keys_retyped = 0`. These are not harness-version envelope comparisons. |
-| `I24` | Recursive CTE (`depth < 4`) over recorded `session_edges`, plus `security_facts` authority-check scopes. This is distinct from the reference 8-hop graph walk; reachability does not grant authority. |
-| `I25` | Heuristic `observed * 0.75` simulated fast-tier envelope total (`0.75 × observed`, leaving a `25%` counterfactual gap) in normalized token units against an assumed `128k` context threshold. A **counterfactual simulation proxy**, never a measured financial saving. |
+For live windows without materialized reference rows, connected projections can use labeled heuristics over tool, usage, message, and session-edge facts. A heuristic retains its own method and assumptions; it does not acquire the reference calculation's meaning. Dependency reachability describes exposure, and routing results remain simulations under operator control.
 
-The live `I22`–`I25` screenshots showcase **Mode B (`intelligence_fallback`) over the active workspace's live fact tables**. The routing display says **SIMULATED TIER TOTAL (COUNTERFACTUAL)** representing the simulated fast-tier envelope total (`0.75 × observed`, leaving a `25%` counterfactual gap) in normalized token units; it is not a priced Mode A result.
-
-Focused SVG consoles expose the Mode A reference contracts or the labeled Mode B proxies described above: **I22** Trajectory Vortex (Orbital Phase-Space Attractor), **I23** Schema Drift (Schema DNA Fingerprint Ribbon), **I24** Authority Blast Radius (Radial Propagation Ripple Graph), and **I25** Counterfactual Model Routing (Split-Beam Route Comparator). Visual connections support investigation, not proof of causation; graph reachability does not imply inherited authority, and routing scenarios remain counterfactual. No dashboard interaction changes live fleet routing or grants governance authority.
+Offline semantic materialization has separate scope rules. The domain views `v_message_mix`, `v_subagent_lineage`, `v_security_posture`, and `v_process_resources` are all-time aggregates with snapshot window labels. The compatibility views `v_mission_token_burn`, `v_handoff_rework_analysis`, `v_seat_idle_ranking`, and `v_executive_governance` filter the materialized interval. See [Nao & Semantic Queries](NAO_SEMANTIC.md) for the complete contract.
 
 ---
 
@@ -218,7 +203,7 @@ Dendro implements 25 reference insights across all four domains:
 | ID | Identifier | Domain | Core Meaning |
 |:---|:---|:---|:---|
 | **I01** | `model.invocations` | Model | Distinct evidenced model invocations. |
-| **I02** | `model.tokens` | Model | Total token consumption across all five categories. |
+| **I02** | `model.tokens` | Model | Cache reads, cache writes, fresh input, and output; reasoning is detail within output. |
 | **I03** | `model.tokens.inclusive` | Model | Subgraph token consumption including downstream subagents. |
 | **I04** | `model.cost` | Model | Verified financial expenditure from recorded currency or pinned tiers. |
 | **I05** | `model.configuration_divergence` | Model | Divergence between declared and observed model parameters. |
@@ -245,6 +230,7 @@ Dendro implements 25 reference insights across all four domains:
 
 ### Progressive Disclosure Contract (L0–L3)
 All insight results are serialized into a standardized Answer structure:
+
 - **L0:** Status, finding, practical meaning, scope, and missingness.
 - **L1:** Assumptions, caveats, and alternative explanations.
 - **L2:** Safe evidence keys ($\le 5$) and component version stamps.

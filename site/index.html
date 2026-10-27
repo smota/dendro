@@ -3,26 +3,752 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Dendro — Read the Growth Rings of Your AI Workflows</title>
-  <meta name="description" content="Dendro turns local AI coding session logs into clear, honest answers about where time, handoffs, rework, and budget actually go across your engineering workflows.">
+  <title>Dendro v0.8.0 — Read the Growth Rings of Your AI Workflows</title>
+  <meta name="description" content="Dendro is the Local-First Flight Recorder, Causal X-Ray &amp; Operational Intelligence Studio for Multi-Agent AI Fleets. Decode 4 architectural layers, 5 capability funnels, and 25 deterministic DuckDB insights offline.">
   <link rel="canonical" href="https://movetheneedle.info/dendro/">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Move the Needle">
-  <meta property="og:title" content="Dendro — Read the Growth Rings of Your AI Workflows">
-  <meta property="og:description" content="See where time, handoffs, rework, and budget actually go across your AI coding sessions—using verifiable local evidence instead of vanity productivity claims.">
+  <meta property="og:title" content="Dendro v0.8.0 — Read the Growth Rings of Your AI Workflows">
+  <meta property="og:description" content="The Local-First Flight Recorder, Causal X-Ray &amp; Operational Intelligence Studio for Multi-Agent AI Fleets across Claude Code, Codex, AGY, Grok CLI, and Pi.">
   <meta property="og:url" content="https://movetheneedle.info/dendro/">
-  <meta property="og:image" content="https://movetheneedle.info/dendro/assets/dendro-preview.gif">
-  <meta property="og:image:alt" content="Dendro terminal cockpit and browser fleet explorer showing multi-agent session timelines, handoffs, and cost attribution.">
+  <meta property="og:image" content="https://movetheneedle.info/dendro/assets/screenshots/hub-living-growth-rings.png">
+  <meta property="og:image:alt" content="Dendro v0.8.0 Living Growth Rings, Tactile Time Machine Scrubber, and 4-Layer Causal X-Ray Studio.">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Dendro — Read the Growth Rings of Your AI Workflows">
-  <meta name="twitter:description" content="Retrospective fleet intelligence for AI coding agents. Separate busy terminals from productive flow.">
-  <meta name="twitter:image" content="https://movetheneedle.info/dendro/assets/dendro-preview.gif">
-  <meta name="twitter:image:alt" content="Dendro terminal cockpit and browser fleet explorer showing multi-agent session timelines, handoffs, and cost attribution.">
+  <meta name="twitter:title" content="Dendro v0.8.0 — Read the Growth Rings of Your AI Workflows">
+  <meta name="twitter:description" content="Local-first flight recorder and causal X-ray studio for multi-agent AI coding fleets. Separate busy terminals from productive flow.">
+  <meta name="twitter:image" content="https://movetheneedle.info/dendro/assets/screenshots/hub-living-growth-rings.png">
+  <meta name="twitter:image:alt" content="Dendro v0.8.0 Living Growth Rings, Tactile Time Machine Scrubber, and 4-Layer Causal X-Ray Studio.">
   <link rel="icon" type="image/svg+xml" href="assets/mark.svg">
   <link rel="icon" type="image/png" sizes="32x32" href="../assets/img/move-the-needle-icon-32.png">
   <link rel="apple-touch-icon" href="../assets/img/move-the-needle-icon-180.png">
   <link rel="stylesheet" href="../assets/css/product.css">
-  <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Dendro","applicationCategory":"DeveloperApplication","operatingSystem":"Linux, macOS, Windows","softwareVersion":"0.8.0","license":"https://opensource.org/licenses/MIT","url":"https://movetheneedle.info/dendro/","codeRepository":"https://github.com/smota/dendro","author":{"@type":"Person","name":"Samuel Mota","url":"https://movetheneedle.info/about/"},"description":"Retrospective fleet intelligence and terminal cockpit that turns AI coding session logs into clear answers about time, handoffs, rework, and budget."}</script>
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Dendro","applicationCategory":"DeveloperApplication","operatingSystem":"Linux, macOS, Windows","softwareVersion":"0.8.0","license":"https://opensource.org/licenses/MIT","url":"https://movetheneedle.info/dendro/","codeRepository":"https://github.com/smota/dendro","author":{"@type":"Person","name":"Samuel Mota","url":"https://movetheneedle.info/about/"},"description":"The Local-First Flight Recorder, Causal X-Ray & Operational Intelligence Studio for Multi-Agent AI Fleets."}</script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg-obsidian: #0A0D12;
+      --bg-canvas: #0B0D0E;
+      --bg-surface: #11161F;
+      --bg-surface-elevated: #161C27;
+      --border-subtle: #1F2735;
+      --border-highlight: #2A3649;
+      --text-primary: #F3EDE2;
+      --text-secondary: #9BA3AF;
+      --text-muted: #64748B;
+      --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --layer-model: #F2A541;
+      --layer-harness: #06B6D4;
+      --layer-coord: #10B981;
+      --layer-env: #8B5CF6;
+      --status-ok: #10B981;
+      --status-partial: #F59E0B;
+      --status-insufficient: #64748B;
+      --status-refused: #EF4444;
+      --status-not-applicable: #475569;
+      --glass-bg: rgba(17, 22, 31, 0.75);
+      --glass-border: 1px solid rgba(255, 255, 255, 0.08);
+      --glass-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.6);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    body.theme-dendro {
+      margin: 0;
+      background: var(--bg-obsidian);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      font-size: 16px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+    .d-wrap {
+      width: min(calc(100% - 40px), 1280px);
+      margin-inline: auto;
+    }
+    a { color: var(--layer-harness); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code, pre { font-family: var(--font-mono); }
+
+    /* Section 1: Global Navigation Bar */
+    .d-navbar {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: rgba(10, 13, 18, 0.88);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .d-navbar-inner {
+      min-height: 68px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1.25rem;
+      flex-wrap: wrap;
+      padding: 0.5rem 0;
+    }
+    .d-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.75rem;
+      color: var(--text-primary);
+      font-weight: 700;
+      font-size: 1.1rem;
+      text-decoration: none !important;
+    }
+    .d-brand img {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+    }
+    .d-version-pill {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 0.18rem 0.55rem;
+      border-radius: 999px;
+      background: rgba(242, 165, 65, 0.14);
+      border: 1px solid rgba(242, 165, 65, 0.4);
+      color: var(--layer-model);
+    }
+    .d-nav-links {
+      display: flex;
+      align-items: center;
+      gap: 1.2rem;
+      flex-wrap: wrap;
+      font-size: 0.9rem;
+    }
+    .d-nav-links a {
+      color: var(--text-secondary);
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .d-nav-links a:hover, .d-nav-links a[aria-current="page"] {
+      color: var(--text-primary);
+    }
+    .d-nav-right {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+    .d-status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      padding: 0.3rem 0.7rem;
+      border-radius: 999px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-highlight);
+      color: var(--layer-coord);
+    }
+    .d-status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--layer-coord);
+      box-shadow: 0 0 8px var(--layer-coord);
+    }
+
+    /* Buttons & Badges */
+    .d-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      padding: 0.65rem 1.2rem;
+      border-radius: 10px;
+      font-weight: 700;
+      font-size: 0.92rem;
+      border: 1px solid var(--border-highlight);
+      background: var(--bg-surface-elevated);
+      color: var(--text-primary);
+      text-decoration: none !important;
+      cursor: pointer;
+      transition: transform 150ms ease, border-color 150ms ease, background 150ms ease;
+    }
+    .d-btn:hover {
+      transform: translateY(-1px);
+      border-color: var(--layer-harness);
+    }
+    .d-btn.primary {
+      background: var(--layer-model);
+      color: var(--bg-obsidian);
+      border-color: var(--layer-model);
+    }
+    .d-btn.cyan {
+      background: rgba(6, 182, 212, 0.14);
+      color: #67E8F9;
+      border-color: rgba(6, 182, 212, 0.45);
+    }
+    .d-eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.11em;
+      text-transform: uppercase;
+      color: var(--layer-model);
+      margin-bottom: 0.6rem;
+    }
+    .d-section {
+      padding: clamp(3.5rem, 6vw, 5.5rem) 0;
+      border-bottom: 1px solid var(--border-subtle);
+      background: var(--bg-obsidian);
+    }
+    .d-section.canvas {
+      background: var(--bg-canvas);
+    }
+    .d-section-header {
+      max-width: 880px;
+      margin-bottom: 2.5rem;
+    }
+    .d-section-header h2 {
+      font-size: clamp(1.85rem, 3.4vw, 2.75rem);
+      color: var(--text-primary);
+      line-height: 1.15;
+      margin: 0.35rem 0 0.85rem;
+    }
+    .d-section-header p {
+      color: var(--text-secondary);
+      font-size: 1.06rem;
+      margin: 0;
+    }
+
+    /* Section 2: Hero & 8-Tab Stage */
+    .d-hero {
+      padding: clamp(3rem, 6vw, 5rem) 0 4rem;
+      background:
+        radial-gradient(950px 480px at 18% 0%, rgba(242, 165, 65, 0.13), transparent 65%),
+        radial-gradient(850px 480px at 85% 10%, rgba(6, 182, 212, 0.12), transparent 65%),
+        radial-gradient(700px 420px at 50% 95%, rgba(16, 185, 129, 0.09), transparent 65%),
+        var(--bg-obsidian);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .d-hero-top {
+      max-width: 960px;
+      margin-bottom: 2.5rem;
+    }
+    .d-hero h1 {
+      font-size: clamp(2.5rem, 5vw, 4.25rem);
+      line-height: 1.06;
+      letter-spacing: -0.03em;
+      margin: 0.5rem 0 1rem;
+      color: var(--text-primary);
+    }
+    .d-hero-subtitle {
+      font-size: clamp(1.12rem, 1.6vw, 1.32rem);
+      color: var(--text-Primary);
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+    }
+    .d-hero-lead {
+      font-size: 1.05rem;
+      color: var(--text-secondary);
+      max-width: 840px;
+      margin-bottom: 1.5rem;
+    }
+    .d-hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: center;
+      margin-bottom: 1.5rem;
+    }
+    .d-cli-inline {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.65rem;
+      padding: 0.55rem 0.95rem;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-highlight);
+      border-radius: 10px;
+      font-family: var(--font-mono);
+      font-size: 0.84rem;
+      color: var(--text-primary);
+    }
+    .d-cli-inline span { color: var(--layer-model); }
+    .d-harness-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+    }
+    .d-pill {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      padding: 0.28rem 0.68rem;
+      border-radius: 999px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-primary);
+    }
+    .d-pill.adapter {
+      border-color: rgba(16, 185, 129, 0.38);
+      color: #A7F3D0;
+    }
+    .d-pill small {
+      color: var(--text-muted);
+      margin-left: 0.25rem;
+    }
+
+    /* 8-Tab Screenshot Stage */
+    .d-stage-shell {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-highlight);
+      border-radius: 16px;
+      box-shadow: var(--glass-shadow);
+      overflow: hidden;
+    }
+    .d-stage-tabs {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 1px;
+      background: var(--border-subtle);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .d-stage-tab {
+      appearance: none;
+      background: var(--bg-obsidian);
+      color: var(--text-secondary);
+      border: none;
+      padding: 0.75rem 0.85rem;
+      text-align: left;
+      font-family: var(--font-sans);
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+      transition: background 150ms ease, color 150ms ease;
+    }
+    .d-stage-tab:hover {
+      background: var(--bg-surface-elevated);
+      color: var(--text-primary);
+    }
+    .d-stage-tab.is-active {
+      background: var(--bg-surface-elevated);
+      color: var(--text-primary);
+      box-shadow: inset 0 -2px 0 var(--layer-model);
+    }
+    .d-stage-tab small {
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      color: var(--layer-harness);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .d-stage-panel {
+      padding: 1.25rem;
+    }
+    .d-stage-meta {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1rem;
+      padding: 0.85rem 1rem;
+      background: var(--bg-obsidian);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+    }
+    .d-stage-meta h3 {
+      margin: 0;
+      font-size: 1.05rem;
+      color: var(--text-primary);
+    }
+    .d-stage-meta p {
+      margin: 0.2rem 0 0;
+      font-size: 0.88rem;
+      color: var(--text-secondary);
+    }
+    .d-stage-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+    }
+    .d-badge {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 0.22rem 0.55rem;
+      border-radius: 6px;
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-highlight);
+      color: var(--text-primary);
+    }
+    .d-badge.model { border-color: rgba(242, 165, 65, 0.45); color: var(--layer-model); }
+    .d-badge.harness { border-color: rgba(6, 182, 212, 0.45); color: var(--layer-harness); }
+    .d-badge.coord { border-color: rgba(16, 185, 129, 0.45); color: var(--layer-coord); }
+    .d-badge.env { border-color: rgba(139, 92, 246, 0.45); color: var(--layer-env); }
+    .d-stage-img-wrap {
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-obsidian);
+    }
+    .d-stage-img-wrap img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    /* Cards & Grids */
+    .d-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem; }
+    .d-grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.25rem; }
+    .d-grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; }
+    .d-grid-5 { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.9rem; }
+    .d-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 1.4rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+    .d-card h3 {
+      margin: 0;
+      font-size: 1.15rem;
+      color: var(--text-primary);
+    }
+    .d-card p {
+      margin: 0;
+      color: var(--text-secondary);
+      font-size: 0.94rem;
+    }
+    .d-kicker {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+    }
+
+    /* Comparison Table */
+    .d-table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--border-highlight);
+      border-radius: 14px;
+      background: var(--bg-surface);
+      margin-top: 2rem;
+    }
+    .d-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.92rem;
+    }
+    .d-table th, .d-table td {
+      padding: 0.95rem 1.15rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border-subtle);
+      vertical-align: top;
+    }
+    .d-table thead th {
+      background: var(--bg-surface-elevated);
+      color: var(--text-primary);
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .d-table tbody tr:last-child td { border-bottom: none; }
+    .d-table td { color: var(--text-secondary); }
+    .d-table td strong { color: var(--text-primary); }
+    .d-table td.d-col-dendro {
+      background: rgba(16, 185, 129, 0.06);
+      color: var(--text-primary);
+      border-left: 2px solid var(--layer-coord);
+    }
+
+    /* Section 4: Living Growth Rings & Time Machine */
+    .d-scrubber-bar {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-highlight);
+      border-radius: 14px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+    }
+    .d-scrubber-top {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .d-preset-group {
+      display: inline-flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      background: var(--bg-obsidian);
+      padding: 0.25rem;
+      border-radius: 10px;
+      border: 1px solid var(--border-subtle);
+    }
+    .d-preset-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 0.38rem 0.75rem;
+      border-radius: 7px;
+      cursor: pointer;
+    }
+    .d-preset-btn.is-active, .d-preset-btn:hover {
+      background: var(--bg-surface-elevated);
+      color: var(--text-primary);
+    }
+    .d-rings-layout {
+      display: grid;
+      grid-template-columns: minmax(320px, 460px) minmax(0, 1fr);
+      gap: 2rem;
+      align-items: center;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 16px;
+      padding: 1.75rem;
+    }
+    .d-rings-svg-box {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    #dendro-growth-rings {
+      width: 100%;
+      max-width: 420px;
+      height: auto;
+    }
+    .ring-sector {
+      cursor: pointer;
+      transition: opacity 150ms ease, filter 150ms ease;
+    }
+    .ring-sector:hover, .ring-sector.is-selected {
+      filter: brightness(1.3);
+      stroke: #F3EDE2;
+      stroke-width: 1.5px;
+    }
+    .d-heartwood-hud {
+      background: var(--bg-obsidian);
+      border: 1px solid var(--border-highlight);
+      border-radius: 12px;
+      padding: 1.25rem;
+      display: grid;
+      gap: 0.75rem;
+    }
+    .d-hud-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border-subtle);
+      font-size: 0.9rem;
+    }
+    .d-hud-row:last-child { border-bottom: none; padding-bottom: 0; }
+    .d-hud-row span { color: var(--text-muted); font-family: var(--font-mono); font-size: 0.78rem; }
+    .d-hud-row strong { color: var(--text-primary); font-family: var(--font-mono); }
+
+    /* Section 5: 4-Layer Exploding Stack X-Ray */
+    .d-xray-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
+      gap: 1.5rem;
+      align-items: start;
+    }
+    .d-xray-stage {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-highlight);
+      border-radius: 16px;
+      padding: 1.5rem;
+      perspective: 1100px;
+      position: relative;
+      overflow: hidden;
+    }
+    .d-xray-planes {
+      display: grid;
+      gap: 0.85rem;
+      transition: transform 400ms cubic-bezier(0.22, 1, 0.36, 1), gap 400ms ease;
+      transform-style: preserve-3d;
+    }
+    .d-xray-stage[data-exploded="true"] .d-xray-planes {
+      transform: rotateX(18deg) rotateY(-12deg) rotateZ(2deg);
+      gap: 1.35rem;
+    }
+    .d-xray-plane {
+      background: var(--bg-obsidian);
+      border: 1px solid var(--border-highlight);
+      border-radius: 12px;
+      padding: 1rem 1.2rem;
+      cursor: pointer;
+      transition: transform 350ms ease, border-color 200ms ease, box-shadow 200ms ease;
+    }
+    .d-xray-stage[data-exploded="true"] .d-xray-plane[data-plane-idx="1"] { transform: translateZ(45px); }
+    .d-xray-stage[data-exploded="true"] .d-xray-plane[data-plane-idx="2"] { transform: translateZ(28px); }
+    .d-xray-stage[data-exploded="true"] .d-xray-plane[data-plane-idx="3"] { transform: translateZ(12px); }
+    .d-xray-stage[data-exploded="true"] .d-xray-plane[data-plane-idx="4"] { transform: translateZ(-5px); }
+    .d-xray-plane.is-focused, .d-xray-plane:hover {
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
+      border-color: var(--text-primary);
+    }
+
+    /* Section 6: Capability Studio & Proportion Spectrum */
+    .d-spectrum-bar {
+      height: 28px;
+      border-radius: 8px;
+      overflow: hidden;
+      display: flex;
+      border: 1px solid var(--border-highlight);
+      margin: 1rem 0 1.75rem;
+    }
+    .d-spectrum-seg {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: var(--bg-obsidian);
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    .d-tool-tile {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+    .d-tool-tile strong {
+      font-size: 0.95rem;
+      color: var(--text-primary);
+    }
+    .d-tool-tile .d-tool-count {
+      font-family: var(--font-mono);
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--layer-harness);
+    }
+    .d-tool-tile small {
+      color: var(--text-secondary);
+      font-size: 0.8rem;
+    }
+    .d-groupby-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      margin-bottom: 1rem;
+    }
+    .d-groupby-tab {
+      background: var(--bg-obsidian);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+      font-weight: 600;
+      padding: 0.45rem 0.85rem;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .d-groupby-tab.is-active {
+      background: var(--bg-surface-elevated);
+      color: var(--layer-harness);
+      border-color: var(--layer-harness);
+    }
+
+    /* Section 8: Scenario Calculator */
+    .d-calc-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+      gap: 1.75rem;
+      align-items: start;
+    }
+    .d-calc-inputs {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-highlight);
+      border-radius: 16px;
+      padding: 1.5rem;
+      display: grid;
+      gap: 1.1rem;
+    }
+    .d-slider-row {
+      display: grid;
+      gap: 0.35rem;
+    }
+    .d-slider-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: 0.9rem;
+    }
+    .d-slider-head label {
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .d-slider-head output, .d-slider-head strong {
+      font-family: var(--font-mono);
+      font-size: 0.86rem;
+      color: var(--layer-model);
+    }
+    .d-slider-row input[type="range"] {
+      width: 100%;
+      accent-color: var(--layer-model);
+      cursor: pointer;
+    }
+    .d-calc-outputs {
+      background: var(--bg-surface-elevated);
+      border: 1px solid var(--border-highlight);
+      border-radius: 16px;
+      padding: 1.5rem;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1rem;
+    }
+    .d-calc-stat {
+      background: var(--bg-obsidian);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 1rem;
+    }
+    .d-calc-stat span {
+      display: block;
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+      margin-bottom: 0.25rem;
+    }
+    .d-calc-stat strong {
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 1.3rem;
+      color: var(--layer-coord);
+    }
+    .d-calc-stat.full {
+      grid-column: 1 / -1;
+    }
+
+    @media (max-width: 1024px) {
+      .d-stage-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .d-rings-layout, .d-xray-layout, .d-calc-layout { grid-template-columns: 1fr; }
+      .d-grid-5 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .d-grid-4, .d-grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 640px) {
+      .d-stage-tabs, .d-grid-2, .d-grid-3, .d-grid-4, .d-grid-5, .d-calc-outputs { grid-template-columns: 1fr; }
+    }
+  </style>
 <!-- mtneedle:managed:start subsite-head v1 -->
 <link rel="stylesheet" href="../assets/css/umbrella.css">
 <!-- mtneedle:managed:end subsite-head -->
@@ -38,303 +764,1225 @@
 </div>
 </nav>
 <!-- mtneedle:managed:end subsite-bar -->
-  <header class="p-nav">
-    <div class="p-wrap p-nav-inner">
-      <a class="p-brand" href="./">
-        <img src="assets/mark.svg" alt="Dendro mark" width="38" height="38">
-        <span>Dendro<small>The Flight Recorder · v0.8.0</small></span>
+
+  <!-- ========================================================================
+       SECTION 1: GLOBAL NAVIGATION BAR
+       ======================================================================== -->
+  <header class="d-navbar">
+    <div class="d-wrap d-navbar-inner">
+      <a class="d-brand" href="./">
+        <img src="assets/mark.svg" alt="Dendro brand mark" width="36" height="36">
+        <span>Dendro</span>
+        <span class="d-version-pill">v0.8.0</span>
       </a>
-      <nav class="p-links" aria-label="Dendro navigation">
+      <nav class="d-nav-links" aria-label="Dendro primary navigation">
         <a href="./" aria-current="page">Overview</a>
-        <a href="how-it-works.html">How it works</a>
+        <a href="how-it-works.html">How It Works</a>
+        <a href="get-started.html">Get Started</a>
         <a href="dashboards/index.html">Dashboards</a>
         <a href="viewer.html">Fleet Explorer</a>
-        <a href="get-started.html">Get started</a>
-        <a class="p-cta" href="https://github.com/smota/dendro">GitHub ↗</a>
+        <a href="https://github.com/smota/dendro">GitHub ↗</a>
       </nav>
+      <div class="d-nav-right">
+        <span id="dual-serving-indicator" class="d-status-pill" title="Static snapshot preview; switches to LIVE DUCKDB when served via dendro dashboard">
+          <span class="d-status-dot" aria-hidden="true"></span>
+          <span id="dual-serving-text">● ILLUSTRATIVE SNAPSHOT</span>
+        </span>
+        <a class="d-btn primary" href="#quickstart" style="padding:0.45rem 0.9rem;font-size:0.82rem;">Quickstart</a>
+      </div>
     </div>
   </header>
 
   <main id="main">
-    <section class="p-hero">
-      <div class="p-wrap p-hero-grid">
-        <div>
-          <div class="p-eyebrow">The Flight Recorder for AI Workflows · MIT Open Source</div>
+    <!-- ======================================================================
+         SECTION 2: HERO SECTION & 8-TAB INTERACTIVE SCREENSHOT SWITCHER
+         ====================================================================== -->
+    <section class="d-hero" id="overview">
+      <div class="d-wrap">
+        <div class="d-hero-top">
+          <div class="d-eyebrow">The Local-First Flight Recorder &amp; Operational Intelligence Studio · Open Source (MIT) · v0.8.0</div>
           <h1>Read the growth rings of your AI workflows.</h1>
-          <p class="p-lead">Six open agent terminals look productive—even when four are waiting on a handoff and two are trapped in a rework loop. <strong>Dendro</strong> reads your existing local session logs afterward to show where time, handoffs, and budget actually went.</p>
-          <div class="p-actions">
-            <a class="p-btn primary" href="viewer.html">Open interactive Fleet Explorer →</a>
-            <a class="p-btn" href="how-it-works.html">How it works &amp; capacity scenario calculator</a>
-            <a class="p-btn" href="get-started.html">Get started</a>
+          <p class="d-hero-subtitle">The Local-First Flight Recorder, Causal X-Ray &amp; Operational Intelligence Studio for Multi-Agent AI Fleets.</p>
+          <p class="d-hero-lead">Six open agent terminals look productive—even when four are waiting on a handoff and two are trapped in a ping-pong rework loop. Written in Rust and powered by an embedded columnar DuckDB engine, <strong>Dendro</strong> reconstructs existing local session logs out-of-band into an instrument-grade causal X-ray across sessions, actors, harnesses, and tools—with zero prompts, zero secrets, and zero cloud exfiltration.</p>
+
+          <div class="d-hero-actions">
+            <a class="d-btn primary" href="dashboards/index.html">Explore Live Studio Dashboards →</a>
+            <a class="d-btn cyan" href="viewer.html">Open Offline Fleet Viewer →</a>
+            <div class="d-cli-inline" aria-label="Quick install command">
+              <span>$</span>
+              <code>cargo install dendro-cli &amp;&amp; dendro cockpit</code>
+            </div>
           </div>
-          <div class="p-pills" aria-label="Supported AI coding tools">
-            <span class="p-pill">Claude Code</span>
-            <span class="p-pill">OpenAI Codex</span>
-            <span class="p-pill">Gemini / AGY</span>
-            <span class="p-pill">Grok CLI</span>
-            <span class="p-pill">Pi</span>
-            <span class="p-pill">Multi-Agent Fleets</span>
+
+          <div class="d-harness-row" aria-label="Supported native coding harnesses and optional orchestration adapters">
+            <span class="d-pill">Claude Code</span>
+            <span class="d-pill">OpenAI Codex</span>
+            <span class="d-pill">Google AGY</span>
+            <span class="d-pill">xAI Grok CLI</span>
+            <span class="d-pill">Pi</span>
+            <span class="d-pill adapter">OpenRig <small>adapter</small></span>
+            <span class="d-pill adapter">AgentFlow SDLC <small>adapter</small></span>
+            <span class="d-pill adapter">Meshloop <small>adapter</small></span>
           </div>
         </div>
 
-        <aside class="p-terminal" aria-label="Dendro growth-ring session breakdown">
-          <div class="p-terminal-bar">
-            <span class="p-dots" aria-hidden="true"><span></span><span></span><span></span></span>
-            <span class="p-terminal-title">dendro · Where did the 4-hour sprint actually go?</span>
+        <!-- 8-Tab Interactive Screenshot Stage -->
+        <div class="d-stage-shell" aria-label="Interactive 8-surface product stage">
+          <div class="d-stage-tabs" role="tablist" aria-label="Dendro v0.8.0 flagship product surfaces">
+            <button type="button" role="tab" class="d-stage-tab is-active" aria-selected="true" tabindex="0" data-stage-tab="rings">
+              <small>01 · Hub Trunk</small>
+              <span>Living Growth Rings &amp; Heartwood HUD</span>
+            </button>
+            <button type="button" role="tab" class="d-stage-tab" aria-selected="false" tabindex="-1" data-stage-tab="xray">
+              <small>02 · Causal Stack ⌘E</small>
+              <span>4-Layer Exploding Stack X-Ray</span>
+            </button>
+            <button type="button" role="tab" class="d-stage-tab" aria-selected="false" tabindex="-1" data-stage-tab="capability">
+              <small>03 · FUNNEL I06</small>
+              <span>agent-otel-bridge Capability Studio</span>
+            </button>
+            <button type="button" role="tab" class="d-stage-tab" aria-selected="false" tabindex="-1" data-stage-tab="vortex">
+              <small>04 · Console I22</small>
+              <span>Trajectory Vortex Phase-Space</span>
+            </button>
+            <button type="button" role="tab" class="d-stage-tab" aria-selected="false" tabindex="-1" data-stage-tab="drift">
+              <small>05 · Console I23</small>
+              <span>Schema Drift DNA Gel-Strip</span>
+            </button>
+            <button type="button" role="tab" class="d-stage-tab" aria-selected="false" tabindex="-1" data-stage-tab="blast">
+              <small>06 · Console I24</small>
+              <span>Authority Blast Radius 8-Hop Ripple</span>
+            </button>
+            <button type="button" role="tab" class="d-stage-tab" aria-selected="false" tabindex="-1" data-stage-tab="routing">
+              <small>07 · Console I25</small>
+              <span>Counterfactual Routing Split-Beam</span>
+            </button>
+            <button type="button" role="tab" class="d-stage-tab" aria-selected="false" tabindex="-1" data-stage-tab="economics">
+              <small>08 · Token Economics</small>
+              <span>5-Part Token &amp; 96.9% Cache Yield</span>
+            </button>
           </div>
-          <div class="p-terminal-body">
-            <svg viewBox="0 0 540 270" role="img" aria-label="Comparison of busy terminal time versus actual productive flow, handoff wait, and rework">
-              <rect width="540" height="270" rx="10" fill="#14110e"/>
-              <g font-family="Inter, system-ui, sans-serif">
-                <text x="20" y="30" fill="#f3ede2" font-size="13" font-weight="700">FIVE DISJOINT SEAT ACTIVITY BANDS</text>
-                <text x="520" y="30" text-anchor="end" fill="#d4943a" font-size="11.5" font-weight="700">ZERO VANITY METRICS</text>
 
-                <text x="20" y="64" fill="#d8cfc0" font-size="12" font-weight="600">Architect Actor</text>
-                <rect x="135" y="50" width="175" height="20" rx="4" fill="#10b981"/>
-                <rect x="312" y="50" width="68" height="20" rx="4" fill="#38bdf8"/>
-                <rect x="382" y="50" width="138" height="20" rx="4" fill="#475569"/>
+          <!-- Panel 1: Living Growth Rings -->
+          <div class="d-stage-panel" role="tabpanel" data-stage-panel="rings">
+            <div class="d-stage-meta">
+              <div>
+                <h3>Living Growth Rings, Heartwood HUD &amp; Apple Health Story Highlights</h3>
+                <p>4 concentric architectural rings (Model, Harness, Coordination, Environment) tiled into 48 radial clock sectors over <code>Oct 20 – Oct 27, 2026</code> with Fire Scar anomaly notches.</p>
+              </div>
+              <div class="d-stage-badges">
+                <span class="d-badge coord">AUTONOMOUS FLEET HEALTH · NOMINAL</span>
+                <span class="d-badge model">Oct 20 – Oct 27, 2026</span>
+                <a class="d-badge harness" href="dashboards/index.html">Open Hub →</a>
+              </div>
+            </div>
+            <div class="d-stage-img-wrap">
+              <img src="assets/screenshots/hub-living-growth-rings.png" alt="Dendro Hub showing Living Growth Rings, Heartwood Core HUD, Tactile Time Machine Scrubber, and Apple Health Story Highlights" width="1480" height="1300">
+            </div>
+          </div>
 
-                <text x="20" y="102" fill="#d8cfc0" font-size="12" font-weight="600">Builder Actor</text>
-                <rect x="135" y="88" width="195" height="20" rx="4" fill="#10b981"/>
-                <rect x="332" y="88" width="110" height="20" rx="4" fill="#ef4444"/>
-                <rect x="444" y="88" width="76" height="20" rx="4" fill="#f59e0b"/>
+          <!-- Panel 2: 4-Layer Exploding Stack X-Ray -->
+          <div class="d-stage-panel" role="tabpanel" data-stage-panel="xray" hidden>
+            <div class="d-stage-meta">
+              <div>
+                <h3>4-Layer Exploding Stack X-Ray (<code>⌘E</code>) &amp; Multi-Dimensional Group-By</h3>
+                <p>Separate Model, Harness, Coordination, and OS Environment execution into 3D isometric space with vertical cubic Bezier correlation threads.</p>
+              </div>
+              <div class="d-stage-badges">
+                <span class="d-badge harness">⌘E 3D Isometric Stack</span>
+                <span class="d-badge env">4 Canonical Layers</span>
+                <a class="d-badge coord" href="dashboards/index.html">Inspect Stack →</a>
+              </div>
+            </div>
+            <div class="d-stage-img-wrap">
+              <img src="assets/screenshots/hub-stack-xray-3d.png" alt="Dendro 4-Layer Exploding Stack X-Ray in 3D isometric perspective with causal Bezier correlation threads" width="1480" height="1520" loading="lazy">
+            </div>
+          </div>
 
-                <text x="20" y="140" fill="#d8cfc0" font-size="12" font-weight="600">Reviewer Actor</text>
-                <rect x="135" y="126" width="95" height="20" rx="4" fill="#38bdf8"/>
-                <rect x="232" y="126" width="130" height="20" rx="4" fill="#10b981"/>
-                <rect x="364" y="126" width="90" height="20" rx="4" fill="#f59e0b"/>
-                <rect x="456" y="126" width="64" height="20" rx="4" fill="#475569"/>
+          <!-- Panel 3: Capability Studio -->
+          <div class="d-stage-panel" role="tabpanel" data-stage-panel="capability" hidden>
+            <div class="d-stage-meta">
+              <div>
+                <h3><code>agent-otel-bridge</code> 5-Layer Capability Studio &amp; <code>FUNNEL I06</code></h3>
+                <p>76,990 recorded tool calls and 54.5k native harness primitives classified across 10 Behavioral Tool Families and the Declared → Loaded → Invoked Skills Funnel.</p>
+              </div>
+              <div class="d-stage-badges">
+                <span class="d-badge harness">76,990 Tool Calls</span>
+                <span class="d-badge model">54.5k Harness Primitives</span>
+                <span class="d-badge coord">FUNNEL I06</span>
+              </div>
+            </div>
+            <div class="d-stage-img-wrap">
+              <img src="assets/screenshots/hub-capability-studio.png" alt="Dendro agent-otel-bridge 5-Layer Capability Studio showing 76,990 tool calls, 54.5k primitives, and FUNNEL I06" width="1480" height="1680" loading="lazy">
+            </div>
+          </div>
 
-                <g font-size="11" fill="#d8cfc0" transform="translate(20, 174)">
-                  <rect x="0" y="0" width="10" height="10" rx="2" fill="#10b981"/><text x="16" y="9">Active work</text>
-                  <rect x="102" y="0" width="10" height="10" rx="2" fill="#38bdf8"/><text x="118" y="9">Waiting on you</text>
-                  <rect x="220" y="0" width="10" height="10" rx="2" fill="#f59e0b"/><text x="236" y="9">Handoff wait</text>
-                  <rect x="330" y="0" width="10" height="10" rx="2" fill="#ef4444"/><text x="346" y="9">Stalled / Rework</text>
-                  <rect x="452" y="0" width="10" height="10" rx="2" fill="#475569"/><text x="468" y="9">Parked</text>
-                </g>
+          <!-- Panel 4: I22 Trajectory Vortex -->
+          <div class="d-stage-panel" role="tabpanel" data-stage-panel="vortex" hidden>
+            <div class="d-stage-meta">
+              <div>
+                <h3><code>I22</code> Active Console — Trajectory Vortex Orbital Phase-Space Attractor</h3>
+                <p>Analyzes <code>1,127</code> completed trajectories with cohort minimum 5 sessions (<code>insufficient_evidence</code> guard). Mode A: 32-dim <code>FLOAT[32]</code> cosine distance; Mode B: turn-length &amp; self-transition proxy.</p>
+              </div>
+              <div class="d-stage-badges">
+                <span class="d-badge harness">I22 · harness.trajectory_vortex</span>
+                <span class="d-badge model">1,127 Trajectories</span>
+                <a class="d-badge coord" href="dashboards/views/trajectory_vortex.html">Open Console →</a>
+              </div>
+            </div>
+            <div class="d-stage-img-wrap">
+              <img src="assets/screenshots/console-trajectory-vortex.png" alt="Dendro I22 Trajectory Vortex console showing 1,127 completed trajectories in orbital phase space" width="1480" height="1520" loading="lazy">
+            </div>
+          </div>
 
-                <rect x="20" y="204" width="500" height="50" rx="8" fill="#1e1914" stroke="#3a2e21"/>
-                <text x="36" y="225" fill="#d4943a" font-size="11" font-weight="700">PLAIN-ENGLISH QUERY</text>
-                <text x="36" y="243" fill="#f3ede2" font-size="12.5">“Which handoff pairs caused the most rework this week?”</text>
+          <!-- Panel 5: I23 Schema Drift -->
+          <div class="d-stage-panel" role="tabpanel" data-stage-panel="drift" hidden>
+            <div class="d-stage-meta">
+              <div>
+                <h3><code>I23</code> Active Console — Schema Drift Biological DNA Gel-Strip</h3>
+                <p>Tracks structural envelope drift across <code>76</code> daily metadata cohort buckets spanning Claude Code, Codex, AGY, Grok, and Pi (added, removed, and retyped keys).</p>
+              </div>
+              <div class="d-stage-badges">
+                <span class="d-badge harness">I23 · harness.schema_drift</span>
+                <span class="d-badge model">76 Daily Cohorts</span>
+                <a class="d-badge coord" href="dashboards/views/schema_drift.html">Open Console →</a>
+              </div>
+            </div>
+            <div class="d-stage-img-wrap">
+              <img src="assets/screenshots/console-schema-drift.png" alt="Dendro I23 Schema Drift DNA gel-strip console across 76 daily metadata cohort buckets" width="1480" height="1500" loading="lazy">
+            </div>
+          </div>
+
+          <!-- Panel 6: I24 Authority Blast Radius -->
+          <div class="d-stage-panel" role="tabpanel" data-stage-panel="blast" hidden>
+            <div class="d-stage-meta">
+              <div>
+                <h3><code>I24</code> Active Console — Authority Blast Radius 8-Hop Radial Ripple</h3>
+                <p>Walks <code>200</code> lineage trees up to an 8-hop ceiling to map evidenced downstream session dependency exposure without inferring inherited authority.</p>
+              </div>
+              <div class="d-stage-badges">
+                <span class="d-badge env">I24 · security.authority_blast_radius</span>
+                <span class="d-badge model">200 Lineage Trees · 8-Hop Ceiling</span>
+                <a class="d-badge coord" href="dashboards/views/authority_blast_radius.html">Open Console →</a>
+              </div>
+            </div>
+            <div class="d-stage-img-wrap">
+              <img src="assets/screenshots/console-blast-radius.png" alt="Dendro I24 Authority Blast Radius 8-hop radial propagation ripple graph across 200 lineage trees" width="1480" height="1520" loading="lazy">
+            </div>
+          </div>
+
+          <!-- Panel 7: I25 Counterfactual Routing -->
+          <div class="d-stage-panel" role="tabpanel" data-stage-panel="routing" hidden>
+            <div class="d-stage-meta">
+              <div>
+                <h3><code>I25</code> Active Console — Counterfactual Model Routing Split-Beam Comparator</h3>
+                <p>Displays <code>SIMULATED TIER TOTAL (COUNTERFACTUAL)</code> with a <code>0.75×</code> simulated fast-tier envelope (leaving a <code>25%</code> counterfactual gap) against a 128k context threshold.</p>
+              </div>
+              <div class="d-stage-badges">
+                <span class="d-badge model">I25 · model.counterfactual_routing</span>
+                <span class="d-badge harness">SIMULATED TIER TOTAL (COUNTERFACTUAL)</span>
+                <a class="d-badge coord" href="dashboards/views/counterfactual_routing.html">Open Console →</a>
+              </div>
+            </div>
+            <div class="d-stage-img-wrap">
+              <img src="assets/screenshots/console-counterfactual-routing.png" alt="Dendro I25 Counterfactual Model Routing Split-Beam Comparator showing SIMULATED TIER TOTAL (COUNTERFACTUAL)" width="1480" height="1680" loading="lazy">
+            </div>
+          </div>
+
+          <!-- Panel 8: 5-Part Token & Cache Accounting -->
+          <div class="d-stage-panel" role="tabpanel" data-stage-panel="economics" hidden>
+            <div class="d-stage-meta">
+              <div>
+                <h3>5-Part Token &amp; Cache Accounting — 96.9% Cache Read Yield</h3>
+                <p>Audits <code>6,848.31M</code> (<code>6.85B</code>) total tokens across <code>84,555</code> messages using 5 disjoint token parts (<code>input_uncached</code>, <code>cache_write</code>, <code>cache_read</code>, <code>output</code>, nested <code>reasoning</code>).</p>
+              </div>
+              <div class="d-stage-badges">
+                <span class="d-badge model">6,848.31M Tokens · 84,555 Messages</span>
+                <span class="d-badge coord">96.9% Cache Yield (Ratio of Sums)</span>
+                <a class="d-badge harness" href="dashboards/views/cost_and_loops.html">Open View →</a>
+              </div>
+            </div>
+            <div class="d-stage-img-wrap">
+              <img src="assets/screenshots/console-token-economics.png" alt="Dendro 5-Part Token and Cache Accounting console showing 96.9% cache read efficiency across 6,848.31M tokens and 84,555 messages" width="1480" height="1700" loading="lazy">
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================================
+         SECTION 3: THE PROBLEM ("ACTIVITY IS EASY TO FAKE. FLOW SHIPS SOFTWARE.")
+         ====================================================================== -->
+    <section class="d-section canvas" id="problem">
+      <div class="d-wrap">
+        <div class="d-section-header">
+          <div class="d-eyebrow">Section 03 · The Core Operational Shift</div>
+          <h2>Activity is easy to fake. Flow is what ships software.</h2>
+          <p>When engineering teams deploy autonomous coding agents across multiple terminal panes, isolated Git worktrees, or multi-actor topologies, execution becomes an opaque black box. Dendro replaces guesswork with retrospective causal truth.</p>
+        </div>
+
+        <div class="d-grid-2" style="margin-bottom:2rem;">
+          <article class="d-card" style="border-top:3px solid var(--status-refused);">
+            <span class="d-kicker" style="color:#FCA5A5;">Without Dendro · The Illusion of Busyness</span>
+            <h3>Terminals scroll rapidly while delivery quietly stalls</h3>
+            <ul class="p-list" style="color:var(--text-secondary);">
+              <li><strong style="color:var(--text-primary);">Unobserved handoff stalls:</strong> A builder actor finishes a slice and waits 45 minutes for reviewer acceptance while holding locks—looking identical to active progress.</li>
+              <li><strong style="color:var(--text-primary);">Ping-pong rework loops:</strong> Two actors bounce a failing task back and forth four times, exhausting context windows and burning uncached tokens without converging.</li>
+              <li><strong style="color:var(--text-primary);">Opaque token spikes:</strong> Cloud billing alerts arrive after a 400% token spike, unable to distinguish cache-invalidation bleed from runaway tool retry loops.</li>
+            </ul>
+          </article>
+
+          <article class="d-card" style="border-top:3px solid var(--layer-coord);">
+            <span class="d-kicker" style="color:#6EE7B7;">With Dendro · Retrospective Causal Truth</span>
+            <h3>Five Disjoint Activity Bands &amp; Multi-Hop Lineage</h3>
+            <ul class="p-list" style="color:var(--text-secondary);">
+              <li><strong style="color:var(--text-primary);">Five Disjoint Seat Activity Bands:</strong> Every observed actor interval is partitioned into <code>active</code>, <code>waiting_on_human</code>, <code>idle_with_work</code> (Handoff Wait), <code>idle_without_work</code> (Cleanly Parked), and <code>unknown</code> (Stalled / Rework / Unobserved).</li>
+              <li><strong style="color:var(--text-primary);">Multi-Hop Sub-Agent Lineage (<code>I09</code>):</strong> Trace spawn, delegate, handoff, return, and retry edges across sessions and harnesses.</li>
+              <li><strong style="color:var(--text-primary);">100% Local-First DuckDB:</strong> Passive out-of-band flight recording with sub-15ms queries and zero prompt or secret persistence.</li>
+            </ul>
+          </article>
+        </div>
+
+        <!-- Five Disjoint Activity Bands Diagram -->
+        <div class="d-card" style="margin-bottom:2rem;">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.75rem;">
+            <div>
+              <span class="d-kicker">Empirical Timeline Partitioning</span>
+              <h3>The Five Disjoint Activity Bands (Measure Flow, Handoff Wait &amp; Rework)</h3>
+            </div>
+            <span class="d-badge coord">Null ≠ Zero · Unknown Intervals Explicitly Hatched</span>
+          </div>
+          <svg viewBox="0 0 960 220" role="img" aria-label="Five Disjoint Activity Bands across Architect, Builder, and Reviewer Actors with diagonal hatch for unobserved intervals" style="width:100%;height:auto;border-radius:10px;background:var(--bg-obsidian);border:1px solid var(--border-subtle);margin-top:0.5rem;">
+            <defs>
+              <pattern id="problem-hatch" width="8" height="8" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse">
+                <rect width="8" height="8" fill="#161C27"/>
+                <line x1="0" y1="0" x2="0" y2="8" stroke="#64748B" stroke-width="3"/>
+              </pattern>
+            </defs>
+            <g font-family="Inter, system-ui, sans-serif" font-size="12">
+              <text x="24" y="42" fill="#F3EDE2" font-weight="700">Architect Actor</text>
+              <rect x="160" y="26" width="260" height="22" rx="4" fill="#10B981"/>
+              <rect x="424" y="26" width="120" height="22" rx="4" fill="#06B6D4"/>
+              <rect x="548" y="26" width="190" height="22" rx="4" fill="#475569"/>
+              <rect x="742" y="26" width="194" height="22" rx="4" fill="url(#problem-hatch)" stroke="#475569"/>
+
+              <text x="24" y="88" fill="#F3EDE2" font-weight="700">Builder Actor</text>
+              <rect x="160" y="72" width="310" height="22" rx="4" fill="#10B981"/>
+              <rect x="474" y="72" width="175" height="22" rx="4" fill="#EF4444"/>
+              <rect x="653" y="72" width="155" height="22" rx="4" fill="#F2A541"/>
+              <rect x="812" y="72" width="124" height="22" rx="4" fill="#10B981"/>
+
+              <text x="24" y="134" fill="#F3EDE2" font-weight="700">Reviewer Actor</text>
+              <rect x="160" y="118" width="150" height="22" rx="4" fill="#06B6D4"/>
+              <rect x="314" y="118" width="220" height="22" rx="4" fill="#10B981"/>
+              <rect x="538" y="118" width="160" height="22" rx="4" fill="#F2A541"/>
+              <rect x="702" y="118" width="234" height="22" rx="4" fill="#475569"/>
+
+              <!-- Legend -->
+              <g transform="translate(24, 172)" font-size="11.5" fill="#9BA3AF">
+                <rect x="0" y="0" width="12" height="12" rx="2" fill="#10B981"/><text x="18" y="10" fill="#F3EDE2">1. active (Model/Tool Work)</text>
+                <rect x="195" y="0" width="12" height="12" rx="2" fill="#06B6D4"/><text x="213" y="10" fill="#F3EDE2">2. waiting_on_human</text>
+                <rect x="360" y="0" width="12" height="12" rx="2" fill="#F2A541"/><text x="378" y="10" fill="#F3EDE2">3. idle_with_work (Handoff Wait)</text>
+                <rect x="590" y="0" width="12" height="12" rx="2" fill="#475569"/><text x="608" y="10" fill="#F3EDE2">4. idle_without_work (Parked)</text>
+                <rect x="795" y="0" width="12" height="12" rx="2" fill="#EF4444"/><text x="813" y="10" fill="#F3EDE2">5. unknown / Rework</text>
+              </g>
+            </g>
+          </svg>
+        </div>
+
+        <!-- 7-Dimension Competitive Landscape Table -->
+        <div class="d-table-wrap" aria-label="7-Dimension Competitive Landscape Matrix">
+          <table class="d-table">
+            <thead>
+              <tr>
+                <th scope="col">Dimension</th>
+                <th scope="col">Cloud LLM Tracers (LangSmith, Arize, Helicone, Datadog)</th>
+                <th scope="col">Raw Local Logs (JSONL files, <code>grep</code>, <code>jq</code>, bash)</th>
+                <th scope="col">Dendro Local-First Studio (v0.8.0)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>1. Data Privacy &amp; Storage</strong></td>
+                <td>Transmits prompts, outputs, and proprietary code to third-party cloud servers.</td>
+                <td>Local on disk, but unindexed, unredacted, and sprawling across hidden directories.</td>
+                <td class="d-col-dendro"><strong>100% Local-First DuckDB.</strong> Zero prompts, thoughts, or secrets ever persisted or transmitted.</td>
+              </tr>
+              <tr>
+                <td><strong>2. Execution Overhead</strong></td>
+                <td>Sits in the live runtime network path; adds 30–120ms proxy latency per prompt.</td>
+                <td>Zero runtime latency (passive file append).</td>
+                <td class="d-col-dendro"><strong>Zero runtime overhead.</strong> Out-of-band passive flight recording; never touches the prompt wire.</td>
+              </tr>
+              <tr>
+                <td><strong>3. Multi-Agent Lineage</strong></td>
+                <td>Truncates at single LLM spans; blind to terminal handoffs, queues, and worktrees.</td>
+                <td>Manual cross-referencing of UUIDs and timestamps across disparate files.</td>
+                <td class="d-col-dendro"><strong>Full Causal Graph (<code>I09</code>).</strong> Multi-hop sub-agent lineage, queue wait (<code>I12</code>), and return loops.</td>
+              </tr>
+              <tr>
+                <td><strong>4. Cross-Layer Breadth</strong></td>
+                <td>Model layer only (tokens and latency). Blind to OS resources, sandboxes, and tools.</td>
+                <td>Unstructured; requires brittle ad-hoc scripts to join across harnesses.</td>
+                <td class="d-col-dendro"><strong>4-Layer Unified Stack:</strong> Model + Harness + Coordination + Environment &amp; Security.</td>
+              </tr>
+              <tr>
+                <td><strong>5. Query &amp; Slicing Speed</strong></td>
+                <td>Rate-limited cloud dashboards with multi-minute aggregation lag.</td>
+                <td>Slow linear <code>jq</code> scans taking minutes over gigabyte session logs.</td>
+                <td class="d-col-dendro"><strong>Sub-15ms local queries</strong> via vectorized columnar DuckDB, Ratatui TUI, and 12 Nao views.</td>
+              </tr>
+              <tr>
+                <td><strong>6. Loop &amp; Anomaly Physics</strong></td>
+                <td>Post-facto billing alerts after token budgets have already been exhausted.</td>
+                <td>Discovered only when a terminal freezes or rate limits trip.</td>
+                <td class="d-col-dendro"><strong>Pre-Loop Distance Tripwires (<code>I22</code>)</strong> &amp; structural Schema Drift gel-strips (<code>I23</code>).</td>
+              </tr>
+              <tr>
+                <td><strong>7. Cost &amp; Licensing</strong></td>
+                <td>$500–$3,000/mo SaaS seat subscriptions plus per-trace ingestion fees.</td>
+                <td>Free license, but high recurring engineering toil.</td>
+                <td class="d-col-dendro"><strong>100% Free &amp; Open-Source (MIT).</strong> Runs on your own hardware forever.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================================
+         SECTION 4: THE METAPHOR (LIVING GROWTH RINGS, TIME MACHINE & APPLE HEALTH)
+         ====================================================================== -->
+    <section class="d-section" id="growth-rings">
+      <div class="d-wrap">
+        <div class="d-section-header">
+          <div class="d-eyebrow">Section 04 · Dendrochronology Meets Apple Instruments</div>
+          <h2>Living Growth Rings, Tactile Time Machine &amp; Story Highlights.</h2>
+          <p>Trees do not lie: wide rings mark rapid growth, compressed rings mark stalls, and dark notches permanently record fire scars. Scrub across 48 radial clock sectors or click any preset window below to inspect the Heartwood Core HUD.</p>
+        </div>
+
+        <!-- Tactile Time Machine Scrubber Preview -->
+        <div class="d-scrubber-bar" aria-label="Tactile Time Machine Scrubber Preview">
+          <div class="d-scrubber-top">
+            <div class="d-preset-group" role="group" aria-label="Sliding time window presets">
+              <button type="button" class="d-preset-btn" data-time-preset="24h" data-range-label="Today · Oct 27, 2026 (24h)" data-range-metric="97.4% Cache Yield · 980.4M Tokens · 12,110 Msgs">Today · 24h</button>
+              <button type="button" class="d-preset-btn is-active" aria-pressed="true" data-time-preset="7d" data-range-label="Oct 20 – Oct 27, 2026 (Last Week · 7d)" data-range-metric="96.9% Cache Yield · 6,848.31M Tokens · 84,555 Msgs">Last Week · 7d</button>
+              <button type="button" class="d-preset-btn" data-time-preset="30d" data-range-label="Sep 28 – Oct 27, 2026 (30 Days)" data-range-metric="96.7% Cache Yield · 24,190.5M Tokens · 312,400 Msgs">30 Days</button>
+              <button type="button" class="d-preset-btn" data-time-preset="month" data-range-label="Oct 01 – Oct 27, 2026 (This Month)" data-range-metric="96.8% Cache Yield · 21,840.2M Tokens · 284,120 Msgs">This Month</button>
+              <button type="button" class="d-preset-btn" data-time-preset="all" data-range-label="All Recorded History · 76 Daily Cohorts" data-range-metric="96.9% Cache Yield · 6.85B+ Observed Benchmark">All Time</button>
+            </div>
+            <div style="display:flex;align-items:center;gap:0.65rem;flex-wrap:wrap;">
+              <span class="d-badge model" id="scrubber-active-range">Oct 20 – Oct 27, 2026</span>
+              <span class="d-badge coord">URL &amp; localStorage Sync (?window=7d)</span>
+            </div>
+          </div>
+          <!-- 4-Layer Stacked Density Histogram Sparkline with Dual Boundary Handles -->
+          <svg viewBox="0 0 1160 54" role="img" aria-label="4-layer stacked density histogram with dual draggable boundary handles" style="width:100%;height:46px;display:block;background:var(--bg-obsidian);border-radius:8px;border:1px solid var(--border-subtle);">
+            <g opacity="0.85">
+              <rect x="20" y="28" width="18" height="20" fill="#8B5CF6"/><rect x="20" y="16" width="18" height="12" fill="#10B981"/><rect x="20" y="8" width="18" height="8" fill="#06B6D4"/><rect x="20" y="4" width="18" height="4" fill="#F2A541"/>
+              <rect x="60" y="24" width="18" height="24" fill="#8B5CF6"/><rect x="60" y="14" width="18" height="10" fill="#10B981"/><rect x="60" y="6" width="18" height="8" fill="#06B6D4"/>
+              <rect x="100" y="18" width="18" height="30" fill="#10B981"/><rect x="100" y="8" width="18" height="10" fill="#06B6D4"/><rect x="100" y="3" width="18" height="5" fill="#F2A541"/>
+              <rect x="180" y="22" width="220" height="26" fill="rgba(6, 182, 212, 0.22)"/>
+              <rect x="410" y="14" width="260" height="34" fill="rgba(16, 185, 129, 0.25)"/>
+              <rect x="680" y="10" width="280" height="38" fill="rgba(242, 165, 65, 0.25)"/>
+              <rect x="970" y="18" width="160" height="30" fill="rgba(139, 92, 246, 0.25)"/>
+            </g>
+            <!-- Active window selection frame -->
+            <rect x="170" y="2" width="970" height="50" rx="5" fill="rgba(242, 165, 65, 0.06)" stroke="#F2A541" stroke-width="1.5"/>
+            <rect x="166" y="12" width="8" height="30" rx="3" fill="#F2A541"/>
+            <rect x="1136" y="12" width="8" height="30" rx="3" fill="#F2A541"/>
+          </svg>
+        </div>
+
+        <!-- 420px Concentric Circular SVG Growth Rings + Heartwood HUD -->
+        <div class="d-rings-layout">
+          <div class="d-rings-svg-box">
+            <svg id="dendro-growth-rings" viewBox="0 0 420 420" role="img" aria-label="420px Concentric Circular SVG Growth Rings across Model, Harness, Coordination, and Environment layers with 48 radial clock sectors and Fire Scars">
+              <defs>
+                <pattern id="container-hatch" width="6" height="6" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse">
+                  <rect width="6" height="6" fill="#0A0D12"/>
+                  <line x1="0" y1="0" x2="0" y2="6" stroke="#64748B" stroke-width="2"/>
+                </pattern>
+                <radialGradient id="heartwood-glow" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stop-color="rgba(16, 185, 129, 0.22)"/>
+                  <stop offset="100%" stop-color="rgba(10, 13, 18, 0.95)"/>
+                </radialGradient>
+              </defs>
+
+              <!-- Outer trunk background -->
+              <circle cx="210" cy="210" r="202" fill="#0A0D12" stroke="#1F2735" stroke-width="2"/>
+
+              <!-- 48 Radial Clock Sector Ticks around the perimeter -->
+              <g stroke="#2A3649" stroke-width="1" opacity="0.75">
+                <circle cx="210" cy="210" r="194" fill="none" stroke="#2A3649" stroke-width="4" stroke-dasharray="3 22.39"/>
+                <circle cx="210" cy="210" r="194" fill="none" stroke="#64748B" stroke-width="7" stroke-dasharray="2 99.58"/>
+              </g>
+
+              <!-- Ring 1 (Outer): Model Layer (#F2A541 Warm Amber) -->
+              <circle class="ring-sector" tabindex="0" data-ring-sector="model"
+                data-layer-label="1 · Model Layer (#F2A541 Warm Amber)"
+                data-slot-window="Oct 20 – Oct 27, 2026 · 48 Radial Sectors"
+                data-actor-summary="Claude Code, Codex, AGY, Grok CLI, Pi"
+                data-telemetry-metric="6,848.31M Tokens · 96.9% Cache Read Yield (I02/I04)"
+                data-epistemic-status="status: ok (computed · ratio-of-sums)"
+                cx="210" cy="210" r="172" fill="none" stroke="#F2A541" stroke-width="22" stroke-dasharray="920 160" stroke-linecap="round" opacity="0.9"/>
+
+              <!-- Unobserved (null) slice on outer ring rendered with diagonal hatch -->
+              <path class="ring-sector" tabindex="0" data-ring-sector="null-slice"
+                data-layer-label="Unobserved Window (Null ≠ Zero)"
+                data-slot-window="Oct 22, 03:00–05:30 UTC · Quiet / Unobserved"
+                data-actor-summary="No active harness life recorded"
+                data-telemetry-metric="null (not_observable — never fabricated as 0)"
+                data-epistemic-status="status: insufficient_evidence (hatched)"
+                d="M 210 27 A 183 183 0 0 1 325 68 L 308 88 A 161 161 0 0 0 210 49 Z"
+                fill="url(#container-hatch)" stroke="#64748B" stroke-width="1.5"/>
+
+              <!-- Ring 2: Harness Layer (#06B6D4 Electric Cyan) -->
+              <circle class="ring-sector" tabindex="0" data-ring-sector="harness"
+                data-layer-label="2 · Harness Layer (#06B6D4 Electric Cyan)"
+                data-slot-window="Oct 20 – Oct 27, 2026 · 76,990 Tool Calls"
+                data-actor-summary="54.5k Native Primitives · 10 Tool Families"
+                data-telemetry-metric="FUNNEL I06 · 1,127 Vortex Trajectories (I22)"
+                data-epistemic-status="status: ok (0 vortex trips · 0 schema 5 drift)"
+                cx="210" cy="210" r="142" fill="none" stroke="#06B6D4" stroke-width="22" stroke-dasharray="760 132" stroke-dashoffset="-40" stroke-linecap="round" opacity="0.9"/>
+
+              <!-- Ring 3: Coordination Layer (#10B981 Emerald Green) -->
+              <circle class="ring-sector" tabindex="0" data-ring-sector="coord"
+                data-layer-label="3 · Coordination Layer (#10B981 Emerald)"
+                data-slot-window="Oct 20 – Oct 27, 2026 · Lineage &amp; Handoffs"
+                data-actor-summary="12 Active Actors · 200 Lineage Trees (I09)"
+                data-telemetry-metric="5 Disjoint Activity Bands · Queue Wait (I12)"
+                data-epistemic-status="status: ok (first-pass acceptance I19 tracked)"
+                cx="210" cy="210" r="112" fill="none" stroke="#10B981" stroke-width="22" stroke-dasharray="610 94" stroke-dashoffset="-85" stroke-linecap="round" opacity="0.9"/>
+
+              <!-- Ring 4 (Inner): Environment & Security Layer (#8B5CF6 Vivid Violet) -->
+              <circle class="ring-sector" tabindex="0" data-ring-sector="env"
+                data-layer-label="4 · Environment &amp; Security (#8B5CF6 Violet)"
+                data-slot-window="Oct 20 – Oct 27, 2026 · OS &amp; Sandbox"
+                data-actor-summary="CPU Deltas &amp; Max Sampled RSS Bytes (I14)"
+                data-telemetry-metric="Sandbox Isolation (I16) · 8-Hop Blast Radius (I24)"
+                data-epistemic-status="status: ok (0 unredacted secrets · I18 verified)"
+                cx="210" cy="210" r="82" fill="none" stroke="#8B5CF6" stroke-width="20" stroke-dasharray="445 70" stroke-dashoffset="-20" stroke-linecap="round" opacity="0.9"/>
+
+              <!-- Fire Scar Anomaly Notches (I07, I08, I19, I23) -->
+              <g class="ring-sector" tabindex="0" data-ring-sector="scar-i08"
+                 data-layer-label="Fire Scar · I08 Tool Action Failure Loop"
+                 data-slot-window="Oct 24, 14:20 UTC · Sector 31"
+                 data-actor-summary="Builder Actor · Shell/Exec retry cluster"
+                 data-telemetry-metric="I08 harness.action_failure · 6 consecutive retries"
+                 data-epistemic-status="status: partial (threshold_exceeded)">
+                <circle cx="342" cy="158" r="9" fill="#EF4444" stroke="#F3EDE2" stroke-width="2"/>
+                <text x="342" y="161" text-anchor="middle" fill="#0A0D12" font-size="8" font-weight="800" font-family="monospace">I08</text>
+              </g>
+              <g class="ring-sector" tabindex="0" data-ring-sector="scar-i07"
+                 data-layer-label="Fire Scar · I07 Context Compaction Drop"
+                 data-slot-window="Oct 25, 09:45 UTC · Sector 19"
+                 data-actor-summary="Architect Actor · 325,000 → 34,000 tokens"
+                 data-telemetry-metric="I07 harness.context_pressure · Compaction boundary"
+                 data-epistemic-status="status: ok (timestamped drop marker)">
+                <circle cx="102" cy="118" r="9" fill="#F59E0B" stroke="#F3EDE2" stroke-width="2"/>
+                <text x="102" y="121" text-anchor="middle" fill="#0A0D12" font-size="8" font-weight="800" font-family="monospace">I07</text>
+              </g>
+              <g class="ring-sector" tabindex="0" data-ring-sector="scar-i19"
+                 data-layer-label="Fire Scar · I19 Handoff Return Bounce"
+                 data-slot-window="Oct 26, 16:10 UTC · Sector 38"
+                 data-actor-summary="Reviewer → Builder return edge"
+                 data-telemetry-metric="I19 outcome.acceptance · Rework return recorded"
+                 data-epistemic-status="status: partial (rework loop resolved)">
+                <circle cx="268" cy="306" r="9" fill="#EF4444" stroke="#F3EDE2" stroke-width="2"/>
+                <text x="268" y="309" text-anchor="middle" fill="#0A0D12" font-size="8" font-weight="800" font-family="monospace">I19</text>
+              </g>
+              <g class="ring-sector" tabindex="0" data-ring-sector="scar-i23"
+                 data-layer-label="Fire Scar · I23 Envelope Key Shift"
+                 data-slot-window="Oct 23, 11:00 UTC · Sector 12"
+                 data-actor-summary="Harness version upgrade cohort"
+                 data-telemetry-metric="I23 harness.schema_drift · L1 distance 0.14"
+                 data-epistemic-status="status: ok (structural drift logged)">
+                <circle cx="88" cy="278" r="9" fill="#06B6D4" stroke="#F3EDE2" stroke-width="2"/>
+                <text x="88" y="281" text-anchor="middle" fill="#0A0D12" font-size="8" font-weight="800" font-family="monospace">I23</text>
+              </g>
+
+              <!-- Heartwood Core Center HUD -->
+              <circle cx="210" cy="210" r="62" fill="url(#heartwood-glow)" stroke="#2A3649" stroke-width="1.5"/>
+              <text x="210" y="192" text-anchor="middle" fill="#10B981" font-family="monospace" font-size="9.5" font-weight="700">HEARTWOOD HUD</text>
+              <text x="210" y="211" text-anchor="middle" fill="#F3EDE2" font-family="sans-serif" font-size="14" font-weight="800">NOMINAL</text>
+              <text x="210" y="227" text-anchor="middle" fill="#9BA3AF" font-family="monospace" font-size="9.5">48 Sectors · 7d</text>
+              <text x="210" y="241" text-anchor="middle" fill="#F2A541" font-family="monospace" font-size="9">96.9% Cache</text>
+            </svg>
+            <p style="font-size:0.8rem;color:var(--text-muted);margin-top:0.65rem;text-align:center;">Hover or click any concentric layer ring, hatched <code>null</code> slice, or Fire Scar (<code>I07</code>, <code>I08</code>, <code>I19</code>, <code>I23</code>) to inspect its telemetry.</p>
+          </div>
+
+          <div>
+            <div class="d-eyebrow">Interactive Heartwood Core Readout</div>
+            <h3 style="font-size:1.5rem;margin:0 0 0.65rem;">4 Concentric Rings · 48 Radial Clock Sectors · Fire Scars</h3>
+            <p style="color:var(--text-secondary);margin-bottom:1.15rem;">Each ring corresponds to one canonical layer of the autonomous stack. Quiet or unobserved intervals are rendered with diagonal hatch lines (<code>url(#container-hatch)</code>)—honoring the <strong>Null ≠ Zero</strong> rule so missing coverage is never mistaken for idle actors.</p>
+
+            <div class="d-heartwood-hud" aria-live="polite">
+              <div class="d-hud-row">
+                <span>ACTIVE LAYER / SCAR</span>
+                <strong id="heartwood-layer" style="color:var(--layer-model);">All 4 Layers · Nominal</strong>
+              </div>
+              <div class="d-hud-row">
+                <span>TIME WINDOW / SECTOR</span>
+                <strong id="heartwood-slot">Oct 20 – Oct 27, 2026 (48 Sectors)</strong>
+              </div>
+              <div class="d-hud-row">
+                <span>ACTORS &amp; HARNESSES</span>
+                <strong id="heartwood-actor">Claude Code · Codex · AGY · Grok · Pi</strong>
+              </div>
+              <div class="d-hud-row">
+                <span>EVIDENCED TELEMETRY</span>
+                <strong id="heartwood-metric" style="color:var(--layer-harness);">96.9% Cache Yield · 6,848.31M Tokens</strong>
+              </div>
+              <div class="d-hud-row">
+                <span>EPISTEMIC STATUS</span>
+                <strong id="heartwood-status" style="color:var(--layer-coord);">status: ok (computed)</strong>
+              </div>
+            </div>
+
+            <div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-top:1rem;">
+              <span class="d-badge model">● Ring 1: Model (#F2A541)</span>
+              <span class="d-badge harness">● Ring 2: Harness (#06B6D4)</span>
+              <span class="d-badge coord">● Ring 3: Coordination (#10B981)</span>
+              <span class="d-badge env">● Ring 4: Environment (#8B5CF6)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Apple Health 3-Story Highlights Strip -->
+        <div class="d-grid-3" style="margin-top:1.5rem;">
+          <article class="d-card">
+            <span class="d-kicker" style="color:var(--layer-model);">Story Highlight 01 · Model Cache Efficiency Ring</span>
+            <div style="display:flex;align-items:center;gap:1rem;">
+              <svg width="68" height="68" viewBox="0 0 68 68" aria-label="96.9% Cache Read Efficiency Gauge">
+                <circle cx="34" cy="34" r="28" fill="none" stroke="#1F2735" stroke-width="7"/>
+                <circle cx="34" cy="34" r="28" fill="none" stroke="#F2A541" stroke-width="7" stroke-dasharray="170.5 176" stroke-linecap="round" transform="rotate(-90 34 34)"/>
+                <text x="34" y="38" text-anchor="middle" fill="#F3EDE2" font-family="monospace" font-size="12" font-weight="800">96.9%</text>
+              </svg>
+              <div>
+                <h3 style="font-size:1.2rem;">6,848.31M Total Tokens</h3>
+                <p style="font-size:0.86rem;">Recorded across <strong>84,555 messages</strong>. Ratio-of-sums cache read efficiency separates warm cache reuse from uncached input bleed.</p>
+              </div>
+            </div>
+          </article>
+
+          <article class="d-card">
+            <span class="d-kicker" style="color:var(--layer-harness);">Story Highlight 02 · 24h Multi-Harness Rhythm Strip</span>
+            <h3>5 Native Coding Harnesses in Concert</h3>
+            <p style="font-size:0.86rem;">Tracks turn pacing and message density across <strong>Claude Code</strong>, <strong>OpenAI Codex</strong>, <strong>Google AGY</strong>, <strong>xAI Grok CLI</strong>, and <strong>Pi</strong>.</p>
+            <svg viewBox="0 0 320 36" role="img" aria-label="24-hour rhythm pulse strip across Claude, Codex, AGY, Grok, and Pi" style="width:100%;height:34px;margin-top:auto;">
+              <g>
+                <rect x="4" y="10" width="8" height="22" rx="2" fill="#F2A541"/><rect x="16" y="6" width="8" height="26" rx="2" fill="#06B6D4"/><rect x="28" y="14" width="8" height="18" rx="2" fill="#10B981"/><rect x="40" y="4" width="8" height="28" rx="2" fill="#F2A541"/><rect x="52" y="12" width="8" height="20" rx="2" fill="#8B5CF6"/><rect x="64" y="8" width="8" height="24" rx="2" fill="#06B6D4"/><rect x="76" y="16" width="8" height="16" rx="2" fill="#10B981"/><rect x="88" y="5" width="8" height="27" rx="2" fill="#F2A541"/><rect x="100" y="9" width="8" height="23" rx="2" fill="#06B6D4"/><rect x="112" y="14" width="8" height="18" rx="2" fill="#8B5CF6"/><rect x="124" y="6" width="8" height="26" rx="2" fill="#10B981"/><rect x="136" y="3" width="8" height="29" rx="2" fill="#F2A541"/><rect x="148" y="11" width="8" height="21" rx="2" fill="#06B6D4"/><rect x="160" y="7" width="8" height="25" rx="2" fill="#10B981"/><rect x="172" y="15" width="8" height="17" rx="2" fill="#8B5CF6"/><rect x="184" y="5" width="8" height="27" rx="2" fill="#F2A541"/><rect x="196" y="9" width="8" height="23" rx="2" fill="#06B6D4"/><rect x="208" y="12" width="8" height="20" rx="2" fill="#10B981"/><rect x="220" y="4" width="8" height="28" rx="2" fill="#F2A541"/><rect x="232" y="8" width="8" height="24" rx="2" fill="#06B6D4"/><rect x="244" y="13" width="8" height="19" rx="2" fill="#8B5CF6"/><rect x="256" y="6" width="8" height="26" rx="2" fill="#10B981"/><rect x="268" y="10" width="8" height="22" rx="2" fill="#F2A541"/><rect x="280" y="7" width="8" height="25" rx="2" fill="#06B6D4"/><rect x="292" y="11" width="8" height="21" rx="2" fill="#10B981"/><rect x="304" y="8" width="8" height="24" rx="2" fill="#F2A541"/>
               </g>
             </svg>
-          </div>
-        </aside>
-      </div>
-    </section>
-
-    <section class="p-section" id="why-care">
-      <div class="p-wrap">
-        <div class="p-section-head">
-          <div>
-            <div class="p-eyebrow">Why care</div>
-            <h2>Activity is easy to fake. Flow is what ships software.</h2>
-          </div>
-          <p>When you run coding agents across multiple terminals, worktrees, or team roles, you get megabytes of raw logs and very little clarity on what actually moved the work forward.</p>
-        </div>
-        <div class="p-grid-2">
-          <article class="p-problem-card">
-            <span class="p-card-kicker">Without Dendro · The Illusion of Busyness</span>
-            <h3>Terminals scroll fast while work quietly stalls</h3>
-            <ul class="p-list">
-              <li><strong>Hidden handoff bottlenecks:</strong> An agent finishes a task and sits idle for 45 minutes waiting for a review or human prompt, looking identical to a completed job.</li>
-              <li><strong>Ping-pong rework loops:</strong> Two roles pass the same task back and forth four times, burning token budget and context windows without converging.</li>
-              <li><strong>Unattributed spend:</strong> Cloud invoices show total token spend, but never which workflow, model choice, or context reset drove the cost.</li>
-            </ul>
           </article>
-          <article class="p-value-card">
-            <span class="p-card-kicker">With Dendro · Retrospective Clarity</span>
-            <h3>Every session read like the rings of a tree</h3>
-            <ul class="p-list">
-              <li><strong>Five disjoint seat activity bands:</strong> Observed session intervals are separated into five disjoint activity bands with unknown intervals explicitly retained: active work, waiting on a human, waiting on a peer handoff, stalled with work in queue, or cleanly parked.</li>
-              <li><strong>First-pass vs. rework visibility:</strong> See immediately which tasks delivered cleanly on the first pass and where handoffs bounced backward.</li>
-              <li><strong>Local, private, zero-setup:</strong> Point Dendro at the session logs already on your disk. Nothing leaves your machine.</li>
-            </ul>
+
+          <article class="d-card">
+            <span class="d-kicker" style="color:var(--layer-coord);">Story Highlight 03 · 7-Column Loop Conditions Strip</span>
+            <h3>0 Vortex Trips · Daily Loop Weather</h3>
+            <p style="font-size:0.86rem;">7-day column strip reporting daily trajectory stability across <code>1,127</code> trajectories: clear convergence vs. action retry clusters.</p>
+            <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:0.35rem;margin-top:auto;text-align:center;font-family:var(--font-mono);font-size:0.68rem;">
+              <div style="background:var(--bg-obsidian);padding:0.35rem;border-radius:6px;border:1px solid rgba(16,185,129,0.4);color:#10B981;">D-6<br>CLEAR</div>
+              <div style="background:var(--bg-obsidian);padding:0.35rem;border-radius:6px;border:1px solid rgba(16,185,129,0.4);color:#10B981;">D-5<br>CLEAR</div>
+              <div style="background:var(--bg-obsidian);padding:0.35rem;border-radius:6px;border:1px solid rgba(245,158,11,0.4);color:#F59E0B;">D-4<br>I08</div>
+              <div style="background:var(--bg-obsidian);padding:0.35rem;border-radius:6px;border:1px solid rgba(16,185,129,0.4);color:#10B981;">D-3<br>CLEAR</div>
+              <div style="background:var(--bg-obsidian);padding:0.35rem;border-radius:6px;border:1px solid rgba(16,185,129,0.4);color:#10B981;">D-2<br>CLEAR</div>
+              <div style="background:var(--bg-obsidian);padding:0.35rem;border-radius:6px;border:1px solid rgba(245,158,11,0.4);color:#F59E0B;">D-1<br>I19</div>
+              <div style="background:var(--bg-obsidian);padding:0.35rem;border-radius:6px;border:1px solid rgba(16,185,129,0.4);color:#10B981;">NOW<br>OK</div>
+            </div>
           </article>
         </div>
       </div>
     </section>
 
-    <section class="p-section alt" id="key-ideas">
-      <div class="p-wrap">
-        <div class="p-section-head">
-          <div>
-            <div class="p-eyebrow">What it brings to the table</div>
-            <h2>Three ideas that replace guesswork with evidence.</h2>
+    <!-- ======================================================================
+         SECTION 5: 4-LAYER EXPLODING STACK X-RAY (⌘E)
+         ====================================================================== -->
+    <section class="d-section canvas" id="stack-xray">
+      <div class="d-wrap">
+        <div class="d-section-header">
+          <div class="d-eyebrow">Section 05 · Cross-Layer Causal Architecture (⌘E)</div>
+          <h2>The 4-Layer Exploding Stack X-Ray.</h2>
+          <p>Press <code>⌘E</code> (or toggle below) to lift flat 2D swimlanes into an exploded 3D isometric stack. Vertical cubic Bezier threads trace temporal correlation from a Model token burst, through a Harness tool retry loop, into a Coordination queue wait, down to the OS process RSS footprint.</p>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;margin-bottom:1.25rem;">
+          <div class="d-preset-group" role="group" aria-label="Stack X-Ray perspective mode">
+            <button type="button" class="d-preset-btn" data-stack-mode="2d" aria-pressed="false">2D Flat Swimlanes</button>
+            <button type="button" class="d-preset-btn is-active" data-stack-mode="3d" aria-pressed="true">3D Exploded Isometric Stack (⌘E)</button>
           </div>
-          <p>Dendro is built for engineering leaders, platform architects, and developers who want honest operational feedback rather than AI hype.</p>
-        </div>
-        <div class="p-grid-3">
-          <article class="p-card">
-            <span class="p-num">01</span>
-            <span class="p-card-kicker">Busy vs. Productive</span>
-            <h3>Account for every second of the workflow</h3>
-            <p>Instead of counting raw turns or lines of code, Dendro reconstructs the true timeline of every actor—separating active model and tool work from human wait times, peer handoff delays, and stalled queues.</p>
-          </article>
-          <article class="p-card">
-            <span class="p-num">02</span>
-            <span class="p-card-kicker">The Cost of Rework</span>
-            <h3>Spot ping-pong loops and context resets</h3>
-            <p>When an agent's context window fills up and compacts, or when a reviewer rejects a change three times in a row, costs spike. Dendro highlights exactly where context drops and rework loops happen.</p>
-          </article>
-          <article class="p-card">
-            <span class="p-num">03</span>
-            <span class="p-card-kicker">Honest Boundaries</span>
-            <h3>Only what local evidence can prove</h3>
-            <p>Dendro never invents "developer hours saved" or subjective code-quality scores. Every chart—in the terminal cockpit, the offline browser explorer, or plain-English queries—is backed by local log facts.</p>
-          </article>
+          <span class="d-badge env">Epistemic Rule: Correlation ≠ Mathematical Proof of Causation</span>
         </div>
 
-        <figure class="dendro-media-frame" style="margin-top:2.5rem;">
-          <video controls preload="metadata" poster="assets/dendro-preview.gif" width="100%">
-            <source src="assets/dendro-demo.mp4" type="video/mp4">
-            <img src="assets/dendro-preview.gif" alt="Dendro terminal cockpit walkthrough">
-          </video>
-          <figcaption>See Dendro in action: explore session timelines, handoff flows, and cost breakdowns in the terminal cockpit or <a href="viewer.html">try the interactive Fleet Explorer in your browser →</a></figcaption>
-        </figure>
-      </div>
-    </section>
+        <div class="d-xray-layout">
+          <div id="stack-xray-stage" class="d-xray-stage" data-exploded="true">
+            <div class="d-xray-planes">
+              <!-- Plane 1: Model Layer -->
+              <div class="d-xray-plane is-focused" data-plane-idx="1" data-stack-layer="model"
+                   data-layer-title="Layer 1 · Model Layer (#F2A541 Warm Amber)"
+                   data-l0="status: ok · 6,848.31M direct tokens (I02), 96.9% cache read yield, pinned cost attribution (I04)."
+                   data-l1="Assumptions: Ratio-of-sums vs. mean-of-ratios cache yield; counterfactual routing (I25) does not mutate live routers."
+                   data-l2="Evidence: usage_facts, _dendro_pricing_tiers · Schema 5 · v0.8.0"
+                   data-l3="Formula: input_uncached + cache_write + cache_read + output (reasoning nested inside output, never double-counted).">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;">
+                  <strong style="color:var(--layer-model);font-family:var(--font-mono);">01 · MODEL LAYER (#F2A541)</strong>
+                  <span class="d-badge model">I01 · I02 · I03 · I04 · I05 · I25</span>
+                </div>
+                <p style="margin:0.35rem 0 0;font-size:0.88rem;color:var(--text-secondary);">5-Part Token Breakdown (<code>input_uncached</code>, <code>cache_write</code>, <code>cache_read</code>, <code>output</code>, nested <code>reasoning</code>), 96.9% cache read yield, and Counterfactual Routing (<code>I25</code>).</p>
+              </div>
 
-    <section class="p-section" id="connected-suite">
-      <div class="p-wrap">
-        <div class="p-section-head">
-          <div>
-            <div class="p-eyebrow">Connected Dashboard Suite · v0.8.0</div>
-            <h2>One local instrument for the whole agentic stack.</h2>
-          </div>
-          <p>Serve the hub on your machine and read the same evidence as growth rings, an exploding stack, a capability studio, and four active-intelligence consoles. <code>dendro dashboard --serve 127.0.0.1:4242</code> binds loopback only. The badge stays an illustrative snapshot until a live local query returns, then reads <strong>LIVE TELEMETRY</strong>.</p>
-        </div>
-        <article class="p-card" style="margin-bottom:1.5rem;">
-          <h3>60-Second CLI &amp; Connected Studio Quickstart</h3>
-          <p>From a local checkout with Rust installed, build and open the connected studio. Build time depends on your machine; “60 seconds” describes the command path.</p>
-          <pre><code>cargo build --release --locked
-./target/release/dendro status
-./target/release/dendro dashboard --serve 127.0.0.1:4242 --site-dir ./site</code></pre>
-          <p>Open <a href="http://127.0.0.1:4242">http://127.0.0.1:4242</a>. Ctrl-C stops the server.</p>
-        </article>
-        <div class="p-actions" style="margin-bottom:1.5rem;">
-          <a class="p-btn primary" href="dashboards/index.html">Open the Intelligence Hub →</a>
-          <a class="p-btn" href="viewer.html">Open Fleet Explorer</a>
-        </div>
-        <p class="p-lead" style="font-size:1rem;margin-top:0;">Honest boundary: null is not zero. A counterfactual route is not a live routing change. Prompts and secrets are never captured. Dendro does not invent hours saved.</p>
+              <!-- Plane 2: Harness Layer -->
+              <div class="d-xray-plane" data-plane-idx="2" data-stack-layer="harness"
+                   data-layer-title="Layer 2 · Harness Layer (#06B6D4 Electric Cyan)"
+                   data-l0="status: ok · 76,990 tool calls, 54.5k primitives, FUNNEL I06 skills conversion, 1,127 vortex trajectories (I22)."
+                   data-l1="Assumptions: Mode A uses FLOAT[32] cosine distance; Mode B uses turn-length variance & self-transition proxy."
+                   data-l2="Evidence: tool_facts, message_facts, skill_facts, harness_trajectory, harness_envelope"
+                   data-l3="Formula: settled / (settled + failed) action failure rate (I08), L1 key distribution drift (I23).">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;">
+                  <strong style="color:var(--layer-harness);font-family:var(--font-mono);">02 · HARNESS LAYER (#06B6D4)</strong>
+                  <span class="d-badge harness">I06 · I07 · I08 · I22 · I23</span>
+                </div>
+                <p style="margin:0.35rem 0 0;font-size:0.88rem;color:var(--text-secondary);">Capability Funnel (<code>I06</code>), Context Window Pressure (<code>I07</code>), Tool Execution Loops (<code>I08</code>), Trajectory Vortex (<code>I22</code>), and Schema Drift (<code>I23</code>).</p>
+              </div>
 
-        <div class="p-grid-2" style="margin-top:1.75rem;">
-          <article class="p-card">
-            <span class="p-card-kicker">Four architectural layers</span>
-            <h3>Model, Harness, Coordination, Environment</h3>
-            <ul class="p-list">
-              <li><strong>Model.</strong> Invocations, tokens, cache, pinned cost, and a routing simulation that does not touch the router.</li>
-              <li><strong>Harness.</strong> Tool families, action loops, trajectory shape, and envelope drift across Claude Code, Codex, AGY, Grok, Pi, and OpenRig.</li>
-              <li><strong>Coordination.</strong> Handoffs, queue wait, lineage, and acceptance. Busy time stays split from flow.</li>
-              <li><strong>Environment &amp; Security.</strong> Placement, CPU and RSS, grants, and evidenced reachability. Exposure is not inherited authority.</li>
-            </ul>
-          </article>
-          <article class="p-card">
-            <span class="p-card-kicker">Five-layer capability studio</span>
-            <h3>What the fleet actually ran</h3>
-            <ul class="p-list">
-              <li><strong>Tool families.</strong> Shell/Exec, Read/Inspect, Edit/Patch, Search/Grep, Subagent Spawn, MCP Call, Skill Load, Web/Fetch, Task/Queue, Governance/Gate.</li>
-              <li><strong>Primitives.</strong> The built-in verbs under those families.</li>
-              <li><strong>Skills.</strong> Declared versus invoked. The funnel is I06.</li>
-              <li><strong>MCP.</strong> Server call counts, never payloads.</li>
-              <li><strong>Hooks.</strong> Lifecycle guardrail events, counted, not quoted.</li>
-            </ul>
-          </article>
-        </div>
+              <!-- Plane 3: Coordination Layer -->
+              <div class="d-xray-plane" data-plane-idx="3" data-stack-layer="coord"
+                   data-layer-title="Layer 3 · Coordination &amp; Lineage Layer (#10B981 Emerald)"
+                   data-l0="status: ok · 200 sub-agent lineage trees (I09), 5 disjoint activity bands, queue wait medians (I12), acceptance yield (I19)."
+                   data-l1="Assumptions: Unobserved intervals remain unknown (hatched); OpenRig/AgentFlow/Meshloop act as optional adapters."
+                   data-l2="Evidence: session_edges, activity_facts, queue_facts, identity_facts"
+                   data-l3="Formula: Disjoint partition of [from, to] into active, waiting_on_human, idle_with_work, idle_without_work, unknown.">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;">
+                  <strong style="color:var(--layer-coord);font-family:var(--font-mono);">03 · COORDINATION LAYER (#10B981)</strong>
+                  <span class="d-badge coord">I09 · I10 · I11 · I12 · I19</span>
+                </div>
+                <p style="margin:0.35rem 0 0;font-size:0.88rem;color:var(--text-secondary);">Sub-Agent Lineage Graphs (<code>I09</code>), Work Duration &amp; Concurrency (<code>I10</code>), Queue Wait Friction (<code>I12</code>), 5 Disjoint Activity Bands, and Acceptance Yield (<code>I19</code>).</p>
+              </div>
 
-        <div class="p-section-head" style="margin-top:2.5rem;">
-          <div>
-            <div class="p-eyebrow">Active intelligence · I22–I25</div>
-            <h2>Four consoles with the limit printed on the glass.</h2>
-          </div>
-          <p>Each console discloses one of two resolution modes: materialized Schema 5 reference views (Mode A) or labeled live windowed fact-table heuristic fallbacks (Mode B). I01–I21 stay on the hub strip beside them.</p>
-        </div>
-        <div class="p-grid-2">
-          <article class="p-card">
-            <span class="p-num">I22</span>
-            <span class="p-card-kicker">Harness · Trajectory Vortex</span>
-            <h3>Inspect trajectory loops in either mode</h3>
-            <p>Mode A: <code>v_trajectory_vortex</code> computes exact 32-dim <code>FLOAT[32]</code> <code>array_cosine_distance</code>. Mode B: turn-length variance and self-transition proxy, clamped to <code>0.08..0.82</code>; trips at <code>&gt;= 25</code> turns and <code>&gt;= 0.55</code> self-transition. <strong>Not an embedding cosine measurement</strong>. A trip is not a cause.</p>
-          </article>
-          <article class="p-card">
-            <span class="p-num">I23</span>
-            <span class="p-card-kicker">Harness · Schema Drift</span>
-            <h3>Read the DNA of every harness envelope</h3>
-            <p>Mode A: <code>v_schema_drift</code> measures <code>VARIANT</code> envelope L1 structural drift across harness versions. Mode B: daily metadata cohort buckets from <code>message_facts</code>, with an L1 proxy clamped at <code>0.45</code> and <code>keys_retyped = 0</code>. Drift is not a compatibility verdict.</p>
-          </article>
-          <article class="p-card">
-            <span class="p-num">I24</span>
-            <span class="p-card-kicker">Environment · Blast Radius</span>
-            <h3>Follow recorded session reachability</h3>
-            <p>Mode A: <code>v_authority_blast_radius</code> uses 8-hop <code>duckpgq</code> evidenced-only session reachability. Mode B: a recursive CTE (<code>depth &lt; 4</code>) over recorded <code>session_edges</code> plus <code>security_facts</code> authority-check scopes. Dependency exposure does not grant authority.</p>
-          </article>
-          <article class="p-card">
-            <span class="p-num">I25</span>
-            <span class="p-card-kicker">Model · Counterfactual Routing</span>
-            <h3>Simulate the inflection. Leave the router alone.</h3>
-            <p>Mode A: <code>v_counterfactual_routing</code> performs pinned-tier simulation and refuses when no pricing tier is pinned. Mode B: heuristic <code>observed * 0.75</code> simulated fast-tier envelope total (<code>0.75 × observed</code>, leaving a <code>25%</code> counterfactual gap) in normalized token units against an assumed <code>128k</code> context threshold. This is a counterfactual simulation proxy, never a measured financial saving or a live routing change.</p>
-          </article>
-        </div>
-
-        <p><strong>Mode B — Live Windowed Fact-Table Fallbacks:</strong> <code>intelligence_fallback</code> in <code>connected_web.rs</code> derives labeled heuristic proxies from <code>tool_facts</code>, <code>usage_facts</code>, <code>message_facts</code>, and <code>session_edges</code> for arbitrary live time windows (<code>?window=7d</code>, <code>YYYY-MM-DD..YYYY-MM-DD</code>) or empty/unmaterialized Schema 5 tables. The live I22–I25 screenshots showcase Mode B over the active workspace's live fact tables, with <strong>SIMULATED TIER TOTAL (COUNTERFACTUAL)</strong> representing the simulated fast-tier envelope total (<code>0.75 × observed</code>, leaving a <code>25%</code> counterfactual gap) in normalized token units. These proxies are distinct from <strong>Mode A — Materialized Schema 5 Reference Views</strong>.</p>
-
-        <div class="p-grid-3" style="margin-top:2rem;">
-          <figure class="dendro-media-frame">
-            <img src="assets/screenshots/hub-living-growth-rings.png" alt="Dendro living growth rings, tactile time machine scrubber, and Apple Health story highlights" width="100%">
-            <figcaption>Living growth rings and the time scrubber. <a href="dashboards/index.html">Open the hub →</a></figcaption>
-          </figure>
-          <figure class="dendro-media-frame">
-            <img src="assets/screenshots/hub-stack-xray-3d.png" alt="Four-layer exploding stack X-ray from Model to Environment with isometric explode" width="100%">
-            <figcaption>Exploding stack X-ray across the four layers. <a href="viewer.html">Inspect a session →</a></figcaption>
-          </figure>
-          <figure class="dendro-media-frame">
-            <img src="assets/screenshots/hub-capability-studio.png" alt="Five-layer capability intelligence studio with tool families, primitives, skills, MCP, and hooks" width="100%">
-            <figcaption>Capability studio: families, primitives, skills, MCP, hooks.</figcaption>
-          </figure>
-        </div>
-      </div>
-    </section>
-
-    <section class="p-section" id="ecosystem">
-      <div class="p-wrap">
-        <div class="p-section-head">
-          <div>
-            <div class="p-eyebrow">Where it fits in the ecosystem</div>
-            <h2>The Flight Recorder after the flight—paired with live telemetry in flight.</h2>
-          </div>
-          <p>Dendro works standalone on any machine with local agent logs. When combined with the rest of the Move the Needle open-source stack, it closes the learning loop.</p>
-        </div>
-        <div class="p-eco-grid">
-          <a class="p-eco-card" href="../agent-otel-bridge/">
-            <div class="p-eco-head">
-              <img src="../agent-otel-bridge/assets/mark.svg" alt="agent-otel-bridge logo" width="44" height="44">
-              <div>
-                <span class="p-card-kicker">Live Partner · Watch in Flight</span>
-                <h3>agent-otel-bridge</h3>
+              <!-- Plane 4: Environment & Security Layer -->
+              <div class="d-xray-plane" data-plane-idx="4" data-stack-layer="env"
+                   data-layer-title="Layer 4 · Environment &amp; Security Layer (#8B5CF6 Vivid Violet)"
+                   data-l0="status: ok · CPU deltas & max sampled RSS bytes (I14), sandbox isolation (I16), secret redaction (I18), 8-hop blast radius (I24)."
+                   data-l1="Assumptions: Linux RSS bytes and Windows working-set bytes are never mixed; exposure is not inherited authority."
+                   data-l2="Evidence: process_identities, process_samples, security_facts, file_source_baselines"
+                   data-l3="Formula: 8-hop duckpgq reachability cone (Mode A) or depth < 4 recursive CTE (Mode B) over evidenced edges.">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;">
+                  <strong style="color:var(--layer-env);font-family:var(--font-mono);">04 · ENVIRONMENT &amp; SECURITY LAYER (#8B5CF6)</strong>
+                  <span class="d-badge env">I13 · I14 · I15 · I16 · I17 · I18 · I24</span>
+                </div>
+                <p style="margin:0.35rem 0 0;font-size:0.88rem;color:var(--text-secondary);">OS Process CPU Deltas &amp; Max Sampled RSS (<code>I14</code>), Sandbox Isolation (<code>I16</code>), Secret Scrubbing (<code>I18</code>), and 8-Hop Authority Blast Radius (<code>I24</code>).</p>
               </div>
             </div>
-            <p><strong>agent-otel-bridge</strong> is the live dashboard showing what your agents are doing right now in Grafana or Datadog. <strong>Dendro</strong> is the flight recorder you read afterward to understand cost, rework, and handoff flow.</p>
-          </a>
-          <a class="p-eco-card" href="../meshloop/">
-            <div class="p-eco-head">
-              <img src="../meshloop/assets/logo.svg" alt="Meshloop logo" width="44" height="44">
+
+            <!-- SVG Cubic Bezier Temporal Correlation Threads -->
+            <svg viewBox="0 0 680 64" role="img" aria-label="Cubic Bezier temporal correlation threads linking Model, Harness, Coordination, and Environment layers" style="width:100%;height:56px;margin-top:0.85rem;display:block;">
+              <path d="M 90 8 C 210 8, 230 56, 340 56 C 450 56, 470 12, 590 12" fill="none" stroke="#F2A541" stroke-width="2" stroke-dasharray="5 4"/>
+              <path d="M 150 52 C 260 52, 290 14, 410 14 C 510 14, 540 48, 630 48" fill="none" stroke="#06B6D4" stroke-width="2"/>
+              <path d="M 60 32 C 200 32, 320 32, 620 32" fill="none" stroke="#10B981" stroke-width="1.5" opacity="0.7"/>
+              <circle cx="90" cy="8" r="5" fill="#F2A541"/>
+              <circle cx="340" cy="56" r="5" fill="#06B6D4"/>
+              <circle cx="410" cy="14" r="5" fill="#10B981"/>
+              <circle cx="590" cy="12" r="5" fill="#8B5CF6"/>
+            </svg>
+          </div>
+
+          <!-- L0-L3 Progressive Disclosure Inspector -->
+          <aside class="d-card" aria-live="polite">
+            <span class="d-kicker" style="color:var(--layer-harness);">L0–L3 Progressive Disclosure Contract</span>
+            <h3 id="xray-inspector-title">Layer 1 · Model Layer (#F2A541 Warm Amber)</h3>
+            <p style="font-size:0.85rem;">Click any of the 4 architectural planes on the left to inspect its 4-level epistemic disclosure card:</p>
+            <div class="d-heartwood-hud" style="margin-top:0.5rem;">
               <div>
-                <span class="p-card-kicker">Execution Partner · Build in Parallel</span>
-                <h3>Meshloop</h3>
+                <span class="d-kicker" style="color:var(--layer-coord);">L0 · status, finding, practical meaning, scope, and missingness</span>
+                <p id="xray-inspector-l0" style="color:var(--text-primary);font-size:0.86rem;margin-top:0.2rem;">status: ok · 6,848.31M direct tokens (I02), 96.9% cache read yield, pinned cost attribution (I04).</p>
+              </div>
+              <div>
+                <span class="d-kicker" style="color:var(--layer-model);">L1 · assumptions and alternatives</span>
+                <p id="xray-inspector-l1" style="color:var(--text-secondary);font-size:0.84rem;margin-top:0.2rem;">Assumptions: Ratio-of-sums vs. mean-of-ratios cache yield; counterfactual routing (I25) does not mutate live routers.</p>
+              </div>
+              <div>
+                <span class="d-kicker" style="color:var(--layer-harness);">L2 · safe evidence IDs and source versions</span>
+                <p id="xray-inspector-l2" style="color:var(--text-secondary);font-size:0.84rem;font-family:var(--font-mono);margin-top:0.2rem;">Evidence: usage_facts, _dendro_pricing_tiers · Schema 5 · v0.8.0</p>
+              </div>
+              <div>
+                <span class="d-kicker" style="color:var(--layer-env);">L3 · formula, population (what, included, excluded), exclusions, and cutoff</span>
+                <p id="xray-inspector-l3" style="color:var(--text-secondary);font-size:0.84rem;font-family:var(--font-mono);margin-top:0.2rem;">Formula: input_uncached + cache_write + cache_read + output (reasoning nested inside output, never double-counted).</p>
               </div>
             </div>
-            <p>Run parallel coding tasks inside isolated sandboxes with <strong>Meshloop</strong>, then use <strong>Dendro</strong> to inspect how long each task took and how many repair turns were needed.</p>
-          </a>
-          <a class="p-eco-card" href="../agent-sdlc/">
-            <div class="p-eco-head">
-              <img src="../agent-sdlc/assets/agentflow-icon-192.png" alt="AgentFlow SDLC logo" width="44" height="44">
-              <div>
-                <span class="p-card-kicker">Governance Partner · Plan &amp; Accept</span>
-                <h3>AgentFlow SDLC 2.0</h3>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================================
+         SECTION 6: CAPABILITY & EXECUTION STUDIO (agent-otel-bridge)
+         ====================================================================== -->
+    <section class="d-section" id="capability-studio">
+      <div class="d-wrap">
+        <div class="d-section-header">
+          <div class="d-eyebrow">Section 06 · 5-Layer agent-otel-bridge Capability System</div>
+          <h2>Capability &amp; Execution Studio: 76,990 Tool Calls Decoded.</h2>
+          <p>Dendro classifies raw harness actions through the 5-Layer <code>agent-otel-bridge</code> taxonomy—mapping <strong>76,990 recorded tool calls</strong> and <strong>54.5k native harness primitives</strong> across 10 Behavioral Tool Families and the <strong><code>FUNNEL I06</code></strong> Skills conversion funnel.</p>
+        </div>
+
+        <!-- Proportion Spectrum Bar -->
+        <div>
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;font-family:var(--font-mono);font-size:0.78rem;">
+            <span style="color:var(--text-primary);">PROPORTION SPECTRUM BAR · 76,990 RECORDED TOOL CALLS (54.5K NATIVE PRIMITIVES)</span>
+            <span style="color:var(--layer-coord);">FUNNEL I06: Declared → Loaded → Verified Invoked Skills</span>
+          </div>
+          <div class="d-spectrum-bar" role="img" aria-label="Proportion Spectrum Bar across 10 Behavioral Tool Families">
+            <div class="d-spectrum-seg" style="width:28.4%;background:#06B6D4;" title="Shell / Exec: 21,840 (28.4%)">Shell 28.4%</div>
+            <div class="d-spectrum-seg" style="width:24.6%;background:#10B981;" title="Read / Inspect: 18,920 (24.6%)">Read 24.6%</div>
+            <div class="d-spectrum-seg" style="width:14.8%;background:#F2A541;" title="Edit / Patch: 11,410 (14.8%)">Edit 14.8%</div>
+            <div class="d-spectrum-seg" style="width:11.9%;background:#8B5CF6;color:#F3EDE2;" title="Search / Grep: 9,150 (11.9%)">Search 11.9%</div>
+            <div class="d-spectrum-seg" style="width:6.0%;background:#38BDF8;" title="Subagent Spawn: 4,620 (6.0%)">Spawn</div>
+            <div class="d-spectrum-seg" style="width:5.1%;background:#34D399;" title="MCP Call: 3,890 (5.1%)">MCP</div>
+            <div class="d-spectrum-seg" style="width:9.2%;background:#F59E0B;" title="Skill Load, Web/Fetch, Task/Queue, Governance/Gate (9.2%)">Skills+</div>
+          </div>
+        </div>
+
+        <!-- 10 Behavioral Tool Families Bento Grid -->
+        <div class="d-grid-5" style="margin-bottom:2rem;">
+          <div class="d-tool-tile">
+            <span class="d-kicker">Family 01</span>
+            <strong>Shell / Exec</strong>
+            <span class="d-tool-count">21,840</span>
+            <small>Sandboxed CLI, cargo, git &amp; test execution</small>
+          </div>
+          <div class="d-tool-tile">
+            <span class="d-kicker">Family 02</span>
+            <strong>Read / Inspect</strong>
+            <span class="d-tool-count">18,920</span>
+            <small>Source file reads &amp; context grounding</small>
+          </div>
+          <div class="d-tool-tile">
+            <span class="d-kicker">Family 03</span>
+            <strong>Edit / Patch</strong>
+            <span class="d-tool-count">11,410</span>
+            <small>Surgical AST &amp; diff mutations</small>
+          </div>
+          <div class="d-tool-tile">
+            <span class="d-kicker">Family 04</span>
+            <strong>Search / Grep</strong>
+            <span class="d-tool-count">9,150</span>
+            <small>Ripgrep, glob &amp; symbol discovery</small>
+          </div>
+          <div class="d-tool-tile">
+            <span class="d-kicker">Family 05</span>
+            <strong>Subagent Spawn</strong>
+            <span class="d-tool-count">4,620</span>
+            <small>Delegated bounded worker processes</small>
+          </div>
+          <div class="d-tool-tile">
+            <span class="d-kicker">Family 06</span>
+            <strong>MCP Call</strong>
+            <span class="d-tool-count">3,890</span>
+            <small>Model Context Protocol server tools</small>
+          </div>
+          <div class="d-tool-tile">
+            <span class="d-kicker">Family 07</span>
+            <strong>Skill Load</strong>
+            <span class="d-tool-count">2,740</span>
+            <small>Procedural SKILL.md activations (<code>I06</code>)</small>
+          </div>
+          <div class="d-tool-tile">
+            <span class="d-kicker">Family 08</span>
+            <strong>Web / Fetch</strong>
+            <span class="d-tool-count">1,680</span>
+            <small>Documentation &amp; HTTP retrieval</small>
+          </div>
+          <div class="d-tool-tile">
+            <span class="d-kicker">Family 09</span>
+            <strong>Task / Queue</strong>
+            <span class="d-tool-count">1,590</span>
+            <small>Handoff routing &amp; ledger state updates</small>
+          </div>
+          <div class="d-tool-tile">
+            <span class="d-kicker">Family 10</span>
+            <strong>Governance / Gate</strong>
+            <span class="d-tool-count">1,150</span>
+            <small>Reviewer verdicts &amp; approval checks</small>
+          </div>
+        </div>
+
+        <!-- 5-Layer Capability System + Multi-Dimensional Group-By Matrix -->
+        <div class="d-grid-2">
+          <article class="d-card">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span class="d-kicker" style="color:var(--layer-harness);">5-Layer Capability Taxonomy</span>
+              <span class="d-badge coord">FUNNEL I06 · harness.capability_funnel</span>
+            </div>
+            <h3>Declared vs. Loaded vs. Verified Invoked Skills</h3>
+            <ul class="p-list" style="color:var(--text-secondary);">
+              <li><strong style="color:var(--text-primary);">Layer 1 — 10 Behavioral Tool Families:</strong> Cross-harness normalization of every agent action.</li>
+              <li><strong style="color:var(--text-primary);">Layer 2 — Native Harness Primitives:</strong> <code>54.5k</code> built-in verbs (<code>Bash</code>, <code>Read</code>, <code>Edit</code>, <code>Write</code>, <code>Grep</code>, <code>Glob</code>, <code>Task</code>).</li>
+              <li><strong style="color:var(--text-primary);">Layer 3 — Skills Funnel (<code>FUNNEL I06</code>):</strong> Separates skills merely declared in config from skills loaded into context and skills effectively invoked.</li>
+              <li><strong style="color:var(--text-primary);">Layer 4 — MCP Servers &amp; Tools:</strong> Call counts, latency distributions, and failure rates—never capturing private payloads.</li>
+              <li><strong style="color:var(--text-primary);">Layer 5 — Lifecycle Hooks &amp; Guardrails:</strong> Pre/post execution policy checks counted deterministically.</li>
+            </ul>
+          </article>
+
+          <article class="d-card">
+            <span class="d-kicker" style="color:var(--layer-model);">Instant Columnar Pivot Engine</span>
+            <h3>6 Zero-Latency Multi-Dimensional Group-By Modes</h3>
+            <p>Embedded across the Hub and all 12 views. Click any dimension to preview the rollup structure:</p>
+            <div class="d-groupby-tabs" role="tablist" aria-label="Multi-dimensional Group-By modes">
+              <button type="button" role="tab" class="d-groupby-tab is-active" aria-selected="true" data-groupby-tab="harness">By Harness / Tool</button>
+              <button type="button" role="tab" class="d-groupby-tab" aria-selected="false" data-groupby-tab="capability">By Capability / Family</button>
+              <button type="button" role="tab" class="d-groupby-tab" aria-selected="false" data-groupby-tab="date">By Date (Daily)</button>
+              <button type="button" role="tab" class="d-groupby-tab" aria-selected="false" data-groupby-tab="workspace">By Workspace / Team</button>
+              <button type="button" role="tab" class="d-groupby-tab" aria-selected="false" data-groupby-tab="outcome">By Status / Outcome</button>
+              <button type="button" role="tab" class="d-groupby-tab" aria-selected="false" data-groupby-tab="raw">Raw Records</button>
+            </div>
+            <div class="d-heartwood-hud" style="font-family:var(--font-mono);font-size:0.8rem;">
+              <div data-groupby-panel="harness">
+                <div class="d-hud-row"><span>Claude Code · Bash / Edit / Read</span><strong>34,120 calls · 97.1% cache</strong></div>
+                <div class="d-hud-row"><span>OpenAI Codex · exec / apply_patch</span><strong>21,450 calls · 96.8% cache</strong></div>
+                <div class="d-hud-row"><span>Google AGY · run_command / read_file</span><strong>14,880 calls · 96.5% cache</strong></div>
+              </div>
+              <div data-groupby-panel="capability" hidden>
+                <div class="d-hud-row"><span>Shell / Exec + Read / Inspect</span><strong>40,760 calls (53.0% share)</strong></div>
+                <div class="d-hud-row"><span>Edit / Patch + Search / Grep</span><strong>20,560 calls (26.7% share)</strong></div>
+                <div class="d-hud-row"><span>Spawn + MCP + Skill Load (FUNNEL I06)</span><strong>11,250 calls (14.6% share)</strong></div>
+              </div>
+              <div data-groupby-panel="date" hidden>
+                <div class="d-hud-row"><span>2026-10-27 (Today)</span><strong>12,110 msgs · 980.4M tokens</strong></div>
+                <div class="d-hud-row"><span>2026-10-26</span><strong>14,320 msgs · 1,140.2M tokens</strong></div>
+                <div class="d-hud-row"><span>76-Day Rolling Cohort Baseline</span><strong>84,555 msgs · 6,848.31M tokens</strong></div>
+              </div>
+              <div data-groupby-panel="workspace" hidden>
+                <div class="d-hud-row"><span>Workspace: dendro (Rust / DuckDB)</span><strong>428 sessions · 0 vortex trips</strong></div>
+                <div class="d-hud-row"><span>Workspace: movetheneedle</span><strong>389 sessions · 96.9% cache yield</strong></div>
+                <div class="d-hud-row"><span>Workspace: agent-otel-bridge</span><strong>310 sessions · FUNNEL I06 active</strong></div>
+              </div>
+              <div data-groupby-panel="outcome" hidden>
+                <div class="d-hud-row"><span>First-Pass Clean Completion (I19)</span><strong>81.4% of evaluated work items</strong></div>
+                <div class="d-hud-row"><span>Multi-Pass Return / Rework</span><strong>18.6% (flagged for review)</strong></div>
+                <div class="d-hud-row"><span>Unsettled / In-Flight Actions (I08)</span><strong>Excluded from failure denominator</strong></div>
+              </div>
+              <div data-groupby-panel="raw" hidden>
+                <div class="d-hud-row"><span>Fact Tables Materialized</span><strong>usage_facts · tool_facts · message_facts</strong></div>
+                <div class="d-hud-row"><span>Lineage &amp; Security Tables</span><strong>session_edges · security_facts</strong></div>
+                <div class="d-hud-row"><span>Redaction Guarantee (I18)</span><strong>0 prompts · 0 secrets · 0 paths</strong></div>
               </div>
             </div>
-            <p>Define clear engineering roles and acceptance gates with <strong>AgentFlow</strong>, and use <strong>Dendro</strong> to measure whether role handoffs are smooth or bouncing back in rework.</p>
-          </a>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================================
+         SECTION 7: 4 BESPOKE ACTIVE INTELLIGENCE CONSOLES (I22–I25)
+         ====================================================================== -->
+    <section class="d-section canvas" id="active-consoles">
+      <div class="d-wrap">
+        <div class="d-section-header">
+          <div class="d-eyebrow">Section 07 · Active Intelligence Consoles (I22–I25)</div>
+          <h2>Four scientific consoles with the epistemic limit printed on the glass.</h2>
+          <p>Every console explicitly discloses its resolution mode: <strong>Mode A</strong> (Materialized Schema 5 reference views) or <strong>Mode B</strong> (Live windowed fact-table heuristic proxies in <code>connected_web.rs</code> over arbitrary <code>?window=7d</code> or <code>YYYY-MM-DD..YYYY-MM-DD</code> slices).</p>
+        </div>
+
+        <div class="d-grid-2">
+          <!-- I22 Trajectory Vortex -->
+          <article class="d-card" style="border-top:3px solid var(--layer-harness);">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
+              <span class="d-badge harness">I22 · harness.trajectory_vortex</span>
+              <span class="d-badge coord">1,127 Completed Trajectories · Min 5 Cohort Guard</span>
+            </div>
+            <h3>Trajectory Vortex: Orbital Phase-Space Attractor</h3>
+            <p>Plots multi-turn trajectories in an elliptical phase space so runaway loops pull orbits outward before token budgets burn. <strong>Mode A:</strong> <code>v_trajectory_vortex</code> computes exact 32-dim <code>FLOAT[32]</code> <code>array_cosine_distance</code>. <strong>Mode B:</strong> turn-length variance and self-transition proxy clamped to <code>0.08..0.82</code> (trips at <code>&gt;= 25</code> turns and <code>&gt;= 0.55</code> self-transition). <em>Not an embedding cosine measurement; a trip is an empirical alert, not a cause.</em></p>
+            <div class="d-stage-img-wrap" style="margin-top:0.5rem;">
+              <img src="assets/screenshots/console-trajectory-vortex.png" alt="I22 Trajectory Vortex Orbital Phase-Space console over 1,127 trajectories" width="1480" height="1520" loading="lazy">
+            </div>
+            <div style="margin-top:0.5rem;">
+              <a class="d-btn cyan" href="dashboards/views/trajectory_vortex.html" style="padding:0.45rem 0.9rem;font-size:0.82rem;">Open I22 Trajectory Vortex Console →</a>
+            </div>
+          </article>
+
+          <!-- I23 Schema Drift -->
+          <article class="d-card" style="border-top:3px solid var(--layer-harness);">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
+              <span class="d-badge harness">I23 · harness.schema_drift</span>
+              <span class="d-badge model">76 Daily Metadata Cohort Buckets</span>
+            </div>
+            <h3>Schema Drift: Biological DNA Fingerprint Gel-Strip</h3>
+            <p>Visualizes structural envelope shifts across Claude Code, Codex, AGY, Grok, and Pi updates as a DNA gel-strip. <strong>Mode A:</strong> <code>v_schema_drift</code> measures <code>VARIANT</code> envelope L1 distance (<code>keys_added</code>, <code>keys_removed</code>, <code>keys_retyped</code>). <strong>Mode B:</strong> daily metadata cohort buckets from <code>message_facts</code> with L1 proxy clamped at <code>0.45</code> and <code>keys_retyped = 0</code>. <em>Structural drift is not a compatibility verdict.</em></p>
+            <div class="d-stage-img-wrap" style="margin-top:0.5rem;">
+              <img src="assets/screenshots/console-schema-drift.png" alt="I23 Schema Drift DNA Gel-Strip console across 76 daily cohorts" width="1480" height="1500" loading="lazy">
+            </div>
+            <div style="margin-top:0.5rem;">
+              <a class="d-btn cyan" href="dashboards/views/schema_drift.html" style="padding:0.45rem 0.9rem;font-size:0.82rem;">Open I23 Schema Drift Console →</a>
+            </div>
+          </article>
+
+          <!-- I24 Authority Blast Radius -->
+          <article class="d-card" style="border-top:3px solid var(--layer-env);">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
+              <span class="d-badge env">I24 · security.authority_blast_radius</span>
+              <span class="d-badge coord">200 Lineage Trees · 8-Hop Ceiling</span>
+            </div>
+            <h3>Authority Blast Radius: Radial Propagation Ripple Graph</h3>
+            <p>Computes downstream session reachability from a failed or revoked permission grant across concentric hop rings. <strong>Mode A:</strong> <code>v_authority_blast_radius</code> runs an 8-hop <code>duckpgq</code> evidenced-only reachability walk. <strong>Mode B:</strong> recursive CTE (<code>depth &lt; 4</code>) over recorded <code>session_edges</code> plus <code>security_facts</code> authority scopes. <em>Dependency exposure does not grant or imply inherited authority.</em></p>
+            <div class="d-stage-img-wrap" style="margin-top:0.5rem;">
+              <img src="assets/screenshots/console-blast-radius.png" alt="I24 Authority Blast Radius 8-hop radial ripple graph across 200 lineage trees" width="1480" height="1520" loading="lazy">
+            </div>
+            <div style="margin-top:0.5rem;">
+              <a class="d-btn cyan" href="dashboards/views/authority_blast_radius.html" style="padding:0.45rem 0.9rem;font-size:0.82rem;">Open I24 Blast Radius Console →</a>
+            </div>
+          </article>
+
+          <!-- I25 Counterfactual Model Routing -->
+          <article class="d-card" style="border-top:3px solid var(--layer-model);">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
+              <span class="d-badge model">I25 · model.counterfactual_routing</span>
+              <span class="d-badge harness">SIMULATED TIER TOTAL (COUNTERFACTUAL)</span>
+            </div>
+            <h3>Counterfactual Routing: Split-Beam Route Comparator</h3>
+            <p>Simulates context-pressure inflection points and fast-tier routing envelopes without touching live routers. <strong>Mode A:</strong> <code>v_counterfactual_routing</code> performs pinned-tier simulation (refuses when no pricing tier is pinned). <strong>Mode B:</strong> <code>SIMULATED TIER TOTAL (COUNTERFACTUAL)</code> computes a <code>0.75×</code> simulated fast-tier envelope (<code>0.75 × observed</code>, leaving a <code>25%</code> counterfactual gap) in normalized token units against a <code>128k</code> context threshold. <em>Simulation proxy, not a live routing mutation or financial guarantee.</em></p>
+            <div class="d-stage-img-wrap" style="margin-top:0.5rem;">
+              <img src="assets/screenshots/console-counterfactual-routing.png" alt="I25 Counterfactual Routing Split-Beam Comparator displaying SIMULATED TIER TOTAL (COUNTERFACTUAL)" width="1480" height="1680" loading="lazy">
+            </div>
+            <div style="margin-top:0.5rem;">
+              <a class="d-btn cyan" href="dashboards/views/counterfactual_routing.html" style="padding:0.45rem 0.9rem;font-size:0.82rem;">Open I25 Counterfactual Routing Console →</a>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================================
+         SECTION 8: CAPACITY SCENARIO CALCULATOR (OPERATOR ASSUMPTION EXPLORER)
+         ====================================================================== -->
+    <section class="d-section" id="calculator">
+      <div class="d-wrap">
+        <div class="d-section-header">
+          <div class="d-eyebrow">Section 08 · Operator Assumption Explorer (Zero Cloud Benchmarks)</div>
+          <h2>Capacity Scenario Calculator: Model Handoff Rework &amp; Actor Load.</h2>
+          <p>Explore how handoff return rates, token burn per mission, and engineering review loops interact across your active actors. All calculations run locally in your browser from your explicit slider inputs—never a synthetic ROI guarantee.</p>
+        </div>
+
+        <div class="d-calc-layout">
+          <form class="d-calc-inputs" aria-label="Operator Assumption Explorer inputs" onsubmit="return false;">
+            <div class="d-slider-row">
+              <div class="d-slider-head">
+                <label for="seatsInput">Active actors / agents</label>
+                <strong id="seatsVal">4 actors</strong>
+              </div>
+              <input id="seatsInput" type="range" min="1" max="100" step="1" value="4">
+            </div>
+
+            <div class="d-slider-row">
+              <div class="d-slider-head">
+                <label for="missionsInput">Monthly missions across fleet</label>
+                <strong id="missionsVal">25 missions</strong>
+              </div>
+              <input id="missionsInput" type="range" min="1" max="500" step="1" value="25">
+            </div>
+
+            <div class="d-slider-row">
+              <div class="d-slider-head">
+                <label for="tokensPerMissionInput">Avg tokens per mission (k)</label>
+                <strong id="tokensPerMissionVal">400k tokens</strong>
+              </div>
+              <input id="tokensPerMissionInput" type="range" min="50" max="5000" step="50" value="400">
+            </div>
+
+            <div class="d-slider-row">
+              <div class="d-slider-head">
+                <label for="reworkRateInput">Estimated handoff rework rate (%)</label>
+                <strong id="reworkRateVal">25%</strong>
+              </div>
+              <input id="reworkRateInput" type="range" min="0" max="100" step="1" value="25">
+            </div>
+
+            <div class="d-slider-row">
+              <div class="d-slider-head">
+                <label for="tokenCostInput">Blended cost per 1M tokens ($ USD)</label>
+                <strong id="tokenCostVal">$5 / 1M</strong>
+              </div>
+              <input id="tokenCostInput" type="range" min="0.5" max="50" step="0.5" value="5">
+            </div>
+
+            <div class="d-slider-row">
+              <div class="d-slider-head">
+                <label for="hoursInput">Engineering hours per rework loop</label>
+                <strong id="hoursVal">2 hours</strong>
+              </div>
+              <input id="hoursInput" type="range" min="0.25" max="24" step="0.25" value="2">
+            </div>
+
+            <div class="d-slider-row">
+              <div class="d-slider-head">
+                <label for="reductionInput">Target rework reduction (%)</label>
+                <strong id="reductionVal">20%</strong>
+              </div>
+              <input id="reductionInput" type="range" min="0" max="100" step="1" value="20">
+            </div>
+          </form>
+
+          <div class="d-calc-outputs" aria-live="polite">
+            <div class="d-calc-stat">
+              <span>Expected Handoff Returns</span>
+              <strong id="reworkChainsVal">6.25 expected returns</strong>
+            </div>
+            <div class="d-calc-stat">
+              <span>Diverted Rework Tokens</span>
+              <strong id="reworkTokensVal">2.5M tokens</strong>
+            </div>
+            <div class="d-calc-stat">
+              <span>Recoverable Token Spend</span>
+              <strong id="reworkCostVal" style="color:var(--layer-model);">$12.50 USD</strong>
+            </div>
+            <div class="d-calc-stat">
+              <span>Engineering Hours Reclaimed</span>
+              <strong id="hoursSavedVal">2.5 hours / month</strong>
+            </div>
+            <div class="d-calc-stat">
+              <span>Fleet Capacity Unlocked</span>
+              <strong id="capacityVal" style="color:var(--layer-harness);">5%</strong>
+            </div>
+            <div class="d-calc-stat full">
+              <span>Actor Workload Distribution</span>
+              <strong id="seatLoadVal" style="font-size:1rem;color:var(--text-primary);">6.25 missions per actor / month, assuming an even workload.</strong>
+            </div>
+            <p style="grid-column:1 / -1;margin:0;font-size:0.82rem;color:var(--text-secondary);border-top:1px solid var(--border-subtle);padding-top:0.75rem;">
+              <strong>Epistemic Boundary (Scenario Calculator ≠ Predicted ROI):</strong> All values above are direct arithmetic projections of your operator-supplied slider assumptions. Dendro never injects hidden cloud averages, synthetic productivity multipliers, or guaranteed savings claims.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================================
+         SECTION 9: 60-SECOND QUICKSTART, RATATUI COCKPIT & EPISTEMIC GUARDRAILS
+         ====================================================================== -->
+    <section class="d-section canvas" id="quickstart">
+      <div class="d-wrap">
+        <div class="d-section-header">
+          <div class="d-eyebrow">Section 09 · 60-Second Quickstart, Terminal Cockpit &amp; Epistemic Guardrails</div>
+          <h2>One Rust binary. Terminal Cockpit, Loopback Studio &amp; Semantic Oracle.</h2>
+          <p>Install <code>dendro-cli</code> or build from source. Point Dendro at the local session transcripts already on your disk—nothing ever leaves your machine.</p>
+        </div>
+
+        <div class="d-grid-2" style="margin-bottom:2rem;">
+          <article class="d-card">
+            <span class="d-kicker" style="color:var(--layer-model);">60-Second CLI &amp; Connected Studio Quickstart</span>
+            <h3>Install &amp; Launch the 6-Screen Ratatui TUI or Web Studio</h3>
+            <pre style="background:var(--bg-obsidian);border:1px solid var(--border-subtle);padding:1rem;border-radius:10px;overflow-x:auto;font-size:0.84rem;color:var(--text-primary);"><code># 1. Install the Rust CLI (or build with cargo build --release --locked)
+cargo install dendro-cli
+
+# 2. Launch the 6-screen Ratatui Terminal Cockpit
+dendro cockpit
+
+# 3. Serve the Connected Web Studio on loopback (127.0.0.1:4242 only)
+dendro dashboard --serve 127.0.0.1:4242 --site-dir ./site
+
+# 4. Run headless loopback daemon, pre-flight advisor &amp; Nao semantic queries
+dendro serve 127.0.0.1:4242
+dendro advise
+dendro ask "which handoff pairs had the highest return rate this week?"</code></pre>
+            <div style="display:flex;flex-wrap:wrap;gap:0.65rem;margin-top:0.5rem;">
+              <a class="d-btn primary" href="dashboards/index.html">Open Connected Intelligence Hub →</a>
+              <a class="d-btn" href="viewer.html">Open Offline Fleet Explorer →</a>
+              <a class="d-btn" href="get-started.html">Full Installation Guide →</a>
+            </div>
+          </article>
+
+          <article class="d-card">
+            <span class="d-kicker" style="color:var(--layer-harness);">Ratatui TUI Cockpit &amp; Loopback Daemon Architecture</span>
+            <h3>Zero-Flicker Terminal Views &amp; Strict Loopback Safety</h3>
+            <ul class="p-list" style="color:var(--text-secondary);">
+              <li><strong style="color:var(--text-primary);"><code>dendro cockpit</code> (6-Screen Ratatui TUI):</strong> Pure-Rust terminal interface with 6 keyboard-driven screens (<code>Overview</code>, <code>Layers</code>, <code>Handoffs</code>, <code>Capabilities</code>, <code>Consoles</code>, <code>Inspection</code>) and full L0–L3 insight drill-downs.</li>
+              <li><strong style="color:var(--text-primary);"><code>dendro serve</code> &amp; <code>dendro dashboard</code> (<code>127.0.0.1:4242</code>):</strong> Binds strictly to local loopback (refusing non-local interfaces), streaming live SSE updates (<code>/api/events</code>) and DuckDB JSON queries (<code>/api/query</code>).</li>
+              <li><strong style="color:var(--text-primary);"><code>dendro advise</code> &amp; <code>dendro ask</code>:</strong> Sub-15ms pull-only pre-flight health oracle and deterministic in-process Nao semantic router across 12 canonical SQL views (zero LLM query hallucination).</li>
+            </ul>
+            <figure style="margin:0.5rem 0 0;background:var(--bg-obsidian);border:1px solid var(--border-subtle);border-radius:10px;padding:0.75rem;">
+              <video controls preload="metadata" poster="assets/dendro-preview.gif" style="width:100%;max-height:240px;object-fit:contain;border-radius:6px;background:#0A0D12;">
+                <source src="assets/dendro-demo.mp4" type="video/mp4">
+                <img src="assets/dendro-preview.gif" alt="Dendro Ratatui terminal cockpit walkthrough">
+              </video>
+              <figcaption style="font-size:0.78rem;color:var(--text-muted);text-align:center;margin-top:0.4rem;">Interactive walkthrough: Ratatui terminal cockpit &amp; offline browser explorer.</figcaption>
+            </figure>
+          </article>
+        </div>
+
+        <!-- The 6 Mandatory Epistemic Honesty Commitments -->
+        <div style="margin-bottom:2.5rem;">
+          <div class="d-eyebrow">Mathematical &amp; Philosophical Integrity</div>
+          <h3 style="font-size:1.45rem;margin:0.2rem 0 1rem;">The 6 Mandatory Epistemic Honesty Commitments</h3>
+          <div class="d-grid-3">
+            <article class="d-card">
+              <span class="d-badge coord" style="align-self:flex-start;">01 · Null ≠ Zero</span>
+              <h3>Missingness is Never Fabricated</h3>
+              <p>An unobserved interval or unmaterialized table is <code>null</code> (rendered with diagonal hatch marks or <code>insufficient_evidence</code>), never zero. Five exclusive status badges govern every view: <code>ok</code>, <code>partial</code>, <code>insufficient_evidence</code>, <code>refused</code>, and <code>not_applicable</code>.</p>
+            </article>
+            <article class="d-card">
+              <span class="d-badge model" style="align-self:flex-start;">02 · Tokens ≠ Productivity</span>
+              <h3>Operational Cost Attribution Only</h3>
+              <p>High token volume never implies high engineering output—a 20M token session may be a stuck rebase loop. Token accounting is strictly framed as 5-part cost and cache yield attribution.</p>
+            </article>
+            <article class="d-card">
+              <span class="d-badge harness" style="align-self:flex-start;">03 · Correlation ≠ Causation</span>
+              <h3>Honest Cross-Layer Alignment</h3>
+              <p>Vertical Bezier threads in the 4-Layer Stack X-Ray represent recorded temporal and structural correlation across Model, Harness, Coordination, and OS spans—never claiming mathematical proof of causation.</p>
+            </article>
+            <article class="d-card">
+              <span class="d-badge harness" style="align-self:flex-start;">04 · Mode A vs. Mode B Disclosure</span>
+              <h3>Explicit Console Resolution Modes</h3>
+              <p>Consoles <code>I22</code>–<code>I25</code> transparently label whether they are rendering <strong>Mode A</strong> (Materialized Schema 5 views) or <strong>Mode B</strong> (Live windowed fact-table heuristic proxies, such as <code>SIMULATED TIER TOTAL (COUNTERFACTUAL)</code>).</p>
+            </article>
+            <article class="d-card">
+              <span class="d-badge model" style="align-self:flex-start;">05 · Calculator ≠ Predicted ROI</span>
+              <h3>Operator Assumptions, Not Benchmarks</h3>
+              <p>The Capacity Scenario Calculator is an Operator Assumption Explorer with transparent arithmetic formulas—never a vendor ROI promise or invented "developer hours saved" claim.</p>
+            </article>
+            <article class="d-card">
+              <span class="d-badge env" style="align-self:flex-start;">06 · 100% Privacy &amp; Zero Exfiltration</span>
+              <h3>Zero Prompts or Secrets Stored</h3>
+              <p>Prompts, model responses, chain-of-thought, tool arguments, and error payloads are never persisted in DuckDB. Secret prefixes (<code>sk-</code>, <code>ghp_</code>, <code>gho_</code>, <code>xai-</code>, Bearer tokens) are scrubbed before storage.</p>
+            </article>
+          </div>
+        </div>
+
+        <!-- Move the Needle Ecosystem Integration -->
+        <div>
+          <div class="d-eyebrow">Where Dendro Fits in the Move the Needle Stack</div>
+          <h3 style="font-size:1.45rem;margin:0.2rem 0 1rem;">The Flight Recorder After the Flight—Paired with Live Telemetry in Flight</h3>
+          <div class="d-grid-3">
+            <a class="d-card" href="../agent-otel-bridge/" style="text-decoration:none;">
+              <div style="display:flex;align-items:center;gap:0.75rem;">
+                <img src="../agent-otel-bridge/assets/mark.svg" alt="agent-otel-bridge logo" width="40" height="40" style="border-radius:8px;">
+                <div>
+                  <span class="d-kicker" style="color:var(--layer-harness);">Live Partner · Watch in Flight</span>
+                  <h3>agent-otel-bridge</h3>
+                </div>
+              </div>
+              <p><strong>agent-otel-bridge</strong> streams live OTLP traces and metrics to Grafana or Datadog in flight; <strong>Dendro</strong> shares its 5-layer capability taxonomy to analyze cost, cache yield, and rework afterward.</p>
+            </a>
+
+            <a class="d-card" href="../meshloop/" style="text-decoration:none;">
+              <div style="display:flex;align-items:center;gap:0.75rem;">
+                <img src="../meshloop/assets/logo.svg" alt="Meshloop logo" width="40" height="40" style="border-radius:8px;">
+                <div>
+                  <span class="d-kicker" style="color:var(--layer-coord);">Execution Partner · Build in Parallel</span>
+                  <h3>Meshloop</h3>
+                </div>
+              </div>
+              <p>Execute parallel coding tasks inside isolated Git worktree sandboxes with <strong>Meshloop</strong>, then inspect repair turns, sub-agent lineage, and process RSS in <strong>Dendro</strong>.</p>
+            </a>
+
+            <a class="d-card" href="../agent-sdlc/" style="text-decoration:none;">
+              <div style="display:flex;align-items:center;gap:0.75rem;">
+                <img src="../agent-sdlc/assets/agentflow-icon-192.png" alt="AgentFlow SDLC logo" width="40" height="40" style="border-radius:8px;">
+                <div>
+                  <span class="d-kicker" style="color:var(--layer-model);">Governance Partner · Plan &amp; Accept</span>
+                  <h3>AgentFlow SDLC 2.0</h3>
+                </div>
+              </div>
+              <p>Define engineering role boundaries and human acceptance gates with <strong>AgentFlow</strong>, and measure first-pass acceptance yield (<code>I19</code>) and handoff wait times in <strong>Dendro</strong>.</p>
+            </a>
+          </div>
         </div>
       </div>
     </section>
@@ -345,9 +1993,9 @@
 <h2 id="mtn-context-dendro">Why Dendro exists</h2>
 <p class="mtn-context-status">Open source · MIT · v0.8.0</p>
 <div class="mtn-context-grid">
-<article><h3>Value</h3><p>See where time, handoffs, rework, and budget actually go across your AI coding sessions—using verifiable local evidence instead of vanity productivity claims.</p></article>
-<article><h3>Strategy</h3><p>Six open terminals look busy even when four agents are stalled on a handoff. Dendro turns raw session history into honest evidence of where time, budget, and rework actually go.</p></article>
-<article><h3>Technical frontier</h3><p>Reads local session transcripts across six AI coding tools to separate productive work from waiting, handoff delays, and multi-pass rework—in an interactive terminal cockpit or browser report.</p></article>
+<article><h3>Value</h3><p>See where time, handoffs, rework, capabilities, and token budget actually go across your multi-agent AI coding sessions—using verifiable local DuckDB evidence instead of vanity productivity claims.</p></article>
+<article><h3>Strategy</h3><p>Six open terminals look busy even when four agents are stalled on a handoff and two are looping. Dendro turns raw local session history into a 4-layer causal X-ray of where time, handoffs, and budget actually go.</p></article>
+<article><h3>Technical frontier</h3><p>Reconstructs local session logs out-of-band across Claude Code, Codex, AGY, Grok CLI, and Pi (plus OpenRig, AgentFlow, and Meshloop adapters) into 4 architectural layers, 5 capability funnels, and 25 deterministic DuckDB insights.</p></article>
 </div>
 <div class="mtn-context-links">
 <div><p class="mtn-context-label">Related thinking</p><a href="../thinking/2026-08-18-observability-after-dashboards.html">Observability After Dashboards</a><a href="../thinking/2026-09-10-follow-the-money-the-future-of-observability.html">Follow the money - the future of observability</a></div>
@@ -359,19 +2007,20 @@
 <!-- mtneedle:managed:end subsite-context -->
   </main>
 
-  <footer class="p-footer">
-    <div class="p-wrap p-footer-inner">
-      <div><strong>Dendro</strong> · MIT License · Built by Samuel Mota (<a href="../">Move the Needle</a>)</div>
+  <footer class="p-footer" style="background:var(--bg-obsidian);border-top:1px solid var(--border-subtle);">
+    <div class="d-wrap p-footer-inner">
+      <div><strong>Dendro v0.8.0</strong> · MIT License · Built by Samuel Mota (<a href="../">Move the Needle</a>)</div>
       <div class="p-footer-links">
         <a href="./" aria-current="page">Overview</a>
-        <a href="how-it-works.html">How it works</a>
+        <a href="how-it-works.html">How It Works</a>
+        <a href="get-started.html">Get Started</a>
         <a href="dashboards/index.html">Dashboards</a>
         <a href="viewer.html">Fleet Explorer</a>
-        <a href="get-started.html">Get started</a>
         <a href="https://github.com/smota/dendro">GitHub ↗</a>
       </div>
     </div>
   </footer>
+  <script src="app.js"></script>
 <!-- mtneedle:managed:start subsite-family v1 -->
 <aside class="mtn-family" aria-label="Move the Needle systems and practice">
 <div class="mtn-family-inner">
