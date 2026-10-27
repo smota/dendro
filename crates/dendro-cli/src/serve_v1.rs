@@ -305,7 +305,7 @@ fn next_source_key(prefix: &str) -> String {
     format!("{prefix}:{ts}:{count}:{rand_val:032x}")
 }
 
-fn value_ref_to_json(val: duckdb::types::ValueRef) -> serde_json::Value {
+pub(crate) fn value_ref_to_json(val: duckdb::types::ValueRef) -> serde_json::Value {
     use duckdb::types::ValueRef;
     match val {
         ValueRef::Null => serde_json::Value::Null,
@@ -1081,7 +1081,14 @@ impl QuackOwnerDaemon {
                         return Ok(vec![]);
                     }
 
-                    let mut stmt = conn.prepare(&format!("SELECT * FROM \"{}\" LIMIT 50", view_name))?;
+                    let limit_clause = envelope
+                        .params
+                        .get("limit")
+                        .and_then(|v| v.as_i64())
+                        .map(|l| format!(" LIMIT {l}"))
+                        .unwrap_or_default();
+                    let mut stmt =
+                        conn.prepare(&format!("SELECT * FROM \"{}\"{limit_clause}", view_name))?;
                     let mapped = stmt.query_map([], |row| {
                         let mut map = serde_json::Map::new();
                         let col_names = row.as_ref().column_names();

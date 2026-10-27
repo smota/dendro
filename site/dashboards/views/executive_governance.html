@@ -222,6 +222,21 @@
       <div class="query-box-title">Underlying DuckDB Query</div>
       <code>SELECT * FROM v_executive_governance;</code>
     </div>
+    <section id="live-duckdb-panel" class="live-duckdb-panel" hidden aria-label="Connected fact rows">
+      <div class="live-duckdb-surface">
+        <h2 class="live-duckdb-title">Connected fact rows</h2>
+        <p id="live-duckdb-window">Recorded window: —</p>
+        <p id="live-duckdb-totals">Total rows: —</p>
+        <ul id="live-duckdb-facts" class="fact-counts"></ul>
+        <div class="live-duckdb-scroll">
+          <table class="telemetry-table">
+            <thead id="live-duckdb-head"></thead>
+            <tbody id="live-duckdb-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
   </main>
 
   <!-- Embedded Snapshot Data -->

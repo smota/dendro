@@ -58,6 +58,12 @@ pub enum Commands {
         /// Ingest default local harness roots first when the database is missing or not ready.
         #[arg(long, help_heading = "Cockpit")]
         auto_ingest: bool,
+        /// Run connected live HTTP & SSE dashboard server on local bind address (e.g. 127.0.0.1:4242).
+        #[arg(long, help_heading = "Connected Web")]
+        serve: Option<String>,
+        /// Path to static dashboard site assets (defaults to ./site or auto-detected site dir).
+        #[arg(long, help_heading = "Connected Web")]
+        site_dir: Option<PathBuf>,
     },
     /// Open the cockpit for an explicit window. Auto-anchors to recorded data.
     #[command(next_help_heading = "Scope")]
@@ -373,6 +379,30 @@ fn offline_dashboard(
 }
 
 pub async fn run(command: Commands) -> Result<()> {
+    if let Commands::Dashboard {
+        db,
+        rig,
+        window,
+        from,
+        to,
+        html: None,
+        serve: Some(bind_addr),
+        site_dir,
+        ..
+    } = &command
+    {
+        return crate::connected_web::start_dashboard_server(
+            db,
+            bind_addr,
+            site_dir.as_deref(),
+            rig.as_deref(),
+            window.as_deref(),
+            from.as_deref(),
+            to.as_deref(),
+        )
+        .await;
+    }
+
     let ui_request = match &command {
         Commands::Ui {
             db,
@@ -397,6 +427,7 @@ pub async fn run(command: Commands) -> Result<()> {
             from,
             to,
             html: None,
+            serve: None,
             once,
             ..
         } => {

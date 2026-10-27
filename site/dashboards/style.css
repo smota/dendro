@@ -917,3 +917,74 @@ table.telemetry-table code {
     grid-template-columns: 1fr;
   }
 }
+
+.hub-telemetry,
+.live-duckdb-panel {
+  background: #0A0D12;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  margin: 8px 0 28px;
+  padding: 16px;
+}
+
+.hub-telemetry-surface,
+.live-duckdb-surface {
+  background: #11161F;
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.hub-telemetry h2,
+.live-duckdb-title {
+  font-size: 1.05rem;
+  margin-bottom: 8px;
+}
+
+.hub-telemetry p,
+.live-duckdb-panel p {
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.fact-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  margin: 12px 0;
+}
+
+.fact-counts li {
+  background: #0A0D12;
+  border-radius: 999px;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  padding: 4px 10px;
+}
+
+.layer-summaries {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  margin-top: 12px;
+}
+
+.layer-summaries article {
+  background: #0A0D12;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.layer-summaries h3 {
+  font-size: 0.92rem;
+  margin-bottom: 6px;
+}
+
+.live-duckdb-scroll {
+  background: #0A0D12;
+  border-radius: 8px;
+  max-height: 28rem;
+  overflow: auto;
+}

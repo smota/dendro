@@ -284,6 +284,11 @@ test('vNext insight ids, Nao views, obsidian tokens, and exclusive badges', () =
   if (!file.endsWith('.html')) continue;
   const html = read(`dashboards/views/${file}`);
   assert.doesNotMatch(html, /<(?:script|link|img|iframe)[^>]+(?:src|href)="https?:/i);
+  assert.match(html, /id="live-duckdb-panel"/);
+  assert.match(html, /id="live-duckdb-window"/);
+  assert.match(html, /id="live-duckdb-facts"/);
+  assert.match(html, /id="live-duckdb-body"/);
+  assert.match(html, /attachLiveSync/);
   viewNames(html).forEach(name => htmlViews.add(name));
  }
  assert.deepEqual([...htmlViews].sort(), expectedViews);
@@ -320,6 +325,18 @@ test('vNext insight ids, Nao views, obsidian tokens, and exclusive badges', () =
  assert.match(live, /badgeText\.textContent = LIVE_BADGE/);
  assert.match(live, /badgeText\.textContent = SNAPSHOT_BADGE/);
  assert.doesNotMatch(live, /LIVE SYNC READY|LIVE SSE|POLLING DUCKDB|LIVE HTTP/);
+ assert.match(live, /function renderLiveDuckDbPanel/);
+ assert.match(live, /recorded_window/);
+ assert.match(live, /table_counts/);
+ assert.match(live, /live-duckdb-panel/);
+ assert.match(live, /endpoint: '\/api\/events'/);
+ assert.match(live, /pollEndpoint: '\/api\/query'/);
+ assert.match(indexHtml, /viewId: 'hub'/);
+ assert.match(indexHtml, /id="hub-recorded-window"/);
+ assert.match(indexHtml, /id="hub-layer-summaries"/);
+ assert.match(indexHtml, /source === 'sse' \|\| source === 'poll'/);
+ assert.match(viewerHtml, /\/api\/query\?view=cockpit/);
+ assert.match(viewerHtml, /LIVE '\+'DUCKDB'/);
 
  for (const rel of ['viewer.html', 'dashboards/index.html']) {
   const fn = displayStatusFrom(read(rel), rel);

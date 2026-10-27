@@ -53,44 +53,81 @@
     <!-- KPI Aggregate Banner -->
     <section class="kpi-grid" aria-label="Layer key performance indicators">
       <article class="kpi-card accent-cyan">
-        <div class="kpi-label">Model tokens (I02)</div>
+        <div class="kpi-label" id="kpi-tokens-label">Model tokens (I02)</div>
         <div class="kpi-value" id="kpi-tokens">14.24M</div>
-        <div class="kpi-meta">
+        <div class="kpi-meta" id="kpi-tokens-meta">
           <span>Disjoint components</span> · <span style="color:var(--accent-cyan);">No inferred currency</span>
         </div>
       </article>
 
       <article class="kpi-card accent-emerald">
-        <div class="kpi-label">8 Active Actors / Seats</div>
+        <div class="kpi-label" id="kpi-seats-label">8 Active Actors / Seats</div>
         <div class="kpi-value" id="kpi-seats">8</div>
-        <div class="kpi-meta">
+        <div class="kpi-meta" id="kpi-seats-meta">
           <span class="badge badge-info">OpenRig Adapter Binding</span> · <span>seat count when present</span>
         </div>
       </article>
 
       <article class="kpi-card accent-purple">
-        <div class="kpi-label">Session yield</div>
+        <div class="kpi-label" id="kpi-yield-label">Session yield</div>
         <div class="kpi-value" id="kpi-yield">78.4K <small style="font-size:0.9rem;font-weight:500;">tok/deliv</small></div>
-        <div class="kpi-meta">
+        <div class="kpi-meta" id="kpi-yield-meta">
           <span>Canonical M1 when linked</span> · <span style="color:var(--purple-protocol);">Null is not zero</span>
         </div>
       </article>
 
       <article class="kpi-card accent-amber">
-        <div class="kpi-label">Work handoff rework</div>
+        <div class="kpi-label" id="kpi-friction-label">Work handoff rework</div>
         <div class="kpi-value" id="kpi-friction">12.9%</div>
-        <div class="kpi-meta">
+        <div class="kpi-meta" id="kpi-friction-meta">
           <span>32 rework returns</span> · <span style="color:var(--amber-friction);">18 recorded pairs</span>
         </div>
       </article>
 
       <article class="kpi-card accent-rose">
-        <div class="kpi-label">Observed concurrency</div>
+        <div class="kpi-label" id="kpi-concurrency-label">Observed concurrency</div>
         <div class="kpi-value" id="kpi-concurrency">2.84x</div>
-        <div class="kpi-meta">
+        <div class="kpi-meta" id="kpi-concurrency-meta">
           <span class="badge badge-info">OpenRig Adapter Binding</span> · <span>k active seats</span>
         </div>
       </article>
+    </section>
+
+    <section id="hub-telemetry" class="hub-telemetry" aria-label="Fleet fact telemetry">
+      <div class="hub-telemetry-surface">
+        <h2>Fleet fact telemetry</h2>
+        <p id="hub-recorded-window">Recorded window: illustrative snapshot</p>
+        <p id="hub-row-count">Total rows: —</p>
+        <p id="hub-harnesses">Harnesses: —</p>
+        <ul class="fact-counts" id="hub-fact-counts">
+          <li>Usage observations <span id="fact-usage_facts">—</span></li>
+          <li>Message facts <span id="fact-message_facts">—</span></li>
+          <li>Activity intervals <span id="fact-activity_facts">—</span></li>
+          <li>Queue items <span id="fact-queue_facts">—</span></li>
+          <li>Security posture records <span id="fact-security_facts">—</span></li>
+          <li>Session lineage edges <span id="fact-session_edges">—</span></li>
+          <li>Tool facts <span id="fact-tool_facts">—</span></li>
+          <li>Skill facts <span id="fact-skill_facts">—</span></li>
+        </ul>
+        <div id="hub-layer-summaries" class="layer-summaries">
+          <article>
+            <h3>Model Layer</h3>
+            <p id="layer-model">usage_facts —</p>
+          </article>
+          <article>
+            <h3>Harness Layer</h3>
+            <p id="layer-harness">message_facts — · activity_facts — · tool_facts — · skill_facts —</p>
+          </article>
+          <article>
+            <h3>Coordination &amp; Lineage</h3>
+            <p id="layer-coordination">queue_facts — · session_edges —</p>
+          </article>
+          <article>
+            <h3>Environment &amp; Security</h3>
+            <p id="layer-environment">security_facts —</p>
+          </article>
+        </div>
+      </div>
     </section>
 
     <section id="persona-questions" aria-label="Persona questions">
@@ -706,13 +743,101 @@ function display_status(status, reason) {
       }
     }
 
+    const FACT_KEYS = ['usage_facts', 'message_facts', 'activity_facts', 'queue_facts', 'security_facts', 'session_edges', 'tool_facts', 'skill_facts'];
+    const FACT_LABELS = {
+      usage_facts: 'Usage observations',
+      message_facts: 'Message facts',
+      activity_facts: 'Activity intervals',
+      queue_facts: 'Queue items',
+      security_facts: 'Security posture records',
+      session_edges: 'Session lineage edges',
+      tool_facts: 'Tool facts',
+      skill_facts: 'Skill facts'
+    };
+
+    function factCount(counts, key) {
+      if (!counts || typeof counts !== 'object') return null;
+      const value = counts[key];
+      if (typeof value === 'number' && Number.isFinite(value)) return value;
+      if (value && typeof value === 'object' && typeof value.rows === 'number' && Number.isFinite(value.rows)) return value.rows;
+      return null;
+    }
+
+    function formatCount(value) {
+      return typeof value === 'number' ? value.toLocaleString() : '—';
+    }
+
+    function applyLiveHub(data) {
+      const counts = data && data.table_counts;
+      const recorded = (data && data.recorded_window) || {};
+      const from = recorded.from || '—';
+      const to = recorded.to || '—';
+      const windowEl = document.getElementById('hub-recorded-window');
+      if (windowEl) windowEl.textContent = 'Live DuckDB window ' + from + ' → ' + to;
+      const listed = Array.isArray(data.rows) ? data.rows.length : null;
+      const total = typeof data.row_count === 'number' ? data.row_count : listed;
+      const rowEl = document.getElementById('hub-row-count');
+      if (rowEl) rowEl.textContent = 'Total rows: ' + formatCount(total);
+      const harnessEl = document.getElementById('hub-harnesses');
+      if (harnessEl) {
+        const names = Array.isArray(data.harnesses) ? data.harnesses.map(item => {
+          if (typeof item === 'string') return item;
+          if (item && typeof item === 'object') return item.name || item.harness || '';
+          return '';
+        }).filter(Boolean) : [];
+        harnessEl.textContent = names.length ? 'Harnesses: ' + names.join(', ') : 'Harnesses: —';
+      }
+      FACT_KEYS.forEach(key => {
+        const el = document.getElementById('fact-' + key);
+        if (el) el.textContent = formatCount(factCount(counts, key));
+      });
+      const layers = {
+        'layer-model': ['usage_facts'],
+        'layer-harness': ['message_facts', 'activity_facts', 'tool_facts', 'skill_facts'],
+        'layer-coordination': ['queue_facts', 'session_edges'],
+        'layer-environment': ['security_facts']
+      };
+      Object.entries(layers).forEach(([id, keys]) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = keys.map(key => formatCount(factCount(counts, key)) + ' ' + (FACT_LABELS[key] || key)).join(' · ');
+      });
+      [
+        ['kpi-tokens-label', 'kpi-tokens', 'kpi-tokens-meta', 'usage_facts', 'Usage observations'],
+        ['kpi-seats-label', 'kpi-seats', 'kpi-seats-meta', 'message_facts', 'Message facts'],
+        ['kpi-yield-label', 'kpi-yield', 'kpi-yield-meta', 'activity_facts', 'Activity intervals'],
+        ['kpi-friction-label', 'kpi-friction', 'kpi-friction-meta', 'queue_facts', 'Queue items'],
+        ['kpi-concurrency-label', 'kpi-concurrency', 'kpi-concurrency-meta', 'session_edges', 'Session lineage edges']
+      ].forEach(([labelId, valueId, metaId, key, labelText]) => {
+        const count = factCount(counts, key);
+        if (count == null) return;
+        const label = document.getElementById(labelId);
+        const value = document.getElementById(valueId);
+        const meta = document.getElementById(metaId);
+        if (label) label.textContent = labelText;
+        if (value) value.textContent = formatCount(count);
+        if (meta) meta.textContent = labelText;
+      });
+      if (Array.isArray(data.insights)) {
+        data.insights.forEach(insight => {
+          if (!insight || typeof insight !== 'object' || !/^I\d{2}$/.test(insight.id || '')) return;
+          const card = document.querySelector('[data-insight-id="' + insight.id + '"]');
+          if (!card) return;
+          const formula = card.querySelector('.insight-formula');
+          if (formula && typeof insight.l0 === 'string' && insight.l0) formula.textContent = insight.l0;
+          const tag = card.querySelector('.view-card-tag');
+          if (tag && typeof insight.layer === 'string' && insight.layer) tag.textContent = insight.layer;
+        });
+      }
+    }
+
     // Connect Live Sync Hook
     const sync = attachLiveSync({
       viewId: 'hub',
       badgeId: 'dual-serving-indicator',
       badgeTextId: 'dual-serving-text',
       onData: function(data, source) {
-        updateKPIs(data);
+        if (source === 'sse' || source === 'poll') applyLiveHub(data);
+        else updateKPIs(data);
       }
     });
 

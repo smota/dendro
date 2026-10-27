@@ -1,6 +1,7 @@
 #![deny(unsafe_code)]
 
 pub mod advise_v1;
+pub mod connected_web;
 mod extensions;
 pub mod serve_v1;
 pub mod tui;

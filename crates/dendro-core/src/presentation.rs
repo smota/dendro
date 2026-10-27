@@ -1956,18 +1956,137 @@ pub fn public_projection(report: &Value) -> Value {
     out.insert("security".into(), project_security(&p["security"]));
     json!({"metric":"decisions","payload":out})
 }
-pub fn offline_html(report: &Value) -> Result<String> {
+
+const MAX_EXPORT_ARRAY_ROWS: usize = 50_000;
+
+fn is_raw_trace_key(key: &str) -> bool {
+    matches!(
+        key,
+        "trace_inputs"
+            | "activity_events"
+            | "demand_events"
+            | "handoff_edges"
+            | "nonreturn_handoffs"
+            | "handoff_loops"
+            | "advisory_trace_inputs"
+            | "local_activity"
+            | "unresolved_activity"
+            | "m3_rework_members"
+            | "m3_paths"
+            | "m3_unknown_members"
+            | "k2_insufficient_history_members"
+            | "closed_item_members"
+            | "closed_item_keys"
+            | "tool_loops"
+            | "mission_records"
+            | "sessions"
+            | "links"
+            | "destination_snapshots"
+            | "seat_lives"
+            | "intakes"
+            | "events"
+            | "intervals"
+            | "rows"
+            | "queue"
+            | "observed_spans"
+            | "source_keys"
+            | "evidence"
+            | "members"
+            | "samples"
+            | "wait_sample_keys"
+            | "exec_sample_keys"
+            | "message_facts"
+            | "usage_facts"
+            | "messages"
+            | "facts"
+    )
+}
+
+/// Synthetic guard: exactly `MAX_EXPORT_ARRAY_ROWS` is accepted. One more row is not.
+fn check_export_array_limit(value: &Value) -> Result<()> {
     fn bounded(value: &Value) -> bool {
         match value {
-            Value::Array(a) => a.len() <= 50_000 && a.iter().all(bounded),
-            Value::Object(m) => m.values().all(bounded),
+            Value::Array(items) => {
+                items.len() <= MAX_EXPORT_ARRAY_ROWS && items.iter().all(bounded)
+            }
+            Value::Object(map) => map.values().all(bounded),
             _ => true,
         }
     }
-    if !bounded(&report["payload"]) {
+    if !bounded(value) {
         bail!("offline export exceeds 50000 rows per array; narrow the report window");
     }
-    let safe = serde_json::to_string(&public_projection(report))?
+    Ok(())
+}
+
+fn compact_raw_trace_arrays(value: &mut Value) -> bool {
+    let mut truncated = false;
+    match value {
+        Value::Array(items) => {
+            for item in items {
+                truncated |= compact_raw_trace_arrays(item);
+            }
+        }
+        Value::Object(map) => {
+            for (key, child) in map.iter_mut() {
+                if is_raw_trace_key(key) {
+                    if let Value::Array(items) = child {
+                        if items.len() > MAX_EXPORT_ARRAY_ROWS {
+                            items.truncate(MAX_EXPORT_ARRAY_ROWS);
+                            truncated = true;
+                        }
+                    }
+                }
+                truncated |= compact_raw_trace_arrays(child);
+            }
+        }
+        _ => {}
+    }
+    truncated
+}
+
+fn truncate_every_oversized_array(value: &mut Value) -> bool {
+    let mut truncated = false;
+    match value {
+        Value::Array(items) => {
+            if items.len() > MAX_EXPORT_ARRAY_ROWS {
+                items.truncate(MAX_EXPORT_ARRAY_ROWS);
+                truncated = true;
+            }
+            for item in items {
+                truncated |= truncate_every_oversized_array(item);
+            }
+        }
+        Value::Object(map) => {
+            for child in map.values_mut() {
+                truncated |= truncate_every_oversized_array(child);
+            }
+        }
+        _ => {}
+    }
+    truncated
+}
+
+pub fn offline_html(report: &Value) -> Result<String> {
+    let mut export = report.clone();
+    let mut truncated = false;
+    if let Some(payload) = export.get_mut("payload") {
+        truncated = compact_raw_trace_arrays(payload);
+        if check_export_array_limit(payload).is_err() {
+            truncated |= truncate_every_oversized_array(payload);
+        }
+        check_export_array_limit(payload)?;
+    }
+    let mut projected = public_projection(&export);
+    if truncated {
+        if let Some(payload) = projected
+            .get_mut("payload")
+            .and_then(|value| value.as_object_mut())
+        {
+            payload.insert("metadata".into(), json!({"truncated_raw_rows": true}));
+        }
+    }
+    let safe = serde_json::to_string(&projected)?
         .replace('&', "\\u0026")
         .replace('<', "\\u003c")
         .replace('>', "\\u003e")
@@ -2162,6 +2281,64 @@ mod tests {
             p["payload"]["m1_by_seat"][0]["seat"],
             p["payload"]["activity_events"][0]["seat"]
         );
+        assert!(!h.contains("truncated_raw_rows"));
+    }
+    #[test]
+    fn export_array_limit_rejects_synthetic_array_over_50000() {
+        let rows = Value::Array(vec![Value::Null; 50_001]);
+        let err = check_export_array_limit(&rows).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("offline export exceeds 50000 rows per array"));
+    }
+    #[test]
+    fn offline_html_compacts_raw_facts_and_keeps_aggregate_totals() {
+        let mut report = json!({
+            "payload": {
+                "from": "2026-01-01T00:00:00Z",
+                "to": "2026-01-02T00:00:00Z",
+                "tokens": 84555,
+                "m1_yield": 3,
+                "m1_by_seat": [{"seat": "alpha", "tokens": 84555, "closed_items": 2, "nonreturn_deliveries": 1}],
+                "handoff_members": [{"from": "alpha", "to": "beta", "is_return": true}],
+                "token_categories": {"input_uncached": 10, "cache_read": 20, "cache_write": 1, "output": 4},
+                "insights": [{
+                    "id": "I02",
+                    "name": "model.tokens.direct",
+                    "version": "1.0.0",
+                    "domain": "model",
+                    "status": {"state": "computed"},
+                    "population": {"what": "usage_facts", "n": 43169},
+                    "measures": [{"id": "output", "name": "output", "value": 4, "unit": "tokens"}],
+                    "coverage": "kept",
+                    "evidence": []
+                }]
+            }
+        });
+        report["payload"]["message_facts"] = Value::Array(vec![Value::Null; 84_555]);
+        report["payload"]["activity_events"] = Value::Array(vec![
+            json!({"seat":"alpha","ts":"2026-01-01T00:00:00Z","state":"running"});
+            50_001
+        ]);
+        let html = offline_html(&report).unwrap();
+        let marker = "<script id=\"dendro-data\" type=\"application/json\">";
+        let start = html.find(marker).unwrap() + marker.len();
+        let end = html[start..].find("</script>").unwrap() + start;
+        let embedded: Value = serde_json::from_str(&html[start..end]).unwrap();
+        let payload = &embedded["payload"];
+        assert_eq!(payload["metadata"]["truncated_raw_rows"], true);
+        assert_eq!(payload["tokens"], 84555);
+        assert_eq!(payload["m1_yield"], 3);
+        assert_eq!(payload["m1_by_seat"][0]["tokens"], 84555);
+        assert_eq!(payload["m1_by_seat"][0]["closed_items"], 2);
+        assert_eq!(payload["handoff_members"].as_array().unwrap().len(), 1);
+        assert_eq!(payload["handoff_members"][0]["is_return"], true);
+        assert_eq!(payload["token_categories"]["cache_read"], 20);
+        assert_eq!(payload["insights"][0]["id"], "I02");
+        assert_eq!(payload["insights"][0]["population"]["n"], 43169);
+        let events = payload["activity_events"].as_array().unwrap();
+        assert_eq!(events.len(), 50_000);
+        assert!(payload.get("message_facts").is_none());
     }
     #[test]
     fn unknown_zero_and_percentages_remain_distinct() {
@@ -2838,5 +3015,49 @@ mod tests {
         assert!(rendered.contains("security_facts=not created"));
         assert!(!rendered.contains("security_facts=0"));
         let _ = std::fs::remove_dir_all(&missing_dir);
+    }
+
+    #[test]
+    fn export_array_limit_allows_synthetic_50000_row_array() {
+        let rows: Vec<_> = (0..50_000).map(|i| json!(i)).collect();
+        assert!(check_export_array_limit(&json!({"trace_inputs": rows})).is_ok());
+        let rows: Vec<_> = (0..50_001).map(|i| json!(i)).collect();
+        let error = check_export_array_limit(&json!({"trace_inputs": rows})).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("offline export exceeds 50000 rows per array"));
+    }
+
+    #[test]
+    fn offline_html_compacts_trace_arrays_over_50000_rows() {
+        let events: Vec<_> = (0..50_001)
+            .map(|_| json!({"seat":"builder","ts":"2026-01-01T00:00:00Z","state":"running"}))
+            .collect();
+        let report = json!({
+            "metric": "decisions",
+            "payload": {
+                "from": "2026-01-01T00:00:00Z",
+                "to": "2026-01-02T00:00:00Z",
+                "activity_events": events
+            }
+        });
+        let html = offline_html(&report).unwrap();
+        assert!(!html.contains("offline export exceeds 50000 rows per array"));
+        let marker = "<script id=\"dendro-data\" type=\"application/json\">";
+        let start = html.find(marker).unwrap() + marker.len();
+        let end = html[start..].find("</script>").unwrap() + start;
+        let embedded: Value = serde_json::from_str(&html[start..end]).unwrap();
+        assert_eq!(
+            embedded["payload"]["activity_events"]
+                .as_array()
+                .unwrap()
+                .len(),
+            50_000
+        );
+
+        let dump: Vec<_> = (0..50_001).map(|i| json!({"n": i})).collect();
+        let other = json!({"payload": {"message_dump": dump}});
+        assert!(check_export_array_limit(&other["payload"]).is_err());
+        assert!(offline_html(&other).is_ok());
     }
 }
