@@ -6,6 +6,187 @@
   <title>Dendro · Model Token & Cost Accounting (I02 / I04)</title>
   <meta name="description" content="Model token and cost accounting for I02 and I04 from v_mission_token_burn. Unknown cost is never treated as zero.">
   <link rel="stylesheet" href="../style.css">
+  <style>
+    /* Concept Primer Strip & L3 Drawer Styles */
+    .concept-primer-strip {
+      margin: 14px 0 24px 0;
+      background: rgba(17, 22, 31, 0.7);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+    }
+    .concept-primer-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 12px 18px;
+      flex-wrap: wrap;
+    }
+    .concept-primer-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex: 1;
+      min-width: 280px;
+    }
+    .stack-layer-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .layer-model {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.35);
+    }
+    .concept-summary-text {
+      font-size: 0.84rem;
+      color: var(--text-secondary, #cbd5e1);
+      line-height: 1.4;
+    }
+    .concept-toggle-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 8px;
+      padding: 6px 14px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-primary, #f8fafc);
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .concept-toggle-btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+    .concept-toggle-btn .concept-chevron {
+      transition: transform 0.2s ease;
+    }
+    .concept-toggle-btn[aria-expanded="true"] .concept-chevron {
+      transform: rotate(180deg);
+    }
+    .concept-drawer {
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(10, 14, 22, 0.6);
+      padding: 16px 20px;
+    }
+    .concept-drawer-tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 8px;
+    }
+    .concept-tab-btn {
+      background: transparent;
+      border: none;
+      padding: 6px 14px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-muted, #94a3b8);
+      cursor: pointer;
+      border-radius: 6px;
+      transition: all 0.15s ease;
+    }
+    .concept-tab-btn:hover {
+      color: var(--text-secondary, #cbd5e1);
+      background: rgba(255, 255, 255, 0.04);
+    }
+    .concept-tab-btn.active {
+      color: #38bdf8;
+      background: rgba(6, 182, 212, 0.12);
+    }
+    .concept-tab-pane {
+      display: none;
+      font-size: 0.84rem;
+      line-height: 1.55;
+      color: var(--text-secondary, #cbd5e1);
+    }
+    .concept-tab-pane.active {
+      display: block;
+    }
+    .concept-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 14px;
+      margin-top: 10px;
+    }
+    .concept-card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 8px;
+      padding: 12px 14px;
+    }
+    .concept-card h4 {
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--text-primary, #f8fafc);
+      margin: 0 0 4px 0;
+    }
+    .concept-card p {
+      font-size: 0.78rem;
+      color: var(--text-muted, #94a3b8);
+      margin: 0;
+    }
+    .concept-threshold {
+      display: inline-block;
+      margin-top: 6px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 600;
+    }
+    .threshold-pass { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+    .threshold-warn { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+    .threshold-fail { background: rgba(244, 63, 94, 0.15); color: #f87171; }
+
+    /* L3 Technical Lineage Drawer */
+    .dendro-l3-drawer {
+      margin-top: 32px;
+      background: rgba(17, 22, 31, 0.6);
+      border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+      border-radius: 10px;
+      overflow: hidden;
+      transition: all 0.2s ease;
+    }
+    .dendro-l3-drawer summary {
+      padding: 12px 18px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-muted, #94a3b8);
+      cursor: pointer;
+      user-select: none;
+      background: rgba(255, 255, 255, 0.02);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .dendro-l3-drawer summary:hover {
+      color: var(--text-secondary, #cbd5e1);
+      background: rgba(255, 255, 255, 0.04);
+    }
+    .dendro-l3-drawer[open] summary {
+      border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+      color: var(--text-primary, #f8fafc);
+    }
+    .dendro-l3-drawer .l3-drawer-body {
+      padding: 16px;
+    }
+  </style>
 </head>
 <body>
   <!-- Top Navigation -->
@@ -52,12 +233,89 @@
     <!-- Header -->
     <section class="hero-header">
       <div class="hero-eyebrow">
-        <span>●</span> Model Layer · I02 / I04 · SQL View: <code>v_mission_token_burn</code>
+        <span>●</span> Model Layer · I02 / I04 · Operational Telemetry
       </div>
       <h1 class="hero-title">Model Token &amp; Cost Accounting (I02 / I04)</h1>
       <p class="hero-subtitle">
         Disjoint token components per model, plus observed and estimated cost kept apart. Reasoning stays inside output. Unknown cost is not zero. Task, actor, and model token accounting across invocations.
       </p>
+    </section>
+
+    <!-- Concept Primer Strip (Understand This View) -->
+    <section class="concept-primer-strip" aria-label="Console Concept Primer">
+      <div class="concept-primer-bar">
+        <div class="concept-primer-left">
+          <span class="stack-layer-badge layer-model">Model Layer</span>
+          <span class="concept-summary-text">
+            Tracks physical 4-component token burn (uncached input, cache read, cache write, output) and prompt cache hit efficiency per model and actor without currency guesswork.
+          </span>
+        </div>
+        <button type="button" class="concept-toggle-btn" id="btn-concept-toggle" aria-expanded="false" aria-controls="concept-drawer">
+          <svg class="concept-info-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+          <span>Understand How This Works (?)</span>
+          <svg class="concept-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </button>
+      </div>
+      <div class="concept-drawer" id="concept-drawer" hidden>
+        <div class="concept-drawer-tabs">
+          <button type="button" class="concept-tab-btn active" data-tab="tab-intuition">
+            <span>Visual Intuition &amp; How to Read It</span>
+          </button>
+          <button type="button" class="concept-tab-btn" data-tab="tab-metrics">
+            <span>Key Metrics, Formula &amp; Actionable Thresholds</span>
+          </button>
+        </div>
+        <div class="concept-tab-pane active" id="tab-intuition">
+          <p>4-Component Token Distribution by Model: Each stacked bar decomposes token consumption into physical token classes:</p>
+          <div class="concept-grid">
+            <div class="concept-card">
+              <h4>Uncached Input (Cyan)</h4>
+              <p>Fresh prompt tokens processed from scratch by the model API. High proportions indicate poor prompt cache reuse.</p>
+            </div>
+            <div class="concept-card">
+              <h4>Cache Read (Emerald)</h4>
+              <p>Prefix tokens served from existing prompt cache. High cache hit rates dramatically reduce billing and turn response times.</p>
+            </div>
+            <div class="concept-card">
+              <h4>Cache Write (Purple)</h4>
+              <p>New tokens written to context checkpoint store to establish prefix caching for future turns.</p>
+            </div>
+            <div class="concept-card">
+              <h4>Generated Output (Amber)</h4>
+              <p>Model output tokens, including tool calls and internal reasoning tokens (per I02 disjoint standards).</p>
+            </div>
+          </div>
+        </div>
+        <div class="concept-tab-pane" id="tab-metrics">
+          <p>Disjoint token accounting equations and efficiency thresholds:</p>
+          <div class="concept-grid">
+            <div class="concept-card">
+              <h4>Cache Read Ratio (I02)</h4>
+              <p><code>cache_read / (input_uncached + cache_read + cache_write)</code></p>
+              <div class="concept-threshold threshold-pass">Target: &gt; 70% Healthy</div>
+            </div>
+            <div class="concept-card">
+              <h4>Disjoint Token Sum</h4>
+              <p><code>input_uncached + cache_read + cache_write + output</code></p>
+              <div class="concept-threshold threshold-pass">No double-counted reasoning</div>
+            </div>
+            <div class="concept-card">
+              <h4>Task-Intake Overhead</h4>
+              <p>Fraction of tokens expended on prompt discovery before task assignment</p>
+              <div class="concept-threshold threshold-warn">Warning if &gt; 8%</div>
+            </div>
+            <div class="concept-card">
+              <h4>Physical Tokens Only</h4>
+              <p>All values track verified provider counts; currency is never imputed</p>
+              <div class="concept-threshold threshold-pass">Deterministic units</div>
+            </div>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- Top KPI Banner -->
@@ -118,7 +376,7 @@
         </div>
       </div>
 
-      <div id="token-bars-container">
+      <div id="token-bars-container" style="max-height: 360px; overflow-y: auto; padding-right: 8px;">
         <!-- Rendered seat token mix bars -->
       </div>
     </section>
@@ -158,25 +416,30 @@
       </div>
     </section>
 
-    <!-- SQL Query Reference -->
-    <div class="query-box">
-      <div class="query-box-title">Underlying DuckDB Query</div>
-      <code>SELECT * FROM v_mission_token_burn ORDER BY input_uncached DESC, seat_id;</code>
-    </div>
-    <section id="live-duckdb-panel" class="live-duckdb-panel" hidden aria-label="Connected fact rows">
-      <div class="live-duckdb-surface">
-        <h2 class="live-duckdb-title">Connected fact rows</h2>
-        <p id="live-duckdb-window">Recorded window: —</p>
-        <p id="live-duckdb-totals">Total rows: —</p>
-        <ul id="live-duckdb-facts" class="fact-counts"></ul>
-        <div class="live-duckdb-scroll">
-          <table class="telemetry-table">
-            <thead id="live-duckdb-head"></thead>
-            <tbody id="live-duckdb-body"></tbody>
-          </table>
+    <!-- Technical Lineage, Coverage & SQL Proof (L3) Drawer -->
+    <details class="dendro-l3-drawer">
+      <summary>Technical Lineage, Coverage &amp; SQL Proof (L3)</summary>
+      <div class="l3-drawer-body">
+        <div class="query-box">
+          <div class="query-box-title">Underlying SQL Projection</div>
+          <code>SELECT * FROM v_mission_token_burn ORDER BY input_uncached DESC, seat_id;</code>
         </div>
+        <section id="live-duckdb-panel" class="live-duckdb-panel" hidden aria-label="Connected fact rows">
+          <div class="live-duckdb-surface">
+            <h2 class="live-duckdb-title">Connected fact rows</h2>
+            <p id="live-duckdb-window">Recorded window: —</p>
+            <p id="live-duckdb-totals">Total rows: —</p>
+            <ul id="live-duckdb-facts" class="fact-counts"></ul>
+            <div class="live-duckdb-scroll">
+              <table class="telemetry-table">
+                <thead id="live-duckdb-head"></thead>
+                <tbody id="live-duckdb-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
       </div>
-    </section>
+    </details>
 
   </main>
 
@@ -279,27 +542,162 @@
       return String(n);
     };
 
+    function initConceptPrimer() {
+      const toggleBtn = document.getElementById('btn-concept-toggle');
+      const drawer = document.getElementById('concept-drawer');
+      if (!toggleBtn || !drawer) return;
+      toggleBtn.addEventListener('click', () => {
+        const isExpanded = toggleBtn.getAttribute('aria-expanded') === 'true';
+        toggleBtn.setAttribute('aria-expanded', !isExpanded);
+        drawer.hidden = isExpanded;
+      });
+      const tabBtns = drawer.querySelectorAll('.concept-tab-btn');
+      const panes = drawer.querySelectorAll('.concept-tab-pane');
+      tabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          const targetId = btn.getAttribute('data-tab');
+          tabBtns.forEach(b => b.classList.remove('active'));
+          panes.forEach(p => p.classList.remove('active'));
+          btn.classList.add('active');
+          const targetPane = document.getElementById(targetId);
+          if (targetPane) targetPane.classList.add('active');
+        });
+      });
+    }
+    initConceptPrimer();
+
+    function hasTokenAccounting(row) {
+      return !!row && typeof row === 'object' && (
+        row.total_tokens != null || row.input_tokens != null || row.input_uncached != null ||
+        row.cache_read_tokens != null || row.cache_read != null ||
+        row.output_tokens != null || row.output != null
+      );
+    }
+
+    function observedNumber(row, keys) {
+      for (const key of keys) {
+        if (row[key] != null) {
+          const n = Number(row[key]);
+          return Number.isFinite(n) ? n : 0;
+        }
+      }
+      return null;
+    }
+
+    function mapMission(row) {
+      const seatId = row.seat_id || row.seat || row.actor || row.harness || (row.scope_id ? 'scope:' + row.scope_id : 'autonomous');
+      const uncached = observedNumber(row, ['input_uncached', 'fresh_input_tokens', 'input_tokens']);
+      const read = observedNumber(row, ['cache_read', 'cache_read_tokens']);
+      const write = observedNumber(row, ['cache_write', 'cache_write_tokens']);
+      const out = observedNumber(row, ['output', 'output_tokens']);
+      const parts = [uncached, read, write, out].filter(value => value != null);
+      const total = row.total_tokens != null
+        ? (Number.isFinite(Number(row.total_tokens)) ? Number(row.total_tokens) : 0)
+        : (parts.length ? parts.reduce((sum, value) => sum + value, 0) : null);
+      const inputDenom = [uncached, read, write].reduce((sum, value) => sum + (value || 0), 0);
+      let cacheRatio = null;
+      if (read != null && inputDenom > 0) cacheRatio = read / inputDenom;
+      else if (row.cache_ratio != null && Number.isFinite(Number(row.cache_ratio))) cacheRatio = Number(row.cache_ratio);
+      else if (row.cache_ratio_pct != null && Number.isFinite(Number(row.cache_ratio_pct))) cacheRatio = Number(row.cache_ratio_pct) / 100;
+      const turns = row.turns != null ? Number(row.turns) : (row.call_count != null ? Number(row.call_count) : null);
+      return {
+        mission_id: row.mission_id || row.session_id || row.harness || 'session',
+        title: row.title || row.label || (row.harness ? 'Direct Session · ' + row.harness : 'Agent Task'),
+        seat_id: seatId,
+        seat: seatId,
+        model: row.model || null,
+        effort: row.effort || null,
+        attribution_bucket: row.attribution_bucket || 'assigned_mission',
+        input_uncached: uncached,
+        fresh_input_tokens: uncached,
+        cache_read: read,
+        cache_read_tokens: read,
+        cache_write: write,
+        output: out,
+        output_tokens: out,
+        total_tokens: total,
+        cache_ratio: cacheRatio,
+        cache_ratio_pct: cacheRatio == null ? null : cacheRatio * 100,
+        turns: Number.isFinite(turns) ? turns : null,
+        loop_retries: row.loop_retries != null ? Number(row.loop_retries) : (row.retries != null ? Number(row.retries) : 0),
+        status: row.status || null
+      };
+    }
+
     function renderView(data) {
       if (!data) return;
-      if (data.summary) {
-        const s = data.summary;
-        if (s.total_tokens !== undefined) document.getElementById('kpi-total-tokens').textContent = formatShort(s.total_tokens);
-        if (s.cache_read_ratio !== undefined && !(data.missions || []).length) document.getElementById('kpi-cache-ratio').textContent = (s.cache_read_ratio * 100).toFixed(1) + '%';
-        if (s.fresh_input_tokens !== undefined) document.getElementById('kpi-fresh-input').textContent = formatShort(s.fresh_input_tokens);
-        if (s.output_tokens !== undefined) document.getElementById('kpi-output-tokens').textContent = formatShort(s.output_tokens);
-        if (s.task_intake_overhead_pct !== undefined) document.getElementById('kpi-intake-overhead').textContent = (s.task_intake_overhead_pct * 100).toFixed(1) + '%';
+
+      // Hydrate only from observed token fields. Missing fields stay null and render as an em dash.
+      let candidateMissions = null;
+      if (Array.isArray(data.missions) && data.missions.length > 0) {
+        candidateMissions = data.missions.map(mapMission);
+      } else if (Array.isArray(data.rows) && data.rows.length > 0) {
+        const accounted = data.rows.filter(hasTokenAccounting);
+        if (accounted.length) candidateMissions = accounted.map(mapMission);
       }
 
-      currentMissions = (data.missions || []).map(m => {
-        const total = (m.input_uncached || 0) + (m.cache_read || 0) + (m.cache_write || 0) + (m.output || 0);
-        const inputDenom = (m.input_uncached || 0) + (m.cache_read || 0) + (m.cache_write || 0);
-        const cacheRatio = inputDenom > 0 ? (m.cache_read || 0) / inputDenom : 0;
-        return { ...m, total_tokens: total, cache_ratio: cacheRatio };
-      });
+      if (candidateMissions && candidateMissions.length > 0) {
+        currentMissions = candidateMissions;
+      } else if (!currentMissions || !currentMissions.length) {
+        try {
+          const embedded = JSON.parse(document.getElementById('dendro-data').textContent || '{}');
+          currentMissions = (embedded.missions || []).map(m => {
+            const uncached = m.input_uncached || 0;
+            const read = m.cache_read || 0;
+            const write = m.cache_write || 0;
+            const out = m.output || 0;
+            const total = uncached + read + write + out;
+            const denom = uncached + read + write;
+            return {
+              ...m,
+              total_tokens: total,
+              cache_ratio: denom > 0 ? read / denom : 0
+            };
+          });
+        } catch (e) {
+          currentMissions = [];
+        }
+      }
+
+      // Summary & KPIs
+      const s = data.summary || {};
+      const totTokens = s.total_tokens;
+      if (totTokens !== undefined) {
+        document.getElementById('kpi-total-tokens').textContent = formatShort(totTokens);
+      } else if (currentMissions.length) {
+        const sumT = currentMissions.reduce((acc, m) => acc + (m.total_tokens || 0), 0);
+        document.getElementById('kpi-total-tokens').textContent = formatShort(sumT);
+      }
+
+      const freshInput = s.fresh_input_tokens ?? s.fresh_input;
+      if (freshInput !== undefined) {
+        document.getElementById('kpi-fresh-input').textContent = formatShort(freshInput);
+      } else if (currentMissions.length) {
+        const sumF = currentMissions.reduce((acc, m) => acc + (m.input_uncached || 0), 0);
+        document.getElementById('kpi-fresh-input').textContent = formatShort(sumF);
+      }
+
+      const outTokens = s.output_tokens ?? s.output;
+      if (outTokens !== undefined) {
+        document.getElementById('kpi-output-tokens').textContent = formatShort(outTokens);
+      } else if (currentMissions.length) {
+        const sumO = currentMissions.reduce((acc, m) => acc + (m.output || 0), 0);
+        document.getElementById('kpi-output-tokens').textContent = formatShort(sumO);
+      }
+
+      const overhead = s.task_intake_overhead_pct ?? s.intake_overhead_pct;
+      if (overhead !== undefined) {
+        const val = overhead > 1 ? overhead : overhead * 100;
+        document.getElementById('kpi-intake-overhead').textContent = val.toFixed(1) + '%';
+      }
+
       if (currentMissions.length) {
         const inputDenom = currentMissions.reduce((n, m) => n + (m.input_uncached || 0) + (m.cache_read || 0) + (m.cache_write || 0), 0);
         const cacheRead = currentMissions.reduce((n, m) => n + (m.cache_read || 0), 0);
         document.getElementById('kpi-cache-ratio').textContent = ((inputDenom > 0 ? cacheRead / inputDenom : 0) * 100).toFixed(1) + '%';
+      } else if (s.cache_read_ratio !== undefined || s.cache_ratio_pct !== undefined) {
+        const ratio = s.cache_ratio_pct ?? (s.cache_read_ratio * 100);
+        document.getElementById('kpi-cache-ratio').textContent = Number(ratio).toFixed(1) + '%';
       }
 
       renderBars(currentMissions);
@@ -324,7 +722,7 @@
         group.className = 'activity-band-group';
         group.innerHTML = `
           <div class="activity-band-label">
-            <span><strong>${escapeHtml(m.seat_id)}</strong> <small style="color:var(--text-muted);">(${escapeHtml(m.model)} · ${formatShort(m.total_tokens)} tok)</small></span>
+            <span><strong>${escapeHtml(m.seat_id)}</strong> <small style="color:var(--text-muted);">(${escapeHtml(m.model || '—')} · ${formatShort(m.total_tokens)} tok)</small></span>
             <span style="font-family:var(--font-mono);font-size:0.8rem;color:var(--text-secondary);">Cache Read: ${readPct.toFixed(0)}% · Uncached: ${uncachedPct.toFixed(0)}% · Output: ${outputPct.toFixed(0)}%</span>
           </div>
           <div class="activity-band-bar">
@@ -366,7 +764,7 @@
         const bucketTag = m.attribution_bucket === 'assigned_mission' ? 'tag-emerald' : 'tag-amber';
         tr.innerHTML = `
           <td><strong><code>${escapeHtml(m.seat_id)}</code></strong></td>
-          <td><code>${escapeHtml(m.model || 'unknown')}</code></td>
+          <td><code>${escapeHtml(m.model || '—')}</code></td>
           <td><span style="font-size:0.8rem;color:var(--text-secondary);text-transform:uppercase;">${escapeHtml(m.effort || '—')}</span></td>
           <td><span class="view-card-tag ${bucketTag}">${escapeHtml(m.attribution_bucket || 'default')}</span></td>
           <td class="num" style="color:var(--accent-cyan);font-weight:600;">${formatNum(m.input_uncached)}</td>
@@ -374,7 +772,7 @@
           <td class="num" style="color:var(--purple-protocol);">${formatNum(m.cache_write)}</td>
           <td class="num" style="color:var(--amber-friction);">${formatNum(m.output)}</td>
           <td class="num" style="font-weight:700;">${formatNum(m.total_tokens)}</td>
-          <td class="num" style="color:var(--emerald-yield);">${(m.cache_ratio * 100).toFixed(1)}%</td>
+          <td class="num" style="color:var(--emerald-yield);">${m.cache_ratio == null ? '—' : (m.cache_ratio * 100).toFixed(1) + '%'}</td>
         `;
         tbody.appendChild(tr);
       });
@@ -409,7 +807,7 @@
       if (!currentMissions.length) return;
       const headers = ['ActorID', 'Model', 'Effort', 'AttributionBucket', 'InputUncached', 'CacheRead', 'CacheWrite', 'Output', 'TotalTokens', 'CacheRatioPct'];
       const rows = currentMissions.map(m => [
-        m.seat_id, m.model, m.effort, m.attribution_bucket, m.input_uncached, m.cache_read, m.cache_write, m.output, m.total_tokens, (m.cache_ratio * 100).toFixed(1)
+        m.seat_id, m.model, m.effort, m.attribution_bucket, m.input_uncached, m.cache_read, m.cache_write, m.output, m.total_tokens, m.cache_ratio == null ? '' : (m.cache_ratio * 100).toFixed(1)
       ]);
       const csv = [headers.map(csvCell).join(','), ...rows.map(row => row.map(csvCell).join(','))].join('\n');
       const blob = new Blob([csv], { type: 'text/csv' });

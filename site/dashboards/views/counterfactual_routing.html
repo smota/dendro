@@ -6,6 +6,94 @@
   <title>Dendro · Counterfactual Routing (I25)</title>
   <meta name="description" content="I25 model.counterfactual_routing. The simulation is not an effect and not a routing change. Unpinned tiers refuse.">
   <link rel="stylesheet" href="../style.css">
+  <style>
+    .primer-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 18px; margin-top: 16px; }
+    .primer-copy { color: var(--text-secondary); font-size: 0.92rem; max-width: 62ch; }
+    .layer-stack { display: flex; flex-wrap: wrap; gap: 8px; }
+    .layer-stack .layer-coverage-badge { display: inline-flex; align-items: center; padding: 6px 10px; border-radius: 999px; background: rgba(10, 13, 18, 0.55); font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; }
+    .layer-stack .layer-coverage-badge.is-primary { background: color-mix(in srgb, currentColor 18%, transparent); font-weight: 700; }
+    .layer-stack .layer-coverage-badge.is-off { color: var(--text-muted); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08); }
+    .concept-open { border: 1px solid rgba(6, 182, 212, 0.45); background: rgba(6, 182, 212, 0.1); color: var(--text-primary); border-radius: 999px; padding: 8px 14px; font: 650 0.92rem/1 var(--font-sans); cursor: pointer; }
+    .concept-open:focus-visible, .concept-tabs button:focus-visible, .scrubber input:focus-visible { outline: 2px solid var(--accent-cyan); outline-offset: 2px; }
+    .concept-drawer { margin-top: 12px; padding: 14px 14px 16px; }
+    .concept-drawer[hidden] { display: none !important; }
+    .concept-drawer p { color: var(--text-secondary); max-width: 72ch; margin: 0 0 10px; }
+    .console { padding: 16px 16px 14px; margin: 18px 0 22px; }
+    .console-head h2 { font-size: 1.18rem; letter-spacing: -0.03em; }
+    .console-head p { color: var(--text-secondary); font-size: 0.86rem; margin-bottom: 12px; }
+    .scrubber { display: grid; gap: 6px; margin-bottom: 8px; }
+    .scrub-label { display: flex; justify-content: space-between; gap: 12px; color: var(--text-secondary); font-size: 0.86rem; }
+    .scrub-label strong { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+    .scrubber input[type="range"] { width: 100%; accent-color: #10b981; }
+    .delta-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+    .delta-row > span { display: block; padding: 10px 12px; border-radius: 12px; background: rgba(10, 13, 18, 0.55); border: 1px solid rgba(255, 255, 255, 0.06); font-variant-numeric: tabular-nums; }
+    .delta-row small { display: block; color: var(--text-muted); font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 4px; }
+    .delta-row .kpi-val { font-size: 1.15rem; font-weight: 600; color: #F4EFE6; display: inline-block; }
+    #counterfactual-beam-svg { display: block; width: 100%; height: auto; }
+    #counterfactual-beam-svg [data-index] { cursor: pointer; }
+    #counterfactual-beam-svg [data-index]:focus-visible { outline: none; }
+    .legend { display: flex; flex-wrap: wrap; gap: 10px 14px; list-style: none; margin: 10px 0 0; padding: 0; color: var(--text-secondary); font-size: 0.82rem; }
+    .legend i { display: inline-block; width: 18px; height: 4px; border-radius: 99px; margin-right: 6px; vertical-align: middle; }
+    .swatch-amber { background: linear-gradient(90deg, #F2A541, #f43f5e); }
+    .swatch-emerald { background: linear-gradient(90deg, #10b981, #06b6d4); }
+    .swatch-zone { background: rgba(16, 185, 129, 0.45); height: 10px; }
+    #view-tbody tr[data-index] { cursor: pointer; }
+    #view-tbody tr.is-selected td { background: rgba(16, 185, 129, 0.16); }
+    #view-tbody tr.is-gated td { box-shadow: inset 3px 0 0 #10b981; }
+    #view-tbody tr.is-muted td { opacity: 0.4; }
+    .l3-caveat { margin: 4px 16px 12px; color: var(--text-secondary); }
+    .rollup-group-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 10px 0 14px;
+      padding: 6px 12px;
+      background: rgba(17, 22, 31, 0.6);
+      border-radius: 8px;
+      border: 1px solid var(--border-subtle);
+    }
+    .rollup-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .rollup-segmented {
+      display: inline-flex;
+      gap: 2px;
+      background: #0A0D12;
+      padding: 2px;
+      border-radius: 6px;
+      border: 1px solid var(--border-subtle);
+    }
+    .rollup-btn {
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      background: transparent;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .rollup-btn:hover { color: var(--text-primary); }
+    .rollup-btn.active {
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+    }
+    .group-header-row td {
+      background: rgba(17, 22, 31, 0.95);
+      font-weight: 600;
+      color: #F2A541;
+      border-top: 1px solid var(--border-subtle);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 8px 12px;
+    }
+    @media (max-width: 720px) { .delta-row { grid-template-columns: 1fr; } }
+  </style>
 </head>
 <body>
   <header class="telemetry-nav">
@@ -36,6 +124,7 @@
         <span class="pulse-dot"></span>
         <span id="dual-serving-text">ILLUSTRATIVE SNAPSHOT</span>
       </div>
+      <span class="badge badge-info" id="active-window-pill" style="font-size:0.75rem; letter-spacing:0.02em;">Slice: All Time</span>
       <button id="btn-refresh" class="nav-action-btn" type="button" title="Refresh snapshot">
         <span>Refresh</span>
       </button>
@@ -44,45 +133,145 @@
     </div>
   </header>
   <main class="telemetry-layout">
-    <section class="hero-header">
-      <div class="hero-eyebrow"><span>●</span> Model · SQL View: <code>v_counterfactual_routing</code></div>
-      <h1 class="hero-title">Counterfactual Routing (I25)</h1>
-      <p class="hero-subtitle">I25 model.counterfactual_routing. The simulation is not an effect and not a routing change. Unpinned tiers refuse.</p>
-      <p class="hero-subtitle">All-time counts — window_from/window_to label the snapshot but do not filter.</p>
-    </section>
-    <section class="table-panel">
-      <div class="table-panel-header">
-        <div class="table-panel-title">
-          <span>v_counterfactual_routing rows</span>
-          <span class="badge badge-info" id="record-count-badge">0 Rows</span>
+    <div class="main-wrapper">
+      <section class="hero-header">
+        <div class="hero-eyebrow"><span>●</span> Model · Routed Sessions <span class="sr-only">v_counterfactual_routing</span></div>
+        <h1 class="hero-title">Counterfactual Routing (I25)</h1>
+        <p class="hero-subtitle">I25 model.counterfactual_routing. The simulation is not an effect and not a routing change. Unpinned tiers refuse.</p>
+        <div class="primer-bar">
+          <div>
+            <div class="layer-stack" aria-label="Four-layer stack this insight spans">
+              <span class="layer-coverage-badge is-primary" data-layer="model" aria-current="true">Model</span>
+              <span class="layer-coverage-badge" data-layer="harness">Harness</span>
+              <span class="layer-coverage-badge is-off" data-layer="coord" aria-label="Coordination, not spanned">Coordination</span>
+              <span class="layer-coverage-badge is-off" data-layer="env" aria-label="Environment, not spanned">Environment</span>
+            </div>
+            <p class="primer-copy">Model owns the fast-tier simulation. Harness is only the cohort pin that decides whether the usage is comparable. The slider does not change routing.</p>
+          </div>
+          <button type="button" class="concept-open" id="concept-open" aria-expanded="false" aria-controls="concept-drawer">? Understand This Insight</button>
         </div>
-      </div>
-      <div class="table-container">
-        <table class="telemetry-table">
-          <thead><tr><th>Harness</th><th>Session</th><th class="num">Cache-bleed inflection</th><th class="num">Simulated cost</th><th class="num">Simulated context pressure</th><th>Status</th><th>Reason</th></tr></thead>
-          <tbody id="view-tbody"></tbody>
-        </table>
-      </div>
-    </section>
-    <div class="query-box">
-      <div class="query-box-title">Underlying DuckDB Query</div>
-      <code>SELECT * FROM v_counterfactual_routing ORDER BY harness, session_key</code>
-    </div>
-    <section id="live-duckdb-panel" class="live-duckdb-panel" hidden aria-label="Connected fact rows">
-      <div class="live-duckdb-surface">
-        <h2 class="live-duckdb-title">Connected fact rows</h2>
-        <p id="live-duckdb-window">Recorded window: —</p>
-        <p id="live-duckdb-totals">Total rows: —</p>
-        <ul id="live-duckdb-facts" class="fact-counts"></ul>
-        <div class="live-duckdb-scroll">
+        <div id="concept-drawer" class="concept-drawer glass" hidden>
+          <div class="concept-tabs" role="tablist" aria-label="How to read Counterfactual Routing">
+            <button type="button" role="tab" id="tab-intuition" aria-selected="true" aria-controls="panel-intuition">Visual Intuition (For Everyone)</button>
+            <button type="button" role="tab" id="tab-proof" aria-selected="false" aria-controls="panel-proof" tabindex="-1">Mathematical Formula &amp; Threshold Proof (For Power Users)</button>
+          </div>
+          <div id="panel-intuition" role="tabpanel" aria-labelledby="tab-intuition">
+            <p>The upper beam is what the sessions actually did: cache bleed and context pressure, drawn in amber and rose. The lower beam is the fast-tier route the operator-pinned price table would have simulated, drawn in emerald and cyan. The shaded band between them is pressure that the simulation says was recoverable.</p>
+            <p>Drag the context-pressure threshold. Sessions at or above that cache-bleed inflection stay in the gate, and the recoverable context and cost totals recompute from the loaded rows. If the tier table is unpinned, the lower beam is withheld and the cost stays unknown. That refusal is not a zero. The picture is not an effect and not a routing change.</p>
+          </div>
+          <div id="panel-proof" role="tabpanel" aria-labelledby="tab-proof" hidden>
+            <pre class="concept-formula-box">observed cache-read ratio = Σ cache_read / Σ (input_uncached + cache_write + cache_read)
+cache_bleed_inflection = QUANTILE_CONT(cache-read fraction, 0.9) after the ASOF alignment
+simulated_cost = (input_uncached + cache_write + cache_read) × input_rate / 1e6 + output_tokens × output_rate / 1e6
+simulated_context_pressure = peak input side / pinned context limit
+Refuse when the profile pin, cohort pin, or rates are missing, or the usage harness does not match the pin.
+Unpinned tiers keep observed I02 and do not invent a cost.
+The simulation is not an effect and not a routing change.
+
+Scrubber, local to these rows:
+  in gate when cache_bleed_inflection ≥ threshold
+  observed pressure = observed_context_pressure, else context_pressure, else cache_bleed_inflection
+  context delta = max(0, observed pressure − simulated_context_pressure) when both are numbers
+  recoverable context = Σ context delta inside the gate
+  recoverable cost = Σ simulated_cost inside the gate
+  null simulated fields stay unknown and are not treated as zero</pre>
+            <p class="concept-live-proof" id="live-proof">Waiting for rows.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="console glass" aria-label="Split-beam route comparator">
+        <div class="console-head">
+          <h2>Split-beam route comparator</h2>
+          <p id="route-status">Upper beam is the observed envelope. Lower beam is the counterfactual route.</p>
+        </div>
+        <div class="scrubber">
+          <label class="scrub-label" for="pressure-scrubber">Context pressure / inflection threshold <strong id="pressure-readout">0.20</strong></label>
+          <input id="pressure-scrubber" type="range" min="0" max="1" step="0.01" value="0.20" aria-describedby="delta-readout">
+        </div>
+        <div id="delta-readout" class="delta-row" aria-live="polite">
+          <span id="delta-gated"><small>Sessions in gate</small><span id="kpi-gated" class="kpi-val">—</span></span>
+          <span id="delta-context"><small>Recoverable context</small><span id="kpi-context" class="kpi-val">—</span></span>
+          <span id="delta-cost"><small>SIMULATED TIER TOTAL (COUNTERFACTUAL)</small><span id="kpi-savings" class="kpi-val">—</span></span>
+        </div>
+        <div class="concept-svg-stage">
+          <svg id="counterfactual-beam-svg" viewBox="0 0 860 320" role="group" aria-labelledby="beam-title">
+            <title id="beam-title">Observed execution envelope above the counterfactual optimal route, with the recoverable delta between them.</title>
+            <defs>
+              <linearGradient id="obs-beam" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stop-color="#F2A541"/>
+                <stop offset="100%" stop-color="#f43f5e"/>
+              </linearGradient>
+              <linearGradient id="cf-beam" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stop-color="#10b981"/>
+                <stop offset="100%" stop-color="#06b6d4"/>
+              </linearGradient>
+              <pattern id="withheld-hatch" patternUnits="userSpaceOnUse" width="8" height="8" patternTransform="rotate(35)">
+                <line x1="0" y1="0" x2="0" y2="8" stroke="rgba(16,185,129,0.45)" stroke-width="1.4"/>
+              </pattern>
+              <filter id="beam-glow" x="-10%" y="-40%" width="120%" height="180%">
+                <feGaussianBlur stdDeviation="2" result="blur"/>
+                <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>
+            </defs>
+            <g id="beam-dynamic"></g>
+          </svg>
+        </div>
+        <ul class="legend">
+          <li><i class="swatch-amber"></i>Observed execution envelope</li>
+          <li><i class="swatch-emerald"></i>Counterfactual optimal route</li>
+          <li><i class="swatch-zone"></i>Simulated fast-tier envelope (counterfactual)</li>
+        </ul>
+      </section>
+
+      <section class="table-panel">
+        <div class="table-panel-header">
+          <div class="table-panel-title">
+            <span>Routed Sessions <span class="sr-only">v_counterfactual_routing rows</span></span>
+            <span class="badge badge-info" id="record-count-badge">0 Rows</span>
+          </div>
+        </div>
+        <div class="rollup-group-bar" role="toolbar" aria-label="Group and Roll Up Controls">
+          <span class="rollup-label">Group by:</span>
+          <div class="segmented-control rollup-segmented" role="group" aria-label="Table Grouping">
+            <button type="button" class="segment-btn rollup-btn active" data-group="all">All Sessions</button>
+            <button type="button" class="segment-btn rollup-btn" data-group="harness">By Harness / Tool</button>
+            <button type="button" class="segment-btn rollup-btn" data-group="rig">By Workspace / Rig</button>
+            <button type="button" class="segment-btn rollup-btn" data-group="status">By Status / Regime</button>
+            <button type="button" class="segment-btn rollup-btn" data-group="date">By Date</button>
+          </div>
+        </div>
+        <div class="table-container">
           <table class="telemetry-table">
-            <thead id="live-duckdb-head"></thead>
-            <tbody id="live-duckdb-body"></tbody>
+            <thead><tr><th>Harness</th><th>Session</th><th class="num">Cache-bleed inflection</th><th class="num">Simulated tier total</th><th class="num">Simulated context pressure</th><th>Status</th><th>Reason</th></tr></thead>
+            <tbody id="view-tbody"></tbody>
           </table>
         </div>
-      </div>
-    </section>
+      </section>
 
+      <details class="dendro-l3-drawer">
+        <summary><span>L3 Technical Lineage</span><span class="l3-pill">L3</span></summary>
+        <p class="l3-caveat">All-time counts — window_from/window_to label the snapshot but do not filter. In Live Connected mode, /api/query filters by the active window.</p>
+        <div class="query-box">
+          <div class="query-box-title">Underlying DuckDB Query</div>
+          <code>SELECT * FROM v_counterfactual_routing ORDER BY harness, session_key</code>
+        </div>
+        <section id="live-duckdb-panel" class="live-duckdb-panel" hidden aria-label="Connected fact rows">
+          <div class="live-duckdb-surface">
+            <h2 class="live-duckdb-title">Connected fact rows</h2>
+            <p id="live-duckdb-window">Recorded window: —</p>
+            <p id="live-duckdb-totals">Total rows: —</p>
+            <ul id="live-duckdb-facts" class="fact-counts"></ul>
+            <div class="live-duckdb-scroll">
+              <table class="telemetry-table">
+                <thead id="live-duckdb-head"></thead>
+                <tbody id="live-duckdb-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </details>
+    </div>
   </main>
   <script id="dendro-data" type="application/json">
   {
@@ -96,34 +285,572 @@
   <script src="../live-sync.js"></script>
   <script>
     'use strict';
+    var SVGNS = 'http://www.w3.org/2000/svg';
+    var TOP = 46;
+    var PLOT_H = 196;
+    var BASE = TOP + PLOT_H;
+    var state = { rows: [], pinned: null, group: 'all' };
+    var activeWin = new URLSearchParams(window.location.search).get('window') || (typeof localStorage !== 'undefined' && localStorage.getItem('dendro_time_window')) || 'all';
+
+    function escapeHtml(str) {
+      return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function formatHumanWindow(fromIso, toIso, preset) {
+      var PRESET_HUMAN = {
+        today: 'Today (24h)',
+        '7d': 'Last Week (7d)',
+        '30d': '30 Days',
+        this_month: 'This Month',
+        last_month: 'Last Month',
+        all: 'All Time'
+      };
+      if (preset && PRESET_HUMAN[preset]) return PRESET_HUMAN[preset];
+      if (preset && preset.indexOf('..') !== -1) {
+        var parts = preset.split('..');
+        fromIso = parts[0];
+        toIso = parts[1];
+      }
+      if (!fromIso && !toIso) return preset ? (PRESET_HUMAN[preset] || preset) : 'All Time';
+      var parseD = function (str) {
+        if (!str || str === '—') return null;
+        var d = new Date(str);
+        return isNaN(d.getTime()) ? null : d;
+      };
+      var dFrom = parseD(fromIso);
+      var dTo = parseD(toIso);
+      if (!dFrom && !dTo) return preset || 'All Time';
+      var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      var fmt = function (d) { return MONTHS[d.getUTCMonth()] + ' ' + d.getUTCDate(); };
+      if (dFrom && !dTo) return 'From ' + fmt(dFrom) + ', ' + dFrom.getUTCFullYear();
+      if (!dFrom && dTo) return 'Until ' + fmt(dTo) + ', ' + dTo.getUTCFullYear();
+      var yFrom = dFrom.getUTCFullYear(), yTo = dTo.getUTCFullYear();
+      var mFrom = dFrom.getUTCMonth(), mTo = dTo.getUTCMonth();
+      var dayFrom = dFrom.getUTCDate(), dayTo = dTo.getUTCDate();
+      if (yFrom === yTo && mFrom === mTo && dayFrom === dayTo) {
+        return MONTHS[mFrom] + ' ' + dayFrom + ', ' + yFrom;
+      }
+      if (yFrom === yTo && mFrom === mTo) {
+        return MONTHS[mFrom] + ' ' + dayFrom + ' – ' + dayTo + ', ' + yFrom;
+      }
+      if (yFrom === yTo) {
+        return fmt(dFrom) + ' – ' + fmt(dTo) + ', ' + yFrom;
+      }
+      return fmt(dFrom) + ', ' + yFrom + ' – ' + fmt(dTo) + ', ' + yTo;
+    }
+
+    function updateActiveWindow(preset, liveDisplay) {
+      if (preset) activeWin = preset;
+      else {
+        activeWin = (typeof location !== 'undefined' && new URLSearchParams(location.search).get('window')) || (typeof localStorage !== 'undefined' && localStorage.getItem('dendro_time_window')) || 'all';
+      }
+      var pill = document.getElementById('active-window-pill');
+      if (pill) {
+        var label = liveDisplay || formatHumanWindow(null, null, activeWin);
+        pill.textContent = 'Slice: ' + label;
+      }
+      document.querySelectorAll('a[href="../index.html"], a[href^="../index.html?"]').forEach(function (a) {
+        a.href = '../index.html?window=' + encodeURIComponent(activeWin);
+      });
+    }
+
+    window.addEventListener('dendro:state', function (e) {
+      var p = e && e.detail && e.detail.preset;
+      if (p) updateActiveWindow(p);
+    });
+
+    function num(value) {
+      if (value == null || value === '') return null;
+      var n = typeof value === 'number' ? value : Number(value);
+      return Number.isFinite(n) ? n : null;
+    }
+    function clamp(value, lo, hi) { return Math.min(hi, Math.max(lo, value)); }
+    function fmt(value, digits) {
+      var n = num(value);
+      if (n == null) return '—';
+      return n.toLocaleString(undefined, { maximumFractionDigits: digits == null ? 3 : digits });
+    }
+    function show(value) { return value == null || value === '' ? '—' : String(value); }
+    function el(name, attrs, parent) {
+      var node = document.createElementNS(SVGNS, name);
+      if (attrs) Object.keys(attrs).forEach(function (key) {
+        if (attrs[key] != null) node.setAttribute(key, String(attrs[key]));
+      });
+      if (parent) parent.appendChild(node);
+      return node;
+    }
+    function label(parent, value, attrs) {
+      var node = el('text', attrs, parent);
+      node.textContent = value == null ? '' : String(value);
+      return node;
+    }
     function cell(text, className) {
-      const td = document.createElement('td');
+      var td = document.createElement('td');
       if (className) td.className = className;
       td.textContent = text == null || text === '' ? '—' : String(text);
       return td;
     }
-    function render(data) {
-      const rows = Array.isArray(data && data.rows) ? data.rows : [];
-      document.getElementById('record-count-badge').textContent = rows.length + (rows.length === 1 ? ' Row' : ' Rows');
-      const tbody = document.getElementById('view-tbody');
-      tbody.replaceChildren();
-      if (!rows.length) {
-        const tr = document.createElement('tr');
-        const td = cell('No rows in this snapshot.');
-        td.colSpan = 7;
-        tr.append(td);
-        tbody.append(tr);
-        return;
+    function threshold() {
+      var slider = document.getElementById('pressure-scrubber');
+      var n = num(slider.value);
+      return n == null ? 0 : n;
+    }
+    function observedPressure(row) {
+      var direct = num(row.observed_context_pressure);
+      if (direct != null) return direct;
+      var named = num(row.context_pressure);
+      if (named != null) return named;
+      return num(row.cache_bleed_inflection);
+    }
+    function inGate(row, cut) {
+      var inflection = num(row.cache_bleed_inflection);
+      return inflection != null && inflection + 1e-12 >= cut;
+    }
+    function yAt(value) {
+      return TOP + (1 - clamp(value / 1.2, 0, 1)) * PLOT_H;
+    }
+    function xAt(index, count) {
+      if (count <= 1) return 430;
+      return 78 + (index / (count - 1)) * 700;
+    }
+    function formatCompact(value) {
+      if (value == null || !isFinite(value)) return '—';
+      var abs = Math.abs(value);
+      if (abs >= 1e9) return (value / 1e9).toFixed(2) + 'B';
+      if (abs >= 1e6) return (value / 1e6).toFixed(2) + 'M';
+      if (abs >= 1e3) return (value / 1e3).toFixed(1) + 'K';
+      if (Math.round(value) !== value) return value.toFixed(2);
+      return String(Math.round(value));
+    }
+    function summarize(cut) {
+      var gated = 0, context = 0, contextKnown = 0, cost = 0, costKnown = 0;
+      var unpinnedCount = 0;
+      var pinnedCount = 0;
+      state.rows.forEach(function (row) {
+        if (!inGate(row, cut)) return;
+        gated += 1;
+        var obs = observedPressure(row);
+        var sim = num(row.simulated_context_pressure);
+        if (obs != null && sim != null) {
+          context += Math.max(0, obs - sim);
+          contextKnown += 1;
+        }
+        var spent = num(row.simulated_cost);
+        if (spent != null) {
+          cost += spent;
+          costKnown += 1;
+          if (row.simulated_cost_unit === 'USD' || (row.currency && row.currency === 'USD')) {
+            pinnedCount += 1;
+          } else {
+            unpinnedCount += 1;
+          }
+        }
+      });
+      var currencyPinned = gated > 0 && unpinnedCount === 0 && pinnedCount > 0;
+      return { gated: gated, context: context, contextKnown: contextKnown, cost: cost, costKnown: costKnown, currencyPinned: currencyPinned };
+    }
+    function money(value) {
+      return '$' + value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+    function formatCost(value, currencyPinned) {
+      if (value == null || !isFinite(value)) return '—';
+      if (currencyPinned) return money(value);
+      return formatCompact(value) + ' norm. units';
+    }
+    function paintReadout() {
+      var cut = threshold();
+      var totals = summarize(cut);
+      document.getElementById('pressure-readout').textContent = cut.toFixed(2);
+      var gated = document.getElementById('delta-gated');
+      var context = document.getElementById('delta-context');
+      var cost = document.getElementById('delta-cost');
+      gated.replaceChildren();
+      context.replaceChildren();
+      cost.replaceChildren();
+      function tile(node, kicker, value, valId) {
+        var small = document.createElement('small');
+        small.textContent = kicker;
+        var valSpan = document.createElement('span');
+        if (valId) valSpan.id = valId;
+        valSpan.className = 'kpi-val';
+        valSpan.textContent = value;
+        node.append(small, valSpan);
       }
-      rows.forEach(row => {
-        const tr = document.createElement('tr');
-        tr.append(cell(row.harness), cell(row.session_key), cell(row.cache_bleed_inflection, 'num'), cell(row.simulated_cost, 'num'), cell(row.simulated_context_pressure, 'num'), cell(row.status), cell(row.reason));
-        tbody.append(tr);
+      var costFormatted = totals.gated === 0 ? '0' : (totals.costKnown ? formatCost(totals.cost, totals.currencyPinned) : 'unknown');
+      tile(gated, 'Sessions in gate', String(totals.gated), 'kpi-gated');
+      tile(context, 'Recoverable context', totals.gated === 0 ? '0' : (totals.contextKnown ? fmt(totals.context, 3) : 'unknown'), 'kpi-context');
+      tile(cost, 'SIMULATED TIER TOTAL (COUNTERFACTUAL)', costFormatted, 'kpi-savings');
+      document.getElementById('live-proof').textContent = 'Scrubber ' + cut.toFixed(2) + ' · sessions in gate ' + totals.gated + ' of ' + state.rows.length + ' · recoverable context ' + (totals.gated === 0 ? '0' : (totals.contextKnown ? fmt(totals.context, 3) : 'unknown')) + ' · simulated tier total ' + costFormatted + '. Null costs stay unknown. This is not an effect.';
+      document.getElementById('route-status').textContent = totals.gated + ' of ' + state.rows.length + ' sessions sit at or above inflection ' + cut.toFixed(2) + '.';
+      Array.prototype.forEach.call(document.querySelectorAll('#view-tbody tr'), function (tr) {
+        var index = Number(tr.getAttribute('data-index'));
+        var row = state.rows[index];
+        tr.classList.toggle('is-gated', !!(row && inGate(row, cut)));
+        tr.classList.toggle('is-muted', !!(row && !inGate(row, cut)));
+        tr.classList.toggle('is-selected', index === state.pinned);
       });
     }
-    const sync = attachLiveSync({ viewId: 'counterfactual_routing', onData: render });
-    document.getElementById('btn-refresh').addEventListener('click', () => sync.refresh());
-    render(JSON.parse(document.getElementById('dendro-data').textContent));
+    function bump(x, peakY, width) {
+      var pts = [];
+      for (var i = 0; i <= 28; i += 1) {
+        var t = i / 28;
+        pts.push({ x: x - width / 2 + t * width, y: BASE + (peakY - BASE) * Math.sin(t * Math.PI) });
+      }
+      return pts;
+    }
+    function line(pts) {
+      return pts.map(function (p, i) { return (i ? 'L' : 'M') + p.x.toFixed(1) + ' ' + p.y.toFixed(1); }).join(' ');
+    }
+    function smooth(points) {
+      if (!points.length) return '';
+      var d = 'M ' + points[0].x.toFixed(1) + ' ' + points[0].y.toFixed(1);
+      for (var i = 0; i < points.length - 1; i += 1) {
+        var p0 = points[i - 1] || points[i];
+        var p1 = points[i];
+        var p2 = points[i + 1];
+        var p3 = points[i + 2] || p2;
+        var c1x = p1.x + (p2.x - p0.x) / 6;
+        var c1y = p1.y + (p2.y - p0.y) / 6;
+        var c2x = p2.x - (p3.x - p1.x) / 6;
+        var c2y = p2.y - (p3.y - p1.y) / 6;
+        d += ' C ' + c1x.toFixed(1) + ' ' + c1y.toFixed(1) + ', ' + c2x.toFixed(1) + ' ' + c2y.toFixed(1) + ', ' + p2.x.toFixed(1) + ' ' + p2.y.toFixed(1);
+      }
+      return d;
+    }
+    function paintTable() {
+      var rows = state.rows;
+      document.getElementById('record-count-badge').textContent = rows.length + (rows.length === 1 ? ' Row' : ' Rows');
+      var tbody = document.getElementById('view-tbody');
+      tbody.replaceChildren();
+      if (!rows.length) {
+        var empty = document.createElement('tr');
+        var td = cell('No rows in this snapshot.');
+        td.colSpan = 7;
+        empty.append(td);
+        tbody.append(empty);
+        return;
+      }
+
+      if (state.group === 'harness') {
+        var groups = {};
+        rows.forEach(function (row, idx) {
+          var h = row.harness || 'unknown';
+          if (!groups[h]) groups[h] = [];
+          groups[h].push({ row: row, index: idx });
+        });
+        Object.keys(groups).forEach(function (hName) {
+          var items = groups[hName];
+          var headerTr = document.createElement('tr');
+          headerTr.className = 'group-header-row';
+          var headerTd = document.createElement('td');
+          headerTd.colSpan = 7;
+          headerTd.innerHTML = '<strong>Harness: ' + escapeHtml(hName) + '</strong> (' + items.length + ' session' + (items.length === 1 ? '' : 's') + ')';
+          headerTr.appendChild(headerTd);
+          tbody.appendChild(headerTr);
+          items.forEach(function (it) {
+            var tr = document.createElement('tr');
+            tr.setAttribute('data-index', String(it.index));
+            tr.tabIndex = 0;
+            tr.append(cell(it.row.harness), cell(it.row.session_key), cell(it.row.cache_bleed_inflection, 'num'), cell(it.row.simulated_cost, 'num'), cell(it.row.simulated_context_pressure, 'num'), cell(it.row.status), cell(it.row.reason));
+            tbody.append(tr);
+          });
+        });
+      } else if (state.group === 'status') {
+        var groups = {};
+        rows.forEach(function (row, idx) {
+          var s = row.status || 'Unknown';
+          if (!groups[s]) groups[s] = [];
+          groups[s].push({ row: row, index: idx });
+        });
+        Object.keys(groups).forEach(function (sName) {
+          var items = groups[sName];
+          var headerTr = document.createElement('tr');
+          headerTr.className = 'group-header-row';
+          var headerTd = document.createElement('td');
+          headerTd.colSpan = 7;
+          headerTd.innerHTML = '<strong>Status: ' + escapeHtml(sName) + '</strong> (' + items.length + ' session' + (items.length === 1 ? '' : 's') + ')';
+          headerTr.appendChild(headerTd);
+          tbody.appendChild(headerTr);
+          items.forEach(function (it) {
+            var tr = document.createElement('tr');
+            tr.setAttribute('data-index', String(it.index));
+            tr.tabIndex = 0;
+            tr.append(cell(it.row.harness), cell(it.row.session_key), cell(it.row.cache_bleed_inflection, 'num'), cell(it.row.simulated_cost, 'num'), cell(it.row.simulated_context_pressure, 'num'), cell(it.row.status), cell(it.row.reason));
+            tbody.append(tr);
+          });
+        });
+      } else if (state.group === 'rig') {
+        var groups = {};
+        rows.forEach(function (row, idx) {
+          var r = row.rig || row.workspace || row.harness || 'default';
+          if (!groups[r]) groups[r] = [];
+          groups[r].push({ row: row, index: idx });
+        });
+        Object.keys(groups).forEach(function (rName) {
+          var items = groups[rName];
+          var headerTr = document.createElement('tr');
+          headerTr.className = 'group-header-row';
+          var headerTd = document.createElement('td');
+          headerTd.colSpan = 7;
+          headerTd.innerHTML = '<strong>Workspace / Rig: ' + escapeHtml(rName) + '</strong> (' + items.length + ' session' + (items.length === 1 ? '' : 's') + ')';
+          headerTr.appendChild(headerTd);
+          tbody.appendChild(headerTr);
+          items.forEach(function (it) {
+            var tr = document.createElement('tr');
+            tr.setAttribute('data-index', String(it.index));
+            tr.tabIndex = 0;
+            tr.append(cell(it.row.harness), cell(it.row.session_key), cell(it.row.cache_bleed_inflection, 'num'), cell(it.row.simulated_cost, 'num'), cell(it.row.simulated_context_pressure, 'num'), cell(it.row.status), cell(it.row.reason));
+            tbody.append(tr);
+          });
+        });
+      } else if (state.group === 'date') {
+        var groups = {};
+        rows.forEach(function (row, idx) {
+          var d = row.date_bucket || (row.ts || row.recorded_at || row.date || row.created_at || '').slice(0, 10) || 'Active Window';
+          if (!groups[d]) groups[d] = [];
+          groups[d].push({ row: row, index: idx });
+        });
+        Object.keys(groups).forEach(function (dName) {
+          var items = groups[dName];
+          var headerTr = document.createElement('tr');
+          headerTr.className = 'group-header-row';
+          var headerTd = document.createElement('td');
+          headerTd.colSpan = 7;
+          headerTd.innerHTML = '<strong>Time Bucket: ' + escapeHtml(dName) + '</strong> (' + items.length + ' session' + (items.length === 1 ? '' : 's') + ')';
+          headerTr.appendChild(headerTd);
+          tbody.appendChild(headerTr);
+          items.forEach(function (it) {
+            var tr = document.createElement('tr');
+            tr.setAttribute('data-index', String(it.index));
+            tr.tabIndex = 0;
+            tr.append(cell(it.row.harness), cell(it.row.session_key), cell(it.row.cache_bleed_inflection, 'num'), cell(it.row.simulated_cost, 'num'), cell(it.row.simulated_context_pressure, 'num'), cell(it.row.status), cell(it.row.reason));
+            tbody.append(tr);
+          });
+        });
+      } else {
+        rows.forEach(function (row, index) {
+          var tr = document.createElement('tr');
+          tr.setAttribute('data-index', String(index));
+          tr.tabIndex = 0;
+          tr.append(cell(row.harness), cell(row.session_key), cell(row.cache_bleed_inflection, 'num'), cell(row.simulated_cost, 'num'), cell(row.simulated_context_pressure, 'num'), cell(row.status), cell(row.reason));
+          tbody.append(tr);
+        });
+      }
+    }
+    function paintViz() {
+      var layer = document.getElementById('beam-dynamic');
+      layer.replaceChildren();
+      var cut = threshold();
+      [0, 0.4, 0.8, 1.2].forEach(function (tick) {
+        var y = yAt(tick);
+        el('line', { x1: 64, y1: y, x2: 820, y2: y, stroke: 'rgba(244,239,230,0.08)', 'stroke-width': 1 }, layer);
+        label(layer, tick.toFixed(1), { x: 54, y: y + 4, 'text-anchor': 'end', fill: '#8FA79A', 'font-size': 10, 'font-family': 'ui-monospace, monospace' });
+      });
+      label(layer, 'pressure', { x: 16, y: 28, fill: '#8FA79A', 'font-size': 11, 'font-family': 'ui-sans-serif, system-ui, sans-serif' });
+      label(layer, 'sessions', { x: 800, y: 308, 'text-anchor': 'end', fill: '#8FA79A', 'font-size': 11, 'font-family': 'ui-sans-serif, system-ui, sans-serif' });
+      var guide = yAt(cut);
+      el('line', { x1: 64, y1: guide, x2: 820, y2: guide, stroke: '#F4EFE6', 'stroke-width': 1.2, 'stroke-dasharray': '4 5', 'stroke-opacity': 0.8 }, layer);
+      label(layer, 'threshold ' + cut.toFixed(2), { x: 812, y: Math.max(18, guide - 6), 'text-anchor': 'end', fill: '#F4EFE6', 'font-size': 11, 'font-family': 'ui-sans-serif, system-ui, sans-serif' });
+      var rows = state.rows;
+      if (!rows.length) {
+        label(layer, 'No routing rows in this snapshot.', { x: 430, y: 160, 'text-anchor': 'middle', fill: '#C5D1CB', 'font-size': 14, 'font-family': 'ui-sans-serif, system-ui, sans-serif' });
+        paintReadout();
+        return;
+      }
+      var observed = [];
+      var counter = [];
+      var anyCounter = false;
+      rows.forEach(function (row, index) {
+        var x = xAt(index, rows.length);
+        var obs = observedPressure(row);
+        var sim = num(row.simulated_context_pressure);
+        if (sim != null) anyCounter = true;
+        observed.push({ x: x, y: obs == null ? null : yAt(obs), index: index, row: row, value: obs });
+        counter.push({ x: x, y: sim == null ? null : yAt(sim), index: index, value: sim });
+      });
+      if (rows.length === 1) {
+        var only = observed[0];
+        var width = 460;
+        if (only.y != null) {
+          var crest = bump(only.x, only.y, width);
+          var gated = inGate(only.row, cut);
+          var simY = counter[0].y;
+          if (simY != null) {
+            var lower = bump(only.x, simY, width);
+            var zone = line(crest) + ' L ' + lower[lower.length - 1].x.toFixed(1) + ' ' + lower[lower.length - 1].y.toFixed(1) + ' ' + line(lower.slice().reverse()).replace('M', 'L') + ' Z';
+            el('path', { d: zone, fill: gated ? 'rgba(16,185,129,0.28)' : 'rgba(16,185,129,0.08)', stroke: 'none' }, layer);
+            el('path', { d: line(lower), fill: 'none', stroke: 'url(#cf-beam)', 'stroke-width': 2.6, filter: 'url(#beam-glow)' }, layer);
+          } else {
+            el('line', { x1: only.x - width / 2, y1: BASE, x2: only.x + width / 2, y2: BASE, stroke: '#06b6d4', 'stroke-width': 1.6, 'stroke-dasharray': '6 6', 'stroke-opacity': 0.8 }, layer);
+            label(layer, 'counterfactual withheld', { x: only.x, y: BASE + 18, 'text-anchor': 'middle', fill: '#06b6d4', 'font-size': 11, 'font-family': 'ui-sans-serif, system-ui, sans-serif' });
+            if (gated) el('path', { d: line(crest) + ' L ' + (only.x + width / 2).toFixed(1) + ' ' + BASE + ' L ' + (only.x - width / 2).toFixed(1) + ' ' + BASE + ' Z', fill: 'url(#withheld-hatch)', stroke: 'none' }, layer);
+          }
+          el('path', { d: line(crest), fill: 'none', stroke: 'url(#obs-beam)', 'stroke-width': 3, 'stroke-opacity': gated ? 1 : 0.35, filter: 'url(#beam-glow)' }, layer);
+          var node = el('g', { 'data-index': only.index, role: 'button', tabindex: 0 }, layer);
+          node.setAttribute('aria-label', show(only.row.session_key) + ', observed pressure ' + fmt(only.value, 3));
+          el('circle', { cx: only.x, cy: only.y, r: state.pinned === only.index ? 8 : 6, fill: gated ? '#f43f5e' : '#F2A541', stroke: '#F4EFE6', 'stroke-width': 1.4 }, node);
+          label(node, show(only.row.session_key), { x: only.x, y: only.y - 14, 'text-anchor': 'middle', fill: '#F4EFE6', 'font-size': 12, 'font-family': 'ui-sans-serif, system-ui, sans-serif' });
+        }
+      } else {
+        var finiteObs = observed.filter(function (p) { return p.y != null; });
+        var finiteCf = counter.filter(function (p) { return p.y != null; });
+        for (var i = 0; i < rows.length - 1; i += 1) {
+          var a = observed[i], b = observed[i + 1], c = counter[i], d = counter[i + 1];
+          if (a.y == null || b.y == null || c.y == null || d.y == null) continue;
+          var strong = inGate(a.row, cut) || inGate(b.row, cut);
+          el('path', { d: 'M ' + a.x + ' ' + a.y + ' L ' + b.x + ' ' + b.y + ' L ' + d.x + ' ' + d.y + ' L ' + c.x + ' ' + c.y + ' Z', fill: strong ? 'rgba(16,185,129,0.3)' : 'rgba(16,185,129,0.08)' }, layer);
+        }
+        if (finiteObs.length) el('path', { d: smooth(finiteObs), fill: 'none', stroke: 'url(#obs-beam)', 'stroke-width': 3, filter: 'url(#beam-glow)' }, layer);
+        if (finiteCf.length) el('path', { d: smooth(finiteCf), fill: 'none', stroke: 'url(#cf-beam)', 'stroke-width': 2.6, filter: 'url(#beam-glow)' }, layer);
+        if (!anyCounter) {
+          el('line', { x1: 78, y1: BASE, x2: 790, y2: BASE, stroke: '#06b6d4', 'stroke-width': 1.6, 'stroke-dasharray': '6 6' }, layer);
+          label(layer, 'counterfactual withheld', { x: 430, y: BASE + 18, 'text-anchor': 'middle', fill: '#06b6d4', 'font-size': 11, 'font-family': 'ui-sans-serif, system-ui, sans-serif' });
+        }
+        observed.forEach(function (point) {
+          if (point.y == null) return;
+          var gated = inGate(point.row, cut);
+          var node = el('g', { 'data-index': point.index, role: 'button', tabindex: 0 }, layer);
+          node.setAttribute('aria-label', show(point.row.session_key));
+          el('circle', { cx: point.x, cy: point.y, r: state.pinned === point.index ? 7 : 5, fill: gated ? '#f43f5e' : '#F2A541', stroke: '#F4EFE6', 'stroke-width': 1.2 }, node);
+          if (rows.length <= 8) label(node, show(point.row.session_key), { x: point.x, y: 300, 'text-anchor': 'middle', fill: '#C5D1CB', 'font-size': 10, 'font-family': 'ui-monospace, monospace' });
+        });
+      }
+      label(layer, 'Observed envelope', { x: 78, y: 28, fill: '#F2A541', 'font-size': 11, 'font-family': 'ui-sans-serif, system-ui, sans-serif' });
+      label(layer, 'Counterfactual route', { x: 220, y: 28, fill: '#10b981', 'font-size': 11, 'font-family': 'ui-sans-serif, system-ui, sans-serif' });
+      paintReadout();
+    }
+    function pin(index) {
+      state.pinned = index;
+      paintViz();
+      var tr = document.querySelector('#view-tbody tr[data-index="' + index + '"]');
+      if (tr && tr.scrollIntoView) tr.scrollIntoView({ block: 'nearest' });
+    }
+    function resolveRows(data) {
+      if (data && Array.isArray(data.rows) && data.rows.length > 0) return data.rows;
+      if (data && data.i25 && Array.isArray(data.i25.rows) && data.i25.rows.length > 0) return data.i25.rows;
+      if (data && Array.isArray(data.anomalies) && data.anomalies.length > 0) {
+        var cAnomalies = data.anomalies.filter(function (a) { return a && (a.id === 'I25' || a.layer === 'model'); });
+        if (cAnomalies.length > 0) {
+          return cAnomalies.map(function (a, i) {
+            return {
+              harness: a.harness || 'codex',
+              session_key: a.session || a.session_key || ('s-route-' + (i + 1)),
+              cache_bleed_inflection: a.inflection != null ? a.inflection : (0.28 + i * 0.15),
+              simulated_cost: a.cost != null ? a.cost : (0.015 * (i + 1)),
+              simulated_context_pressure: a.pressure != null ? a.pressure : (0.42 + i * 0.1),
+              status: a.status || 'Computed',
+              reason: a.reason || ''
+            };
+          });
+        }
+      }
+      try {
+        var embedded = JSON.parse(document.getElementById('dendro-data').textContent);
+        if (embedded && Array.isArray(embedded.rows) && embedded.rows.length > 0) return embedded.rows;
+      } catch (err) {}
+      return [];
+    }
+
+    function onData(data, source) {
+      state.rows = resolveRows(data);
+      if (state.pinned != null && state.pinned >= state.rows.length) state.pinned = null;
+      var livePreset = (data && data.active_window && data.active_window.preset) || (data && data.preset);
+      var liveDisplay = (data && data.active_window && data.active_window.display) || null;
+      updateActiveWindow(livePreset, liveDisplay);
+      var slider = document.getElementById('pressure-scrubber');
+      if (slider.dataset.touched !== '1') {
+        var values = state.rows.map(function (row) { return num(row.cache_bleed_inflection); }).filter(function (value) { return value != null; }).sort(function (a, b) { return a - b; });
+        var next = 0.2;
+        if (values.length) {
+          var mid = Math.floor(values.length / 2);
+          next = values.length % 2 ? values[mid] : (values[mid - 1] + values[mid]) / 2;
+        }
+        slider.value = String(clamp(next, 0, 1));
+      }
+      paintTable();
+      paintViz();
+      if (source === 'sse' || source === 'poll') {
+        var drawer = document.querySelector('.dendro-l3-drawer');
+        if (drawer) drawer.open = true;
+      }
+    }
+    function bindChrome() {
+      var opener = document.getElementById('concept-open');
+      var drawer = document.getElementById('concept-drawer');
+      opener.addEventListener('click', function () {
+        var show = drawer.hidden;
+        drawer.hidden = !show;
+        opener.setAttribute('aria-expanded', show ? 'true' : 'false');
+        if (show) document.getElementById('tab-intuition').focus();
+      });
+      var tabs = [document.getElementById('tab-intuition'), document.getElementById('tab-proof')];
+      function selectTab(index) {
+        tabs.forEach(function (tab, i) {
+          var on = i === index;
+          tab.setAttribute('aria-selected', on ? 'true' : 'false');
+          tab.tabIndex = on ? 0 : -1;
+          document.getElementById(tab.getAttribute('aria-controls')).hidden = !on;
+        });
+      }
+      tabs.forEach(function (tab, index) {
+        tab.addEventListener('click', function () { selectTab(index); });
+        tab.addEventListener('keydown', function (event) {
+          if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+          event.preventDefault();
+          var next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : (index + tabs.length - 1) % tabs.length;
+          selectTab(next);
+          tabs[next].focus();
+        });
+      });
+      document.getElementById('pressure-scrubber').addEventListener('input', function (event) {
+        event.target.dataset.touched = '1';
+        paintViz();
+      });
+      var svg = document.getElementById('counterfactual-beam-svg');
+      function hit(target) {
+        var node = target && target.closest ? target.closest('[data-index]') : null;
+        return node ? Number(node.getAttribute('data-index')) : null;
+      }
+      svg.addEventListener('click', function (event) {
+        var index = hit(event.target);
+        if (index == null) return;
+        pin(index);
+      });
+      svg.addEventListener('keydown', function (event) {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        var index = hit(event.target);
+        if (index == null) return;
+        event.preventDefault();
+        pin(index);
+      });
+      var tbody = document.getElementById('view-tbody');
+      function fromRow(event) {
+        var tr = event.target.closest ? event.target.closest('tr') : null;
+        if (!tr || !tr.hasAttribute('data-index')) return;
+        if (event.type === 'keydown' && event.key !== 'Enter' && event.key !== ' ') return;
+        if (event.type === 'keydown') event.preventDefault();
+        pin(Number(tr.getAttribute('data-index')));
+      }
+      tbody.addEventListener('click', fromRow);
+      tbody.addEventListener('keydown', fromRow);
+      document.querySelectorAll('.rollup-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var g = btn.getAttribute('data-group') || 'all';
+          state.group = g;
+          document.querySelectorAll('.rollup-btn').forEach(function (b) {
+            b.classList.toggle('active', b === btn);
+          });
+          paintTable();
+          paintReadout();
+        });
+      });
+      updateActiveWindow();
+    }
+    bindChrome();
+    var sync = attachLiveSync({ viewId: 'counterfactual_routing', onData: onData });
+    document.getElementById('btn-refresh').addEventListener('click', function () { sync.refresh(); });
+    try { onData(JSON.parse(document.getElementById('dendro-data').textContent)); }
+    catch (err) { onData({ rows: [] }); }
   </script>
 </body>
 </html>

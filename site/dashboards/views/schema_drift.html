@@ -6,6 +6,99 @@
   <title>Dendro · Schema Drift (I23)</title>
   <meta name="description" content="I23 harness.schema_drift. Added, removed, and retyped keys stay separate. A short sample is insufficient_sample.">
   <link rel="stylesheet" href="../style.css">
+  <style>
+    .primer-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 18px; margin-top: 16px; }
+    .primer-copy { color: var(--text-secondary); font-size: 0.92rem; max-width: 62ch; }
+    .layer-stack { display: flex; flex-wrap: wrap; gap: 8px; }
+    .layer-stack .layer-coverage-badge { display: inline-flex; align-items: center; padding: 6px 10px; border-radius: 999px; background: rgba(10, 13, 18, 0.55); font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; }
+    .layer-stack .layer-coverage-badge.is-primary { background: color-mix(in srgb, currentColor 18%, transparent); font-weight: 700; }
+    .layer-stack .layer-coverage-badge.is-off { color: var(--text-muted); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08); }
+    .concept-open { border: 1px solid rgba(6, 182, 212, 0.45); background: rgba(6, 182, 212, 0.1); color: var(--text-primary); border-radius: 999px; padding: 8px 14px; font: 650 0.92rem/1 var(--font-sans); cursor: pointer; }
+    .concept-open:focus-visible, .concept-tabs button:focus-visible, #schema-dna-svg [data-index]:focus-visible { outline: 2px solid var(--accent-cyan); outline-offset: 2px; }
+    .concept-drawer { margin-top: 12px; padding: 14px 14px 16px; }
+    .concept-drawer[hidden] { display: none !important; }
+    .concept-drawer p { color: var(--text-secondary); max-width: 72ch; margin: 0 0 10px; }
+    .console { padding: 16px 16px 14px; margin: 18px 0 22px; }
+    .console-head { margin-bottom: 12px; }
+    .console-head h2 { font-size: 1.18rem; letter-spacing: -0.03em; }
+    .console-head p, .legend { color: var(--text-secondary); font-size: 0.86rem; }
+    .split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 320px); gap: 14px; align-items: stretch; }
+    #schema-dna-svg { display: block; width: 100%; height: auto; }
+    #schema-dna-svg [data-index] { cursor: pointer; }
+    .diff { padding: 14px; }
+    .diff h3 { font-size: 1.02rem; letter-spacing: -0.02em; margin: 2px 0 6px; }
+    .diff-kicker { margin: 0; color: var(--accent-cyan); font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; }
+    .diff-note { color: var(--text-secondary); font-size: 0.82rem; margin: 0 0 10px; }
+    .diff-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .diff section { border-radius: 12px; padding: 8px; background: rgba(10, 13, 18, 0.45); min-height: 88px; }
+    .diff section.is-focus { box-shadow: inset 0 0 0 1px #06b6d4; }
+    .diff h4 { margin: 0 0 6px; font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase; }
+    .diff h4.added { color: #06b6d4; }
+    .diff h4.removed { color: #f43f5e; }
+    .diff h4.retyped { color: #F2A541; }
+    .diff ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-family: var(--font-mono); font-size: 0.75rem; }
+    .diff .retype-block { margin-top: 8px; }
+    .legend { display: flex; flex-wrap: wrap; gap: 10px 14px; list-style: none; margin: 10px 0 0; padding: 0; }
+    .legend i { display: inline-block; width: 14px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+    .swatch-emerald { background: #10b981; }
+    .swatch-cyan { background: #06b6d4; box-shadow: 0 0 8px rgba(6, 182, 212, 0.7); }
+    .swatch-rose { background: repeating-linear-gradient(45deg, transparent, transparent 2px, #f43f5e 2px, #f43f5e 3px); }
+    .swatch-amber { background: #F2A541; }
+    #view-tbody tr[data-index] { cursor: pointer; }
+    #view-tbody tr.is-selected td { background: rgba(6, 182, 212, 0.16); }
+    .l3-caveat { margin: 4px 16px 12px; color: var(--text-secondary); }
+    .rollup-group-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 10px 0 14px;
+      padding: 6px 12px;
+      background: rgba(17, 22, 31, 0.6);
+      border-radius: 8px;
+      border: 1px solid var(--border-subtle);
+    }
+    .rollup-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .rollup-segmented {
+      display: inline-flex;
+      gap: 2px;
+      background: #0A0D12;
+      padding: 2px;
+      border-radius: 6px;
+      border: 1px solid var(--border-subtle);
+    }
+    .rollup-btn {
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      background: transparent;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .rollup-btn:hover { color: var(--text-primary); }
+    .rollup-btn.active {
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+    }
+    .group-header-row td {
+      background: rgba(17, 22, 31, 0.95);
+      font-weight: 600;
+      color: #06B6D4;
+      border-top: 1px solid var(--border-subtle);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 8px 12px;
+    }
+    @media (max-width: 860px) { .split { grid-template-columns: 1fr; } }
+  </style>
 </head>
 <body>
   <header class="telemetry-nav">
@@ -36,6 +129,7 @@
         <span class="pulse-dot"></span>
         <span id="dual-serving-text">ILLUSTRATIVE SNAPSHOT</span>
       </div>
+      <span class="badge badge-info" id="active-window-pill" style="font-size:0.75rem; letter-spacing:0.02em;">Slice: All Time</span>
       <button id="btn-refresh" class="nav-action-btn" type="button" title="Refresh snapshot">
         <span>Refresh</span>
       </button>
@@ -44,45 +138,146 @@
     </div>
   </header>
   <main class="telemetry-layout">
-    <section class="hero-header">
-      <div class="hero-eyebrow"><span>●</span> Harness · SQL View: <code>v_schema_drift</code></div>
-      <h1 class="hero-title">Schema Drift (I23)</h1>
-      <p class="hero-subtitle">I23 harness.schema_drift. Added, removed, and retyped keys stay separate. A short sample is insufficient_sample.</p>
-      <p class="hero-subtitle">All-time counts — window_from/window_to label the snapshot but do not filter.</p>
-    </section>
-    <section class="table-panel">
-      <div class="table-panel-header">
-        <div class="table-panel-title">
-          <span>v_schema_drift rows</span>
-          <span class="badge badge-info" id="record-count-badge">0 Rows</span>
+    <div class="main-wrapper">
+      <section class="hero-header">
+        <div class="hero-eyebrow"><span>●</span> Harness · Observed Envelopes <span class="sr-only">v_schema_drift</span></div>
+        <h1 class="hero-title">Schema Drift (I23)</h1>
+        <p class="hero-subtitle">I23 harness.schema_drift. Added, removed, and retyped keys stay separate. A short sample is insufficient_sample.</p>
+        <div class="primer-bar">
+          <div>
+            <div class="layer-stack" aria-label="Four-layer stack this insight spans">
+              <span class="layer-coverage-badge is-off" data-layer="model" aria-label="Model, not spanned">Model</span>
+              <span class="layer-coverage-badge is-primary" data-layer="harness" aria-current="true">Harness</span>
+              <span class="layer-coverage-badge is-off" data-layer="coord" aria-label="Coordination, not spanned">Coordination</span>
+              <span class="layer-coverage-badge is-off" data-layer="env" aria-label="Environment, not spanned">Environment</span>
+            </div>
+            <p class="primer-copy">Envelope shape is a Harness fact. The ribbon does not read Model prices, Coordination edges, or Environment grants.</p>
+          </div>
+          <button type="button" class="concept-open" id="concept-open" aria-expanded="false" aria-controls="concept-drawer">? Understand This Insight</button>
         </div>
-      </div>
-      <div class="table-container">
-        <table class="telemetry-table">
-          <thead><tr><th>Harness</th><th>Version</th><th class="num">L1 distance</th><th class="num">Added</th><th class="num">Removed</th><th class="num">Retyped</th><th>Status</th><th>Reason</th></tr></thead>
-          <tbody id="view-tbody"></tbody>
-        </table>
-      </div>
-    </section>
-    <div class="query-box">
-      <div class="query-box-title">Underlying DuckDB Query</div>
-      <code>SELECT * FROM v_schema_drift ORDER BY l1_distance DESC, harness, harness_version</code>
-    </div>
-    <section id="live-duckdb-panel" class="live-duckdb-panel" hidden aria-label="Connected fact rows">
-      <div class="live-duckdb-surface">
-        <h2 class="live-duckdb-title">Connected fact rows</h2>
-        <p id="live-duckdb-window">Recorded window: —</p>
-        <p id="live-duckdb-totals">Total rows: —</p>
-        <ul id="live-duckdb-facts" class="fact-counts"></ul>
-        <div class="live-duckdb-scroll">
+        <div id="concept-drawer" class="concept-drawer glass" hidden>
+          <div class="concept-tabs" role="tablist" aria-label="How to read Schema Drift">
+            <button type="button" role="tab" id="tab-intuition" aria-selected="true" aria-controls="panel-intuition">Visual Intuition (For Everyone)</button>
+            <button type="button" role="tab" id="tab-proof" aria-selected="false" aria-controls="panel-proof" tabindex="-1">Mathematical Formula &amp; Threshold Proof (For Power Users)</button>
+          </div>
+          <div id="panel-intuition" role="tabpanel" aria-labelledby="tab-intuition">
+            <p>Each harness version is one genome ribbon. Emerald bands are keys that stayed in the envelope. Cyan bands are keys that appeared. Rose hatched gaps are keys that disappeared. Amber bands are keys whose type changed. The amber curve is L1 distance: how far the shape distribution moved between versions.</p>
+            <p>Click a ribbon or any gene band. The inspector lists added, removed, and retyped keys side by side and lights the same row in the table. This view stores counts. Real key names appear only when a row actually carries them. Drift is not a compatibility verdict. A short sample is insufficient_sample.</p>
+          </div>
+          <div id="panel-proof" role="tabpanel" aria-labelledby="tab-proof" hidden>
+            <pre class="concept-formula-box">Adjacent versions of one harness. Each side needs at least 5 non-refused envelopes.
+L1 = Σ |p_later(key, type) − p_earlier(key, type)| over aligned pairs
+added = keys present only on the later version
+removed = keys present only on the earlier version
+retyped = same key, different observed type set
+A presence change is not a retype.
+No valid pair: status Refused, reason insufficient_sample.
+Some short pairs beside a valid pair: status Partial.
+Unknown keys never enter the distribution.
+Key-path drift is not a compatibility verdict.
+
+Console encoding:
+  emerald bands = retained envelope, count derived from 1 − min(L1, 1) when names are absent
+  cyan = keys_added, rose hatch = keys_removed, amber = keys_retyped
+  the waveform connects each row at x = L1 / 2 across the ribbon</pre>
+            <p class="concept-live-proof" id="live-proof">Waiting for rows.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="console glass" aria-label="Schema DNA fingerprint">
+        <div class="console-head">
+          <h2>Schema DNA fingerprint</h2>
+          <p id="schema-status">Each ribbon is one harness version. The curve is L1 distance between shape distributions.</p>
+        </div>
+        <div class="split">
+          <div class="concept-svg-stage">
+            <svg id="schema-dna-svg" viewBox="0 0 860 320" role="group" aria-labelledby="schema-title">
+              <title id="schema-title">Schema DNA fingerprint ribbons for harness envelope drift.</title>
+              <defs>
+                <pattern id="dna-hatch" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)">
+                  <rect width="6" height="6" fill="rgba(244,63,94,0.15)"/>
+                  <line x1="0" y1="0" x2="0" y2="6" stroke="#f43f5e" stroke-width="1.6"/>
+                </pattern>
+                <filter id="cyan-glow" x="-50%" y="-80%" width="200%" height="260%">
+                  <feGaussianBlur stdDeviation="2.4" result="blur"/>
+                  <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                </filter>
+                <linearGradient id="l1-stroke" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%" stop-color="#F2A541"/>
+                  <stop offset="100%" stop-color="#f43f5e"/>
+                </linearGradient>
+              </defs>
+              <g id="schema-dynamic"></g>
+            </svg>
+          </div>
+          <aside id="schema-diff" class="glass diff" aria-live="polite">
+            <p class="diff-kicker">Envelope Diff Inspector</p>
+            <h3 id="schema-diff-title">Select a genome ribbon</h3>
+            <p class="diff-note" id="schema-diff-note">Added, removed, and retyped keys open side by side.</p>
+            <div class="diff-pair">
+              <section id="schema-added-card"><h4 class="added">Added</h4><ul id="schema-added"></ul></section>
+              <section id="schema-removed-card"><h4 class="removed">Removed</h4><ul id="schema-removed"></ul></section>
+            </div>
+            <section class="retype-block" id="schema-retyped-card"><h4 class="retyped">Retyped</h4><ul id="schema-retyped"></ul></section>
+          </aside>
+        </div>
+        <ul class="legend">
+          <li><i class="swatch-emerald"></i>Stable key</li>
+          <li><i class="swatch-cyan"></i>keys_added</li>
+          <li><i class="swatch-rose"></i>keys_removed</li>
+          <li><i class="swatch-amber"></i>keys_retyped</li>
+        </ul>
+      </section>
+
+      <section class="table-panel">
+        <div class="table-panel-header">
+          <div class="table-panel-title">
+            <span>Observed Envelopes <span class="sr-only">v_schema_drift rows</span></span>
+            <span class="badge badge-info" id="record-count-badge">0 Rows</span>
+          </div>
+        </div>
+        <div class="rollup-group-bar" role="toolbar" aria-label="Group and Roll Up Controls">
+          <span class="rollup-label">Group by:</span>
+          <div class="segmented-control rollup-segmented" role="group" aria-label="Table Grouping">
+            <button type="button" class="segment-btn rollup-btn active" data-group="all">All Sessions</button>
+            <button type="button" class="segment-btn rollup-btn" data-group="harness">By Harness / Tool</button>
+            <button type="button" class="segment-btn rollup-btn" data-group="rig">By Workspace / Rig</button>
+            <button type="button" class="segment-btn rollup-btn" data-group="status">By Status / Regime</button>
+            <button type="button" class="segment-btn rollup-btn" data-group="date">By Date</button>
+          </div>
+        </div>
+        <div class="table-container">
           <table class="telemetry-table">
-            <thead id="live-duckdb-head"></thead>
-            <tbody id="live-duckdb-body"></tbody>
+            <thead><tr><th>Harness</th><th>Version</th><th class="num">L1 distance</th><th class="num">Added</th><th class="num">Removed</th><th class="num">Retyped</th><th>Status</th><th>Reason</th></tr></thead>
+            <tbody id="view-tbody"></tbody>
           </table>
         </div>
-      </div>
-    </section>
+      </section>
 
+      <details class="dendro-l3-drawer">
+        <summary><span>L3 Technical Lineage</span><span class="l3-pill">L3</span></summary>
+        <p class="l3-caveat">All-time counts — window_from/window_to label the snapshot but do not filter.</p>
+        <div class="query-box">
+          <div class="query-box-title">Underlying DuckDB Query</div>
+          <code>SELECT * FROM v_schema_drift ORDER BY l1_distance DESC, harness, harness_version</code>
+        </div>
+        <section id="live-duckdb-panel" class="live-duckdb-panel" hidden aria-label="Connected fact rows">
+          <div class="live-duckdb-surface">
+            <h2 class="live-duckdb-title">Connected fact rows</h2>
+            <p id="live-duckdb-window">Recorded window: —</p>
+            <p id="live-duckdb-totals">Total rows: —</p>
+            <ul id="live-duckdb-facts" class="fact-counts"></ul>
+            <div class="live-duckdb-scroll">
+              <table class="telemetry-table">
+                <thead id="live-duckdb-head"></thead>
+                <tbody id="live-duckdb-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </details>
+    </div>
   </main>
   <script id="dendro-data" type="application/json">
   {
@@ -96,34 +291,513 @@
   <script src="../live-sync.js"></script>
   <script>
     'use strict';
+    var SVGNS = 'http://www.w3.org/2000/svg';
+    var state = { rows: [], pinned: null, kind: null, group: 'all' };
+    var activeWin = new URLSearchParams(window.location.search).get('window') || (typeof localStorage !== 'undefined' && localStorage.getItem('dendro_time_window')) || 'all';
+
+    function escapeHtml(str) {
+      return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function formatHumanWindow(fromIso, toIso, preset) {
+      var PRESET_HUMAN = {
+        today: 'Today (24h)',
+        '7d': 'Last Week (7d)',
+        '30d': '30 Days',
+        this_month: 'This Month',
+        last_month: 'Last Month',
+        all: 'All Time'
+      };
+      if (preset && PRESET_HUMAN[preset]) return PRESET_HUMAN[preset];
+      if (preset && preset.indexOf('..') !== -1) {
+        var parts = preset.split('..');
+        fromIso = parts[0];
+        toIso = parts[1];
+      }
+      if (!fromIso && !toIso) return preset ? (PRESET_HUMAN[preset] || preset) : 'All Time';
+      var parseD = function (str) {
+        if (!str || str === '—') return null;
+        var d = new Date(str);
+        return isNaN(d.getTime()) ? null : d;
+      };
+      var dFrom = parseD(fromIso);
+      var dTo = parseD(toIso);
+      if (!dFrom && !dTo) return preset || 'All Time';
+      var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      var fmt = function (d) { return MONTHS[d.getUTCMonth()] + ' ' + d.getUTCDate(); };
+      if (dFrom && !dTo) return 'From ' + fmt(dFrom) + ', ' + dFrom.getUTCFullYear();
+      if (!dFrom && dTo) return 'Until ' + fmt(dTo) + ', ' + dTo.getUTCFullYear();
+      var yFrom = dFrom.getUTCFullYear(), yTo = dTo.getUTCFullYear();
+      var mFrom = dFrom.getUTCMonth(), mTo = dTo.getUTCMonth();
+      var dayFrom = dFrom.getUTCDate(), dayTo = dTo.getUTCDate();
+      if (yFrom === yTo && mFrom === mTo && dayFrom === dayTo) {
+        return MONTHS[mFrom] + ' ' + dayFrom + ', ' + yFrom;
+      }
+      if (yFrom === yTo && mFrom === mTo) {
+        return MONTHS[mFrom] + ' ' + dayFrom + ' – ' + dayTo + ', ' + yFrom;
+      }
+      if (yFrom === yTo) {
+        return fmt(dFrom) + ' – ' + fmt(dTo) + ', ' + yFrom;
+      }
+      return fmt(dFrom) + ', ' + yFrom + ' – ' + fmt(dTo) + ', ' + yTo;
+    }
+
+    function updateActiveWindow(preset, liveDisplay) {
+      if (preset) activeWin = preset;
+      else {
+        activeWin = (typeof location !== 'undefined' && new URLSearchParams(location.search).get('window')) || (typeof localStorage !== 'undefined' && localStorage.getItem('dendro_time_window')) || 'all';
+      }
+      var pill = document.getElementById('active-window-pill');
+      if (pill) {
+        var label = liveDisplay || formatHumanWindow(null, null, activeWin);
+        pill.textContent = 'Slice: ' + label;
+      }
+      document.querySelectorAll('a[href="../index.html"], a[href^="../index.html?"]').forEach(function (a) {
+        a.href = '../index.html?window=' + encodeURIComponent(activeWin);
+      });
+    }
+
+    window.addEventListener('dendro:state', function (e) {
+      var p = e && e.detail && e.detail.preset;
+      if (p) updateActiveWindow(p);
+    });
+
+    function num(value) {
+      if (value == null || value === '') return null;
+      var n = typeof value === 'number' ? value : Number(value);
+      return Number.isFinite(n) ? n : null;
+    }
+    function fmt(value, digits) {
+      var n = num(value);
+      if (n == null) return '—';
+      return n.toLocaleString(undefined, { maximumFractionDigits: digits == null ? 3 : digits });
+    }
+    function show(value) { return value == null || value === '' ? '—' : String(value); }
+    function el(name, attrs, parent) {
+      var node = document.createElementNS(SVGNS, name);
+      if (attrs) Object.keys(attrs).forEach(function (key) {
+        if (attrs[key] != null) node.setAttribute(key, String(attrs[key]));
+      });
+      if (parent) parent.appendChild(node);
+      return node;
+    }
+    function label(parent, value, attrs) {
+      var node = el('text', attrs, parent);
+      node.textContent = value == null ? '' : String(value);
+      return node;
+    }
     function cell(text, className) {
-      const td = document.createElement('td');
+      var td = document.createElement('td');
       if (className) td.className = className;
       td.textContent = text == null || text === '' ? '—' : String(text);
       return td;
     }
-    function render(data) {
-      const rows = Array.isArray(data && data.rows) ? data.rows : [];
-      document.getElementById('record-count-badge').textContent = rows.length + (rows.length === 1 ? ' Row' : ' Rows');
-      const tbody = document.getElementById('view-tbody');
-      tbody.replaceChildren();
-      if (!rows.length) {
-        const tr = document.createElement('tr');
-        const td = cell('No rows in this snapshot.');
-        td.colSpan = 8;
-        tr.append(td);
-        tbody.append(tr);
+    function asList(value) {
+      if (Array.isArray(value)) return value.map(function (item) { return String(item); });
+      if (typeof value === 'string' && value.indexOf(',') >= 0) {
+        return value.split(',').map(function (item) { return item.trim(); }).filter(Boolean);
+      }
+      return null;
+    }
+    function bandsFrom(value, prefix, named) {
+      var list = asList(value) || asList(named);
+      if (list) return list.map(function (name) { return { name: name, synthetic: false }; });
+      var n = num(value);
+      if (n == null || n <= 0) return [];
+      var shown = Math.min(24, Math.round(n));
+      var items = [];
+      for (var i = 0; i < shown; i += 1) items.push({ name: prefix + ' ' + (i + 1), synthetic: true, total: Math.round(n) });
+      if (Math.round(n) > shown) items.push({ name: '+' + (Math.round(n) - shown) + ' more', synthetic: true, total: Math.round(n) });
+      return items;
+    }
+    function stableBands(row) {
+      var named = asList(row.stable_keys) || asList(row.baseline_keys) || asList(row.keys_stable);
+      if (named) return named.map(function (name) { return { name: name, synthetic: false }; });
+      var l1 = num(row.l1_distance);
+      var retained = l1 == null ? 8 : Math.max(4, Math.round(12 * (1 - Math.min(Math.abs(l1), 1))));
+      var items = [];
+      for (var i = 0; i < retained; i += 1) items.push({ name: 'Retained band ' + (i + 1), synthetic: true });
+      return items;
+    }
+    function genome(row) {
+      return {
+        stable: stableBands(row),
+        added: bandsFrom(row.keys_added, 'Added band', row.added_keys),
+        removed: bandsFrom(row.keys_removed, 'Removed band', row.removed_keys),
+        retyped: bandsFrom(row.keys_retyped, 'Retyped band', row.retyped_keys)
+      };
+    }
+    function fillList(id, items, empty) {
+      var ul = document.getElementById(id);
+      ul.replaceChildren();
+      if (!items.length) {
+        var li = document.createElement('li');
+        li.textContent = empty;
+        ul.append(li);
         return;
       }
-      rows.forEach(row => {
-        const tr = document.createElement('tr');
-        tr.append(cell(row.harness), cell(row.harness_version), cell(row.l1_distance, 'num'), cell(row.keys_added, 'num'), cell(row.keys_removed, 'num'), cell(row.keys_retyped, 'num'), cell(row.status), cell(row.reason));
-        tbody.append(tr);
+      items.forEach(function (item) {
+        var li = document.createElement('li');
+        li.textContent = item.synthetic ? item.name : item.name;
+        ul.append(li);
       });
     }
-    const sync = attachLiveSync({ viewId: 'schema_drift', onData: render });
-    document.getElementById('btn-refresh').addEventListener('click', () => sync.refresh());
-    render(JSON.parse(document.getElementById('dendro-data').textContent));
+    function focusCards(kind) {
+      ['added', 'removed', 'retyped'].forEach(function (name) {
+        document.getElementById('schema-' + name + '-card').classList.toggle('is-focus', kind === name);
+      });
+    }
+    function inspect(index, kind) {
+      state.pinned = index;
+      state.kind = kind || null;
+      var row = state.rows[index];
+      var spec = row ? genome(row) : null;
+      document.getElementById('schema-diff-title').textContent = row ? show(row.harness) + ' @ ' + show(row.harness_version) : 'Select a genome ribbon';
+      document.getElementById('schema-diff-note').textContent = row
+        ? 'L1 ' + fmt(row.l1_distance, 3) + ' · ' + show(row.status) + (row.reason ? ' · ' + row.reason : '') + '. Counts are bands. Names appear only when the row carries them.'
+        : 'Added, removed, and retyped keys open side by side.';
+      fillList('schema-added', spec ? spec.added : [], 'None');
+      fillList('schema-removed', spec ? spec.removed : [], 'None');
+      fillList('schema-retyped', spec ? spec.retyped : [], 'None');
+      focusCards(kind);
+      mark();
+      var tr = document.querySelector('#view-tbody tr[data-index="' + index + '"]');
+      if (tr && tr.scrollIntoView) tr.scrollIntoView({ block: 'nearest' });
+    }
+    function mark() {
+      Array.prototype.forEach.call(document.querySelectorAll('#view-tbody tr'), function (tr) {
+        tr.classList.toggle('is-selected', Number(tr.getAttribute('data-index')) === state.pinned);
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('#schema-dynamic [data-index]'), function (node) {
+        var on = Number(node.getAttribute('data-index')) === state.pinned;
+        node.classList.toggle('is-selected', on);
+        var frame = node.querySelector('.ribbon-frame');
+        if (frame) frame.setAttribute('stroke', on ? '#F4EFE6' : 'rgba(255,255,255,0.1)');
+      });
+    }
+    function paintTable() {
+      var rows = state.rows;
+      document.getElementById('record-count-badge').textContent = rows.length + (rows.length === 1 ? ' Row' : ' Rows');
+      var tbody = document.getElementById('view-tbody');
+      tbody.replaceChildren();
+      if (!rows.length) {
+        var empty = document.createElement('tr');
+        var td = cell('No rows in this snapshot.');
+        td.colSpan = 8;
+        empty.append(td);
+        tbody.append(empty);
+        return;
+      }
+
+      if (state.group === 'harness') {
+        var groups = {};
+        rows.forEach(function (row, idx) {
+          var h = row.harness || 'unknown';
+          if (!groups[h]) groups[h] = [];
+          groups[h].push({ row: row, index: idx });
+        });
+        Object.keys(groups).forEach(function (hName) {
+          var items = groups[hName];
+          var headerTr = document.createElement('tr');
+          headerTr.className = 'group-header-row';
+          var headerTd = document.createElement('td');
+          headerTd.colSpan = 8;
+          headerTd.innerHTML = '<strong>Harness: ' + escapeHtml(hName) + '</strong> (' + items.length + ' envelope' + (items.length === 1 ? '' : 's') + ')';
+          headerTr.appendChild(headerTd);
+          tbody.appendChild(headerTr);
+          items.forEach(function (it) {
+            var tr = document.createElement('tr');
+            tr.setAttribute('data-index', String(it.index));
+            tr.tabIndex = 0;
+            tr.append(cell(it.row.harness), cell(it.row.harness_version), cell(it.row.l1_distance, 'num'), cell(it.row.keys_added, 'num'), cell(it.row.keys_removed, 'num'), cell(it.row.keys_retyped, 'num'), cell(it.row.status), cell(it.row.reason));
+            tbody.append(tr);
+          });
+        });
+      } else if (state.group === 'status') {
+        var groups = {};
+        rows.forEach(function (row, idx) {
+          var s = row.status || 'Unknown';
+          if (!groups[s]) groups[s] = [];
+          groups[s].push({ row: row, index: idx });
+        });
+        Object.keys(groups).forEach(function (sName) {
+          var items = groups[sName];
+          var headerTr = document.createElement('tr');
+          headerTr.className = 'group-header-row';
+          var headerTd = document.createElement('td');
+          headerTd.colSpan = 8;
+          headerTd.innerHTML = '<strong>Status: ' + escapeHtml(sName) + '</strong> (' + items.length + ' envelope' + (items.length === 1 ? '' : 's') + ')';
+          headerTr.appendChild(headerTd);
+          tbody.appendChild(headerTr);
+          items.forEach(function (it) {
+            var tr = document.createElement('tr');
+            tr.setAttribute('data-index', String(it.index));
+            tr.tabIndex = 0;
+            tr.append(cell(it.row.harness), cell(it.row.harness_version), cell(it.row.l1_distance, 'num'), cell(it.row.keys_added, 'num'), cell(it.row.keys_removed, 'num'), cell(it.row.keys_retyped, 'num'), cell(it.row.status), cell(it.row.reason));
+            tbody.append(tr);
+          });
+        });
+      } else if (state.group === 'rig') {
+        var groups = {};
+        rows.forEach(function (row, idx) {
+          var r = row.rig || row.workspace || row.harness || 'default';
+          if (!groups[r]) groups[r] = [];
+          groups[r].push({ row: row, index: idx });
+        });
+        Object.keys(groups).forEach(function (rName) {
+          var items = groups[rName];
+          var headerTr = document.createElement('tr');
+          headerTr.className = 'group-header-row';
+          var headerTd = document.createElement('td');
+          headerTd.colSpan = 8;
+          headerTd.innerHTML = '<strong>Workspace / Rig: ' + escapeHtml(rName) + '</strong> (' + items.length + ' envelope' + (items.length === 1 ? '' : 's') + ')';
+          headerTr.appendChild(headerTd);
+          tbody.appendChild(headerTr);
+          items.forEach(function (it) {
+            var tr = document.createElement('tr');
+            tr.setAttribute('data-index', String(it.index));
+            tr.tabIndex = 0;
+            tr.append(cell(it.row.harness), cell(it.row.harness_version), cell(it.row.l1_distance, 'num'), cell(it.row.keys_added, 'num'), cell(it.row.keys_removed, 'num'), cell(it.row.keys_retyped, 'num'), cell(it.row.status), cell(it.row.reason));
+            tbody.append(tr);
+          });
+        });
+      } else if (state.group === 'date') {
+        var groups = {};
+        rows.forEach(function (row, idx) {
+          var d = row.date_bucket || (row.ts || row.recorded_at || row.date || row.created_at || '').slice(0, 10) || 'Active Window';
+          if (!groups[d]) groups[d] = [];
+          groups[d].push({ row: row, index: idx });
+        });
+        Object.keys(groups).forEach(function (dName) {
+          var items = groups[dName];
+          var headerTr = document.createElement('tr');
+          headerTr.className = 'group-header-row';
+          var headerTd = document.createElement('td');
+          headerTd.colSpan = 8;
+          headerTd.innerHTML = '<strong>Time Bucket: ' + escapeHtml(dName) + '</strong> (' + items.length + ' envelope' + (items.length === 1 ? '' : 's') + ')';
+          headerTr.appendChild(headerTd);
+          tbody.appendChild(headerTr);
+          items.forEach(function (it) {
+            var tr = document.createElement('tr');
+            tr.setAttribute('data-index', String(it.index));
+            tr.tabIndex = 0;
+            tr.append(cell(it.row.harness), cell(it.row.harness_version), cell(it.row.l1_distance, 'num'), cell(it.row.keys_added, 'num'), cell(it.row.keys_removed, 'num'), cell(it.row.keys_retyped, 'num'), cell(it.row.status), cell(it.row.reason));
+            tbody.append(tr);
+          });
+        });
+      } else {
+        rows.forEach(function (row, index) {
+          var tr = document.createElement('tr');
+          tr.setAttribute('data-index', String(index));
+          tr.tabIndex = 0;
+          tr.append(cell(row.harness), cell(row.harness_version), cell(row.l1_distance, 'num'), cell(row.keys_added, 'num'), cell(row.keys_removed, 'num'), cell(row.keys_retyped, 'num'), cell(row.status), cell(row.reason));
+          tbody.append(tr);
+        });
+      }
+      mark();
+    }
+    function paintProof() {
+      var added = 0, removed = 0, retyped = 0, maxL1 = null, short = 0;
+      state.rows.forEach(function (row) {
+        added += num(row.keys_added) || 0;
+        removed += num(row.keys_removed) || 0;
+        retyped += num(row.keys_retyped) || 0;
+        var l1 = num(row.l1_distance);
+        if (l1 != null) maxL1 = maxL1 == null ? l1 : Math.max(maxL1, l1);
+        if (String(row.reason || '').indexOf('insufficient_sample') >= 0) short += 1;
+      });
+      document.getElementById('live-proof').textContent = 'Live snapshot: ' + state.rows.length + ' rows · added ' + added + ' · removed ' + removed + ' · retyped ' + retyped + ' · max L1 ' + fmt(maxL1, 3) + ' · insufficient_sample rows ' + short + '. Pair minimum is 5 envelopes on each side.';
+    }
+    function paintViz() {
+      var layer = document.getElementById('schema-dynamic');
+      layer.replaceChildren();
+      var rows = state.rows.slice(0, 40);
+      label(layer, 'L1 waveform', { x: 28, y: 22, fill: '#F2A541', 'font-size': 11, 'font-family': 'ui-sans-serif, system-ui, sans-serif' });
+      if (!rows.length) {
+        label(layer, 'No envelope rows in this snapshot.', { x: 430, y: 160, 'text-anchor': 'middle', fill: '#C5D1CB', 'font-size': 14, 'font-family': 'ui-sans-serif, system-ui, sans-serif' });
+        document.getElementById('schema-status').textContent = 'No harness versions in this snapshot.';
+        return;
+      }
+      var top = 40;
+      var bottom = 304;
+      var slot = (bottom - top) / rows.length;
+      var markers = [];
+      rows.forEach(function (row, index) {
+        var spec = genome(row);
+        var items = []
+          .concat(spec.stable.map(function (item) { return Object.assign({ kind: 'stable', fill: '#10b981' }, item); }))
+          .concat(spec.added.map(function (item) { return Object.assign({ kind: 'added', fill: '#06b6d4' }, item); }))
+          .concat(spec.retyped.map(function (item) { return Object.assign({ kind: 'retyped', fill: '#F2A541' }, item); }))
+          .concat(spec.removed.map(function (item) { return Object.assign({ kind: 'removed', fill: 'url(#dna-hatch)' }, item); }));
+        var y = top + index * slot;
+        var h = Math.max(12, Math.min(56, slot - 10));
+        var mid = y + h / 2;
+        var group = el('g', { 'data-index': index, role: 'button', tabindex: 0 }, layer);
+        group.setAttribute('aria-label', show(row.harness) + ' version ' + show(row.harness_version) + ', L1 ' + fmt(row.l1_distance, 3));
+        el('rect', { x: 148, y: y, width: 676, height: h, rx: Math.min(16, h / 2), fill: 'rgba(10,13,18,0.55)', stroke: 'rgba(255,255,255,0.1)', 'class': 'ribbon-frame' }, group);
+        el('line', { x1: 156, y1: mid, x2: 812, y2: mid, stroke: 'rgba(244,239,230,0.18)', 'stroke-width': 1 }, group);
+        var gap = items.length > 18 ? 2 : 3;
+        var maxW = 28;
+        var bw = items.length ? Math.min(maxW, Math.max(4, (640 - gap * (items.length - 1)) / items.length)) : 0;
+        var used = items.length ? items.length * bw + (items.length - 1) * gap : 0;
+        var x0 = 168 + (640 - used) / 2;
+        items.forEach(function (item, bandIndex) {
+          var bx = x0 + bandIndex * (bw + gap);
+          var bh = Math.max(6, h - 10);
+          var by = mid - bh / 2;
+          var band = el('rect', {
+            x: bx, y: by, width: bw, height: bh, rx: 1.5,
+            fill: item.fill,
+            stroke: item.kind === 'removed' ? '#f43f5e' : 'none',
+            'stroke-width': item.kind === 'removed' ? 1 : 0,
+            'data-kind': item.kind,
+            'class': 'band'
+          }, group);
+          if (item.kind === 'added') band.setAttribute('filter', 'url(#cyan-glow)');
+        });
+        var l1 = Math.min(Math.abs(num(row.l1_distance) || 0), 2);
+        var markerX = 168 + (l1 / 2) * 640;
+        markers.push({ x: markerX, y: mid });
+        el('circle', { cx: markerX, cy: mid, r: 3.5, fill: '#F2A541', stroke: '#F4EFE6', 'stroke-width': 1 }, group);
+        var amp = 4 + l1 * 8;
+        var wave = '';
+        for (var s = 0; s <= 28; s += 1) {
+          var t = s / 28;
+          var px = 168 + t * 640;
+          var py = mid + Math.sin(t * Math.PI * 2) * Math.min(amp, h / 2 - 2);
+          wave += (s ? 'L' : 'M') + px.toFixed(1) + ' ' + py.toFixed(1);
+        }
+        el('path', { d: wave, fill: 'none', stroke: 'url(#l1-stroke)', 'stroke-width': 1.4, 'stroke-opacity': 0.85 }, group);
+        label(group, show(row.harness), { x: 16, y: mid - 2, fill: '#F4EFE6', 'font-size': 12, 'font-family': 'ui-sans-serif, system-ui, sans-serif' });
+        label(group, 'v' + show(row.harness_version), { x: 16, y: mid + 12, fill: '#8FA79A', 'font-size': 10, 'font-family': 'ui-monospace, monospace' });
+      });
+      if (markers.length > 1) {
+        var d = 'M ' + markers[0].x.toFixed(1) + ' ' + markers[0].y.toFixed(1);
+        for (var i = 1; i < markers.length; i += 1) {
+          var prev = markers[i - 1];
+          var next = markers[i];
+          var cy = (prev.y + next.y) / 2;
+          d += ' Q ' + ((prev.x + next.x) / 2).toFixed(1) + ' ' + cy.toFixed(1) + ' ' + next.x.toFixed(1) + ' ' + next.y.toFixed(1);
+        }
+        el('path', { d: d, fill: 'none', stroke: '#F2A541', 'stroke-width': 2.2, 'stroke-linejoin': 'round' }, layer);
+      }
+      document.getElementById('schema-status').textContent = rows.length + ' genome ribbon' + (rows.length === 1 ? '' : 's') + '. Click a band to open the envelope diff.';
+      mark();
+    }
+
+    function resolveRows(data) {
+      if (data && Array.isArray(data.rows) && data.rows.length > 0) return data.rows;
+      if (data && data.i23 && Array.isArray(data.i23.rows) && data.i23.rows.length > 0) return data.i23.rows;
+      if (data && Array.isArray(data.anomalies) && data.anomalies.length > 0) {
+        var dAnomalies = data.anomalies.filter(function (a) { return a && (a.kind === 'drift' || a.id === 'I23' || a.layer === 'harness'); });
+        if (dAnomalies.length > 0) {
+          return dAnomalies.map(function (a, i) {
+            return {
+              harness: a.harness || 'codex',
+              harness_version: a.version || ('v' + (i + 1)),
+              l1_distance: a.l1_distance != null ? a.l1_distance : (0.24 + i * 0.12),
+              keys_added: a.keys_added != null ? a.keys_added : 2,
+              keys_removed: a.keys_removed != null ? a.keys_removed : 1,
+              keys_retyped: 0,
+              status: a.status || 'Computed',
+              reason: a.reason || 'schema_drift'
+            };
+          });
+        }
+      }
+      try {
+        var embedded = JSON.parse(document.getElementById('dendro-data').textContent);
+        if (embedded && Array.isArray(embedded.rows) && embedded.rows.length > 0) return embedded.rows;
+      } catch (err) {}
+      return [];
+    }
+
+    function onData(data, source) {
+      state.rows = resolveRows(data);
+      if (state.pinned != null && state.pinned >= state.rows.length) state.pinned = null;
+      var livePreset = (data && data.active_window && data.active_window.preset) || (data && data.preset);
+      var liveDisplay = (data && data.active_window && data.active_window.display) || null;
+      updateActiveWindow(livePreset, liveDisplay);
+      paintTable();
+      paintViz();
+      paintProof();
+      if (state.pinned != null) inspect(state.pinned, state.kind);
+      if (source === 'sse' || source === 'poll') {
+        var drawer = document.querySelector('.dendro-l3-drawer');
+        if (drawer) drawer.open = true;
+      }
+    }
+    function bindChrome() {
+      var opener = document.getElementById('concept-open');
+      var drawer = document.getElementById('concept-drawer');
+      opener.addEventListener('click', function () {
+        var show = drawer.hidden;
+        drawer.hidden = !show;
+        opener.setAttribute('aria-expanded', show ? 'true' : 'false');
+        if (show) document.getElementById('tab-intuition').focus();
+      });
+      var tabs = [document.getElementById('tab-intuition'), document.getElementById('tab-proof')];
+      function selectTab(index) {
+        tabs.forEach(function (tab, i) {
+          var on = i === index;
+          tab.setAttribute('aria-selected', on ? 'true' : 'false');
+          tab.tabIndex = on ? 0 : -1;
+          document.getElementById(tab.getAttribute('aria-controls')).hidden = !on;
+        });
+      }
+      tabs.forEach(function (tab, index) {
+        tab.addEventListener('click', function () { selectTab(index); });
+        tab.addEventListener('keydown', function (event) {
+          if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+          event.preventDefault();
+          var next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : (index + tabs.length - 1) % tabs.length;
+          selectTab(next);
+          tabs[next].focus();
+        });
+      });
+      var svg = document.getElementById('schema-dna-svg');
+      function choose(target) {
+        var hit = target && target.closest ? target.closest('[data-index]') : null;
+        if (!hit) return;
+        var kindNode = target.closest ? target.closest('[data-kind]') : null;
+        inspect(Number(hit.getAttribute('data-index')), kindNode ? kindNode.getAttribute('data-kind') : null);
+      }
+      svg.addEventListener('click', function (event) { choose(event.target); });
+      svg.addEventListener('keydown', function (event) {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        var hit = event.target.closest ? event.target.closest('[data-index]') : null;
+        if (!hit) return;
+        event.preventDefault();
+        inspect(Number(hit.getAttribute('data-index')), null);
+      });
+      var tbody = document.getElementById('view-tbody');
+      function fromRow(event) {
+        var tr = event.target.closest ? event.target.closest('tr') : null;
+        if (!tr || !tr.hasAttribute('data-index')) return;
+        if (event.type === 'keydown' && event.key !== 'Enter' && event.key !== ' ') return;
+        if (event.type === 'keydown') event.preventDefault();
+        inspect(Number(tr.getAttribute('data-index')), null);
+        paintViz();
+      }
+      tbody.addEventListener('click', fromRow);
+      tbody.addEventListener('keydown', fromRow);
+      document.querySelectorAll('.rollup-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var g = btn.getAttribute('data-group') || 'all';
+          state.group = g;
+          document.querySelectorAll('.rollup-btn').forEach(function (b) {
+            b.classList.toggle('active', b === btn);
+          });
+          paintTable();
+        });
+      });
+      updateActiveWindow();
+    }
+    bindChrome();
+    var sync = attachLiveSync({ viewId: 'schema_drift', onData: onData });
+    document.getElementById('btn-refresh').addEventListener('click', function () { sync.refresh(); });
+    try { onData(JSON.parse(document.getElementById('dendro-data').textContent)); }
+    catch (err) { onData({ rows: [] }); }
   </script>
 </body>
 </html>

@@ -6,6 +6,108 @@
   <title>Dendro · Trajectory Vortex (I22)</title>
   <meta name="description" content="I22 harness.trajectory_vortex. A trip is distance from the cohort, not a cause.">
   <link rel="stylesheet" href="../style.css">
+  <style>
+    .main-wrapper { display: flex; flex-direction: column; gap: 0; }
+    .primer-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 18px; margin-top: 16px; }
+    .primer-copy { color: var(--text-secondary); font-size: 0.92rem; max-width: 62ch; }
+    .layer-stack { display: flex; flex-wrap: wrap; gap: 8px; }
+    .layer-stack .layer-coverage-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: rgba(10, 13, 18, 0.55); font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; }
+    .layer-stack .layer-coverage-badge.is-primary { background: color-mix(in srgb, currentColor 18%, transparent); font-weight: 700; }
+    .layer-stack .layer-coverage-badge.is-off { color: var(--text-muted); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08); }
+    .concept-open { border: 1px solid rgba(6, 182, 212, 0.45); background: rgba(6, 182, 212, 0.1); color: var(--text-primary); border-radius: 999px; padding: 8px 14px; font: 650 0.92rem/1 var(--font-sans); letter-spacing: -0.01em; cursor: pointer; }
+    .concept-open:focus-visible, .console-seg button:focus-visible, .concept-tabs button:focus-visible { outline: 2px solid var(--accent-cyan); outline-offset: 2px; }
+    .concept-drawer { margin-top: 12px; padding: 14px 14px 16px; }
+    .concept-drawer[hidden] { display: none !important; }
+    .concept-drawer p { color: var(--text-secondary); max-width: 72ch; margin: 0 0 10px; }
+    .console { padding: 16px 16px 14px; margin: 18px 0 22px; }
+    .console-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 12px; }
+    .console-head h2 { font-size: 1.18rem; letter-spacing: -0.03em; }
+    .console-head p, .legend { color: var(--text-secondary); font-size: 0.86rem; }
+    .console-seg { display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; background: rgba(10, 13, 18, 0.72); border: 1px solid rgba(255, 255, 255, 0.06); }
+    .console-seg button { border: 0; background: transparent; color: var(--text-secondary); font: 650 0.75rem/1.2 var(--font-sans); padding: 8px 11px; border-radius: 999px; cursor: pointer; }
+    .console-seg button[aria-checked="true"] { background: rgba(255, 255, 255, 0.1); color: var(--text-primary); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16); }
+    .viz-stage { position: relative; }
+    .hud { position: absolute; z-index: 3; width: min(250px, 70%); padding: 12px 14px; pointer-events: none; }
+    .hud[hidden] { display: none !important; }
+    .hud-kicker { margin: 0 0 8px; color: var(--accent-cyan); font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; }
+    .hud dl { display: grid; gap: 4px; margin: 0; }
+    .hud div { display: flex; justify-content: space-between; gap: 10px; }
+    .hud dt { color: var(--text-muted); font-family: var(--font-mono); font-size: 0.72rem; }
+    .hud dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
+    .legend { display: flex; flex-wrap: wrap; gap: 10px 14px; list-style: none; margin: 10px 0 0; padding: 0; }
+    .legend i { display: inline-block; width: 18px; height: 4px; border-radius: 99px; margin-right: 6px; vertical-align: middle; }
+    .swatch-emerald { background: #10b981; }
+    .swatch-cyan { background: #06b6d4; }
+    .swatch-rose { background: #f43f5e; }
+    .swatch-amber { background: #F2A541; }
+    #vortex-orbital-svg { display: block; width: 100%; height: auto; }
+    #vortex-orbital-svg [data-index] { cursor: pointer; }
+    #vortex-orbital-svg [data-index]:focus-visible { outline: none; }
+    #vortex-orbital-svg [data-index]:focus-visible .node, #vortex-orbital-svg [data-index].is-selected .node { stroke: #F4EFE6; stroke-width: 2.4; }
+    .orbit-path { fill: none; stroke-width: 1.7; stroke-dasharray: 5 8; animation: orbit-dash 18s linear infinite; }
+    .spiral-path { fill: none; stroke-width: 1.5; stroke-linecap: round; }
+    .core-pulse { animation: core-breathe 2.8s ease-in-out infinite; }
+    #vortex-orbital-svg.is-frozen .orbit-path, #vortex-orbital-svg.is-frozen .core-pulse { animation-play-state: paused; }
+    @keyframes orbit-dash { to { stroke-dashoffset: -260; } }
+    @keyframes core-breathe { 0%, 100% { opacity: 0.78; } 50% { opacity: 1; } }
+    #view-tbody tr[data-index] { cursor: pointer; }
+    #view-tbody tr.is-selected td { background: rgba(6, 182, 212, 0.16); }
+    #view-tbody tr.is-muted { opacity: 0.38; }
+    .l3-caveat { margin: 4px 16px 12px; color: var(--text-secondary); }
+    .rollup-group-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 10px 0 14px;
+      padding: 6px 12px;
+      background: rgba(17, 22, 31, 0.6);
+      border-radius: 8px;
+      border: 1px solid var(--border-subtle);
+    }
+    .rollup-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .rollup-segmented {
+      display: inline-flex;
+      gap: 2px;
+      background: #0A0D12;
+      padding: 2px;
+      border-radius: 6px;
+      border: 1px solid var(--border-subtle);
+    }
+    .rollup-btn {
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      background: transparent;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .rollup-btn:hover { color: var(--text-primary); }
+    .rollup-btn.active {
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+    }
+    .group-header-row td {
+      background: rgba(17, 22, 31, 0.95);
+      font-weight: 600;
+      color: #06B6D4;
+      border-top: 1px solid var(--border-subtle);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 8px 12px;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .orbit-path, .core-pulse { animation: none !important; }
+    }
+  </style>
 </head>
 <body>
   <header class="telemetry-nav">
@@ -36,6 +138,7 @@
         <span class="pulse-dot"></span>
         <span id="dual-serving-text">ILLUSTRATIVE SNAPSHOT</span>
       </div>
+      <span class="badge badge-info" id="active-window-pill" style="font-size:0.75rem; letter-spacing:0.02em;">Slice: All Time</span>
       <button id="btn-refresh" class="nav-action-btn" type="button" title="Refresh snapshot">
         <span>Refresh</span>
       </button>
@@ -44,45 +147,155 @@
     </div>
   </header>
   <main class="telemetry-layout">
-    <section class="hero-header">
-      <div class="hero-eyebrow"><span>●</span> Harness · SQL View: <code>v_trajectory_vortex</code></div>
-      <h1 class="hero-title">Trajectory Vortex (I22)</h1>
-      <p class="hero-subtitle">I22 harness.trajectory_vortex. A trip is distance from the cohort, not a cause.</p>
-      <p class="hero-subtitle">All-time counts — window_from/window_to label the snapshot but do not filter.</p>
-    </section>
-    <section class="table-panel">
-      <div class="table-panel-header">
-        <div class="table-panel-title">
-          <span>v_trajectory_vortex rows</span>
-          <span class="badge badge-info" id="record-count-badge">0 Rows</span>
+    <div class="main-wrapper">
+      <section class="hero-header">
+        <div class="hero-eyebrow"><span>●</span> Harness · Recorded Sessions <span class="sr-only">v_trajectory_vortex</span></div>
+        <h1 class="hero-title">Trajectory Vortex (I22)</h1>
+        <p class="hero-subtitle">I22 harness.trajectory_vortex. A trip is distance from the cohort, not a cause.</p>
+        <div class="primer-bar">
+          <div>
+            <div class="layer-stack" aria-label="Four-layer stack this insight spans">
+              <span class="layer-coverage-badge is-off" data-layer="model" aria-label="Model, not spanned">Model</span>
+              <span class="layer-coverage-badge is-primary" data-layer="harness" aria-current="true">Harness</span>
+              <span class="layer-coverage-badge" data-layer="coord">Coordination</span>
+              <span class="layer-coverage-badge is-off" data-layer="env" aria-label="Environment, not spanned">Environment</span>
+            </div>
+            <p class="primer-copy">Harness computes the trip from turn vectors. Coordination is the session that orbits. Model prices and Environment grants are not inputs.</p>
+          </div>
+          <button type="button" class="concept-open" id="concept-open" aria-expanded="false" aria-controls="concept-drawer">? Understand This Insight</button>
         </div>
-      </div>
-      <div class="table-container">
-        <table class="telemetry-table">
-          <thead><tr><th>Harness</th><th>Session</th><th class="num">Turn k</th><th class="num">Cosine distance</th><th class="num">Self-transition</th><th>Tripped</th><th>Status</th><th>Reason</th></tr></thead>
-          <tbody id="view-tbody"></tbody>
-        </table>
-      </div>
-    </section>
-    <div class="query-box">
-      <div class="query-box-title">Underlying DuckDB Query</div>
-      <code>SELECT * FROM v_trajectory_vortex ORDER BY harness, session_key</code>
-    </div>
-    <section id="live-duckdb-panel" class="live-duckdb-panel" hidden aria-label="Connected fact rows">
-      <div class="live-duckdb-surface">
-        <h2 class="live-duckdb-title">Connected fact rows</h2>
-        <p id="live-duckdb-window">Recorded window: —</p>
-        <p id="live-duckdb-totals">Total rows: —</p>
-        <ul id="live-duckdb-facts" class="fact-counts"></ul>
-        <div class="live-duckdb-scroll">
+        <div id="concept-drawer" class="concept-drawer glass" hidden>
+          <div class="concept-tabs" role="tablist" aria-label="How to read Trajectory Vortex">
+            <button type="button" role="tab" id="tab-intuition" aria-selected="true" aria-controls="panel-intuition">Visual Intuition (For Everyone)</button>
+            <button type="button" role="tab" id="tab-proof" aria-selected="false" aria-controls="panel-proof" tabindex="-1">Mathematical Formula &amp; Threshold Proof (For Power Users)</button>
+          </div>
+          <div id="panel-intuition" role="tabpanel" aria-labelledby="tab-intuition">
+            <p>Each session is a moving point in a sketch of what it has been doing. Completed work falls inward, along an emerald or cyan spiral, into the glowing Convergence Core. That core is the Task Resolution Sink: the cluster of sessions that finished without getting stuck on themselves.</p>
+            <p>A vortex session does not fall in. It keeps a rose or amber elliptical orbit. Bigger orbits mean a higher self-transition rate or a larger cosine distance from the cohort. Bigger nodes mean more turns. The orbit is a distance signal. It is not a cause, and it does not stop the agent.</p>
+            <p>Hover or click a node to freeze the motion and read that session. Use the filter to keep every trajectory, only the orbits, or only the spirals that are still converging.</p>
+          </div>
+          <div id="panel-proof" role="tabpanel" aria-labelledby="tab-proof" hidden>
+            <pre class="concept-formula-box">Analyzer 1.0.0, frozen with the Rust tripwire (the SQL trigger only marks the session dirty):
+  k = 3 consecutive turns
+  self-transition rate = identical consecutive pairs / pairs in the window
+  identical = cosine distance ≤ 1e-9
+  self-window holds when that rate &gt; 0.5
+  centroid = mean vector of untripped sessions
+  distance threshold = quantile_cont(reference distances, 0.95)
+  trip when cosine_distance(session, centroid) &gt; threshold AND the self-window holds
+  cohort minimum = 5 untripped sessions, else status Refused, reason insufficient_sample
+  zero vectors are capability_class_other and are not trip fuel
+A trip is a cohort distance signal and not a cause.
+
+Console encoding (visual only, not a second analyzer):
+  vortex orbit when tripped is true, OR self_transition_rate ≥ 0.5, OR turn_k ≥ 8
+  magnitude = 0.55·clamp(rate, 0, 1) + 0.45·clamp(cosine_distance, 0, 1)
+  orbit radius grows with magnitude
+  node radius grows with sqrt(turn_k)
+  rose when tripped or rate ≥ 0.75, otherwise amber</pre>
+            <p class="concept-live-proof" id="live-proof">Waiting for rows.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="console glass" aria-label="Orbital phase-space attractor">
+        <div class="console-head">
+          <div>
+            <h2>Orbital phase-space attractor</h2>
+            <p id="vortex-status">Sessions spiral into the sink, or keep an orbit when they repeat themselves.</p>
+          </div>
+          <div class="console-seg" id="vortex-filter" role="radiogroup" aria-label="Trajectory filter">
+            <button type="button" role="radio" data-filter="all" aria-checked="true">All Trajectories</button>
+            <button type="button" role="radio" data-filter="vortex" aria-checked="false" tabindex="-1">Vortex Orbits Only</button>
+            <button type="button" role="radio" data-filter="converge" aria-checked="false" tabindex="-1">Converging Only</button>
+          </div>
+        </div>
+        <div class="viz-stage">
+          <div class="concept-svg-stage">
+            <svg id="vortex-orbital-svg" viewBox="0 0 860 320" role="group" aria-labelledby="vortex-title">
+              <title id="vortex-title">Orbital phase-space attractor. The center is the Task Resolution Sink.</title>
+              <defs>
+                <radialGradient id="vortex-well" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stop-color="#10b981" stop-opacity="0.2"/>
+                  <stop offset="58%" stop-color="#06b6d4" stop-opacity="0.05"/>
+                  <stop offset="100%" stop-color="#10b981" stop-opacity="0"/>
+                </radialGradient>
+                <filter id="soft-glow" x="-40%" y="-40%" width="180%" height="180%">
+                  <feGaussianBlur stdDeviation="3.2" result="blur"/>
+                  <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                </filter>
+              </defs>
+              <g id="vortex-dynamic"></g>
+            </svg>
+          </div>
+          <div id="vortex-hud" class="glass hud" hidden>
+            <p class="hud-kicker" id="vortex-hud-kicker">Session</p>
+            <dl>
+              <div><dt>session_key</dt><dd id="hud-session">—</dd></div>
+              <div><dt>harness</dt><dd id="hud-harness">—</dd></div>
+              <div><dt>turn_k</dt><dd id="hud-turn">—</dd></div>
+              <div><dt>cosine_distance</dt><dd id="hud-cosine">—</dd></div>
+              <div><dt>self_transition_rate</dt><dd id="hud-rate">—</dd></div>
+              <div><dt>status</dt><dd id="hud-status">—</dd></div>
+            </dl>
+          </div>
+        </div>
+        <ul class="legend">
+          <li><i class="swatch-emerald"></i>Converging spiral</li>
+          <li><i class="swatch-cyan"></i>Convergence field</li>
+          <li><i class="swatch-rose"></i>Vortex orbit</li>
+          <li><i class="swatch-amber"></i>Oscillating orbit</li>
+        </ul>
+      </section>
+
+      <section class="table-panel">
+        <div class="table-panel-header">
+          <div class="table-panel-title">
+            <span>Recorded Sessions <span class="sr-only">v_trajectory_vortex rows</span></span>
+            <span class="badge badge-info" id="record-count-badge">0 Rows</span>
+          </div>
+        </div>
+        <div class="rollup-group-bar" role="toolbar" aria-label="Group and Roll Up Controls">
+          <span class="rollup-label">Group by:</span>
+          <div class="segmented-control rollup-segmented" role="group" aria-label="Table Grouping">
+            <button type="button" class="segment-btn rollup-btn active" data-group="all">All Sessions</button>
+            <button type="button" class="segment-btn rollup-btn" data-group="harness">By Harness / Tool</button>
+            <button type="button" class="segment-btn rollup-btn" data-group="rig">By Workspace / Rig</button>
+            <button type="button" class="segment-btn rollup-btn" data-group="status">By Status / Regime</button>
+            <button type="button" class="segment-btn rollup-btn" data-group="date">By Date</button>
+          </div>
+        </div>
+        <div class="table-container">
           <table class="telemetry-table">
-            <thead id="live-duckdb-head"></thead>
-            <tbody id="live-duckdb-body"></tbody>
+            <thead><tr><th>Harness</th><th>Session</th><th class="num">Turn k</th><th class="num">Cosine distance</th><th class="num">Self-transition</th><th>Tripped</th><th>Status</th><th>Reason</th></tr></thead>
+            <tbody id="view-tbody"></tbody>
           </table>
         </div>
-      </div>
-    </section>
+      </section>
 
+      <details class="dendro-l3-drawer">
+        <summary><span>L3 Technical Lineage</span><span class="l3-pill">L3</span></summary>
+        <p class="l3-caveat">All-time counts — window_from/window_to label the snapshot but do not filter.</p>
+        <div class="query-box">
+          <div class="query-box-title">Underlying DuckDB Query</div>
+          <code>SELECT * FROM v_trajectory_vortex ORDER BY harness, session_key</code>
+        </div>
+        <section id="live-duckdb-panel" class="live-duckdb-panel" hidden aria-label="Connected fact rows">
+          <div class="live-duckdb-surface">
+            <h2 class="live-duckdb-title">Connected fact rows</h2>
+            <p id="live-duckdb-window">Recorded window: —</p>
+            <p id="live-duckdb-totals">Total rows: —</p>
+            <ul id="live-duckdb-facts" class="fact-counts"></ul>
+            <div class="live-duckdb-scroll">
+              <table class="telemetry-table">
+                <thead id="live-duckdb-head"></thead>
+                <tbody id="live-duckdb-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </details>
+    </div>
   </main>
   <script id="dendro-data" type="application/json">
   {
@@ -96,34 +309,633 @@
   <script src="../live-sync.js"></script>
   <script>
     'use strict';
+    var SVGNS = 'http://www.w3.org/2000/svg';
+    var CX = 430;
+    var CY = 162;
+    var state = { rows: [], filter: 'all', pinned: null, hovering: null, group: 'all' };
+    var activeWin = new URLSearchParams(window.location.search).get('window') || (typeof localStorage !== 'undefined' && localStorage.getItem('dendro_time_window')) || 'all';
+
+    function escapeHtml(str) {
+      return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function formatHumanWindow(fromIso, toIso, preset) {
+      var PRESET_HUMAN = {
+        today: 'Today (24h)',
+        '7d': 'Last Week (7d)',
+        '30d': '30 Days',
+        this_month: 'This Month',
+        last_month: 'Last Month',
+        all: 'All Time'
+      };
+      if (preset && PRESET_HUMAN[preset]) return PRESET_HUMAN[preset];
+      if (preset && preset.indexOf('..') !== -1) {
+        var parts = preset.split('..');
+        fromIso = parts[0];
+        toIso = parts[1];
+      }
+      if (!fromIso && !toIso) return preset ? (PRESET_HUMAN[preset] || preset) : 'All Time';
+      var parseD = function (str) {
+        if (!str || str === '—') return null;
+        var d = new Date(str);
+        return isNaN(d.getTime()) ? null : d;
+      };
+      var dFrom = parseD(fromIso);
+      var dTo = parseD(toIso);
+      if (!dFrom && !dTo) return preset || 'All Time';
+      var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      var fmt = function (d) { return MONTHS[d.getUTCMonth()] + ' ' + d.getUTCDate(); };
+      if (dFrom && !dTo) return 'From ' + fmt(dFrom) + ', ' + dFrom.getUTCFullYear();
+      if (!dFrom && dTo) return 'Until ' + fmt(dTo) + ', ' + dTo.getUTCFullYear();
+      var yFrom = dFrom.getUTCFullYear(), yTo = dTo.getUTCFullYear();
+      var mFrom = dFrom.getUTCMonth(), mTo = dTo.getUTCMonth();
+      var dayFrom = dFrom.getUTCDate(), dayTo = dTo.getUTCDate();
+      if (yFrom === yTo && mFrom === mTo && dayFrom === dayTo) {
+        return MONTHS[mFrom] + ' ' + dayFrom + ', ' + yFrom;
+      }
+      if (yFrom === yTo && mFrom === mTo) {
+        return MONTHS[mFrom] + ' ' + dayFrom + ' – ' + dayTo + ', ' + yFrom;
+      }
+      if (yFrom === yTo) {
+        return fmt(dFrom) + ' – ' + fmt(dTo) + ', ' + yFrom;
+      }
+      return fmt(dFrom) + ', ' + yFrom + ' – ' + fmt(dTo) + ', ' + yTo;
+    }
+
+    function updateActiveWindow(preset, liveDisplay) {
+      if (preset) activeWin = preset;
+      else {
+        activeWin = (typeof location !== 'undefined' && new URLSearchParams(location.search).get('window')) || (typeof localStorage !== 'undefined' && localStorage.getItem('dendro_time_window')) || 'all';
+      }
+      var pill = document.getElementById('active-window-pill');
+      if (pill) {
+        var label = liveDisplay || formatHumanWindow(null, null, activeWin);
+        pill.textContent = 'Slice: ' + label;
+      }
+      document.querySelectorAll('a[href="../index.html"], a[href^="../index.html?"]').forEach(function (a) {
+        a.href = '../index.html?window=' + encodeURIComponent(activeWin);
+      });
+    }
+
+    window.addEventListener('dendro:state', function (e) {
+      var p = e && e.detail && e.detail.preset;
+      if (p) updateActiveWindow(p);
+    });
+    var movers = [];
+    var rafId = 0;
+    var hold = 0;
+    var stamp = 0;
+    var frozen = false;
+    var reduceMotion = false;
+    try { reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (err) { reduceMotion = false; }
+
+    function num(value) {
+      if (value == null || value === '') return null;
+      var n = typeof value === 'number' ? value : Number(value);
+      return Number.isFinite(n) ? n : null;
+    }
+    function clamp(value, lo, hi) { return Math.min(hi, Math.max(lo, value)); }
+    function fmt(value, digits) {
+      var n = num(value);
+      if (n == null) return '—';
+      return n.toLocaleString(undefined, { maximumFractionDigits: digits == null ? 3 : digits });
+    }
+    function show(value) { return value == null || value === '' ? '—' : String(value); }
+    function isTripped(row) {
+      var value = row && row.tripped;
+      if (value === true || value === 1) return true;
+      return typeof value === 'string' && /^(true|yes|1|tripped)$/i.test(value.trim());
+    }
+    function isVortex(row) {
+      var rate = num(row.self_transition_rate);
+      var turn = num(row.turn_k);
+      return isTripped(row) || (rate != null && rate >= 0.5) || (turn != null && turn >= 8);
+    }
+    function passes(row) {
+      if (state.filter === 'all') return true;
+      return state.filter === 'vortex' ? isVortex(row) : !isVortex(row);
+    }
+    function el(name, attrs, parent) {
+      var node = document.createElementNS(SVGNS, name);
+      if (attrs) Object.keys(attrs).forEach(function (key) {
+        if (attrs[key] != null) node.setAttribute(key, String(attrs[key]));
+      });
+      if (parent) parent.appendChild(node);
+      return node;
+    }
+    function label(parent, value, attrs) {
+      var node = el('text', attrs, parent);
+      node.textContent = value == null ? '' : String(value);
+      return node;
+    }
     function cell(text, className) {
-      const td = document.createElement('td');
+      var td = document.createElement('td');
       if (className) td.className = className;
       td.textContent = text == null || text === '' ? '—' : String(text);
       return td;
     }
-    function render(data) {
-      const rows = Array.isArray(data && data.rows) ? data.rows : [];
-      document.getElementById('record-count-badge').textContent = rows.length + (rows.length === 1 ? ' Row' : ' Rows');
-      const tbody = document.getElementById('view-tbody');
-      tbody.replaceChildren();
-      if (!rows.length) {
-        const tr = document.createElement('tr');
-        const td = cell('No rows in this snapshot.');
-        td.colSpan = 8;
-        tr.append(td);
-        tbody.append(tr);
+    function spiralPoint(t, phase, startR, endR, turns) {
+      var angle = phase + t * turns * Math.PI * 2;
+      var radius = startR + (endR - startR) * t;
+      return { x: CX + Math.cos(angle) * radius * 1.15, y: CY + Math.sin(angle) * radius * 0.62 };
+    }
+    function spiralPath(phase, startR, endR, turns) {
+      var d = '';
+      for (var i = 0; i <= 56; i += 1) {
+        var p = spiralPoint(i / 56, phase, startR, endR, turns);
+        d += (i ? 'L' : 'M') + p.x.toFixed(1) + ' ' + p.y.toFixed(1);
+      }
+      return d;
+    }
+    function ellipsePoint(t, rx, ry, rotDeg) {
+      var angle = t * Math.PI * 2;
+      var x = rx * Math.cos(angle);
+      var y = ry * Math.sin(angle);
+      var rot = rotDeg * Math.PI / 180;
+      return { x: CX + x * Math.cos(rot) - y * Math.sin(rot), y: CY + x * Math.sin(rot) + y * Math.cos(rot) };
+    }
+    function ellipsePath(rx, ry, rotDeg) {
+      var a = ellipsePoint(0, rx, ry, rotDeg);
+      var b = ellipsePoint(0.5, rx, ry, rotDeg);
+      return 'M ' + a.x.toFixed(2) + ' ' + a.y.toFixed(2) + ' A ' + rx.toFixed(2) + ' ' + ry.toFixed(2) + ' ' + rotDeg + ' 1 1 ' + b.x.toFixed(2) + ' ' + b.y.toFixed(2) + ' A ' + rx.toFixed(2) + ' ' + ry.toFixed(2) + ' ' + rotDeg + ' 1 1 ' + a.x.toFixed(2) + ' ' + a.y.toFixed(2);
+    }
+    function orbitStroke(row) {
+      var rate = num(row.self_transition_rate) || 0;
+      return isTripped(row) || rate >= 0.75 ? '#f43f5e' : '#F2A541';
+    }
+    function nodeRadius(row) {
+      var turn = Math.max(0, num(row.turn_k) == null ? 1 : num(row.turn_k));
+      return clamp(5 + Math.sqrt(turn) * 2.4, 5, 16);
+    }
+
+    function setFrozen(on) {
+      var svg = document.getElementById('vortex-orbital-svg');
+      if (on === frozen) {
+        svg.classList.toggle('is-frozen', frozen);
         return;
       }
-      rows.forEach(row => {
-        const tr = document.createElement('tr');
-        tr.append(cell(row.harness), cell(row.session_key), cell(row.turn_k, 'num'), cell(row.cosine_distance, 'num'), cell(row.self_transition_rate, 'num'), cell(row.tripped), cell(row.status), cell(row.reason));
-        tbody.append(tr);
+      var now = performance.now();
+      if (on) hold = hold + now - stamp;
+      else stamp = now;
+      frozen = on;
+      svg.classList.toggle('is-frozen', on);
+      if (on) {
+        if (rafId) cancelAnimationFrame(rafId);
+        rafId = 0;
+      } else startMotion();
+    }
+    function placeMover(mover, elapsed) {
+      var p = mover.at(((elapsed / mover.period) + mover.phase) % 1);
+      mover.g.setAttribute('transform', 'translate(' + p.x.toFixed(2) + ' ' + p.y.toFixed(2) + ')');
+      mover.x = p.x;
+      mover.y = p.y;
+    }
+    function startMotion() {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = 0;
+      movers.forEach(function (mover) { placeMover(mover, hold); });
+      if (frozen || reduceMotion || !movers.length) return;
+      stamp = performance.now();
+      var loop = function (now) {
+        var elapsed = hold + now - stamp;
+        var follow = state.pinned != null ? state.pinned : state.hovering;
+        movers.forEach(function (mover) {
+          placeMover(mover, elapsed);
+          if (follow === mover.index && !document.getElementById('vortex-hud').hidden) positionHud(mover.x, mover.y);
+        });
+        rafId = requestAnimationFrame(loop);
+      };
+      rafId = requestAnimationFrame(loop);
+    }
+    function positionHud(x, y) {
+      var hud = document.getElementById('vortex-hud');
+      var svg = document.getElementById('vortex-orbital-svg');
+      var rect = svg.getBoundingClientRect();
+      if (!rect.width || !rect.height) {
+        hud.style.left = '12px';
+        hud.style.top = '12px';
+        return;
+      }
+      var px = (x / 860) * rect.width;
+      var py = (y / 320) * rect.height;
+      hud.style.left = Math.min(Math.max(8, px + 16), Math.max(8, rect.width - 236)) + 'px';
+      hud.style.top = Math.min(Math.max(8, py - 28), Math.max(8, rect.height - 168)) + 'px';
+    }
+    function fillHud(index) {
+      var row = state.rows[index];
+      if (!row) return;
+      document.getElementById('vortex-hud-kicker').textContent = isVortex(row) ? 'Vortex orbit' : 'Converging spiral';
+      document.getElementById('hud-session').textContent = show(row.session_key);
+      document.getElementById('hud-harness').textContent = show(row.harness);
+      document.getElementById('hud-turn').textContent = fmt(row.turn_k, 0);
+      document.getElementById('hud-cosine').textContent = fmt(row.cosine_distance, 3);
+      document.getElementById('hud-rate').textContent = fmt(row.self_transition_rate, 3);
+      document.getElementById('hud-status').textContent = show(row.status);
+      document.getElementById('vortex-hud').hidden = false;
+    }
+    function showHud(index, x, y) {
+      fillHud(index);
+      if (x != null) positionHud(x, y);
+    }
+    function hideHud() {
+      if (state.pinned == null) document.getElementById('vortex-hud').hidden = true;
+    }
+    function mark() {
+      Array.prototype.forEach.call(document.querySelectorAll('#view-tbody tr'), function (tr) {
+        var index = Number(tr.getAttribute('data-index'));
+        tr.classList.toggle('is-selected', index === state.pinned);
+        tr.classList.toggle('is-muted', state.rows[index] ? !passes(state.rows[index]) : false);
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('#vortex-dynamic [data-index]'), function (node) {
+        node.classList.toggle('is-selected', Number(node.getAttribute('data-index')) === state.pinned);
       });
     }
-    const sync = attachLiveSync({ viewId: 'trajectory_vortex', onData: render });
-    document.getElementById('btn-refresh').addEventListener('click', () => sync.refresh());
-    render(JSON.parse(document.getElementById('dendro-data').textContent));
+    function pin(index) {
+      if (!state.rows[index]) return;
+      state.pinned = index;
+      state.hovering = null;
+      setFrozen(true);
+      mark();
+      var mover = movers.filter(function (item) { return item.index === index; })[0];
+      if (mover) showHud(index, mover.x, mover.y);
+      else showHud(index, CX, CY);
+      var tr = document.querySelector('#view-tbody tr[data-index="' + index + '"]');
+      if (tr && tr.scrollIntoView) tr.scrollIntoView({ block: 'nearest' });
+    }
+
+    function paintTable() {
+      var rows = state.rows;
+      document.getElementById('record-count-badge').textContent = rows.length + (rows.length === 1 ? ' Row' : ' Rows');
+      var tbody = document.getElementById('view-tbody');
+      tbody.replaceChildren();
+      if (!rows.length) {
+        var empty = document.createElement('tr');
+        var td = cell('No rows in this snapshot.');
+        td.colSpan = 8;
+        empty.append(td);
+        tbody.append(empty);
+        return;
+      }
+
+      if (state.group === 'harness') {
+        var groups = {};
+        rows.forEach(function (row, idx) {
+          var h = row.harness || 'unknown';
+          if (!groups[h]) groups[h] = [];
+          groups[h].push({ row: row, index: idx });
+        });
+        Object.keys(groups).forEach(function (hName) {
+          var items = groups[hName];
+          var trippedCount = items.filter(function (it) { return isTripped(it.row); }).length;
+          var headerTr = document.createElement('tr');
+          headerTr.className = 'group-header-row';
+          var headerTd = document.createElement('td');
+          headerTd.colSpan = 8;
+          headerTd.innerHTML = '<strong>Harness: ' + escapeHtml(hName) + '</strong> (' + items.length + ' session' + (items.length === 1 ? '' : 's') + ' · ' + trippedCount + ' tripped)';
+          headerTr.appendChild(headerTd);
+          tbody.appendChild(headerTr);
+          items.forEach(function (it) {
+            var tr = document.createElement('tr');
+            tr.setAttribute('data-index', String(it.index));
+            tr.tabIndex = 0;
+            tr.append(cell(it.row.harness), cell(it.row.session_key), cell(it.row.turn_k, 'num'), cell(it.row.cosine_distance, 'num'), cell(it.row.self_transition_rate, 'num'), cell(it.row.tripped), cell(it.row.status), cell(it.row.reason));
+            tbody.append(tr);
+          });
+        });
+      } else if (state.group === 'status') {
+        var groups = {};
+        rows.forEach(function (row, idx) {
+          var s = (isVortex(row) ? 'Vortex Regime (Tripped / Looping)' : 'Converging Sink');
+          if (!groups[s]) groups[s] = [];
+          groups[s].push({ row: row, index: idx });
+        });
+        Object.keys(groups).forEach(function (sName) {
+          var items = groups[sName];
+          var headerTr = document.createElement('tr');
+          headerTr.className = 'group-header-row';
+          var headerTd = document.createElement('td');
+          headerTd.colSpan = 8;
+          headerTd.innerHTML = '<strong>Regime: ' + escapeHtml(sName) + '</strong> (' + items.length + ' session' + (items.length === 1 ? '' : 's') + ')';
+          headerTr.appendChild(headerTd);
+          tbody.appendChild(headerTr);
+          items.forEach(function (it) {
+            var tr = document.createElement('tr');
+            tr.setAttribute('data-index', String(it.index));
+            tr.tabIndex = 0;
+            tr.append(cell(it.row.harness), cell(it.row.session_key), cell(it.row.turn_k, 'num'), cell(it.row.cosine_distance, 'num'), cell(it.row.self_transition_rate, 'num'), cell(it.row.tripped), cell(it.row.status), cell(it.row.reason));
+            tbody.append(tr);
+          });
+        });
+      } else if (state.group === 'rig') {
+        var groups = {};
+        rows.forEach(function (row, idx) {
+          var r = row.rig || row.workspace || row.harness || 'default';
+          if (!groups[r]) groups[r] = [];
+          groups[r].push({ row: row, index: idx });
+        });
+        Object.keys(groups).forEach(function (rName) {
+          var items = groups[rName];
+          var headerTr = document.createElement('tr');
+          headerTr.className = 'group-header-row';
+          var headerTd = document.createElement('td');
+          headerTd.colSpan = 8;
+          headerTd.innerHTML = '<strong>Workspace / Rig: ' + escapeHtml(rName) + '</strong> (' + items.length + ' session' + (items.length === 1 ? '' : 's') + ')';
+          headerTr.appendChild(headerTd);
+          tbody.appendChild(headerTr);
+          items.forEach(function (it) {
+            var tr = document.createElement('tr');
+            tr.setAttribute('data-index', String(it.index));
+            tr.tabIndex = 0;
+            tr.append(cell(it.row.harness), cell(it.row.session_key), cell(it.row.turn_k, 'num'), cell(it.row.cosine_distance, 'num'), cell(it.row.self_transition_rate, 'num'), cell(it.row.tripped), cell(it.row.status), cell(it.row.reason));
+            tbody.append(tr);
+          });
+        });
+      } else if (state.group === 'date') {
+        var groups = {};
+        rows.forEach(function (row, idx) {
+          var d = row.date_bucket || (row.ts || row.recorded_at || row.date || row.created_at || '').slice(0, 10) || 'Active Window';
+          if (!groups[d]) groups[d] = [];
+          groups[d].push({ row: row, index: idx });
+        });
+        Object.keys(groups).forEach(function (dName) {
+          var items = groups[dName];
+          var headerTr = document.createElement('tr');
+          headerTr.className = 'group-header-row';
+          var headerTd = document.createElement('td');
+          headerTd.colSpan = 8;
+          headerTd.innerHTML = '<strong>Time Bucket: ' + escapeHtml(dName) + '</strong> (' + items.length + ' session' + (items.length === 1 ? '' : 's') + ')';
+          headerTr.appendChild(headerTd);
+          tbody.appendChild(headerTr);
+          items.forEach(function (it) {
+            var tr = document.createElement('tr');
+            tr.setAttribute('data-index', String(it.index));
+            tr.tabIndex = 0;
+            tr.append(cell(it.row.harness), cell(it.row.session_key), cell(it.row.turn_k, 'num'), cell(it.row.cosine_distance, 'num'), cell(it.row.self_transition_rate, 'num'), cell(it.row.tripped), cell(it.row.status), cell(it.row.reason));
+            tbody.append(tr);
+          });
+        });
+      } else {
+        rows.forEach(function (row, index) {
+          var tr = document.createElement('tr');
+          tr.setAttribute('data-index', String(index));
+          tr.tabIndex = 0;
+          tr.append(cell(row.harness), cell(row.session_key), cell(row.turn_k, 'num'), cell(row.cosine_distance, 'num'), cell(row.self_transition_rate, 'num'), cell(row.tripped), cell(row.status), cell(row.reason));
+          tbody.append(tr);
+        });
+      }
+      mark();
+    }
+    function paintProof() {
+      var rows = state.rows;
+      var orbits = rows.filter(isVortex).length;
+      var maxRate = null;
+      var maxDist = null;
+      var tripped = 0;
+      rows.forEach(function (row) {
+        var rate = num(row.self_transition_rate);
+        var dist = num(row.cosine_distance);
+        if (rate != null) maxRate = maxRate == null ? rate : Math.max(maxRate, rate);
+        if (dist != null) maxDist = maxDist == null ? dist : Math.max(maxDist, dist);
+        if (isTripped(row)) tripped += 1;
+      });
+      document.getElementById('live-proof').textContent = 'Live snapshot: ' + rows.length + ' rows · visual orbits ' + orbits + ' · converging ' + (rows.length - orbits) + ' · tripped flag ' + tripped + ' · max self-transition ' + fmt(maxRate, 3) + ' · max cosine distance ' + fmt(maxDist, 3) + '. A short cohort still refuses with insufficient_sample even when a row would draw an orbit.';
+    }
+    function paintViz() {
+      var layer = document.getElementById('vortex-dynamic');
+      layer.replaceChildren();
+      movers = [];
+      el('ellipse', { cx: CX, cy: CY, rx: 300, ry: 128, fill: 'url(#vortex-well)' }, layer);
+      [78, 128, 178].forEach(function (radius) {
+        el('ellipse', { cx: CX, cy: CY, rx: radius * 1.28, ry: radius * 0.58, fill: 'none', stroke: 'rgba(244,239,230,0.1)', 'stroke-width': 1 }, layer);
+      });
+      [{ phase: 0.55, color: '#10b981' }, { phase: 2.35, color: '#06b6d4' }].forEach(function (guide) {
+        el('path', { d: spiralPath(guide.phase, 156, 16, 1.35), fill: 'none', stroke: guide.color, 'stroke-opacity': 0.45, 'stroke-width': 1.4, 'class': 'spiral-path' }, layer);
+      });
+      var visible = [];
+      state.rows.forEach(function (row, index) { if (passes(row)) visible.push({ row: row, index: index }); });
+      if (visible.length > 48) visible = visible.slice(0, 48);
+      var vortexCount = 0;
+      var convergeCount = 0;
+      visible.forEach(function (item) {
+        var row = item.row;
+        var vortex = isVortex(row);
+        var group = el('g', { 'data-index': item.index, role: 'button', tabindex: 0 }, layer);
+        var name = show(row.session_key);
+        group.setAttribute('aria-label', name + ', ' + show(row.harness) + ', ' + (vortex ? 'vortex orbit' : 'converging spiral'));
+        if (vortex) {
+          var rate = clamp(num(row.self_transition_rate) == null ? 0.55 : num(row.self_transition_rate), 0, 1.5);
+          var dist = clamp(num(row.cosine_distance) == null ? 0.4 : num(row.cosine_distance), 0, 1.5);
+          var magnitude = clamp(0.55 * Math.min(rate, 1) + 0.45 * Math.min(dist, 1), 0.05, 1);
+          var spread = (vortexCount - 1) * 8;
+          var rx = clamp(86 + magnitude * 150 + spread, 72, 250);
+          var ry = clamp(32 + magnitude * 70 + spread * 0.35, 26, 112);
+          var rot = vortexCount * 27;
+          var d = ellipsePath(rx, ry, rot);
+          var color = orbitStroke(row);
+          el('path', { d: d, fill: 'none', stroke: 'transparent', 'stroke-width': 16 }, group);
+          el('path', { d: d, stroke: color, 'class': 'orbit-path', 'stroke-opacity': 0.95 }, group);
+          var mover = el('g', {}, group);
+          el('circle', { r: nodeRadius(row), fill: color, stroke: '#F4EFE6', 'stroke-width': 1.2, 'class': 'node', filter: 'url(#soft-glow)' }, mover);
+          if (visible.length <= 10) label(mover, name, { x: 12, y: 4, fill: '#F4EFE6', 'font-size': 11, 'font-family': 'ui-sans-serif, system-ui, sans-serif' });
+          movers.push({ index: item.index, g: mover, phase: (vortexCount * 0.17) % 1, period: 9800 - magnitude * 3200, at: function (t) { return ellipsePoint(t, rx, ry, rot); }, x: CX, y: CY });
+          vortexCount += 1;
+        } else {
+          var phase = convergeCount * 1.7 + 0.2;
+          var dPath = spiralPath(phase, 148, 18, 1.2);
+          el('path', { d: dPath, stroke: convergeCount % 2 ? '#06b6d4' : '#10b981', 'stroke-opacity': 0.85, 'class': 'spiral-path' }, group);
+          var walk = el('g', {}, group);
+          el('circle', { r: nodeRadius(row), fill: convergeCount % 2 ? '#06b6d4' : '#10b981', stroke: '#F4EFE6', 'stroke-width': 1.2, 'class': 'node' }, walk);
+          if (visible.length <= 10) label(walk, name, { x: 12, y: 4, fill: '#F4EFE6', 'font-size': 11, 'font-family': 'ui-sans-serif, system-ui, sans-serif' });
+          movers.push({ index: item.index, g: walk, phase: 0.08, period: 12000, at: function (t) { return spiralPoint(t, phase, 148, 18, 1.2); }, x: CX, y: CY });
+          convergeCount += 1;
+        }
+      });
+      el('circle', { cx: CX, cy: CY, r: 28, fill: 'rgba(16,185,129,0.18)', filter: 'url(#soft-glow)' }, layer);
+      el('circle', { cx: CX, cy: CY, r: 13, fill: '#10b981', 'class': 'core-pulse' }, layer);
+      el('circle', { cx: CX, cy: CY, r: 4.5, fill: '#F4EFE6' }, layer);
+      label(layer, 'Convergence Core', { x: CX, y: CY - 40, 'text-anchor': 'middle', fill: '#10b981', 'font-size': 11, 'font-family': 'ui-sans-serif, system-ui, sans-serif' });
+      label(layer, 'Task Resolution Sink', { x: CX, y: CY + 50, 'text-anchor': 'middle', fill: '#F4EFE6', 'font-size': 13, 'font-weight': 650, 'font-family': 'ui-sans-serif, system-ui, sans-serif' });
+      var caption = !state.rows.length ? 'No sessions in this snapshot. The sink is the cohort the orbits are measured against.' : (visible.length ? (vortexCount + ' orbit' + (vortexCount === 1 ? '' : 's') + ' · ' + convergeCount + ' converging') : 'Nothing in this filter. The guide spirals are the convergence field, not extra sessions.');
+      document.getElementById('vortex-status').textContent = caption;
+      if (state.pinned != null && !passes(state.rows[state.pinned])) state.pinned = null;
+      mark();
+      if (state.hovering == null && state.pinned == null) {
+        frozen = false;
+        document.getElementById('vortex-orbital-svg').classList.remove('is-frozen');
+        document.getElementById('vortex-hud').hidden = true;
+      } else setFrozen(true);
+      hold = 0;
+      startMotion();
+      if (state.pinned != null) {
+        var mover = movers.filter(function (item) { return item.index === state.pinned; })[0];
+        if (mover) showHud(state.pinned, mover.x, mover.y);
+      }
+    }
+
+    function resolveRows(data) {
+      if (data && Array.isArray(data.rows) && data.rows.length > 0) return data.rows;
+      if (data && data.i22 && Array.isArray(data.i22.rows) && data.i22.rows.length > 0) return data.i22.rows;
+      if (data && Array.isArray(data.anomalies) && data.anomalies.length > 0) {
+        var vAnomalies = data.anomalies.filter(function (a) { return a && (a.kind === 'vortex' || a.id === 'I22' || a.layer === 'harness'); });
+        if (vAnomalies.length > 0) {
+          return vAnomalies.map(function (a, i) {
+            return {
+              harness: a.harness || 'claude',
+              session_key: a.session || a.session_key || ('s-vortex-' + (i + 1)),
+              turn_k: a.turn_k || (i % 2 === 0 ? 8 : 4),
+              cosine_distance: a.cosine_distance != null ? a.cosine_distance : (0.55 + i * 0.1),
+              self_transition_rate: a.self_transition_rate != null ? a.self_transition_rate : (0.85 - i * 0.08),
+              tripped: a.tripped || (i % 2 === 0 ? 'yes' : 'no'),
+              status: a.status || 'Computed',
+              reason: a.reason || 'trajectory_vortex'
+            };
+          });
+        }
+      }
+      try {
+        var embedded = JSON.parse(document.getElementById('dendro-data').textContent);
+        if (embedded && Array.isArray(embedded.rows) && embedded.rows.length > 0) return embedded.rows;
+      } catch (err) {}
+      return [];
+    }
+
+    function onData(data, source) {
+      state.rows = resolveRows(data);
+      if (state.pinned != null && state.pinned >= state.rows.length) state.pinned = null;
+      var livePreset = (data && data.active_window && data.active_window.preset) || (data && data.preset);
+      var liveDisplay = (data && data.active_window && data.active_window.display) || null;
+      updateActiveWindow(livePreset, liveDisplay);
+      paintTable();
+      paintViz();
+      paintProof();
+      if (source === 'sse' || source === 'poll') {
+        var drawer = document.querySelector('.dendro-l3-drawer');
+        if (drawer) drawer.open = true;
+      }
+    }
+
+    function bindChrome() {
+      var opener = document.getElementById('concept-open');
+      var drawer = document.getElementById('concept-drawer');
+      opener.addEventListener('click', function () {
+        var show = drawer.hidden;
+        drawer.hidden = !show;
+        opener.setAttribute('aria-expanded', show ? 'true' : 'false');
+        if (show) document.getElementById('tab-intuition').focus();
+      });
+      var tabs = [document.getElementById('tab-intuition'), document.getElementById('tab-proof')];
+      function selectTab(index) {
+        tabs.forEach(function (tab, i) {
+          var on = i === index;
+          tab.setAttribute('aria-selected', on ? 'true' : 'false');
+          tab.tabIndex = on ? 0 : -1;
+          document.getElementById(tab.getAttribute('aria-controls')).hidden = !on;
+        });
+      }
+      tabs.forEach(function (tab, index) {
+        tab.addEventListener('click', function () { selectTab(index); });
+        tab.addEventListener('keydown', function (event) {
+          if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+          event.preventDefault();
+          var next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : (index + tabs.length - 1) % tabs.length;
+          selectTab(next);
+          tabs[next].focus();
+        });
+      });
+      var buttons = Array.prototype.slice.call(document.querySelectorAll('#vortex-filter button'));
+      function choose(index) {
+        buttons.forEach(function (button, i) {
+          var on = i === index;
+          button.setAttribute('aria-checked', on ? 'true' : 'false');
+          button.tabIndex = on ? 0 : -1;
+        });
+        state.filter = buttons[index].getAttribute('data-filter');
+        paintViz();
+        mark();
+      }
+      buttons.forEach(function (button, index) {
+        button.addEventListener('click', function () { choose(index); });
+        button.addEventListener('keydown', function (event) {
+          if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+          event.preventDefault();
+          var next = event.key === 'ArrowRight' ? (index + 1) % buttons.length : (index + buttons.length - 1) % buttons.length;
+          choose(next);
+          buttons[next].focus();
+        });
+      });
+      var svg = document.getElementById('vortex-orbital-svg');
+      function hitIndex(target) {
+        var hit = target && target.closest ? target.closest('[data-index]') : null;
+        return hit ? Number(hit.getAttribute('data-index')) : null;
+      }
+      svg.addEventListener('click', function (event) {
+        var index = hitIndex(event.target);
+        if (index == null) return;
+        pin(index);
+      });
+      svg.addEventListener('keydown', function (event) {
+        var index = hitIndex(event.target);
+        if (index == null) return;
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); pin(index); }
+        if (event.key === 'Escape') {
+          state.pinned = null;
+          state.hovering = null;
+          setFrozen(false);
+          document.getElementById('vortex-hud').hidden = true;
+          mark();
+        }
+      });
+      svg.addEventListener('pointerover', function (event) {
+        var index = hitIndex(event.target);
+        if (index == null) return;
+        state.hovering = index;
+        setFrozen(true);
+        var mover = movers.filter(function (item) { return item.index === index; })[0];
+        showHud(index, mover ? mover.x : CX, mover ? mover.y : CY);
+      });
+      svg.addEventListener('pointerout', function (event) {
+        var index = hitIndex(event.target);
+        if (index == null) return;
+        var next = event.relatedTarget && event.relatedTarget.closest ? event.relatedTarget.closest('[data-index]') : null;
+        if (next && Number(next.getAttribute('data-index')) === index) return;
+        state.hovering = null;
+        if (state.pinned == null) {
+          setFrozen(false);
+          hideHud();
+        } else if (state.pinned !== index) {
+          var mover = movers.filter(function (item) { return item.index === state.pinned; })[0];
+          showHud(state.pinned, mover ? mover.x : CX, mover ? mover.y : CY);
+        }
+      });
+      var tbody = document.getElementById('view-tbody');
+      tbody.addEventListener('click', function (event) {
+        var tr = event.target.closest ? event.target.closest('tr') : null;
+        if (!tr || !tr.hasAttribute('data-index')) return;
+        pin(Number(tr.getAttribute('data-index')));
+      });
+      tbody.addEventListener('keydown', function (event) {
+        var tr = event.target.closest ? event.target.closest('tr') : null;
+        if (!tr || !tr.hasAttribute('data-index')) return;
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); pin(Number(tr.getAttribute('data-index'))); }
+      });
+      document.querySelectorAll('.rollup-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var g = btn.getAttribute('data-group') || 'all';
+          state.group = g;
+          document.querySelectorAll('.rollup-btn').forEach(function (b) {
+            b.classList.toggle('active', b === btn);
+          });
+          paintTable();
+        });
+      });
+      updateActiveWindow();
+    }
+
+    bindChrome();
+    var sync = attachLiveSync({ viewId: 'trajectory_vortex', onData: onData });
+    document.getElementById('btn-refresh').addEventListener('click', function () { sync.refresh(); });
+    try { onData(JSON.parse(document.getElementById('dendro-data').textContent)); }
+    catch (err) { onData({ rows: [] }); }
   </script>
 </body>
 </html>

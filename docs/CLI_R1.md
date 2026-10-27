@@ -214,6 +214,47 @@ When Pi usage or Pi source files exist, the coverage section includes:
 
 With no `--root`, `dendro run` configures two Pi roots: `$OPENRIG_HOME/state/pi` (default `~/.openrig/state/pi`) and `~/.pi/agent/sessions`. Distinct Pi roots are both kept. Identical paths are deduplicated. A session file is still one native session (K10). Linkage to a seat still requires identity facts; standalone Pi usage stays in `standalone_usage` until it links.
 
+## Connected Web Intelligence Studio (`vNext`)
+
+### `dashboard` — live connected web, TUI, or offline HTML
+
+```sh
+dendro dashboard --serve <HOST:PORT> [--site-dir <DIR>]
+
+# Live browser studio; open http://127.0.0.1:4242
+dendro dashboard --serve 127.0.0.1:4242 --site-dir ./site
+
+# Six-screen Ratatui cockpit, with conditional ingest
+dendro dashboard --auto-ingest
+
+# Portable offline snapshot
+dendro dashboard --html ./dendro-dashboard.html
+```
+
+`--serve` starts a foreground connected HTTP presentation server. `--site-dir` selects the local asset directory containing the studio and dashboard pages. Only loopback addresses are accepted; wildcard and external binds are refused. Stop the server with Ctrl-C. The browser reads `/api/live-summary` and `/api/live-view`; these presentation endpoints do not accept raw SQL.
+
+The web studio includes Living Growth Rings, a Tactile Time Machine Scrubber, Apple Health Story Highlights, the four-layer Stack X-Ray, five-layer capability intelligence, group-by rollups, and the `I22`–`I25` consoles. Browser calendar selections include `today`, `24h`, `7d`, `30d`, `this_month`, `last_month`, `all`, and custom `YYYY-MM-DD..YYYY-MM-DD`. Exact UTC bounds accompany readable labels such as **Oct 20 – Oct 27, 2026**. Date-only custom ranges include the selected end day. These calendar selections do not extend the CLI's existing `--window 1h|24h|7d|30d|all` vocabulary or change its recorded-bounds semantics.
+
+### `serve` — trusted single-owner daemon
+
+```sh
+dendro serve [--db <path>] [--socket <path>] [--once]
+```
+
+`dendro serve` owns the raw read-write DuckDB session. Clients use typed, capability-bounded local IPC through a private Unix socket or Windows Named Pipe. It is a separate command and interface from `dendro dashboard --serve`, which presents the browser studio. No raw SQL interface is exposed to browser clients.
+
+### `advise` — operator pre-flight advice
+
+```sh
+dendro advise --question environment_readiness
+dendro advise --question delegation_loop_risk --json
+dendro advise --mcp-schema
+```
+
+`dendro advise` evaluates `model_cohort_baseline`, `skill_effectiveness_audit`, `delegation_loop_risk`, or `environment_readiness`. Use `--db`, `--harness`, `--skill`, and `--session` to select the relevant evidence; `--json` returns structured output and `--mcp-schema` prints the advisory tool schema. `--budget-ms` sets the evaluation budget. The warm p95 target is **<=15ms**; an exceeded budget returns `advisory_budget_exceeded` rather than partial advice. This is not a cold-start guarantee. Advice remains operator-facing and pull-only.
+
+`dendro ask` remains the supported-intent entry point over Nao semantic projections. Use `dendro ask --list-intents` for the catalog; materialization and missing-evidence rules remain unchanged.
+
 ## Canonical CLI Subcommand Reference (`A15` Parity)
 
 The table below catalogs every subcommand declared in `crates/dendro-cli/src/main.rs` and `crates/dendro-cli/src/extensions.rs`. Every command adheres to the local-first private filesystem and single-owner DuckDB 2.0 concurrency contract.
@@ -228,14 +269,14 @@ The table below catalogs every subcommand declared in `crates/dendro-cli/src/mai
 | `watch` | `main.rs` | Ingest | Sample agent processes (CPU, memory, disk, exit) into the analytics database. | `--db <path>`, `--interval <dur>`, `--duration <dur>`, `--once`, `--harness <name>`, `--flush-every <dur>` |
 | `run-agent` | `main.rs` | Ingest | Launch an agent process and sample that process tree from its exact PID. | `--db <path>`, `--harness <name>`, `--interval <dur>`, `--flush-every <dur>`, `-- <command>` |
 | `run` | `main.rs` | Ingest | Ingest local harness roots into the analytics DuckDB database with private staging. | `--db <path>`, `--root <spec>`, `--frozen`, `--write-manifest`/`--manifest-out <path>`, `--sealed <path>` |
-| `serve` | `main.rs` | Engine | Start trusted single-owner daemon holding raw DuckDB/`quack` connection over local IPC (`0700` socket / Named Pipe). | `--db <path>`, `--socket <path>`, `--idle-timeout <dur>` |
-| `advise` | `main.rs` | Advisory | Operator pre-flight advisor and MCP server answering 4 canonical questions within warm $\le 15\text{ms}$ budget. | `--db <path>`, `--question <id>`, `--format <text\|json>` |
+| `serve` | `main.rs` | Engine | Start trusted single-owner daemon holding raw DuckDB/`quack` connection over local IPC (`0700` socket / Named Pipe). | `--db <path>`, `--socket <path>`, `--once` |
+| `advise` | `main.rs` | Advisory | Operator pre-flight advisor with MCP tool schema for 4 canonical questions and a warm $\le 15\text{ms}$ budget. | `--db <path>`, `--question <id>`, `--harness <name>`, `--skill <name>`, `--session <id>`, `--json`, `--mcp-schema`, `--budget-ms <n>` |
 | `insights` | `main.rs` | Report | Run each compiled reference insight (`I01`–`I25`) against the selected database. | `--db <path>`, `--json`, `--harness <name>`, `--session <id>` |
 | `report` | `main.rs` | Report | Print an Operational Intelligence report (`links`, `activity`, `handoffs`, `tokens`, `decisions`). | `<kind>`, `--format <fmt>`, `--viz`, `--anomaly <kind>`, `--friction`, `--db <path>`, `--rig <rig>`, `--window <w>`, `--from <utc>`, `--to <utc>` |
 | `trace` | `main.rs` | Trace | Print trace inputs, source keys, and intermediate calculations for one metric ID. | `--metric-id <id>`, `--db <path>`, `--rig <rig>`, `--window <w>`, `--from <utc>`, `--to <utc>` |
 | `assert` | `main.rs` | Governance | Emit an advisory CI verdict: 0 pass, 2 breach, 3 insufficient evidence. | `--db <path>`, `--rig <rig>`, `--window <w>`, `--max-rework-rate <r>`, `--max-idle-rate <r>` |
 | `issue-draft` | `main.rs` | Governance | Draft local Markdown issue describing observed fleet operational debt. | `--db <path>`, `--metric <m>`, `--usd-per-million <val>`, `--publish`, `--repo <owner/repo>` |
-| `dashboard` | `extensions.rs` | Cockpit | Open the 6-screen interactive terminal cockpit or export offline HTML. | `--db <path>`, `--rig <rig>`, `--window <w>`, `--html [path]`, `--once`, `--auto-ingest` |
+| `dashboard` | `extensions.rs` | Cockpit | Open the connected web studio, 6-screen interactive terminal cockpit, or export offline HTML. | `--db <path>`, `--rig <rig>`, `--window <w>`, `--serve <HOST:PORT>`, `--site-dir <DIR>`, `--html [path]`, `--once`, `--auto-ingest` |
 | `ui` | `extensions.rs` | Cockpit | Open the interactive terminal cockpit for an explicit window. | `--db <path>`, `--rig <rig>`, `--window <w>`, `--once`, `--auto-ingest` |
 | `ask` | `extensions.rs` | Question | Answer a supported natural language fleet question via semantic intent matching. | `[query]`, `--question <q>`, `--db <path>`, `--baseline <path>`, `--window <w>`, `--format <text\|json>`, `--list-intents`, `--no-refresh` |
 | `simulate` | `extensions.rs` | Analysis | Run deterministic historical what-ifs over a canonical decisions report (`simulate topology`). | `topology`, `--db <path>`, `--rig <rig>`, `--window <w>`, `--scenario <path>`, `--remove <seats>`, `--replacement-seat <seat>`, `--direct-handoffs` |

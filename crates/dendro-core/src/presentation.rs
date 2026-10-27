@@ -768,8 +768,24 @@ fn build_entity_breakdown(rigs: &[String], seats: &[String]) -> Value {
     })
 }
 
-/// Resolve an explicit (`--from`/`--to`) or relative (`--window 1h|24h|7d|30d|all`) window,
-/// anchoring relative windows to the database's recorded timestamp bounds when available.
+/// UTC calendar bounds shared by reports and the connected dashboard.
+pub fn calendar_window_bounds(
+    preset: &str,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Option<(chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)> {
+    use chrono::Datelike;
+    let day = now.date_naive().and_hms_opt(0, 0, 0)?.and_utc();
+    let month = day.with_day(1)?;
+    match preset {
+        "today" => Some((day, now)),
+        "this_month" => Some((month, now)),
+        "last_month" => Some((month.checked_sub_months(chrono::Months::new(1))?, month)),
+        _ => None,
+    }
+}
+
+/// Resolve an explicit (`--from`/`--to`), UTC calendar, or trailing window.
+/// Calendar windows use the current UTC clock; trailing durations use recorded bounds when available.
 /// Because `report_json` uses a half-open `[from, to)` interval (`ts >= from AND ts < to`),
 /// `end_d` is set to `max_d + 1s` so events recorded at `max_timestamp` (including sub-second events) are included.
 pub fn resolve_window(
@@ -792,13 +808,21 @@ fn resolve_window_request(
     if let (Some(f), Some(t)) = (from, to) {
         return Ok((f.to_owned(), t.to_owned(), "explicit".into()));
     }
+    if let Some((start, end)) = calendar_window_bounds(window.unwrap_or("all"), chrono::Utc::now())
+    {
+        return Ok((
+            start.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            end.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            "trailing_utc".into(),
+        ));
+    }
     let dur = match window.unwrap_or("all") {
         "1h" => Some(chrono::Duration::hours(1)),
         "24h" => Some(chrono::Duration::days(1)),
         "7d" => Some(chrono::Duration::days(7)),
         "30d" => Some(chrono::Duration::days(30)),
         "all" => None,
-        _ => bail!("window must be 1h, 24h, 7d, 30d, or all"),
+        _ => bail!("window must be 1h, 24h, today, 7d, 30d, this_month, last_month, or all"),
     };
     if request.initialized() {
         #[cfg(any(windows, target_os = "linux"))]
@@ -2264,6 +2288,69 @@ pub fn terminal_ui(report: &Value, traces: &[Value], once: bool) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn calendar_windows_cover_utc_day_month_and_previous_leap_month() {
+        let now = chrono::DateTime::parse_from_rfc3339("2024-03-19T13:42:10Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        for (preset, from, to) in [
+            ("today", "2024-03-19T00:00:00Z", "2024-03-19T13:42:10Z"),
+            ("this_month", "2024-03-01T00:00:00Z", "2024-03-19T13:42:10Z"),
+            ("last_month", "2024-02-01T00:00:00Z", "2024-03-01T00:00:00Z"),
+        ] {
+            let (start, end) = calendar_window_bounds(preset, now).unwrap();
+            assert_eq!(
+                start.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+                from
+            );
+            assert_eq!(end.to_rfc3339_opts(chrono::SecondsFormat::Secs, true), to);
+        }
+        let january = chrono::DateTime::parse_from_rfc3339("2026-01-12T10:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        assert_eq!(
+            calendar_window_bounds("last_month", january)
+                .unwrap()
+                .0
+                .to_rfc3339(),
+            "2025-12-01T00:00:00+00:00"
+        );
+    }
+
+    #[test]
+    fn resolve_window_accepts_calendar_presets_without_recorded_data() {
+        #[cfg(any(windows, target_os = "linux"))]
+        let private = crate::platform_v1::create_user_private_root_with_choice(
+            "dendro-calendar-test-",
+            &crate::platform_v1::StorageRootChoice::UserProfile,
+        )
+        .unwrap();
+        #[cfg(any(windows, target_os = "linux"))]
+        let missing = private.path().join("missing.duckdb");
+        #[cfg(not(any(windows, target_os = "linux")))]
+        let missing =
+            std::env::temp_dir().join(format!("dendro-calendar-{}.duckdb", std::process::id()));
+        for preset in ["today", "this_month", "last_month"] {
+            let before = chrono::Utc::now();
+            let (from, to, mode) =
+                resolve_window(&missing, None, Some(preset), None, None).unwrap();
+            let after = chrono::Utc::now();
+            let parsed_from = chrono::DateTime::parse_from_rfc3339(&from)
+                .unwrap()
+                .with_timezone(&chrono::Utc);
+            let parsed_to = chrono::DateTime::parse_from_rfc3339(&to)
+                .unwrap()
+                .with_timezone(&chrono::Utc);
+            let (first_start, first_end) = calendar_window_bounds(preset, before).unwrap();
+            let (last_start, last_end) = calendar_window_bounds(preset, after).unwrap();
+            assert!(parsed_from >= first_start && parsed_from <= last_start);
+            assert!(
+                parsed_to.timestamp() >= first_end.timestamp()
+                    && parsed_to.timestamp() <= last_end.timestamp()
+            );
+            assert_eq!(mode, "trailing_utc");
+        }
+    }
     #[test]
     fn export_scrubs_serialized_bytes_and_keeps_numeric_values() {
         let r = json!({"payload":{"product":"sk-private","from":"2026-01-01T00:00:00Z","to":"2026-01-02T00:00:00Z","tokens":42,"m1_by_seat":[{"seat":"</script><script>alert(1)</script>ghp_canary","tokens":42,"source_key":"/private/path"}],"metadata":"secretcanary","activity_events":[{"seat":"</script><script>alert(1)</script>ghp_canary","ts":"2026-01-01T00:00:00Z","state":"running"}]}});

@@ -25,6 +25,26 @@ Source: sponsor directive, 2026-10-10 17:58Z.
 
 ---
 
+## Apple-Grade Connected Dashboard Suite & Interactive Consoles (`vNext`)
+
+**Operator outcome:** Move from “something changed in my fleet” to a scoped investigation, with the window, evidence coverage, and uncertainty visible throughout. The connected suite is the browser presentation of Dendro's local-first flight recorder and Operational Intelligence engine. It complements the CLI, six-screen TUI, and offline exports; the R1 acceptance and metric definitions remain authoritative.
+
+| Experience | Product behavior | Operator benefit |
+| --- | --- | --- |
+| **Living Growth Rings** | 32 time buckets across Model, Harness, Coordination, and Environment, with anomaly scars | Recognize changes in the fleet's execution shape and choose a period to investigate. |
+| **Tactile Time Machine Scrubber** | Calendar presets (`today`, `24h`, `7d`, `30d`, `this_month`, `last_month`, `all`) and custom date ranges, with readable UTC labels such as **Oct 20 – Oct 27, 2026** | Move through recorded work with the active period visible. |
+| **Apple Health Story Highlights** | Concise findings that lead into the relevant operational views | Understand what changed, then inspect the supporting evidence. |
+| **4-Layer Stack X-Ray** | Anatomical Model → Harness → Coordination → Environment swimlanes, connective threads, and 3D isometric explode (`⌘E`) | Inspect relationships across the execution stack without treating visual proximity as causal proof. |
+| **5-Layer Capability Studio** | `agent-otel-bridge` capability intelligence across 10 behavioral tool families, harness primitives, declared/invoked skills, MCP servers/tools, and lifecycle hooks/guardrails; Capability Proportion Spectrum Bar and Bento Console Dock | Compare available capabilities with observed execution and open a focused investigation. |
+| **Multi-Dimensional Group-By Rollups** | Available harness/tool, capability/tool family, daily date, workspace/team, status/outcome dimensions, plus raw records | Find concentrations and inspect token components without losing the evidence context. |
+| **Bespoke SVG Consoles (`I22`–`I25`)** | Trajectory Vortex (**Orbital Phase-Space Attractor**), Schema Drift (**Schema DNA Fingerprint Ribbon**), Authority Blast Radius (**Radial Propagation Ripple Graph**), and Counterfactual Model Routing (**Split-Beam Route Comparator**) | Inspect behavioral loops, envelope drift, evidenced downstream exposure, and pinned routing scenarios. |
+
+The connected entry point is `dendro dashboard --serve <HOST:PORT> [--site-dir <DIR>]`, with loopback-only binding and typed `/api/live-summary` and `/api/live-view` presentation endpoints. The trusted single-owner daemon remains `dendro serve`. No prompts, agent thoughts, completions, tool arguments, or raw secrets enter the analytics store or browser payloads. Diagnostic views remain advisory, graph exposure does not establish inherited authority, and counterfactual routing does not establish actual savings. The suite changes neither fleet governance authority nor R1 acceptance.
+
+See the [Architecture Blueprint](ARCHITECTURE.md#45-connected-web-intelligence-studio--agent-otel-bridge-capability-layer), [CLI reference](CLI_R1.md#connected-web-intelligence-studio-vnext), and [Visual Product Tour](VISUAL_PRODUCT_TOUR.md).
+
+---
+
 ## 1. Conclusion
 
 **Recommendation: proceed with the local engine (Goal 1).**

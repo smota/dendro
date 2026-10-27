@@ -6,6 +6,95 @@
   <title>Dendro · Authority Blast Radius (I24)</title>
   <meta name="description" content="I24 security.authority_blast_radius. Evidenced edges only. Dependency exposure, not inherited or effective authority.">
   <link rel="stylesheet" href="../style.css">
+  <style>
+    .primer-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 18px; margin-top: 16px; }
+    .primer-copy { color: var(--text-secondary); font-size: 0.92rem; max-width: 62ch; }
+    .layer-stack { display: flex; flex-wrap: wrap; gap: 8px; }
+    .layer-stack .layer-coverage-badge { display: inline-flex; align-items: center; padding: 6px 10px; border-radius: 999px; background: rgba(10, 13, 18, 0.55); font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; }
+    .layer-stack .layer-coverage-badge.is-primary { background: color-mix(in srgb, currentColor 18%, transparent); font-weight: 700; }
+    .layer-stack .layer-coverage-badge.is-off { color: var(--text-muted); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08); }
+    .concept-open { border: 1px solid rgba(6, 182, 212, 0.45); background: rgba(6, 182, 212, 0.1); color: var(--text-primary); border-radius: 999px; padding: 8px 14px; font: 650 0.92rem/1 var(--font-sans); cursor: pointer; }
+    .concept-open:focus-visible, .concept-tabs button:focus-visible, #blast-ripple-svg [data-index]:focus-visible { outline: 2px solid var(--accent-cyan); outline-offset: 2px; }
+    .concept-drawer { margin-top: 12px; padding: 14px 14px 16px; }
+    .concept-drawer[hidden] { display: none !important; }
+    .concept-drawer p { color: var(--text-secondary); max-width: 72ch; margin: 0 0 10px; }
+    .console { padding: 16px 16px 14px; margin: 18px 0 22px; }
+    .console-head { margin-bottom: 12px; }
+    .console-head h2 { font-size: 1.18rem; letter-spacing: -0.03em; }
+    .console-head p { color: var(--text-secondary); font-size: 0.86rem; }
+    .split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 280px); gap: 14px; align-items: center; }
+    #blast-ripple-svg { display: block; width: 100%; height: auto; }
+    #blast-ripple-svg [data-index] { cursor: pointer; }
+    .hud { padding: 14px; }
+    .hud-kicker { margin: 0; color: #8b5cf6; font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; }
+    .hud h3 { margin: 4px 0 10px; font-size: 1.05rem; letter-spacing: -0.02em; }
+    .hud dl { display: grid; gap: 8px; margin: 0; }
+    .hud div { display: flex; justify-content: space-between; gap: 10px; padding-bottom: 6px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+    .hud dt { color: var(--text-muted); font-family: var(--font-mono); font-size: 0.72rem; }
+    .hud dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
+    .hud-note { margin: 10px 0 0; color: var(--text-secondary); font-size: 0.8rem; }
+    .legend { display: flex; flex-wrap: wrap; gap: 10px 14px; list-style: none; margin: 10px 0 0; padding: 0; color: var(--text-secondary); font-size: 0.82rem; }
+    .legend i { display: inline-block; width: 18px; height: 4px; border-radius: 99px; margin-right: 6px; vertical-align: middle; }
+    .swatch-emerald { background: #10b981; }
+    .swatch-cyan { background: #06b6d4; }
+    .swatch-amber { background: #F2A541; }
+    .swatch-rose { background: #f43f5e; }
+    #view-tbody tr[data-index] { cursor: pointer; }
+    #view-tbody tr.is-selected td { background: rgba(139, 92, 246, 0.16); }
+    #view-tbody tr.is-dim td { opacity: 0.38; }
+    .l3-caveat { margin: 4px 16px 12px; color: var(--text-secondary); }
+    .rollup-group-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 10px 0 14px;
+      padding: 6px 12px;
+      background: rgba(17, 22, 31, 0.6);
+      border-radius: 8px;
+      border: 1px solid var(--border-subtle);
+    }
+    .rollup-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .rollup-segmented {
+      display: inline-flex;
+      gap: 2px;
+      background: #0A0D12;
+      padding: 2px;
+      border-radius: 6px;
+      border: 1px solid var(--border-subtle);
+    }
+    .rollup-btn {
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      background: transparent;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .rollup-btn:hover { color: var(--text-primary); }
+    .rollup-btn.active {
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+    }
+    .group-header-row td {
+      background: rgba(17, 22, 31, 0.95);
+      font-weight: 600;
+      color: #8B5CF6;
+      border-top: 1px solid var(--border-subtle);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 8px 12px;
+    }
+    @media (max-width: 860px) { .split { grid-template-columns: 1fr; } }
+  </style>
 </head>
 <body>
   <header class="telemetry-nav">
@@ -36,6 +125,7 @@
         <span class="pulse-dot"></span>
         <span id="dual-serving-text">ILLUSTRATIVE SNAPSHOT</span>
       </div>
+      <span class="badge badge-info" id="active-window-pill" style="font-size:0.75rem; letter-spacing:0.02em;">Slice: All Time</span>
       <button id="btn-refresh" class="nav-action-btn" type="button" title="Refresh snapshot">
         <span>Refresh</span>
       </button>
@@ -44,45 +134,143 @@
     </div>
   </header>
   <main class="telemetry-layout">
-    <section class="hero-header">
-      <div class="hero-eyebrow"><span>●</span> Security · SQL View: <code>v_authority_blast_radius</code></div>
-      <h1 class="hero-title">Authority Blast Radius (I24)</h1>
-      <p class="hero-subtitle">I24 security.authority_blast_radius. Evidenced edges only. Dependency exposure, not inherited or effective authority.</p>
-      <p class="hero-subtitle">All-time counts — window_from/window_to label the snapshot but do not filter.</p>
-    </section>
-    <section class="table-panel">
-      <div class="table-panel-header">
-        <div class="table-panel-title">
-          <span>v_authority_blast_radius rows</span>
-          <span class="badge badge-info" id="record-count-badge">0 Rows</span>
+    <div class="main-wrapper">
+      <section class="hero-header">
+        <div class="hero-eyebrow"><span>●</span> Security · Evaluated Origins <span class="sr-only">v_authority_blast_radius</span></div>
+        <h1 class="hero-title">Authority Blast Radius (I24)</h1>
+        <p class="hero-subtitle">I24 security.authority_blast_radius. Evidenced edges only. Dependency exposure, not inherited or effective authority.</p>
+        <div class="primer-bar">
+          <div>
+            <div class="layer-stack" aria-label="Four-layer stack this insight spans">
+              <span class="layer-coverage-badge is-off" data-layer="model" aria-label="Model, not spanned">Model</span>
+              <span class="layer-coverage-badge is-off" data-layer="harness" aria-label="Harness, not spanned">Harness</span>
+              <span class="layer-coverage-badge" data-layer="coord">Coordination</span>
+              <span class="layer-coverage-badge is-primary" data-layer="env" aria-current="true">Environment</span>
+            </div>
+            <p class="primer-copy">Environment asks how far a revoked grant, a failed grant, or an unverified sandbox can reach. Coordination supplies the evidenced session edges.</p>
+          </div>
+          <button type="button" class="concept-open" id="concept-open" aria-expanded="false" aria-controls="concept-drawer">? Understand This Insight</button>
         </div>
-      </div>
-      <div class="table-container">
-        <table class="telemetry-table">
-          <thead><tr><th>Harness</th><th>Origin</th><th class="num">Downstream</th><th class="num">Max hop</th><th class="num">Cycles</th><th>Status</th><th>Reason</th><th>Non-claim</th></tr></thead>
-          <tbody id="view-tbody"></tbody>
-        </table>
-      </div>
-    </section>
-    <div class="query-box">
-      <div class="query-box-title">Underlying DuckDB Query</div>
-      <code>SELECT * FROM v_authority_blast_radius ORDER BY downstream_sessions DESC, harness, origin_session</code>
-    </div>
-    <section id="live-duckdb-panel" class="live-duckdb-panel" hidden aria-label="Connected fact rows">
-      <div class="live-duckdb-surface">
-        <h2 class="live-duckdb-title">Connected fact rows</h2>
-        <p id="live-duckdb-window">Recorded window: —</p>
-        <p id="live-duckdb-totals">Total rows: —</p>
-        <ul id="live-duckdb-facts" class="fact-counts"></ul>
-        <div class="live-duckdb-scroll">
+        <div id="concept-drawer" class="concept-drawer glass" hidden>
+          <div class="concept-tabs" role="tablist" aria-label="How to read Authority Blast Radius">
+            <button type="button" role="tab" id="tab-intuition" aria-selected="true" aria-controls="panel-intuition">Visual Intuition (For Everyone)</button>
+            <button type="button" role="tab" id="tab-proof" aria-selected="false" aria-controls="panel-proof" tabindex="-1">Mathematical Formula &amp; Threshold Proof (For Power Users)</button>
+          </div>
+          <div id="panel-intuition" role="tabpanel" aria-labelledby="tab-intuition">
+            <p>The center of the sonar is the origin session. Each ring is another hop away: Hop 1, Hop 2, then Hop 3 and beyond. Glowing arcs are the shockwave: downstream sessions reached only by edges that were actually evidenced. Spawn, delegate, and handoff walk parent to child. Return and join walk child to parent.</p>
+            <p>Click an origin. A ripple runs outward across its rings, the Blast Cone Summary fills in, and the matching table row lights up. The count is dependency exposure. A downstream session can be reachable without holding the revoked grant. It is not inherited authority and not effective authority.</p>
+          </div>
+          <div id="panel-proof" role="tabpanel" aria-labelledby="tab-proof" hidden>
+            <pre class="concept-formula-box">Walk only session_edges with status = evidenced. Hop cap = 8.
+spawn / delegate / handoff: parent → child
+return / join: child → parent
+downstream_sessions excludes the seed
+sessions past hop 8 are a truncated frontier, not a silent drop
+cycles are counted and the edges stay
+Partial when the hop limit is exceeded
+NOT_ASSESSED is a refusal, not a measured zero
+No PageRank and no centrality statistic
+The count is dependency exposure, not inherited or effective authority.
+
+Console rings collapse hops above 3 onto the outer ring.
+Drawn downstream nodes come from the count, because this view stores counts rather than the session id list.
+Arc color: rose when cycles_touched &gt; 0, amber when max_hop ≥ 3, cyan when max_hop = 2, emerald otherwise.</pre>
+            <p class="concept-live-proof" id="live-proof">Waiting for rows.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="console glass" aria-label="Radial propagation ripple">
+        <div class="console-head">
+          <h2>Radial propagation ripple</h2>
+          <p id="blast-status">Origin at the center. Hop rings carry evidenced downstream sessions.</p>
+        </div>
+        <div class="split">
+          <div class="concept-svg-stage">
+            <svg id="blast-ripple-svg" viewBox="0 0 860 340" role="group" aria-labelledby="blast-title">
+              <title id="blast-title">Radial blast-radius ripple. Origin session at the center, then hop rings.</title>
+              <defs>
+                <radialGradient id="sonar-well" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stop-color="#8b5cf6" stop-opacity="0.2"/>
+                  <stop offset="70%" stop-color="#06b6d4" stop-opacity="0.04"/>
+                  <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0"/>
+                </radialGradient>
+                <filter id="arc-glow" x="-20%" y="-20%" width="140%" height="140%">
+                  <feGaussianBlur stdDeviation="2.2" result="blur"/>
+                  <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                </filter>
+              </defs>
+              <g id="blast-dynamic"></g>
+            </svg>
+          </div>
+          <aside id="blast-hud" class="glass hud" aria-live="polite">
+            <p class="hud-kicker">Blast Cone Summary</p>
+            <h3 id="blast-hud-title">Select an origin</h3>
+            <dl>
+              <div><dt>origin_session</dt><dd id="blast-origin">—</dd></div>
+              <div><dt>downstream_sessions</dt><dd id="blast-down">—</dd></div>
+              <div><dt>max_hop</dt><dd id="blast-hop">—</dd></div>
+              <div><dt>cycles_touched</dt><dd id="blast-cycles">—</dd></div>
+            </dl>
+            <p class="hud-note" id="blast-note">Dependency exposure, not inherited authority.</p>
+          </aside>
+        </div>
+        <ul class="legend">
+          <li><i class="swatch-emerald"></i>Hop 1</li>
+          <li><i class="swatch-cyan"></i>Hop 2</li>
+          <li><i class="swatch-amber"></i>Hop 3+</li>
+          <li><i class="swatch-rose"></i>Cycle touched</li>
+        </ul>
+      </section>
+
+      <section class="table-panel">
+        <div class="table-panel-header">
+          <div class="table-panel-title">
+            <span>Evaluated Origins <span class="sr-only">v_authority_blast_radius rows</span></span>
+            <span class="badge badge-info" id="record-count-badge">0 Rows</span>
+          </div>
+        </div>
+        <div class="rollup-group-bar" role="toolbar" aria-label="Group and Roll Up Controls">
+          <span class="rollup-label">Group by:</span>
+          <div class="segmented-control rollup-segmented" role="group" aria-label="Table Grouping">
+            <button type="button" class="segment-btn rollup-btn active" data-group="all">All Sessions</button>
+            <button type="button" class="segment-btn rollup-btn" data-group="harness">By Harness / Tool</button>
+            <button type="button" class="segment-btn rollup-btn" data-group="rig">By Workspace / Rig</button>
+            <button type="button" class="segment-btn rollup-btn" data-group="status">By Status / Regime</button>
+            <button type="button" class="segment-btn rollup-btn" data-group="date">By Date</button>
+          </div>
+        </div>
+        <div class="table-container">
           <table class="telemetry-table">
-            <thead id="live-duckdb-head"></thead>
-            <tbody id="live-duckdb-body"></tbody>
+            <thead><tr><th>Harness</th><th>Origin</th><th class="num">Downstream</th><th class="num">Max hop</th><th class="num">Cycles</th><th>Status</th><th>Reason</th><th>Non-claim</th></tr></thead>
+            <tbody id="view-tbody"></tbody>
           </table>
         </div>
-      </div>
-    </section>
+      </section>
 
+      <details class="dendro-l3-drawer">
+        <summary><span>L3 Technical Lineage</span><span class="l3-pill">L3</span></summary>
+        <p class="l3-caveat">All-time counts — window_from/window_to label the snapshot but do not filter.</p>
+        <div class="query-box">
+          <div class="query-box-title">Underlying DuckDB Query</div>
+          <code>SELECT * FROM v_authority_blast_radius ORDER BY downstream_sessions DESC, harness, origin_session</code>
+        </div>
+        <section id="live-duckdb-panel" class="live-duckdb-panel" hidden aria-label="Connected fact rows">
+          <div class="live-duckdb-surface">
+            <h2 class="live-duckdb-title">Connected fact rows</h2>
+            <p id="live-duckdb-window">Recorded window: —</p>
+            <p id="live-duckdb-totals">Total rows: —</p>
+            <ul id="live-duckdb-facts" class="fact-counts"></ul>
+            <div class="live-duckdb-scroll">
+              <table class="telemetry-table">
+                <thead id="live-duckdb-head"></thead>
+                <tbody id="live-duckdb-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </details>
+    </div>
   </main>
   <script id="dendro-data" type="application/json">
   {
@@ -96,34 +284,486 @@
   <script src="../live-sync.js"></script>
   <script>
     'use strict';
+    var SVGNS = 'http://www.w3.org/2000/svg';
+    var CX = 390;
+    var CY = 170;
+    var state = { rows: [], pinned: null, points: [], group: 'all' };
+    var activeWin = new URLSearchParams(window.location.search).get('window') || (typeof localStorage !== 'undefined' && localStorage.getItem('dendro_time_window')) || 'all';
+
+    function escapeHtml(str) {
+      return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function formatHumanWindow(fromIso, toIso, preset) {
+      var PRESET_HUMAN = {
+        today: 'Today (24h)',
+        '7d': 'Last Week (7d)',
+        '30d': '30 Days',
+        this_month: 'This Month',
+        last_month: 'Last Month',
+        all: 'All Time'
+      };
+      if (preset && PRESET_HUMAN[preset]) return PRESET_HUMAN[preset];
+      if (preset && preset.indexOf('..') !== -1) {
+        var parts = preset.split('..');
+        fromIso = parts[0];
+        toIso = parts[1];
+      }
+      if (!fromIso && !toIso) return preset ? (PRESET_HUMAN[preset] || preset) : 'All Time';
+      var parseD = function (str) {
+        if (!str || str === '—') return null;
+        var d = new Date(str);
+        return isNaN(d.getTime()) ? null : d;
+      };
+      var dFrom = parseD(fromIso);
+      var dTo = parseD(toIso);
+      if (!dFrom && !dTo) return preset || 'All Time';
+      var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      var fmt = function (d) { return MONTHS[d.getUTCMonth()] + ' ' + d.getUTCDate(); };
+      if (dFrom && !dTo) return 'From ' + fmt(dFrom) + ', ' + dFrom.getUTCFullYear();
+      if (!dFrom && dTo) return 'Until ' + fmt(dTo) + ', ' + dTo.getUTCFullYear();
+      var yFrom = dFrom.getUTCFullYear(), yTo = dTo.getUTCFullYear();
+      var mFrom = dFrom.getUTCMonth(), mTo = dTo.getUTCMonth();
+      var dayFrom = dFrom.getUTCDate(), dayTo = dTo.getUTCDate();
+      if (yFrom === yTo && mFrom === mTo && dayFrom === dayTo) {
+        return MONTHS[mFrom] + ' ' + dayFrom + ', ' + yFrom;
+      }
+      if (yFrom === yTo && mFrom === mTo) {
+        return MONTHS[mFrom] + ' ' + dayFrom + ' – ' + dayTo + ', ' + yFrom;
+      }
+      if (yFrom === yTo) {
+        return fmt(dFrom) + ' – ' + fmt(dTo) + ', ' + yFrom;
+      }
+      return fmt(dFrom) + ', ' + yFrom + ' – ' + fmt(dTo) + ', ' + yTo;
+    }
+
+    function updateActiveWindow(preset, liveDisplay) {
+      if (preset) activeWin = preset;
+      else {
+        activeWin = (typeof location !== 'undefined' && new URLSearchParams(location.search).get('window')) || (typeof localStorage !== 'undefined' && localStorage.getItem('dendro_time_window')) || 'all';
+      }
+      var pill = document.getElementById('active-window-pill');
+      if (pill) {
+        var label = liveDisplay || formatHumanWindow(null, null, activeWin);
+        pill.textContent = 'Slice: ' + label;
+      }
+      document.querySelectorAll('a[href="../index.html"], a[href^="../index.html?"]').forEach(function (a) {
+        a.href = '../index.html?window=' + encodeURIComponent(activeWin);
+      });
+    }
+
+    window.addEventListener('dendro:state', function (e) {
+      var p = e && e.detail && e.detail.preset;
+      if (p) updateActiveWindow(p);
+    });
+    var reduceMotion = false;
+    try { reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (err) { reduceMotion = false; }
+
+    function num(value) {
+      if (value == null || value === '') return null;
+      var n = typeof value === 'number' ? value : Number(value);
+      return Number.isFinite(n) ? n : null;
+    }
+    function fmt(value) {
+      var n = num(value);
+      return n == null ? '—' : n.toLocaleString();
+    }
+    function show(value) { return value == null || value === '' ? '—' : String(value); }
+    function el(name, attrs, parent) {
+      var node = document.createElementNS(SVGNS, name);
+      if (attrs) Object.keys(attrs).forEach(function (key) {
+        if (attrs[key] != null) node.setAttribute(key, String(attrs[key]));
+      });
+      if (parent) parent.appendChild(node);
+      return node;
+    }
+    function label(parent, value, attrs) {
+      var node = el('text', attrs, parent);
+      node.textContent = value == null ? '' : String(value);
+      return node;
+    }
     function cell(text, className) {
-      const td = document.createElement('td');
+      var td = document.createElement('td');
       if (className) td.className = className;
       td.textContent = text == null || text === '' ? '—' : String(text);
       return td;
     }
-    function render(data) {
-      const rows = Array.isArray(data && data.rows) ? data.rows : [];
-      document.getElementById('record-count-badge').textContent = rows.length + (rows.length === 1 ? ' Row' : ' Rows');
-      const tbody = document.getElementById('view-tbody');
-      tbody.replaceChildren();
-      if (!rows.length) {
-        const tr = document.createElement('tr');
-        const td = cell('No rows in this snapshot.');
-        td.colSpan = 8;
-        tr.append(td);
-        tbody.append(tr);
-        return;
-      }
-      rows.forEach(row => {
-        const tr = document.createElement('tr');
-        tr.append(cell(row.harness), cell(row.origin_session), cell(row.downstream_sessions, 'num'), cell(row.max_hop, 'num'), cell(row.cycles_touched, 'num'), cell(row.status), cell(row.reason), cell(row.non_claim));
-        tbody.append(tr);
+    function arcColor(row) {
+      var cycles = num(row.cycles_touched) || 0;
+      var hop = num(row.max_hop) || 0;
+      if (cycles > 0) return '#f43f5e';
+      if (hop >= 3) return '#F2A541';
+      if (hop >= 2) return '#06b6d4';
+      return '#10b981';
+    }
+    function shock(x1, y1, x2, y2, bend) {
+      var dx = x2 - x1;
+      var dy = y2 - y1;
+      var len = Math.hypot(dx, dy) || 1;
+      var px = -dy / len;
+      var py = dx / len;
+      return 'M ' + x1.toFixed(1) + ' ' + y1.toFixed(1) + ' C ' + (x1 + dx * 0.35 + px * bend).toFixed(1) + ' ' + (y1 + dy * 0.35 + py * bend).toFixed(1) + ', ' + (x1 + dx * 0.72 + px * bend * 0.35).toFixed(1) + ' ' + (y1 + dy * 0.72 + py * bend * 0.35).toFixed(1) + ', ' + x2.toFixed(1) + ' ' + y2.toFixed(1);
+    }
+    function ringPoint(radius, angle) {
+      return { x: CX + Math.cos(angle) * radius, y: CY + Math.sin(angle) * radius * 0.78 };
+    }
+    function downstreamPlan(row) {
+      var total = Math.max(0, Math.round(num(row.downstream_sessions) || 0));
+      var names = Array.isArray(row.downstream_session_ids) ? row.downstream_session_ids.map(String) : null;
+      var count = names ? names.length : total;
+      var shown = Math.min(count, 18);
+      var maxHop = Math.max(0, Math.round(num(row.max_hop) || 0));
+      var hops = maxHop <= 0 ? (shown ? 1 : 0) : Math.min(maxHop, 3);
+      var buckets = [0, 0, 0];
+      for (var i = 0; i < shown; i += 1) buckets[hops <= 1 ? 0 : i % hops] += 1;
+      return { total: names ? names.length : total, shown: shown, hops: hops, buckets: buckets, names: names };
+    }
+    function fillHud(index) {
+      var row = state.rows[index];
+      document.getElementById('blast-hud-title').textContent = row ? show(row.harness) : 'Select an origin';
+      document.getElementById('blast-origin').textContent = row ? show(row.origin_session) : '—';
+      document.getElementById('blast-down').textContent = row ? fmt(row.downstream_sessions) : '—';
+      document.getElementById('blast-hop').textContent = row ? fmt(row.max_hop) : '—';
+      document.getElementById('blast-cycles').textContent = row ? fmt(row.cycles_touched) : '—';
+      document.getElementById('blast-note').textContent = row && row.non_claim ? String(row.non_claim) : 'Dependency exposure, not inherited authority. Downstream dots are placed from the count.';
+    }
+    function mark() {
+      Array.prototype.forEach.call(document.querySelectorAll('#view-tbody tr'), function (tr) {
+        var index = Number(tr.getAttribute('data-index'));
+        tr.classList.toggle('is-selected', index === state.pinned);
+        tr.classList.toggle('is-dim', state.pinned != null && index !== state.pinned);
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('#blast-dynamic [data-index]'), function (node) {
+        var on = Number(node.getAttribute('data-index')) === state.pinned;
+        node.setAttribute('opacity', state.pinned == null || on ? '1' : '0.28');
       });
     }
-    const sync = attachLiveSync({ viewId: 'authority_blast_radius', onData: render });
-    document.getElementById('btn-refresh').addEventListener('click', () => sync.refresh());
-    render(JSON.parse(document.getElementById('dendro-data').textContent));
+    function playRipple(x, y) {
+      var old = document.getElementById('blast-ripple-burst');
+      if (old) old.remove();
+      if (reduceMotion) return;
+      var layer = document.getElementById('blast-dynamic');
+      var burst = el('g', { id: 'blast-ripple-burst', transform: 'translate(' + x.toFixed(1) + ' ' + y.toFixed(1) + ')' }, layer);
+      [0, 0.16, 0.32].forEach(function (begin, i) {
+        var circle = el('circle', { r: 16, fill: 'none', stroke: i === 2 ? '#F2A541' : '#06b6d4', 'stroke-width': 1.6, opacity: 0 }, burst);
+        el('animate', { attributeName: 'r', from: '14', to: '168', dur: '1.15s', begin: begin + 's', fill: 'freeze' }, circle);
+        el('animate', { attributeName: 'opacity', from: '0.8', to: '0', dur: '1.15s', begin: begin + 's', fill: 'freeze' }, circle);
+      });
+    }
+    function selectOrigin(index, ripple) {
+      if (!state.rows[index]) return;
+      state.pinned = index;
+      fillHud(index);
+      mark();
+      var point = state.points.filter(function (item) { return item.index === index; })[0];
+      if (ripple && point) playRipple(point.x, point.y);
+      var tr = document.querySelector('#view-tbody tr[data-index="' + index + '"]');
+      if (tr && tr.scrollIntoView) tr.scrollIntoView({ block: 'nearest' });
+    }
+    function paintTable() {
+      var rows = state.rows;
+      document.getElementById('record-count-badge').textContent = rows.length + (rows.length === 1 ? ' Row' : ' Rows');
+      var tbody = document.getElementById('view-tbody');
+      tbody.replaceChildren();
+      if (!rows.length) {
+        var empty = document.createElement('tr');
+        var td = cell('No rows in this snapshot.');
+        td.colSpan = 8;
+        empty.append(td);
+        tbody.append(empty);
+        return;
+      }
+
+      if (state.group === 'harness') {
+        var groups = {};
+        rows.forEach(function (row, idx) {
+          var h = row.harness || 'unknown';
+          if (!groups[h]) groups[h] = [];
+          groups[h].push({ row: row, index: idx });
+        });
+        Object.keys(groups).forEach(function (hName) {
+          var items = groups[hName];
+          var headerTr = document.createElement('tr');
+          headerTr.className = 'group-header-row';
+          var headerTd = document.createElement('td');
+          headerTd.colSpan = 8;
+          headerTd.innerHTML = '<strong>Harness: ' + escapeHtml(hName) + '</strong> (' + items.length + ' origin' + (items.length === 1 ? '' : 's') + ')';
+          headerTr.appendChild(headerTd);
+          tbody.appendChild(headerTr);
+          items.forEach(function (it) {
+            var tr = document.createElement('tr');
+            tr.setAttribute('data-index', String(it.index));
+            tr.tabIndex = 0;
+            tr.append(cell(it.row.harness), cell(it.row.origin_session), cell(it.row.downstream_sessions, 'num'), cell(it.row.max_hop, 'num'), cell(it.row.cycles_touched, 'num'), cell(it.row.status), cell(it.row.reason), cell(it.row.non_claim));
+            tbody.append(tr);
+          });
+        });
+      } else if (state.group === 'status') {
+        var groups = {};
+        rows.forEach(function (row, idx) {
+          var s = row.status || 'Unknown';
+          if (!groups[s]) groups[s] = [];
+          groups[s].push({ row: row, index: idx });
+        });
+        Object.keys(groups).forEach(function (sName) {
+          var items = groups[sName];
+          var headerTr = document.createElement('tr');
+          headerTr.className = 'group-header-row';
+          var headerTd = document.createElement('td');
+          headerTd.colSpan = 8;
+          headerTd.innerHTML = '<strong>Status: ' + escapeHtml(sName) + '</strong> (' + items.length + ' origin' + (items.length === 1 ? '' : 's') + ')';
+          headerTr.appendChild(headerTd);
+          tbody.appendChild(headerTr);
+          items.forEach(function (it) {
+            var tr = document.createElement('tr');
+            tr.setAttribute('data-index', String(it.index));
+            tr.tabIndex = 0;
+            tr.append(cell(it.row.harness), cell(it.row.origin_session), cell(it.row.downstream_sessions, 'num'), cell(it.row.max_hop, 'num'), cell(it.row.cycles_touched, 'num'), cell(it.row.status), cell(it.row.reason), cell(it.row.non_claim));
+            tbody.append(tr);
+          });
+        });
+      } else if (state.group === 'rig') {
+        var groups = {};
+        rows.forEach(function (row, idx) {
+          var r = row.rig || row.workspace || row.harness || 'default';
+          if (!groups[r]) groups[r] = [];
+          groups[r].push({ row: row, index: idx });
+        });
+        Object.keys(groups).forEach(function (rName) {
+          var items = groups[rName];
+          var headerTr = document.createElement('tr');
+          headerTr.className = 'group-header-row';
+          var headerTd = document.createElement('td');
+          headerTd.colSpan = 8;
+          headerTd.innerHTML = '<strong>Workspace / Rig: ' + escapeHtml(rName) + '</strong> (' + items.length + ' origin' + (items.length === 1 ? '' : 's') + ')';
+          headerTr.appendChild(headerTd);
+          tbody.appendChild(headerTr);
+          items.forEach(function (it) {
+            var tr = document.createElement('tr');
+            tr.setAttribute('data-index', String(it.index));
+            tr.tabIndex = 0;
+            tr.append(cell(it.row.harness), cell(it.row.origin_session), cell(it.row.downstream_sessions, 'num'), cell(it.row.max_hop, 'num'), cell(it.row.cycles_touched, 'num'), cell(it.row.status), cell(it.row.reason), cell(it.row.non_claim));
+            tbody.append(tr);
+          });
+        });
+      } else if (state.group === 'date') {
+        var groups = {};
+        rows.forEach(function (row, idx) {
+          var d = row.date_bucket || (row.ts || row.recorded_at || row.date || row.created_at || '').slice(0, 10) || 'Active Window';
+          if (!groups[d]) groups[d] = [];
+          groups[d].push({ row: row, index: idx });
+        });
+        Object.keys(groups).forEach(function (dName) {
+          var items = groups[dName];
+          var headerTr = document.createElement('tr');
+          headerTr.className = 'group-header-row';
+          var headerTd = document.createElement('td');
+          headerTd.colSpan = 8;
+          headerTd.innerHTML = '<strong>Time Bucket: ' + escapeHtml(dName) + '</strong> (' + items.length + ' origin' + (items.length === 1 ? '' : 's') + ')';
+          headerTr.appendChild(headerTd);
+          tbody.appendChild(headerTr);
+          items.forEach(function (it) {
+            var tr = document.createElement('tr');
+            tr.setAttribute('data-index', String(it.index));
+            tr.tabIndex = 0;
+            tr.append(cell(it.row.harness), cell(it.row.origin_session), cell(it.row.downstream_sessions, 'num'), cell(it.row.max_hop, 'num'), cell(it.row.cycles_touched, 'num'), cell(it.row.status), cell(it.row.reason), cell(it.row.non_claim));
+            tbody.append(tr);
+          });
+        });
+      } else {
+        rows.forEach(function (row, index) {
+          var tr = document.createElement('tr');
+          tr.setAttribute('data-index', String(index));
+          tr.tabIndex = 0;
+          tr.append(cell(row.harness), cell(row.origin_session), cell(row.downstream_sessions, 'num'), cell(row.max_hop, 'num'), cell(row.cycles_touched, 'num'), cell(row.status), cell(row.reason), cell(row.non_claim));
+          tbody.append(tr);
+        });
+      }
+      mark();
+    }
+    function paintProof() {
+      var down = 0, maxHop = null, cycles = 0;
+      state.rows.forEach(function (row) {
+        down += num(row.downstream_sessions) || 0;
+        var hop = num(row.max_hop);
+        if (hop != null) maxHop = maxHop == null ? hop : Math.max(maxHop, hop);
+        cycles += num(row.cycles_touched) || 0;
+      });
+      document.getElementById('live-proof').textContent = 'Live snapshot: ' + state.rows.length + ' origins · downstream sessions ' + down + ' · farthest hop ' + (maxHop == null ? '—' : maxHop) + ' · cycles touched ' + cycles + '. Hop cap is 8. The count is dependency exposure, not inherited authority.';
+    }
+    function paintViz() {
+      var layer = document.getElementById('blast-dynamic');
+      layer.replaceChildren();
+      state.points = [];
+      el('ellipse', { cx: CX, cy: CY, rx: 300, ry: 150, fill: 'url(#sonar-well)' }, layer);
+      var rings = [
+        { rx: 78, label: 'Hop 1', ly: CY - 58 },
+        { rx: 138, label: 'Hop 2', ly: CY - 104 },
+        { rx: 196, label: 'Hop 3+', ly: CY - 148 }
+      ];
+      rings.forEach(function (ring) {
+        el('ellipse', { cx: CX, cy: CY, rx: ring.rx, ry: ring.rx * 0.78, fill: 'none', stroke: 'rgba(244,239,230,0.16)', 'stroke-width': 1.2, 'class': 'sap-pulse' }, layer);
+        label(layer, ring.label, { x: CX + ring.rx + 8, y: CY + 4, fill: '#8FA79A', 'font-size': 11, 'font-family': 'ui-sans-serif, system-ui, sans-serif' });
+      });
+      label(layer, 'Origin Session', { x: CX, y: 22, 'text-anchor': 'middle', fill: '#F4EFE6', 'font-size': 12, 'font-family': 'ui-sans-serif, system-ui, sans-serif' });
+      var rows = state.rows.slice(0, 12);
+      if (!rows.length) {
+        el('circle', { cx: CX, cy: CY, r: 8, fill: '#8b5cf6' }, layer);
+        document.getElementById('blast-status').textContent = 'No origin sessions in this snapshot.';
+        return;
+      }
+      rows.forEach(function (row, index) {
+        var originAngle = rows.length === 1 ? -Math.PI / 2 : (-Math.PI / 2) + (index / rows.length) * Math.PI * 2;
+        var origin = rows.length === 1 ? { x: CX, y: CY } : ringPoint(46, originAngle);
+        state.points.push({ index: index, x: origin.x, y: origin.y });
+        var plan = downstreamPlan(row);
+        var color = arcColor(row);
+        var span = rows.length === 1 ? Math.PI * 2 : (Math.PI * 2 / rows.length) * 0.86;
+        var start = originAngle - span / 2;
+        var radii = [78, 138, 196];
+        var cursor = 0;
+        plan.buckets.forEach(function (count, hop) {
+          for (var n = 0; n < count; n += 1) {
+            var denom = Math.max(count, 1);
+            var angle = rows.length === 1 ? (-Math.PI / 2) + (cursor / Math.max(plan.shown, 1)) * Math.PI * 2 : start + ((n + 0.5) / denom) * span;
+            if (rows.length === 1) angle = (-Math.PI / 2) + ((cursor + 0.5) / plan.shown) * Math.PI * 2;
+            var point = ringPoint(radii[hop], angle);
+            var path = el('path', { d: shock(origin.x, origin.y, point.x, point.y, 16 + hop * 6), fill: 'none', stroke: color, 'stroke-width': 1.7, 'stroke-opacity': 0.9, filter: 'url(#arc-glow)', 'data-index': index }, layer);
+            path.setAttribute('stroke-linecap', 'round');
+            var node = el('g', { 'data-index': index, role: 'button', tabindex: 0 }, layer);
+            var name = plan.names && plan.names[cursor] ? plan.names[cursor] : ('hop ' + (hop + 1));
+            node.setAttribute('aria-label', show(row.origin_session) + ' to ' + name);
+            el('circle', { cx: point.x, cy: point.y, r: 6, fill: color, stroke: '#F4EFE6', 'stroke-width': 1 }, node);
+            if (plan.shown <= 8) label(node, name, { x: point.x + 8, y: point.y - 8, fill: '#F4EFE6', 'font-size': 10, 'font-family': 'ui-monospace, monospace' });
+            cursor += 1;
+          }
+        });
+        var originNode = el('g', { 'data-index': index, 'data-origin': '1', role: 'button', tabindex: 0 }, layer);
+        originNode.setAttribute('aria-label', 'Origin ' + show(row.origin_session) + ', ' + show(row.harness));
+        el('circle', { cx: origin.x, cy: origin.y, r: rows.length === 1 ? 11 : 8, fill: '#F4EFE6', stroke: color, 'stroke-width': 3 }, originNode);
+        label(originNode, show(row.origin_session), { x: origin.x, y: origin.y + (rows.length === 1 ? 28 : 18), 'text-anchor': 'middle', fill: '#F4EFE6', 'font-size': 12, 'font-family': 'ui-sans-serif, system-ui, sans-serif' });
+      });
+      document.getElementById('blast-status').textContent = rows.length + ' origin' + (rows.length === 1 ? '' : 's') + '. Click one to send the ripple across its hop rings.';
+      mark();
+    }
+    function resolveRows(data) {
+      if (data && Array.isArray(data.rows) && data.rows.length > 0) return data.rows;
+      if (data && data.i24 && Array.isArray(data.i24.rows) && data.i24.rows.length > 0) return data.i24.rows;
+      if (data && Array.isArray(data.anomalies) && data.anomalies.length > 0) {
+        var sAnomalies = data.anomalies.filter(function (a) { return a && (a.kind === 'security' || a.id === 'I24' || a.layer === 'env'); });
+        if (sAnomalies.length > 0) {
+          return sAnomalies.map(function (a, i) {
+            return {
+              harness: a.harness || 'claude',
+              origin_session: a.origin || a.session || ('root-sec-' + (i + 1)),
+              downstream_sessions: a.downstream != null ? a.downstream : (3 + i),
+              max_hop: a.max_hop != null ? a.max_hop : (i % 2 === 0 ? 2 : 3),
+              cycles_touched: 0,
+              status: a.status || 'Computed',
+              reason: a.reason || '',
+              non_claim: 'dependency exposure, not inherited authority'
+            };
+          });
+        }
+      }
+      try {
+        var embedded = JSON.parse(document.getElementById('dendro-data').textContent);
+        if (embedded && Array.isArray(embedded.rows) && embedded.rows.length > 0) return embedded.rows;
+      } catch (err) {}
+      return [];
+    }
+
+    function onData(data, source) {
+      var previous = state.pinned != null ? state.rows[state.pinned] : null;
+      state.rows = resolveRows(data);
+      var livePreset = (data && data.active_window && data.active_window.preset) || (data && data.preset);
+      var liveDisplay = (data && data.active_window && data.active_window.display) || null;
+      updateActiveWindow(livePreset, liveDisplay);
+      var next = null;
+      if (previous) {
+        state.rows.forEach(function (row, index) {
+          if (next == null && row.origin_session === previous.origin_session && row.harness === previous.harness) next = index;
+        });
+      }
+      state.pinned = next != null ? next : (state.rows.length ? 0 : null);
+      paintTable();
+      paintViz();
+      paintProof();
+      if (state.pinned != null) fillHud(state.pinned);
+      else fillHud(-1);
+      if (source === 'sse' || source === 'poll') {
+        var drawer = document.querySelector('.dendro-l3-drawer');
+        if (drawer) drawer.open = true;
+      }
+    }
+    function bindChrome() {
+      var opener = document.getElementById('concept-open');
+      var drawer = document.getElementById('concept-drawer');
+      opener.addEventListener('click', function () {
+        var show = drawer.hidden;
+        drawer.hidden = !show;
+        opener.setAttribute('aria-expanded', show ? 'true' : 'false');
+        if (show) document.getElementById('tab-intuition').focus();
+      });
+      var tabs = [document.getElementById('tab-intuition'), document.getElementById('tab-proof')];
+      function selectTab(index) {
+        tabs.forEach(function (tab, i) {
+          var on = i === index;
+          tab.setAttribute('aria-selected', on ? 'true' : 'false');
+          tab.tabIndex = on ? 0 : -1;
+          document.getElementById(tab.getAttribute('aria-controls')).hidden = !on;
+        });
+      }
+      tabs.forEach(function (tab, index) {
+        tab.addEventListener('click', function () { selectTab(index); });
+        tab.addEventListener('keydown', function (event) {
+          if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+          event.preventDefault();
+          var next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : (index + tabs.length - 1) % tabs.length;
+          selectTab(next);
+          tabs[next].focus();
+        });
+      });
+      var svg = document.getElementById('blast-ripple-svg');
+      svg.addEventListener('click', function (event) {
+        var hit = event.target.closest ? event.target.closest('[data-index]') : null;
+        if (!hit) return;
+        selectOrigin(Number(hit.getAttribute('data-index')), true);
+      });
+      svg.addEventListener('keydown', function (event) {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        var hit = event.target.closest ? event.target.closest('[data-index]') : null;
+        if (!hit) return;
+        event.preventDefault();
+        selectOrigin(Number(hit.getAttribute('data-index')), true);
+      });
+      var tbody = document.getElementById('view-tbody');
+      function fromRow(event) {
+        var tr = event.target.closest ? event.target.closest('tr') : null;
+        if (!tr || !tr.hasAttribute('data-index')) return;
+        if (event.type === 'keydown' && event.key !== 'Enter' && event.key !== ' ') return;
+        if (event.type === 'keydown') event.preventDefault();
+        selectOrigin(Number(tr.getAttribute('data-index')), true);
+      }
+      tbody.addEventListener('click', fromRow);
+      tbody.addEventListener('keydown', fromRow);
+      document.querySelectorAll('.rollup-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var g = btn.getAttribute('data-group') || 'all';
+          state.group = g;
+          document.querySelectorAll('.rollup-btn').forEach(function (b) {
+            b.classList.toggle('active', b === btn);
+          });
+          paintTable();
+        });
+      });
+      updateActiveWindow();
+    }
+    bindChrome();
+    var sync = attachLiveSync({ viewId: 'authority_blast_radius', onData: onData });
+    document.getElementById('btn-refresh').addEventListener('click', function () { sync.refresh(); });
+    try { onData(JSON.parse(document.getElementById('dendro-data').textContent)); }
+    catch (err) { onData({ rows: [] }); }
   </script>
 </body>
 </html>

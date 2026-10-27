@@ -64,7 +64,7 @@
           <p class="p-lead">Six open agent terminals look productive—even when four are waiting on a handoff and two are trapped in a rework loop. <strong>Dendro</strong> reads your existing local session logs afterward to show where time, handoffs, and budget actually went.</p>
           <div class="p-actions">
             <a class="p-btn primary" href="viewer.html">Open interactive Fleet Explorer →</a>
-            <a class="p-btn" href="how-it-works.html">How it works &amp; ROI calculator</a>
+            <a class="p-btn" href="how-it-works.html">How it works &amp; capacity scenario calculator</a>
             <a class="p-btn" href="get-started.html">Get started</a>
           </div>
           <div class="p-pills" aria-label="Supported AI coding tools">
@@ -86,7 +86,7 @@
             <svg viewBox="0 0 540 270" role="img" aria-label="Comparison of busy terminal time versus actual productive flow, handoff wait, and rework">
               <rect width="540" height="270" rx="10" fill="#14110e"/>
               <g font-family="Inter, system-ui, sans-serif">
-                <text x="20" y="30" fill="#f3ede2" font-size="13" font-weight="700">100% OF SESSION TIME ACCOUNTED FOR</text>
+                <text x="20" y="30" fill="#f3ede2" font-size="13" font-weight="700">FIVE DISJOINT SEAT ACTIVITY BANDS</text>
                 <text x="520" y="30" text-anchor="end" fill="#d4943a" font-size="11.5" font-weight="700">ZERO VANITY METRICS</text>
 
                 <text x="20" y="64" fill="#d8cfc0" font-size="12" font-weight="600">Architect Actor</text>
@@ -146,7 +146,7 @@
             <span class="p-card-kicker">With Dendro · Retrospective Clarity</span>
             <h3>Every session read like the rings of a tree</h3>
             <ul class="p-list">
-              <li><strong>Complete time accounting:</strong> Every second of an agent's session is separated into active work, waiting on a human, waiting on a peer handoff, stalled with work in queue, or cleanly parked.</li>
+              <li><strong>Five disjoint seat activity bands:</strong> Observed session intervals are separated into five disjoint activity bands with unknown intervals explicitly retained: active work, waiting on a human, waiting on a peer handoff, stalled with work in queue, or cleanly parked.</li>
               <li><strong>First-pass vs. rework visibility:</strong> See immediately which tasks delivered cleanly on the first pass and where handoffs bounced backward.</li>
               <li><strong>Local, private, zero-setup:</strong> Point Dendro at the session logs already on your disk. Nothing leaves your machine.</li>
             </ul>
@@ -192,6 +192,106 @@
           </video>
           <figcaption>See Dendro in action: explore session timelines, handoff flows, and cost breakdowns in the terminal cockpit or <a href="viewer.html">try the interactive Fleet Explorer in your browser →</a></figcaption>
         </figure>
+      </div>
+    </section>
+
+    <section class="p-section" id="connected-suite">
+      <div class="p-wrap">
+        <div class="p-section-head">
+          <div>
+            <div class="p-eyebrow">Connected Dashboard Suite · v0.8.0</div>
+            <h2>One local instrument for the whole agentic stack.</h2>
+          </div>
+          <p>Serve the hub on your machine and read the same evidence as growth rings, an exploding stack, a capability studio, and four active-intelligence consoles. <code>dendro dashboard --serve 127.0.0.1:4242</code> binds loopback only. The badge stays an illustrative snapshot until a live local query returns, then reads <strong>LIVE TELEMETRY</strong>.</p>
+        </div>
+        <article class="p-card" style="margin-bottom:1.5rem;">
+          <h3>60-Second CLI &amp; Connected Studio Quickstart</h3>
+          <p>From a local checkout with Rust installed, build and open the connected studio. Build time depends on your machine; “60 seconds” describes the command path.</p>
+          <pre><code>cargo build --release --locked
+./target/release/dendro status
+./target/release/dendro dashboard --serve 127.0.0.1:4242 --site-dir ./site</code></pre>
+          <p>Open <a href="http://127.0.0.1:4242">http://127.0.0.1:4242</a>. Ctrl-C stops the server.</p>
+        </article>
+        <div class="p-actions" style="margin-bottom:1.5rem;">
+          <a class="p-btn primary" href="dashboards/index.html">Open the Intelligence Hub →</a>
+          <a class="p-btn" href="viewer.html">Open Fleet Explorer</a>
+        </div>
+        <p class="p-lead" style="font-size:1rem;margin-top:0;">Honest boundary: null is not zero. A counterfactual route is not a live routing change. Prompts and secrets are never captured. Dendro does not invent hours saved.</p>
+
+        <div class="p-grid-2" style="margin-top:1.75rem;">
+          <article class="p-card">
+            <span class="p-card-kicker">Four architectural layers</span>
+            <h3>Model, Harness, Coordination, Environment</h3>
+            <ul class="p-list">
+              <li><strong>Model.</strong> Invocations, tokens, cache, pinned cost, and a routing simulation that does not touch the router.</li>
+              <li><strong>Harness.</strong> Tool families, action loops, trajectory shape, and envelope drift across Claude Code, Codex, AGY, Grok, Pi, and OpenRig.</li>
+              <li><strong>Coordination.</strong> Handoffs, queue wait, lineage, and acceptance. Busy time stays split from flow.</li>
+              <li><strong>Environment &amp; Security.</strong> Placement, CPU and RSS, grants, and evidenced reachability. Exposure is not inherited authority.</li>
+            </ul>
+          </article>
+          <article class="p-card">
+            <span class="p-card-kicker">Five-layer capability studio</span>
+            <h3>What the fleet actually ran</h3>
+            <ul class="p-list">
+              <li><strong>Tool families.</strong> Shell/Exec, Read/Inspect, Edit/Patch, Search/Grep, Subagent Spawn, MCP Call, Skill Load, Web/Fetch, Task/Queue, Governance/Gate.</li>
+              <li><strong>Primitives.</strong> The built-in verbs under those families.</li>
+              <li><strong>Skills.</strong> Declared versus invoked. The funnel is I06.</li>
+              <li><strong>MCP.</strong> Server call counts, never payloads.</li>
+              <li><strong>Hooks.</strong> Lifecycle guardrail events, counted, not quoted.</li>
+            </ul>
+          </article>
+        </div>
+
+        <div class="p-section-head" style="margin-top:2.5rem;">
+          <div>
+            <div class="p-eyebrow">Active intelligence · I22–I25</div>
+            <h2>Four consoles with the limit printed on the glass.</h2>
+          </div>
+          <p>Each console discloses one of two resolution modes: materialized Schema 5 reference views (Mode A) or labeled live windowed fact-table heuristic fallbacks (Mode B). I01–I21 stay on the hub strip beside them.</p>
+        </div>
+        <div class="p-grid-2">
+          <article class="p-card">
+            <span class="p-num">I22</span>
+            <span class="p-card-kicker">Harness · Trajectory Vortex</span>
+            <h3>Inspect trajectory loops in either mode</h3>
+            <p>Mode A: <code>v_trajectory_vortex</code> computes exact 32-dim <code>FLOAT[32]</code> <code>array_cosine_distance</code>. Mode B: turn-length variance and self-transition proxy, clamped to <code>0.08..0.82</code>; trips at <code>&gt;= 25</code> turns and <code>&gt;= 0.55</code> self-transition. <strong>Not an embedding cosine measurement</strong>. A trip is not a cause.</p>
+          </article>
+          <article class="p-card">
+            <span class="p-num">I23</span>
+            <span class="p-card-kicker">Harness · Schema Drift</span>
+            <h3>Read the DNA of every harness envelope</h3>
+            <p>Mode A: <code>v_schema_drift</code> measures <code>VARIANT</code> envelope L1 structural drift across harness versions. Mode B: daily metadata cohort buckets from <code>message_facts</code>, with an L1 proxy clamped at <code>0.45</code> and <code>keys_retyped = 0</code>. Drift is not a compatibility verdict.</p>
+          </article>
+          <article class="p-card">
+            <span class="p-num">I24</span>
+            <span class="p-card-kicker">Environment · Blast Radius</span>
+            <h3>Follow recorded session reachability</h3>
+            <p>Mode A: <code>v_authority_blast_radius</code> uses 8-hop <code>duckpgq</code> evidenced-only session reachability. Mode B: a recursive CTE (<code>depth &lt; 4</code>) over recorded <code>session_edges</code> plus <code>security_facts</code> authority-check scopes. Dependency exposure does not grant authority.</p>
+          </article>
+          <article class="p-card">
+            <span class="p-num">I25</span>
+            <span class="p-card-kicker">Model · Counterfactual Routing</span>
+            <h3>Simulate the inflection. Leave the router alone.</h3>
+            <p>Mode A: <code>v_counterfactual_routing</code> performs pinned-tier simulation and refuses when no pricing tier is pinned. Mode B: heuristic <code>observed * 0.75</code> simulated fast-tier envelope total (<code>0.75 × observed</code>, leaving a <code>25%</code> counterfactual gap) in normalized token units against an assumed <code>128k</code> context threshold. This is a counterfactual simulation proxy, never a measured financial saving or a live routing change.</p>
+          </article>
+        </div>
+
+        <p><strong>Mode B — Live Windowed Fact-Table Fallbacks:</strong> <code>intelligence_fallback</code> in <code>connected_web.rs</code> derives labeled heuristic proxies from <code>tool_facts</code>, <code>usage_facts</code>, <code>message_facts</code>, and <code>session_edges</code> for arbitrary live time windows (<code>?window=7d</code>, <code>YYYY-MM-DD..YYYY-MM-DD</code>) or empty/unmaterialized Schema 5 tables. The live I22–I25 screenshots showcase Mode B over the active workspace's live fact tables, with <strong>SIMULATED TIER TOTAL (COUNTERFACTUAL)</strong> representing the simulated fast-tier envelope total (<code>0.75 × observed</code>, leaving a <code>25%</code> counterfactual gap) in normalized token units. These proxies are distinct from <strong>Mode A — Materialized Schema 5 Reference Views</strong>.</p>
+
+        <div class="p-grid-3" style="margin-top:2rem;">
+          <figure class="dendro-media-frame">
+            <img src="assets/screenshots/hub-living-growth-rings.png" alt="Dendro living growth rings, tactile time machine scrubber, and Apple Health story highlights" width="100%">
+            <figcaption>Living growth rings and the time scrubber. <a href="dashboards/index.html">Open the hub →</a></figcaption>
+          </figure>
+          <figure class="dendro-media-frame">
+            <img src="assets/screenshots/hub-stack-xray-3d.png" alt="Four-layer exploding stack X-ray from Model to Environment with isometric explode" width="100%">
+            <figcaption>Exploding stack X-ray across the four layers. <a href="viewer.html">Inspect a session →</a></figcaption>
+          </figure>
+          <figure class="dendro-media-frame">
+            <img src="assets/screenshots/hub-capability-studio.png" alt="Five-layer capability intelligence studio with tool families, primitives, skills, MCP, and hooks" width="100%">
+            <figcaption>Capability studio: families, primitives, skills, MCP, hooks.</figcaption>
+          </figure>
+        </div>
       </div>
     </section>
 

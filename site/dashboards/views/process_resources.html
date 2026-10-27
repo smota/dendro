@@ -6,6 +6,187 @@
   <title>Dendro · Environment & Process Resources</title>
   <meta name="description" content="Process scope and max RSS from v_process_resources. I14 owns CPU and disk deltas. I18 owns source coverage. RSS units are never mixed.">
   <link rel="stylesheet" href="../style.css">
+  <style>
+    /* Concept Primer Strip & L3 Drawer Styles */
+    .concept-primer-strip {
+      margin: 14px 0 24px 0;
+      background: rgba(17, 22, 31, 0.7);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+    }
+    .concept-primer-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 12px 18px;
+      flex-wrap: wrap;
+    }
+    .concept-primer-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex: 1;
+      min-width: 280px;
+    }
+    .stack-layer-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .layer-environment {
+      background: rgba(148, 163, 184, 0.15);
+      color: #cbd5e1;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+    }
+    .concept-summary-text {
+      font-size: 0.84rem;
+      color: var(--text-secondary, #cbd5e1);
+      line-height: 1.4;
+    }
+    .concept-toggle-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 8px;
+      padding: 6px 14px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-primary, #f8fafc);
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .concept-toggle-btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+    .concept-toggle-btn .concept-chevron {
+      transition: transform 0.2s ease;
+    }
+    .concept-toggle-btn[aria-expanded="true"] .concept-chevron {
+      transform: rotate(180deg);
+    }
+    .concept-drawer {
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(10, 14, 22, 0.6);
+      padding: 16px 20px;
+    }
+    .concept-drawer-tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 8px;
+    }
+    .concept-tab-btn {
+      background: transparent;
+      border: none;
+      padding: 6px 14px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-muted, #94a3b8);
+      cursor: pointer;
+      border-radius: 6px;
+      transition: all 0.15s ease;
+    }
+    .concept-tab-btn:hover {
+      color: var(--text-secondary, #cbd5e1);
+      background: rgba(255, 255, 255, 0.04);
+    }
+    .concept-tab-btn.active {
+      color: #38bdf8;
+      background: rgba(6, 182, 212, 0.12);
+    }
+    .concept-tab-pane {
+      display: none;
+      font-size: 0.84rem;
+      line-height: 1.55;
+      color: var(--text-secondary, #cbd5e1);
+    }
+    .concept-tab-pane.active {
+      display: block;
+    }
+    .concept-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 14px;
+      margin-top: 10px;
+    }
+    .concept-card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 8px;
+      padding: 12px 14px;
+    }
+    .concept-card h4 {
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--text-primary, #f8fafc);
+      margin: 0 0 4px 0;
+    }
+    .concept-card p {
+      font-size: 0.78rem;
+      color: var(--text-muted, #94a3b8);
+      margin: 0;
+    }
+    .concept-threshold {
+      display: inline-block;
+      margin-top: 6px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 600;
+    }
+    .threshold-pass { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+    .threshold-warn { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+    .threshold-fail { background: rgba(244, 63, 94, 0.15); color: #f87171; }
+
+    /* L3 Technical Lineage Drawer */
+    .dendro-l3-drawer {
+      margin-top: 32px;
+      background: rgba(17, 22, 31, 0.6);
+      border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+      border-radius: 10px;
+      overflow: hidden;
+      transition: all 0.2s ease;
+    }
+    .dendro-l3-drawer summary {
+      padding: 12px 18px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-muted, #94a3b8);
+      cursor: pointer;
+      user-select: none;
+      background: rgba(255, 255, 255, 0.02);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .dendro-l3-drawer summary:hover {
+      color: var(--text-secondary, #cbd5e1);
+      background: rgba(255, 255, 255, 0.04);
+    }
+    .dendro-l3-drawer[open] summary {
+      border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+      color: var(--text-primary, #f8fafc);
+    }
+    .dendro-l3-drawer .l3-drawer-body {
+      padding: 16px;
+    }
+  </style>
 </head>
 <body>
   <header class="telemetry-nav">
@@ -47,12 +228,89 @@
 
   <main class="telemetry-layout">
     <section class="hero-header">
-      <div class="hero-eyebrow"><span>●</span> Environment · I14 / I18 · SQL View: <code>v_process_resources</code></div>
+      <div class="hero-eyebrow"><span>●</span> Environment Layer · I14 / I18 · Operational Telemetry</div>
       <h1 class="hero-title">Environment &amp; Process Resources</h1>
       <p class="hero-subtitle">
         Process scope, max RSS, and process attribution from process identities and samples. I14 is CPU deltas and max sampled RSS. I18 counts read, projected, unprojected, and refused sources. This SQL view does not recompute CPU or coverage.
       </p>
       <p class="hero-subtitle">All-time counts — window_from/window_to label the snapshot but do not filter.</p>
+    </section>
+
+    <!-- Concept Primer Strip (Understand This View) -->
+    <section class="concept-primer-strip" aria-label="Console Concept Primer">
+      <div class="concept-primer-bar">
+        <div class="concept-primer-left">
+          <span class="stack-layer-badge layer-environment">Environment Layer</span>
+          <span class="concept-summary-text">
+            Monitors process scope, max resident set size (RSS), and memory allocation across host OS environments without mixing measurement units.
+          </span>
+        </div>
+        <button type="button" class="concept-toggle-btn" id="btn-concept-toggle" aria-expanded="false" aria-controls="concept-drawer">
+          <svg class="concept-info-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+          <span>Understand How This Works (?)</span>
+          <svg class="concept-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </button>
+      </div>
+      <div class="concept-drawer" id="concept-drawer" hidden>
+        <div class="concept-drawer-tabs">
+          <button type="button" class="concept-tab-btn active" data-tab="tab-intuition">
+            <span>Visual Intuition &amp; How to Read It</span>
+          </button>
+          <button type="button" class="concept-tab-btn" data-tab="tab-metrics">
+            <span>Key Metrics, Formula &amp; Actionable Thresholds</span>
+          </button>
+        </div>
+        <div class="concept-tab-pane active" id="tab-intuition">
+          <p>Max RSS by Root and Unit: Each bar visualizes peak observed Resident Set Size (RSS) per host root directory and process harness:</p>
+          <div class="concept-grid">
+            <div class="concept-card">
+              <h4>Launched Processes (Purple)</h4>
+              <p>Direct subprocesses spawned by the agent runtime (e.g. bash commands, compiler runs, build tools).</p>
+            </div>
+            <div class="concept-card">
+              <h4>Discovered Processes (Cyan)</h4>
+              <p>Pre-existing host services or background daemons identified within the agent execution workspace.</p>
+            </div>
+            <div class="concept-card">
+              <h4>Strict Unit Separation</h4>
+              <p>RSS memory units are never coerced or mixed across distinct sample scales (bytes vs pages vs KiB).</p>
+            </div>
+            <div class="concept-card">
+              <h4>Process Deduping</h4>
+              <p>Process counts are deduped by root directory, harness, and attribution to avoid inflated process numbers.</p>
+            </div>
+          </div>
+        </div>
+        <div class="concept-tab-pane" id="tab-metrics">
+          <p>Environment performance indicators and operational boundaries:</p>
+          <div class="concept-grid">
+            <div class="concept-card">
+              <h4>Max RSS</h4>
+              <p>Peak resident set memory consumption across all active processes</p>
+              <div class="concept-threshold threshold-pass">Bytes kept distinct</div>
+            </div>
+            <div class="concept-card">
+              <h4>Process Scope</h4>
+              <p>Unique executing processes under monitored root directories</p>
+              <div class="concept-threshold threshold-pass">Deduped count</div>
+            </div>
+            <div class="concept-card">
+              <h4>I14 Environment Resources</h4>
+              <p>CPU deltas and max sampled memory; refused if unobservable</p>
+              <div class="concept-threshold threshold-warn">Refused if empty</div>
+            </div>
+            <div class="concept-card">
+              <h4>I18 Source Coverage</h4>
+              <p>Audit of read, projected, unprojected, and refused telemetry files</p>
+              <div class="concept-threshold threshold-pass">Computed tracking</div>
+            </div>
+          </div>
+        </div>
+      </div>
     </section>
 
     <section class="kpi-grid" aria-label="Environment indicators">
@@ -98,7 +356,7 @@
     <section class="table-panel">
       <div class="table-panel-header">
         <div class="table-panel-title">
-          <span>v_process_resources rows</span>
+          <span>Recorded Rows <span class="sr-only">v_process_resources rows</span></span>
           <span class="badge badge-info" id="record-count-badge">0 Rows</span>
         </div>
       </div>
@@ -120,24 +378,30 @@
       </div>
     </section>
 
-    <div class="query-box">
-      <div class="query-box-title">Underlying DuckDB Query</div>
-      <code>SELECT * FROM v_process_resources ORDER BY max_rss_bytes DESC, harness, root_key;</code>
-    </div>
-    <section id="live-duckdb-panel" class="live-duckdb-panel" hidden aria-label="Connected fact rows">
-      <div class="live-duckdb-surface">
-        <h2 class="live-duckdb-title">Connected fact rows</h2>
-        <p id="live-duckdb-window">Recorded window: —</p>
-        <p id="live-duckdb-totals">Total rows: —</p>
-        <ul id="live-duckdb-facts" class="fact-counts"></ul>
-        <div class="live-duckdb-scroll">
-          <table class="telemetry-table">
-            <thead id="live-duckdb-head"></thead>
-            <tbody id="live-duckdb-body"></tbody>
-          </table>
+    <!-- Technical Lineage, Coverage & SQL Proof (L3) Drawer -->
+    <details class="dendro-l3-drawer">
+      <summary>Technical Lineage, Coverage &amp; SQL Proof (L3)</summary>
+      <div class="l3-drawer-body">
+        <div class="query-box">
+          <div class="query-box-title">Underlying SQL Projection</div>
+          <code>SELECT * FROM v_process_resources ORDER BY max_rss_bytes DESC, harness, root_key;</code>
         </div>
+        <section id="live-duckdb-panel" class="live-duckdb-panel" hidden aria-label="Connected fact rows">
+          <div class="live-duckdb-surface">
+            <h2 class="live-duckdb-title">Connected fact rows</h2>
+            <p id="live-duckdb-window">Recorded window: —</p>
+            <p id="live-duckdb-totals">Total rows: —</p>
+            <ul id="live-duckdb-facts" class="fact-counts"></ul>
+            <div class="live-duckdb-scroll">
+              <table class="telemetry-table">
+                <thead id="live-duckdb-head"></thead>
+                <tbody id="live-duckdb-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
       </div>
-    </section>
+    </details>
 
   </main>
 
@@ -170,8 +434,45 @@
       if (n >= 1024) return (n / 1024).toFixed(1) + ' KiB';
       return n + ' B';
     }
+    function initConceptPrimer() {
+      const toggleBtn = document.getElementById('btn-concept-toggle');
+      const drawer = document.getElementById('concept-drawer');
+      if (!toggleBtn || !drawer) return;
+      toggleBtn.addEventListener('click', () => {
+        const isExpanded = toggleBtn.getAttribute('aria-expanded') === 'true';
+        toggleBtn.setAttribute('aria-expanded', !isExpanded);
+        drawer.hidden = isExpanded;
+      });
+      const tabBtns = drawer.querySelectorAll('.concept-tab-btn');
+      const panes = drawer.querySelectorAll('.concept-tab-pane');
+      tabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          const targetId = btn.getAttribute('data-tab');
+          tabBtns.forEach(b => b.classList.remove('active'));
+          panes.forEach(p => p.classList.remove('active'));
+          btn.classList.add('active');
+          const targetPane = document.getElementById(targetId);
+          if (targetPane) targetPane.classList.add('active');
+        });
+      });
+    }
+    initConceptPrimer();
+
+    let currentResourceRows = [];
+
     function render(data) {
-      const rows = Array.isArray(data && data.rows) ? data.rows : [];
+      let rows = Array.isArray(data && data.rows) ? data.rows : [];
+      if (rows.length > 0) {
+        currentResourceRows = rows;
+      } else if (!currentResourceRows.length) {
+        try {
+          const embedded = JSON.parse(document.getElementById('dendro-data').textContent || '{}');
+          currentResourceRows = embedded.rows || [];
+        } catch (e) {
+          currentResourceRows = [];
+        }
+      }
+      rows = currentResourceRows;
       const byteRows = rows.filter(row => row.rss_unit === 'bytes');
       const processGroups = new Map();
       rows.forEach(row => {
