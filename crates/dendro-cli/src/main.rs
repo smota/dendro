@@ -1000,6 +1000,17 @@ fn exit_with_flush(code: i32) -> ! {
 }
 
 fn main() -> Result<()> {
+    // Both Clap's generated command builders and the async command future need
+    // more stack than the process main thread provides on Windows.
+    std::thread::Builder::new()
+        .name("dendro-runtime".into())
+        .stack_size(4 * 1024 * 1024)
+        .spawn(run_cli)?
+        .join()
+        .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+}
+
+fn run_cli() -> Result<()> {
     tracing_subscriber::fmt::init();
     let parse_result = if std::env::args_os().len() == 1 {
         Cli::command().try_get_matches_from(["dendro", "status"])
