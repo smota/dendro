@@ -25,7 +25,7 @@ When software engineers and engineering organizations deploy autonomous coding a
 - *Did a session stall because of a complex algorithmic problem, or was an agent sitting idle waiting 45 minutes for a human prompt while holding locks?*
 - *Why did token burn spike 400% on a routine refactor? Was it cache-invalidation bleed, a runaway tool retry loop, or an inefficient sub-agent fanout?*
 
-**Dendro solves this retrospectively from local evidence.** Written in high-performance Rust and powered by an embedded columnar DuckDB engine, Dendro runs 100% locally on the engineer's machine. It discovers and reconstructs existing session logs out-of-band, transforming raw, fragmented JSONL traces into an instrument-grade causal X-ray of the entire agentic stack.
+**Dendro reads the local session history your AI tools already write on your machine—turning scattered agent runs into a unified flight recorder and operational intelligence studio.** See where your budget goes, which tools and skills actually deliver, and where multi-agent handoffs slow down. Its open, extensible architecture lets you bring your own coding client, orchestration runtime, or capability mapper. Keep implementation details in the technical reference; lead product copy with what the user can see and improve.
 
 ```
        ┌─────────────────────────────────────────────────────────────┐
@@ -51,24 +51,23 @@ When software engineers and engineering organizations deploy autonomous coding a
             ▼                                                   ▼
 ┌───────────────────────┐                           ┌───────────────────────┐
 │  RATATUI TUI COCKPIT  │                           │  CONNECTED WEB STUDIO │
-│   (`dendro cockpit`)  │                           │   (`dendro dashboard`)│
+│   (`dendro dashboard`)  │                           │   (`dendro dashboard`)│
 └───────────────────────┘                           └───────────────────────┘
 ```
 
-### 1.2 Supported Harnesses & Orchestrator Ecosystem
-Dendro is natively multi-harness. It does not dictate how agents are built or orchestrated; it reads the standard footprint they already leave on disk:
-- **Native Coding Harnesses:**
-  - **Claude Code** (`~/.claude/projects/`, session JSONL transcripts, cost records)
-  - **OpenAI Codex** (`~/.codex/sessions/`, trajectory JSONLs, tool execution events)
-  - **Google AGY / Antigravity** (`~/.gemini/antigravity-cli/brain/`, trajectory logs, transcript JSONL)
-  - **xAI Grok CLI** (`~/.grok/`, multi-turn execution records)
-  - **Pi** (Minimalist agent sessions, local run logs)
-- **Fleet Orchestration Adapters:**
-  - **OpenRig** (`~/.openrig/`, rig topologies, persistent seats, durable queues, handoff chains)
-  - **AgentFlow SDLC** (`.agentflow/`, role-phase handovers, governance contracts, evidence chains)
-  - **Meshloop** (`.meshloop-*`, supervisor graphs, reviewer leaves, ephemeral worktree isolation)
+### 1.2 Supported Coding Clients, Export Adapters & Fleet Orchestration Runtimes
 
-*Vocabulary Rule:* Always frame **Fleets, Harnesses, Sessions, Actors, Tools, and Capabilities** as the universal primary concepts. Frame OpenRig `Rig` and `Seat` bindings as optional orchestration adapters rather than the mandatory data model.
+Keep three categories visible in product copy. AI coding clients execute the work; fleet orchestration runtimes coordinate multi-agent teams and handoffs across those clients.
+
+| Stack component | Supported out of the box today | Coverage and extension path |
+| --- | --- | --- |
+| **Coding Clients** | **Claude Code, OpenAI Codex, Google Antigravity, Grok, and Pi** | Read their authorized local session history. Use full recognized names in prose. |
+| **Editor/Agent Export Adapters** | Verified **Cursor, Windsurf, Goose, and Devin** exports | Coverage is limited to the documented [Supported Export Formats](docs/extensions/formats.md). |
+| **Fleet Orchestration Runtimes** | **OpenRig**: rig topologies, persistent seats, durable queues, and handoff chains | Other runtimes, such as **AgentFlow** and **Meshloop**, also coordinate teams and handoffs; connect their available records through the extension contract rather than implying standalone adapters already ship. |
+
+Use **Google Antigravity** throughout prose. OpenRig, AgentFlow, and Meshloop belong in the runtime category, separately from coding clients and export adapters. Present OpenRig `Rig` and `Seat` bindings as an optional integration within the broader fleet, session, actor, tool, and capability model.
+
+For the **Extensible by Design — Bring Your Own Stack** section, show this support matrix and link directly to [Bring Your Own Client or Runtime](docs/extensions/README.md), [Supported Export Formats](docs/extensions/formats.md), and the [Contributing Guide](CONTRIBUTING.md). Include capability mappers in the extension invitation.
 
 ### 1.3 The Core Brand Metaphor: Dendrochronology Meets Apple Instruments & Apple Health
 The name *Dendro* derives from **dendrochronology**—the scientific method of dating and interpreting environmental history through the growth rings of trees. 
@@ -96,9 +95,20 @@ Dendro brings this exact empirical discipline to artificial intelligence:
 2. **Cross-Layer Causal Visibility:** Break down the artificial barrier between prompt cost, tool runtime, team handoffs, and sandbox security.
 3. **Instant Multi-Dimensional Slicing:** Zero-latency pivots across Harness, Capability, Tool Family, Date, Team/Workspace, and Outcome.
 4. **Zero-Configuration Local Discovery:** Zero agents to install, zero proxies to configure, zero network round-trips. Just point `dendro` at your machine and read history immediately.
-5. **100% Privacy & Zero-Exfiltration Guarantee:** Zero prompts, zero model responses, zero thoughts, zero tool payloads, and zero secrets ever leave the machine or enter the analytical DuckDB database.
+5. **Local Privacy:** Source logs are read-only. No prompts, agent thoughts, code completions, or secrets (`sk-`, `ghp_`, Bearer tokens) are ever captured or stored. Everything runs locally on your machine—nothing is proxied or sent to a third-party cloud.
 
-### 2.3 Headline Vocabulary Matrix: Do's and Don'ts
+### 2.3 User Value Pillars
+
+Lead with the user's daily reality: you see the final diff or monthly bill, but cannot explain a 40-minute task, a looping sub-agent, or a custom skill that never ran. Carry these four outcomes into the site:
+
+- **Stop paying for invisible waste.** You can spot retry loops, uncached context refills, and runaway sub-agents before they drain your token budget.
+- **Know which tools, skills, and MCP servers actually deliver.** You can see which capabilities help finish work, which fail silently, and which sit unused.
+- **Pinpoint where multi-agent workflows stall.** You can follow available evidence through model time, tool failures, sub-agent handoffs, and human approval gates.
+- **Test routing changes before you touch production.** You can simulate fast-tier models and context limits against recorded work before changing configuration.
+
+Transition into **One studio across every layer of your stack**. Present the four architectural layers and five capability layers in separate tables with columns **Layer | What You See | What You Can Decide & Improve**; use the [README](README.md#architecture) as the copy reference.
+
+### 2.4 Headline Vocabulary Matrix: Do's and Don'ts
 
 | Feature / Concept | ❌ DO NOT USE (Forbidden in Headlines) | ✅ ALWAYS USE (Authorized Headline Language) |
 | :--- | :--- | :--- |
@@ -111,7 +121,7 @@ Dendro brings this exact empirical discipline to artificial intelligence:
 | **Security & Sandbox** | "Permission checker" | **"Authority Blast Radius & Process Footprint X-Ray"** |
 | **Productivity Claims** | "Saves 20 hours/week", "Guaranteed 40% ROI" | **"Five Disjoint Seat Activity Bands: Measure Flow, Handoff Wait & Rework"** |
 
-### 2.4 Product Owner Rule: Promote, Engage, and Inform — Never Over-Explain Screenshots or Dump Database Numbers
+### 2.5 Product Owner Rule: Promote, Engage, and Inform — Never Over-Explain Screenshots or Dump Database Numbers
 - **The Core Rule:** **"Promote, Engage, and Inform — Never Over-Explain Screenshots or Dump Database Numbers."**
 - **Screenshots Speak for Themselves:** High-DPI product captures demonstrate real craft and operational truth. Captions, cards, and narrative copy must sell the *insight and decision unlocked*—never recite raw pixel counts (`6,848.31M`, `84,555`, `39,916,624`), internal row counts, or defensive SQL fallback modes (`Mode A / Mode B`, `intelligence_fallback`, `0.75 * observed`).
 - **Focus on Decisions and Capabilities:**
@@ -208,7 +218,7 @@ The site builder must highlight these 8 interactive surfaces across the product 
 - **Visual Mechanics:** Located directly below the Growth Rings. 3 high-contrast, clean summary cards inspired by Apple Health narrative trends.
 - **Cards & Micro-Charts:**
   1. *Model Cache Efficiency Ring:* Circular gauge showing `96.9%` cache read efficiency, pairing uncached input vs. cache read tokens in plain English.
-  2. *24h Multi-Harness Rhythm Strip:* Multi-colored pulse strip tracking turn frequency and message pace across Claude Code, Codex, AGY, Grok, and Pi.
+  2. *24h Multi-Harness Rhythm Strip:* Multi-colored pulse strip tracking turn frequency and message pace across Claude Code, OpenAI Codex, Google Antigravity, Grok, and Pi.
   3. *7-Column Loop Conditions Strip:* Weather-style column strip showing daily loop conditions (clear, rework, or vortex trips) across the fleet.
 
 ### 4. 4-Layer "Exploding Stack X-Ray" (`⌘E`)
@@ -248,9 +258,9 @@ Four specialized scientific visualization consoles:
 - **`I24` Authority Blast Radius:** *Radial Propagation Ripple Graph.* Computes 8-hop dependency exposure from a failed or revoked permission grant, visualizing affected downstream sessions in concentric ripples.
 - **`I25` Counterfactual Model Routing:** *Split-Beam Route Comparator.* Interactive dual-beam comparator allowing operators to slide context-pressure thresholds and simulate the financial and latency impact of routing sessions to faster, cheaper model tiers.
 
-### 8. Ratatui Terminal Cockpit (`dendro cockpit`) & Headless Services
+### 8. Ratatui Terminal Cockpit (`dendro dashboard`) & Headless Services
 - **6-Screen TUI Cockpit:** A pure-Rust terminal interface built with Ratatui, featuring 6 navigation tabs (`Overview`, `Layers`, `Handoffs`, `Capabilities`, `Consoles`, `Inspection`), responsive layouts, and zero-flicker rendering.
-- **Trusted Local Daemon (`dendro serve`):** Binds strictly to `127.0.0.1:4242` on the loopback interface, serving static dashboards, SSE streams (`/api/events`), and JSON query APIs (`/api/query`).
+- **Local Services:** `dendro serve` provides trusted local IPC. `dendro dashboard --serve 127.0.0.1:4242` serves the connected web studio, SSE streams (`/api/events`), and JSON query projections (`/api/query`).
 - **Warm Pre-Flight Advisor (`dendro advise`):** Sub-15ms pull-only advisory oracle that answers session health checks before an agent begins work.
 - **Deterministic Semantic Queries (`dendro ask`):** In-process Nao semantic model router translating plain-English queries into deterministic DuckDB aggregations across 6 bounded intents without fuzzy LLM hallucinations.
 
@@ -267,7 +277,7 @@ All 8 production screenshots are available at `/home/sam/code/dendro/site/assets
 | `hub-stack-xray-3d.png` | **1480 × 1520** | • **`⌘E` 3D Exploded Stack Mode**<br>• Causal Bezier correlation threads linking layers<br>• Multi-Dimensional Group-By Explorer<br>• Inspectable node attributes | **Feature Showcase #2 / Architecture Deep-Dive**<br>*"The 4-Layer Exploding Stack: Pull apart execution across all four architectural layers in flat or 3D isometric views to trace root causes in seconds."* |
 | `hub-capability-studio.png` | **1480 × 1680** | • **5-Layer Capability Matrix** badge<br>• **FUNNEL I06** badge (`harness.capability_funnel`)<br>• Fleet Execution Spectrum Bar<br>• 10 Behavioral Tool Families + `ToolArchetype` tiles<br>• Declared vs. Invoked vs. Dormant Skills | **Capability Section / Tool Execution Intelligence**<br>*"5-Layer Capability Matrix: Deconstruct fleet execution across all five capability layers to see which tools, skills, and MCP servers drive real outcomes."* |
 | `console-trajectory-vortex.png` | **1480 × 1520** | • **I22 Active Console** (`harness.trajectory_vortex`)<br>• Completed multi-turn trajectories analyzed<br>• Phase-space attractor turn-length & self-transition tracking<br>• Real-time loop tripwire defense | **Active Consoles Grid / Loop Defense**<br>*"Trajectory Vortex (`I22`): Catch runaway agent loops early before they burn budget."* |
-| `console-schema-drift.png` | **1480 × 1500** | • **I23 Active Console** (`harness.schema_drift`)<br>• Historical metadata cohort progression<br>• L1 distance banding across Claude, Codex, AGY, Grok, Pi<br>• Breaking structural mutation alerts | **Active Consoles Grid / Fleet Reliability**<br>*"Schema Drift (`I23`): Spot breaking tool and harness changes instantly across version updates."* |
+| `console-schema-drift.png` | **1480 × 1500** | • **I23 Active Console** (`harness.schema_drift`)<br>• Historical metadata cohort progression<br>• L1 distance banding across Claude Code, OpenAI Codex, Google Antigravity, Grok, and Pi<br>• Breaking structural mutation alerts | **Active Consoles Grid / Fleet Reliability**<br>*"Schema Drift (`I23`): Spot breaking tool and harness changes instantly across version updates."* |
 | `console-blast-radius.png` | **1480 × 1520** | • **I24 Active Console** (`security.authority_blast_radius`)<br>• Multi-hop lineage dependency trees walked<br>• Radial propagation ripple graph<br>• Evidenced credential reachability boundary | **Active Consoles Grid / Security & Sandboxing**<br>*"Authority Blast Radius (`I24`): Map security reachability and blast radius with verified evidence."* |
 | `console-counterfactual-routing.png` | **1480 × 1680** | • **I25 Active Console** (`model.counterfactual_routing`)<br>• Split-Beam Route Comparator<br>• Fast-tier simulation vs. observed baseline<br>• Safe context threshold explorer | **Active Consoles Grid / FinOps & Optimization**<br>*"Counterfactual Routing (`I25`): Test smarter model routing scenarios safely without touching live routers."* |
 | `console-token-economics.png` | **1480 × 1700** | • Multi-agent session telemetry<br>• 5-part token breakdown (input, cache write, cache read, output, reasoning)<br>• 96.9% cache read efficiency (ratio of sums)<br>• Multi-dimensional group-by pivots across actor, model, and task | **Operational Economics / FinOps Section**<br>*"Operational Economics: Honest 5-part token breakdown and 96.9% cache read yield across multi-agent workflows."* |
@@ -277,7 +287,7 @@ All 8 production screenshots are available at `/home/sam/code/dendro/site/assets
 - **Video & Motion:**
   - `site/assets/dendro-demo.mp4` & `docs/assets/dendro-demo.mp4` (Full interactive demo walkthrough)
   - `site/assets/dendro-preview.gif` & `docs/assets/dendro-preview.gif` (Quick animated preview loop)
-- **Documentation Guide:** `docs/VISUAL_PRODUCT_TOUR.md` (Detailed narrative guide)
+- **Documentation Guides:** [Visual Product Tour](docs/VISUAL_PRODUCT_TOUR.md) and [Studio Walkthrough](docs/VIDEO_WALKTHROUGH.md). Place the linked GIF/video at the start of the visual tour and high on the landing page. Use the current Connected Intelligence Studio recording; media production is owned separately from this handover.
 - **Shared Stylesheet:** `site/dashboards/style.css` (Canonical design tokens and dark mode styling)
 
 ### 5.3 Design System Palette & CSS Tokens
@@ -371,7 +381,11 @@ This section outlines the recommended architecture for a world-class revamp of `
   - `Launch Fleet Explorer →` (`viewer.html`)
   - `View Connected Dashboards` (`dashboards/index.html`)
   - `Quickstart Guide` (`#quickstart`)
-- **Supported Harnesses Pills:** Claude Code · OpenAI Codex · AGY / Antigravity · Grok CLI · Pi · OpenRig · AgentFlow.
+- **Coding Client Pills:** Claude Code · OpenAI Codex · Google Antigravity · Grok · Pi.
+- **Export Adapter Pills:** Cursor · Windsurf · Goose · Devin; link to verified format coverage.
+- **Fleet Orchestration Runtime Row:** OpenRig (built-in integration). Explain AgentFlow and Meshloop as other coordination runtimes with extension paths.
+- **Extensibility CTA:** Bring Your Own Stack; link to the extension guide, supported formats, and contributing guide.
+- **Walkthrough:** Put the [animated preview](docs/assets/dendro-preview.gif), linked to the [full video](docs/assets/dendro-demo.mp4) and [walkthrough](docs/VIDEO_WALKTHROUGH.md), before the screenshot stage.
 - **Hero Visual:** An **Interactive 8-Tab Screenshot Stage**. Visitors can click across 8 tabs (*Growth Rings*, *Stack X-Ray*, *Capability Studio*, *Trajectory Vortex*, *Schema Drift*, *Blast Radius*, *Counterfactual Routing*, *Token Economics*) to view full high-DPI screenshots paired with interactive callouts and live telemetry stats.
 
 #### Section 3: The Core Shift: "Activity is Easy to Fake. Flow Ships Software."
@@ -426,16 +440,9 @@ This section outlines the recommended architecture for a world-class revamp of `
 - **Disclaimer Callout:** *"All calculations represent operator-supplied assumptions. Dendro never uses hidden cloud averages, synthetic ROI formulas, or speculative productivity benchmarks."*
 
 #### Section 9: 60-Second Quickstart & Terminal Ecosystem
-- **One-Line Installation:**
-  ```bash
-  # Install via Cargo
-  cargo install dendro-cli
-  
-  # Or run immediately via local binary
-  dendro cockpit
-  ```
-- **The Ratatui Terminal Experience:** Screenshot/ASCII mockup of `dendro cockpit` in action inside a terminal.
-- **Trusted Local Daemon:** Explanation of `dendro serve 127.0.0.1:4242` loopback safety (refusing non-local binds) and `dendro ask` in-process semantic queries.
+- **Build and Open the Studio:** Follow the current [README quickstart](README.md#quickstart). Show the clone/build commands, `dendro run`, and `dendro dashboard --serve 127.0.0.1:4242 --site-dir ./site`. State that source build time depends on the machine.
+- **Terminal Alternative:** `dendro dashboard --auto-ingest` opens the cockpit; `dendro status` checks coverage and `dendro ask "where do tokens go?"` explores recorded work.
+- **Advanced Usage:** Link to the [Operator Guide](docs/adoption/README.md) and [CLI Reference](docs/CLI_R1.md) for source roots, storage, fixed windows, exports, and daemon setup.
 - **Footer:** GitHub link, MIT License notice, Move the Needle umbrella links, and software version `v0.8.0`.
 
 ---

@@ -2,6 +2,8 @@
 
 Read your fleet's history and turn it into better decisions with Dendro, the local-first AI Fleet Intelligence studio. Explore execution across models, harnesses, coordination, and environment—from the first signal to the evidence behind it.
 
+Your AI coding clients—**Claude Code, OpenAI Codex, Google Antigravity, Grok, and Pi**—leave local session history Dendro can read. Verified export adapters also support **Cursor, Windsurf, Goose, and Devin**. Fleet orchestration runtimes such as **OpenRig, AgentFlow, and Meshloop** coordinate teams and handoffs across those clients; OpenRig is the built-in runtime integration. The open, extensible architecture lets you bring another client, runtime, or capability mapper.
+
 **[Take the Visual Product Tour →](VISUAL_PRODUCT_TOUR.md)** · **[Start locally: 60-Second Quickstart →](../README.md#quickstart)**
 
 ## Discover & Experience Dendro
@@ -9,6 +11,7 @@ Read your fleet's history and turn it into better decisions with Dendro, the loc
 See the product in action and understand the ideas behind it.
 
 - [Visual Product Tour](VISUAL_PRODUCT_TOUR.md) — Explore the studio, from Living Growth Rings to focused intelligence consoles.
+- [Connected Studio Walkthrough](VIDEO_WALKTHROUGH.md) — Watch the [animated preview](assets/dendro-preview.gif) or [full video](assets/dendro-demo.mp4).
 - [Capabilities & Intelligence Layers](capabilities.md) — Find the tools for your next fleet decision.
 - [Product Philosophy & Narrative](storytelling.md) — How Dendro turns fleet telemetry into a story you can act on.
 
@@ -34,8 +37,10 @@ Understand how the evidence is collected, organized, and explained.
 
 ## Extend & Contribute
 
-Connect another harness or help improve Dendro.
+Bring your own stack or help improve Dendro.
 
-- [Custom Harness Connector SDK](extensions/README.md) — Build a connector for your execution records.
+- [Bring Your Own Client or Runtime](extensions/README.md) — Connect execution records or extend capability mappings.
+- [Supported Export Formats](extensions/formats.md) — Verify schema support and coverage for Cursor, Windsurf, Goose, and Devin exports.
+- [Contributing Guide](../CONTRIBUTING.md) — Help add the next component.
 - [Maintainer Guide](maintainers/README.md) — Navigate the Rust workspace and quality checks.
 - [Release Notes (`v0.8.0`)](RELEASE_NOTES_v0.8.0.md) — See what's new in the connected studio.

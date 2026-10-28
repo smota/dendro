@@ -313,12 +313,13 @@ fn cutoff_is_the_last_complete_line_and_manifest_contains_no_content_or_paths() 
     }
     assert!(!encoded.contains(&directory.to_string_lossy().to_string()));
     let entry = serde_json::to_value(&manifest.files[0]).unwrap();
-    let fields: Vec<_> = entry
+    let mut fields: Vec<_> = entry
         .as_object()
         .unwrap()
         .keys()
         .map(String::as_str)
         .collect();
+    fields.sort();
     assert_eq!(
         fields,
         ["byte_length", "harness", "prefix_sha256", "source_id"]

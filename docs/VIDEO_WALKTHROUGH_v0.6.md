@@ -1,7 +1,10 @@
 # Dendro v0.6.0 — Real Operation & Usage Video Script
 
-**Video Asset:** [`docs/assets/dendro-demo.mp4`](assets/dendro-demo.mp4)  
-**Animated Preview:** [`docs/assets/dendro-preview.gif`](assets/dendro-preview.gif)  
+> [!NOTE]
+> **Modern UI Walkthrough Available**: This document records the historical v0.6.0 terminal explorer walkthrough. For the modern, production **Connected Intelligence Studio** walkthrough (Apple-grade web UI, 4-Layer Exploding Stack X-Ray, 5-Layer Capability Studio, and 5 Active Intelligence Consoles), see [**`docs/VIDEO_WALKTHROUGH.md`**](VIDEO_WALKTHROUGH.md).
+
+**Video Asset:** [`docs/assets/dendro-demo.mp4`](assets/dendro-demo.mp4) (historical v0.6.0 archive)  
+**Animated Preview:** [`docs/assets/dendro-preview.gif`](assets/dendro-preview.gif) (historical v0.6.0 archive)  
 **Recorded Binary:** `dendro 0.6.0` (`./target/release/dendro`)  
 **Resolution / Duration:** `1920x1080` @ `12 fps` (`41.0s` H.264 MP4 + `960x540` optimized palette GIF)
 

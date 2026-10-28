@@ -1,8 +1,14 @@
 # Dendro Visual Product Tour
 
-**Your fleet has a history. Now you can read it.** Dendro brings execution records from Claude Code, Codex, AGY, Grok, Pi, and OpenRig into one local studio. See where time and tokens went, which capabilities ran, and where work lost momentum.
+**Your fleet has a history. Now you can read it.** Dendro brings local session history from AI coding clients **Claude Code, OpenAI Codex, Google Antigravity, Grok, and Pi** into one studio, with verified export adapters for **Cursor, Windsurf, Goose, and Devin**. See where time and tokens went, which capabilities ran, and where work lost momentum.
+
+Fleet orchestration runtimes such as **OpenRig, AgentFlow, and Meshloop** coordinate teams and handoffs across those clients. OpenRig is supported out of the box; you can [bring another client, runtime, or capability mapper](extensions/README.md) through Dendro's open extension contracts. Check the [supported export formats](extensions/formats.md) for verified adapter coverage or the [Contributing Guide](../CONTRIBUTING.md) to help extend it.
 
 [Documentation Hub](README.md) · [60-Second Quickstart](../README.md#quickstart) · [Capabilities](capabilities.md)
+
+[![Watch the Connected Intelligence Studio walkthrough](assets/dendro-preview.gif)](assets/dendro-demo.mp4)
+
+[Watch the full video](assets/dendro-demo.mp4) · [Follow the walkthrough](VIDEO_WALKTHROUGH.md)
 
 Open the connected studio after ingesting your local sources:
 
@@ -43,7 +49,7 @@ Visit `http://127.0.0.1:4242` to explore your fleet.
     <td width="50%" valign="top">
       <img src="assets/screenshots/console-schema-drift.png" alt="I23 · Schema Drift console" width="600" />
       <p><strong>I23 · Schema Drift: Spot structural shifts after an upgrade.</strong></p>
-      <p>Compare telemetry shapes across Claude Code, Codex, AGY, Grok, and Pi to identify the connector or version that needs attention.</p>
+      <p>Compare telemetry shapes across Claude Code, OpenAI Codex, Google Antigravity, Grok, and Pi to identify the connector or version that needs attention.</p>
     </td>
   </tr>
   <tr>
