@@ -192,4 +192,48 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
   });
+
+  // 6. Copy-to-Clipboard Buttons for CLI Install Commands
+  const copyButtons = Array.from(document.querySelectorAll('[data-copy-text]'));
+  function copyTextToClipboard(text) {
+    if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      return navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+    }
+    return Promise.resolve(fallbackCopy(text));
+  }
+  function fallbackCopy(text) {
+    if (typeof document === 'undefined' || !document.body) return false;
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch (_) {}
+    document.body.removeChild(ta);
+    return true;
+  }
+  copyButtons.forEach(btn => {
+    const labelEl = btn.querySelector('.d-copy-label');
+    const origLabel = labelEl ? labelEl.textContent : 'Copy';
+    const svgEl = btn.querySelector('svg');
+    const origSvg = svgEl ? svgEl.innerHTML : '';
+    let resetTimer = null;
+    btn.addEventListener('click', () => {
+      const text = btn.getAttribute('data-copy-text') || '';
+      if (!text) return;
+      copyTextToClipboard(text).then(() => {
+        btn.classList.add('is-copied');
+        if (labelEl) labelEl.textContent = 'Copied!';
+        if (svgEl) svgEl.innerHTML = '<polyline points="20 6 9 17 4 12"/>';
+        if (resetTimer) clearTimeout(resetTimer);
+        resetTimer = setTimeout(() => {
+          btn.classList.remove('is-copied');
+          if (labelEl) labelEl.textContent = origLabel;
+          if (svgEl && origSvg) svgEl.innerHTML = origSvg;
+        }, 2000);
+      });
+    });
+  });
 });

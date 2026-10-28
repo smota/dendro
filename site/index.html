@@ -23,7 +23,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="../assets/img/move-the-needle-icon-32.png">
   <link rel="apple-touch-icon" href="../assets/img/move-the-needle-icon-180.png">
   <link rel="stylesheet" href="../assets/css/product.css">
-  <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Dendro","applicationCategory":"DeveloperApplication","operatingSystem":"Linux, macOS, Windows","license":"https://fsl.software/","url":"https://movetheneedle.info/dendro/","codeRepository":"https://github.com/smota/dendro","author":{"@type":"Person","name":"Samuel Mota","url":"https://movetheneedle.info/about/"},"description":"The Local-First Flight Recorder, Causal X-Ray & Operational Intelligence Studio for AI Coding Agents."}</script>
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Dendro","applicationCategory":"DeveloperApplication","operatingSystem":"Linux, macOS, Windows","license":"https://github.com/smota/dendro/blob/main/LICENSE","url":"https://movetheneedle.info/dendro/","codeRepository":"https://github.com/smota/dendro","author":{"@type":"Person","name":"Samuel Mota","url":"https://movetheneedle.info/about/"},"description":"The Local-First Flight Recorder, Causal X-Ray & Operational Intelligence Studio for AI Coding Agents."}</script>
   <style>
     :root {
       color-scheme: dark;
@@ -264,7 +264,7 @@
       display: inline-flex;
       align-items: center;
       gap: 0.65rem;
-      padding: 0.55rem 0.95rem;
+      padding: 0.45rem 0.6rem 0.45rem 0.95rem;
       background: var(--bg-surface);
       border: 1px solid var(--border-highlight);
       border-radius: 10px;
@@ -272,7 +272,63 @@
       font-size: 0.84rem;
       color: var(--text-primary);
     }
-    .d-cli-inline span { color: var(--layer-model); }
+    .d-cli-inline > span { color: var(--layer-model); }
+    .d-copy-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.3rem 0.55rem;
+      border-radius: 7px;
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-obsidian);
+      color: var(--text-secondary);
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.16s ease;
+    }
+    .d-copy-btn:hover {
+      border-color: var(--layer-harness);
+      color: var(--text-primary);
+      background: var(--bg-surface-elevated);
+    }
+    .d-copy-btn.is-copied {
+      border-color: var(--layer-coord);
+      color: #6EE7B7;
+      background: rgba(16, 185, 129, 0.14);
+    }
+    .d-copy-btn svg {
+      width: 14px;
+      height: 14px;
+      flex-shrink: 0;
+    }
+    .d-explorer-links {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.6rem;
+      margin: -0.5rem 0 1.35rem;
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+      color: var(--text-secondary);
+    }
+    .d-explorer-links a {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.3rem 0.7rem;
+      border-radius: 8px;
+      background: rgba(22, 28, 39, 0.85);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-primary);
+      text-decoration: none;
+      transition: border-color 0.16s ease, color 0.16s ease;
+    }
+    .d-explorer-links a:hover {
+      border-color: var(--layer-harness);
+      color: #67E8F9;
+    }
     .d-harness-row {
       display: flex;
       flex-wrap: wrap;
@@ -857,7 +913,7 @@
     <section class="d-hero" id="overview">
       <div class="d-wrap">
         <div class="d-hero-top">
-          <div class="d-eyebrow">The Local-First Flight Recorder &amp; Operational Intelligence Studio · FSL-1.1-Apache-2.0</div>
+          <div class="d-eyebrow">The Local-First Flight Recorder &amp; Operational Intelligence Studio · Source-Available (FSL-1.1-Apache-2.0)</div>
           <h1>See why your AI agents succeed, stall, or burn budget.</h1>
           <p class="d-hero-subtitle">The Local-First Flight Recorder, Causal X-Ray &amp; Operational Intelligence Studio for AI Coding Workflows.</p>
           <p class="d-hero-lead">Six open agent terminals look productive—even when four are waiting on a handoff and two are trapped in a ping-pong rework loop. Written in Rust and powered by an embedded columnar DuckDB engine, <strong>Dendro</strong> reconstructs existing local session logs out-of-band into an instrument-grade causal X-ray across sessions, actors, harnesses, and tools—with zero prompts, zero secrets, and zero cloud exfiltration.</p>
@@ -867,8 +923,20 @@
             <a class="d-btn cyan" href="viewer.html">Open Offline Fleet Viewer →</a>
             <div class="d-cli-inline" aria-label="Quick install command">
               <span>$</span>
-              <code>cargo install --git https://github.com/smota/dendro.git dendro-cli</code>
+              <code id="hero-install-cmd">cargo install --git https://github.com/smota/dendro.git dendro-cli</code>
+              <button type="button" id="hero-copy-btn" class="d-copy-btn" data-copy-text="cargo install --git https://github.com/smota/dendro.git dendro-cli" aria-label="Copy install command to clipboard" title="Copy install command">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                <span class="d-copy-label">Copy</span>
+              </button>
             </div>
+          </div>
+
+          <div class="d-explorer-links" aria-label="Offline Fleet Explorer demo dataset and JSON format documentation">
+            <span style="color:var(--layer-model);font-weight:700;">Offline Fleet Explorer Resources:</span>
+            <a href="viewer.html">⚡ Load Interactive Demo in Explorer →</a>
+            <a href="https://github.com/smota/dendro/blob/main/docs/assets/fleet-explorer-demo.json" target="_blank" rel="noopener">📄 Example Demo JSON (GitHub) ↗</a>
+            <a href="fixtures/fleet-explorer-demo.json" download="fleet-explorer-demo.json">⬇ Download Demo JSON</a>
+            <a href="https://github.com/smota/dendro/blob/main/docs/OFFLINE_FLEET_EXPLORER_FORMAT.md" target="_blank" rel="noopener">📐 Fleet Explorer Format Spec ↗</a>
           </div>
 
           <div class="d-harness-row" aria-label="Supported native coding harnesses and optional orchestration adapters">
@@ -1205,7 +1273,7 @@
                 <td><strong>7. Cost &amp; Licensing</strong></td>
                 <td>$500–$3,000/mo per-user cloud SaaS subscriptions plus per-trace ingestion fees.</td>
                 <td>Free license, but high recurring engineering toil.</td>
-                <td class="d-col-dendro"><strong>100% Free for Internal Use (FSL-1.1-Apache-2.0).</strong> Runs on your own hardware forever.</td>
+                <td class="d-col-dendro"><strong>Free for Internal &amp; Team Use (FSL-1.1-Apache-2.0) — converts to Apache-2.0 after 2 years.</strong> Runs on your own hardware forever.</td>
               </tr>
             </tbody>
           </table>
@@ -1930,7 +1998,13 @@
 
         <div class="d-grid-2" style="margin-bottom:2rem;">
           <article class="d-card">
-            <span class="d-kicker" style="color:var(--layer-model);">60-Second CLI &amp; Connected Studio Quickstart</span>
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
+              <span class="d-kicker" style="color:var(--layer-model);">60-Second CLI &amp; Connected Studio Quickstart</span>
+              <button type="button" class="d-copy-btn" data-copy-text="cargo install --git https://github.com/smota/dendro.git dendro-cli" aria-label="Copy cargo install command" title="Copy cargo install command">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                <span class="d-copy-label">Copy cargo install</span>
+              </button>
+            </div>
             <h3>Install &amp; Launch the 6-Screen Ratatui TUI or Web Studio</h3>
             <pre style="background:var(--bg-obsidian);border:1px solid var(--border-subtle);padding:1rem;border-radius:10px;overflow-x:auto;font-size:0.84rem;color:var(--text-primary);"><code># Path A: Install via Cargo (dendro on PATH)
 cargo install --git https://github.com/smota/dendro.git dendro-cli
@@ -1954,6 +2028,11 @@ dendro ask "which handoff pairs had the highest return rate this week?"</code></
               <a class="d-btn primary" href="dashboards/index.html">Open Connected Intelligence Hub →</a>
               <a class="d-btn" href="viewer.html">Open Offline Fleet Explorer →</a>
               <a class="d-btn" href="get-started.html">Full Installation Guide →</a>
+            </div>
+            <div class="d-explorer-links" style="margin:0.5rem 0 0;">
+              <a href="https://github.com/smota/dendro/blob/main/docs/assets/fleet-explorer-demo.json" target="_blank" rel="noopener">📄 Example Demo JSON (GitHub) ↗</a>
+              <a href="fixtures/fleet-explorer-demo.json" download="fleet-explorer-demo.json">⬇ Local Demo JSON</a>
+              <a href="https://github.com/smota/dendro/blob/main/docs/OFFLINE_FLEET_EXPLORER_FORMAT.md" target="_blank" rel="noopener">📐 Offline Fleet Explorer Format Spec ↗</a>
             </div>
           </article>
 
@@ -2059,7 +2138,7 @@ dendro ask "which handoff pairs had the highest return rate this week?"</code></
 <div class="mtn-context-inner">
 <p class="mtn-context-eyebrow">Built by Samuel Mota · Move the Needle</p>
 <h2 id="mtn-context-dendro">Why Dendro exists</h2>
-<p class="mtn-context-status">FSL-1.1-Apache-2.0</p>
+<p class="mtn-context-status">Open source · FSL-1.1-Apache-2.0</p>
 <div class="mtn-context-grid">
 <article><h3>Value</h3><p>See where time, handoffs, rework, capabilities, and token budget actually go across your multi-agent AI coding sessions—using verifiable local DuckDB evidence instead of vanity productivity claims.</p></article>
 <article><h3>Strategy</h3><p>Six open terminals look busy even when four agents are stalled on a handoff and two are looping. Dendro turns raw local session history into a 4-layer causal X-ray of where time, handoffs, and budget actually go.</p></article>
@@ -2077,7 +2156,7 @@ dendro ask "which handoff pairs had the highest return rate this week?"</code></
 
   <footer class="p-footer" style="background:var(--bg-obsidian);border-top:1px solid var(--border-subtle);">
     <div class="d-wrap p-footer-inner">
-      <div><strong>Dendro</strong> · FSL-1.1-Apache-2.0 · Built by Samuel Mota (<a href="../">Move the Needle</a>)</div>
+      <div><strong>Dendro</strong> · FSL-1.1-Apache-2.0 License · Built by Samuel Mota (<a href="../">Move the Needle</a>)</div>
       <div class="p-footer-links">
         <a href="./" aria-current="page">Overview</a>
         <a href="how-it-works.html">How It Works</a>
