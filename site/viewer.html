@@ -1,11 +1,145 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dendro · Fleet explorer</title>
 <style>
-:root{color-scheme:dark;--bg-obsidian:#0A0D12;--bg-surface:#11161F;font:15px/1.5 system-ui,sans-serif;color:#e2e8f0;background:var(--bg-obsidian)}*{box-sizing:border-box}body{margin:0;padding:24px}main{max-width:1100px;margin:auto}h1{font-size:1.7rem;margin:0}h2{font-size:1.1rem;margin:24px 0 10px}p{color:#aab8ca}button,.upload,select{font:inherit;color:inherit;background:#142236;border:1px solid #37516a;padding:9px 14px;border-radius:7px;cursor:pointer}button:hover,.upload:hover{border-color:#06b6d4}button:focus-visible,.upload:focus-within,select:focus-visible{outline:3px solid #06b6d4;outline-offset:3px}.toolbar,.tabs{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0}.upload input{max-width:220px}button[aria-selected=true]{background:#10b981;color:#041018;border-color:#10b981}.badge{color:#fbbf24;font-weight:700}.state{font-weight:700;border:1px solid #37516a;border-radius:999px;padding:2px 8px}.state.computed{color:#34d399}.state.partial{color:#fbbf24}.state.refused{color:#fb7185}.state.unknown{color:#94a3b8}.state.domain{color:#67e8f9;margin-left:8px;text-transform:lowercase}.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:12px}.metric,article{background:var(--bg-surface);border:1px solid #25364c;border-radius:9px;padding:16px}.metric strong{display:block;color:#5eead4;font-size:1.65rem}.metric span{color:#aab8ca;font-size:.85rem}.scroll{overflow:auto;max-width:100%}svg{width:100%;min-width:600px;display:block}svg text{fill:#d7e2ee;font-size:14px}path.flow{fill:none;stroke:#06b6d4;opacity:.65}path.return{stroke:#fbbf24;stroke-dasharray:8 6;animation:drift 2s linear infinite}path.flow:focus{outline:3px solid #fbbf24;outline-offset:4px;stroke:#fff}table{width:100%;border-collapse:collapse;font-size:.9rem}td,th{text-align:left;border-bottom:1px solid #25364c;padding:9px}th{color:#91b5c9}code{overflow-wrap:anywhere}.empty{color:#cbd5e1;border:1px dashed #536277;padding:15px}.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:.85rem}.legend span:before{content:'●';margin-right:6px;color:var(--tone)}.bar{height:26px;display:flex;min-width:0;border:1px solid #536277;margin:8px 0}.bar span{min-width:0;overflow:hidden;background:var(--tone);color:#07111c;text-align:center;font-size:12px}.note{font-size:.85rem}details{margin:20px 0}summary{cursor:pointer;color:#67e8f9}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.8rem}#status{min-height:1.5em}#inspection{border-left:3px solid #06b6d4;padding-left:14px}.lane-label{font-size:12px}.hold{background:repeating-linear-gradient(45deg,#27374b,#27374b 4px,#9ca3af 4px,#9ca3af 6px)!important;color:white!important} [hidden]{display:none!important}@keyframes drift{to{stroke-dashoffset:-28}}@media(prefers-reduced-motion:reduce){*{animation:none!important}}@media(max-width:650px){body{padding:14px}.metrics{grid-template-columns:repeat(2,1fr)}h1{font-size:1.4rem}.upload input{max-width:170px}.metric{padding:10px}.metric strong{font-size:1.35rem}}
-</style></head><body><main>
-<h1>Read your agentic stack across Model, Harness, Coordination &amp; Lineage, and Environment &amp; Security layers</h1>
-<p>Actors, sessions, work lineage, model accounting, and security posture. Everything runs locally in this file.</p>
-<div class="toolbar"><span id="dual-serving-indicator" class="dual-serving-badge snapshot"><span id="dual-serving-text">ILLUSTRATIVE SNAPSHOT</span></span><label class="upload">Open report / trace JSON <input id="file" type="file" accept=".json,application/json"></label><button id="demo" type="button">Load synthetic demo</button><button id="load-full-demo" type="button">Load 6-actor fleet demo (JSON)</button><a class="upload" href="fixtures/fleet-explorer-demo.json" download="fleet-explorer-demo.json" style="text-decoration:none">Download demo JSON</a><a class="upload" href="https://github.com/smota/dendro/blob/main/docs/assets/fleet-explorer-demo.json" target="_blank" rel="noopener" style="text-decoration:none">Example JSON (GitHub) ↗</a><a class="upload" href="https://github.com/smota/dendro/blob/main/docs/OFFLINE_FLEET_EXPLORER_FORMAT.md" target="_blank" rel="noopener" style="text-decoration:none">Format Spec ↗</a></div>
+:root{color-scheme:dark;--bg-obsidian:#0A0D12;--bg-surface:#11161F;--bg-elevated:#161C27;--border-subtle:#1F2735;--border-highlight:#2A3649;--text-primary:#F3EDE2;--text-secondary:#9BA3AF;--text-muted:#64748B;--layer-model:#F2A541;--layer-harness:#06B6D4;--layer-coord:#10B981;--layer-env:#8B5CF6;--font-mono:'JetBrains Mono','Fira Code',ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font:15px/1.55 'Inter',system-ui,-apple-system,sans-serif;color:var(--text-primary);background:var(--bg-obsidian)}
+*{box-sizing:border-box}
+body{margin:0;padding:0;background:radial-gradient(900px 420px at 15% 0%,rgba(242,165,65,.09),transparent 65%),radial-gradient(850px 420px at 85% 5%,rgba(6,182,212,.09),transparent 65%),var(--bg-obsidian)}
+.v-topbar{position:sticky;top:0;z-index:40;background:rgba(10,13,18,.88);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid var(--border-subtle)}
+.v-topbar-inner{max-width:1180px;margin:0 auto;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.v-brand{display:inline-flex;align-items:center;gap:11px;text-decoration:none;color:var(--text-primary)}
+.v-brand img{width:32px;height:32px;border-radius:7px}
+.v-brand-text{display:flex;flex-direction:column;line-height:1.15}
+.v-brand-title{font-weight:800;font-size:1.08rem;color:var(--text-primary)}
+.v-brand-tagline{font-size:.68rem;font-weight:500;color:var(--text-secondary);letter-spacing:.01em;margin-top:2px}
+.v-nav{display:flex;align-items:center;gap:18px;flex-wrap:wrap;font-size:.88rem}
+.v-nav a{color:var(--text-secondary);text-decoration:none;font-weight:600;transition:color .15s ease}
+.v-nav a:hover,.v-nav a[aria-current="page"]{color:var(--text-primary)}
+.dual-serving-badge{display:inline-flex;align-items:center;gap:7px;font-family:var(--font-mono);font-size:.7rem;font-weight:700;letter-spacing:.05em;padding:5px 11px;border-radius:999px;background:var(--bg-surface);border:1px solid var(--border-highlight);color:var(--layer-coord)}
+.status-dot{width:7px;height:7px;border-radius:50%;background:var(--layer-coord);box-shadow:0 0 8px var(--layer-coord)}
+main{max-width:1180px;margin:0 auto;padding:32px 24px 56px}
+.v-hero-head{max-width:920px;margin-bottom:22px}
+.v-eyebrow{font-family:var(--font-mono);font-size:.74rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--layer-model);margin-bottom:6px}
+h1{font-size:clamp(1.65rem,2.8vw,2.35rem);line-height:1.16;letter-spacing:-.02em;margin:0 0 8px;color:var(--text-primary)}
+h2{font-size:1.15rem;margin:28px 0 10px;color:var(--text-primary)}
+h3{font-size:1rem;margin:18px 0 8px;color:var(--text-primary)}
+p{color:var(--text-secondary);margin:0 0 12px}
+button,.upload,select{font:inherit;color:var(--text-primary);background:var(--bg-elevated);border:1px solid var(--border-highlight);padding:9px 15px;border-radius:9px;cursor:pointer;font-weight:600;font-size:.88rem;transition:all .15s ease;display:inline-flex;align-items:center;gap:7px}
+button:hover,.upload:hover,select:hover{border-color:var(--layer-harness);background:#1C2433}
+button:focus-visible,.upload:focus-within,select:focus-visible{outline:2px solid var(--layer-harness);outline-offset:2px}
+.upload{position:relative;cursor:pointer;user-select:none}
+.upload input[type="file"]{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;clip:rect(0,0,0,0)}
+.btn-emerald{background:rgba(16,185,129,.15);border-color:rgba(16,185,129,.45);color:#6EE7B7}
+.btn-emerald:hover{background:rgba(16,185,129,.24);border-color:var(--layer-coord);color:#A7F3D0}
+.btn-cyan{background:rgba(6,182,212,.15);border-color:rgba(6,182,212,.45);color:#67E8F9}
+.btn-cyan:hover{background:rgba(6,182,212,.24);border-color:var(--layer-harness);color:#A5F3FC}
+.btn-subtle{background:var(--bg-obsidian);border-color:var(--border-subtle);color:var(--text-secondary);font-size:.82rem;padding:8px 12px}
+.toolbar{display:grid;grid-template-columns:1.25fr 1fr;gap:16px;margin:18px 0 14px}
+.source-group{background:var(--bg-surface);border:1px solid var(--border-highlight);border-radius:14px;padding:16px 18px;display:flex;flex-direction:column;gap:10px;box-shadow:0 12px 28px rgba(0,0,0,.35)}
+.step-kicker{font-family:var(--font-mono);font-size:.7rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--layer-coord)}
+.step-kicker.cyan{color:var(--layer-harness)}
+.source-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.source-links{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-family:var(--font-mono);font-size:.75rem;color:var(--text-muted);margin-top:2px}
+.source-links a{color:var(--text-secondary);text-decoration:none;border-bottom:1px dotted var(--border-highlight);padding-bottom:1px}
+.source-links a:hover{color:#67E8F9;border-bottom-color:#67E8F9}
+.source-note{font-size:.8rem;color:var(--text-secondary);margin:0}
+.source-note code{font-family:var(--font-mono);font-size:.76rem;background:var(--bg-obsidian);padding:2px 6px;border-radius:5px;border:1px solid var(--border-subtle);color:var(--layer-model)}
+#status{min-height:2.4em;margin:0 0 18px;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.28);border-radius:10px;padding:10px 14px;color:var(--text-primary);font-family:var(--font-mono);font-size:.81rem;display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+#status::before{content:"ACTIVE DATASET · STEP 2: SELECT A TAB BELOW →";font-weight:800;color:var(--layer-coord);margin-right:6px;letter-spacing:.03em}
+#status.badge{border-color:rgba(242,165,65,.38);background:rgba(242,165,65,.08);color:#FDE68A;font-weight:600}
+#status.badge::before{color:var(--layer-model)}
+.tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:0 0 22px;padding:6px;background:var(--bg-surface);border:1px solid var(--border-highlight);border-radius:12px}
+.tabs button{justify-content:center;background:transparent;border:1px solid transparent;border-radius:8px;padding:10px 12px;color:var(--text-secondary);font-size:.86rem;font-weight:600}
+.tabs button:hover{color:var(--text-primary);background:rgba(255,255,255,.03)}
+.tabs button[aria-selected=true]{border-color:var(--layer-harness);background:rgba(6,182,212,.14);color:#fff;box-shadow:0 4px 14px rgba(6,182,212,.15)}
+.state{font-family:var(--font-mono);font-size:.74rem;font-weight:700;border:1px solid var(--border-highlight);border-radius:999px;padding:2px 9px}
+.state.computed{color:#34d399;border-color:rgba(52,211,153,.35);background:rgba(16,185,129,.1)}
+.state.partial{color:#fbbf24;border-color:rgba(251,191,36,.35);background:rgba(245,158,11,.1)}
+.state.refused{color:#fb7185;border-color:rgba(251,113,133,.35);background:rgba(244,63,94,.1)}
+.state.unknown{color:#94a3b8}
+.state.domain{color:#67e8f9;margin-left:8px;text-transform:lowercase;border-color:rgba(6,182,212,.3);background:rgba(6,182,212,.1)}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:12px;margin-bottom:8px}
+.metric,article{background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:12px;padding:16px;margin-bottom:10px}
+.metric strong{display:block;color:#5eead4;font-family:var(--font-mono);font-size:1.55rem;margin-bottom:2px}
+.metric span{color:var(--text-secondary);font-size:.82rem}
+#insight-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+#insight-list article{margin-bottom:0}
+.scroll{overflow:auto;max-width:100%;background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:12px;padding:14px}
+svg{width:100%;min-width:600px;display:block}
+svg text{fill:#d7e2ee;font-size:13px;font-family:var(--font-mono)}
+path.flow{fill:none;stroke:#06b6d4;opacity:.65;cursor:pointer}
+path.return{stroke:#fbbf24;stroke-dasharray:8 6;animation:drift 2s linear infinite}
+path.flow:focus{outline:3px solid #fbbf24;outline-offset:4px;stroke:#fff}
+table{width:100%;border-collapse:collapse;font-size:.86rem;background:var(--bg-surface);border-radius:10px;overflow:hidden}
+td,th{text-align:left;border-bottom:1px solid var(--border-subtle);padding:9px 11px}
+th{color:#91b5c9;font-family:var(--font-mono);font-size:.76rem;text-transform:uppercase;letter-spacing:.04em;background:rgba(22,28,39,.7)}
+code{font-family:var(--font-mono);overflow-wrap:anywhere}
+.empty{color:#cbd5e1;border:1px dashed var(--border-highlight);border-radius:10px;padding:15px;background:rgba(17,22,31,.5)}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:.85rem}
+.legend span:before{content:'●';margin-right:6px;color:var(--tone)}
+.bar{height:26px;display:flex;min-width:0;border:1px solid var(--border-highlight);border-radius:6px;overflow:hidden;margin:8px 0}
+.bar span{min-width:0;overflow:hidden;background:var(--tone);color:#07111c;text-align:center;font-size:11.5px;font-weight:700;line-height:26px}
+.note{font-size:.84rem;color:var(--text-secondary)}
+details{margin:28px 0 0;background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:12px;padding:14px 18px}
+summary{cursor:pointer;color:#67e8f9;font-weight:700;font-size:.9rem}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.8rem}
+#inspection{background:var(--bg-surface);border:1px solid var(--border-subtle);border-left:3px solid #06b6d4;border-radius:10px;padding:14px 18px;margin-top:12px}
+.lane-label{font-size:12px}
+.hold{background:repeating-linear-gradient(45deg,#27374b,#27374b 4px,#9ca3af 4px,#9ca3af 6px)!important;color:white!important}
+[hidden]{display:none!important}
+@keyframes drift{to{stroke-dashoffset:-28}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important}}
+@media(max-width:860px){.toolbar{grid-template-columns:1fr}.tabs{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:650px){main{padding:20px 14px}.metrics{grid-template-columns:repeat(2,1fr)}.tabs{grid-template-columns:1fr}h1{font-size:1.4rem}.metric{padding:10px}.metric strong{font-size:1.3rem}}
+</style></head><body>
+<header class="v-topbar">
+  <div class="v-topbar-inner">
+    <a href="./" class="v-brand" aria-label="Dendro Home">
+      <img src="assets/mark.svg" alt="Dendro Logo" width="32" height="32">
+      <span class="v-brand-text">
+        <span class="v-brand-title">Dendro</span>
+        <small class="v-brand-tagline">The Local-First Flight Recorder</small>
+      </span>
+    </a>
+    <nav class="v-nav" aria-label="Dendro primary navigation">
+      <a href="./">Overview</a>
+      <a href="how-it-works.html">How It Works</a>
+      <a href="get-started.html">Get Started</a>
+      <a href="dashboards/index.html">Dashboards</a>
+      <a href="viewer.html" aria-current="page">Fleet Explorer</a>
+      <a href="https://github.com/smota/dendro">GitHub ↗</a>
+    </nav>
+    <span id="dual-serving-indicator" class="dual-serving-badge snapshot" title="Data source mode"><span class="status-dot" aria-hidden="true"></span><span id="dual-serving-text">ILLUSTRATIVE SNAPSHOT</span></span>
+  </div>
+</header>
+<main>
+<div class="v-hero-head">
+  <div class="v-eyebrow">Offline Fleet Explorer · Zero Cloud Exfiltration · Local Browser Projections</div>
+  <h1>Read your agentic stack across Model, Harness, Coordination &amp; Lineage, and Environment &amp; Security layers</h1>
+  <p>Actors, sessions, work lineage, model accounting, and security posture. Everything runs locally in this file.</p>
+</div>
+<div class="toolbar" role="region" aria-label="Step 1: Choose a fleet dataset">
+  <div class="source-group">
+    <span class="step-kicker">STEP 1A · TRY A SAMPLE RUN</span>
+    <div class="source-actions">
+      <button id="load-full-demo" class="btn-emerald" type="button">⚡ Load 24h 6-Actor Sprint Demo</button>
+      <button id="demo" class="btn-subtle" type="button">Reset to Baseline Snapshot</button>
+    </div>
+    <div class="source-links">
+      <a href="https://github.com/smota/dendro/blob/main/docs/assets/fleet-explorer-demo.json" target="_blank" rel="noopener">Example JSON on GitHub ↗</a>
+      <span>·</span>
+      <a href="fixtures/fleet-explorer-demo.json" download="fleet-explorer-demo.json">Download .json</a>
+      <span>·</span>
+      <a href="https://github.com/smota/dendro/blob/main/docs/OFFLINE_FLEET_EXPLORER_FORMAT.md" target="_blank" rel="noopener">Format Spec ↗</a>
+    </div>
+  </div>
+  <div class="source-group">
+    <span class="step-kicker cyan">STEP 1B · LOAD YOUR OWN EXPORT</span>
+    <div class="source-actions">
+      <label class="upload btn-cyan">📂 Choose Local JSON Report… <input id="file" type="file" accept=".json,application/json"></label>
+    </div>
+    <p class="source-note">Run <code>dendro report --json &gt; run.json</code> locally — 100% offline in your browser.</p>
+  </div>
+</div>
 <p id="status" role="status" aria-live="polite"></p>
 <div class="tabs" role="tablist" aria-label="Exploration layers"><button role="tab" id="tab-pulse" aria-controls="pulse" aria-selected="true" tabindex="0">1 · Actor &amp; session pulse</button><button role="tab" id="tab-flow" aria-controls="flow" aria-selected="false" tabindex="-1">2 · Work lineage &amp; model accounting</button><button role="tab" id="tab-trace" aria-controls="trace" aria-selected="false" tabindex="-1">3 · Actor evidence</button><button role="tab" id="tab-insights" aria-controls="insights" aria-selected="false" tabindex="-1">4 · Layer insights</button></div>
 <section id="pulse" role="tabpanel" aria-labelledby="tab-pulse"><div id="metrics" class="metrics"></div><h2>Actor activity bands</h2><p class="note">Aggregate durations across the observation window. Hatched container holds are a subset of idle-with-work, never counted twice. These totals do not identify when a hold occurred.</p><div id="bands"></div><h2>Session activity timeline</h2><p class="note">State transitions on a shared time axis. Running is activity evidence, not proof of leaf execution or a tool category. Thin hatched/amber strips use source-backed classified idle intervals when present, never aggregate totals. Unknown remains unknown; no state is carried across an unobserved life. Context-drop markers require recorded timestamps; absent markers do not establish that no drops occurred.</p><div id="timeline" class="scroll" tabindex="0"></div><h2>Observed concurrency</h2><p class="note">Time at k active actors, aggregated across the window; this is not a time-ordered ribbon.</p><div id="concurrency"></div></section>
