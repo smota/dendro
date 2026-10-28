@@ -49,6 +49,20 @@ impl TestDir {
     fn path(&self) -> &Path {
         &self.0
     }
+
+    fn socket_path(&self) -> PathBuf {
+        #[cfg(windows)]
+        {
+            PathBuf::from(format!(
+                r"\\.\pipe\LOCAL\dendro-test-{}",
+                self.path().file_name().unwrap().to_string_lossy()
+            ))
+        }
+        #[cfg(not(windows))]
+        {
+            self.path().join("dendro.sock")
+        }
+    }
 }
 
 impl Drop for TestDir {
@@ -69,7 +83,7 @@ fn test_socket_fixture_path_fits_portable_unix_limit() {
 async fn test_single_owner_daemon_locks_database() {
     let test_dir = TestDir::new("owner_lock");
     let db_path = test_dir.path().join("dendro.duckdb");
-    let socket_path = test_dir.path().join("dendro.sock");
+    let socket_path = test_dir.socket_path();
 
     // 1. Daemon starts and holds the raw exclusive DuckDB session
     let daemon = QuackOwnerDaemon::open(db_path.clone(), Some(socket_path.clone()))
@@ -165,10 +179,11 @@ async fn test_socket_directory_permissions_and_token_sidecar() {
 async fn test_same_user_containment_and_raw_sql_rejection() {
     let test_dir = TestDir::new("containment");
     let db_path = test_dir.path().join("dendro.duckdb");
-    let socket_path = test_dir.path().join("dendro.sock");
+    let socket_path = test_dir.socket_path();
 
     let daemon = QuackOwnerDaemon::open(db_path.clone(), Some(socket_path.clone()))
         .expect("daemon should start");
+    let socket_path = daemon.socket_path().to_path_buf();
 
     let hook_token = daemon.token_for_role(ClientRole::Hook);
     let cli_token = daemon.token_for_role(ClientRole::Cli);
@@ -379,10 +394,11 @@ async fn test_same_user_containment_and_raw_sql_rejection() {
 async fn test_query_view_numeric_column_serialization() {
     let test_dir = TestDir::new("numeric_serialization");
     let db_path = test_dir.path().join("dendro.duckdb");
-    let socket_path = test_dir.path().join("dendro.sock");
+    let socket_path = test_dir.socket_path();
 
     let daemon = QuackOwnerDaemon::open(db_path.clone(), Some(socket_path.clone()))
         .expect("daemon should open database");
+    let socket_path = daemon.socket_path().to_path_buf();
 
     let cli_token = daemon.token_for_role(ClientRole::Cli);
     let daemon_handle = tokio::spawn(async move {
@@ -461,10 +477,11 @@ async fn test_query_view_numeric_column_serialization() {
 async fn test_quack_append_fact_required_fields_validation() {
     let test_dir = TestDir::new("req_fields");
     let db_path = test_dir.path().join("dendro.duckdb");
-    let socket_path = test_dir.path().join("dendro.sock");
+    let socket_path = test_dir.socket_path();
 
     let daemon = QuackOwnerDaemon::open(db_path.clone(), Some(socket_path.clone()))
         .expect("daemon should open database");
+    let socket_path = daemon.socket_path().to_path_buf();
 
     let cli_token = daemon.token_for_role(ClientRole::Cli);
     let daemon_handle = tokio::spawn(async move {
