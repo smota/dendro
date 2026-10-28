@@ -2577,3 +2577,341 @@ details.dendro-l3-drawer .query-box {
     width: 100%;
   }
 }
+
+/* ==========================================================================
+   Direct Operator Overview ("Modo Direto") & Context-Tax Styles
+   ========================================================================== */
+.direct-overview-fold {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0 auto 16px;
+  max-width: 1400px;
+  width: 100%;
+}
+
+.direct-overview-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 8px 14px;
+  background: rgba(17, 22, 31, 0.7);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+}
+
+.direct-mode-toggle-group, .predefined-lenses-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toolbar-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.lens-chip {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.lens-chip:hover, .lens-chip:focus {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: #10B981;
+  color: var(--text-primary);
+  outline: none;
+}
+
+.direct-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.direct-card {
+  background: rgba(17, 22, 31, 0.7);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 14px 16px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.direct-card:hover, .direct-card:focus {
+  border-color: #10B981;
+  outline: none;
+  box-shadow: 0 4px 20px rgba(16, 185, 129, 0.15);
+}
+
+.critical-focus-card {
+  grid-column: 1 / -1;
+  border-color: rgba(242, 165, 65, 0.5);
+  background: linear-gradient(135deg, rgba(242, 165, 65, 0.06), rgba(17, 22, 31, 0.8));
+}
+
+.card-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.card-badge-row .badge {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.priority-badge {
+  background: rgba(242, 165, 65, 0.2);
+  color: #F2A541;
+  border: 1px solid rgba(242, 165, 65, 0.4);
+}
+
+.temporal-badge {
+  background: rgba(6, 182, 212, 0.15);
+  color: #06B6D4;
+  border: 1px solid rgba(6, 182, 212, 0.3);
+}
+
+.domain-badge {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10B981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.status-badge {
+  background: rgba(244, 63, 94, 0.15);
+  color: #F43F5E;
+  border: 1px solid rgba(244, 63, 94, 0.3);
+}
+
+.money-badge {
+  background: rgba(139, 92, 246, 0.15);
+  color: #8B5CF6;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+.card-title {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-weight: 500;
+  margin: 0;
+}
+
+.card-metric {
+  font-size: 20px;
+  font-weight: 700;
+  color: #F4EFE6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-subtext {
+  font-size: 12px;
+  color: #94A3B8;
+  margin: 0;
+}
+
+.card-recommendation {
+  font-size: 11px;
+  color: #F2A541;
+  margin: 0;
+}
+
+.card-drill-hint {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.35);
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+.cwd-summary-list, .tools-summary-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 4px 0;
+  font-size: 11px;
+}
+
+.summary-row {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-muted);
+}
+.summary-row code {
+  color: var(--emerald-yield);
+  font-family: var(--font-mono);
+}
+
+/* Lateral Contextual Drawer */
+.direct-overview-drawer[hidden] {
+  display: none !important;
+}
+
+.direct-overview-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 560px;
+  max-width: 90vw;
+  height: 100vh;
+  background: #0E131C;
+  border-left: 1px solid var(--border-subtle);
+  z-index: 9999;
+  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.7);
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+.drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.drawer-title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.drawer-title {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0;
+  color: #F4EFE6;
+}
+
+.drawer-subtitle {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.drawer-close-btn {
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+.drawer-close-btn:hover, .drawer-close-btn:focus {
+  border-color: #f43f5e;
+  color: #f43f5e;
+  outline: none;
+}
+
+.drawer-body {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  font-size: 13px;
+  color: #CBD5E1;
+}
+
+.drawer-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.drawer-section h4 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.trace-cli-box {
+  background: #06090E;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.trace-cli-code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: #06B6D4;
+  word-break: break-all;
+}
+
+.btn-copy-trace {
+  background: rgba(6, 182, 212, 0.15);
+  border: 1px solid rgba(6, 182, 212, 0.4);
+  color: #06B6D4;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn-copy-trace:hover {
+  background: rgba(6, 182, 212, 0.3);
+}
+
+.source-keys-pill-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.source-key-pill {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-subtle);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #94A3B8;
+}
+
+/* Mode toggling: Direct vs Forensic */
+body.mode-direct .forensic-section {
+  display: none !important;
+}
+body.mode-forensic .direct-cards-grid,
+body.mode-forensic .predefined-lenses-group {
+  display: none !important;
+}
+body.mode-forensic .forensic-section {
+  display: block;
+}

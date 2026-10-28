@@ -2259,6 +2259,23 @@ pub fn trace_json_with_analysis_physical(
         );
     let payload = &report["payload"];
     let (formula, value) = match metric_id {
+        "direct_overview" => {
+            let from_dt = chrono::DateTime::parse_from_rfc3339(from)?.with_timezone(&chrono::Utc);
+            let to_dt = chrono::DateTime::parse_from_rfc3339(to)?.with_timezone(&chrono::Utc);
+            let store = AnalyticsStore::open_read_only(db)?;
+            let req = crate::overview::OverviewRequest {
+                rig: rig.map(str::to_string),
+                from: from_dt,
+                to: to_dt,
+                observation_clock: Some(to_dt),
+                evidence_as_of: None,
+                advisory_options: advisory.clone(),
+                friction_thresholds: friction,
+                expect_evidence_digest: None,
+            };
+            let overview = store.read_snapshot(|store| crate::overview::evaluate_overview_snapshot(store, &req))?;
+            (crate::overview::FORMULA_VERSION, serde_json::to_value(&overview)?)
+        }
         "advisory_idle_claimed" => ("advisory-idle-claimed-v1",payload["advisory_idle_claimed"].clone()),
         "anomaly_spotlights" => ("anomaly-spotlights-v1",payload["anomaly_spotlights"].clone()),
         "handoff_friction" => (crate::vortex::FORMULA_VERSION, payload["handoff_friction"].clone()),
@@ -2415,6 +2432,8 @@ pub fn trace_json_with_analysis_physical(
         else if metric_id == "anomaly_spotlights" {"anomaly-spotlights-v1"}
         else if metric_id == "handoff_friction" {
             crate::vortex::FORMULA_VERSION
+        } else if metric_id == "direct_overview" {
+            crate::overview::FORMULA_VERSION
         } else if metric_id == "medians" {
             "acceptance-r1-a1-wait-fractional-v1"
         } else {
@@ -2426,6 +2445,7 @@ pub fn trace_json_with_analysis_physical(
         "from": redact(from),
         "to": redact(to),
         "rig": rig.map(redact),
+        "digest": if metric_id == "direct_overview" { value["digest"].clone() } else { Value::Null },
     }))
 }
 

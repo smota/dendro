@@ -332,6 +332,11 @@
       }
       try { paintActiveSlice(getPersistedWindow(), normalized); } catch (err) {}
       try { refreshDimensionPivot(normalized, config.viewId); } catch (err) {}
+      try {
+        if (normalized && normalized.direct_overview) {
+          renderDirectOverview(normalized.direct_overview);
+        }
+      } catch (err) {}
     }
 
     function publishLive(data) {
@@ -3503,12 +3508,359 @@
     return true;
   }
 
+  // ========================================================================
+  // Direct Operator Overview ("Modo Direto") & Contextual Drawer Logic
+  // ========================================================================
+  var lastOverviewData = null;
+  var lastFocusedTrigger = null;
+
+  function escapeHtml(str) {
+    if (str == null) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function getInitialDashboardMode() {
+    if (typeof window === 'undefined') return 'direct';
+    try {
+      var params = new URLSearchParams(window.location.search);
+      var urlMode = params.get('mode');
+      if (urlMode === 'direct' || urlMode === 'forensic') return urlMode;
+      var saved = localStorage.getItem('dendro_dashboard_mode');
+      if (saved === 'direct' || saved === 'forensic') return saved;
+    } catch (e) {}
+    return 'direct';
+  }
+
+  function setDashboardMode(mode) {
+    if (typeof document === 'undefined' || !document.body || !document.body.classList) return;
+    var current = mode === 'forensic' ? 'forensic' : 'direct';
+    document.body.classList.remove('mode-direct', 'mode-forensic');
+    document.body.classList.add('mode-' + current);
+
+    var btnDirect = document.getElementById('btn-mode-direct');
+    var btnForensic = document.getElementById('btn-mode-forensic');
+    if (btnDirect) btnDirect.classList.toggle('active', current === 'direct');
+    if (btnForensic) btnForensic.classList.toggle('active', current === 'forensic');
+
+    try {
+      localStorage.setItem('dendro_dashboard_mode', current);
+      var url = new URL(window.location.href);
+      if (url.searchParams.get('mode') !== current) {
+        url.searchParams.set('mode', current);
+        window.history.replaceState({}, '', url.toString());
+      }
+    } catch (e) {}
+  }
+
+  function renderDirectOverview(data) {
+    if (!data || typeof data !== 'object') return;
+    lastOverviewData = data;
+
+    // Card 1: Critical Focus
+    var cf = data.critical_focus || {};
+    var priorityBadge = document.getElementById('focus-priority-badge');
+    var temporalBadge = document.getElementById('focus-temporal-badge');
+    var catEl = document.getElementById('focus-category');
+    var entEl = document.getElementById('focus-entity');
+    var statsEl = document.getElementById('focus-stats');
+    var recEl = document.getElementById('focus-recommendation');
+
+    if (temporalBadge) temporalBadge.textContent = cf.temporal_label || 'Active Fleet Bottleneck';
+
+    if (cf.focus_state === 'active') {
+      if (priorityBadge) priorityBadge.textContent = 'CRITICAL FOCUS #1';
+      if (catEl) catEl.textContent = cf.category || 'Incident';
+      if (entEl) entEl.textContent = cf.entity_id || '—';
+      if (statsEl) statsEl.textContent = 'Duration: ' + (cf.duration_secs || 0) + 's';
+      if (recEl) recEl.textContent = cf.recommendation || 'Action required to unblock workflow.';
+    } else if (cf.focus_state === 'nominal') {
+      if (priorityBadge) priorityBadge.textContent = 'NOMINAL';
+      if (catEl) catEl.textContent = 'No Critical Bottlenecks';
+      if (entEl) entEl.textContent = 'Fleet Operating Normally';
+      if (statsEl) statsEl.textContent = 'Duration: — · Tokens: —';
+      if (recEl) recEl.textContent = 'Zero active stalls, holds or vortexes exceed thresholds.';
+    } else {
+      if (priorityBadge) priorityBadge.textContent = 'UNAVAILABLE';
+      if (catEl) catEl.textContent = 'Insufficient Telemetry';
+      if (entEl) entEl.textContent = 'Missing Source Evidence';
+      if (statsEl) statsEl.textContent = 'Duration: — · Tokens: —';
+      if (recEl) recEl.textContent = 'Awaiting sufficient evidence across active window.';
+    }
+
+    // Card 2: CWD Projects
+    var projects = data.project_groups || [];
+    var totalProjEl = document.getElementById('cwd-total-projects');
+    var cwdStatsEl = document.getElementById('cwd-stats');
+    var cwdList = document.getElementById('cwd-summary-list');
+
+    if (totalProjEl) totalProjEl.textContent = projects.length + ' Active Projects';
+    var allTokens = data.all_projects_total_tokens != null ? data.all_projects_total_tokens.toLocaleString() : '—';
+    var allCost = data.all_projects_observed_cost_usd != null ? '$' + Number(data.all_projects_observed_cost_usd).toFixed(2) : 'unpriced';
+    if (cwdStatsEl) cwdStatsEl.textContent = 'Total Tokens: ' + allTokens + ' · Spend: ' + allCost;
+
+    if (cwdList) {
+      cwdList.innerHTML = '';
+      projects.slice(0, 3).forEach(function(p) {
+        var row = document.createElement('div');
+        row.className = 'summary-row';
+        var code = document.createElement('code');
+        code.textContent = p.alias || p.cwd_fingerprint || 'unassigned';
+        var val = document.createElement('span');
+        val.textContent = (p.total_tokens || 0).toLocaleString() + ' tok';
+        row.appendChild(code);
+        row.appendChild(val);
+        cwdList.appendChild(row);
+      });
+    }
+
+    // Card 3: Context Tax
+    var ct = data.context_tax || {};
+    var ctBadge = document.getElementById('context-tax-badge');
+    var ctUncalled = document.getElementById('context-tax-uncalled');
+    var ctStats = document.getElementById('context-tax-stats');
+
+    if (ctBadge) {
+      ctBadge.textContent = ct.declaration_status === 'measured' ? '[MEASURED]' : '[UNAVAILABLE]';
+    }
+    if (ctUncalled) {
+      ctUncalled.textContent = ct.uncalled_tools_count != null ? ct.uncalled_tools_count + ' Uncalled Tools' : 'Unavailable';
+    }
+    if (ctStats) {
+      ctStats.textContent = ct.uncalled_skills && ct.uncalled_skills.length > 0
+        ? 'Uncalled: ' + ct.uncalled_skills.slice(0, 2).join(', ')
+        : 'Schema Waste: unavailable (no raw token sizing)';
+    }
+
+    // Card 4: Throughput & Cost
+    var tc = data.throughput_and_cost || {};
+    var tcBadge = document.getElementById('throughput-money-badge');
+    var tcDel = document.getElementById('throughput-deliveries');
+    var tcStats = document.getElementById('throughput-stats');
+    var tcDetails = document.getElementById('throughput-details');
+
+    if (tcBadge) tcBadge.textContent = (tc.money_status || 'unpriced').toUpperCase();
+    if (tcDel) tcDel.textContent = (tc.closed_issue_qitems || 0) + ' Issue Tasks Closed';
+    var avgStr = tc.avg_cost_per_closed_issue_qitem != null
+      ? '$' + Number(tc.avg_cost_per_closed_issue_qitem).toFixed(2)
+      : (tc.average_label || 'unpriced');
+    var spendStr = tc.total_fleet_spend_usd != null
+      ? '$' + Number(tc.total_fleet_spend_usd).toFixed(2)
+      : (tc.observed_priced_subtotal_usd != null ? '$' + Number(tc.observed_priced_subtotal_usd).toFixed(2) + ' (partial)' : 'unpriced');
+    if (tcStats) tcStats.textContent = 'Avg Cost: ' + avgStr + ' · Spend: ' + spendStr;
+    if (tcDetails) tcDetails.textContent = 'Closed Issue Tasks: ' + (tc.closed_issue_qitems || 0) + ' · Internal Tasks: ' + (tc.closed_internal_tasks || 0);
+  }
+
+  function openDirectOverviewDrawer(cardType, customData) {
+    var drawer = document.getElementById('direct-overview-drawer');
+    var titleEl = document.getElementById('drawer-title');
+    var subtitleEl = document.getElementById('drawer-subtitle');
+    var bodyEl = document.getElementById('drawer-content');
+    var closeBtn = document.getElementById('btn-close-drawer');
+    if (!drawer || !bodyEl) return;
+
+    lastFocusedTrigger = document.activeElement;
+    bodyEl.innerHTML = '';
+    var data = lastOverviewData || {};
+
+    if (cardType === 'critical_focus') {
+      if (titleEl) titleEl.textContent = 'Critical Focus: Rank 1 Fleet Bottleneck';
+      if (subtitleEl) subtitleEl.textContent = 'Deterministic hierarchy: Stalls > Holds > Vortexes';
+      var cf = data.critical_focus || {};
+
+      var sec1 = document.createElement('div');
+      sec1.className = 'drawer-section';
+      sec1.innerHTML = '<h4>Operational Finding</h4><p>' + escapeHtml(cf.category || 'Nominal') + ' on <strong>' + escapeHtml(cf.entity_id || 'Fleet') + '</strong></p><p class="card-recommendation">' + escapeHtml(cf.recommendation || '') + '</p>';
+      bodyEl.appendChild(sec1);
+
+      var sec2 = document.createElement('div');
+      sec2.className = 'drawer-section';
+      sec2.innerHTML = '<h4>Reproducible CLI Trace</h4><div class="trace-cli-box"><code class="trace-cli-code">dendro trace --metric-id direct_overview</code><button type="button" class="btn-copy-trace" data-cmd="dendro trace --metric-id direct_overview">Copy</button></div>';
+      bodyEl.appendChild(sec2);
+
+      var sec3 = document.createElement('div');
+      sec3.className = 'drawer-section';
+      var skHtml = (cf.selected_source_keys || []).map(function(k) { return '<span class="source-key-pill">' + escapeHtml(k) + '</span>'; }).join('');
+      sec3.innerHTML = '<h4>AC7 Source Keys</h4><div class="source-keys-pill-list">' + (skHtml || '<span>No active incident keys</span>') + '</div>';
+      bodyEl.appendChild(sec3);
+    } else if (cardType === 'cwd_projects') {
+      if (titleEl) titleEl.textContent = 'Projects & Folders Rollup (AC10 Privacy-Safe)';
+      if (subtitleEl) subtitleEl.textContent = 'Grouped by cwd_fingerprint without raw path disclosure';
+
+      var pList = data.project_groups || [];
+      var table = document.createElement('table');
+      table.className = 'telemetry-table';
+      table.innerHTML = '<thead><tr><th>CWD Fingerprint</th><th>Tokens</th><th>Spend</th></tr></thead><tbody>' +
+        pList.map(function(p) {
+          return '<tr><td><code>' + escapeHtml(p.alias || p.cwd_fingerprint) + '</code></td><td>' + (p.total_tokens || 0).toLocaleString() + '</td><td>' + (p.estimated_cost_usd != null ? '$' + Number(p.estimated_cost_usd).toFixed(2) : 'unpriced') + '</td></tr>';
+        }).join('') + '</tbody>';
+
+      var sec1 = document.createElement('div');
+      sec1.className = 'drawer-section';
+      sec1.appendChild(table);
+      bodyEl.appendChild(sec1);
+
+      var sec2 = document.createElement('div');
+      sec2.className = 'drawer-section';
+      sec2.innerHTML = '<h4>Reproducible CLI Trace</h4><div class="trace-cli-box"><code class="trace-cli-code">dendro trace --metric-id direct_overview</code><button type="button" class="btn-copy-trace" data-cmd="dendro trace --metric-id direct_overview">Copy</button></div>';
+      bodyEl.appendChild(sec2);
+    } else if (cardType === 'context_tax') {
+      if (titleEl) titleEl.textContent = 'Skills & MCPs: Yield vs. Context-Tax';
+      if (subtitleEl) subtitleEl.textContent = 'Distinguishing active yield from prompt schema overhead';
+      var ct = data.context_tax || {};
+
+      var sec1 = document.createElement('div');
+      sec1.className = 'drawer-section';
+      sec1.innerHTML = '<h4>Status &amp; Disclosure</h4><p>Status: <strong>' + escapeHtml(ct.declaration_status || 'unavailable') + '</strong></p><p>Uncalled Tools Count: <strong>' + (ct.uncalled_tools_count != null ? ct.uncalled_tools_count : 'unavailable') + '</strong></p><p style="font-size:11px;color:#94A3B8;">' + escapeHtml(ct.disclosure || 'Schema waste is unavailable when per-tool token sizing is not recorded.') + '</p>';
+      bodyEl.appendChild(sec1);
+
+      var sec2 = document.createElement('div');
+      sec2.className = 'drawer-section';
+      sec2.innerHTML = '<h4>Reproducible CLI Trace</h4><div class="trace-cli-box"><code class="trace-cli-code">dendro trace --metric-id direct_overview</code><button type="button" class="btn-copy-trace" data-cmd="dendro trace --metric-id direct_overview">Copy</button></div>';
+      bodyEl.appendChild(sec2);
+    } else if (cardType === 'throughput_cost') {
+      if (titleEl) titleEl.textContent = 'Fleet Throughput & Cost Accounting';
+      if (subtitleEl) subtitleEl.textContent = 'Strict accounting_v1 deliverable & spend alignment';
+      var tc = data.throughput_and_cost || {};
+
+      var sec1 = document.createElement('div');
+      sec1.className = 'drawer-section';
+      sec1.innerHTML = '<h4>Deliverables Accounting</h4><p>Closed Issue Tasks: <strong>' + (tc.closed_issue_qitems || 0) + '</strong></p><p>Closed Internal Tasks: <strong>' + (tc.closed_internal_tasks || 0) + '</strong></p><p>Total Fleet Spend: <strong>' + (tc.total_fleet_spend_usd != null ? '$' + Number(tc.total_fleet_spend_usd).toFixed(2) : (tc.money_status || 'unpriced')) + '</strong></p>';
+      bodyEl.appendChild(sec1);
+
+      var sec2 = document.createElement('div');
+      sec2.className = 'drawer-section';
+      sec2.innerHTML = '<h4>Reproducible CLI Trace</h4><div class="trace-cli-box"><code class="trace-cli-code">dendro trace --metric-id direct_overview</code><button type="button" class="btn-copy-trace" data-cmd="dendro trace --metric-id direct_overview">Copy</button></div>';
+      bodyEl.appendChild(sec2);
+    } else if (cardType === 'lens' && customData) {
+      if (titleEl) titleEl.textContent = 'Predefined Question Lens';
+      if (subtitleEl) subtitleEl.textContent = 'Live Query: ' + escapeHtml(customData.view || '');
+      var sec1 = document.createElement('div');
+      sec1.className = 'drawer-section';
+      var rows = customData.rows || [];
+      if (rows.length === 0) {
+        sec1.innerHTML = '<p>No records found for active window and rig.</p>';
+      } else {
+        var table = document.createElement('table');
+        table.className = 'telemetry-table';
+        var keys = Object.keys(rows[0] || {}).slice(0, 4);
+        table.innerHTML = '<thead><tr>' + keys.map(function(k) { return '<th>' + escapeHtml(k) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+          rows.slice(0, 20).map(function(r) {
+            return '<tr>' + keys.map(function(k) { return '<td>' + escapeHtml(String(r[k] != null ? r[k] : '—')) + '</td>'; }).join('') + '</tr>';
+          }).join('') + '</tbody>';
+        sec1.appendChild(table);
+      }
+      bodyEl.appendChild(sec1);
+    }
+
+    drawer.removeAttribute('hidden');
+    drawer.classList.add('open');
+    if (closeBtn) closeBtn.focus();
+  }
+
+  function closeDirectOverviewDrawer() {
+    var drawer = document.getElementById('direct-overview-drawer');
+    if (!drawer) return;
+    drawer.setAttribute('hidden', '');
+    drawer.classList.remove('open');
+    if (lastFocusedTrigger && typeof lastFocusedTrigger.focus === 'function') {
+      lastFocusedTrigger.focus();
+    }
+  }
+
+  function mountDirectOverview() {
+    if (typeof document === 'undefined' || !document.body) return;
+
+    // 1. Initial Mode
+    var initialMode = getInitialDashboardMode();
+    setDashboardMode(initialMode);
+
+    var btnDirect = document.getElementById('btn-mode-direct');
+    var btnForensic = document.getElementById('btn-mode-forensic');
+    if (btnDirect) btnDirect.addEventListener('click', function() { setDashboardMode('direct'); });
+    if (btnForensic) btnForensic.addEventListener('click', function() { setDashboardMode('forensic'); });
+
+    // 2. Card click -> open drawer
+    var cardFocus = document.getElementById('card-critical-focus');
+    var cardCwd = document.getElementById('card-cwd-projects');
+    var cardContext = document.getElementById('card-context-tax');
+    var cardThroughput = document.getElementById('card-throughput-cost');
+
+    function bindCard(el, type) {
+      if (!el) return;
+      el.addEventListener('click', function() { openDirectOverviewDrawer(type); });
+      el.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          openDirectOverviewDrawer(type);
+        }
+      });
+    }
+
+    bindCard(cardFocus, 'critical_focus');
+    bindCard(cardCwd, 'cwd_projects');
+    bindCard(cardContext, 'context_tax');
+    bindCard(cardThroughput, 'throughput_cost');
+
+    // 3. Close drawer
+    var closeBtn = document.getElementById('btn-close-drawer');
+    if (closeBtn) closeBtn.addEventListener('click', closeDirectOverviewDrawer);
+
+    // 4. Predefined question lenses
+    document.querySelectorAll('.lens-chip[data-lens]').forEach(function(chip) {
+      chip.addEventListener('click', function() {
+        var lens = chip.getAttribute('data-lens');
+        if (!lens) return;
+        var win = getPersistedWindow ? getPersistedWindow() : 'all';
+        var url = '/api/query?view=' + encodeURIComponent(lens) + '&window=' + encodeURIComponent(win);
+        fetch(url)
+          .then(function(r) { return r.json(); })
+          .then(function(res) {
+            openDirectOverviewDrawer('lens', { view: lens, rows: res.rows || [] });
+          })
+          .catch(function(err) {
+            openDirectOverviewDrawer('lens', { view: lens, rows: [] });
+          });
+      });
+    });
+
+    // 5. Global Escape key closes drawer
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        var drawer = document.getElementById('direct-overview-drawer');
+        if (drawer && !drawer.hasAttribute('hidden')) {
+          closeDirectOverviewDrawer();
+        }
+      }
+    });
+
+    // 6. Copy button click
+    document.addEventListener('click', function(e) {
+      var btn = e.target.closest('.btn-copy-trace');
+      if (btn) {
+        var cmd = btn.getAttribute('data-cmd');
+        if (cmd && navigator.clipboard) {
+          navigator.clipboard.writeText(cmd).then(function() {
+            var orig = btn.textContent;
+            btn.textContent = 'Copied!';
+            setTimeout(function() { btn.textContent = orig; }, 1500);
+          });
+        }
+      }
+    });
+  }
+
   initSprings();
   bindGlobalKeys();
   bindConceptClicks();
   mountProductShell();
   bindWindowChrome();
   bootDashboardChrome();
+  mountDirectOverview();
 
   global.attachLiveSync = attachLiveSync;
   global.DendroLiveSync = attachLiveSync;

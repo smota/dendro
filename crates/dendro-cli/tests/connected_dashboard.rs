@@ -343,3 +343,116 @@ async fn test_quack_query_view_is_uncapped_without_limit() {
 
     daemon_handle.abort();
 }
+
+#[tokio::test]
+async fn test_direct_overview_query_and_trace_digest() {
+    let test_dir = TestDir::new("direct_overview");
+    let db_path = test_dir.path().join("dendro.duckdb");
+
+    // Initialize DuckDB database
+    {
+        let store = dendro_core::AnalyticsStore::open_path(&db_path, "tester").unwrap();
+        store.checkpoint().unwrap();
+        drop(store);
+    }
+
+    let window = "2026-10-01T00:00:00Z..2026-10-02T00:00:00Z";
+    let rig = "test-rig";
+
+    // 1. Test execute_live_query with direct_overview
+    let res = dendro_cli::connected_web::execute_live_query(
+        &db_path,
+        "direct_overview",
+        Some(window),
+        Some(rig),
+    )
+    .expect("direct_overview live query should succeed");
+
+    assert!(
+        res["direct_overview"].is_object(),
+        "must contain direct_overview object"
+    );
+    assert_eq!(
+        res["direct_overview"]["formula_version"],
+        "direct-overview-v1"
+    );
+    let digest = res["direct_overview"]["digest"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_eq!(digest.len(), 64, "digest must be 64-char sha256 hex string");
+
+    // 2. Test execute_live_query with v_cwd_fingerprint_rollup lens
+    let res_cwd = dendro_cli::connected_web::execute_live_query(
+        &db_path,
+        "v_cwd_fingerprint_rollup",
+        Some(window),
+        Some(rig),
+    )
+    .expect("v_cwd_fingerprint_rollup query should succeed");
+    assert!(res_cwd["rows"].is_array());
+
+    // 3. Test execute_live_query with skill_facts lens
+    let res_skill = dendro_cli::connected_web::execute_live_query(
+        &db_path,
+        "skill_facts",
+        Some(window),
+        Some(rig),
+    )
+    .expect("skill_facts query should succeed");
+    assert!(res_skill["rows"].is_array());
+
+    // 4. Test physical trace for direct_overview
+    let trace = dendro_core::pipeline::trace_json_with_analysis_physical(
+        &db_path,
+        "direct_overview",
+        Some(rig),
+        "2026-10-01T00:00:00Z",
+        "2026-10-02T00:00:00Z",
+        dendro_core::LoopThresholds::default(),
+        dendro_core::FrictionThresholds::default(),
+        dendro_core::advisory::AdvisoryOptions::default(),
+    )
+    .expect("trace direct_overview should succeed");
+
+    assert_eq!(trace["metric_id"], "direct_overview");
+    assert_eq!(trace["formula_version"], "direct-overview-v1");
+    assert_eq!(trace["digest"], digest);
+
+    // 5. Test digest verification in CLI / trace evaluator
+    let req_matching = dendro_core::overview::OverviewRequest {
+        rig: Some(rig.to_string()),
+        from: chrono::DateTime::parse_from_rfc3339("2026-10-01T00:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc),
+        to: chrono::DateTime::parse_from_rfc3339("2026-10-02T00:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc),
+        observation_clock: Some(
+            chrono::DateTime::parse_from_rfc3339("2026-10-02T00:00:00Z")
+                .unwrap()
+                .with_timezone(&chrono::Utc),
+        ),
+        evidence_as_of: None,
+        advisory_options: dendro_core::advisory::AdvisoryOptions::default(),
+        friction_thresholds: dendro_core::vortex::FrictionThresholds::default(),
+        expect_evidence_digest: Some(digest.clone()),
+    };
+    let res_matching =
+        dendro_core::overview::evaluate_overview_snapshot_path(&db_path, &req_matching);
+    assert!(res_matching.is_ok(), "matching digest must succeed");
+
+    let req_mismatch = dendro_core::overview::OverviewRequest {
+        expect_evidence_digest: Some(
+            "0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+        ),
+        ..req_matching
+    };
+    let res_mismatch =
+        dendro_core::overview::evaluate_overview_snapshot_path(&db_path, &req_mismatch);
+    assert!(res_mismatch.is_err(), "mismatched digest must fail");
+    assert!(res_mismatch
+        .unwrap_err()
+        .to_string()
+        .contains("evidence digest mismatch"));
+}
