@@ -3368,7 +3368,7 @@
       name.textContent = 'Dendro';
       var badge = document.createElement('span');
       badge.className = 'dendro-version';
-      badge.textContent = 'v0.8 Intelligence';
+      badge.textContent = 'Fleet Intelligence';
       word.appendChild(name);
       word.appendChild(badge);
       brand.appendChild(mark);
@@ -3410,7 +3410,7 @@
 
       var foot = document.createElement('div');
       foot.className = 'dendro-sidebar-foot';
-      foot.textContent = 'Local-First Fleet Intelligence · v0.8.0';
+      foot.textContent = 'Local-First Fleet Intelligence';
       sidebar.appendChild(foot);
 
       var backdrop = document.createElement('div');
