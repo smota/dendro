@@ -209,7 +209,7 @@ test('B5 late lens response cannot replace or reopen a newer card drawer', { tim
     arrived(); await gate; await route.continue();
   });
   await page.locator('.lens-chip[data-lens="skill_facts"]').click(); await seen;
-  await drawer(page, '#card-throughput-cost');
+  await drawer(page, '#card-critical-focus');
   const title = await page.locator('#drawer-title').innerText();
   const response = page.waitForResponse(r => new URL(r.url()).searchParams.get('view') === 'skill_facts');
   release(); await response; await settle(page);
