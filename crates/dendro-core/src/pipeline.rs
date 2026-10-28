@@ -2236,6 +2236,32 @@ pub fn trace_json_with_analysis_physical(
     friction: crate::FrictionThresholds,
     advisory: crate::advisory::AdvisoryOptions,
 ) -> Result<Value> {
+    if metric_id == "direct_overview" {
+        // One shared snapshot owns both metric values and replay provenance.
+        // Legacy report inputs must not be mixed in from a second DB snapshot.
+        let from_dt = chrono::DateTime::parse_from_rfc3339(from)?.with_timezone(&chrono::Utc);
+        let to_dt = chrono::DateTime::parse_from_rfc3339(to)?.with_timezone(&chrono::Utc);
+        let req = crate::overview::OverviewRequest {
+            rig: rig.map(str::to_owned),
+            from: from_dt,
+            to: to_dt,
+            observation_clock: Some(chrono::Utc::now()),
+            evidence_as_of: None,
+            advisory_options: advisory,
+            friction_thresholds: friction,
+            expect_evidence_digest: None,
+        };
+        let overview = crate::overview::evaluate_overview_snapshot_path(db, &req)?;
+        return Ok(json!({
+            "metric_id":"direct_overview","formula_version":crate::overview::FORMULA_VERSION,
+            "formula":crate::overview::FORMULA_VERSION,"value":overview,
+            "inputs":{"scope":overview.scope,"source_keys":overview.source_keys,
+                "evidence_as_of":overview.evidence_as_of,"coverage":overview.coverage,
+                "source_coverage":overview.source_coverage,"digest":overview.digest},
+            "from":crate::overview::to_iso_z(&from_dt),"to":crate::overview::to_iso_z(&to_dt),
+            "rig":req.rig,"digest":overview.digest,
+        }));
+    }
     let mut evaluation = evaluate_report(
         db,
         "decisions",
@@ -2259,23 +2285,6 @@ pub fn trace_json_with_analysis_physical(
         );
     let payload = &report["payload"];
     let (formula, value) = match metric_id {
-        "direct_overview" => {
-            let from_dt = chrono::DateTime::parse_from_rfc3339(from)?.with_timezone(&chrono::Utc);
-            let to_dt = chrono::DateTime::parse_from_rfc3339(to)?.with_timezone(&chrono::Utc);
-            let store = AnalyticsStore::open_read_only(db)?;
-            let req = crate::overview::OverviewRequest {
-                rig: rig.map(str::to_string),
-                from: from_dt,
-                to: to_dt,
-                observation_clock: Some(to_dt),
-                evidence_as_of: None,
-                advisory_options: advisory.clone(),
-                friction_thresholds: friction,
-                expect_evidence_digest: None,
-            };
-            let overview = store.read_snapshot(|store| crate::overview::evaluate_overview_snapshot(store, &req))?;
-            (crate::overview::FORMULA_VERSION, serde_json::to_value(&overview)?)
-        }
         "advisory_idle_claimed" => ("advisory-idle-claimed-v1",payload["advisory_idle_claimed"].clone()),
         "anomaly_spotlights" => ("anomaly-spotlights-v1",payload["anomaly_spotlights"].clone()),
         "handoff_friction" => (crate::vortex::FORMULA_VERSION, payload["handoff_friction"].clone()),

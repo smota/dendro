@@ -334,7 +334,9 @@
       try { refreshDimensionPivot(normalized, config.viewId); } catch (err) {}
       try {
         if (normalized && normalized.direct_overview) {
-          renderDirectOverview(normalized.direct_overview);
+          renderDirectOverview(normalized.direct_overview, source);
+        } else {
+          markOverviewUnavailable('Overview evidence unavailable');
         }
       } catch (err) {}
     }
@@ -389,13 +391,18 @@
       };
     }
 
-    function getEventsUrl() {
-      return `${config.endpoint}?view=${encodeURIComponent(config.viewId)}&window=${encodeURIComponent(getPersistedWindow(global))}`;
+    function scopedLiveUrl(endpoint) {
+      if (typeof URLSearchParams !== 'function') return endpoint + '?view=' + encodeURIComponent(config.viewId) + '&window=' + encodeURIComponent(getPersistedWindow(global));
+      var params = new URLSearchParams();
+      params.set('view', config.viewId); params.set('window', getPersistedWindow(global));
+      try {
+        var current = new URLSearchParams(global.location.search);
+        ['rig', 'from', 'to'].forEach(function(key) { if (current.has(key)) params.set(key, current.get(key)); });
+      } catch (err) {}
+      return endpoint + '?' + params.toString();
     }
-
-    function getQueryUrl() {
-      return `${config.pollEndpoint}?view=${encodeURIComponent(config.viewId)}&window=${encodeURIComponent(getPersistedWindow(global))}`;
-    }
+    function getEventsUrl() { return scopedLiveUrl(config.endpoint); }
+    function getQueryUrl() { return scopedLiveUrl(config.pollEndpoint); }
 
     function closeEventSource() {
       if (!sse) return;
@@ -412,11 +419,12 @@
 
     function reconnectForWindow(newPreset) {
       clearRetryTimer();
-      if (newPreset && newPreset === connectedWindow && (sse || pollTimer)) return;
+
       if (newPreset) {
         try { setPersistedWindow(newPreset); } catch (err) {}
       }
       liveGeneration += 1;
+      invalidateOverviewScope();
       closeEventSource();
       if (!isHttp) return;
       if (sseUnavailable || typeof EventSource !== 'function') {
@@ -431,9 +439,13 @@
     }
 
     function onWindowPreset(event) {
-      var detail = event && event.detail;
-      var next = detail && detail.patch && detail.patch.preset;
-      if (!next || next === connectedWindow) return;
+      var patch = event && event.detail && event.detail.patch;
+      if (!patch) return;
+      if (Object.prototype.hasOwnProperty.call(patch, 'rig')) {
+        try { var url = new URL(global.location.href); if (patch.rig == null) url.searchParams.delete('rig'); else url.searchParams.set('rig', patch.rig); global.history.replaceState({}, '', url.toString()); } catch (err) {}
+      }
+      var next = patch.preset;
+      if ((!next || next === connectedWindow) && !Object.prototype.hasOwnProperty.call(patch, 'rig')) return;
       reconnectForWindow(next);
     }
 
@@ -511,6 +523,7 @@
         updateBadge('snapshot');
         const data = loadEmbeddedData();
         if (data) triggerData(data, 'embedded-snapshot');
+        else markOverviewUnavailable('Overview query failed');
       }
     }
 
@@ -1377,6 +1390,7 @@
       if (typeof location === 'undefined' || !location) return;
       var params = new URLSearchParams(typeof location.search === 'string' ? location.search : '');
       params.set('window', preset);
+      params.delete('from'); params.delete('to');
       var path = location.pathname || '';
       var hash = location.hash || '';
       var next = path + '?' + params.toString() + hash;
@@ -3513,6 +3527,59 @@
   // ========================================================================
   var lastOverviewData = null;
   var lastFocusedTrigger = null;
+  var overviewScopeGeneration = 0;
+  var drawerGeneration = 0;
+  var drawerSnapshot = null;
+  var overviewScopeKey = null;
+  var LENS_VIEWS = ['v_seat_idle_ranking', 'v_handoff_rework_analysis', 'skill_facts', 'v_cwd_fingerprint_rollup'];
+
+  function cloneOverview(data) { return JSON.parse(JSON.stringify(data)); }
+  function shellQuote(value) { return "'" + String(value).replace(/'/g, "'\"'\"'") + "'"; }
+  function overviewTraceCommand(data) {
+    var scope = data && data.scope;
+    if (!scope || !scope.from || !scope.to || !data.digest) return null;
+    var cmd = 'dendro trace --metric-id direct_overview';
+    if (scope.rig != null) cmd += ' --rig ' + shellQuote(scope.rig);
+    return cmd + ' --from ' + shellQuote(scope.from) + ' --to ' + shellQuote(scope.to)
+      + ' --expect-evidence-digest ' + shellQuote(data.digest);
+  }
+  function invalidateOverviewScope() {
+    overviewScopeGeneration += 1;
+    drawerGeneration += 1;
+    lastOverviewData = null;
+    ['focus-category', 'focus-entity', 'focus-stats', 'focus-recommendation', 'cwd-total-projects', 'cwd-stats', 'context-tax-uncalled', 'context-tax-stats', 'throughput-deliveries', 'throughput-stats', 'throughput-details'].forEach(function(id) { var el = document.getElementById(id); if (el) el.textContent = 'Loading selected scope…'; });
+    document.querySelectorAll('.lens-chip[data-lens]').forEach(function(chip) { chip.disabled = true; });
+    closeDirectOverviewDrawer();
+  }
+  function markOverviewUnavailable(message) {
+    if (typeof document === 'undefined' || !document.getElementById('card-critical-focus')) return;
+    invalidateOverviewScope();
+    var priority = document.getElementById('focus-priority-badge'); if (priority) priority.textContent = 'UNAVAILABLE';
+    var temporal = document.getElementById('focus-temporal-badge'); if (temporal) temporal.textContent = 'Source snapshot unavailable';
+    ['focus-category', 'cwd-total-projects', 'context-tax-uncalled', 'throughput-deliveries'].forEach(function(id) { var el = document.getElementById(id); if (el) el.textContent = message; });
+    ['focus-stats', 'focus-recommendation', 'cwd-stats', 'context-tax-stats', 'throughput-stats', 'throughput-details', 'cwd-summary-list', 'tools-summary-list'].forEach(function(id) { var el = document.getElementById(id); if (el) el.textContent = 'Unavailable'; });
+  }
+  function appendSnapshotEvidence(body, data, keys) {
+    var section = document.createElement('div'); section.className = 'drawer-section';
+    var heading = document.createElement('h4'); heading.textContent = 'Captured Evidence'; section.appendChild(heading);
+    var state = document.createElement('p');
+    var scope = data.scope || {};
+    state.textContent = (data.snapshot ? 'Snapshot' : 'Observed snapshot') + ' · Coverage: ' + (data.coverage || 'unavailable')
+      + ' · Source as-of: ' + (data.evidence_as_of || 'unavailable') + ' · Captured: ' + (data.as_of || 'unavailable')
+      + ' · Rig: ' + (scope.rig == null ? 'all rigs' : scope.rig) + ' · [' + (scope.from || 'unavailable') + ', ' + (scope.to || 'unavailable') + ')';
+    section.appendChild(state);
+    var digest = document.createElement('p'); digest.textContent = 'Evidence digest: ' + (data.digest || 'unavailable'); section.appendChild(digest);
+    var coverage = document.createElement('p'); coverage.textContent = 'Sources: ' + JSON.stringify(data.source_coverage || {}); section.appendChild(coverage);
+    var list = document.createElement('div'); list.className = 'source-keys-pill-list';
+    (keys || []).forEach(function(key) { var pill = document.createElement('span'); pill.className = 'source-key-pill'; pill.textContent = key; list.appendChild(pill); });
+    if (!keys || !keys.length) list.textContent = 'No supporting source keys in this snapshot.';
+    section.appendChild(list); body.appendChild(section);
+    var cmd = overviewTraceCommand(data);
+    var trace = document.createElement('div'); trace.className = 'trace-cli-box';
+    var code = document.createElement('code'); code.className = 'trace-cli-code'; code.textContent = cmd || 'Replay unavailable: exact scope or digest is absent.'; trace.appendChild(code);
+    var copy = document.createElement('button'); copy.type = 'button'; copy.className = 'btn-copy-trace'; copy.textContent = 'Copy'; copy.disabled = !cmd;
+    if (cmd) copy.setAttribute('data-cmd', cmd); trace.appendChild(copy); body.appendChild(trace);
+  }
 
   function escapeHtml(str) {
     if (str == null) return '';
@@ -3557,9 +3624,37 @@
     } catch (e) {}
   }
 
-  function renderDirectOverview(data) {
+  function renderDirectOverview(data, source) {
     if (!data || typeof data !== 'object') return;
-    lastOverviewData = data;
+    // A trailing window can resolve to new endpoints on each refresh. Only a
+    // selected filter change invalidates an open drawer's captured snapshot.
+    var selectedScope = { rig: data.scope ? data.scope.rig : null, window: getPersistedWindow(global) };
+    try {
+      var scopeParams = new URLSearchParams(global.location.search);
+      selectedScope.from = scopeParams.get('from'); selectedScope.to = scopeParams.get('to');
+    } catch (err) {}
+    var nextKey = JSON.stringify(selectedScope);
+    if (overviewScopeKey !== nextKey) {
+      overviewScopeKey = nextKey;
+      overviewScopeGeneration += 1;
+      drawerGeneration += 1;
+      closeDirectOverviewDrawer();
+    }
+    lastOverviewData = cloneOverview(data);
+    if (source === 'initial-cache' || source === 'embedded-snapshot') {
+      lastOverviewData.snapshot = true; lastOverviewData.live_alert = false;
+    }
+    data = lastOverviewData;
+    document.querySelectorAll('.lens-chip[data-lens]').forEach(function(chip) {
+      var view = chip.getAttribute('data-lens');
+      var available = false;
+      if (view === 'v_seat_idle_ranking') available = (data.source_coverage && data.source_coverage.advisory === 'observed') || data.coverage === 'complete' || (data.critical_focus && (data.critical_focus.ranked_source_keys || []).length > 0);
+      if (view === 'v_handoff_rework_analysis') available = data.source_coverage && (data.source_coverage.queue === 'observed' || (data.source_coverage.vortex && !['unavailable', 'no_data'].includes(data.source_coverage.vortex)));
+      if (view === 'skill_facts') available = data.context_tax && data.context_tax.uncalled_tools_count != null;
+      if (view === 'v_cwd_fingerprint_rollup') available = (data.usage_source_keys || []).length > 0 || (data.activity_source_keys || []).length > 0;
+      chip.disabled = !available || !data.scope;
+      chip.title = available ? 'Inspect captured rig and exact window' : 'Required evidence is unavailable in this scope';
+    });
 
     // Card 1: Critical Focus
     var cf = data.critical_focus || {};
@@ -3570,20 +3665,20 @@
     var statsEl = document.getElementById('focus-stats');
     var recEl = document.getElementById('focus-recommendation');
 
-    if (temporalBadge) temporalBadge.textContent = cf.temporal_label || 'Active Fleet Bottleneck';
+    if (temporalBadge) temporalBadge.textContent = (cf.temporal_label || 'Fleet Bottleneck') + ' · ' + (data.snapshot ? 'Snapshot' : 'Observed') + ' · ' + (data.coverage || 'unavailable');
 
     if (cf.focus_state === 'active') {
       if (priorityBadge) priorityBadge.textContent = 'CRITICAL FOCUS #1';
       if (catEl) catEl.textContent = cf.category || 'Incident';
       if (entEl) entEl.textContent = cf.entity_id || '—';
       if (statsEl) statsEl.textContent = 'Duration: ' + (cf.duration_secs || 0) + 's';
-      if (recEl) recEl.textContent = cf.recommendation || 'Action required to unblock workflow.';
+      if (recEl) recEl.textContent = cf.recommendation || (data.live_alert ? 'Inspect the supporting evidence.' : 'Historical or stale source evidence; inspect the captured snapshot.');
     } else if (cf.focus_state === 'nominal') {
       if (priorityBadge) priorityBadge.textContent = 'NOMINAL';
       if (catEl) catEl.textContent = 'No Critical Bottlenecks';
-      if (entEl) entEl.textContent = 'Fleet Operating Normally';
+      if (entEl) entEl.textContent = 'No observed threshold breach';
       if (statsEl) statsEl.textContent = 'Duration: — · Tokens: —';
-      if (recEl) recEl.textContent = 'Zero active stalls, holds or vortexes exceed thresholds.';
+      if (recEl) recEl.textContent = 'No qualifying incidents in the available source evidence.';
     } else {
       if (priorityBadge) priorityBadge.textContent = 'UNAVAILABLE';
       if (catEl) catEl.textContent = 'Insufficient Telemetry';
@@ -3601,7 +3696,7 @@
     if (totalProjEl) totalProjEl.textContent = projects.length + ' Active Projects';
     var allTokens = data.all_projects_total_tokens != null ? data.all_projects_total_tokens.toLocaleString() : '—';
     var allCost = data.all_projects_observed_cost_usd != null ? '$' + Number(data.all_projects_observed_cost_usd).toFixed(2) : 'unpriced';
-    if (cwdStatsEl) cwdStatsEl.textContent = 'Total Tokens: ' + allTokens + ' · Spend: ' + allCost;
+    if (cwdStatsEl) cwdStatsEl.textContent = 'Total Tokens: ' + allTokens + ' · Observed priced subtotal: ' + allCost;
 
     if (cwdList) {
       cwdList.innerHTML = '';
@@ -3611,7 +3706,7 @@
         var code = document.createElement('code');
         code.textContent = p.alias || p.cwd_fingerprint || 'unassigned';
         var val = document.createElement('span');
-        val.textContent = (p.total_tokens || 0).toLocaleString() + ' tok';
+        val.textContent = (p.total_tokens || 0).toLocaleString() + ' tok · ' + Number(p.active_hours || 0).toFixed(2) + ' observed h · ' + (p.closed_issue_qitems || 0) + ' closed';
         row.appendChild(code);
         row.appendChild(val);
         cwdList.appendChild(row);
@@ -3625,15 +3720,27 @@
     var ctStats = document.getElementById('context-tax-stats');
 
     if (ctBadge) {
-      ctBadge.textContent = ct.declaration_status === 'measured' ? '[MEASURED]' : '[UNAVAILABLE]';
+      ctBadge.textContent = '[' + (ct.declaration_status || 'unavailable').toUpperCase() + ']';
     }
     if (ctUncalled) {
       ctUncalled.textContent = ct.uncalled_tools_count != null ? ct.uncalled_tools_count + ' Uncalled Tools' : 'Unavailable';
     }
     if (ctStats) {
-      ctStats.textContent = ct.uncalled_skills && ct.uncalled_skills.length > 0
-        ? 'Uncalled: ' + ct.uncalled_skills.slice(0, 2).join(', ')
-        : 'Schema Waste: unavailable (no raw token sizing)';
+      ctStats.textContent = (ct.active_tools || []).slice(0, 2).map(function(t) {
+        return t.tool_name + ': ' + t.invocation_count + ' calls, ' + t.error_count + ' errors, ' + t.unknown_outcome_count + ' unknown outcomes';
+      }).join(' · ') || 'Active tool yield unavailable';
+    }
+
+    var toolsList = document.getElementById('tools-summary-list');
+    if (toolsList) {
+      toolsList.innerHTML = '';
+      (ct.active_tools || []).slice(0, 5).forEach(function(t) {
+        var row = document.createElement('div'); row.className = 'summary-row';
+        var name = document.createElement('code'); name.textContent = t.tool_name;
+        var values = document.createElement('span');
+        values.textContent = t.invocation_count + ' calls · ' + t.error_count + ' errors · ' + (t.error_rate == null ? 'rate unavailable' : (100 * t.error_rate).toFixed(1) + '% known') + ' · ' + t.unknown_outcome_count + ' unknown';
+        row.appendChild(name); row.appendChild(values); toolsList.appendChild(row);
+      });
     }
 
     // Card 4: Throughput & Cost
@@ -3644,7 +3751,7 @@
     var tcDetails = document.getElementById('throughput-details');
 
     if (tcBadge) tcBadge.textContent = (tc.money_status || 'unpriced').toUpperCase();
-    if (tcDel) tcDel.textContent = (tc.closed_issue_qitems || 0) + ' Issue Tasks Closed';
+    if (tcDel) tcDel.textContent = data.source_coverage && data.source_coverage.queue === 'unavailable' ? 'Unavailable' : (tc.closed_issue_qitems || 0) + ' Issue Tasks Closed';
     var avgStr = tc.avg_cost_per_closed_issue_qitem != null
       ? '$' + Number(tc.avg_cost_per_closed_issue_qitem).toFixed(2)
       : (tc.average_label || 'unpriced');
@@ -3655,7 +3762,7 @@
     if (tcDetails) tcDetails.textContent = 'Closed Issue Tasks: ' + (tc.closed_issue_qitems || 0) + ' · Internal Tasks: ' + (tc.closed_internal_tasks || 0);
   }
 
-  function openDirectOverviewDrawer(cardType, customData) {
+  function openDirectOverviewDrawer(cardType, customData, captured) {
     var drawer = document.getElementById('direct-overview-drawer');
     var titleEl = document.getElementById('drawer-title');
     var subtitleEl = document.getElementById('drawer-subtitle');
@@ -3663,9 +3770,11 @@
     var closeBtn = document.getElementById('btn-close-drawer');
     if (!drawer || !bodyEl) return;
 
-    lastFocusedTrigger = document.activeElement;
+    if (drawer.hasAttribute('hidden')) lastFocusedTrigger = document.activeElement;
+    drawerGeneration += 1;
     bodyEl.innerHTML = '';
-    var data = lastOverviewData || {};
+    drawerSnapshot = cloneOverview(captured || lastOverviewData || {});
+    var data = drawerSnapshot;
 
     if (cardType === 'critical_focus') {
       if (titleEl) titleEl.textContent = 'Critical Focus: Rank 1 Fleet Bottleneck';
@@ -3674,19 +3783,11 @@
 
       var sec1 = document.createElement('div');
       sec1.className = 'drawer-section';
-      sec1.innerHTML = '<h4>Operational Finding</h4><p>' + escapeHtml(cf.category || 'Nominal') + ' on <strong>' + escapeHtml(cf.entity_id || 'Fleet') + '</strong></p><p class="card-recommendation">' + escapeHtml(cf.recommendation || '') + '</p>';
+      var heading = document.createElement('h4'); heading.textContent = 'Operational Finding'; sec1.appendChild(heading);
+      var finding = document.createElement('p'); finding.textContent = (cf.category || cf.focus_state || 'Unavailable') + ' on ' + (cf.entity_id || 'Fleet'); sec1.appendChild(finding);
+      var explanation = document.createElement('p'); explanation.textContent = cf.recommendation || 'Inspect the captured source keys and coverage.'; sec1.appendChild(explanation);
       bodyEl.appendChild(sec1);
 
-      var sec2 = document.createElement('div');
-      sec2.className = 'drawer-section';
-      sec2.innerHTML = '<h4>Reproducible CLI Trace</h4><div class="trace-cli-box"><code class="trace-cli-code">dendro trace --metric-id direct_overview</code><button type="button" class="btn-copy-trace" data-cmd="dendro trace --metric-id direct_overview">Copy</button></div>';
-      bodyEl.appendChild(sec2);
-
-      var sec3 = document.createElement('div');
-      sec3.className = 'drawer-section';
-      var skHtml = (cf.selected_source_keys || []).map(function(k) { return '<span class="source-key-pill">' + escapeHtml(k) + '</span>'; }).join('');
-      sec3.innerHTML = '<h4>AC7 Source Keys</h4><div class="source-keys-pill-list">' + (skHtml || '<span>No active incident keys</span>') + '</div>';
-      bodyEl.appendChild(sec3);
     } else if (cardType === 'cwd_projects') {
       if (titleEl) titleEl.textContent = 'Projects & Folders Rollup (AC10 Privacy-Safe)';
       if (subtitleEl) subtitleEl.textContent = 'Grouped by cwd_fingerprint without raw path disclosure';
@@ -3694,20 +3795,23 @@
       var pList = data.project_groups || [];
       var table = document.createElement('table');
       table.className = 'telemetry-table';
-      table.innerHTML = '<thead><tr><th>CWD Fingerprint</th><th>Tokens</th><th>Spend</th></tr></thead><tbody>' +
-        pList.map(function(p) {
-          return '<tr><td><code>' + escapeHtml(p.alias || p.cwd_fingerprint) + '</code></td><td>' + (p.total_tokens || 0).toLocaleString() + '</td><td>' + (p.estimated_cost_usd != null ? '$' + Number(p.estimated_cost_usd).toFixed(2) : 'unpriced') + '</td></tr>';
-        }).join('') + '</tbody>';
+      var header = document.createElement('tr');
+      ['CWD Fingerprint', 'Tokens', 'Observed active seat-hours', 'Closed Issue Tasks', 'Observed priced subtotal'].forEach(function(label) { var th = document.createElement('th'); th.textContent = label; header.appendChild(th); });
+      table.appendChild(header);
+      pList.forEach(function(p) {
+        var row = document.createElement('tr');
+        [p.alias || p.cwd_fingerprint, (p.total_tokens || 0).toLocaleString(), Number(p.active_hours || 0).toFixed(3), p.closed_issue_qitems || 0, p.estimated_cost_usd != null ? '$' + Number(p.estimated_cost_usd).toFixed(2) : 'unpriced'].forEach(function(value) { var td = document.createElement('td'); td.textContent = value; row.appendChild(td); });
+        table.appendChild(row);
+      });
 
       var sec1 = document.createElement('div');
       sec1.className = 'drawer-section';
       sec1.appendChild(table);
+      var unassigned = document.createElement('p');
+      unassigned.textContent = 'Unassigned: ' + (data.unassigned_total_tokens || 0) + ' tokens · ' + Number(data.unassigned_active_hours || 0).toFixed(3) + ' observed active seat-hours · ' + (data.unassigned_closed_issue_qitems || 0) + ' Closed Issue Tasks. Project and unassigned totals conserve the scoped evidence.';
+      sec1.appendChild(unassigned);
       bodyEl.appendChild(sec1);
 
-      var sec2 = document.createElement('div');
-      sec2.className = 'drawer-section';
-      sec2.innerHTML = '<h4>Reproducible CLI Trace</h4><div class="trace-cli-box"><code class="trace-cli-code">dendro trace --metric-id direct_overview</code><button type="button" class="btn-copy-trace" data-cmd="dendro trace --metric-id direct_overview">Copy</button></div>';
-      bodyEl.appendChild(sec2);
     } else if (cardType === 'context_tax') {
       if (titleEl) titleEl.textContent = 'Skills & MCPs: Yield vs. Context-Tax';
       if (subtitleEl) subtitleEl.textContent = 'Distinguishing active yield from prompt schema overhead';
@@ -3716,12 +3820,11 @@
       var sec1 = document.createElement('div');
       sec1.className = 'drawer-section';
       sec1.innerHTML = '<h4>Status &amp; Disclosure</h4><p>Status: <strong>' + escapeHtml(ct.declaration_status || 'unavailable') + '</strong></p><p>Uncalled Tools Count: <strong>' + (ct.uncalled_tools_count != null ? ct.uncalled_tools_count : 'unavailable') + '</strong></p><p style="font-size:11px;color:#94A3B8;">' + escapeHtml(ct.disclosure || 'Schema waste is unavailable when per-tool token sizing is not recorded.') + '</p>';
+      var tools = document.createElement('p');
+      tools.textContent = (ct.active_tools || []).map(function(t) { return t.tool_name + ': ' + t.invocation_count + ' calls; ' + t.error_count + ' errors; ' + (t.error_rate == null ? 'rate unavailable' : (100 * t.error_rate).toFixed(1) + '% of known outcomes') + '; ' + t.unknown_outcome_count + ' unknown outcomes'; }).join(' · ') || 'Active tool yield unavailable';
+      sec1.appendChild(tools);
       bodyEl.appendChild(sec1);
 
-      var sec2 = document.createElement('div');
-      sec2.className = 'drawer-section';
-      sec2.innerHTML = '<h4>Reproducible CLI Trace</h4><div class="trace-cli-box"><code class="trace-cli-code">dendro trace --metric-id direct_overview</code><button type="button" class="btn-copy-trace" data-cmd="dendro trace --metric-id direct_overview">Copy</button></div>';
-      bodyEl.appendChild(sec2);
     } else if (cardType === 'throughput_cost') {
       if (titleEl) titleEl.textContent = 'Fleet Throughput & Cost Accounting';
       if (subtitleEl) subtitleEl.textContent = 'Strict accounting_v1 deliverable & spend alignment';
@@ -3729,34 +3832,39 @@
 
       var sec1 = document.createElement('div');
       sec1.className = 'drawer-section';
-      sec1.innerHTML = '<h4>Deliverables Accounting</h4><p>Closed Issue Tasks: <strong>' + (tc.closed_issue_qitems || 0) + '</strong></p><p>Closed Internal Tasks: <strong>' + (tc.closed_internal_tasks || 0) + '</strong></p><p>Total Fleet Spend: <strong>' + (tc.total_fleet_spend_usd != null ? '$' + Number(tc.total_fleet_spend_usd).toFixed(2) : (tc.money_status || 'unpriced')) + '</strong></p>';
+      sec1.innerHTML = '<h4>Deliverables Accounting</h4><p>Closed Issue Tasks: <strong>' + (tc.closed_issue_qitems != null && !(data.source_coverage && data.source_coverage.queue === 'unavailable') ? tc.closed_issue_qitems : 'unavailable') + '</strong></p><p>Closed Internal Tasks: <strong>' + (tc.closed_internal_tasks != null && !(data.source_coverage && data.source_coverage.queue === 'unavailable') ? tc.closed_internal_tasks : 'unavailable') + '</strong></p><p>Total Fleet Spend: <strong>' + (tc.total_fleet_spend_usd != null ? '$' + Number(tc.total_fleet_spend_usd).toFixed(2) : (tc.money_status || 'unpriced')) + '</strong></p>';
+      var formula = document.createElement('p');
+      formula.textContent = 'Average cost = full scoped observed fleet spend / distinct eligible closed issue tasks. Incomplete pricing or no closed tasks makes the ratio unavailable.';
+      sec1.appendChild(formula);
       bodyEl.appendChild(sec1);
 
-      var sec2 = document.createElement('div');
-      sec2.className = 'drawer-section';
-      sec2.innerHTML = '<h4>Reproducible CLI Trace</h4><div class="trace-cli-box"><code class="trace-cli-code">dendro trace --metric-id direct_overview</code><button type="button" class="btn-copy-trace" data-cmd="dendro trace --metric-id direct_overview">Copy</button></div>';
-      bodyEl.appendChild(sec2);
     } else if (cardType === 'lens' && customData) {
       if (titleEl) titleEl.textContent = 'Predefined Question Lens';
       if (subtitleEl) subtitleEl.textContent = 'Live Query: ' + escapeHtml(customData.view || '');
       var sec1 = document.createElement('div');
       sec1.className = 'drawer-section';
       var rows = customData.rows || [];
-      if (rows.length === 0) {
-        sec1.innerHTML = '<p>No records found for active window and rig.</p>';
+      if (customData.status === 'loading') {
+        sec1.textContent = 'Loading captured scope…';
+      } else if (customData.status === 'error') {
+        sec1.textContent = 'Query failed for captured scope. Close and retry.';
+      } else if (rows.length === 0) {
+        sec1.textContent = 'No records found for captured window and rig.';
       } else {
         var table = document.createElement('table');
         table.className = 'telemetry-table';
         var keys = Object.keys(rows[0] || {}).slice(0, 4);
-        table.innerHTML = '<thead><tr>' + keys.map(function(k) { return '<th>' + escapeHtml(k) + '</th>'; }).join('') + '</tr></thead><tbody>' +
-          rows.slice(0, 20).map(function(r) {
-            return '<tr>' + keys.map(function(k) { return '<td>' + escapeHtml(String(r[k] != null ? r[k] : '—')) + '</td>'; }).join('') + '</tr>';
-          }).join('') + '</tbody>';
+        var header = document.createElement('tr');
+        keys.forEach(function(key) { var th = document.createElement('th'); th.textContent = key; header.appendChild(th); }); table.appendChild(header);
+        rows.slice(0, 20).forEach(function(r) {
+          var row = document.createElement('tr'); keys.forEach(function(key) { var td = document.createElement('td'); td.textContent = String(r[key] != null ? r[key] : '—'); row.appendChild(td); }); table.appendChild(row);
+        });
         sec1.appendChild(table);
       }
       bodyEl.appendChild(sec1);
     }
 
+    appendSnapshotEvidence(bodyEl, data, data.source_keys || []);
     drawer.removeAttribute('hidden');
     drawer.classList.add('open');
     if (closeBtn) closeBtn.focus();
@@ -3765,6 +3873,8 @@
   function closeDirectOverviewDrawer() {
     var drawer = document.getElementById('direct-overview-drawer');
     if (!drawer) return;
+    drawerGeneration += 1;
+    drawerSnapshot = null;
     drawer.setAttribute('hidden', '');
     drawer.classList.remove('open');
     if (lastFocusedTrigger && typeof lastFocusedTrigger.focus === 'function') {
@@ -3814,16 +3924,28 @@
     document.querySelectorAll('.lens-chip[data-lens]').forEach(function(chip) {
       chip.addEventListener('click', function() {
         var lens = chip.getAttribute('data-lens');
-        if (!lens) return;
-        var win = getPersistedWindow ? getPersistedWindow() : 'all';
-        var url = '/api/query?view=' + encodeURIComponent(lens) + '&window=' + encodeURIComponent(win);
-        fetch(url)
-          .then(function(r) { return r.json(); })
+        if (chip.disabled || LENS_VIEWS.indexOf(lens) < 0 || !lastOverviewData || !lastOverviewData.scope) return;
+        var captured = cloneOverview(lastOverviewData);
+        var scope = captured.scope;
+        var url = new URL('/api/query', window.location.origin);
+        url.searchParams.set('view', lens);
+        url.searchParams.set('expect_evidence_digest', captured.digest);
+        url.searchParams.set('from', scope.from); url.searchParams.set('to', scope.to);
+        url.searchParams.set('window', scope.from + '..' + scope.to);
+        if (scope.rig != null) url.searchParams.set('rig', scope.rig);
+        var generation = overviewScopeGeneration;
+        openDirectOverviewDrawer('lens', { view: lens, status: 'loading' }, captured);
+        var requestGeneration = drawerGeneration;
+        fetch(url.toString())
+          .then(function(r) { if (!r.ok) throw new Error('query failed'); return r.json(); })
           .then(function(res) {
-            openDirectOverviewDrawer('lens', { view: lens, rows: res.rows || [] });
+            if (generation !== overviewScopeGeneration || requestGeneration !== drawerGeneration) return;
+            if (res.error) throw new Error('query failed');
+            openDirectOverviewDrawer('lens', { view: lens, status: 'ready', rows: res.lens_rows || res.rows || [] }, captured);
           })
-          .catch(function(err) {
-            openDirectOverviewDrawer('lens', { view: lens, rows: [] });
+          .catch(function() {
+            if (generation !== overviewScopeGeneration || requestGeneration !== drawerGeneration) return;
+            openDirectOverviewDrawer('lens', { view: lens, status: 'error' }, captured);
           });
       });
     });

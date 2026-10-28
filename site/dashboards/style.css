@@ -2915,3 +2915,17 @@ body.mode-forensic .predefined-lenses-group {
 body.mode-forensic .forensic-section {
   display: block;
 }
+
+/* Direct overview evidence can contain long sealed identifiers. */
+.direct-card { min-width: 0; }
+.summary-row { gap: 8px; flex-wrap: wrap; align-items: baseline; }
+.summary-row code { min-width: 0; overflow-wrap: anywhere; flex: 1 1 10ch; }
+.summary-row span, .drawer-section p { overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.lens-chip:disabled { opacity: 0.5; cursor: not-allowed; }
+.direct-card:focus-visible, .drawer-close-btn:focus-visible, .lens-chip:focus-visible {
+  outline: 2px solid var(--emerald-yield);
+  outline-offset: 3px;
+}
+
+.drawer-body .telemetry-table { width: 100%; table-layout: fixed; }
+.drawer-body .telemetry-table th, .drawer-body .telemetry-table td { overflow-wrap: anywhere; }

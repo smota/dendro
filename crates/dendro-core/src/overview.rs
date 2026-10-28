@@ -13,6 +13,9 @@ use crate::advisory::AdvisoryOptions;
 use crate::vortex::FrictionThresholds;
 use crate::{ActivityFact, AnalyticsStore, IdentityFact, SkillFact};
 
+mod attribution;
+mod native;
+
 pub const FORMULA_VERSION: &str = "direct-overview-v1";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,12 +48,26 @@ pub struct CwdProjectGroup {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub alias: Option<String>,
     pub total_tokens: i64,
+    pub active_hours: f64,
+    pub closed_issue_qitems: usize,
     pub estimated_cost_usd: Option<f64>,
     pub usage_source_keys: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ActiveTool {
+    pub tool_name: String,
+    pub invocation_count: usize,
+    pub error_count: usize,
+    pub error_rate: Option<f64>,
+    pub unknown_outcome_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ContextTaxOverview {
+    pub active_tools: Vec<ActiveTool>,
+    pub active_tools_status: String,
+    pub excluded_source_keys: Vec<String>,
     pub uncalled_tools_count: Option<usize>,
     pub declaration_status: String,
     pub uncalled_skills: Vec<String>,
@@ -84,8 +101,22 @@ pub struct ThroughputAndCostOverview {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct OverviewScope {
+    pub rig: Option<String>,
+    pub from: String,
+    pub to: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DirectOverview {
     pub formula_version: String,
+    pub scope: OverviewScope,
+    pub source_coverage: BTreeMap<String, String>,
+    pub lens_rows: BTreeMap<String, Vec<serde_json::Value>>,
+    pub observed_active_hours: f64,
+    pub unassigned_active_hours: f64,
+    pub unassigned_closed_issue_qitems: usize,
+    pub activity_source_keys: Vec<String>,
     pub as_of: String,
     pub snapshot: bool,
     pub live_alert: bool,
@@ -114,6 +145,8 @@ pub struct DirectOverview {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DerivedIncident {
     pub classification: String,
+    #[serde(default)]
+    pub threshold_breached: Option<bool>,
     pub seat: Option<String>,
     pub qitem_id: Option<String>,
     pub hold_id: Option<String>,
@@ -145,7 +178,7 @@ pub struct OverviewQueueFact {
 
 impl OverviewQueueFact {
     pub fn ts(&self) -> DateTime<Utc> {
-        DateTime::from_timestamp_millis(self.ts_ms).unwrap_or_else(Utc::now)
+        DateTime::from_timestamp_millis(self.ts_ms).unwrap_or(DateTime::<Utc>::MIN_UTC)
     }
 }
 
@@ -173,6 +206,7 @@ pub struct OverviewToolFact {
     pub native_session: String,
     pub ts_ms: Option<i64>,
     pub tool_name: String,
+    pub failed: Option<bool>,
 }
 
 impl OverviewToolFact {
@@ -194,10 +228,10 @@ pub struct OverviewProcessIdentity {
 
 impl OverviewProcessIdentity {
     pub fn first_seen(&self) -> DateTime<Utc> {
-        DateTime::from_timestamp_millis(self.first_seen_ms).unwrap_or_else(Utc::now)
+        DateTime::from_timestamp_millis(self.first_seen_ms).unwrap_or(DateTime::<Utc>::MIN_UTC)
     }
     pub fn last_seen(&self) -> DateTime<Utc> {
-        DateTime::from_timestamp_millis(self.last_seen_ms).unwrap_or_else(Utc::now)
+        DateTime::from_timestamp_millis(self.last_seen_ms).unwrap_or(DateTime::<Utc>::MIN_UTC)
     }
 }
 
@@ -221,7 +255,13 @@ pub fn token_amount(u: &OverviewUsageFact) -> i64 {
 }
 
 pub fn to_iso_z(dt: &DateTime<Utc>) -> String {
-    dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+    dt.to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true)
+}
+
+// Stored adapter timestamps use milliseconds. Ceil a boundary so a sub-ms
+// endpoint retains the half-open comparison for exactly representable facts.
+fn cutoff_ms(ts: DateTime<Utc>) -> i64 {
+    ts.timestamp_millis() + i64::from(!ts.timestamp_subsec_nanos().is_multiple_of(1_000_000))
 }
 
 /// Evaluates direct overview from in-memory/adapted facts.
@@ -229,13 +269,40 @@ pub fn evaluate_direct_overview_facts(
     facts: &RawOverviewFacts<'_>,
     req: &OverviewRequest,
 ) -> Result<DirectOverview> {
+    let mut identities = facts.identity_facts.to_vec();
+    identities.sort_by(|a, b| {
+        (&a.harness, &a.native_session, a.ts, &a.source_key).cmp(&(
+            &b.harness,
+            &b.native_session,
+            b.ts,
+            &b.source_key,
+        ))
+    });
+    let sorted = RawOverviewFacts {
+        identity_facts: &identities,
+        ..facts.clone()
+    };
+    evaluate_with_support(&sorted, req, &native::Support::default())
+}
+
+fn evaluate_with_support(
+    facts: &RawOverviewFacts<'_>,
+    req: &OverviewRequest,
+    support: &native::Support,
+) -> Result<DirectOverview> {
+    if req.from >= req.to {
+        return Err(anyhow!("overview from must precede to"));
+    }
+    req.advisory_options.validate()?;
+    req.friction_thresholds.validate()?;
     let observation_clock = req.observation_clock.unwrap_or_else(Utc::now);
     let as_of_dt = req.evidence_as_of.or(facts.evidence_as_of);
 
     // D3: Snapshot / live alert
     let (snapshot, live_alert) = match as_of_dt {
         Some(as_of) if as_of < observation_clock - chrono::Duration::seconds(300) => (true, false),
-        _ => (false, true),
+        Some(_) if req.to >= observation_clock - chrono::Duration::seconds(300) => (false, true),
+        _ => (true, false),
     };
 
     // D3: Temporal label: window.to >= observation_clock - 300s
@@ -248,7 +315,10 @@ pub fn evaluate_direct_overview_facts(
     let overall_coverage = facts
         .coverage
         .clone()
-        .unwrap_or_else(|| "complete".to_string());
+        .unwrap_or_else(|| "unavailable".to_string());
+
+    let live_alert = live_alert && !matches!(overall_coverage.as_str(), "no_data" | "unavailable");
+    let snapshot = snapshot || !live_alert;
 
     // 1. Critical Focus evaluation
     let (critical_focus, focus_source_keys) =
@@ -261,17 +331,8 @@ pub fn evaluate_direct_overview_facts(
     let (throughput_and_cost, tc_source_keys) = evaluate_throughput_and_cost(facts, req)?;
 
     // 4. Combined CWD Projects and Scoped Usage in a single pass over usage_facts
-    let req_from_ms = req.from.timestamp_millis();
-    let req_to_ms = req.to.timestamp_millis();
-
-    let in_scope_sessions: Option<BTreeSet<(&str, &str)>> = req.rig.as_deref().map(|r| {
-        facts
-            .identity_facts
-            .iter()
-            .filter(|id| id.rig == r)
-            .map(|id| (id.harness.as_str(), id.native_session.as_str()))
-            .collect()
-    });
+    let req_from_ms = cutoff_ms(req.from);
+    let req_to_ms = cutoff_ms(req.to);
 
     let mut pid_index: HashMap<(&str, &str), Vec<&OverviewProcessIdentity>> =
         HashMap::with_capacity(32);
@@ -301,12 +362,8 @@ pub fn evaluate_direct_overview_facts(
     let mut undated_source_keys = Vec::new();
 
     for u in facts.usage_facts {
-        let is_in_rig = match in_scope_sessions {
-            Some(ref sessions) => {
-                sessions.contains(&(u.harness.as_str(), u.native_session.as_str()))
-            }
-            None => true,
-        };
+        let is_in_rig =
+            attribution::session_in_scope(facts, req, &u.harness, &u.native_session, u.ts());
 
         if !is_in_rig {
             excluded_source_keys.push(u.source_key.clone());
@@ -342,7 +399,11 @@ pub fn evaluate_direct_overview_facts(
             match pid_index.get(&(u.harness.as_str(), u.native_session.as_str())) {
                 Some(candidates) => candidates
                     .iter()
-                    .filter(|p| ts_ms >= p.first_seen_ms && ts_ms <= p.last_seen_ms)
+                    .filter(|p| {
+                        ts_ms >= p.first_seen_ms
+                            && ts_ms <= p.last_seen_ms
+                            && p.ended_at_ms.is_none_or(|end| ts_ms < end)
+                    })
                     .collect(),
                 None => vec![],
             };
@@ -353,7 +414,10 @@ pub fn evaluate_direct_overview_facts(
             .filter_map(|p| p.cwd_fingerprint.as_deref())
             .collect();
 
-        if fingerprints.len() == 1 {
+        if fingerprints.len() == 1
+            && matching_pids.iter().all(|p| p.cwd_fingerprint.is_some())
+            && attribution::binding(facts, &u.harness, &u.native_session, u.ts().unwrap()).is_some()
+        {
             let fp = *fingerprints.first().unwrap();
             let entry = project_usage
                 .entry(fp.to_string())
@@ -385,6 +449,8 @@ pub fn evaluate_direct_overview_facts(
             cwd_fingerprint: fp,
             alias: None,
             total_tokens: tokens,
+            active_hours: 0.0,
+            closed_issue_qitems: 0,
             estimated_cost_usd: if has_cost { Some(cost) } else { None },
             usage_source_keys: keys,
         });
@@ -392,6 +458,28 @@ pub fn evaluate_direct_overview_facts(
     project_groups.sort_by(|a, b| a.cwd_fingerprint.cmp(&b.cwd_fingerprint));
 
     cwd_source_keys.extend(unassigned_usage_keys.clone());
+
+    let activity = attribution::project_activity(facts, req, support, &mut project_groups);
+    let unassigned_closed_issue_qitems =
+        attribution::project_closures(facts, req, &throughput_and_cost, &mut project_groups);
+    project_groups.sort_by(|a, b| a.cwd_fingerprint.cmp(&b.cwd_fingerprint));
+
+    let mut lens_rows = support.lens_rows.clone();
+    let mut projects = project_groups.clone();
+    projects.sort_by(|a, b| {
+        b.total_tokens
+            .cmp(&a.total_tokens)
+            .then_with(|| a.cwd_fingerprint.cmp(&b.cwd_fingerprint))
+    });
+    projects.truncate(5);
+    lens_rows.insert(
+        "v_cwd_fingerprint_rollup".into(),
+        projects
+            .iter()
+            .map(|p| serde_json::to_value(p).expect("project serialization"))
+            .collect(),
+    );
+    lens_rows.insert("skill_facts".into(),context_tax.uncalled_skills.iter().map(|skill|json!({"skill":skill,"invoked":false,"status":context_tax.declaration_status})).collect());
 
     // Union all source keys
     let mut all_source_keys: Vec<String> = Vec::with_capacity(
@@ -404,37 +492,29 @@ pub fn evaluate_direct_overview_facts(
     all_source_keys.extend(tax_source_keys);
     all_source_keys.extend(tc_source_keys);
     all_source_keys.extend(cwd_source_keys);
+    all_source_keys.extend(activity.2.clone());
+    all_source_keys.extend(critical_focus.state_support_source_keys.clone());
     all_source_keys.sort();
     all_source_keys.dedup();
     let source_keys_vec = all_source_keys;
 
-    // Compute deterministic evidence digest
-    let digest_input = json!({
-        "formula_version": FORMULA_VERSION,
-        "rig": req.rig,
-        "from": to_iso_z(&req.from),
-        "to": to_iso_z(&req.to),
-        "critical_focus": {
-            "focus_state": critical_focus.focus_state,
-            "category": critical_focus.category,
-            "entity_id": critical_focus.entity_id,
-            "duration_secs": critical_focus.duration_secs,
-        },
-        "context_tax": {
-            "uncalled_tools_count": context_tax.uncalled_tools_count,
-            "declaration_status": context_tax.declaration_status,
-        },
-        "throughput_and_cost": {
-            "closed_issue_qitems": throughput_and_cost.closed_issue_qitems,
-            "total_fleet_spend_usd": throughput_and_cost.total_fleet_spend_usd,
-            "money_status": throughput_and_cost.money_status,
-        },
+    // Canonical safe input operands, exact scope and effective analytic options.
+    // Each typed row is length-prefixed; no raw prompt/command/free-text reason
+    // enters this projection. Only the presentation observation clock is omitted.
+    let mut header = json!({
+        "digest_version": "canonical-selected-operands-v2", "formula_version": FORMULA_VERSION,
+        "scope": {"rig": req.rig, "from": to_iso_z(&req.from), "to": to_iso_z(&req.to)},
+        "options": {"advisory": req.advisory_options, "friction": req.friction_thresholds},
+        "coverage": overall_coverage, "source_coverage": support.coverage,
+        "evidence_as_of": as_of_dt, "support": support.safe_evidence,
+        "context_excluded": context_tax.excluded_source_keys,
     });
+    attribution::redact_evidence(&mut header);
     let mut hasher = Sha256::new();
-    hasher.update(digest_input.to_string().as_bytes());
-    for k in &source_keys_vec {
-        hasher.update(k.as_bytes());
-    }
+    let bytes = serde_json::to_vec(&header)?;
+    hasher.update((bytes.len() as u64).to_be_bytes());
+    hasher.update(bytes);
+    attribution::hash_evidence(&mut hasher, facts, req)?;
     let digest = format!("{:x}", hasher.finalize());
 
     // Optional expected digest validation
@@ -450,6 +530,17 @@ pub fn evaluate_direct_overview_facts(
 
     Ok(DirectOverview {
         formula_version: FORMULA_VERSION.to_string(),
+        scope: OverviewScope {
+            rig: req.rig.clone(),
+            from: to_iso_z(&req.from),
+            to: to_iso_z(&req.to),
+        },
+        source_coverage: support.coverage.clone(),
+        lens_rows,
+        observed_active_hours: activity.0,
+        unassigned_active_hours: activity.1,
+        unassigned_closed_issue_qitems,
+        activity_source_keys: activity.2,
         as_of: to_iso_z(&observation_clock),
         snapshot,
         live_alert,
@@ -506,41 +597,42 @@ fn evaluate_critical_focus(
         ));
     }
 
-    // Check if queue_facts show resolved stalls (e.g. Case 5)
-    let mut state_support_source_keys = Vec::new();
-    let mut resolved_stall = false;
-    if !facts.queue_facts.is_empty() {
-        let req_to_ms = req.to.timestamp_millis();
-        let has_claim = facts.queue_facts.iter().any(|q| q.state == "in-progress");
-        let last_state = facts
-            .queue_facts
-            .iter()
-            .max_by_key(|q| (q.ts_ms, q.transition_id));
-        if has_claim && last_state.is_some_and(|q| q.state == "done" && q.ts_ms <= req_to_ms) {
-            resolved_stall = true;
-            for q in facts.queue_facts {
-                if q.state == "in-progress" || q.state == "done" {
-                    state_support_source_keys.push(q.source_key.clone());
-                }
-            }
+    // Terminal state suppresses only the incident for that item. Other items
+    // and seats continue through ranking, even if an unrelated item just finished.
+    let mut terminal = BTreeSet::new();
+    let mut state_support_rows = Vec::new();
+    let mut states = BTreeMap::new();
+    for q in facts.queue_facts.iter().filter(|q| {
+        q.ts_ms < cutoff_ms(req.to) && attribution::seat_in_scope(facts, req, &q.dest_seat, q.ts())
+    }) {
+        let entry = states.entry(q.qitem_id.as_str()).or_insert(q);
+        if (q.ts_ms, q.transition_id, &q.source_key)
+            > (entry.ts_ms, entry.transition_id, &entry.source_key)
+        {
+            *entry = q;
         }
     }
-
-    if resolved_stall {
-        return Ok((
-            CriticalFocus {
-                focus_state: "nominal".to_string(),
-                category: None,
-                entity_id: None,
-                duration_secs: None,
-                temporal_label: temporal_label.to_string(),
-                selected_source_keys: vec![],
-                ranked_source_keys: vec![],
-                state_support_source_keys,
-            },
-            vec![],
-        ));
+    for (id, q) in states {
+        if matches!(q.state.as_str(), "done" | "denied" | "canceled" | "failed") {
+            terminal.insert(id);
+            state_support_rows.extend(
+                facts
+                    .queue_facts
+                    .iter()
+                    .filter(|r| {
+                        r.qitem_id == id
+                            && r.ts_ms <= q.ts_ms
+                            && attribution::seat_in_scope(facts, req, &r.dest_seat, r.ts())
+                    })
+                    .map(|r| (r.ts_ms, r.transition_id, r.source_key.clone())),
+            );
+        }
     }
+    state_support_rows.sort();
+    let state_support_source_keys = state_support_rows
+        .into_iter()
+        .map(|(_, _, key)| key)
+        .collect();
 
     // Evaluate derived incidents
     struct Candidate {
@@ -548,13 +640,19 @@ fn evaluate_critical_focus(
         category: String,
         entity_id: String,
         duration_secs: f64,
-        total_tokens: i64,
+        total_tokens: Option<i64>,
         source_keys: Vec<String>,
     }
 
     let mut candidates = Vec::new();
     for inc in &facts.derived_evidence {
-        if inc.resolved == Some(true) {
+        if inc.resolved == Some(true)
+            || (inc.classification != "rework_vortex"
+                && inc
+                    .qitem_id
+                    .as_deref()
+                    .is_some_and(|id| terminal.contains(id)))
+        {
             continue;
         }
 
@@ -571,7 +669,7 @@ fn evaluate_critical_focus(
                         category: "Leaf Stall".to_string(),
                         entity_id,
                         duration_secs: inc.duration_secs,
-                        total_tokens: inc.total_tokens.unwrap_or(0),
+                        total_tokens: inc.total_tokens,
                         source_keys: inc.source_keys.clone(),
                     });
                 }
@@ -588,7 +686,7 @@ fn evaluate_critical_focus(
                         category: "Unparked Container Hold".to_string(),
                         entity_id,
                         duration_secs: inc.duration_secs,
-                        total_tokens: inc.total_tokens.unwrap_or(0),
+                        total_tokens: inc.total_tokens,
                         source_keys: inc.source_keys.clone(),
                     });
                 }
@@ -605,7 +703,7 @@ fn evaluate_critical_focus(
                         category: "Admission Gate Hold".to_string(),
                         entity_id,
                         duration_secs: inc.duration_secs,
-                        total_tokens: inc.total_tokens.unwrap_or(0),
+                        total_tokens: inc.total_tokens,
                         source_keys: inc.source_keys.clone(),
                     });
                 }
@@ -616,10 +714,12 @@ fn evaluate_critical_focus(
                 let tokens = inc.rework_tokens.or(inc.total_tokens).unwrap_or(0);
                 let duration = inc.duration_secs;
 
-                let breach = return_rate > req.friction_thresholds.return_rate
-                    || (chain_returns > req.friction_thresholds.chain_returns as usize
-                        && tokens > 1_000_000)
-                    || duration > req.friction_thresholds.loop_duration_secs as f64;
+                let breach = inc.threshold_breached.unwrap_or(
+                    return_rate > req.friction_thresholds.return_rate
+                        || chain_returns > req.friction_thresholds.chain_returns as usize
+                        || tokens > req.friction_thresholds.rework_tokens as i64
+                        || duration > req.friction_thresholds.loop_duration_secs as f64,
+                );
 
                 if breach {
                     let entity_id = inc.qitem_id.clone().unwrap_or_default();
@@ -628,7 +728,7 @@ fn evaluate_critical_focus(
                         category: "Rework Vortex".to_string(),
                         entity_id,
                         duration_secs: inc.duration_secs,
-                        total_tokens: tokens,
+                        total_tokens: inc.rework_tokens.or(inc.total_tokens),
                         source_keys: inc.source_keys.clone(),
                     });
                 }
@@ -640,14 +740,19 @@ fn evaluate_critical_focus(
     if candidates.is_empty() {
         return Ok((
             CriticalFocus {
-                focus_state: "nominal".to_string(),
+                focus_state: if coverage == "complete" {
+                    "nominal"
+                } else {
+                    "unavailable"
+                }
+                .to_string(),
                 category: None,
                 entity_id: None,
                 duration_secs: None,
                 temporal_label: temporal_label.to_string(),
                 selected_source_keys: vec![],
                 ranked_source_keys: vec![],
-                state_support_source_keys: vec![],
+                state_support_source_keys,
             },
             vec![],
         ));
@@ -679,7 +784,7 @@ fn evaluate_critical_focus(
             temporal_label: temporal_label.to_string(),
             selected_source_keys: selected_source_keys.clone(),
             ranked_source_keys,
-            state_support_source_keys: vec![],
+            state_support_source_keys,
         },
         selected_source_keys,
     ))
@@ -689,109 +794,15 @@ fn evaluate_context_tax(
     facts: &RawOverviewFacts<'_>,
     req: &OverviewRequest,
 ) -> Result<(ContextTaxOverview, Vec<String>)> {
-    if facts.skill_facts.is_empty() {
-        return Ok((
-            ContextTaxOverview {
-                uncalled_tools_count: None,
-                declaration_status: "unavailable".to_string(),
-                uncalled_skills: vec![],
-                wasted_schema_tokens: None,
-                schema_tokens_status: "unavailable".to_string(),
-                wasted_cost_usd: None,
-                declaration_source_keys: vec![],
-                invocation_support_source_keys: vec![],
-            },
-            vec![],
-        ));
-    }
-
-    // Filter skill facts by rig if specified
-    let rig_seats: Option<BTreeSet<&str>> = req.rig.as_deref().map(|r| {
-        facts
-            .identity_facts
-            .iter()
-            .filter(|id| id.rig == r)
-            .map(|id| id.seat.as_str())
-            .collect()
-    });
-
-    let mut id_to_seat: BTreeMap<(&str, &str), &str> = BTreeMap::new();
-    for id in facts.identity_facts {
-        id_to_seat.insert(
-            (id.harness.as_str(), id.native_session.as_str()),
-            id.seat.as_str(),
-        );
-    }
-
-    // Collect invocations from tool_facts and skill_facts(invoked=true)
-    let mut invoked_skills_by_seat = BTreeSet::new();
-    let mut invocation_support_source_keys = Vec::new();
-
-    for t in facts.tool_facts {
-        if let Some(&s) = id_to_seat.get(&(t.harness.as_str(), t.native_session.as_str())) {
-            invoked_skills_by_seat.insert((s, t.tool_name.to_ascii_lowercase()));
-            invocation_support_source_keys.push(t.source_key.clone());
-        }
-    }
-
-    for s in facts.skill_facts {
-        if s.invoked {
-            invoked_skills_by_seat.insert((s.seat.as_str(), s.skill.to_ascii_lowercase()));
-            invocation_support_source_keys.push(s.source_key.clone());
-        }
-    }
-
-    let mut uncalled_skills = Vec::new();
-    let mut declaration_source_keys = Vec::new();
-
-    for s in facts.skill_facts {
-        if s.invoked {
-            continue;
-        }
-        if let Some(ref seats) = rig_seats {
-            if !seats.contains(s.seat.as_str()) {
-                continue;
-            }
-        }
-
-        // Check if later reconciled
-        let is_reconciled =
-            invoked_skills_by_seat.contains(&(s.seat.as_str(), s.skill.to_ascii_lowercase()));
-        if !is_reconciled {
-            uncalled_skills.push(s.skill.clone());
-            declaration_source_keys.push(s.source_key.clone());
-        }
-    }
-
-    uncalled_skills.sort();
-    uncalled_skills.dedup();
-
-    let count = uncalled_skills.len();
-
-    let mut all_keys = declaration_source_keys.clone();
-    all_keys.extend(invocation_support_source_keys.clone());
-
-    Ok((
-        ContextTaxOverview {
-            uncalled_tools_count: Some(count),
-            declaration_status: "measured".to_string(),
-            uncalled_skills,
-            wasted_schema_tokens: None,
-            schema_tokens_status: "unavailable".to_string(),
-            wasted_cost_usd: None,
-            declaration_source_keys,
-            invocation_support_source_keys,
-        },
-        all_keys,
-    ))
+    Ok(attribution::context_tax(facts, req))
 }
 
 fn evaluate_throughput_and_cost(
     facts: &RawOverviewFacts<'_>,
     req: &OverviewRequest,
 ) -> Result<(ThroughputAndCostOverview, Vec<String>)> {
-    let req_from_ms = req.from.timestamp_millis();
-    let req_to_ms = req.to.timestamp_millis();
+    let req_from_ms = cutoff_ms(req.from);
+    let req_to_ms = cutoff_ms(req.to);
 
     let rig_seats: Option<BTreeSet<&str>> = req.rig.as_deref().map(|r| {
         facts
@@ -804,7 +815,9 @@ fn evaluate_throughput_and_cost(
 
     // Group transitions by qitem_id
     let mut items: HashMap<&str, Vec<&OverviewQueueFact>> = HashMap::with_capacity(256);
-    for q in facts.queue_facts {
+    for q in facts.queue_facts.iter().filter(|q| {
+        q.ts_ms < req_to_ms && attribution::seat_in_scope(facts, req, &q.dest_seat, q.ts())
+    }) {
         items.entry(&q.qitem_id).or_default().push(q);
     }
 
@@ -816,7 +829,7 @@ fn evaluate_throughput_and_cost(
     let mut closed_internal_tasks = 0;
 
     for (item_id, mut transitions) in items {
-        transitions.sort_by_key(|a| (a.ts_ms, a.transition_id));
+        transitions.sort_by_key(|a| (a.ts_ms, a.transition_id, &a.source_key));
         let last_transition = transitions.last().unwrap();
 
         // Check if reopened at cutoff
@@ -850,6 +863,7 @@ fn evaluate_throughput_and_cost(
             t.is_recovery
                 || t.qitem_id.starts_with("qitem-recovery-")
                 || t.qitem_id.starts_with("recovery:")
+                || t.qitem_id.starts_with("stuck-sweep:")
                 || t.recovery_reason.is_some()
         });
 
@@ -872,21 +886,30 @@ fn evaluate_throughput_and_cost(
             }
         }
 
-        // Find done transition in window
+        // Collapse repeated done readings, but never reach back across a reopen.
+        let last_open = transitions.iter().rposition(|t| t.state != "done");
         let done_transition = transitions
             .iter()
-            .filter(|t| t.state == "done" && t.ts_ms >= req_from_ms && t.ts_ms < req_to_ms)
-            .min_by_key(|t| (t.ts_ms, t.transition_id));
-
-        let Some(dt) = done_transition else {
+            .skip(last_open.map_or(0, |n| n + 1))
+            .find(|t| t.state == "done");
+        let Some(dt) = done_transition.filter(|t| {
+            t.ts_ms >= req_from_ms
+                && t.ts_ms < req_to_ms
+                && attribution::completion_reason(t.closure_reason.as_deref())
+        }) else {
             for t in &transitions {
                 excluded_source_keys.push((t.ts_ms, t.transition_id, t.source_key.clone()));
             }
             continue;
         };
-
-        // Check issue tags
-        let has_issue_tag = !dt.issue_tags.is_empty();
+        let has_issue_tag = dt
+            .issue_tags
+            .iter()
+            .any(|s| attribution::positive_issue_id(s));
+        if !dt.issue_tags.is_empty() && !has_issue_tag {
+            excluded_source_keys.push((dt.ts_ms, dt.transition_id, dt.source_key.clone()));
+            continue;
+        }
 
         if has_issue_tag {
             closed_issue_items.push((
@@ -953,30 +976,21 @@ fn evaluate_throughput_and_cost(
     let closed_issue_qitems = closed_issue_qitem_ids.len();
 
     // 2. Spend evaluation from usage_facts
-    let in_scope_sessions: Option<BTreeSet<(&str, &str)>> = req.rig.as_deref().map(|r| {
-        facts
-            .identity_facts
-            .iter()
-            .filter(|id| id.rig == r)
-            .map(|id| (id.harness.as_str(), id.native_session.as_str()))
-            .collect()
-    });
-
     let mut priced_rows = 0;
     let mut unpriced_rows = 0;
+    let mut unknown_time = false;
     let mut spend_sum = 0.0;
     let mut spend_source_keys = Vec::new();
     let mut priced_source_keys = Vec::new();
     let mut unpriced_source_keys = Vec::new();
 
     for u in facts.usage_facts {
-        if let Some(ref sessions) = in_scope_sessions {
-            if !sessions.contains(&(u.harness.as_str(), u.native_session.as_str())) {
-                continue;
-            }
+        if !attribution::session_in_scope(facts, req, &u.harness, &u.native_session, u.ts()) {
+            continue;
         }
 
         let Some(ts_ms) = u.ts_ms else {
+            unknown_time = true;
             continue;
         };
         if ts_ms < req_from_ms || ts_ms >= req_to_ms {
@@ -998,11 +1012,11 @@ fn evaluate_throughput_and_cost(
     }
 
     let (money_status, total_fleet_spend_usd, observed_priced_subtotal_usd) =
-        if priced_rows > 0 && unpriced_rows == 0 {
+        if priced_rows > 0 && unpriced_rows == 0 && !unknown_time {
             ("priced".to_string(), Some(spend_sum), None)
         } else if priced_rows == 0 && unpriced_rows > 0 {
             ("unpriced".to_string(), None, None)
-        } else if priced_rows > 0 && unpriced_rows > 0 {
+        } else if priced_rows > 0 && (unpriced_rows > 0 || unknown_time) {
             ("partial".to_string(), None, Some(spend_sum))
         } else {
             ("unpriced".to_string(), None, None)
@@ -1051,173 +1065,7 @@ pub fn evaluate_overview_snapshot_path(db: &Path, req: &OverviewRequest) -> Resu
     store.read_snapshot(|s| evaluate_overview_snapshot(s, req))
 }
 
-pub struct OverviewStatements<'conn> {
-    pub stmt_queue: duckdb::Statement<'conn>,
-    pub stmt_usage: duckdb::Statement<'conn>,
-    pub stmt_skills: duckdb::Statement<'conn>,
-    pub stmt_tools: duckdb::Statement<'conn>,
-    pub stmt_pids: duckdb::Statement<'conn>,
-    pub stmt_identities: duckdb::Statement<'conn>,
-    pub queue_buf: Vec<OverviewQueueFact>,
-    pub usage_buf: Vec<OverviewUsageFact>,
-    pub skills_buf: Vec<SkillFact>,
-    pub tools_buf: Vec<OverviewToolFact>,
-    pub pids_buf: Vec<OverviewProcessIdentity>,
-    pub identities_buf: Vec<IdentityFact>,
-}
-
-impl<'conn> OverviewStatements<'conn> {
-    pub fn prepare(conn: &'conn duckdb::Connection) -> Result<Self> {
-        let stmt_queue = conn.prepare("SELECT source_key, transition_id, qitem_id, epoch_ms(ts), state, dest_seat, closure_reason, is_recovery, recovery_reason, issue_tags FROM queue_facts")?;
-        let stmt_usage = conn.prepare("SELECT source_key, harness, native_session, epoch_ms(ts), (input_uncached + output_tokens + cache_read + cache_write)::BIGINT, currency_total FROM usage_facts")?;
-        let stmt_skills =
-            conn.prepare("SELECT source_key, seat, skill, invoked FROM skill_facts")?;
-        let stmt_tools = conn.prepare(
-            "SELECT source_key, harness, native_session, epoch_ms(ts), tool_name FROM tool_facts",
-        )?;
-        let stmt_pids = conn.prepare("SELECT harness, session_link, cwd_fingerprint, epoch_ms(first_seen), epoch_ms(last_seen) FROM process_identities")?;
-        let stmt_identities = conn.prepare("SELECT source_key, harness, native_session, rig, seat, epoch_ms(ts) FROM identity_facts")?;
-        Ok(Self {
-            stmt_queue,
-            stmt_usage,
-            stmt_skills,
-            stmt_tools,
-            stmt_pids,
-            stmt_identities,
-            queue_buf: Vec::with_capacity(640),
-            usage_buf: Vec::with_capacity(4096),
-            skills_buf: Vec::with_capacity(256),
-            tools_buf: Vec::with_capacity(512),
-            pids_buf: Vec::with_capacity(128),
-            identities_buf: Vec::with_capacity(128),
-        })
-    }
-
-    pub fn evaluate(&mut self, req: &OverviewRequest) -> Result<DirectOverview> {
-        self.queue_buf.clear();
-        let rows = self.stmt_queue.query_map([], |row| {
-            let ts_ms: i64 = row.get(3)?;
-            let tags_str: String = row.get(9)?;
-            let has_issue_tag = !tags_str.is_empty() && tags_str != "[]";
-            let tags = if has_issue_tag {
-                serde_json::from_str(&tags_str).unwrap_or_else(|_| vec!["issue".to_string()])
-            } else {
-                vec![]
-            };
-            Ok(OverviewQueueFact {
-                source_key: row.get(0)?,
-                transition_id: row.get(1)?,
-                qitem_id: row.get(2)?,
-                ts_ms,
-                state: row.get(4)?,
-                source_seat: String::new(),
-                dest_seat: row.get(5)?,
-                closure_reason: row.get(6)?,
-                closure_target: None,
-                is_recovery: row.get(7)?,
-                recovery_reason: row.get(8)?,
-                issue_tags: tags,
-            })
-        })?;
-        for fact in rows.flatten() {
-            self.queue_buf.push(fact);
-        }
-
-        self.usage_buf.clear();
-        let rows = self.stmt_usage.query_map([], |row| {
-            let ts_ms: Option<i64> = row.get(3)?;
-            Ok(OverviewUsageFact {
-                source_key: row.get(0)?,
-                harness: row.get(1)?,
-                native_session: row.get(2)?,
-                ts_ms,
-                seq: 0,
-                total_tokens: row.get(4)?,
-                currency_total: row.get(5)?,
-            })
-        })?;
-        for fact in rows.flatten() {
-            self.usage_buf.push(fact);
-        }
-
-        self.skills_buf.clear();
-        let rows = self.stmt_skills.query_map([], |row| {
-            Ok(SkillFact {
-                source_key: row.get(0)?,
-                seat: row.get(1)?,
-                skill: row.get(2)?,
-                invoked: row.get(3)?,
-            })
-        })?;
-        for fact in rows.flatten() {
-            self.skills_buf.push(fact);
-        }
-
-        self.tools_buf.clear();
-        let rows = self.stmt_tools.query_map([], |row| {
-            let ts_ms: Option<i64> = row.get(3)?;
-            Ok(OverviewToolFact {
-                source_key: row.get(0)?,
-                harness: row.get(1)?,
-                native_session: row.get(2)?,
-                ts_ms,
-                tool_name: row.get(4)?,
-            })
-        })?;
-        for fact in rows.flatten() {
-            self.tools_buf.push(fact);
-        }
-
-        self.pids_buf.clear();
-        let rows = self.stmt_pids.query_map([], |row| {
-            let f_ms: i64 = row.get(3)?;
-            let l_ms: i64 = row.get(4)?;
-            Ok(OverviewProcessIdentity {
-                identity_key: String::new(),
-                harness: row.get(0)?,
-                session_link: row.get(1)?,
-                cwd_fingerprint: row.get(2)?,
-                first_seen_ms: f_ms,
-                last_seen_ms: l_ms,
-                ended_at_ms: None,
-            })
-        })?;
-        for fact in rows.flatten() {
-            self.pids_buf.push(fact);
-        }
-
-        self.identities_buf.clear();
-        let rows = self.stmt_identities.query_map([], |row| {
-            let ts_ms: Option<i64> = row.get(5)?;
-            Ok(IdentityFact {
-                source_key: row.get(0)?,
-                harness: row.get(1)?,
-                native_session: row.get(2)?,
-                rig: row.get(3)?,
-                seat: row.get(4)?,
-                ts: ts_ms.and_then(DateTime::from_timestamp_millis),
-            })
-        })?;
-        for fact in rows.flatten() {
-            self.identities_buf.push(fact);
-        }
-
-        let raw_facts = RawOverviewFacts {
-            derived_evidence: vec![],
-            queue_facts: &self.queue_buf,
-            skill_facts: &self.skills_buf,
-            usage_facts: &self.usage_buf,
-            tool_facts: &self.tools_buf,
-            process_identities: &self.pids_buf,
-            identity_facts: &self.identities_buf,
-            activity_facts: &[],
-            coverage: Some("complete".to_string()),
-            evidence_as_of: None,
-        };
-
-        evaluate_direct_overview_facts(&raw_facts, req)
-    }
-}
+pub use native::OverviewStatements;
 
 /// Evaluates direct overview from a DuckDB database or store.
 pub fn evaluate_overview_snapshot(
@@ -1252,6 +1100,7 @@ mod tests {
         fs::create_dir_all(&temp_dir).unwrap();
         let db_path = temp_dir.join("analytics.duckdb");
 
+        let dataset_digest;
         // Populate database with exact 5,500 facts census:
         // usage 4000 / queue 600 / tool 400 / identity 100 / activity 150 / process_identities 100 / skill 150
         {
@@ -1266,7 +1115,7 @@ mod tests {
                         format!("id:{}", i),
                         "codex",
                         format!("session-{}", i),
-                        "test-rig",
+                        if i == 99 { "foreign-rig" } else { "test-rig" },
                         format!("dev-{}@test-rig", i),
                         "2026-10-01 00:00:00"
                     ])
@@ -1278,7 +1127,7 @@ mod tests {
             // 2. 100 process_identities
             conn.execute_batch(
                 "INSERT INTO process_identities (identity_key, root_key, pid, platform, start_time_unix_s, exe_name, harness, cwd_fingerprint, session_link, environment_kind, isolation_hint, first_seen, last_seen, visibility_limits)
-                 SELECT 'proc:' || i, 'root', 1000 + i, 'linux', 0, 'proc', 'codex', 'fp-' || (i % 10), 'session-' || (i % 100), 'local', 'none',
+                 SELECT 'proc:' || i, 'root', 1000 + i, 'linux', 0, 'proc', 'codex', 'fp-' || (i % 10), 'session-' || (CASE WHEN i=1 THEN 0 ELSE i END), 'local', 'none',
                         CAST('2026-10-01 00:00:00' AS TIMESTAMP), CAST('2026-10-02 00:00:00' AS TIMESTAMP), 'none'
                  FROM range(0, 100) t(i)"
             ).unwrap();
@@ -1286,41 +1135,52 @@ mod tests {
             // 3. 150 activity_facts
             conn.execute_batch(
                 "INSERT INTO activity_facts (source_key, seat, ts, state, seq)
-                 SELECT 'act:' || i, 'dev-' || (i % 100) || '@test-rig', CAST('2026-10-01 00:00:00' AS TIMESTAMP) + i * INTERVAL '1 minute', 'running', i
+                 SELECT 'act:' || i, 'dev-' || (i % 100) || '@test-rig', CAST('2026-10-01 00:00:00' AS TIMESTAMP) + i * INTERVAL '1 minute', CASE WHEN i IN (100,117) THEN 'idle' ELSE 'running' END, i
                  FROM range(0, 150) t(i)"
             ).unwrap();
 
             // 4. 600 queue_facts (200 items x 3 transitions)
             conn.execute_batch(
                 "INSERT INTO queue_facts (source_key, transition_id, qitem_id, ts, state, source_seat, dest_seat, missions, chain_id, issue_tags, is_recovery)
-                 SELECT 'q:pending:' || i, i * 3 + 1, 'item-' || i, CAST('2026-10-01 00:00:00' AS TIMESTAMP) + i * INTERVAL '1 second', 'pending', 'orch@test-rig', 'dev-' || (i % 100) || '@test-rig', '[]', 'chain-' || i, '[\"101\"]', false
+                 SELECT 'events:queue.created:' || i, i * 3 + 1, 'item-' || i, CAST('2026-10-01 00:00:00' AS TIMESTAMP) + i * INTERVAL '1 second', 'pending', 'orch@test-rig', 'dev-' || (i % 100) || '@test-rig', '[]', 'chain-' || i, '[\"101\"]', false
                  FROM range(0, 200) t(i);
                  INSERT INTO queue_facts (source_key, transition_id, qitem_id, ts, state, source_seat, dest_seat, missions, chain_id, issue_tags, is_recovery)
-                 SELECT 'q:claim:' || i, i * 3 + 2, 'item-' || i, CAST('2026-10-01 00:00:02' AS TIMESTAMP) + i * INTERVAL '1 second', 'in-progress', 'orch@test-rig', 'dev-' || (i % 100) || '@test-rig', '[]', 'chain-' || i, '[\"101\"]', false
+                 SELECT 'events:queue.claimed:' || i, i * 3 + 2, 'item-' || i, CAST('2026-10-01 00:00:02' AS TIMESTAMP) + i * INTERVAL '1 second', 'in-progress', 'orch@test-rig', 'dev-' || (i % 100) || '@test-rig', '[]', 'chain-' || i, '[\"101\"]', false
                  FROM range(0, 200) t(i);
                  INSERT INTO queue_facts (source_key, transition_id, qitem_id, ts, state, source_seat, dest_seat, missions, chain_id, issue_tags, is_recovery, closure_reason)
-                 SELECT 'q:done:' || i, i * 3 + 3, 'item-' || i, CAST('2026-10-01 01:00:00' AS TIMESTAMP) + i * INTERVAL '1 second', 'done', 'orch@test-rig', 'dev-' || (i % 100) || '@test-rig', '[]', 'chain-' || i, '[\"101\"]', false, 'no-follow-on'
+                 SELECT 'q:done:' || i, i * 3 + 3, 'item-' || i, CASE WHEN i % 17=0 THEN CAST('2026-10-02 00:00:00' AS TIMESTAMP) ELSE CAST('2026-10-01 01:00:00' AS TIMESTAMP) + i * INTERVAL '1 second' END, 'done', 'orch@test-rig', 'dev-' || (i % 100) || '@test-rig', '[]', 'chain-' || i, '[\"101\"]', false, CASE WHEN i%17=1 THEN 'denied' ELSE 'no-follow-on' END
                  FROM range(0, 200) t(i);"
             ).unwrap();
+
+            conn.execute(
+                "UPDATE queue_facts SET parent_qitem_id='item-0' WHERE qitem_id='item-4'",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "UPDATE queue_facts SET is_recovery=true WHERE qitem_id='item-3'",
+                [],
+            )
+            .unwrap();
 
             // 5. 4000 usage_facts
             conn.execute_batch(
                 "INSERT INTO usage_facts (source_key, harness, native_session, ts, seq, input_uncached, output_tokens, cache_read, cache_write, reasoning, generation, source_id, currency_total)
-                 SELECT 'usage:' || i, 'codex', 'session-' || (i % 100), CAST('2026-10-01 00:00:00' AS TIMESTAMP) + (i % 86400) * INTERVAL '1 second', i, 10, 5, 2, 1, 0, 0, 'src', 0.01
+                 SELECT 'usage:' || i, 'codex', 'session-' || (i % 100), CASE WHEN i=0 THEN CAST('2026-09-30 23:59:59' AS TIMESTAMP) WHEN i=2 THEN CAST('2026-10-02 00:00:00' AS TIMESTAMP) WHEN i=3 THEN NULL ELSE CAST('2026-10-01 00:00:00' AS TIMESTAMP) + (i % 86400) * INTERVAL '1 second' END, i, 10, 5, 2, 1, 0, 0, 'src', CASE WHEN i%29=0 THEN NULL ELSE 0.01 END
                  FROM range(0, 4000) t(i)"
             ).unwrap();
 
             // 6. 400 tool_facts
             conn.execute_batch(
-                "INSERT INTO tool_facts (source_key, harness, native_session, ts, seq, tool_name, structured_write, generation, source_id, category)
-                 SELECT 'tool:' || i, 'codex', 'session-' || (i % 100), CAST('2026-10-01 00:00:00' AS TIMESTAMP) + (i % 86400) * INTERVAL '1 second', i, 'bash', false, 0, 'src', 'other'
+                "INSERT INTO tool_facts (source_key, harness, native_session, ts, seq, tool_name, failed, structured_write, generation, source_id, category)
+                 SELECT 'tool:' || i, 'codex', 'session-' || (i % 100), CAST('2026-10-01 00:00:00' AS TIMESTAMP) + (i % 86400) * INTERVAL '1 second', i, 'tool-' || (i%7), CASE WHEN i%7=1 THEN NULL ELSE i%7=0 END, false, 0, 'src', 'other'
                  FROM range(0, 400) t(i)"
             ).unwrap();
 
             // 7. 150 skill_facts
             conn.execute_batch(
                 "INSERT INTO skill_facts (source_key, seat, skill, invoked)
-                 SELECT 'skill:' || i, 'dev-' || (i % 100) || '@test-rig', 'skill-' || i, (i % 2 = 0)
+                 SELECT 'usage:' || i || ':skill:0', 'dev-' || (i % 100) || '@test-rig', 'tool-' || (i%7), (i % 2 = 0)
                  FROM range(0, 150) t(i)"
             ).unwrap();
 
@@ -1359,14 +1219,67 @@ mod tests {
                 5500
             );
 
+            // Hash the entire synthetic census, including excluded/undated
+            // rows, auxiliary populations, and schema/index definitions. This
+            // inventory is outside the measured query/evaluation boundary.
+            let mut corpus = Sha256::new();
+            for (table, order) in [
+                ("usage_facts", "source_key"),
+                ("queue_facts", "source_key"),
+                ("tool_facts", "source_key"),
+                ("identity_facts", "source_key"),
+                ("activity_facts", "source_key"),
+                ("process_identities", "identity_key"),
+                ("skill_facts", "source_key"),
+                ("seat_bounds", "seat,created_at,stopped_at"),
+                ("destination_snapshots", "source_key"),
+                ("openrig_row_records", "source_key"),
+            ] {
+                corpus.update((table.len() as u64).to_be_bytes());
+                corpus.update(table.as_bytes());
+                // Identifiers come only from this fixed fixture-owned allowlist.
+                let mut stmt = conn
+                    .prepare(&format!(
+                        "SELECT to_json(t)::VARCHAR FROM {table} t ORDER BY {order}"
+                    ))
+                    .unwrap();
+                for row in stmt.query_map([], |r| r.get::<_, String>(0)).unwrap() {
+                    let row = row.unwrap();
+                    corpus.update((row.len() as u64).to_be_bytes());
+                    corpus.update(row.as_bytes());
+                }
+            }
+            let mut stmt=conn.prepare("SELECT to_json(t)::VARCHAR FROM (SELECT type,name,tbl_name,sql FROM sqlite_master WHERE type IN ('table','view','index') ORDER BY type,name) t").unwrap();
+            for row in stmt.query_map([], |r| r.get::<_, String>(0)).unwrap() {
+                let row = row.unwrap();
+                corpus.update((row.len() as u64).to_be_bytes());
+                corpus.update(row.as_bytes());
+            }
+            dataset_digest = format!("{:x}", corpus.finalize());
             store.checkpoint().unwrap();
             drop(store);
         }
 
-        // Open read-only store for benchmark
-        let store = AnalyticsStore::open_read_only(&db_path).unwrap();
-        let _ = store.connection().execute_batch("PRAGMA threads=1;");
-        let mut stmts = OverviewStatements::prepare(store.connection()).unwrap();
+        // Fixture selection and database open are outside the timed boundary.
+        // This is our own synthetic fixture, opened with DuckDB's read-only flag;
+        // production owner-root admission is exercised by the independent tests.
+        let conn = duckdb::Connection::open_with_flags(
+            &db_path,
+            duckdb::Config::default()
+                .access_mode(duckdb::AccessMode::ReadOnly)
+                .unwrap(),
+        )
+        .unwrap();
+        conn.execute_batch("PRAGMA threads=1;").unwrap();
+        assert!(conn
+            .execute_batch("CREATE TABLE forbidden_benchmark_write (n INTEGER)")
+            .is_err());
+        let evaluate = |req: &OverviewRequest| {
+            OverviewStatements::prepare(&conn)
+                .unwrap()
+                .evaluate(req)
+                .unwrap()
+        };
         let req = OverviewRequest {
             rig: Some("test-rig".to_string()),
             from: parse_dt("2026-10-01T00:00:00Z"),
@@ -1380,21 +1293,21 @@ mod tests {
 
         // 1 Cold run
         let cold_start = Instant::now();
-        let cold_res = stmts.evaluate(&req).unwrap();
+        let cold_res = evaluate(&req);
         let cold_duration = cold_start.elapsed();
         println!("Direct Overview Benchmark Cold Run: {:?}", cold_duration);
         assert_eq!(cold_res.formula_version, FORMULA_VERSION);
 
         // 5 Warmup iterations
         for _ in 0..5 {
-            let _ = stmts.evaluate(&req).unwrap();
+            let _ = evaluate(&req);
         }
 
         // 20 Timed iterations
         let mut samples = Vec::with_capacity(20);
         for _ in 0..20 {
             let start = Instant::now();
-            let res = stmts.evaluate(&req).unwrap();
+            let res = evaluate(&req);
             let elapsed = start.elapsed();
             assert_eq!(res.formula_version, FORMULA_VERSION);
             samples.push(elapsed);
@@ -1405,7 +1318,26 @@ mod tests {
         let p95 = samples[(samples.len() as f64 * 0.95) as usize];
         let max = *samples.last().unwrap();
 
-        println!("Direct Overview Benchmark (5,500 facts):");
+        println!(
+            "Direct Overview Benchmark (5,500 facts; profile={}):",
+            if cfg!(debug_assertions) {
+                "debug"
+            } else {
+                "release"
+            }
+        );
+        println!("  Census: usage4000 queue600 tool400 identity100 activity150 process_identities100 skill150; auxiliary seat_bounds=0 destination_snapshots=0 openrig_row_records=0; admission-hold telemetry absent; vortex derived from counted inputs");
+        println!("  Full census + schema/index digest: {}", dataset_digest);
+        println!("  Scoped evidence/options digest: {}", cold_res.digest);
+        println!("  Boundary: prepare+query+load+canonical advisory/vortex/activity+evaluate; read-only connection; threads=1; 5 warmups/20 samples");
+        assert!(
+            cold_res.observed_active_hours > 0.0,
+            "activity computation must be connected"
+        );
+        assert!(
+            !cold_res.context_tax.active_tools.is_empty(),
+            "active tool computation must be connected"
+        );
         println!("  Mean: {:?}", mean);
         println!("  P95:  {:?}", p95);
         println!("  Max:  {:?}", max);
@@ -1507,6 +1439,7 @@ mod tests {
                             .as_str()
                             .unwrap_or_default()
                             .to_string(),
+                        threshold_breached: None,
                         seat: d.get("seat").and_then(Value::as_str).map(str::to_string),
                         qitem_id: d
                             .get("qitem_id")
@@ -1628,6 +1561,7 @@ mod tests {
                         native_session: t["native_session"].as_str().unwrap().to_string(),
                         ts_ms: Some(ts_dt.timestamp_millis()),
                         tool_name: t["tool_name"].as_str().unwrap().to_string(),
+                        failed: t.get("failed").and_then(Value::as_bool),
                     });
                 }
             }
@@ -2278,3 +2212,6 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod repair_regressions;

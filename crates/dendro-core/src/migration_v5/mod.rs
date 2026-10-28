@@ -883,12 +883,14 @@ fn create_backup_dir(path: &Path) -> Result<(), MigrationV5Error> {
     if path.symlink_metadata().is_ok() {
         return Err(MigrationV5Error::BackupExists);
     }
-    let mut builder = fs::DirBuilder::new();
+    let builder = fs::DirBuilder::new();
     #[cfg(unix)]
-    {
+    let builder = {
+        let mut builder = builder;
         use std::os::unix::fs::DirBuilderExt;
         builder.mode(0o700);
-    }
+        builder
+    };
     builder.create(path).map_err(|error| {
         if error.kind() == std::io::ErrorKind::AlreadyExists {
             MigrationV5Error::BackupExists
