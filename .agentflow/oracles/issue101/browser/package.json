@@ -1,0 +1,13 @@
+{
+  "name": "dendro-issue101-browser-preflight",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Isolated rendered-browser availability probe; does not verify candidate UI",
+  "packageManager": "pnpm@12.11.2",
+  "scripts": {
+    "probe": "node probe.cjs"
+  },
+  "devDependencies": {
+    "playwright": "1.64.1"
+  }
+}
