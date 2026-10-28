@@ -1,0 +1,6 @@
+dashboard:
+  id: token_lineage
+  title: Four-component token lineage (no inferred currency)
+queries:
+  - id: tokens
+    sql: SELECT * FROM v_mission_token_burn ORDER BY input_uncached DESC, seat_id

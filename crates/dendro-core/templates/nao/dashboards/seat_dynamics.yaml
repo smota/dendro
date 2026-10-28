@@ -1,0 +1,6 @@
+dashboard:
+  id: seat_dynamics
+  title: Seat activity and canonical yield
+queries:
+  - id: idle_ranking
+    sql: SELECT * FROM v_seat_idle_ranking ORDER BY idle_with_work_secs DESC, seat_id

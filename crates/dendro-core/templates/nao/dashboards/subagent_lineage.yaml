@@ -1,0 +1,6 @@
+dashboard:
+  id: subagent_lineage
+  title: "Sub-Agent & Work Lineage Graph"
+queries:
+  - id: lineage
+    sql: SELECT * FROM v_subagent_lineage ORDER BY child_count DESC, harness, parent_session

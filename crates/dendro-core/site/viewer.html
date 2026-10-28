@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dendro · Fleet explorer</title>
+<style>
+:root{color-scheme:dark;--bg-obsidian:#0A0D12;--bg-surface:#11161F;--bg-elevated:#161C27;--border-subtle:#1F2735;--border-highlight:#2A3649;--text-primary:#F3EDE2;--text-secondary:#9BA3AF;--text-muted:#64748B;--layer-model:#F2A541;--layer-harness:#06B6D4;--layer-coord:#10B981;--layer-env:#8B5CF6;--font-mono:'JetBrains Mono','Fira Code',ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font:15px/1.55 'Inter',system-ui,-apple-system,sans-serif;color:var(--text-primary);background:var(--bg-obsidian)}
+*{box-sizing:border-box}
+body{margin:0;padding:0;background:radial-gradient(900px 420px at 15% 0%,rgba(242,165,65,.09),transparent 65%),radial-gradient(850px 420px at 85% 5%,rgba(6,182,212,.09),transparent 65%),var(--bg-obsidian)}
+.v-topbar{position:sticky;top:0;z-index:40;background:rgba(10,13,18,.88);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom:1px solid var(--border-subtle)}
+.v-topbar-inner{max-width:1180px;margin:0 auto;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.v-brand{display:inline-flex;align-items:center;gap:11px;text-decoration:none;color:var(--text-primary)}
+.v-brand img{width:32px;height:32px;border-radius:7px}
+.v-brand-text{display:flex;flex-direction:column;line-height:1.15}
+.v-brand-title{font-weight:800;font-size:1.08rem;color:var(--text-primary)}
+.v-brand-tagline{font-size:.68rem;font-weight:500;color:var(--text-secondary);letter-spacing:.01em;margin-top:2px}
+.v-nav{display:flex;align-items:center;gap:18px;flex-wrap:wrap;font-size:.88rem}
+.v-nav a{color:var(--text-secondary);text-decoration:none;font-weight:600;transition:color .15s ease}
+.v-nav a:hover,.v-nav a[aria-current="page"]{color:var(--text-primary)}
+.dual-serving-badge{display:inline-flex;align-items:center;gap:7px;font-family:var(--font-mono);font-size:.7rem;font-weight:700;letter-spacing:.05em;padding:5px 11px;border-radius:999px;background:var(--bg-surface);border:1px solid var(--border-highlight);color:var(--layer-coord)}
+.status-dot{width:7px;height:7px;border-radius:50%;background:var(--layer-coord);box-shadow:0 0 8px var(--layer-coord)}
+main{max-width:1180px;margin:0 auto;padding:32px 24px 56px}
+.v-hero-head{max-width:920px;margin-bottom:22px}
+.v-eyebrow{font-family:var(--font-mono);font-size:.74rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--layer-model);margin-bottom:6px}
+h1{font-size:clamp(1.65rem,2.8vw,2.35rem);line-height:1.16;letter-spacing:-.02em;margin:0 0 8px;color:var(--text-primary)}
+h2{font-size:1.15rem;margin:28px 0 10px;color:var(--text-primary)}
+h3{font-size:1rem;margin:18px 0 8px;color:var(--text-primary)}
+p{color:var(--text-secondary);margin:0 0 12px}
+button,.upload,select{font:inherit;color:var(--text-primary);background:var(--bg-elevated);border:1px solid var(--border-highlight);padding:9px 15px;border-radius:9px;cursor:pointer;font-weight:600;font-size:.88rem;transition:all .15s ease;display:inline-flex;align-items:center;gap:7px}
+button:hover,.upload:hover,select:hover{border-color:var(--layer-harness);background:#1C2433}
+button:focus-visible,.upload:focus-within,select:focus-visible{outline:2px solid var(--layer-harness);outline-offset:2px}
+.upload{position:relative;cursor:pointer;user-select:none}
+.upload input[type="file"]{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;clip:rect(0,0,0,0)}
+.btn-emerald{background:rgba(16,185,129,.15);border-color:rgba(16,185,129,.45);color:#6EE7B7}
+.btn-emerald:hover{background:rgba(16,185,129,.24);border-color:var(--layer-coord);color:#A7F3D0}
+.btn-cyan{background:rgba(6,182,212,.15);border-color:rgba(6,182,212,.45);color:#67E8F9}
+.btn-cyan:hover{background:rgba(6,182,212,.24);border-color:var(--layer-harness);color:#A5F3FC}
+.btn-subtle{background:var(--bg-obsidian);border-color:var(--border-subtle);color:var(--text-secondary);font-size:.82rem;padding:8px 12px}
+.toolbar{display:grid;grid-template-columns:1.25fr 1fr;gap:16px;margin:18px 0 14px}
+.source-group{background:var(--bg-surface);border:1px solid var(--border-highlight);border-radius:14px;padding:16px 18px;display:flex;flex-direction:column;gap:10px;box-shadow:0 12px 28px rgba(0,0,0,.35)}
+.step-kicker{font-family:var(--font-mono);font-size:.7rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--layer-coord)}
+.step-kicker.cyan{color:var(--layer-harness)}
+.source-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.source-links{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-family:var(--font-mono);font-size:.75rem;color:var(--text-muted);margin-top:2px}
+.source-links a{color:var(--text-secondary);text-decoration:none;border-bottom:1px dotted var(--border-highlight);padding-bottom:1px}
+.source-links a:hover{color:#67E8F9;border-bottom-color:#67E8F9}
+.source-note{font-size:.8rem;color:var(--text-secondary);margin:0}
+.source-note code{font-family:var(--font-mono);font-size:.76rem;background:var(--bg-obsidian);padding:2px 6px;border-radius:5px;border:1px solid var(--border-subtle);color:var(--layer-model)}
+#status{min-height:2.4em;margin:0 0 18px;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.28);border-radius:10px;padding:10px 14px;color:var(--text-primary);font-family:var(--font-mono);font-size:.81rem;display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+#status::before{content:"ACTIVE DATASET · STEP 2: SELECT A TAB BELOW →";font-weight:800;color:var(--layer-coord);margin-right:6px;letter-spacing:.03em}
+#status.badge{border-color:rgba(242,165,65,.38);background:rgba(242,165,65,.08);color:#FDE68A;font-weight:600}
+#status.badge::before{color:var(--layer-model)}
+.tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:0 0 22px;padding:6px;background:var(--bg-surface);border:1px solid var(--border-highlight);border-radius:12px}
+.tabs button{justify-content:center;background:transparent;border:1px solid transparent;border-radius:8px;padding:10px 12px;color:var(--text-secondary);font-size:.86rem;font-weight:600}
+.tabs button:hover{color:var(--text-primary);background:rgba(255,255,255,.03)}
+.tabs button[aria-selected=true]{border-color:var(--layer-harness);background:rgba(6,182,212,.14);color:#fff;box-shadow:0 4px 14px rgba(6,182,212,.15)}
+.state{font-family:var(--font-mono);font-size:.74rem;font-weight:700;border:1px solid var(--border-highlight);border-radius:999px;padding:2px 9px}
+.state.computed{color:#34d399;border-color:rgba(52,211,153,.35);background:rgba(16,185,129,.1)}
+.state.partial{color:#fbbf24;border-color:rgba(251,191,36,.35);background:rgba(245,158,11,.1)}
+.state.refused{color:#fb7185;border-color:rgba(251,113,133,.35);background:rgba(244,63,94,.1)}
+.state.unknown{color:#94a3b8}
+.state.domain{color:#67e8f9;margin-left:8px;text-transform:lowercase;border-color:rgba(6,182,212,.3);background:rgba(6,182,212,.1)}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:12px;margin-bottom:8px}
+.metric,article{background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:12px;padding:16px;margin-bottom:10px}
+.metric strong{display:block;color:#5eead4;font-family:var(--font-mono);font-size:1.55rem;margin-bottom:2px}
+.metric span{color:var(--text-secondary);font-size:.82rem}
+#insight-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+#insight-list article{margin-bottom:0}
+.scroll{overflow:auto;max-width:100%;background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:12px;padding:14px}
+svg{width:100%;min-width:600px;display:block}
+svg text{fill:#d7e2ee;font-size:13px;font-family:var(--font-mono)}
+path.flow{fill:none;stroke:#06b6d4;opacity:.65;cursor:pointer}
+path.return{stroke:#fbbf24;stroke-dasharray:8 6;animation:drift 2s linear infinite}
+path.flow:focus{outline:3px solid #fbbf24;outline-offset:4px;stroke:#fff}
+table{width:100%;border-collapse:collapse;font-size:.86rem;background:var(--bg-surface);border-radius:10px;overflow:hidden}
+td,th{text-align:left;border-bottom:1px solid var(--border-subtle);padding:9px 11px}
+th{color:#91b5c9;font-family:var(--font-mono);font-size:.76rem;text-transform:uppercase;letter-spacing:.04em;background:rgba(22,28,39,.7)}
+code{font-family:var(--font-mono);overflow-wrap:anywhere}
+.empty{color:#cbd5e1;border:1px dashed var(--border-highlight);border-radius:10px;padding:15px;background:rgba(17,22,31,.5)}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:.85rem}
+.legend span:before{content:'●';margin-right:6px;color:var(--tone)}
+.bar{height:26px;display:flex;min-width:0;border:1px solid var(--border-highlight);border-radius:6px;overflow:hidden;margin:8px 0}
+.bar span{min-width:0;overflow:hidden;background:var(--tone);color:#07111c;text-align:center;font-size:11.5px;font-weight:700;line-height:26px}
+.note{font-size:.84rem;color:var(--text-secondary)}
+details{margin:28px 0 0;background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:12px;padding:14px 18px}
+summary{cursor:pointer;color:#67e8f9;font-weight:700;font-size:.9rem}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.8rem}
+#inspection{background:var(--bg-surface);border:1px solid var(--border-subtle);border-left:3px solid #06b6d4;border-radius:10px;padding:14px 18px;margin-top:12px}
+.lane-label{font-size:12px}
+.hold{background:repeating-linear-gradient(45deg,#27374b,#27374b 4px,#9ca3af 4px,#9ca3af 6px)!important;color:white!important}
+[hidden]{display:none!important}
+@keyframes drift{to{stroke-dashoffset:-28}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important}}
+@media(max-width:860px){.toolbar{grid-template-columns:1fr}.tabs{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:650px){main{padding:20px 14px}.metrics{grid-template-columns:repeat(2,1fr)}.tabs{grid-template-columns:1fr}h1{font-size:1.4rem}.metric{padding:10px}.metric strong{font-size:1.3rem}}
+</style></head><body>
+<header class="v-topbar">
+  <div class="v-topbar-inner">
+    <a href="./" class="v-brand" aria-label="Dendro Home">
+      <img src="assets/mark.svg" alt="Dendro Logo" width="32" height="32">
+      <span class="v-brand-text">
+        <span class="v-brand-title">Dendro</span>
+        <small class="v-brand-tagline">The Local-First Flight Recorder</small>
+      </span>
+    </a>
+    <nav class="v-nav" aria-label="Dendro primary navigation">
+      <a href="./">Overview</a>
+      <a href="how-it-works.html">How It Works</a>
+      <a href="get-started.html">Get Started</a>
+      <a href="dashboards/index.html">Dashboards</a>
+      <a href="viewer.html" aria-current="page">Fleet Explorer</a>
+      <a href="https://github.com/smota/dendro">GitHub ↗</a>
+    </nav>
+    <span id="dual-serving-indicator" class="dual-serving-badge snapshot" title="Data source mode"><span class="status-dot" aria-hidden="true"></span><span id="dual-serving-text">ILLUSTRATIVE SNAPSHOT</span></span>
+  </div>
+</header>
+<main>
+<div class="v-hero-head">
+  <div class="v-eyebrow">Offline Fleet Explorer · Zero Cloud Exfiltration · Local Browser Projections</div>
+  <h1>Read your agentic stack across Model, Harness, Coordination &amp; Lineage, and Environment &amp; Security layers</h1>
+  <p>Actors, sessions, work lineage, model accounting, and security posture. Everything runs locally in this file.</p>
+</div>
+<div class="toolbar" role="region" aria-label="Step 1: Choose a fleet dataset">
+  <div class="source-group">
+    <span class="step-kicker">STEP 1A · TRY A SAMPLE RUN</span>
+    <div class="source-actions">
+      <button id="load-full-demo" class="btn-emerald" type="button">⚡ Load 24h 6-Actor Sprint Demo</button>
+      <button id="demo" class="btn-subtle" type="button">Reset to Baseline Snapshot</button>
+    </div>
+    <div class="source-links">
+      <a href="https://github.com/smota/dendro/blob/main/docs/assets/fleet-explorer-demo.json" target="_blank" rel="noopener">Example JSON on GitHub ↗</a>
+      <span>·</span>
+      <a href="fixtures/fleet-explorer-demo.json" download="fleet-explorer-demo.json">Download .json</a>
+      <span>·</span>
+      <a href="https://github.com/smota/dendro/blob/main/docs/OFFLINE_FLEET_EXPLORER_FORMAT.md" target="_blank" rel="noopener">Format Spec ↗</a>
+    </div>
+  </div>
+  <div class="source-group">
+    <span class="step-kicker cyan">STEP 1B · LOAD YOUR OWN EXPORT</span>
+    <div class="source-actions">
+      <label class="upload btn-cyan">📂 Choose Local JSON Report… <input id="file" type="file" accept=".json,application/json"></label>
+    </div>
+    <p class="source-note">Run <code>dendro report --json &gt; run.json</code> locally — 100% offline in your browser.</p>
+  </div>
+</div>
+<p id="status" role="status" aria-live="polite"></p>
+<div class="tabs" role="tablist" aria-label="Exploration layers"><button role="tab" id="tab-pulse" aria-controls="pulse" aria-selected="true" tabindex="0">1 · Actor &amp; session pulse</button><button role="tab" id="tab-flow" aria-controls="flow" aria-selected="false" tabindex="-1">2 · Work lineage &amp; model accounting</button><button role="tab" id="tab-trace" aria-controls="trace" aria-selected="false" tabindex="-1">3 · Actor evidence</button><button role="tab" id="tab-insights" aria-controls="insights" aria-selected="false" tabindex="-1">4 · Layer insights</button></div>
+<section id="pulse" role="tabpanel" aria-labelledby="tab-pulse"><div id="metrics" class="metrics"></div><h2>Actor activity bands</h2><p class="note">Aggregate durations across the observation window. Hatched container holds are a subset of idle-with-work, never counted twice. These totals do not identify when a hold occurred.</p><div id="bands"></div><h2>Session activity timeline</h2><p class="note">State transitions on a shared time axis. Running is activity evidence, not proof of leaf execution or a tool category. Thin hatched/amber strips use source-backed classified idle intervals when present, never aggregate totals. Unknown remains unknown; no state is carried across an unobserved life. Context-drop markers require recorded timestamps; absent markers do not establish that no drops occurred.</p><div id="timeline" class="scroll" tabindex="0"></div><h2>Observed concurrency</h2><p class="note">Time at k active actors, aggregated across the window; this is not a time-ordered ribbon.</p><div id="concurrency"></div></section>
+<section id="flow" role="tabpanel" aria-labelledby="tab-flow" hidden><h2>Work handoff flow</h2><p class="note">Each ribbon represents a recorded actor pair. Width = handoff count; amber dashes = returns. It is queue flow, not token attribution or productive value. Activate a ribbon to inspect its counts.</p><div id="sankey" class="scroll" tabindex="0"></div><p id="flow-detail" role="status"></p><h2>Model token accounting</h2><p class="note">Fresh input, cache reads, cache writes and output are separate recorded categories. No attribution to a particular handoff is inferred.</p><div id="tokens"></div><h2>Pair friction heatmap</h2><label for="heatMetric">Cell metric </label><select id="heatMetric"><option value="count">Handoff count</option><option value="rate">Return rate (%)</option><option value="wait">Wait median (s)</option><option value="exec">Execution median (s)</option><option value="boundary">Ring boundary counts</option></select><p class="note">Rows send; columns receive. Dark cells are unavailable (—), distinct from measured zero. Color intensity scales within this view. Maximum 30 × 30 actors.</p><div id="heatmap" class="scroll" tabindex="0"></div><h2>Attributed token buckets</h2><p class="note">Analytical task-intake classification only. Assigned mission tokens do not establish productive value; no token transfer across queue handoffs is inferred.</p><div id="attribution"></div><h2>Pair wait & execution medians</h2><div id="pairs" class="scroll" tabindex="0"></div></section>
+<section id="trace" role="tabpanel" aria-labelledby="tab-trace" hidden><h2>Actor evidence inspector</h2><label for="seat">Select an actor alias </label><select id="seat"></select><div id="inspection"></div><p class="note">Actor and item labels are replaced by local aliases. Source paths, commands, transcripts and arbitrary metadata are never rendered. Reports cannot establish causal savings or delivered value.</p></section>
+<section id="insights" role="tabpanel" aria-labelledby="tab-insights" hidden><h2>Compiled insights (insight_v1)</h2><p class="note">Statuses and measures are copied from canonical insight results. Each card badges its domain: model, harness, coordination, environment, or security. Unknown stays —. Partial and refused stay labeled. Security rows use the closed kind/value vocabulary only.</p><div id="insight-list"></div><h2>Work lineage</h2><div id="lineage"></div><h2>Environment &amp; coverage</h2><div id="environment"></div><h2>Security posture</h2><div id="security"></div></section>
+<details><summary>Supported JSON and privacy boundaries</summary><p class="note">Accepts Dendro report envelopes with <code>payload</code> containing <code>product: "AI Fleet Intelligence"</code>, or trace objects with <code>metric_id</code> and <code>inputs</code>. Uses only numeric fields from <code>m1_by_seat, activity, activity_events, handoff_members, handoff_edges, m2_pairs, pair_medians, token_categories, fleet_concurrency, context_compactions.events, ring_boundaries.edges, task_intake_overhead</code>, insight results in <code>insights</code>, lineage and environment summaries, closed <code>security</code> counts, and ISO <code>from/to</code> or <code>window.from/to</code>. Absent fields remain unavailable. Maximum file size: 10 MiB; maximum 50,000 rows per supported array.</p><p class="note">Reference documentation &amp; example dataset: <a href="https://github.com/smota/dendro/blob/main/docs/OFFLINE_FLEET_EXPLORER_FORMAT.md" target="_blank" rel="noopener" style="color:#67e8f9">docs/OFFLINE_FLEET_EXPLORER_FORMAT.md ↗</a> · <a href="https://github.com/smota/dendro/blob/main/docs/assets/fleet-explorer-demo.json" target="_blank" rel="noopener" style="color:#67e8f9">docs/assets/fleet-explorer-demo.json (GitHub) ↗</a> · <a href="fixtures/fleet-explorer-demo.json" download="fleet-explorer-demo.json" style="color:#67e8f9">Local fixtures/fleet-explorer-demo.json</a>.</p><p class="note">Only load sanitized analytical exports. Raw files stay in browser memory and are not uploaded or stored. Aliases hide labels in the view; this viewer does not sanitize the original file for redistribution. Embedded exports must be scrubbed by the exporter before sharing. No source replay, tool execution spans, mission-token links are inferred from aggregate reports.</p></details>
+<noscript>This explorer requires JavaScript enabled locally. No data is sent to a server.</noscript>
+</main><script id="dendro-data" type="application/json">null</script>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const timestamp = x => typeof x === 'string' && /^\d{4}-\d\d-\d\dT.*(?:Z|[+-]\d\d:\d\d)$/.test(x) ? Date.parse(x) : NaN;
+const numeric = x => typeof x === 'number' && Number.isFinite(x) && x >= 0 ? x : null;
+const num = x => numeric(x) === null ? 'Unavailable' : x.toLocaleString(undefined,{maximumFractionDigits:2});
+const arr = x => Array.isArray(x) ? x.slice(0,50000).filter(v => v && typeof v === 'object') : [];
+const colors = ['#10b981','#fbbf24','#475569','#a78bfa','#94a3b8'];
+const bandKeys = ['active_secs','idle_with_work_secs','idle_without_work_secs','waiting_human_secs','unknown_secs'];
+const bandNames = ['Active','Idle with work','Idle without work','Waiting for human','Unknown'];
+const elem = (tag,text,cls) => {const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;};
+/* @vnext-insight-catalog */
+const ALLOWED_INSIGHT_IDS = new Set(['I01','I02','I03','I04','I05','I06','I07','I08','I09','I10','I11','I12','I13','I14','I15','I16','I17','I18','I19','I20','I21','I22','I23','I24','I25']);
+/* @vnext-insight-catalog-end */
+const ALLOWED_INSIGHT_NAMES = new Set(['model.invocations','model.tokens.direct','model.tokens.inclusive','model.cost','model.configuration_divergence','harness.capability_funnel','harness.context_pressure','harness.action_failure','work.lineage_shape','work.duration','work.shared_allocation','coord.queue_wait','environment.placement','environment.resources','environment.effects','security.isolation','security.authority','coverage.source','outcome.acceptance','outcome.resource_efficiency','comparison.descriptive','harness.trajectory_vortex','harness.schema_drift','security.authority_blast_radius','model.counterfactual_routing']);
+const ALLOWED_DOMAINS = new Set(['model','harness','coordination','environment','security']);
+const ALLOWED_STATUSES = new Set(['ok','partial','refused','not_applicable','insufficient_evidence','computed','unknown']);
+const ALLOWED_REASONS = new Set(['empty population','undefined input','undefined cache ratio','unsettled actions and undefined failure rate','unsettled actions excluded from failure rate denominator','undefined failure rate','cycle detected and unresolved parent session','cycle detected in session lineage','unresolved parent session','visibility limits present on process observations','unreadable or non-monotonic resource counter','source coverage is partial','not evaluated','not created','value outside closed vocabulary','estimated usd unknown','not_observable','insufficient_sample','not_applicable','NOT_ASSESSED','threshold_exceeded','noncomparable','store read failed','negative token component excluded','lineage cycle','observed lower bound']);
+const ALLOWED_MEASURE_KEYS = new Set(['input_uncached','cache_write','cache_read','output','reasoning','cache_read_ratio_of_sums','cache_read_mean_of_ratios','I02.input_uncached','I02.cache_write','I02.cache_read','I02.output','I02.reasoning','I02.cache_read_ratio_of_sums','I02.cache_read_mean_of_ratios','observed_usd','estimated_usd','I04.observed_usd','I04.estimated_usd','failed','settled','unsettled','failure_rate','I08.failed','I08.settled','I08.unsettled','I08.failure_rate','multi_parent_children','roots','max_depth','cycles','unresolved_parents','I09.multi_parent_children','I09.roots','I09.max_depth','I09.cycles','I09.unresolved_parents','relation.spawn','relation.delegate','relation.delegate_existing','relation.handoff','relation.return','relation.join','relation.retry','relation.resume','relation.dependency','I09.relation.spawn','I09.relation.delegate','I09.relation.delegate_existing','I09.relation.handoff','I09.relation.return','I09.relation.join','I09.relation.retry','I09.relation.resume','I09.relation.dependency','status.started','status.finished','status.failed','status.unknown','I09.status.started','I09.status.finished','I09.status.failed','I09.status.unknown','cpu_time_delta_us','max_rss','disk_read_delta_bytes','disk_write_delta_bytes','attribution.launched','attribution.discovered','cpu_unreadable_trees','I14.cpu_time_delta_us','I14.max_rss','I14.disk_read_delta_bytes','I14.disk_write_delta_bytes','I14.attribution.launched','I14.attribution.discovered','I14.cpu_unreadable_trees','read','projected','unprojected','refused','I18.read','I18.projected','I18.unprojected','I18.refused','I01.distinct_calls','distinct_calls','I01.usage_only','usage_only','I03.fleet_deduped','fleet_deduped','I05.divergent_pairs','divergent_pairs','I05.matched_pairs','matched_pairs','I05.excluded_unknown','excluded_unknown','inclusive_tokens','loaded','invoked','funnel_rate','context_used','context_limit','context_pressure','wall_union','attempt_seconds','concurrency_ratio','shared_usage','residual','queue_wait','incarnations','rebuild_count','syscall_ok','syscall_failed','isolation_consistent','authority_consistent','authority_mismatch','authority_insufficient','accepted','eligible','cost_per_accepted','mean_ratio','stratified_difference','cosine_distance','self_transition_rate','tripped','l1_distance','keys_added','keys_removed','keys_retyped','downstream_sessions','max_hop','cycles_touched','simulated_cost','simulated_context_pressure','cache_bleed_inflection']);
+const ALLOWED_UNITS = new Set(['tokens','ratio','usd','count','edges','bytes','seconds','ms','percent','sources','actions','sessions','microseconds','trees','warnings','characters','messages','fragments','events','cpu_user_microseconds','cpu_system_microseconds','linux_rss_bytes','windows_working_set_bytes','rss_bytes','unknown','']);
+const ALLOWED_POPULATION_WHAT = new Set(['usage_facts','tool_facts','session_edges','process_samples','process_identities','source_files','security_facts','unknown','','call_facts','capability_facts','context_observations','work_intervals','allocation_policies','queue_intervals','placement_intervals','syscall_traces','isolation_dimensions','authority_decisions','acceptance_evaluations','efficiency_pairs','comparison_strata','trajectory_turns','envelope_shapes','authority_edges','tier_profiles']);
+const SECURITY_ADMISSION = [['permission_mode',['default','auto','acceptEdits','plan','bypassPermissions','other']],['permission_decision',['allow','deny','other']],['sandbox_policy',['danger-full-access','read-only','workspace-write','true','false','other']],['approval_policy',['never','on-request','other']],['permission_profile',['other']],['sandbox_override_requested',['true']],['dangerous_command',['recursive_delete','pipe_to_shell','force_push','force_push_with_lease','chmod_world_writable','sudo','disk_write_device','credential_file_access','network_exfil_pattern']]];
+const ALLOWED_SECURITY_KINDS = new Set([...SECURITY_ADMISSION.map(([kind])=>kind),'approved_prefix_count']);
+const ALLOWED_SECURITY_VALUES = new Set(SECURITY_ADMISSION.flatMap(([,values])=>values));
+const SECURITY_VALUE_BY_KIND = new Map(SECURITY_ADMISSION.map(([kind,values])=>[kind,new Set(values)]));
+const insightState = s => s && ALLOWED_STATUSES.has(s.state) ? s.state : 'unknown';
+const insightReason = s => s && typeof s.reason==='string' && ALLOWED_REASONS.has(s.reason) ? s.reason : '';
+function allowedUnit(value){if(value==null||value==='')return '';return typeof value==='string'&&ALLOWED_UNITS.has(value)?value:'redacted';}
+function allowedPopulationWhat(value){if(value==null||value==='')return '';return typeof value==='string'&&ALLOWED_POPULATION_WHAT.has(value)?value:'redacted';}
+function safeToken(value){return typeof value==='string'&&ALLOWED_MEASURE_KEYS.has(value)?value:'redacted';}
+function allowedSecurityKind(value){return typeof value==='string'&&ALLOWED_SECURITY_KINDS.has(value)?value:'redacted';}
+function closedDigitCount(value){if(value.length>18)return false;for(let i=0;i<value.length;i++){const code=value.charCodeAt(i);if(code<48||code>57)return false;}return true;}
+function allowedSecurityValue(kind,value){if(typeof kind!=='string'||typeof value!=='string'||value.length===0)return 'redacted';if(kind==='approved_prefix_count')return closedDigitCount(value)?value:'redacted';if(!ALLOWED_SECURITY_VALUES.has(value))return 'redacted';const allowed=SECURITY_VALUE_BY_KIND.get(kind);return allowed&&allowed.has(value)?value:'redacted';}
+const measureValue = v => typeof v==='number' && Number.isFinite(v) ? v : null;
+const showMeasure = v => v===null ? '—' : num(v);
+function display_status(status, reason) {
+  const reasonCode = typeof reason === 'string' ? reason : '';
+  if (reasonCode === 'not_observable' || reasonCode === 'insufficient_sample') return 'insufficient_evidence';
+  if (reasonCode === 'not_applicable' || reasonCode === 'NOT_ASSESSED') return 'not_applicable';
+  if (reasonCode === 'threshold_exceeded') return 'partial';
+  if (reasonCode === 'noncomparable') return 'insufficient_evidence';
+  const name = typeof status === 'string' ? status : '';
+  if (name === 'Computed' || name === 'computed') return 'ok';
+  if (name === 'Partial' || name === 'partial') return 'partial';
+  if (name === 'Refused' || name === 'refused') return 'refused';
+  return 'refused';
+}
+function statusLine(status){const state=insightState(status),reason=insightReason(status),rust=state==='computed'?'Computed':state==='partial'?'Partial':state==='refused'?'Refused':state,token=(rust==='Computed'||rust==='Partial'||rust==='Refused')?display_status(rust,reason):state,line=elem('p'),badge=elem('span',token==='unknown'?'—':token,'state '+state);line.append(badge);if(reason)line.append(document.createTextNode(' '+reason));return line;}
+function measureTable(measures){if(!measures.length)return elem('p','No measures for this status.','empty');const t=elem('table'),head=elem('tr');['Measure','Value','Unit'].forEach(x=>head.append(elem('th',x)));t.append(head);measures.forEach(m=>{const tr=elem('tr');[m.name||m.id||'—',showMeasure(m.value),m.unit||'—'].forEach(x=>tr.append(elem('td',x)));t.append(tr);});return t;}
+function insightCard(row){const box=elem('article');box.append(elem('strong',row.id||'—'),elem('span',' '+(row.name||'')));if(row.domain)box.append(elem('span',row.domain,'state domain'));box.append(statusLine(row.status),elem('p',`Population: ${row.population?.what||'—'} n=${row.population&&typeof row.population.n==='number'?num(row.population.n):'—'}`,'note'),measureTable(row.measures||[]));return box;}
+const empty = (id,text) => $(id).replaceChildren(elem('p',text,'empty'));
+function project(raw){
+ if(!raw || typeof raw !== 'object' || Array.isArray(raw))throw Error('Expected a Dendro report or trace object.');
+ if(raw.product!=='AI Fleet Intelligence' && raw.payload?.product!=='AI Fleet Intelligence' && !(typeof raw.metric_id==='string' && raw.inputs && typeof raw.inputs==='object'))throw Error('Unsupported JSON. Export a Dendro report or trace.');
+ const p=raw.inputs || raw.payload || raw, aliases=new Map();
+ const alias=x=>{if(typeof x!=='string'||!x)return null;if(!aliases.has(x))aliases.set(x,`Actor ${aliases.size+1}`);return aliases.get(x);};
+ const rows=(key,fn)=>arr(p[key]).map(fn);
+ const activity=rows('activity',r=>({seat:alias(r.seat),...Object.fromEntries([...bandKeys,'observed_secs','unparked_container_secs','leaf_stall_secs','engineering_calls','ceremony_calls'].map(k=>[k,numeric(r[k])])),spans:arr(r.observed_spans).map(s=>({from:timestamp(s.from),to:timestamp(s.to)})).filter(s=>Number.isFinite(s.from)&&Number.isFinite(s.to)&&s.to>s.from)}));
+ const seats=rows('m1_by_seat',r=>({seat:alias(r.seat),tokens:numeric(r.tokens),closed_items:numeric(r.closed_items),nonreturn_deliveries:numeric(r.nonreturn_deliveries),tokens_per_closed_item:numeric(r.tokens_per_closed_item)}));
+ const edges=rows(Array.isArray(p.handoff_members)?'handoff_members':'handoff_edges',r=>({from:alias(r.from),to:alias(r.to),returned:r.is_return===true||r.return===true})).filter(r=>r.from&&r.to);
+ const pairs=rows('pair_medians',r=>({from:alias(r.from),to:alias(r.to),wait_median:numeric(r.wait_median),wait_samples:numeric(r.wait_samples),exec_median:numeric(r.exec_median),exec_samples:numeric(r.exec_samples)}));
+ const pairCounts=rows('m2_pairs',r=>({from:alias(r.from),to:alias(r.to),count:numeric(r.handoffs),rate:numeric(r.return_rate)}));
+ const boundaries=arr(p.ring_boundaries?.edges).map(r=>({from:alias(r.from),to:alias(r.to),kind:['in_ring','cross_rig_seam','supervisory_plane'].includes(r.boundary)?r.boundary:'unknown'}));
+ const attribution=Object.fromEntries(['assigned_mission_tokens','task_intake_overhead','ambiguous_tokens','unlinked_session'].map(k=>[k,numeric(p.task_intake_overhead?.[k])]));
+ const events=rows('activity_events',r=>({seat:alias(r.seat),ts:timestamp(r.ts),state:['running','idle','needs_input'].includes(r.state)?r.state:'unknown'})).filter(e=>e.seat&&Number.isFinite(e.ts));
+ const intervals=arr(p.advisory_idle_claimed?.intervals).map(r=>({seat:alias(r.seat),from:timestamp(r.from),to:timestamp(r.to),classification:['unparked_container_hold','true_leaf_stall'].includes(r.classification)?r.classification:'unknown'})).filter(r=>r.seat&&Number.isFinite(r.from)&&Number.isFinite(r.to)&&r.to>r.from);
+ const compactions=arr(p.context_compactions?.events).map(r=>({seat:alias(r.seat),ts:timestamp(r.ts),before:numeric(r.pre_drop_context_tokens),after:numeric(r.post_drop_context_tokens)})).filter(r=>r.seat&&Number.isFinite(r.ts));
+ const from=timestamp(p.from||p.window?.from||raw.from),to=timestamp(p.to||p.window?.to||raw.to);
+ const tokenKeys=['input_uncached','cache_read','cache_write','output'];
+ const tokens=Object.fromEntries(tokenKeys.map(k=>[k,numeric(p.token_categories?.[k])]));
+ const histogram=arr(p.fleet_concurrency?.histogram).map(r=>({k:numeric(r.active_seats),secs:numeric(r.secs)})).filter(r=>r.k!==null&&r.secs!==null);
+ const insightRow=r=>{if(!r||typeof r!=='object')return null;const id=typeof r.id==='string'&&ALLOWED_INSIGHT_IDS.has(r.id)?r.id:null;if(!id)return null;const name=typeof r.name==='string'&&ALLOWED_INSIGHT_NAMES.has(r.name)?r.name:'redacted';const domain=ALLOWED_DOMAINS.has(r.domain)?r.domain:'';const measures=arr(r.measures).map(m=>({id:safeToken(m&&m.id),name:safeToken(m&&m.name),value:measureValue(m.value),unit:allowedUnit(typeof m.unit==='string'?m.unit:'')}));return {id,name,domain,status:{state:insightState(r.status),reason:insightReason(r.status)},population:{what:allowedPopulationWhat(r.population?.what),n:typeof r.population?.n==='number'&&Number.isFinite(r.population.n)?r.population.n:null},measures};};
+ const insights=arr(p.insights).map(insightRow).filter(Boolean);
+ const summary=key=>{const row=insightRow(p[key]);return row&&row.id?row:insights.find(item=>item.id===(key==='lineage'?'I09':'I14'))||null;};
+ const securityCounts=arr(p.security?.counts).map(r=>({kind:allowedSecurityKind(r.kind),value:allowedSecurityValue(r.kind,r.value),n:measureValue(r.n)})).filter(r=>r.kind!=='redacted'&&r.value!=='redacted'&&r.n!==null);
+ return {histogramUnavailable:arr(p.fleet_concurrency?.histogram).length-histogram.length,activity,seats,edges,pairs,events,intervals,compactions,from,to,tokens,histogram,pairCounts,boundaries,attribution,aliases:[...aliases.values()],total:numeric(p.tokens),yield:numeric(p.m1_yield),rework:numeric(p.m3_rework_chains),parallel:numeric(p.fleet_concurrency?.effective_parallelism),insights,lineage:summary('lineage'),environment:summary('environment'),security:{status:{state:insightState(p.security?.status),reason:insightReason(p.security?.status)},populationN:typeof p.security?.population?.n==='number'&&Number.isFinite(p.security.population.n)?p.security.population.n:null,counts:securityCounts}};
+}
+function table(id,headers,rows){if(!rows.length)return empty(id,'No supported evidence in this export.');const t=elem('table'),head=elem('tr');headers.forEach(x=>head.append(elem('th',x)));t.append(head);rows.forEach(row=>{const tr=elem('tr');row.forEach(x=>tr.append(elem('td',x)));t.append(tr);});$(id).replaceChildren(t);}
+function bar(parts){const total=parts.reduce((n,p)=>n+(p.value||0),0),b=elem('div',undefined,'bar');if(!total)return elem('p','No nonzero duration recorded.','empty');parts.forEach(p=>{if(!p.value)return;const s=elem('span',p.value/total>.12?p.label:'',p.hold?'hold':undefined);s.style.width=`${100*p.value/total}%`;s.style.setProperty('--tone',p.color);s.title=`${p.label}: ${num(p.value)}`;b.append(s);});return b;}
+const svgNode=(tag,attrs={})=>{const e=document.createElementNS('http://www.w3.org/2000/svg',tag);Object.entries(attrs).forEach(([k,v])=>e.setAttribute(k,v));return e;};
+function svgText(svg,x,y,text,cls){const t=svgNode('text',{x,y,class:cls||''});t.textContent=text;svg.append(t);}
+let current;
+function render(d){current=d;
+ $('metrics').replaceChildren();[['Recorded tokens',num(d.total)],['M1 · tokens / nonreturned delivery',num(d.yield)],['Actors in evidence',num(d.aliases.length)],['Rework chains',num(d.rework)],['Effective parallelism',num(d.parallel)]].forEach(([label,value])=>{const box=elem('div',undefined,'metric');box.append(elem('strong',value),elem('span',label));$('metrics').append(box);});
+ $('bands').replaceChildren();d.activity.filter(a=>a.seat).forEach(a=>{const box=elem('article');box.append(elem('strong',a.seat));const parts=bandKeys.map((k,i)=>({label:bandNames[i],value:a[k],color:colors[i]}));if(a.unparked_container_secs!==null && a.idle_with_work_secs!==null){const hold=Math.min(a.unparked_container_secs,a.idle_with_work_secs);parts[1].value-=hold;parts.splice(2,0,{label:'Container hold (subset)',value:hold,color:'#94a3b8',hold:true});}box.append(bar(parts),elem('p',parts.map(p=>`${p.label}: ${p.value===null?'Unavailable':num(p.value)+' s'}`).join(' · '),'note'));$('bands').append(box);});if(!d.activity.length)empty('bands','Activity bands unavailable.');
+ renderTimeline(d);renderFlow(d);
+ if(d.histogram.length){$('concurrency').replaceChildren(bar(d.histogram.map((h,i)=>({label:`k=${h.k}`,value:h.secs,color:colors[i%colors.length]}))),elem('p',d.histogram.map(h=>`k=${h.k}: ${num(h.secs)} s`).join(' · ')+(d.histogramUnavailable?` · ${d.histogramUnavailable} rows unavailable`:''),'note'));}else empty('concurrency','Concurrency histogram unavailable.');
+ const entries=Object.entries(d.tokens);if(entries.some(([,v])=>v!==null)){ $('tokens').replaceChildren(bar(entries.map(([label,value],i)=>({label,value:value||0,color:colors[i]}))),elem('p',entries.map(([k,v])=>`${k}: ${num(v)}`).join(' · '),'note'));}else empty('tokens','Token categories unavailable; no mix inferred from totals.');
+ table('pairs',['From','To','Wait median (s)','Wait samples','Execution median (s)','Execution samples'],d.pairs.map(r=>[r.from||'Unknown',r.to||'Unknown',num(r.wait_median),num(r.wait_samples),num(r.exec_median),num(r.exec_samples)]));
+ renderHeatmap(d);
+ const buckets=Object.entries(d.attribution);if(buckets.some(([,v])=>v!==null))$('attribution').replaceChildren(bar(buckets.map(([label,value],i)=>({label,value:value||0,color:colors[i]}))),elem('p',buckets.map(([k,v])=>`${k}: ${num(v)}`).join(' · '),'note'));else empty('attribution','Attributed token buckets unavailable.');
+ $('seat').replaceChildren(...d.aliases.map(x=>{const o=elem('option',x);o.value=x;return o;}));$('seat').disabled=!d.aliases.length;inspect();
+ renderInsights(d);
+}
+function renderSummary(id,title,block){const host=$(id);host.replaceChildren(elem('h3',title));if(!block){host.append(elem('p','Not evaluated.','empty'));return;}host.append(statusLine(block.status),elem('p',`Population: ${block.population?.what||'—'} n=${block.population&&typeof block.population.n==='number'?num(block.population.n):'—'}`,'note'),measureTable(block.measures||[]));}
+function renderInsights(d){
+ if(!d.insights.length)$('insight-list').replaceChildren(elem('p','No insight results in this export.','empty'));
+ else $('insight-list').replaceChildren(...d.insights.map(insightCard));
+ renderSummary('lineage','Work lineage (I09)',d.lineage);
+ renderSummary('environment','Environment resources (I14)',d.environment);
+ const host=$('security');host.replaceChildren();host.append(statusLine(d.security.status),elem('p',`Population n=${d.security.populationN===null?'—':num(d.security.populationN)}`,'note'));
+ if(d.security.status.state==='refused'||d.security.status.state==='unknown'){host.append(elem('p','Security counts are unavailable for this status.','empty'));return;}
+ if(!d.security.counts.length){host.append(elem('p','No admitted security observations.','empty'));return;}
+ const t=elem('table'),head=elem('tr');['Kind','Value','Count'].forEach(x=>head.append(elem('th',x)));t.append(head);d.security.counts.forEach(r=>{const tr=elem('tr');[r.kind,r.value,showMeasure(r.n)].forEach(x=>tr.append(elem('td',x)));t.append(tr);});host.append(t);
+}
+function renderTimeline(d){
+ if((!d.events.length&&!d.intervals.length)||!Number.isFinite(d.from)||!Number.isFinite(d.to)||d.to<=d.from)return empty('timeline','Timestamped activity transitions and a valid observation window are required.');
+ const laneSeats=[...new Set([...d.events.map(e=>e.seat),...d.intervals.map(e=>e.seat)])].slice(0,100),height=laneSeats.length*36+44,svg=svgNode('svg',{viewBox:`0 0 1000 ${height}`,role:'img','aria-label':'Recorded actor state timeline'}),x=t=>120+850*(t-d.from)/(d.to-d.from);
+ const defs=svgNode('defs'),pattern=svgNode('pattern',{id:'container-hatch',width:6,height:6,patternUnits:'userSpaceOnUse',patternTransform:'rotate(45)'});pattern.append(svgNode('rect',{width:6,height:6,fill:'#9ca3af'}),svgNode('rect',{width:3,height:6,fill:'#27374b'}));defs.append(pattern);svg.append(defs);
+ svgText(svg,120,15,new Date(d.from).toISOString());svgText(svg,690,15,new Date(d.to).toISOString());
+ laneSeats.forEach((seat,i)=>{const y=28+i*36;svgText(svg,0,y+17,seat,'lane-label');const events=d.events.filter(e=>e.seat===seat).sort((a,b)=>a.ts-b.ts);const a=d.activity.find(a=>a.seat===seat);const spans=a?.spans||[];svg.append(svgNode('rect',{x:120,y,width:850,height:24,fill:'#334155'}));
+ spans.forEach(span=>{const lo=Math.max(span.from,d.from),hi=Math.min(span.to,d.to);if(hi<=lo)return;const local=events.filter(e=>e.ts>=span.from&&e.ts<hi);local.forEach((e,j)=>{const start=Math.max(lo,e.ts),end=Math.min(hi,local[j+1]?.ts??hi);if(end<=start)return;const r=svgNode('rect',{x:x(start),y,width:Math.max(.5,x(end)-x(start)),height:24,fill:e.state==='running'?'#10b981':e.state==='needs_input'?'#a78bfa':e.state==='idle'?'#475569':'#94a3b8'});const title=svgNode('title');title.textContent=`${seat}: ${e.state}, ${new Date(start).toISOString()} – ${new Date(end).toISOString()}`;r.append(title);svg.append(r);});});});d.intervals.filter(r=>laneSeats.includes(r.seat)&&r.from<d.to&&r.to>d.from).forEach(r=>{const y=28+laneSeats.indexOf(r.seat)*36,lo=Math.max(r.from,d.from),hi=Math.min(r.to,d.to);const rect=svgNode('rect',{x:x(lo),y:y+16,width:Math.max(.5,x(hi)-x(lo)),height:8,fill:r.classification==='unparked_container_hold'?'url(#container-hatch)':'#fbbf24'});const title=svgNode('title');title.textContent=`${r.seat}: source-backed ${r.classification}, ${new Date(lo).toISOString()} – ${new Date(hi).toISOString()}`;rect.append(title);svg.append(rect);});d.compactions.filter(c=>c.ts>=d.from&&c.ts<d.to&&laneSeats.includes(c.seat)).forEach(c=>{const y=28+laneSeats.indexOf(c.seat)*36;const line=svgNode('line',{x1:x(c.ts),x2:x(c.ts),y1:y-4,y2:y+28,stroke:'#fb7185','stroke-width':3});const title=svgNode('title');title.textContent=`Recorded context drop: ${num(c.before)} → ${num(c.after)} tokens`;line.append(title);svg.append(line);});$('timeline').replaceChildren(svg,elem('p','Green: running · Slate: idle · Purple: needs input · Gray: unknown / unobserved · Pink markers: recorded context drops (hover for counts). Hatched strip: proven container hold · Amber strip: no-recorded-child idle stall. Up to 100 lanes displayed.','note'));
+}
+function renderFlow(d){
+ $('flow-detail').textContent='';if(!d.edges.length)return empty('sankey','No handoff edges recorded; no flow inferred.');const pairs=new Map();d.edges.forEach(e=>{const key=`${e.from}|${e.to}|${e.returned}`;if(!pairs.has(key))pairs.set(key,{...e,count:0});pairs.get(key).count++;});const flows=[...pairs.values()].slice(0,100),left=[...new Set(flows.map(e=>e.from))],right=[...new Set(flows.map(e=>e.to))],height=Math.max(260,Math.max(left.length,right.length)*58+40),svg=svgNode('svg',{viewBox:`0 0 900 ${height}`,role:'group','aria-label':'Handoff count flow. Activate ribbons for evidence.'});
+ left.forEach((s,i)=>{svgText(svg,10,55+i*58,s);svg.append(svgNode('rect',{x:120,y:34+i*58,width:10,height:32,fill:'#06b6d4'}));});right.forEach((s,i)=>{svgText(svg,780,55+i*58,s);svg.append(svgNode('rect',{x:760,y:34+i*58,width:10,height:32,fill:'#10b981'}));});
+ const max=Math.max(...flows.map(e=>e.count));flows.forEach(e=>{const offset=e.returned?15:-15,y1=50+left.indexOf(e.from)*58+offset,y2=50+right.indexOf(e.to)*58+offset,p=svgNode('path',{d:`M130 ${y1} C420 ${y1},480 ${y2},760 ${y2}`,class:`flow${e.returned?' return':''}`,'stroke-width':Math.max(3,26*e.count/max),tabindex:0,role:'button','aria-label':`${e.from} to ${e.to}: ${e.count} ${e.returned?'returns':'handoffs'}`});const show=()=>{$('flow-detail').textContent=`${e.from} → ${e.to}: ${e.count} ${e.returned?'returned':'other'} handoff(s). Counts do not establish token cost.`;};p.addEventListener('click',show);p.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();show();}});svg.append(p);});$('sankey').replaceChildren(svg,elem('p','Sender → receiver · Up to 100 pair ribbons displayed.','note'));
+}
+function renderHeatmap(d){
+ const mode=$('heatMetric').value||'count',seats=d.aliases.slice(0,30);if(!seats.length)return empty('heatmap','No pair evidence.');
+ const values=seats.map(from=>seats.map(to=>{const pair=d.pairs.find(r=>r.from===from&&r.to===to),count=d.pairCounts.find(r=>r.from===from&&r.to===to),edges=d.edges.filter(r=>r.from===from&&r.to===to);if(mode==='wait')return pair?.wait_median??null;if(mode==='exec')return pair?.exec_median??null;if(mode==='boundary'){const b=d.boundaries.filter(r=>r.from===from&&r.to===to);return b.length?b.map(r=>r.kind).reduce((acc,k)=>({...acc,[k]:(acc[k]||0)+1}),{}):null;}if(mode==='rate')return count?.rate!==null&&count?.rate!==undefined?count.rate*100:null;return count?.count??(edges.length||null);}));
+ const max=Math.max(1,...values.flat().filter(v=>typeof v==='number')),t=elem('table'),head=elem('tr');head.append(elem('th','Sender ↓ / receiver →'));seats.forEach(s=>head.append(elem('th',s)));t.append(head);values.forEach((row,i)=>{const tr=elem('tr');tr.append(elem('th',seats[i]));row.forEach(v=>{const td=elem('td',v===null?'—':typeof v==='object'?Object.entries(v).map(([k,n])=>`${k==='cross_rig_seam'?'cross_scope_seam':k}: ${n}`).join(' · '):num(v));td.style.background=v===null?'#172130':`rgba(6,182,212,${typeof v==='number'?.12+.65*v/max:.3})`;td.title=v===null?'Unavailable':mode;tr.append(td);});t.append(tr);});$('heatmap').replaceChildren(t);
+}
+function inspect(){if(!current)return;const seat=$('seat').value,a=current.activity.find(a=>a.seat===seat),s=current.seats.find(s=>s.seat===seat);$('inspection').replaceChildren(elem('h2',seat||'No actor evidence'),elem('p',`Tokens: ${num(s?.tokens)} · Closed items: ${num(s?.closed_items)} · Tokens / closed item: ${num(s?.tokens_per_closed_item)}`),elem('p',`Nonreturned deliveries: ${num(s?.nonreturn_deliveries)} · Container hold: ${num(a?.unparked_container_secs)} s · Leaf stall: ${num(a?.leaf_stall_secs)} s`),elem('p',`Engineering tool calls: ${num(a?.engineering_calls)} · Ceremony tool calls: ${num(a?.ceremony_calls)}`));}
+function load(raw,source){const data=project(raw);render(data);$('status').textContent=source;$('status').className=source.startsWith('Synthetic')?'badge':'';}
+const DEMO={product:'AI Fleet Intelligence',from:'2026-01-01T00:00:00Z',to:'2026-01-01T01:00:00Z',tokens:1200000,m1_yield:120000,m3_rework_chains:1,m1_by_seat:[{seat:'builder',tokens:900000,closed_items:6,nonreturn_deliveries:6,tokens_per_closed_item:150000},{seat:'reviewer',tokens:300000,closed_items:4,nonreturn_deliveries:4,tokens_per_closed_item:75000}],activity:[{seat:'builder',observed_spans:[{from:'2026-01-01T00:00:00Z',to:'2026-01-01T01:00:00Z'}],observed_secs:3600,active_secs:2400,idle_with_work_secs:600,idle_without_work_secs:600,waiting_human_secs:0,unknown_secs:0,unparked_container_secs:300,leaf_stall_secs:300,engineering_calls:40,ceremony_calls:8},{seat:'reviewer',observed_spans:[{from:'2026-01-01T00:00:00Z',to:'2026-01-01T01:00:00Z'}],observed_secs:3600,active_secs:1800,idle_with_work_secs:600,idle_without_work_secs:1200,waiting_human_secs:0,unknown_secs:0,unparked_container_secs:0,leaf_stall_secs:600,engineering_calls:18,ceremony_calls:6}],activity_events:[{seat:'builder',ts:'2026-01-01T00:00:00Z',state:'running'},{seat:'builder',ts:'2026-01-01T00:40:00Z',state:'idle'},{seat:'reviewer',ts:'2026-01-01T00:00:00Z',state:'idle'},{seat:'reviewer',ts:'2026-01-01T00:20:00Z',state:'running'},{seat:'reviewer',ts:'2026-01-01T00:50:00Z',state:'idle'}],handoff_edges:[{from:'builder',to:'reviewer',return:false},{from:'builder',to:'reviewer',return:false},{from:'reviewer',to:'builder',return:true}],pair_medians:[{from:'builder',to:'reviewer',wait_median:120,wait_samples:2}],token_categories:{input_uncached:200000,cache_read:800000,cache_write:100000,output:100000},fleet_concurrency:{effective_parallelism:1.1667,histogram:[{active_seats:0,secs:600},{active_seats:1,secs:1800},{active_seats:2,secs:1200}]},insights:[{id:'I02',name:'model.tokens.direct',version:'1.0.0',domain:'model',status:{state:'computed'},population:{what:'usage_facts',n:2},measures:[{id:'I02.input_uncached',name:'input_uncached',value:100,unit:'tokens'},{id:'I02.output',name:'output',value:40,unit:'tokens'},{id:'I02.cache_read',name:'cache_read',value:20,unit:'tokens'}],coverage:'reasoning is included in output and is not part of the disjoint sum',evidence:[]},{id:'I04',name:'model.cost',version:'1.0.0',domain:'model',status:{state:'partial',reason:'estimated usd unknown'},population:{what:'usage_facts',n:2},measures:[{id:'I04.observed_usd',name:'observed_usd',value:0,unit:'usd'},{id:'I04.estimated_usd',name:'estimated_usd',value:null,unit:'usd'}],coverage:'observed and estimated are never added; unknown is not zero',evidence:[]},{id:'I08',name:'harness.action_failure',version:'1.0.0',domain:'harness',status:{state:'computed'},population:{what:'tool_facts',n:4},measures:[{id:'I08.failure_rate',name:'failure_rate',value:0.25,unit:'ratio'},{id:'I08.unsettled',name:'unsettled',value:1,unit:'actions'}],coverage:'unsettled actions are counted separately and never treated as succeeded',evidence:[]},{id:'I09',name:'work.lineage_shape',version:'1.0.0',domain:'coordination',status:{state:'partial',reason:'unresolved parent session'},population:{what:'session_edges',n:2},measures:[{id:'I09.roots',name:'roots',value:1,unit:'sessions'},{id:'I09.max_depth',name:'max_depth',value:null,unit:'edges'}],coverage:'synthetic',evidence:[]},{id:'I14',name:'environment.resources',version:'1.0.0',domain:'environment',status:{state:'refused',reason:'empty population'},population:{what:'process_samples',n:0},measures:[],coverage:'synthetic',evidence:[]},{id:'I18',name:'coverage.source',version:'1.0.0',domain:'environment',status:{state:'computed'},population:{what:'source_files',n:3},measures:[{id:'I18.read',name:'read',value:3,unit:'sources'},{id:'I18.projected',name:'projected',value:2,unit:'sources'},{id:'I18.unprojected',name:'unprojected',value:1,unit:'sources'},{id:'I18.refused',name:'refused',value:0,unit:'sources'}],coverage:'read, projected, unprojected, and refused stay separate',evidence:[]}],security:{status:{state:'computed'},population:{what:'security_facts',n:1},counts:[{kind:'sandbox_policy',value:'workspace-write',n:1}]}};
+$('heatMetric').addEventListener('change',()=>{if(current)renderHeatmap(current);});$('seat').addEventListener('change',inspect);$('demo').addEventListener('click',()=>load(DEMO,'Synthetic demo · invented values for exploration, not an empirical benchmark.'));
+$('load-full-demo').addEventListener('click',()=>{if(typeof fetch!=='function')return;fetch('fixtures/fleet-explorer-demo.json',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error('HTTP '+r.status);return r.json();}).then(d=>load(d,'Offline Fleet Explorer Demo (fixtures/fleet-explorer-demo.json) · 6 actors · 21 insights')).catch(()=>{$('status').textContent='Could not load fixtures/fleet-explorer-demo.json.';});});
+$('file').addEventListener('change',async event=>{const file=event.target.files[0];if(!file)return;try{if(file.size>10*1024*1024)throw Error('File exceeds the 10 MiB limit.');load(JSON.parse(await file.text()),'Local analytical export · aliases applied · no data sent or stored.');}catch(error){$('status').textContent='Could not load file. '+(error instanceof SyntaxError?'Invalid JSON.':error.message);}finally{event.target.value='';}});
+const tabs=[...document.querySelectorAll('[role=tab]')];function activate(tab){tabs.forEach(t=>{const selected=t===tab;t.setAttribute('aria-selected',selected);t.tabIndex=selected?0:-1;$(t.getAttribute('aria-controls')).hidden=!selected;});}tabs.forEach((tab,i)=>{tab.addEventListener('click',()=>activate(tab));tab.addEventListener('keydown',e=>{let next;if(e.key==='ArrowRight')next=(i+1)%tabs.length;else if(e.key==='ArrowLeft')next=(i+tabs.length-1)%tabs.length;else if(e.key==='Home')next=0;else if(e.key==='End')next=tabs.length-1;else return;e.preventDefault();activate(tabs[next]);tabs[next].focus();});});
+let embeddedReport=false;
+try{const embedded=JSON.parse($('dendro-data').textContent);if(embedded){embeddedReport=true;load(embedded,'Embedded analytical export · local view');}else load(DEMO,'Synthetic demo · invented values for exploration, not an empirical benchmark.');}catch{ $('status').textContent='Embedded data invalid. Open a valid analytical JSON export.';}
+function showLiveConnected(data){const badge=$('dual-serving-indicator'),badgeText=$('dual-serving-text');if(badge&&badge.classList)badge.classList.add('live');if(badgeText)badgeText.textContent='LIVE '+'DUCKDB';const recorded=data&&data.recorded_window||{};const from=recorded.from||'—';const to=recorded.to||'—';const parts=['Live connected',from+' → '+to];if(typeof data.row_count==='number')parts.push(data.row_count.toLocaleString()+' rows');const counts=data&&data.table_counts;if(counts&&typeof counts==='object'){[['usage_facts','usage observations'],['message_facts','message facts'],['activity_facts','activity intervals'],['queue_facts','queue items'],['security_facts','security posture records'],['session_edges','session lineage edges'],['tool_facts','tool facts'],['skill_facts','skill facts']].forEach(([key,label])=>{const value=counts[key];const n=typeof value==='number'?value:(value&&typeof value.rows==='number'?value.rows:null);if(typeof n==='number'&&Number.isFinite(n))parts.push(n.toLocaleString()+' '+label);});}const status=$('status');if(status){status.textContent=parts.join(' · ');status.className='';}}
+function maybeLiveQuery(){if(embeddedReport)return;const protocol=typeof window!=='undefined'&&window.location?window.location.protocol:'';if(protocol!=='http:'&&protocol!=='https:')return;if(typeof fetch!=='function')return;fetch('/api/query?view=cockpit',{cache:'no-store'}).then(res=>{if(!res.ok)throw new Error('HTTP '+res.status);return res.json();}).then(data=>{if(data&&typeof data==='object')showLiveConnected(data);}).catch(()=>{});}
+maybeLiveQuery();
+</script></body></html>

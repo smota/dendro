@@ -1,0 +1,6 @@
+dashboard:
+  id: authority_blast_radius
+  title: "Authority Blast Radius (I24)"
+queries:
+  - id: radius
+    sql: SELECT * FROM v_authority_blast_radius ORDER BY downstream_sessions DESC, harness, origin_session

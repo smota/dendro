@@ -1,0 +1,6 @@
+dashboard:
+  id: executive_governance
+  title: Canonical governance evidence
+queries:
+  - id: scorecard
+    sql: SELECT * FROM v_executive_governance

@@ -1,0 +1,6 @@
+dashboard:
+  id: schema_drift
+  title: "Schema Drift (I23)"
+queries:
+  - id: drift
+    sql: SELECT * FROM v_schema_drift ORDER BY l1_distance DESC, harness, harness_version

@@ -2873,7 +2873,7 @@ mod tests {
         store.checkpoint().unwrap();
         drop(store);
         let (from, to) = ("2026-10-09T00:00:00Z", "2026-10-09T04:00:00Z");
-        let register = include_str!("../../../docs/ACCEPTANCE_R1_CLARIFICATIONS.md");
+        let register = include_str!("../docs/ACCEPTANCE_R1_CLARIFICATIONS.md");
         let report = report_json(&db, "decisions", None, from, to).unwrap();
         let k2 = report["payload"]["k2_closed_item"].as_str().unwrap();
         assert!(

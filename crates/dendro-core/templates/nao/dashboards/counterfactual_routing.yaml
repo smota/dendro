@@ -1,0 +1,6 @@
+dashboard:
+  id: counterfactual_routing
+  title: "Counterfactual Routing (I25)"
+queries:
+  - id: routing
+    sql: SELECT * FROM v_counterfactual_routing ORDER BY harness, session_key

@@ -1,0 +1,27 @@
+# Verified against getnao/nao cdb448c686150eb5aebf3a2b6a31a49a7c6c23ac.
+# init-nao replaces this path with the actual canonical database path as a YAML string.
+project_name: dendro
+threads: 1
+databases:
+  - name: dendro
+    type: duckdb
+    path: "dendro.duckdb"
+    templates: [columns]
+    include:
+      - "main.v_seat_idle_ranking"
+      - "main.v_handoff_rework_analysis"
+      - "main.v_mission_token_burn"
+      - "main.v_executive_governance"
+      - "main.v_message_mix"
+      - "main.v_subagent_lineage"
+      - "main.v_security_posture"
+      - "main.v_process_resources"
+      - "main.v_trajectory_vortex"
+      - "main.v_schema_drift"
+      - "main.v_authority_blast_radius"
+      - "main.v_counterfactual_routing"
+      - "main.dendro_semantic_provenance"
+      - "main.dendro_semantic_usage"
+    allow_listed_only: true
+repos: []
+llm: null

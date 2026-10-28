@@ -2117,7 +2117,7 @@ pub fn offline_html(report: &Value) -> Result<String> {
         bail!("offline export exceeds 10 MiB; narrow the report window");
     }
     let marker = "<script id=\"dendro-data\" type=\"application/json\">null</script>";
-    let template = include_str!("../../../site/viewer.html");
+    let template = include_str!("../site/viewer.html");
     if template.matches(marker).count() != 1 {
         bail!("offline viewer embedding contract changed");
     }

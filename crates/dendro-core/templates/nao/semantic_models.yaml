@@ -1,0 +1,77 @@
+# Dendro's local adapter manifest; not a claim of compatibility with an unpinned Nao release.
+version: 3
+data_source:
+  type: duckdb
+  path_file: database.json
+  read_only: true
+refresh:
+  command: dendro materialize --db <database> --from <RFC3339> --to <RFC3339> [--rig <rig>]
+  semantics: one canonical decisions report, exact half-open window, explicit refresh after ingestion
+  stale_policy: refuse
+models:
+  - name: seat_idle_ranking
+    table: v_seat_idle_ranking
+    description: Canonical per-seat activity durations and M1 yield from the decisions report payload (activity and m1_by_seat).
+    dimensions: [seat_id, rig, window_from, window_to, definition_version]
+    columns: [observed_secs, active_secs, idle_with_work_secs, idle_between_work_secs, waiting_external_secs, unknown_secs, unparked_container_secs, leaf_stall_secs, ceremony_ratio, tool_categories, m1, source_keys, row_json]
+  - name: handoff_rework_analysis
+    table: v_handoff_rework_analysis
+    description: Canonical seat-pair handoff counts, rework returns, and wait/execution turnaround medians from the decisions report payload (handoff_friction.pairs).
+    dimensions: [from_seat, to_seat, rig, window_from, window_to, ring_boundary]
+    columns: [handoffs, rework_returns, return_rate, wait_median_ms, exec_turnaround_median_ms, source_keys, row_json]
+  - name: mission_token_burn
+    table: v_mission_token_burn
+    description: Canonical four-category token totals grouped by seat, model, effort, attribution bucket, and mission/issue/phase arrays from trace_inputs and issue_lineage.
+    dimensions: [seat_id, model, effort, attribution_bucket, missions, issues, phases, rig, window_from, window_to]
+    columns: [input_uncached, output, cache_read, cache_write, source_keys]
+  - name: executive_governance
+    table: v_executive_governance
+    description: Canonical fleet-level governance scorecard and metrics projected directly from the decisions report payload.
+    dimensions: [rig, window_from, window_to, definition_version]
+    columns: [m1_yield, m1_by_seat, m2_return_rate, m3_rework_chains, token_categories, link_rates, fleet_concurrency, watchdog_recovery, four_eyes_independence, context_compactions, cross_slice_cache_bleed, task_intake_overhead, issue_lineage, vortex_loops, ring_boundaries, source_keys, row_json]
+  - name: message_mix
+    table: v_message_mix
+    description: Canonical per-harness and per-session message counts by role, direction, and modality from message_facts (metadata only; never message text). ALL-TIME counts — window_from/window_to label the snapshot but do not filter these rows.
+    dimensions: [harness, native_session, role, direction, modality, rig, window_from, window_to, definition_version]
+    columns: [message_count, source_keys]
+  - name: subagent_lineage
+    table: v_subagent_lineage
+    description: Canonical per-parent-session child counts and edge status counts from explicit session_edges; recursive depth, cycle, and unresolved-parent verdicts come from canonical insight I09 (work.lineage_shape). ALL-TIME counts — window_from/window_to label the snapshot but do not filter these rows; I09 is windowed.
+    dimensions: [harness, parent_session, rig, window_from, window_to, definition_version]
+    columns: [child_count, edge_count, started_count, finished_count, failed_count, unknown_count, child_sessions, relations, source_keys]
+  - name: security_posture
+    table: v_security_posture
+    description: Canonical security observation counts by harness, kind, and closed-vocabulary value from security_facts (explicit source-field observations only, never command text or authority verdicts). ALL-TIME counts — window_from/window_to label the snapshot but do not filter these rows.
+    dimensions: [harness, kind, value, rig, window_from, window_to, definition_version]
+    columns: [observation_count, session_count, source_keys]
+  - name: process_resources
+    table: v_process_resources
+    description: Canonical per-root_key and per-harness process count, max RSS per rss_unit, sample count, and attribution from process_identities and process_samples; monotonic CPU and disk deltas come from canonical insight I14 (environment.resources) and are never recomputed in SQL. ALL-TIME counts — window_from/window_to label the snapshot but do not filter these rows; I14 is windowed.
+    dimensions: [root_key, harness, attribution, rss_unit, rig, window_from, window_to, definition_version]
+    columns: [process_count, max_rss_bytes, sample_count, source_keys]
+  - name: trajectory_vortex
+    table: v_trajectory_vortex
+    description: Reserved trajectory rows for I22 harness.trajectory_vortex. A trip is distance from the cohort, not a cause. ALL-TIME rows — window_from/window_to label the snapshot but do not filter these rows. CPU stays on I14. Cost stays on I04.
+    dimensions: [harness, session_key, status, reason, rig, window_from, window_to, definition_version]
+    columns: [turn_k, cosine_distance, self_transition_rate, tripped, source_keys]
+  - name: schema_drift
+    table: v_schema_drift
+    description: Reserved envelope-shape drift rows for I23 harness.schema_drift. Short samples use reason insufficient_sample. ALL-TIME rows — window_from/window_to label the snapshot but do not filter these rows.
+    dimensions: [harness, harness_version, status, reason, rig, window_from, window_to, definition_version]
+    columns: [l1_distance, keys_added, keys_removed, keys_retyped, source_keys]
+  - name: authority_blast_radius
+    table: v_authority_blast_radius
+    description: Reserved evidenced-only reachability rows for I24 security.authority_blast_radius. The count is dependency exposure, not inherited or effective authority. ALL-TIME rows — window_from/window_to label the snapshot but do not filter these rows.
+    dimensions: [harness, origin_session, status, reason, rig, window_from, window_to, definition_version]
+    columns: [downstream_sessions, max_hop, cycles_touched, non_claim, source_keys]
+  - name: counterfactual_routing
+    table: v_counterfactual_routing
+    description: Reserved counterfactual rows for I25 model.counterfactual_routing. The simulation is not an effect and not a routing change. ALL-TIME rows — window_from/window_to label the snapshot but do not filter these rows. Observed cost stays on I04.
+    dimensions: [harness, session_key, status, reason, rig, window_from, window_to, definition_version]
+    columns: [cache_bleed_inflection, simulated_cost, simulated_context_pressure, source_keys]
+prompts:
+  file: prompts.md
+  patterns: [Compare, Rank, Explain, Verify, Trace, HonestLimits]
+  execution: local deterministic allowlist
+  arbitrary_sql: false
+  unsupported_response: 'Insufficient data: unsupported intent or metric'

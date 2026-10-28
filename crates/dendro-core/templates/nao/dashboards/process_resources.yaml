@@ -1,0 +1,6 @@
+dashboard:
+  id: process_resources
+  title: "Environment & Process Resources"
+queries:
+  - id: resources
+    sql: SELECT * FROM v_process_resources ORDER BY max_rss_bytes DESC, harness, root_key

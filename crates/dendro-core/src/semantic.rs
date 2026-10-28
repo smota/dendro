@@ -1313,7 +1313,7 @@ pub fn init_workspace_with_receipt(destination: &Path, db: &Path) -> Result<Valu
         #[cfg(not(any(windows, target_os = "linux")))]
         let database = fs::canonicalize(request.database())?;
         crate::pipeline::refuse_secret_path(&database)?;
-        let config = include_str!("../../../templates/nao/nao_config.yaml")
+        let config = include_str!("../templates/nao/nao_config.yaml")
             .replace("\r\n", "\n")
             .replace("\"dendro.duckdb\"", &serde_json::to_string(&database)?);
         #[cfg(any(windows, target_os = "linux"))]
@@ -1323,9 +1323,9 @@ pub fn init_workspace_with_receipt(destination: &Path, db: &Path) -> Result<Valu
         write_workspace_file(&target.join("nao_config.yaml"), config.as_bytes())?;
         write_workspace_file(
             &target.join("semantic_models.yaml"),
-            include_bytes!("../../../templates/nao/semantic_models.yaml"),
+            include_bytes!("../templates/nao/semantic_models.yaml"),
         )?;
-        let rules = include_str!("../../../templates/nao/prompts.md").to_owned();
+        let rules = include_str!("../templates/nao/prompts.md").to_owned();
         #[cfg(windows)]
         let rules = format!("{rules}\nThis workspace queries a dedicated private, version-scoped database snapshot in read-only mode. It does not follow later Dendro publications. To refresh, run dendro init-nao into a new workspace; never replace the snapshot in place.\n");
         write_workspace_file(&target.join("RULES.md"), rules.as_bytes())?;
@@ -2287,7 +2287,7 @@ mod tests {
         }])?;
         assert_ne!(signature(&store)?, before_sig);
 
-        let models_yaml = include_str!("../../../templates/nao/semantic_models.yaml");
+        let models_yaml = include_str!("../templates/nao/semantic_models.yaml");
         for view in VIEWS {
             assert!(
                 models_yaml.contains(view),
