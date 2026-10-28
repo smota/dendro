@@ -3,26 +3,26 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Get Started with Dendro v0.8.0 — Install &amp; Launch the Cockpit &amp; Studio</title>
-  <meta name="description" content="Install Dendro v0.8.0 via Cargo and inspect your local Claude Code, Codex, AGY, Grok CLI, and Pi session logs in the Ratatui TUI Cockpit or Connected Web Studio.">
+  <title>Get Started with Dendro — Install &amp; Launch the Cockpit &amp; Studio</title>
+  <meta name="description" content="Install Dendro via Cargo and inspect your local Claude Code, Codex, AGY, Grok CLI, and Pi session logs in the Ratatui TUI Cockpit or Connected Web Studio.">
   <link rel="canonical" href="https://movetheneedle.info/dendro/get-started.html">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Move the Needle">
-  <meta property="og:title" content="Get Started with Dendro v0.8.0 — Install &amp; Launch the Cockpit &amp; Studio">
-  <meta property="og:description" content="Install Dendro v0.8.0 and turn your existing local AI coding transcripts into 4-layer causal timelines, 5-part token breakdowns, and offline browser reports.">
+  <meta property="og:title" content="Get Started with Dendro — Install &amp; Launch the Cockpit &amp; Studio">
+  <meta property="og:description" content="Install Dendro and turn your existing local AI coding transcripts into 4-layer causal timelines, 5-part token breakdowns, and offline browser reports.">
   <meta property="og:url" content="https://movetheneedle.info/dendro/get-started.html">
   <meta property="og:image" content="https://movetheneedle.info/dendro/assets/screenshots/hub-living-growth-rings.png">
-  <meta property="og:image:alt" content="Dendro v0.8.0 quickstart, Ratatui terminal cockpit, and Connected Web Studio.">
+  <meta property="og:image:alt" content="Dendro quickstart, Ratatui terminal cockpit, and Connected Web Studio.">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Get Started with Dendro v0.8.0 — Install &amp; Launch the Cockpit &amp; Studio">
-  <meta name="twitter:description" content="Install Dendro v0.8.0 and turn your existing local AI coding transcripts into 4-layer causal timelines and cost breakdowns.">
+  <meta name="twitter:title" content="Get Started with Dendro — Install &amp; Launch the Cockpit &amp; Studio">
+  <meta name="twitter:description" content="Install Dendro and turn your existing local AI coding transcripts into 4-layer causal timelines and cost breakdowns.">
   <meta name="twitter:image" content="https://movetheneedle.info/dendro/assets/screenshots/hub-living-growth-rings.png">
-  <meta name="twitter:image:alt" content="Dendro v0.8.0 quickstart, Ratatui terminal cockpit, and Connected Web Studio.">
+  <meta name="twitter:image:alt" content="Dendro quickstart, Ratatui terminal cockpit, and Connected Web Studio.">
   <link rel="icon" type="image/svg+xml" href="assets/mark.svg">
   <link rel="icon" type="image/png" sizes="32x32" href="../assets/img/move-the-needle-icon-32.png">
   <link rel="apple-touch-icon" href="../assets/img/move-the-needle-icon-180.png">
   <link rel="stylesheet" href="../assets/css/product.css">
-  <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","name":"Get Started with Dendro v0.8.0","url":"https://movetheneedle.info/dendro/get-started.html","description":"Install Dendro v0.8.0 and inspect your local AI coding session logs.","isPartOf":{"@type":"WebSite","name":"Move the Needle","url":"https://movetheneedle.info/"}}</script>
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","name":"Get Started with Dendro","url":"https://movetheneedle.info/dendro/get-started.html","description":"Install Dendro and inspect your local AI coding session logs.","isPartOf":{"@type":"WebSite","name":"Move the Needle","url":"https://movetheneedle.info/"}}</script>
   <style>
     :root {
       color-scheme: dark;
@@ -81,7 +81,7 @@
     <div class="p-wrap p-nav-inner">
       <a class="p-brand" href="./">
         <img src="assets/mark.svg" alt="Dendro mark" width="38" height="38">
-        <span>Dendro<small>The Local-First Flight Recorder · v0.8.0</small></span>
+        <span>Dendro<small>The Local-First Flight Recorder</small></span>
       </a>
       <nav class="p-links" aria-label="Dendro navigation">
         <a href="./">Overview</a>
@@ -97,7 +97,7 @@
   <main id="main">
     <section class="p-page-hero">
       <div class="p-wrap">
-        <div class="p-eyebrow">Get Started · v0.8.0</div>
+        <div class="p-eyebrow">Get Started</div>
         <h1>Inspect your existing AI sessions in 60 seconds.</h1>
         <p class="p-lead">Dendro reads the local session footprints your coding agents have already written on disk. Zero runtime proxies to configure, zero cloud accounts to create, and zero prompt or secret persistence.</p>
       </div>
@@ -107,15 +107,20 @@
       <div class="p-wrap">
         <div class="p-grid-3">
           <article class="p-step">
-            <span class="p-step-badge">1 · Install the Rust CLI</span>
-            <h3>Install via Cargo or build from source</h3>
-            <p>Install the single Rust binary locally on Linux, macOS, or WSL2:</p>
-            <pre><code># Install via Cargo
-cargo install dendro-cli
+            <span class="p-step-badge">1 · Install or Build the Rust CLI</span>
+            <h3>Install via Cargo or build from Git checkout</h3>
+            <p>Get the single Rust binary locally on Linux, macOS, or WSL2:</p>
+            <pre><code># Path A: Install via Cargo (dendro on PATH)
+cargo install --git https://github.com/smota/dendro.git dendro-cli
+dendro
 
-# Or build release binary from source
+# (or from local checkout: cargo install --path crates/dendro-cli --locked)
+
+# Path B: Or build and run from Git checkout (current)
 git clone https://github.com/smota/dendro.git
-cd dendro &amp;&amp; cargo build --release --locked</code></pre>
+cd dendro
+cargo build --release --locked
+./target/release/dendro</code></pre>
           </article>
           <article class="p-step">
             <span class="p-step-badge">2 · Ratatui Cockpit or Web Studio</span>
@@ -165,8 +170,8 @@ dendro ask "top cost by model this week"</code></pre>
             <p>No. Dendro is a passive out-of-band flight recorder. It discovers and reads the standard session footprints that Claude Code, OpenAI Codex, Google AGY, xAI Grok CLI, and Pi already write to disk.</p>
           </details>
           <details>
-            <summary>How do OpenRig, AgentFlow SDLC, and Meshloop fit into Dendro's data model?</summary>
-            <p>Dendro treats <strong>Fleets, Harnesses, Sessions, Actors, Tools, and Capabilities</strong> as the universal primary taxonomy across any coding workflow. OpenRig, AgentFlow SDLC, and Meshloop are supported as optional orchestration adapters when correlating multi-actor handoff chains, role gates, and isolated worktree runs.</p>
+            <summary>How do multi-agent orchestrators and SDLC frameworks fit into Dendro's data model?</summary>
+            <p>Dendro treats <strong>Fleets, Harnesses, Sessions, Actors, Tools, and Capabilities</strong> as the universal primary taxonomy across any coding workflow. Multi-agent orchestrators, SDLC role routers, and worktree supervisors are supported as optional adapters when correlating multi-actor handoff chains, role gates, and isolated worktree runs.</p>
           </details>
         </div>
       </div>
@@ -175,7 +180,7 @@ dendro ask "top cost by model this week"</code></pre>
 
   <footer class="p-footer">
     <div class="p-wrap p-footer-inner">
-      <div><strong>Dendro v0.8.0</strong> · MIT License · Built by Samuel Mota (<a href="../">Move the Needle</a>)</div>
+      <div><strong>Dendro</strong> · MIT License · Built by Samuel Mota (<a href="../">Move the Needle</a>)</div>
       <div class="p-footer-links">
         <a href="./">Overview</a>
         <a href="how-it-works.html">How It Works</a>
@@ -190,7 +195,7 @@ dendro ask "top cost by model this week"</code></pre>
 <aside class="mtn-family" aria-label="Move the Needle systems and practice">
 <div class="mtn-family-inner">
 <div class="mtn-family-intro"><a class="mtn-umbrella-brand" href="../" aria-label="Move the Needle home"><img src="../assets/img/move-the-needle-icon-32.png" alt="" width="20" height="20"><span>Move the Needle</span></a><p>Built and maintained by Samuel Mota through Move the Needle, his independent technology transformation practice.</p></div>
-<div class="mtn-family-col"><p class="mtn-family-title">Systems</p><ul><li><a href="../agent-sdlc/">AgentFlow SDLC</a></li><li><a href="../dendro/" aria-current="page">Dendro</a></li><li><a href="../meshloop/">Meshloop</a></li><li><a href="../holoself/">Holoself</a></li><li><a href="../nextstep/">Nextstep</a></li><li><a href="../metaskills/">MetaSkills</a></li><li><a href="../open-source/">All open source</a></li></ul></div>
+<div class="mtn-family-col"><p class="mtn-family-title">Systems</p><ul><li><a href="../agent-sdlc/">AgentFlow SDLC</a></li><li><a href="../dendro/" aria-current="page">Dendro</a></li><li><a href="../agent-otel-bridge/">agent-otel-bridge</a></li><li><a href="../meshloop/">Meshloop</a></li><li><a href="../holoself/">Holoself</a></li><li><a href="../nextstep/">Nextstep</a></li><li><a href="../metaskills/">MetaSkills</a></li><li><a href="../open-source/">All open source</a></li></ul></div>
 <div class="mtn-family-col"><p class="mtn-family-title">Practice</p><ul><li><a href="../where-i-help/">Focus areas</a></li><li><a href="../how-i-work/">Approach</a></li><li><a href="../experience/">Case studies</a></li><li><a href="../thinking/">Thinking</a></li><li><a href="../about/">About</a></li><li><a href="../#contact">Contact</a></li></ul></div>
 <p class="mtn-family-legal">© Samuel Mota · <a href="https://www.linkedin.com/in/smota/?utm_source=movetheneedle.info&utm_medium=referral">LinkedIn ↗</a> · <a href="https://github.com/smota">GitHub ↗</a></p>
 </div>

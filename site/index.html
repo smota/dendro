@@ -3,26 +3,27 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Dendro v0.8.0 — Read the Growth Rings of Your AI Workflows</title>
-  <meta name="description" content="Dendro is the Local-First Flight Recorder, Causal X-Ray &amp; Operational Intelligence Studio for Multi-Agent AI Fleets. Decode 4 architectural layers, 5 capability funnels, and 25 deterministic DuckDB insights offline.">
+  <meta name="version" content="v0.8.0">
+  <title>Dendro — Local-First Flight Recorder &amp; Causal X-Ray for AI Agents</title>
+  <meta name="description" content="Dendro is the Local-First Flight Recorder, Causal X-Ray &amp; Operational Intelligence Studio for AI Coding Agents. Decode 4 architectural layers, 5 capability funnels, and 25 deterministic DuckDB insights offline.">
   <link rel="canonical" href="https://movetheneedle.info/dendro/">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Move the Needle">
-  <meta property="og:title" content="Dendro v0.8.0 — Read the Growth Rings of Your AI Workflows">
-  <meta property="og:description" content="The Local-First Flight Recorder, Causal X-Ray &amp; Operational Intelligence Studio for Multi-Agent AI Fleets across Claude Code, Codex, AGY, Grok CLI, and Pi.">
+  <meta property="og:title" content="Dendro — Local-First Flight Recorder &amp; Causal X-Ray for AI Agents">
+  <meta property="og:description" content="The Local-First Flight Recorder, Causal X-Ray &amp; Operational Intelligence Studio for AI Coding Workflows across Claude Code, Codex, AGY, Grok CLI, and Pi.">
   <meta property="og:url" content="https://movetheneedle.info/dendro/">
   <meta property="og:image" content="https://movetheneedle.info/dendro/assets/screenshots/hub-living-growth-rings.png">
-  <meta property="og:image:alt" content="Dendro v0.8.0 Living Growth Rings, Tactile Time Machine Scrubber, and 4-Layer Causal X-Ray Studio.">
+  <meta property="og:image:alt" content="Dendro 4-Layer Radial Session Dial, Time Machine Scrubber, and Causal X-Ray Studio.">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Dendro v0.8.0 — Read the Growth Rings of Your AI Workflows">
-  <meta name="twitter:description" content="Local-first flight recorder and causal X-ray studio for multi-agent AI coding fleets. Separate busy terminals from productive flow.">
+  <meta name="twitter:title" content="Dendro — Local-First Flight Recorder &amp; Causal X-Ray for AI Agents">
+  <meta name="twitter:description" content="Local-first flight recorder and causal X-ray studio for AI coding agents. Separate busy terminals from productive flow.">
   <meta name="twitter:image" content="https://movetheneedle.info/dendro/assets/screenshots/hub-living-growth-rings.png">
-  <meta name="twitter:image:alt" content="Dendro v0.8.0 Living Growth Rings, Tactile Time Machine Scrubber, and 4-Layer Causal X-Ray Studio.">
+  <meta name="twitter:image:alt" content="Dendro 4-Layer Radial Session Dial, Time Machine Scrubber, and Causal X-Ray Studio.">
   <link rel="icon" type="image/svg+xml" href="assets/mark.svg">
   <link rel="icon" type="image/png" sizes="32x32" href="../assets/img/move-the-needle-icon-32.png">
   <link rel="apple-touch-icon" href="../assets/img/move-the-needle-icon-180.png">
   <link rel="stylesheet" href="../assets/css/product.css">
-  <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Dendro","applicationCategory":"DeveloperApplication","operatingSystem":"Linux, macOS, Windows","softwareVersion":"0.8.0","license":"https://opensource.org/licenses/MIT","url":"https://movetheneedle.info/dendro/","codeRepository":"https://github.com/smota/dendro","author":{"@type":"Person","name":"Samuel Mota","url":"https://movetheneedle.info/about/"},"description":"The Local-First Flight Recorder, Causal X-Ray & Operational Intelligence Studio for Multi-Agent AI Fleets."}</script>
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Dendro","applicationCategory":"DeveloperApplication","operatingSystem":"Linux, macOS, Windows","license":"https://opensource.org/licenses/MIT","url":"https://movetheneedle.info/dendro/","codeRepository":"https://github.com/smota/dendro","author":{"@type":"Person","name":"Samuel Mota","url":"https://movetheneedle.info/about/"},"description":"The Local-First Flight Recorder, Causal X-Ray & Operational Intelligence Studio for AI Coding Agents."}</script>
   <style>
     :root {
       color-scheme: dark;
@@ -296,55 +297,112 @@
       margin-left: 0.25rem;
     }
 
-    /* 8-Tab Screenshot Stage */
-    .d-stage-shell {
+    /* Multi-Screen Horizontal Screenshot Carousel */
+    .d-screenshot-carousel {
       background: var(--bg-surface);
       border: 1px solid var(--border-highlight);
       border-radius: 16px;
       box-shadow: var(--glass-shadow);
-      overflow: hidden;
+      padding: 1.25rem;
     }
-    .d-stage-tabs {
+    .d-carousel-controls {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+      padding-bottom: 0.9rem;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .d-carousel-pills {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 1px;
-      background: var(--border-subtle);
-      border-bottom: 1px solid var(--border-subtle);
+      gap: 0.5rem;
+      flex: 1 1 760px;
     }
     .d-stage-tab {
       appearance: none;
       background: var(--bg-obsidian);
       color: var(--text-secondary);
-      border: none;
-      padding: 0.75rem 0.85rem;
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 0.6rem 0.75rem;
       text-align: left;
       font-family: var(--font-sans);
-      font-size: 0.82rem;
+      font-size: 0.8rem;
       font-weight: 600;
       cursor: pointer;
       display: flex;
       flex-direction: column;
-      gap: 0.2rem;
-      transition: background 150ms ease, color 150ms ease;
+      gap: 0.18rem;
+      transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
     }
     .d-stage-tab:hover {
       background: var(--bg-surface-elevated);
       color: var(--text-primary);
+      border-color: var(--border-highlight);
     }
     .d-stage-tab.is-active {
       background: var(--bg-surface-elevated);
       color: var(--text-primary);
+      border-color: var(--layer-model);
       box-shadow: inset 0 -2px 0 var(--layer-model);
     }
     .d-stage-tab small {
       font-family: var(--font-mono);
-      font-size: 0.68rem;
+      font-size: 0.66rem;
       color: var(--layer-harness);
       text-transform: uppercase;
       letter-spacing: 0.05em;
     }
-    .d-stage-panel {
-      padding: 1.25rem;
+    .d-carousel-arrows {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .d-carousel-arrow {
+      appearance: none;
+      background: var(--bg-obsidian);
+      color: var(--text-primary);
+      border: 1px solid var(--border-highlight);
+      border-radius: 9px;
+      padding: 0.55rem 0.9rem;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: border-color 150ms ease, background 150ms ease;
+    }
+    .d-carousel-arrow:hover {
+      background: var(--bg-surface-elevated);
+      border-color: var(--layer-harness);
+    }
+    .d-carousel-track {
+      display: flex;
+      gap: 1.5rem;
+      overflow-x: auto;
+      scroll-snap-type: x mandatory;
+      scroll-behavior: smooth;
+      padding: 0.5rem 0 1.25rem;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-highlight) var(--bg-obsidian);
+    }
+    .d-carousel-slide {
+      flex: 0 0 min(82%, 860px);
+      scroll-snap-align: center;
+      background: var(--bg-obsidian);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 1.15rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.9rem;
+      transition: border-color 200ms ease, box-shadow 200ms ease;
+    }
+    .d-carousel-slide.is-active {
+      border-color: var(--layer-model);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
     }
     .d-stage-meta {
       display: flex;
@@ -352,9 +410,8 @@
       justify-content: space-between;
       align-items: center;
       gap: 1rem;
-      margin-bottom: 1rem;
       padding: 0.85rem 1rem;
-      background: var(--bg-obsidian);
+      background: var(--bg-surface);
       border: 1px solid var(--border-subtle);
       border-radius: 10px;
     }
@@ -740,13 +797,14 @@
     }
 
     @media (max-width: 1024px) {
-      .d-stage-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .d-carousel-pills { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .d-rings-layout, .d-xray-layout, .d-calc-layout { grid-template-columns: 1fr; }
       .d-grid-5 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .d-grid-4, .d-grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
     @media (max-width: 640px) {
-      .d-stage-tabs, .d-grid-2, .d-grid-3, .d-grid-4, .d-grid-5, .d-calc-outputs { grid-template-columns: 1fr; }
+      .d-carousel-pills, .d-grid-2, .d-grid-3, .d-grid-4, .d-grid-5, .d-calc-outputs { grid-template-columns: 1fr; }
+      .d-carousel-slide { flex: 0 0 92%; }
     }
   </style>
 <!-- mtneedle:managed:start subsite-head v1 -->
@@ -773,7 +831,6 @@
       <a class="d-brand" href="./">
         <img src="assets/mark.svg" alt="Dendro brand mark" width="36" height="36">
         <span>Dendro</span>
-        <span class="d-version-pill">v0.8.0</span>
       </a>
       <nav class="d-nav-links" aria-label="Dendro primary navigation">
         <a href="./" aria-current="page">Overview</a>
@@ -795,14 +852,14 @@
 
   <main id="main">
     <!-- ======================================================================
-         SECTION 2: HERO SECTION & 8-TAB INTERACTIVE SCREENSHOT SWITCHER
+         SECTION 2: HERO SECTION & MULTI-SCREEN HORIZONTAL SCREENSHOT CAROUSEL
          ====================================================================== -->
     <section class="d-hero" id="overview">
       <div class="d-wrap">
         <div class="d-hero-top">
-          <div class="d-eyebrow">The Local-First Flight Recorder &amp; Operational Intelligence Studio · Open Source (MIT) · v0.8.0</div>
-          <h1>Read the growth rings of your AI workflows.</h1>
-          <p class="d-hero-subtitle">The Local-First Flight Recorder, Causal X-Ray &amp; Operational Intelligence Studio for Multi-Agent AI Fleets.</p>
+          <div class="d-eyebrow">The Local-First Flight Recorder &amp; Operational Intelligence Studio · Open Source (MIT)</div>
+          <h1>See why your AI agents succeed, stall, or burn budget.</h1>
+          <p class="d-hero-subtitle">The Local-First Flight Recorder, Causal X-Ray &amp; Operational Intelligence Studio for AI Coding Workflows.</p>
           <p class="d-hero-lead">Six open agent terminals look productive—even when four are waiting on a handoff and two are trapped in a ping-pong rework loop. Written in Rust and powered by an embedded columnar DuckDB engine, <strong>Dendro</strong> reconstructs existing local session logs out-of-band into an instrument-grade causal X-ray across sessions, actors, harnesses, and tools—with zero prompts, zero secrets, and zero cloud exfiltration.</p>
 
           <div class="d-hero-actions">
@@ -810,7 +867,7 @@
             <a class="d-btn cyan" href="viewer.html">Open Offline Fleet Viewer →</a>
             <div class="d-cli-inline" aria-label="Quick install command">
               <span>$</span>
-              <code>cargo install dendro-cli &amp;&amp; dendro cockpit</code>
+              <code>cargo install --git https://github.com/smota/dendro.git dendro-cli</code>
             </div>
           </div>
 
@@ -820,191 +877,197 @@
             <span class="d-pill">Google AGY</span>
             <span class="d-pill">xAI Grok CLI</span>
             <span class="d-pill">Pi</span>
-            <span class="d-pill adapter">OpenRig <small>adapter</small></span>
-            <span class="d-pill adapter">AgentFlow SDLC <small>adapter</small></span>
-            <span class="d-pill adapter">Meshloop <small>adapter</small></span>
+            <span class="d-pill adapter">Multi-Agent Orchestrators <small>optional adapters</small></span>
           </div>
         </div>
 
-        <!-- 8-Tab Interactive Screenshot Stage -->
-        <div class="d-stage-shell" aria-label="Interactive 8-surface product stage">
-          <div class="d-stage-tabs" role="tablist" aria-label="Dendro v0.8.0 flagship product surfaces">
-            <button type="button" role="tab" class="d-stage-tab is-active" aria-selected="true" tabindex="0" data-stage-tab="rings">
-              <small>01 · Hub Trunk</small>
-              <span>Living Growth Rings &amp; Heartwood HUD</span>
-            </button>
-            <button type="button" role="tab" class="d-stage-tab" aria-selected="false" tabindex="-1" data-stage-tab="xray">
-              <small>02 · Causal Stack ⌘E</small>
-              <span>4-Layer Exploding Stack X-Ray</span>
-            </button>
-            <button type="button" role="tab" class="d-stage-tab" aria-selected="false" tabindex="-1" data-stage-tab="capability">
-              <small>03 · FUNNEL I06</small>
-              <span>5-Layer Capability Studio</span>
-            </button>
-            <button type="button" role="tab" class="d-stage-tab" aria-selected="false" tabindex="-1" data-stage-tab="vortex">
-              <small>04 · Console I22</small>
-              <span>Trajectory Vortex Phase-Space</span>
-            </button>
-            <button type="button" role="tab" class="d-stage-tab" aria-selected="false" tabindex="-1" data-stage-tab="drift">
-              <small>05 · Console I23</small>
-              <span>Schema Drift DNA Gel-Strip</span>
-            </button>
-            <button type="button" role="tab" class="d-stage-tab" aria-selected="false" tabindex="-1" data-stage-tab="blast">
-              <small>06 · Console I24</small>
-              <span>Authority Blast Radius 8-Hop Ripple</span>
-            </button>
-            <button type="button" role="tab" class="d-stage-tab" aria-selected="false" tabindex="-1" data-stage-tab="routing">
-              <small>07 · Console I25</small>
-              <span>Counterfactual Routing Split-Beam</span>
-            </button>
-            <button type="button" role="tab" class="d-stage-tab" aria-selected="false" tabindex="-1" data-stage-tab="economics">
-              <small>08 · Token Economics</small>
-              <span>5-Part Token &amp; 96.9% Cache Yield</span>
-            </button>
-          </div>
-
-          <!-- Panel 1: Living Growth Rings -->
-          <div class="d-stage-panel" role="tabpanel" data-stage-panel="rings">
-            <div class="d-stage-meta">
-              <div>
-                <h3>Living Growth Rings, Heartwood HUD &amp; Apple Health Story Highlights</h3>
-                <p>4 concentric architectural rings (Model, Harness, Coordination, Environment) tiled into 48 radial clock sectors over <code>Oct 20 – Oct 27, 2026</code> with Fire Scar anomaly notches.</p>
-              </div>
-              <div class="d-stage-badges">
-                <span class="d-badge coord">AUTONOMOUS FLEET HEALTH · NOMINAL</span>
-                <span class="d-badge model">Oct 20 – Oct 27, 2026</span>
-                <a class="d-badge harness" href="dashboards/index.html">Open Hub →</a>
-              </div>
+        <!-- Multi-Screen Horizontal Screenshot Carousel (All 8 Screens Visible & Scrollable) -->
+        <div class="d-screenshot-carousel" aria-label="Interactive 8-surface product screenshot gallery">
+          <div class="d-carousel-controls">
+            <div class="d-carousel-pills" role="tablist" aria-label="Dendro flagship product surfaces">
+              <button type="button" role="tab" class="d-stage-tab is-active" aria-selected="true" tabindex="0" data-stage-tab="rings">
+                <small>01 · Session Hub</small>
+                <span>4-Layer Session Dial &amp; Time Machine</span>
+              </button>
+              <button type="button" role="tab" class="d-stage-tab" aria-selected="false" tabindex="-1" data-stage-tab="xray">
+                <small>02 · Causal Stack ⌘E</small>
+                <span>4-Layer Exploding Stack X-Ray</span>
+              </button>
+              <button type="button" role="tab" class="d-stage-tab" aria-selected="false" tabindex="-1" data-stage-tab="capability">
+                <small>03 · FUNNEL I06</small>
+                <span>5-Layer Capability Studio</span>
+              </button>
+              <button type="button" role="tab" class="d-stage-tab" aria-selected="false" tabindex="-1" data-stage-tab="vortex">
+                <small>04 · Console I22</small>
+                <span>Trajectory Vortex Phase-Space</span>
+              </button>
+              <button type="button" role="tab" class="d-stage-tab" aria-selected="false" tabindex="-1" data-stage-tab="drift">
+                <small>05 · Console I23</small>
+                <span>Schema Drift DNA Gel-Strip</span>
+              </button>
+              <button type="button" role="tab" class="d-stage-tab" aria-selected="false" tabindex="-1" data-stage-tab="blast">
+                <small>06 · Console I24</small>
+                <span>Authority Blast Radius 8-Hop Ripple</span>
+              </button>
+              <button type="button" role="tab" class="d-stage-tab" aria-selected="false" tabindex="-1" data-stage-tab="routing">
+                <small>07 · Console I25</small>
+                <span>Counterfactual Routing Split-Beam</span>
+              </button>
+              <button type="button" role="tab" class="d-stage-tab" aria-selected="false" tabindex="-1" data-stage-tab="economics">
+                <small>08 · Token Economics</small>
+                <span>5-Part Token &amp; 96.9% Cache Yield</span>
+              </button>
             </div>
-            <div class="d-stage-img-wrap">
-              <img src="assets/screenshots/hub-living-growth-rings.png" alt="Dendro Hub showing Living Growth Rings, Heartwood Core HUD, Tactile Time Machine Scrubber, and Apple Health Story Highlights" width="1480" height="1300">
+            <div class="d-carousel-arrows" aria-label="Carousel scroll navigation">
+              <button type="button" class="d-carousel-arrow" id="carousel-prev" aria-label="Scroll to previous screenshot">← Prev</button>
+              <button type="button" class="d-carousel-arrow" id="carousel-next" aria-label="Scroll to next screenshot">Next →</button>
             </div>
           </div>
 
-          <!-- Panel 2: 4-Layer Exploding Stack X-Ray -->
-          <div class="d-stage-panel" role="tabpanel" data-stage-panel="xray" hidden>
-            <div class="d-stage-meta">
-              <div>
-                <h3>4-Layer Exploding Stack X-Ray (<code>⌘E</code>) &amp; Multi-Dimensional Group-By</h3>
-                <p>Separate Model, Harness, Coordination, and OS Environment execution into 3D isometric space with vertical cubic Bezier correlation threads.</p>
+          <div class="d-carousel-track" id="screenshot-carousel-track">
+            <!-- Slide 1: 4-Layer Session Dial & Time Machine -->
+            <article class="d-carousel-slide is-active" data-stage-panel="rings">
+              <div class="d-stage-meta">
+                <div>
+                  <h3>4-Layer Radial Session Dial, Core Health HUD &amp; Daily Telemetry Highlights</h3>
+                  <p>Four concentric radial rings encode the Model, Harness, Coordination, and Environment layers across 48 time sectors over <code>Oct 20 – Oct 27, 2026</code> with anomaly tripwires.</p>
+                </div>
+                <div class="d-stage-badges">
+                  <span class="d-badge coord">AUTONOMOUS FLEET HEALTH · NOMINAL</span>
+                  <span class="d-badge model">Oct 20 – Oct 27, 2026</span>
+                  <a class="d-badge harness" href="dashboards/index.html">Open Hub →</a>
+                </div>
               </div>
-              <div class="d-stage-badges">
-                <span class="d-badge harness">⌘E 3D Isometric Stack</span>
-                <span class="d-badge env">4 Canonical Layers</span>
-                <a class="d-badge coord" href="dashboards/index.html">Inspect Stack →</a>
+              <div class="d-stage-img-wrap">
+                <img src="assets/screenshots/hub-living-growth-rings.png" alt="Dendro Hub showing 4-Layer Radial Session Dial, Core Health HUD, Tactile Time Machine Scrubber, and Daily Telemetry Highlights" width="1480" height="1300" loading="eager">
               </div>
-            </div>
-            <div class="d-stage-img-wrap">
-              <img src="assets/screenshots/hub-stack-xray-3d.png" alt="Dendro 4-Layer Exploding Stack X-Ray in 3D isometric perspective with causal Bezier correlation threads" width="1480" height="1520" loading="lazy">
-            </div>
-          </div>
+            </article>
 
-          <!-- Panel 3: Capability Studio -->
-          <div class="d-stage-panel" role="tabpanel" data-stage-panel="capability" hidden>
-            <div class="d-stage-meta">
-              <div>
-                <h3>5-Layer Capability &amp; Execution Studio &amp; <code>FUNNEL I06</code></h3>
-                <p>Follow every agent action from raw shell and file primitives to verified skill invocations and MCP calls—revealing which capabilities drive real execution and which sit unused across 10 Behavioral Tool Families.</p>
+            <!-- Slide 2: 4-Layer Exploding Stack X-Ray -->
+            <article class="d-carousel-slide" data-stage-panel="xray">
+              <div class="d-stage-meta">
+                <div>
+                  <h3>4-Layer Exploding Stack X-Ray (<code>⌘E</code>) &amp; Multi-Dimensional Group-By</h3>
+                  <p>Separate Model, Harness, Coordination, and OS Environment execution into 3D isometric space with vertical cubic Bezier correlation threads.</p>
+                </div>
+                <div class="d-stage-badges">
+                  <span class="d-badge harness">⌘E 3D Isometric Stack</span>
+                  <span class="d-badge env">4 Canonical Layers</span>
+                  <a class="d-badge coord" href="dashboards/index.html">Inspect Stack →</a>
+                </div>
               </div>
-              <div class="d-stage-badges">
-                <span class="d-badge harness">10 Tool Families</span>
-                <span class="d-badge model">Native Harness Primitives</span>
-                <span class="d-badge coord">FUNNEL I06</span>
+              <div class="d-stage-img-wrap">
+                <img src="assets/screenshots/hub-stack-xray-3d.png" alt="Dendro 4-Layer Exploding Stack X-Ray in 3D isometric perspective with causal Bezier correlation threads" width="1480" height="1520" loading="eager">
               </div>
-            </div>
-            <div class="d-stage-img-wrap">
-              <img src="assets/screenshots/hub-capability-studio.png" alt="Dendro 5-Layer Capability and Execution Studio showing 10 Behavioral Tool Families, native harness primitives, and FUNNEL I06" width="1480" height="1680" loading="lazy">
-            </div>
-          </div>
+            </article>
 
-          <!-- Panel 4: I22 Trajectory Vortex -->
-          <div class="d-stage-panel" role="tabpanel" data-stage-panel="vortex" hidden>
-            <div class="d-stage-meta">
-              <div>
-                <h3><code>I22</code> Active Console — Trajectory Vortex Orbital Phase-Space Attractor</h3>
-                <p>Spot when an agent stops converging and starts spiraling—catching runaway tool retry loops in orbital phase space before they burn your token budget and stall downstream handoffs.</p>
+            <!-- Slide 3: Capability Studio -->
+            <article class="d-carousel-slide" data-stage-panel="capability">
+              <div class="d-stage-meta">
+                <div>
+                  <h3>5-Layer Capability &amp; Execution Studio &amp; <code>FUNNEL I06</code></h3>
+                  <p>Follow every agent action from raw shell and file primitives to verified skill invocations and MCP calls—revealing which capabilities drive real execution and which sit unused across 10 Behavioral Tool Families.</p>
+                </div>
+                <div class="d-stage-badges">
+                  <span class="d-badge harness">10 Tool Families</span>
+                  <span class="d-badge model">Native Harness Primitives</span>
+                  <span class="d-badge coord">FUNNEL I06</span>
+                </div>
               </div>
-              <div class="d-stage-badges">
-                <span class="d-badge harness">I22 · harness.trajectory_vortex</span>
-                <span class="d-badge model">Phase-Space Loop Detection</span>
-                <a class="d-badge coord" href="dashboards/views/trajectory_vortex.html">Open Console →</a>
+              <div class="d-stage-img-wrap">
+                <img src="assets/screenshots/hub-capability-studio.png" alt="Dendro 5-Layer Capability and Execution Studio showing 10 Behavioral Tool Families, native harness primitives, and FUNNEL I06" width="1480" height="1680" loading="eager">
               </div>
-            </div>
-            <div class="d-stage-img-wrap">
-              <img src="assets/screenshots/console-trajectory-vortex.png" alt="Dendro I22 Trajectory Vortex console showing completed trajectories in orbital phase space" width="1480" height="1520" loading="lazy">
-            </div>
-          </div>
+            </article>
 
-          <!-- Panel 5: I23 Schema Drift -->
-          <div class="d-stage-panel" role="tabpanel" data-stage-panel="drift" hidden>
-            <div class="d-stage-meta">
-              <div>
-                <h3><code>I23</code> Active Console — Schema Drift Biological DNA Gel-Strip</h3>
-                <p>Track structural metadata shifts across Claude Code, Codex, AGY, Grok CLI, and Pi updates so silent harness changes never blindside your parsing or governance pipelines.</p>
+            <!-- Slide 4: I22 Trajectory Vortex -->
+            <article class="d-carousel-slide" data-stage-panel="vortex">
+              <div class="d-stage-meta">
+                <div>
+                  <h3><code>I22</code> Active Console — Trajectory Vortex Orbital Phase-Space Attractor</h3>
+                  <p>Spot when an agent stops converging and starts spiraling—catching runaway tool retry loops in orbital phase space before they burn your token budget and stall downstream handoffs.</p>
+                </div>
+                <div class="d-stage-badges">
+                  <span class="d-badge harness">I22 · harness.trajectory_vortex</span>
+                  <span class="d-badge model">Phase-Space Loop Detection</span>
+                  <a class="d-badge coord" href="dashboards/views/trajectory_vortex.html">Open Console →</a>
+                </div>
               </div>
-              <div class="d-stage-badges">
-                <span class="d-badge harness">I23 · harness.schema_drift</span>
-                <span class="d-badge model">Structural Envelope Fingerprints</span>
-                <a class="d-badge coord" href="dashboards/views/schema_drift.html">Open Console →</a>
+              <div class="d-stage-img-wrap">
+                <img src="assets/screenshots/console-trajectory-vortex.png" alt="Dendro I22 Trajectory Vortex console showing completed trajectories in orbital phase space" width="1480" height="1520" loading="lazy">
               </div>
-            </div>
-            <div class="d-stage-img-wrap">
-              <img src="assets/screenshots/console-schema-drift.png" alt="Dendro I23 Schema Drift DNA gel-strip console across daily metadata cohort buckets" width="1480" height="1500" loading="lazy">
-            </div>
-          </div>
+            </article>
 
-          <!-- Panel 6: I24 Authority Blast Radius -->
-          <div class="d-stage-panel" role="tabpanel" data-stage-panel="blast" hidden>
-            <div class="d-stage-meta">
-              <div>
-                <h3><code>I24</code> Active Console — Authority Blast Radius 8-Hop Radial Ripple</h3>
-                <p>Trace how far a revoked permission, failed tool call, or compromised credential propagates across multi-hop sub-agent delegation chains up to an 8-hop reachability ceiling.</p>
+            <!-- Slide 5: I23 Schema Drift -->
+            <article class="d-carousel-slide" data-stage-panel="drift">
+              <div class="d-stage-meta">
+                <div>
+                  <h3><code>I23</code> Active Console — Schema Drift Biological DNA Gel-Strip</h3>
+                  <p>Track structural metadata shifts across Claude Code, Codex, AGY, Grok CLI, and Pi updates so silent harness changes never blindside your parsing or governance pipelines.</p>
+                </div>
+                <div class="d-stage-badges">
+                  <span class="d-badge harness">I23 · harness.schema_drift</span>
+                  <span class="d-badge model">Structural Envelope Fingerprints</span>
+                  <a class="d-badge coord" href="dashboards/views/schema_drift.html">Open Console →</a>
+                </div>
               </div>
-              <div class="d-stage-badges">
-                <span class="d-badge env">I24 · security.authority_blast_radius</span>
-                <span class="d-badge model">8-Hop Reachability Cone</span>
-                <a class="d-badge coord" href="dashboards/views/authority_blast_radius.html">Open Console →</a>
+              <div class="d-stage-img-wrap">
+                <img src="assets/screenshots/console-schema-drift.png" alt="Dendro I23 Schema Drift DNA gel-strip console across daily metadata cohort buckets" width="1480" height="1500" loading="lazy">
               </div>
-            </div>
-            <div class="d-stage-img-wrap">
-              <img src="assets/screenshots/console-blast-radius.png" alt="Dendro I24 Authority Blast Radius 8-hop radial propagation ripple graph" width="1480" height="1520" loading="lazy">
-            </div>
-          </div>
+            </article>
 
-          <!-- Panel 7: I25 Counterfactual Routing -->
-          <div class="d-stage-panel" role="tabpanel" data-stage-panel="routing" hidden>
-            <div class="d-stage-meta">
-              <div>
-                <h3><code>I25</code> Active Console — Counterfactual Model Routing Split-Beam Comparator</h3>
-                <p>Test "what-if" model routing policies against your real workload history—evaluating <code>SIMULATED TIER TOTAL (COUNTERFACTUAL)</code> envelopes and 128k context-pressure thresholds before changing a single production setting.</p>
+            <!-- Slide 6: I24 Authority Blast Radius -->
+            <article class="d-carousel-slide" data-stage-panel="blast">
+              <div class="d-stage-meta">
+                <div>
+                  <h3><code>I24</code> Active Console — Authority Blast Radius 8-Hop Radial Ripple</h3>
+                  <p>Trace how far a revoked permission, failed tool call, or compromised credential propagates across multi-hop sub-agent delegation chains up to an 8-hop reachability ceiling.</p>
+                </div>
+                <div class="d-stage-badges">
+                  <span class="d-badge env">I24 · security.authority_blast_radius</span>
+                  <span class="d-badge model">8-Hop Reachability Cone</span>
+                  <a class="d-badge coord" href="dashboards/views/authority_blast_radius.html">Open Console →</a>
+                </div>
               </div>
-              <div class="d-stage-badges">
-                <span class="d-badge model">I25 · model.counterfactual_routing</span>
-                <span class="d-badge harness">SIMULATED TIER TOTAL (COUNTERFACTUAL)</span>
-                <a class="d-badge coord" href="dashboards/views/counterfactual_routing.html">Open Console →</a>
+              <div class="d-stage-img-wrap">
+                <img src="assets/screenshots/console-blast-radius.png" alt="Dendro I24 Authority Blast Radius 8-hop radial propagation ripple graph" width="1480" height="1520" loading="lazy">
               </div>
-            </div>
-            <div class="d-stage-img-wrap">
-              <img src="assets/screenshots/console-counterfactual-routing.png" alt="Dendro I25 Counterfactual Model Routing Split-Beam Comparator showing SIMULATED TIER TOTAL (COUNTERFACTUAL)" width="1480" height="1680" loading="lazy">
-            </div>
-          </div>
+            </article>
 
-          <!-- Panel 8: 5-Part Token & Cache Accounting -->
-          <div class="d-stage-panel" role="tabpanel" data-stage-panel="economics" hidden>
-            <div class="d-stage-meta">
-              <div>
-                <h3>5-Part Token &amp; Cache Accounting — 96.9% Cache Read Yield</h3>
-                <p>Deconstruct model usage into five disjoint token parts (<code>input_uncached</code>, <code>cache_write</code>, <code>cache_read</code>, <code>output</code>, nested <code>reasoning</code>) to separate warm prefix reuse from expensive uncached context bleed.</p>
+            <!-- Slide 7: I25 Counterfactual Routing -->
+            <article class="d-carousel-slide" data-stage-panel="routing">
+              <div class="d-stage-meta">
+                <div>
+                  <h3><code>I25</code> Active Console — Counterfactual Model Routing Split-Beam Comparator</h3>
+                  <p>Test "what-if" model routing policies against your real workload history—evaluating <code>SIMULATED TIER TOTAL (COUNTERFACTUAL)</code> envelopes and 128k context-pressure thresholds before changing a single production setting.</p>
+                </div>
+                <div class="d-stage-badges">
+                  <span class="d-badge model">I25 · model.counterfactual_routing</span>
+                  <span class="d-badge harness">SIMULATED TIER TOTAL (COUNTERFACTUAL)</span>
+                  <a class="d-badge coord" href="dashboards/views/counterfactual_routing.html">Open Console →</a>
+                </div>
               </div>
-              <div class="d-stage-badges">
-                <span class="d-badge model">5-Part Token Accounting (I02)</span>
-                <span class="d-badge coord">96.9% Cache Yield (Ratio of Sums)</span>
-                <a class="d-badge harness" href="dashboards/views/cost_and_loops.html">Open View →</a>
+              <div class="d-stage-img-wrap">
+                <img src="assets/screenshots/console-counterfactual-routing.png" alt="Dendro I25 Counterfactual Model Routing Split-Beam Comparator showing SIMULATED TIER TOTAL (COUNTERFACTUAL)" width="1480" height="1680" loading="lazy">
               </div>
-            </div>
-            <div class="d-stage-img-wrap">
-              <img src="assets/screenshots/console-token-economics.png" alt="Dendro 5-Part Token and Cache Accounting console showing 96.9% cache read efficiency and disjoint token decomposition" width="1480" height="1700" loading="lazy">
-            </div>
+            </article>
+
+            <!-- Slide 8: 5-Part Token & Cache Accounting -->
+            <article class="d-carousel-slide" data-stage-panel="economics">
+              <div class="d-stage-meta">
+                <div>
+                  <h3>5-Part Token &amp; Cache Accounting — 96.9% Cache Read Yield</h3>
+                  <p>Deconstruct model usage into five disjoint token parts (<code>input_uncached</code>, <code>cache_write</code>, <code>cache_read</code>, <code>output</code>, nested <code>reasoning</code>) to separate warm prefix reuse from expensive uncached context bleed.</p>
+                </div>
+                <div class="d-stage-badges">
+                  <span class="d-badge model">5-Part Token Accounting (I02)</span>
+                  <span class="d-badge coord">96.9% Cache Yield (Ratio of Sums)</span>
+                  <a class="d-badge harness" href="dashboards/views/cost_and_loops.html">Open View →</a>
+                </div>
+              </div>
+              <div class="d-stage-img-wrap">
+                <img src="assets/screenshots/console-token-economics.png" alt="Dendro 5-Part Token and Cache Accounting console showing 96.9% cache read efficiency and disjoint token decomposition" width="1480" height="1700" loading="lazy">
+              </div>
+            </article>
           </div>
         </div>
       </div>
@@ -1036,7 +1099,7 @@
             <span class="d-kicker" style="color:#6EE7B7;">With Dendro · Retrospective Causal Truth</span>
             <h3>Five Disjoint Activity Bands &amp; Multi-Hop Lineage</h3>
             <ul class="p-list" style="color:var(--text-secondary);">
-              <li><strong style="color:var(--text-primary);">Five Disjoint Seat Activity Bands:</strong> Every observed actor interval is partitioned into <code>active</code>, <code>waiting_on_human</code>, <code>idle_with_work</code> (Handoff Wait), <code>idle_without_work</code> (Cleanly Parked), and <code>unknown</code> (Stalled / Rework / Unobserved).</li>
+              <li><strong style="color:var(--text-primary);">Five Disjoint Agent Activity Bands:</strong> Every observed actor interval is partitioned into <code>active</code>, <code>waiting_on_human</code>, <code>idle_with_work</code> (Handoff Wait), <code>idle_without_work</code> (Cleanly Parked), and <code>unknown</code> (Stalled / Rework / Unobserved).</li>
               <li><strong style="color:var(--text-primary);">Multi-Hop Sub-Agent Lineage (<code>I09</code>):</strong> Trace spawn, delegate, handoff, return, and retry edges across sessions and harnesses.</li>
               <li><strong style="color:var(--text-primary);">100% Local-First DuckDB:</strong> Passive out-of-band flight recording with sub-15ms queries and zero prompt or secret persistence.</li>
             </ul>
@@ -1098,7 +1161,7 @@
                 <th scope="col">Dimension</th>
                 <th scope="col">Cloud LLM Tracers (LangSmith, Arize, Helicone, Datadog)</th>
                 <th scope="col">Raw Local Logs (JSONL files, <code>grep</code>, <code>jq</code>, bash)</th>
-                <th scope="col">Dendro Local-First Studio (v0.8.0)</th>
+                <th scope="col">Dendro Local-First Studio</th>
               </tr>
             </thead>
             <tbody>
@@ -1140,7 +1203,7 @@
               </tr>
               <tr>
                 <td><strong>7. Cost &amp; Licensing</strong></td>
-                <td>$500–$3,000/mo SaaS seat subscriptions plus per-trace ingestion fees.</td>
+                <td>$500–$3,000/mo per-user cloud SaaS subscriptions plus per-trace ingestion fees.</td>
                 <td>Free license, but high recurring engineering toil.</td>
                 <td class="d-col-dendro"><strong>100% Free &amp; Open-Source (MIT).</strong> Runs on your own hardware forever.</td>
               </tr>
@@ -1151,14 +1214,14 @@
     </section>
 
     <!-- ======================================================================
-         SECTION 4: THE METAPHOR (LIVING GROWTH RINGS, TIME MACHINE & APPLE HEALTH)
+         SECTION 4: 4-LAYER RADIAL SESSION DIAL, TIME MACHINE & TELEMETRY HIGHLIGHTS
          ====================================================================== -->
     <section class="d-section" id="growth-rings">
       <div class="d-wrap">
         <div class="d-section-header">
-          <div class="d-eyebrow">Section 04 · Dendrochronology Meets Apple Instruments</div>
-          <h2>Living Growth Rings, Tactile Time Machine &amp; Story Highlights.</h2>
-          <p>Trees do not lie: wide rings mark rapid growth, compressed rings mark stalls, and dark notches permanently record fire scars. Scrub across 48 radial clock sectors or click any preset window below to inspect the Heartwood Core HUD.</p>
+          <div class="d-eyebrow">Section 04 · 4-Layer Radial Session Dial &amp; Time Machine</div>
+          <h2>4-Layer Radial Session Dial, Time Machine Scrubber &amp; Telemetry Highlights.</h2>
+          <p>Inspect your entire AI workflow at a glance: four concentric radial rings encode the Model, Harness, Coordination, and Environment layers across 48 time sectors, while anomaly markers pinpoint exact failure and rework events. Scrub across any time window or click a preset below to inspect the Core Health HUD.</p>
         </div>
 
         <!-- Tactile Time Machine Scrubber Preview -->
@@ -1264,9 +1327,9 @@
                 data-epistemic-status="status: ok (0 unredacted secrets · I18 verified)"
                 cx="210" cy="210" r="82" fill="none" stroke="#8B5CF6" stroke-width="20" stroke-dasharray="445 70" stroke-dashoffset="-20" stroke-linecap="round" opacity="0.9"/>
 
-              <!-- Fire Scar Anomaly Notches (I07, I08, I19, I23) -->
+              <!-- Anomaly Tripwire Markers (I07, I08, I19, I23) -->
               <g class="ring-sector" tabindex="0" data-ring-sector="scar-i08"
-                 data-layer-label="Fire Scar · I08 Tool Action Failure Loop"
+                 data-layer-label="Anomaly Tripwire · I08 Tool Action Failure Loop"
                  data-slot-window="Oct 24, 14:20 UTC · Sector 31"
                  data-actor-summary="Builder Actor · Shell/Exec retry cluster"
                  data-telemetry-metric="I08 harness.action_failure · 6 consecutive retries"
@@ -1275,7 +1338,7 @@
                 <text x="342" y="161" text-anchor="middle" fill="#0A0D12" font-size="8" font-weight="800" font-family="monospace">I08</text>
               </g>
               <g class="ring-sector" tabindex="0" data-ring-sector="scar-i07"
-                 data-layer-label="Fire Scar · I07 Context Compaction Drop"
+                 data-layer-label="Anomaly Tripwire · I07 Context Compaction Drop"
                  data-slot-window="Oct 25, 09:45 UTC · Sector 19"
                  data-actor-summary="Architect Actor · 325,000 → 34,000 tokens"
                  data-telemetry-metric="I07 harness.context_pressure · Compaction boundary"
@@ -1284,7 +1347,7 @@
                 <text x="102" y="121" text-anchor="middle" fill="#0A0D12" font-size="8" font-weight="800" font-family="monospace">I07</text>
               </g>
               <g class="ring-sector" tabindex="0" data-ring-sector="scar-i19"
-                 data-layer-label="Fire Scar · I19 Handoff Return Bounce"
+                 data-layer-label="Anomaly Tripwire · I19 Handoff Return Bounce"
                  data-slot-window="Oct 26, 16:10 UTC · Sector 38"
                  data-actor-summary="Reviewer → Builder return edge"
                  data-telemetry-metric="I19 outcome.acceptance · Rework return recorded"
@@ -1293,7 +1356,7 @@
                 <text x="268" y="309" text-anchor="middle" fill="#0A0D12" font-size="8" font-weight="800" font-family="monospace">I19</text>
               </g>
               <g class="ring-sector" tabindex="0" data-ring-sector="scar-i23"
-                 data-layer-label="Fire Scar · I23 Envelope Key Shift"
+                 data-layer-label="Anomaly Tripwire · I23 Envelope Key Shift"
                  data-slot-window="Oct 23, 11:00 UTC · Sector 12"
                  data-actor-summary="Harness version upgrade cohort"
                  data-telemetry-metric="I23 harness.schema_drift · L1 distance 0.14"
@@ -1302,24 +1365,24 @@
                 <text x="88" y="281" text-anchor="middle" fill="#0A0D12" font-size="8" font-weight="800" font-family="monospace">I23</text>
               </g>
 
-              <!-- Heartwood Core Center HUD -->
+              <!-- Core Health Center HUD -->
               <circle cx="210" cy="210" r="62" fill="url(#heartwood-glow)" stroke="#2A3649" stroke-width="1.5"/>
-              <text x="210" y="192" text-anchor="middle" fill="#10B981" font-family="monospace" font-size="9.5" font-weight="700">HEARTWOOD HUD</text>
+              <text x="210" y="192" text-anchor="middle" fill="#10B981" font-family="monospace" font-size="9.5" font-weight="700">CORE HEALTH HUD</text>
               <text x="210" y="211" text-anchor="middle" fill="#F3EDE2" font-family="sans-serif" font-size="14" font-weight="800">NOMINAL</text>
               <text x="210" y="227" text-anchor="middle" fill="#9BA3AF" font-family="monospace" font-size="9.5">48 Sectors · 7d</text>
               <text x="210" y="241" text-anchor="middle" fill="#F2A541" font-family="monospace" font-size="9">96.9% Cache</text>
             </svg>
-            <p style="font-size:0.8rem;color:var(--text-muted);margin-top:0.65rem;text-align:center;">Hover or click any concentric layer ring, hatched <code>null</code> slice, or Fire Scar (<code>I07</code>, <code>I08</code>, <code>I19</code>, <code>I23</code>) to inspect its telemetry.</p>
+            <p style="font-size:0.8rem;color:var(--text-muted);margin-top:0.65rem;text-align:center;">Hover or click any concentric layer band, hatched <code>null</code> slice, or anomaly tripwire (<code>I07</code>, <code>I08</code>, <code>I19</code>, <code>I23</code>) to inspect its telemetry.</p>
           </div>
 
           <div>
-            <div class="d-eyebrow">Interactive Heartwood Core Readout</div>
-            <h3 style="font-size:1.5rem;margin:0 0 0.65rem;">4 Concentric Rings · 48 Radial Clock Sectors · Fire Scars</h3>
-            <p style="color:var(--text-secondary);margin-bottom:1.15rem;">Each ring corresponds to one canonical layer of the autonomous stack. Quiet or unobserved intervals are rendered with diagonal hatch lines (<code>url(#container-hatch)</code>)—honoring the <strong>Null ≠ Zero</strong> rule so missing coverage is never mistaken for idle actors.</p>
+            <div class="d-eyebrow">Interactive Core Health Readout</div>
+            <h3 style="font-size:1.5rem;margin:0 0 0.65rem;">4 Architectural Layers · 48 Time Sectors · Anomaly Tripwires</h3>
+            <p style="color:var(--text-secondary);margin-bottom:1.15rem;">Each radial band corresponds to one canonical layer of the AI execution stack. Quiet or unobserved intervals are rendered with diagonal hatch lines (<code>url(#container-hatch)</code>)—honoring the <strong>Null ≠ Zero</strong> rule so missing coverage is never mistaken for idle actors.</p>
 
             <div class="d-heartwood-hud" aria-live="polite">
               <div class="d-hud-row">
-                <span>ACTIVE LAYER / SCAR</span>
+                <span>ACTIVE LAYER / TRIPWIRE</span>
                 <strong id="heartwood-layer" style="color:var(--layer-model);">All 4 Layers · Nominal</strong>
               </div>
               <div class="d-hud-row">
@@ -1341,18 +1404,18 @@
             </div>
 
             <div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-top:1rem;">
-              <span class="d-badge model">● Ring 1: Model (#F2A541)</span>
-              <span class="d-badge harness">● Ring 2: Harness (#06B6D4)</span>
-              <span class="d-badge coord">● Ring 3: Coordination (#10B981)</span>
-              <span class="d-badge env">● Ring 4: Environment (#8B5CF6)</span>
+              <span class="d-badge model">● Layer 1: Model (#F2A541)</span>
+              <span class="d-badge harness">● Layer 2: Harness (#06B6D4)</span>
+              <span class="d-badge coord">● Layer 3: Coordination (#10B981)</span>
+              <span class="d-badge env">● Layer 4: Environment (#8B5CF6)</span>
             </div>
           </div>
         </div>
 
-        <!-- Apple Health 3-Story Highlights Strip -->
+        <!-- Daily Telemetry Story Highlights Strip -->
         <div class="d-grid-3" style="margin-top:1.5rem;">
           <article class="d-card">
-            <span class="d-kicker" style="color:var(--layer-model);">Story Highlight 01 · Model Cache Efficiency Ring</span>
+            <span class="d-kicker" style="color:var(--layer-model);">Story Highlight 01 · Model Cache Efficiency Gauge</span>
             <div style="display:flex;align-items:center;gap:1rem;">
               <svg width="68" height="68" viewBox="0 0 68 68" aria-label="96.9% Cache Read Efficiency Gauge">
                 <circle cx="34" cy="34" r="28" fill="none" stroke="#1F2735" stroke-width="7"/>
@@ -1422,7 +1485,7 @@
                    data-layer-title="Layer 1 · Model Layer (#F2A541 Warm Amber)"
                    data-l0="status: ok · 5-part disjoint token accounting (I02), 96.9% cache read yield, pinned cost attribution (I04)."
                    data-l1="Assumptions: Ratio-of-sums vs. mean-of-ratios cache yield; counterfactual routing (I25) does not mutate live routers."
-                   data-l2="Evidence: usage_facts, _dendro_pricing_tiers · Schema 5 · v0.8.0"
+                   data-l2="Evidence: usage_facts, _dendro_pricing_tiers · Schema 5"
                    data-l3="Formula: input_uncached + cache_write + cache_read + output (reasoning nested inside output, never double-counted).">
                 <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;">
                   <strong style="color:var(--layer-model);font-family:var(--font-mono);">01 · MODEL LAYER (#F2A541)</strong>
@@ -1449,7 +1512,7 @@
               <div class="d-xray-plane" data-plane-idx="3" data-stack-layer="coord"
                    data-layer-title="Layer 3 · Coordination &amp; Lineage Layer (#10B981 Emerald)"
                    data-l0="status: ok · Multi-hop sub-agent lineage trees (I09), 5 disjoint activity bands, queue wait medians (I12), acceptance yield (I19)."
-                   data-l1="Assumptions: Unobserved intervals remain unknown (hatched); OpenRig/AgentFlow/Meshloop act as optional adapters."
+                   data-l1="Assumptions: Unobserved intervals remain unknown (hatched); multi-agent orchestrators act as optional adapters."
                    data-l2="Evidence: session_edges, activity_facts, queue_facts, identity_facts"
                    data-l3="Formula: Disjoint partition of [from, to] into active, waiting_on_human, idle_with_work, idle_without_work, unknown.">
                 <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;">
@@ -1502,7 +1565,7 @@
               </div>
               <div>
                 <span class="d-kicker" style="color:var(--layer-harness);">L2 · safe evidence IDs and source versions</span>
-                <p id="xray-inspector-l2" style="color:var(--text-secondary);font-size:0.84rem;font-family:var(--font-mono);margin-top:0.2rem;">Evidence: usage_facts, _dendro_pricing_tiers · Schema 5 · v0.8.0</p>
+                <p id="xray-inspector-l2" style="color:var(--text-secondary);font-size:0.84rem;font-family:var(--font-mono);margin-top:0.2rem;">Evidence: usage_facts, _dendro_pricing_tiers · Schema 5</p>
               </div>
               <div>
                 <span class="d-kicker" style="color:var(--layer-env);">L3 · formula, population (what, included, excluded), exclusions, and cutoff</span>
@@ -1862,23 +1925,28 @@
         <div class="d-section-header">
           <div class="d-eyebrow">Section 09 · 60-Second Quickstart, Terminal Cockpit &amp; Epistemic Guardrails</div>
           <h2>One Rust binary. Terminal Cockpit, Loopback Studio &amp; Semantic Oracle.</h2>
-          <p>Install <code>dendro-cli</code> or build from source. Point Dendro at the local session transcripts already on your disk—nothing ever leaves your machine.</p>
+          <p>Install via Cargo or build directly from Git checkout. Point Dendro at the local session transcripts already on your disk—nothing ever leaves your machine.</p>
         </div>
 
         <div class="d-grid-2" style="margin-bottom:2rem;">
           <article class="d-card">
             <span class="d-kicker" style="color:var(--layer-model);">60-Second CLI &amp; Connected Studio Quickstart</span>
             <h3>Install &amp; Launch the 6-Screen Ratatui TUI or Web Studio</h3>
-            <pre style="background:var(--bg-obsidian);border:1px solid var(--border-subtle);padding:1rem;border-radius:10px;overflow-x:auto;font-size:0.84rem;color:var(--text-primary);"><code># 1. Install the Rust CLI (or build with cargo build --release --locked)
-cargo install dendro-cli
-
-# 2. Launch the 6-screen Ratatui Terminal Cockpit
+            <pre style="background:var(--bg-obsidian);border:1px solid var(--border-subtle);padding:1rem;border-radius:10px;overflow-x:auto;font-size:0.84rem;color:var(--text-primary);"><code># Path A: Install via Cargo (dendro on PATH)
+cargo install --git https://github.com/smota/dendro.git dendro-cli
 dendro cockpit
 
-# 3. Serve the Connected Web Studio on loopback (127.0.0.1:4242 only)
+# (or from local checkout: cargo install --path crates/dendro-cli --locked)
+
+# Path B: Or build and run from Git checkout (current)
+git clone https://github.com/smota/dendro.git
+cd dendro &amp;&amp; cargo build --release --locked
+./target/release/dendro cockpit
+
+# Serve the Connected Web Studio on loopback (127.0.0.1:4242 only)
 dendro dashboard --serve 127.0.0.1:4242 --site-dir ./site
 
-# 4. Run headless loopback daemon, pre-flight advisor &amp; Nao semantic queries
+# Run headless loopback daemon, pre-flight advisor &amp; Nao semantic queries
 dendro serve 127.0.0.1:4242
 dendro advise
 dendro ask "which handoff pairs had the highest return rate this week?"</code></pre>
@@ -1966,7 +2034,7 @@ dendro ask "which handoff pairs had the highest return rate this week?"</code></
                 <img src="../agent-sdlc/assets/agentflow-icon-192.png" alt="AgentFlow SDLC logo" width="40" height="40" style="border-radius:8px;">
                 <div>
                   <span class="d-kicker" style="color:var(--layer-model);">Governance Partner · Plan &amp; Accept</span>
-                  <h3>AgentFlow SDLC 2.0</h3>
+                  <h3>AgentFlow SDLC</h3>
                 </div>
               </div>
               <p>Define engineering role boundaries and human acceptance gates with <strong>AgentFlow</strong>, and measure first-pass acceptance yield (<code>I19</code>) and handoff wait times in <strong>Dendro</strong>.</p>
@@ -1991,14 +2059,14 @@ dendro ask "which handoff pairs had the highest return rate this week?"</code></
 <div class="mtn-context-inner">
 <p class="mtn-context-eyebrow">Built by Samuel Mota · Move the Needle</p>
 <h2 id="mtn-context-dendro">Why Dendro exists</h2>
-<p class="mtn-context-status">Open source · MIT · v0.8.0</p>
+<p class="mtn-context-status">Open source · MIT</p>
 <div class="mtn-context-grid">
 <article><h3>Value</h3><p>See where time, handoffs, rework, capabilities, and token budget actually go across your multi-agent AI coding sessions—using verifiable local DuckDB evidence instead of vanity productivity claims.</p></article>
 <article><h3>Strategy</h3><p>Six open terminals look busy even when four agents are stalled on a handoff and two are looping. Dendro turns raw local session history into a 4-layer causal X-ray of where time, handoffs, and budget actually go.</p></article>
-<article><h3>Technical frontier</h3><p>Reconstructs local session logs out-of-band across Claude Code, Codex, AGY, Grok CLI, and Pi (plus OpenRig, AgentFlow, and Meshloop adapters) into 4 architectural layers, 5 capability funnels, and 25 deterministic DuckDB insights.</p></article>
+<article><h3>Technical frontier</h3><p>Reconstructs local session logs out-of-band across Claude Code, Codex, AGY, Grok CLI, and Pi (plus optional multi-agent orchestration adapters) into 4 architectural layers, 5 capability funnels, and 25 deterministic DuckDB insights.</p></article>
 </div>
 <div class="mtn-context-links">
-<div><p class="mtn-context-label">Related thinking</p><a href="../thinking/2026-08-18-observability-after-dashboards.html">Observability After Dashboards</a><a href="../thinking/2026-09-10-follow-the-money-the-future-of-observability.html">Follow the money - the future of observability</a></div>
+<div><p class="mtn-context-label">Related thinking</p><a href="../thinking/2026-10-27-designed-to-be-left-behind-architectural-mobility-in-the-age-of-disposable-models.html">Designed to Be Left Behind: Architectural Mobility in the Age of Disposable Models</a><a href="../thinking/2026-08-18-observability-after-dashboards.html">Observability After Dashboards</a><a href="../thinking/2026-09-10-follow-the-money-the-future-of-observability.html">Follow the money - the future of observability</a></div>
 <div><p class="mtn-context-label">Where this shows up in practice</p><a href="../where-i-help/reliability/">Platforms &amp; reliability</a></div>
 <div><a class="mtn-context-cta" href="../#contact">Discuss applying this with your team</a></div>
 </div>
@@ -2009,7 +2077,7 @@ dendro ask "which handoff pairs had the highest return rate this week?"</code></
 
   <footer class="p-footer" style="background:var(--bg-obsidian);border-top:1px solid var(--border-subtle);">
     <div class="d-wrap p-footer-inner">
-      <div><strong>Dendro v0.8.0</strong> · MIT License · Built by Samuel Mota (<a href="../">Move the Needle</a>)</div>
+      <div><strong>Dendro</strong> · MIT License · Built by Samuel Mota (<a href="../">Move the Needle</a>)</div>
       <div class="p-footer-links">
         <a href="./" aria-current="page">Overview</a>
         <a href="how-it-works.html">How It Works</a>
@@ -2025,7 +2093,7 @@ dendro ask "which handoff pairs had the highest return rate this week?"</code></
 <aside class="mtn-family" aria-label="Move the Needle systems and practice">
 <div class="mtn-family-inner">
 <div class="mtn-family-intro"><a class="mtn-umbrella-brand" href="../" aria-label="Move the Needle home"><img src="../assets/img/move-the-needle-icon-32.png" alt="" width="20" height="20"><span>Move the Needle</span></a><p>Built and maintained by Samuel Mota through Move the Needle, his independent technology transformation practice.</p></div>
-<div class="mtn-family-col"><p class="mtn-family-title">Systems</p><ul><li><a href="../agent-sdlc/">AgentFlow SDLC</a></li><li><a href="../dendro/" aria-current="page">Dendro</a></li><li><a href="../meshloop/">Meshloop</a></li><li><a href="../holoself/">Holoself</a></li><li><a href="../nextstep/">Nextstep</a></li><li><a href="../metaskills/">MetaSkills</a></li><li><a href="../open-source/">All open source</a></li></ul></div>
+<div class="mtn-family-col"><p class="mtn-family-title">Systems</p><ul><li><a href="../agent-sdlc/">AgentFlow SDLC</a></li><li><a href="../dendro/" aria-current="page">Dendro</a></li><li><a href="../agent-otel-bridge/">agent-otel-bridge</a></li><li><a href="../meshloop/">Meshloop</a></li><li><a href="../holoself/">Holoself</a></li><li><a href="../nextstep/">Nextstep</a></li><li><a href="../metaskills/">MetaSkills</a></li><li><a href="../open-source/">All open source</a></li></ul></div>
 <div class="mtn-family-col"><p class="mtn-family-title">Practice</p><ul><li><a href="../where-i-help/">Focus areas</a></li><li><a href="../how-i-work/">Approach</a></li><li><a href="../experience/">Case studies</a></li><li><a href="../thinking/">Thinking</a></li><li><a href="../about/">About</a></li><li><a href="../#contact">Contact</a></li></ul></div>
 <p class="mtn-family-legal">© Samuel Mota · <a href="https://www.linkedin.com/in/smota/?utm_source=movetheneedle.info&utm_medium=referral">LinkedIn ↗</a> · <a href="https://github.com/smota">GitHub ↗</a></p>
 </div>

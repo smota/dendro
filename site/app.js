@@ -29,12 +29,18 @@ document.addEventListener('DOMContentLoaded', () => {
     update();
   }
 
-  // 2. Hero 8-Tab Interactive Screenshot Switcher
+  // 2. Hero Multi-Screen Horizontal Screenshot Carousel
   const stageTabs = Array.from(document.querySelectorAll('[data-stage-tab]'));
   const stagePanels = Array.from(document.querySelectorAll('[data-stage-panel]'));
-  function activateStageTab(targetKey, focusTab) {
-    stageTabs.forEach(tab => {
+  const carouselTrack = document.getElementById('screenshot-carousel-track');
+  const prevBtn = document.getElementById('carousel-prev');
+  const nextBtn = document.getElementById('carousel-next');
+  let activeStageIdx = 0;
+
+  function setActiveStageState(targetKey, focusTab) {
+    stageTabs.forEach((tab, idx) => {
       const active = tab.getAttribute('data-stage-tab') === targetKey;
+      if (active) activeStageIdx = idx;
       tab.setAttribute('aria-selected', active ? 'true' : 'false');
       tab.setAttribute('tabindex', active ? '0' : '-1');
       tab.classList.toggle('is-active', active);
@@ -42,19 +48,66 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     stagePanels.forEach(panel => {
       const active = panel.getAttribute('data-stage-panel') === targetKey;
-      panel.hidden = !active;
+      panel.classList.toggle('is-active', active);
+      panel.removeAttribute('hidden');
     });
   }
+
+  function scrollToStageSlide(targetKey, focusTab) {
+    setActiveStageState(targetKey, focusTab);
+    const targetSlide = stagePanels.find(p => p.getAttribute('data-stage-panel') === targetKey);
+    if (targetSlide && typeof targetSlide.scrollIntoView === 'function') {
+      targetSlide.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    }
+  }
+
   stageTabs.forEach((tab, idx) => {
-    tab.addEventListener('click', () => activateStageTab(tab.getAttribute('data-stage-tab'), false));
+    tab.addEventListener('click', () => scrollToStageSlide(tab.getAttribute('data-stage-tab'), false));
     tab.addEventListener('keydown', e => {
       if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
         e.preventDefault();
         const nextIdx = (idx + (e.key === 'ArrowRight' ? 1 : stageTabs.length - 1)) % stageTabs.length;
-        activateStageTab(stageTabs[nextIdx].getAttribute('data-stage-tab'), true);
+        scrollToStageSlide(stageTabs[nextIdx].getAttribute('data-stage-tab'), true);
       }
     });
   });
+
+  if (prevBtn && stageTabs.length) {
+    prevBtn.addEventListener('click', () => {
+      const nextIdx = (activeStageIdx + stageTabs.length - 1) % stageTabs.length;
+      scrollToStageSlide(stageTabs[nextIdx].getAttribute('data-stage-tab'), false);
+    });
+  }
+  if (nextBtn && stageTabs.length) {
+    nextBtn.addEventListener('click', () => {
+      const nextIdx = (activeStageIdx + 1) % stageTabs.length;
+      scrollToStageSlide(stageTabs[nextIdx].getAttribute('data-stage-tab'), false);
+    });
+  }
+  if (carouselTrack && stagePanels.length) {
+    let scrollTick = false;
+    carouselTrack.addEventListener('scroll', () => {
+      if (scrollTick) return;
+      scrollTick = true;
+      window.requestAnimationFrame(() => {
+        const trackRect = carouselTrack.getBoundingClientRect();
+        const trackCenter = trackRect.left + trackRect.width / 2;
+        let closestKey = null;
+        let minDist = Infinity;
+        stagePanels.forEach(panel => {
+          const rect = panel.getBoundingClientRect();
+          const slideCenter = rect.left + rect.width / 2;
+          const dist = Math.abs(slideCenter - trackCenter);
+          if (dist < minDist) {
+            minDist = dist;
+            closestKey = panel.getAttribute('data-stage-panel');
+          }
+        });
+        if (closestKey) setActiveStageState(closestKey, false);
+        scrollTick = false;
+      });
+    }, { passive: true });
+  }
 
   // 3. Living Growth Rings (#dendro-growth-rings) & Tactile Time Machine Scrubber
   const sectorNodes = Array.from(document.querySelectorAll('[data-ring-sector]'));
