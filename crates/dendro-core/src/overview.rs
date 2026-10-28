@@ -1062,7 +1062,9 @@ fn evaluate_throughput_and_cost(
 /// Evaluates direct overview from a DuckDB database path.
 pub fn evaluate_overview_snapshot_path(db: &Path, req: &OverviewRequest) -> Result<DirectOverview> {
     let store = AnalyticsStore::open_read_only(db)?;
-    store.read_snapshot(|s| evaluate_overview_snapshot(s, req))
+    // OverviewStatements owns the read transaction; DuckDB currently reports
+    // is_autocommit=true even inside an existing transaction. Do not nest one.
+    evaluate_overview_snapshot(&store, req)
 }
 
 pub use native::OverviewStatements;
