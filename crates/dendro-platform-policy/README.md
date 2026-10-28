@@ -31,6 +31,8 @@ Built on an **open, extensible architecture**, Dendro supports AI coding clients
   <p><strong>Read your entire fleet like an instrument.</strong> Scrub across any time window with the <strong>Time Machine</strong>, spot anomalies at a glance on <strong>The Living Growth Rings</strong>, and jump straight from <strong>Story Highlights</strong> into the underlying layer.</p>
 </div>
 
+> **Why "Dendro"?** From **dendrochronology** (*δένδρον / déndron*, tree + *χρόνος / khrónos*, time)—the science of reading a tree's history through its growth rings. Just as a trunk records seasons of abundant flow, resource pressure, and fire scars in concentric layers, **Dendro** reads the natural history your AI agents leave behind across **Model**, **Harness**, **Coordination**, and **Environment**.
+
 <a id="why-dendro"></a>
 
 ## Why Dendro?
