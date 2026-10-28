@@ -1,0 +1,1324 @@
+{
+  "format": "independent-reference-data-v1",
+  "goal": "https://github.com/smota/dendro/issues/101",
+  "authority": "https://github.com/smota/dendro/issues/101#issuecomment-6469975795",
+  "candidate_evaluated": false,
+  "scope": {
+    "rig": "test-rig",
+    "from": "2026-10-01T00:00:00Z",
+    "to": "2026-10-02T00:00:00Z",
+    "observation_clock": "2026-10-02T00:00:00Z"
+  },
+  "conventions": {
+    "purpose": "Literal selected-output assertions, not a production request/response schema or executable oracle checker.",
+    "facts": "Storage-column projections. All rows are synthetic. Omitted columns carry no assertion. A future loader must explicitly supply mandatory nonsemantic fields; no current production loader is implied.",
+    "issue_tags": "Arrays represent decoded queue_facts.issue_tags JSON text. Canonical stored positive issue IDs are extracted from raw issue:<id> tags; raw tags in input_origin are descriptive only.",
+    "derived_evidence": "Named canonical evidence operands, not invented persistent fact tables or an overview API. Advisory classification/duration/source_keys vocabulary follows advisory::emit; hold/vortex operand mapping requires architecture freeze.",
+    "expected": "All expected scalars, IDs and source memberships are literal independent author choices. They were not produced by a candidate evaluator.",
+    "scope_support": "Case-local identity_facts identify rigs. Where present, common_identity is explicitly included as supporting facts by reference; facts on another rig are never inherited.",
+    "tokens": "Sum input_uncached + output_tokens + cache_read + cache_write. reasoning is already part of output and is not added again.",
+    "zero_cost": "currency_total=0 is observed zero; null is unavailable pricing, never zero.",
+    "source_membership": "Expected source lists describe selected metric operands, not a complete production evidence digest. Support keys are separately listed when material. No production evidence-key serialization is frozen here."
+  },
+  "common_identity": [
+    {
+      "source_key": "id:build",
+      "harness": "codex",
+      "native_session": "session-build",
+      "rig": "test-rig",
+      "seat": "dev-build@test-rig",
+      "ts": "2026-10-01T00:00:00Z"
+    }
+  ],
+  "architecture_dependencies": {
+    "D2": "Architecture v2: single half-open scope, missing-time exclusion and explicit coverage; pending Phase3 freeze.",
+    "D3": "Architecture v2: state at cutoff, freshness distinct from heading, completeness and operand mapping; pending Phase3 freeze. Status field spellings in these assertions are semantic labels, not a production schema.",
+    "D4": "Architecture v2: unique harness/session plus overlapping process interval, same-fingerprint dedup and unassigned ambiguity; pending Phase3 freeze.",
+    "D6": "Amendment3 DONE-only and distinct qitems; architecture v2 extracted positive ID validation, deterministic ordering and recovery-prefix defense; pending Phase3 freeze.",
+    "D7": "Architecture v2: full scoped observed spend, partial subtotal and null ratio rules; pending Phase3 freeze. Null/unpriced truth is already required.",
+    "D8": "Architecture v2: undated declaration linkage and verified session-grain reconciliation/coverage; pending Phase3 freeze. No schema telemetry means null waste regardless."
+  },
+  "cases": [
+    {
+      "id": "rank-stall-over-hold-over-vortex",
+      "authority": "amendment3 hierarchy; architecture-v2 D3 operand mapping",
+      "requires_architecture_freeze": [
+        "D3"
+      ],
+      "inputs": {
+        "derived_evidence": [
+          {
+            "classification": "true_leaf_stall",
+            "seat": "dev-build@test-rig",
+            "qitem_id": "leaf-1",
+            "duration_secs": 2400,
+            "total_tokens": 10,
+            "resolved": false,
+            "source_keys": [
+              "stall:1"
+            ]
+          },
+          {
+            "classification": "admission_gate_hold",
+            "hold_id": "hold-B1",
+            "gate": "B1",
+            "duration_secs": 3600,
+            "total_tokens": 900,
+            "resolved": false,
+            "source_keys": [
+              "hold:1"
+            ]
+          },
+          {
+            "classification": "rework_vortex",
+            "qitem_id": "loop-1",
+            "duration_secs": 7200,
+            "total_tokens": 2000000,
+            "chain_returns": 3,
+            "resolved": false,
+            "source_keys": [
+              "vortex:1"
+            ]
+          }
+        ],
+        "coverage": "complete"
+      },
+      "expected": {
+        "category": "Leaf Stall",
+        "entity_id": "dev-build@test-rig",
+        "duration_secs": 2400,
+        "temporal_label": "Active Fleet Bottleneck",
+        "ranked_source_keys": [
+          "stall:1",
+          "hold:1",
+          "vortex:1"
+        ]
+      }
+    },
+    {
+      "id": "rank-hold-over-vortex-without-stall",
+      "authority": "amendment3 hierarchy; architecture-v2 D3 operand mapping",
+      "requires_architecture_freeze": [
+        "D3"
+      ],
+      "inputs": {
+        "derived_evidence": [
+          {
+            "classification": "admission_gate_hold",
+            "hold_id": "hold-B2",
+            "gate": "B2",
+            "duration_secs": 601,
+            "total_tokens": 0,
+            "resolved": false,
+            "source_keys": [
+              "hold:2"
+            ]
+          },
+          {
+            "classification": "rework_vortex",
+            "qitem_id": "loop-2",
+            "duration_secs": 3600,
+            "total_tokens": 2000000,
+            "chain_returns": 3,
+            "resolved": false,
+            "source_keys": [
+              "vortex:2"
+            ]
+          }
+        ],
+        "coverage": "complete"
+      },
+      "expected": {
+        "category": "Admission Gate Hold",
+        "entity_id": "hold-B2",
+        "selected_source_keys": [
+          "hold:2"
+        ]
+      }
+    },
+    {
+      "id": "rank-duration-then-tokens-then-lexical",
+      "authority": "amendment3 tie tuple; architecture-v2 D3 stable identity",
+      "requires_architecture_freeze": [
+        "D3"
+      ],
+      "inputs": {
+        "derived_evidence": [
+          {
+            "classification": "true_leaf_stall",
+            "seat": "seat-z@test-rig",
+            "duration_secs": 2400,
+            "total_tokens": 999,
+            "source_keys": [
+              "tie:z"
+            ]
+          },
+          {
+            "classification": "true_leaf_stall",
+            "seat": "seat-c@test-rig",
+            "duration_secs": 2500,
+            "total_tokens": 5,
+            "source_keys": [
+              "tie:c"
+            ]
+          },
+          {
+            "classification": "true_leaf_stall",
+            "seat": "seat-b@test-rig",
+            "duration_secs": 2500,
+            "total_tokens": 7,
+            "source_keys": [
+              "tie:b"
+            ]
+          },
+          {
+            "classification": "true_leaf_stall",
+            "seat": "seat-a@test-rig",
+            "duration_secs": 2500,
+            "total_tokens": 7,
+            "source_keys": [
+              "tie:a"
+            ]
+          }
+        ],
+        "coverage": "complete"
+      },
+      "expected": {
+        "entity_id": "seat-a@test-rig",
+        "ranked_source_keys": [
+          "tie:a",
+          "tie:b",
+          "tie:c",
+          "tie:z"
+        ]
+      }
+    },
+    {
+      "id": "strict-thresholds-complete-no-incident",
+      "authority": "amendment3 strict greater-than thresholds; architecture-v2 D3 nominal distinction",
+      "requires_architecture_freeze": [
+        "D3"
+      ],
+      "inputs": {
+        "derived_evidence": [
+          {
+            "classification": "true_leaf_stall",
+            "seat": "dev-build@test-rig",
+            "duration_secs": 1800,
+            "source_keys": [
+              "edge:stall"
+            ]
+          },
+          {
+            "classification": "unparked_container_hold",
+            "seat": "parent@test-rig",
+            "duration_secs": 900,
+            "source_keys": [
+              "edge:container"
+            ]
+          },
+          {
+            "classification": "admission_gate_hold",
+            "hold_id": "hold-edge",
+            "duration_secs": 600,
+            "source_keys": [
+              "edge:hold"
+            ]
+          },
+          {
+            "classification": "rework_vortex",
+            "qitem_id": "loop-edge",
+            "duration_secs": 600,
+            "return_rate": 0.1,
+            "chain_returns": 2,
+            "total_tokens": 1000000,
+            "source_keys": [
+              "edge:vortex"
+            ],
+            "rework_tokens": 1000000
+          }
+        ],
+        "coverage": "complete"
+      },
+      "expected": {
+        "focus_state": "nominal",
+        "entity_id": null,
+        "selected_source_keys": []
+      }
+    },
+    {
+      "id": "resolved-stall-not-current-focus",
+      "authority": "architecture-v2 D3 reconstruct state at cutoff; not a frozen new threshold",
+      "requires_architecture_freeze": [
+        "D3"
+      ],
+      "inputs": {
+        "common_identity": true,
+        "queue_facts": [
+          {
+            "source_key": "resolved:claim",
+            "transition_id": 1,
+            "qitem_id": "resolved-1",
+            "ts": "2026-10-01T01:00:00Z",
+            "state": "in-progress",
+            "source_seat": "orch@test-rig",
+            "dest_seat": "dev-build@test-rig"
+          },
+          {
+            "source_key": "resolved:done",
+            "transition_id": 2,
+            "qitem_id": "resolved-1",
+            "ts": "2026-10-01T03:00:00Z",
+            "state": "done",
+            "source_seat": "orch@test-rig",
+            "dest_seat": "dev-build@test-rig"
+          }
+        ],
+        "coverage": "complete"
+      },
+      "expected": {
+        "focus_state": "nominal",
+        "entity_id": null,
+        "selected_source_keys": [],
+        "state_support_source_keys": [
+          "resolved:claim",
+          "resolved:done"
+        ]
+      }
+    },
+    {
+      "id": "stale-observation-not-live-alert",
+      "authority": "architecture-v2 D3 freshness distinct from requested-window label",
+      "requires_architecture_freeze": [
+        "D3"
+      ],
+      "inputs": {
+        "evidence_as_of": "2026-10-01T23:00:00Z",
+        "derived_evidence": [
+          {
+            "classification": "true_leaf_stall",
+            "seat": "dev-build@test-rig",
+            "duration_secs": 2400,
+            "source_keys": [
+              "stale:claim"
+            ]
+          }
+        ],
+        "coverage": "partial"
+      },
+      "expected": {
+        "snapshot": true,
+        "live_alert": false,
+        "temporal_label": "Active Fleet Bottleneck",
+        "coverage": "partial",
+        "evidence_as_of": "2026-10-01T23:00:00Z"
+      }
+    },
+    {
+      "id": "missing-evidence-is-not-nominal",
+      "authority": "architecture-v2 D3 absent source distinction",
+      "requires_architecture_freeze": [
+        "D3"
+      ],
+      "inputs": {
+        "derived_evidence": [],
+        "coverage": "no_data"
+      },
+      "expected": {
+        "focus_state": "unavailable",
+        "entity_id": null,
+        "selected_source_keys": []
+      }
+    },
+    {
+      "id": "temporal-label-freshness-boundary-inclusive",
+      "authority": "amendment3 temporal label at now minus 300 seconds",
+      "requires_architecture_freeze": [],
+      "inputs": {
+        "scope_override": {
+          "to": "2026-10-01T23:55:00Z"
+        },
+        "derived_evidence": [
+          {
+            "classification": "true_leaf_stall",
+            "seat": "dev-build@test-rig",
+            "duration_secs": 2400,
+            "source_keys": [
+              "label:edge"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "temporal_label": "Active Fleet Bottleneck"
+      }
+    },
+    {
+      "id": "temporal-label-historical-after-boundary",
+      "authority": "amendment3 temporal label older than now minus 300 seconds",
+      "requires_architecture_freeze": [],
+      "inputs": {
+        "scope_override": {
+          "to": "2026-10-01T23:54:59Z"
+        },
+        "derived_evidence": [
+          {
+            "classification": "true_leaf_stall",
+            "seat": "dev-build@test-rig",
+            "duration_secs": 2400,
+            "source_keys": [
+              "label:old"
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "temporal_label": "Historical Window Bottleneck"
+      }
+    },
+    {
+      "id": "two-uncalled-ten-turns-no-schema",
+      "authority": "amendment3 AC101-4; architecture-v2 D8 undated declaration linkage",
+      "requires_architecture_freeze": [
+        "D8"
+      ],
+      "inputs": {
+        "common_identity": true,
+        "skill_facts": [
+          {
+            "source_key": "turn:1:skill:0",
+            "seat": "dev-build@test-rig",
+            "skill": "tool-alpha",
+            "invoked": false
+          },
+          {
+            "source_key": "turn:1:skill:1",
+            "seat": "dev-build@test-rig",
+            "skill": "tool-beta",
+            "invoked": false
+          }
+        ],
+        "usage_facts": [
+          {
+            "source_key": "turn:1",
+            "harness": "codex",
+            "native_session": "session-build",
+            "ts": "2026-10-01T01:00:00Z",
+            "seq": 1
+          },
+          {
+            "source_key": "turn:2",
+            "harness": "codex",
+            "native_session": "session-build",
+            "ts": "2026-10-01T01:01:00Z",
+            "seq": 2
+          },
+          {
+            "source_key": "turn:3",
+            "harness": "codex",
+            "native_session": "session-build",
+            "ts": "2026-10-01T01:02:00Z",
+            "seq": 3
+          },
+          {
+            "source_key": "turn:4",
+            "harness": "codex",
+            "native_session": "session-build",
+            "ts": "2026-10-01T01:03:00Z",
+            "seq": 4
+          },
+          {
+            "source_key": "turn:5",
+            "harness": "codex",
+            "native_session": "session-build",
+            "ts": "2026-10-01T01:04:00Z",
+            "seq": 5
+          },
+          {
+            "source_key": "turn:6",
+            "harness": "codex",
+            "native_session": "session-build",
+            "ts": "2026-10-01T01:05:00Z",
+            "seq": 6
+          },
+          {
+            "source_key": "turn:7",
+            "harness": "codex",
+            "native_session": "session-build",
+            "ts": "2026-10-01T01:06:00Z",
+            "seq": 7
+          },
+          {
+            "source_key": "turn:8",
+            "harness": "codex",
+            "native_session": "session-build",
+            "ts": "2026-10-01T01:07:00Z",
+            "seq": 8
+          },
+          {
+            "source_key": "turn:9",
+            "harness": "codex",
+            "native_session": "session-build",
+            "ts": "2026-10-01T01:08:00Z",
+            "seq": 9
+          },
+          {
+            "source_key": "turn:10",
+            "harness": "codex",
+            "native_session": "session-build",
+            "ts": "2026-10-01T01:09:00Z",
+            "seq": 10
+          }
+        ],
+        "schema_exposure": null
+      },
+      "expected": {
+        "uncalled_tools_count": 2,
+        "wasted_schema_tokens": null,
+        "schema_tokens_status": "unavailable",
+        "wasted_cost_usd": null,
+        "declaration_source_keys": [
+          "turn:1:skill:0",
+          "turn:1:skill:1"
+        ]
+      }
+    },
+    {
+      "id": "later-invocation-reconciles-false-declaration",
+      "authority": "amendment3 reconciliation; architecture-v2 D8 verified grain/linkage",
+      "requires_architecture_freeze": [
+        "D8"
+      ],
+      "inputs": {
+        "common_identity": true,
+        "skill_facts": [
+          {
+            "source_key": "reconcile:1:skill:0",
+            "seat": "dev-build@test-rig",
+            "skill": "tool-alpha",
+            "invoked": false
+          },
+          {
+            "source_key": "reconcile:2:skill:0",
+            "seat": "dev-build@test-rig",
+            "skill": "tool-alpha",
+            "invoked": true
+          },
+          {
+            "source_key": "reconcile:1:skill:1",
+            "seat": "dev-build@test-rig",
+            "skill": "tool-beta",
+            "invoked": false
+          }
+        ],
+        "usage_facts": [
+          {
+            "source_key": "reconcile:1",
+            "harness": "codex",
+            "native_session": "session-build",
+            "ts": "2026-10-01T01:00:00Z",
+            "seq": 1
+          },
+          {
+            "source_key": "reconcile:2",
+            "harness": "codex",
+            "native_session": "session-build",
+            "ts": "2026-10-01T02:00:00Z",
+            "seq": 2
+          }
+        ],
+        "schema_exposure": null
+      },
+      "expected": {
+        "uncalled_tools_count": 1,
+        "uncalled_skills": [
+          "tool-beta"
+        ],
+        "wasted_schema_tokens": null,
+        "wasted_cost_usd": null,
+        "invocation_support_source_keys": [
+          "reconcile:2:skill:0"
+        ]
+      }
+    },
+    {
+      "id": "priced-thirty-three-issue-seven-internal",
+      "authority": "amendment3 AC101-5; full fleet spend population architecture-v2 D7",
+      "requires_architecture_freeze": [
+        "D7"
+      ],
+      "inputs": {
+        "common_identity": true,
+        "input_origin": {
+          "task-101": [
+            "issue:101"
+          ],
+          "task-91": [
+            "issue:91"
+          ],
+          "task-26": [
+            "issue:26"
+          ]
+        },
+        "usage_facts": [
+          {
+            "source_key": "cost:30",
+            "harness": "codex",
+            "native_session": "session-build",
+            "ts": "2026-10-01T12:00:00Z",
+            "currency_total": 30,
+            "model": "priced-synthetic"
+          }
+        ],
+        "queue_facts": [
+          {
+            "source_key": "done:101",
+            "transition_id": 1,
+            "qitem_id": "task-101",
+            "ts": "2026-10-01T13:00:00Z",
+            "state": "done",
+            "issue_tags": [
+              "101"
+            ],
+            "is_recovery": false,
+            "closure_reason": "no-follow-on",
+            "dest_seat": "dev-build@test-rig"
+          },
+          {
+            "source_key": "done:91",
+            "transition_id": 2,
+            "qitem_id": "task-91",
+            "ts": "2026-10-01T13:01:00Z",
+            "state": "done",
+            "issue_tags": [
+              "91"
+            ],
+            "is_recovery": false,
+            "closure_reason": "no-follow-on",
+            "dest_seat": "dev-build@test-rig"
+          },
+          {
+            "source_key": "done:26",
+            "transition_id": 3,
+            "qitem_id": "task-26",
+            "ts": "2026-10-01T13:02:00Z",
+            "state": "done",
+            "issue_tags": [
+              "26"
+            ],
+            "is_recovery": false,
+            "closure_reason": "no-follow-on",
+            "dest_seat": "dev-build@test-rig"
+          },
+          {
+            "source_key": "internal:1",
+            "transition_id": 4,
+            "qitem_id": "internal-1",
+            "ts": "2026-10-01T14:01:00Z",
+            "state": "done",
+            "issue_tags": [],
+            "is_recovery": false,
+            "closure_reason": "no-follow-on",
+            "dest_seat": "dev-build@test-rig"
+          },
+          {
+            "source_key": "internal:2",
+            "transition_id": 5,
+            "qitem_id": "internal-2",
+            "ts": "2026-10-01T14:02:00Z",
+            "state": "done",
+            "issue_tags": [],
+            "is_recovery": false,
+            "closure_reason": "no-follow-on",
+            "dest_seat": "dev-build@test-rig"
+          },
+          {
+            "source_key": "internal:3",
+            "transition_id": 6,
+            "qitem_id": "internal-3",
+            "ts": "2026-10-01T14:03:00Z",
+            "state": "done",
+            "issue_tags": [],
+            "is_recovery": false,
+            "closure_reason": "no-follow-on",
+            "dest_seat": "dev-build@test-rig"
+          },
+          {
+            "source_key": "internal:4",
+            "transition_id": 7,
+            "qitem_id": "internal-4",
+            "ts": "2026-10-01T14:04:00Z",
+            "state": "done",
+            "issue_tags": [],
+            "is_recovery": false,
+            "closure_reason": "no-follow-on",
+            "dest_seat": "dev-build@test-rig"
+          },
+          {
+            "source_key": "internal:5",
+            "transition_id": 8,
+            "qitem_id": "internal-5",
+            "ts": "2026-10-01T14:05:00Z",
+            "state": "done",
+            "issue_tags": [],
+            "is_recovery": false,
+            "closure_reason": "no-follow-on",
+            "dest_seat": "dev-build@test-rig"
+          },
+          {
+            "source_key": "internal:6",
+            "transition_id": 9,
+            "qitem_id": "internal-6",
+            "ts": "2026-10-01T14:06:00Z",
+            "state": "done",
+            "issue_tags": [],
+            "is_recovery": false,
+            "closure_reason": "no-follow-on",
+            "dest_seat": "dev-build@test-rig"
+          },
+          {
+            "source_key": "internal:7",
+            "transition_id": 10,
+            "qitem_id": "internal-7",
+            "ts": "2026-10-01T14:07:00Z",
+            "state": "done",
+            "issue_tags": [],
+            "is_recovery": false,
+            "closure_reason": "no-follow-on",
+            "dest_seat": "dev-build@test-rig"
+          }
+        ]
+      },
+      "expected": {
+        "closed_issue_qitems": 3,
+        "closed_internal_tasks": 7,
+        "total_fleet_spend_usd": 30,
+        "avg_cost_per_closed_issue_qitem": 10,
+        "closed_issue_source_keys": [
+          "done:101",
+          "done:91",
+          "done:26"
+        ],
+        "spend_source_keys": [
+          "cost:30"
+        ]
+      }
+    },
+    {
+      "id": "observed-zero-spend-is-zero",
+      "authority": "amendment3 truthful known zero; architecture-v2 D7 observed money population",
+      "requires_architecture_freeze": [
+        "D7"
+      ],
+      "inputs": {
+        "common_identity": true,
+        "usage_facts": [
+          {
+            "source_key": "zero:cost",
+            "harness": "codex",
+            "native_session": "session-build",
+            "ts": "2026-10-01T12:00:00Z",
+            "currency_total": 0
+          }
+        ],
+        "queue_facts": [
+          {
+            "source_key": "zero:done",
+            "transition_id": 1,
+            "qitem_id": "zero-item",
+            "ts": "2026-10-01T13:00:00Z",
+            "state": "done",
+            "issue_tags": [
+              "101"
+            ],
+            "is_recovery": false,
+            "closure_reason": "no-follow-on",
+            "dest_seat": "dev-build@test-rig"
+          }
+        ]
+      },
+      "expected": {
+        "closed_issue_qitems": 1,
+        "total_fleet_spend_usd": 0,
+        "avg_cost_per_closed_issue_qitem": 0,
+        "money_status": "priced",
+        "spend_source_keys": [
+          "zero:cost"
+        ]
+      }
+    },
+    {
+      "id": "unpriced-spend-is-null",
+      "authority": "amendment3 unpriced money; architecture-v2 D7 coverage fields",
+      "requires_architecture_freeze": [
+        "D7"
+      ],
+      "inputs": {
+        "common_identity": true,
+        "usage_facts": [
+          {
+            "source_key": "unpriced:cost",
+            "harness": "codex",
+            "native_session": "session-build",
+            "ts": "2026-10-01T12:00:00Z",
+            "currency_total": null,
+            "model": "unpriced-synthetic"
+          }
+        ],
+        "queue_facts": [
+          {
+            "source_key": "unpriced:done",
+            "transition_id": 1,
+            "qitem_id": "unpriced-item",
+            "ts": "2026-10-01T13:00:00Z",
+            "state": "done",
+            "issue_tags": [
+              "101"
+            ],
+            "is_recovery": false,
+            "closure_reason": "no-follow-on",
+            "dest_seat": "dev-build@test-rig"
+          }
+        ]
+      },
+      "expected": {
+        "closed_issue_qitems": 1,
+        "total_fleet_spend_usd": null,
+        "avg_cost_per_closed_issue_qitem": null,
+        "money_status": "unpriced",
+        "unpriced_source_keys": [
+          "unpriced:cost"
+        ]
+      }
+    },
+    {
+      "id": "partial-pricing-never-unqualified-average",
+      "authority": "amendment3 truthful pricing; architecture-v2 D7 partial subtotal convention",
+      "requires_architecture_freeze": [
+        "D7"
+      ],
+      "inputs": {
+        "common_identity": true,
+        "usage_facts": [
+          {
+            "source_key": "partial:priced",
+            "harness": "codex",
+            "native_session": "session-build",
+            "ts": "2026-10-01T12:00:00Z",
+            "currency_total": 10
+          },
+          {
+            "source_key": "partial:unpriced",
+            "harness": "codex",
+            "native_session": "session-build",
+            "ts": "2026-10-01T12:01:00Z",
+            "currency_total": null
+          }
+        ],
+        "queue_facts": [
+          {
+            "source_key": "partial:done",
+            "transition_id": 1,
+            "qitem_id": "partial-item",
+            "ts": "2026-10-01T13:00:00Z",
+            "state": "done",
+            "issue_tags": [
+              "101"
+            ],
+            "is_recovery": false,
+            "closure_reason": "no-follow-on",
+            "dest_seat": "dev-build@test-rig"
+          }
+        ]
+      },
+      "expected": {
+        "closed_issue_qitems": 1,
+        "total_fleet_spend_usd": null,
+        "observed_priced_subtotal_usd": 10,
+        "avg_cost_per_closed_issue_qitem": null,
+        "priced_rows": 1,
+        "unpriced_rows": 1,
+        "money_status": "partial",
+        "priced_source_keys": [
+          "partial:priced"
+        ],
+        "unpriced_source_keys": [
+          "partial:unpriced"
+        ]
+      }
+    },
+    {
+      "id": "zero-denominator-not-zero-average",
+      "authority": "amendment3 no closed issue tasks",
+      "requires_architecture_freeze": [],
+      "inputs": {
+        "common_identity": true,
+        "usage_facts": [
+          {
+            "source_key": "denominator:cost",
+            "harness": "codex",
+            "native_session": "session-build",
+            "ts": "2026-10-01T12:00:00Z",
+            "currency_total": 30
+          }
+        ],
+        "queue_facts": []
+      },
+      "expected": {
+        "closed_issue_qitems": 0,
+        "total_fleet_spend_usd": 30,
+        "avg_cost_per_closed_issue_qitem": null,
+        "average_label": "no closed issue tasks",
+        "closed_issue_source_keys": []
+      }
+    },
+    {
+      "id": "done-counts-handed-off-does-not",
+      "authority": "amendment3 DONE only supersedes architecture-v2 D6 handed-off",
+      "requires_architecture_freeze": [],
+      "inputs": {
+        "common_identity": true,
+        "queue_facts": [
+          {
+            "source_key": "state:done",
+            "transition_id": 1,
+            "qitem_id": "state-done",
+            "ts": "2026-10-01T13:00:00Z",
+            "state": "done",
+            "issue_tags": [
+              "101"
+            ],
+            "is_recovery": false,
+            "closure_reason": "no-follow-on",
+            "dest_seat": "dev-build@test-rig"
+          },
+          {
+            "source_key": "state:handed-off",
+            "transition_id": 2,
+            "qitem_id": "state-handoff",
+            "ts": "2026-10-01T13:01:00Z",
+            "state": "handed-off",
+            "issue_tags": [
+              "101"
+            ],
+            "is_recovery": false,
+            "closure_reason": "handed_off_to",
+            "dest_seat": "dev-build@test-rig"
+          },
+          {
+            "source_key": "state:denied",
+            "transition_id": 3,
+            "qitem_id": "state-denied",
+            "ts": "2026-10-01T13:02:00Z",
+            "state": "denied",
+            "issue_tags": [
+              "101"
+            ],
+            "is_recovery": false,
+            "dest_seat": "dev-build@test-rig"
+          },
+          {
+            "source_key": "state:canceled",
+            "transition_id": 4,
+            "qitem_id": "state-canceled",
+            "ts": "2026-10-01T13:03:00Z",
+            "state": "canceled",
+            "issue_tags": [
+              "101"
+            ],
+            "is_recovery": false,
+            "dest_seat": "dev-build@test-rig"
+          }
+        ]
+      },
+      "expected": {
+        "closed_issue_qitems": 1,
+        "closed_issue_qitem_ids": [
+          "state-done"
+        ],
+        "closed_issue_source_keys": [
+          "state:done"
+        ],
+        "excluded_source_keys": [
+          "state:handed-off",
+          "state:denied",
+          "state:canceled"
+        ]
+      }
+    },
+    {
+      "id": "duplicate-multitag-recovery-reopen",
+      "authority": "amendment3 distinct qitem, recovery, multi-tag, reopened-at-cutoff; architecture-v2 D6 final-state order",
+      "requires_architecture_freeze": [
+        "D6"
+      ],
+      "inputs": {
+        "common_identity": true,
+        "queue_facts": [
+          {
+            "source_key": "dedup:1",
+            "transition_id": 1,
+            "qitem_id": "multi-item",
+            "ts": "2026-10-01T10:00:00Z",
+            "state": "done",
+            "issue_tags": [
+              "101",
+              "91"
+            ],
+            "is_recovery": false,
+            "closure_reason": "no-follow-on",
+            "dest_seat": "dev-build@test-rig"
+          },
+          {
+            "source_key": "dedup:2",
+            "transition_id": 2,
+            "qitem_id": "multi-item",
+            "ts": "2026-10-01T10:01:00Z",
+            "state": "done",
+            "issue_tags": [
+              "101",
+              "91"
+            ],
+            "is_recovery": false,
+            "closure_reason": "no-follow-on",
+            "dest_seat": "dev-build@test-rig"
+          },
+          {
+            "source_key": "dedup:same-issue",
+            "transition_id": 3,
+            "qitem_id": "second-item",
+            "ts": "2026-10-01T11:00:00Z",
+            "state": "done",
+            "issue_tags": [
+              "101"
+            ],
+            "is_recovery": false,
+            "closure_reason": "no-follow-on",
+            "dest_seat": "dev-build@test-rig"
+          },
+          {
+            "source_key": "recovery:prefix",
+            "transition_id": 4,
+            "qitem_id": "qitem-recovery-synthetic",
+            "ts": "2026-10-01T11:01:00Z",
+            "state": "done",
+            "issue_tags": [
+              "101"
+            ],
+            "is_recovery": false,
+            "recovery_reason": "stuck-sweep:synthetic",
+            "dest_seat": "dev-build@test-rig"
+          },
+          {
+            "source_key": "recovery:flag",
+            "transition_id": 5,
+            "qitem_id": "ordinary-name-recovery",
+            "ts": "2026-10-01T11:02:00Z",
+            "state": "done",
+            "issue_tags": [
+              "101"
+            ],
+            "is_recovery": true,
+            "dest_seat": "dev-build@test-rig"
+          },
+          {
+            "source_key": "reopen:done",
+            "transition_id": 6,
+            "qitem_id": "reopened-item",
+            "ts": "2026-10-01T12:00:00Z",
+            "state": "done",
+            "issue_tags": [
+              "101"
+            ],
+            "is_recovery": false,
+            "closure_reason": "no-follow-on",
+            "dest_seat": "dev-build@test-rig"
+          },
+          {
+            "source_key": "reopen:pending",
+            "transition_id": 7,
+            "qitem_id": "reopened-item",
+            "ts": "2026-10-01T23:59:59Z",
+            "state": "pending",
+            "issue_tags": [
+              "101"
+            ],
+            "is_recovery": false,
+            "dest_seat": "dev-build@test-rig"
+          }
+        ],
+        "recovery_note": "Prefix defense is tested independently of flag; ordinary-name row tests flag defense independently of prefix."
+      },
+      "expected": {
+        "closed_issue_qitems": 2,
+        "closed_issue_qitem_ids": [
+          "multi-item",
+          "second-item"
+        ],
+        "eligible_closure_support_source_keys": [
+          "dedup:1",
+          "dedup:2",
+          "dedup:same-issue"
+        ],
+        "recovery_excluded_source_keys": [
+          "recovery:prefix",
+          "recovery:flag"
+        ],
+        "reopen_state_support_source_keys": [
+          "reopen:done",
+          "reopen:pending"
+        ]
+      }
+    },
+    {
+      "id": "unique-cwd-duplicate-same-fingerprint-conserves",
+      "authority": "amendment3 privacy/conservation; architecture-v2 D4 time join cardinality",
+      "requires_architecture_freeze": [
+        "D4"
+      ],
+      "inputs": {
+        "common_identity": true,
+        "usage_facts": [
+          {
+            "source_key": "project:usage",
+            "harness": "codex",
+            "native_session": "session-build",
+            "ts": "2026-10-01T12:00:00Z",
+            "input_uncached": 100,
+            "output_tokens": 20,
+            "cache_read": 30,
+            "cache_write": 10,
+            "reasoning": 5,
+            "currency_total": 3
+          }
+        ],
+        "process_identities": [
+          {
+            "identity_key": "process:one",
+            "harness": "codex",
+            "session_link": "session-build",
+            "cwd_fingerprint": "fp-a81f",
+            "first_seen": "2026-10-01T11:00:00Z",
+            "last_seen": "2026-10-01T13:00:00Z",
+            "ended_at": null
+          },
+          {
+            "identity_key": "process:duplicate",
+            "harness": "codex",
+            "session_link": "session-build",
+            "cwd_fingerprint": "fp-a81f",
+            "first_seen": "2026-10-01T11:30:00Z",
+            "last_seen": "2026-10-01T13:00:00Z",
+            "ended_at": null
+          }
+        ]
+      },
+      "expected": {
+        "project_groups": [
+          {
+            "cwd_fingerprint": "fp-a81f",
+            "total_tokens": 160,
+            "estimated_cost_usd": 3,
+            "usage_source_keys": [
+              "project:usage"
+            ]
+          }
+        ],
+        "unassigned_total_tokens": 0,
+        "all_projects_total_tokens": 160,
+        "all_projects_observed_cost_usd": 3,
+        "raw_cwd_path_count": 0
+      }
+    },
+    {
+      "id": "ambiguous-concurrent-cwd-remains-unassigned",
+      "authority": "amendment3 unassigned and conservation; architecture-v2 D4 ambiguous identity",
+      "requires_architecture_freeze": [
+        "D4"
+      ],
+      "inputs": {
+        "common_identity": true,
+        "usage_facts": [
+          {
+            "source_key": "ambiguous:usage",
+            "harness": "codex",
+            "native_session": "session-build",
+            "ts": "2026-10-01T12:00:00Z",
+            "input_uncached": 100,
+            "output_tokens": 20,
+            "cache_read": 30,
+            "cache_write": 10,
+            "reasoning": 5,
+            "currency_total": 3
+          }
+        ],
+        "process_identities": [
+          {
+            "identity_key": "process:a",
+            "harness": "codex",
+            "session_link": "session-build",
+            "cwd_fingerprint": "fp-a81f",
+            "first_seen": "2026-10-01T11:00:00Z",
+            "last_seen": "2026-10-01T13:00:00Z",
+            "ended_at": null
+          },
+          {
+            "identity_key": "process:b",
+            "harness": "codex",
+            "session_link": "session-build",
+            "cwd_fingerprint": "fp-b92e",
+            "first_seen": "2026-10-01T11:00:00Z",
+            "last_seen": "2026-10-01T13:00:00Z",
+            "ended_at": null
+          }
+        ]
+      },
+      "expected": {
+        "assigned_usage_source_keys": [],
+        "unassigned_usage_source_keys": [
+          "ambiguous:usage"
+        ],
+        "unassigned_total_tokens": 160,
+        "unassigned_observed_cost_usd": 3,
+        "all_projects_total_tokens": 160,
+        "all_projects_observed_cost_usd": 3,
+        "raw_cwd_path_count": 0
+      }
+    },
+    {
+      "id": "half-open-window-wrong-rig-and-missing-time",
+      "authority": "amendment3 [from,to) and rig scope; architecture-v2 D2 missing-time coverage",
+      "requires_architecture_freeze": [
+        "D2",
+        "D7"
+      ],
+      "inputs": {
+        "common_identity": true,
+        "identity_facts": [
+          {
+            "source_key": "id:foreign",
+            "harness": "codex",
+            "native_session": "foreign-session",
+            "rig": "other-rig",
+            "seat": "dev-build@other-rig",
+            "ts": "2026-10-01T00:00:00Z"
+          }
+        ],
+        "usage_facts": [
+          {
+            "source_key": "scope:before",
+            "harness": "codex",
+            "native_session": "session-build",
+            "ts": "2026-09-30T23:59:59Z",
+            "input_uncached": 100,
+            "output_tokens": 0,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0,
+            "currency_total": 100
+          },
+          {
+            "source_key": "scope:lower",
+            "harness": "codex",
+            "native_session": "session-build",
+            "ts": "2026-10-01T00:00:00Z",
+            "input_uncached": 11,
+            "output_tokens": 0,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0,
+            "currency_total": 1
+          },
+          {
+            "source_key": "scope:inside",
+            "harness": "codex",
+            "native_session": "session-build",
+            "ts": "2026-10-01T23:59:59Z",
+            "input_uncached": 19,
+            "output_tokens": 0,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0,
+            "currency_total": 2
+          },
+          {
+            "source_key": "scope:upper",
+            "harness": "codex",
+            "native_session": "session-build",
+            "ts": "2026-10-02T00:00:00Z",
+            "input_uncached": 200,
+            "output_tokens": 0,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0,
+            "currency_total": 200
+          },
+          {
+            "source_key": "scope:foreign",
+            "harness": "codex",
+            "native_session": "foreign-session",
+            "ts": "2026-10-01T12:00:00Z",
+            "input_uncached": 300,
+            "output_tokens": 0,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0,
+            "currency_total": 300
+          },
+          {
+            "source_key": "scope:undated",
+            "harness": "codex",
+            "native_session": "session-build",
+            "ts": null,
+            "input_uncached": 400,
+            "output_tokens": 0,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0,
+            "currency_total": 400
+          }
+        ]
+      },
+      "expected": {
+        "total_tokens": 30,
+        "bounded_observed_priced_subtotal_usd": 3,
+        "usage_source_keys": [
+          "scope:lower",
+          "scope:inside"
+        ],
+        "excluded_source_keys": [
+          "scope:before",
+          "scope:upper",
+          "scope:foreign",
+          "scope:undated"
+        ],
+        "undated_coverage_source_keys": [
+          "scope:undated"
+        ]
+      }
+    },
+    {
+      "id": "no-skill-facts-is-unavailable-not-zero",
+      "authority": "architecture-v2 D8 evidence absence distinction",
+      "requires_architecture_freeze": [
+        "D8"
+      ],
+      "inputs": {
+        "common_identity": true,
+        "skill_facts": [],
+        "tool_facts": [],
+        "schema_exposure": null
+      },
+      "expected": {
+        "uncalled_tools_count": null,
+        "declaration_status": "unavailable",
+        "wasted_schema_tokens": null,
+        "schema_tokens_status": "unavailable",
+        "wasted_cost_usd": null,
+        "declaration_source_keys": []
+      }
+    }
+  ],
+  "architecture": "https://github.com/smota/dendro/issues/101#issuecomment-6470241179",
+  "architecture_status": "Phase2 v2 recorded; dependent cases become unconditional only when parent freezes Phase3. Draft v1 is superseded."
+}

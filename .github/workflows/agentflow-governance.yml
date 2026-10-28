@@ -34,6 +34,13 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Install locked project dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          corepack enable || true
+          pnpm install --frozen-lockfile
+
       - name: Install pinned Rust toolchain
         shell: bash
         run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal

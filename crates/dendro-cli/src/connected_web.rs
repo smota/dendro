@@ -177,6 +177,8 @@ pub fn execute_live_query(
         "schema_drift" | "v_schema_drift" => "v_schema_drift",
         "authority_blast_radius" | "v_authority_blast_radius" => "v_authority_blast_radius",
         "counterfactual_routing" | "v_counterfactual_routing" => "v_counterfactual_routing",
+        "direct_overview" | "v_direct_overview" => "direct_overview",
+        "cwd_projects" | "v_cwd_fingerprint_rollup" => "v_cwd_fingerprint_rollup",
         other => other,
     };
 
@@ -321,13 +323,13 @@ const LIVE_FACTS: &[(&str, &str, &str)] = &[
     ("usage_facts", "ts", "source_key VARCHAR, harness VARCHAR, native_session VARCHAR, ts TIMESTAMP, input_uncached BIGINT, output_tokens BIGINT, cache_read BIGINT, cache_write BIGINT, currency_total DOUBLE, model VARCHAR"),
     ("message_facts", "ts", "source_key VARCHAR, harness VARCHAR, native_session VARCHAR, ts TIMESTAMP, role VARCHAR, direction VARCHAR, modalities VARCHAR"),
     ("activity_facts", "ts", "source_key VARCHAR, seat VARCHAR, ts TIMESTAMP, state VARCHAR"),
-    ("queue_facts", "ts", "source_key VARCHAR, qitem_id VARCHAR, ts TIMESTAMP, state VARCHAR, source_seat VARCHAR, dest_seat VARCHAR, is_recovery BOOLEAN"),
+    ("queue_facts", "ts", "source_key VARCHAR, transition_id BIGINT, qitem_id VARCHAR, ts TIMESTAMP, state VARCHAR, source_seat VARCHAR, dest_seat VARCHAR, closure_reason VARCHAR, closure_target VARCHAR, is_recovery BOOLEAN, recovery_reason VARCHAR, issue_tags VARCHAR"),
     ("security_facts", "ts", "source_key VARCHAR, harness VARCHAR, native_session VARCHAR, ts TIMESTAMP, kind VARCHAR, value VARCHAR, source_field VARCHAR"),
     ("session_edges", "observed_at", "source_key VARCHAR, harness VARCHAR, parent_session VARCHAR, child_session VARCHAR, observed_at TIMESTAMP, relation VARCHAR, status VARCHAR"),
-    ("tool_facts", "ts", "source_key VARCHAR, harness VARCHAR, native_session VARCHAR, ts TIMESTAMP, failed BOOLEAN, category VARCHAR"),
+    ("tool_facts", "ts", "source_key VARCHAR, harness VARCHAR, native_session VARCHAR, ts TIMESTAMP, failed BOOLEAN, category VARCHAR, tool_name VARCHAR"),
     ("skill_facts", "", "source_key VARCHAR, seat VARCHAR, skill VARCHAR, invoked BOOLEAN"),
     ("identity_facts", "", "source_key VARCHAR, harness VARCHAR, native_session VARCHAR, rig VARCHAR, seat VARCHAR, ts TIMESTAMP"),
-    ("process_identities", "last_seen", "identity_key VARCHAR, root_key VARCHAR, harness VARCHAR, attribution VARCHAR, session_link VARCHAR, first_seen TIMESTAMP, last_seen TIMESTAMP"),
+    ("process_identities", "last_seen", "identity_key VARCHAR, root_key VARCHAR, harness VARCHAR, attribution VARCHAR, session_link VARCHAR, cwd_fingerprint VARCHAR, first_seen TIMESTAMP, last_seen TIMESTAMP"),
     ("process_samples", "ts", "identity_key VARCHAR, ts TIMESTAMP, rss_unit VARCHAR, rss_bytes BIGINT"),
     ("envelope_fingerprints", "", "harness VARCHAR, ts TIMESTAMP, fingerprint VARCHAR, harness_version VARCHAR"),
 ];
@@ -696,7 +698,32 @@ fn query_live_payload(
         "v_handoff_rework_analysis" => handoff_payload(conn, &mut payload, &rows)?,
         "v_mission_token_burn" => mission_payload(conn, &mut payload, &rows)?,
         "v_executive_governance" => governance_payload(conn, &mut payload, &rows, &window)?,
+        "direct_overview" => {
+            let ov = direct_overview_payload(conn, &window, rig)?;
+            payload["direct_overview"] = ov.clone();
+            payload["rows"] = ov["project_groups"].clone();
+            payload["summary"] = ov;
+        }
+        "v_cwd_fingerprint_rollup" => {
+            let ov = direct_overview_payload(conn, &window, rig)?;
+            payload["direct_overview"] = ov.clone();
+            payload["rows"] = ov["project_groups"].clone();
+        }
+        "skill_facts" => {
+            let ov = direct_overview_payload(conn, &window, rig)?;
+            payload["direct_overview"] = ov;
+            payload["rows"] = json!(json_rows(
+                conn,
+                "SELECT skill, seat, invoked, COUNT(*)::BIGINT AS count FROM skill_facts GROUP BY ALL ORDER BY count DESC",
+                []
+            )?);
+        }
         _ => {}
+    }
+    if matches!(view, "hub" | "general" | "status") {
+        if let Ok(ov) = direct_overview_payload(conn, &window, rig) {
+            payload["direct_overview"] = ov;
+        }
     }
     enrich_payload_groupings(conn, &mut payload, view)?;
     Ok(payload)
@@ -1265,6 +1292,27 @@ fn anomaly_markers(conn: &duckdb::Connection) -> Result<serde_json::Value> {
     markers.sort_by(|a, b| b["t"].as_str().cmp(&a["t"].as_str()));
     markers.truncate(24);
     Ok(json!(markers))
+}
+
+fn direct_overview_payload(
+    conn: &duckdb::Connection,
+    window: &LiveWindow,
+    rig: Option<&str>,
+) -> Result<serde_json::Value> {
+    use dendro_core::overview::*;
+    let req = OverviewRequest {
+        rig: rig.map(str::to_string),
+        from: window.from,
+        to: window.to,
+        observation_clock: Some(chrono::Utc::now()),
+        evidence_as_of: None,
+        advisory_options: dendro_core::advisory::AdvisoryOptions::default(),
+        friction_thresholds: dendro_core::vortex::FrictionThresholds::default(),
+        expect_evidence_digest: None,
+    };
+    let mut stmts = OverviewStatements::prepare(conn)?;
+    let overview = stmts.evaluate(&req)?;
+    serde_json::to_value(&overview).map_err(Into::into)
 }
 
 fn seat_payload(

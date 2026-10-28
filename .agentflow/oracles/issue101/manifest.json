@@ -1,0 +1,204 @@
+{
+  "format": "issue101-reference-manifest-v1",
+  "created_utc": "2026-10-28T13:30:25.283687+00:00",
+  "author_provenance": "bounded delegated Codex test-engineering leaf /root/issue101_oracle_author; independent of future dev.build, dev.qa and rev.review",
+  "base_commit": "6ee2f95506948d63519d0a43a74d293a31f653d7",
+  "branch": "work/issue-101-direct-overview",
+  "write_freeze": "All leaf writes stop after this manifest is generated and verified. Parent owns subsequent verification/Phase3 freeze.",
+  "candidate_evaluated": false,
+  "reference_data": {
+    "case_count": 22,
+    "hashes": [
+      {
+        "path": "cases.json",
+        "sha256": "b988d8dcbc02188c06bc02784ef818d122f4bee376594bb028024cd8fdbceeaf",
+        "bytes": 40494
+      }
+    ],
+    "expected_values": "literal independent scalars and source memberships; no candidate evaluator used",
+    "architecture": "v2 supersedes draft v1; per-case dependency IDs require parent Phase3 freeze"
+  },
+  "tooling": {
+    "hashes": [
+      {
+        "path": "README.md",
+        "sha256": "e18cb72df357fe8255a6e05e339da64c6f3135a9df8c083030d7f527ab831e77",
+        "bytes": 5853
+      },
+      {
+        "path": "browser/.gitignore",
+        "sha256": "92de4d793bb0b7ac7f11cb2a902f27c62b1dd6b31d876a7c439c35d4123fc604",
+        "bytes": 29
+      },
+      {
+        "path": "browser/package.json",
+        "sha256": "bbe5cbd5093d1065fbf21c7ef837f01874493a0eb41828eb4bd3593d216f5648",
+        "bytes": 327
+      },
+      {
+        "path": "browser/pnpm-lock.yaml",
+        "sha256": "704726c1defc3300ed7c19d6fa596825a3f9e1606d9c46500730d92f827bddc6",
+        "bytes": 5318
+      },
+      {
+        "path": "browser/probe.cjs",
+        "sha256": "51d32783c3e7e9693b44f0db65599b9b6a61d0a462c6315cf80a7866eb670654",
+        "bytes": 1660
+      }
+    ]
+  },
+  "upstream_inputs": [
+    {
+      "path": "phase1-acceptance-v3.md",
+      "sha256": "fc145ead138c1063e855b1612d68ecc2f6e20f5e70eaf92db60db73ae6679094",
+      "bytes": 17656
+    },
+    {
+      "path": "council/review-advice-v1.md",
+      "sha256": "19b6417dc09362dd37425772d05092557d076462611afbf8733a47d8c46e2e35",
+      "bytes": 10440
+    },
+    {
+      "path": "council/qa-advice-v2.md",
+      "sha256": "8629605af1abef2a09838cfbe19bf9218279f3fd759a28b3b908949907a0db48",
+      "bytes": 7383
+    },
+    {
+      "path": "architecture-contract-draft-v1.md",
+      "sha256": "ddf9f87d59ca3d04c4185f3a19c3231d9fe3000b53d7af6144a1e6673bef4e1e",
+      "bytes": 11561
+    },
+    {
+      "path": "architecture-contract-v2.md",
+      "sha256": "6db42bbd2667af13e5da20fb49af5c49261c4ddc8707d4657ff5c5469e076c2d",
+      "bytes": 14941
+    }
+  ],
+  "environment_and_run_evidence": {
+    "hashes": [
+      {
+        "path": "browser/.runs/chromium-install.log",
+        "sha256": "60c87074c7c035e2e533d3abd888c9ba873c2b376ee52abaca31744a924b2d0a",
+        "bytes": 7056
+      },
+      {
+        "path": "browser/.runs/frozen-install.log",
+        "sha256": "ce39e24055c7c0eff85540ebaf8cac27623c3df1de7be5c1610373347936d758",
+        "bytes": 144
+      },
+      {
+        "path": "browser/.runs/install.log",
+        "sha256": "97d7b39992886b90bf10c4e26528502b944de6d7f85467bbbf285bef00a7228d",
+        "bytes": 411
+      },
+      {
+        "path": "browser/.runs/probe.log",
+        "sha256": "876df56e41a7bd463305fdcd39f66498947adf88b2b2ec2198ed28899d82415c",
+        "bytes": 404
+      },
+      {
+        "path": "browser/.runs/registry.json",
+        "sha256": "49d4d88b92738924a0f7b7feaacc0bb0e02270d26859f2eb41b77654f851585c",
+        "bytes": 184
+      },
+      {
+        "path": "browser/.runs/scoped-install.log",
+        "sha256": "452894da7a884bc48af13ba287d25e0bbba6f8965c408a82ad3fc6baf966115d",
+        "bytes": 260
+      },
+      {
+        "path": "browser/.runs/validation.json",
+        "sha256": "743281fab59927638d95f22ba936c5ea32d9a6032a16750292995c891298e600",
+        "bytes": 1225
+      }
+    ],
+    "ignored_paths": [
+      "browser/node_modules/",
+      "browser/.cache/",
+      "browser/.runs/"
+    ],
+    "versions": {
+      "node": "22.23.3",
+      "pnpm": "12.11.2",
+      "playwright": "1.64.1",
+      "chromium": "156.0.8078.4",
+      "playwright_chromium_revision": 1248
+    },
+    "filesystem": "ext4; browser cache and current package store under browser/.cache/",
+    "geometry": {
+      "innerWidth": 1920,
+      "innerHeight": 1080,
+      "devicePixelRatio": 1,
+      "scrollY": 0,
+      "scrollHeight": 1080,
+      "rect": {
+        "x": 40,
+        "y": 30,
+        "width": 600,
+        "height": 480,
+        "bottom": 510
+      }
+    },
+    "network_effects": [
+      "Public npm metadata/package downloads",
+      "Playwright CDN Chromium, headless shell and FFmpeg downloads"
+    ],
+    "cache_effects": [
+      "Initial pnpm install populated normal shared store /home/sam/.local/share/pnpm/store/v11; not removed",
+      "Scoped reinstall explicitly used ignored browser/.cache/pnpm-store; current node_modules metadata confirms this store"
+    ],
+    "commands": [
+      {
+        "command": "pnpm view playwright version dist.integrity engines --json",
+        "exit_code": 0,
+        "result": "Observed latest 1.64.1 before pinning"
+      },
+      {
+        "command": "pnpm --dir .agentflow/oracles/issue101/browser view playwright@1.64.1 version dist.integrity engines --json",
+        "exit_code": 0,
+        "evidence": "browser/.runs/registry.json"
+      },
+      {
+        "command": "pnpm --dir .agentflow/oracles/issue101/browser install --ignore-scripts --ignore-workspace",
+        "exit_code": 0,
+        "evidence": "browser/.runs/install.log"
+      },
+      {
+        "command": "CI=true pnpm --dir .agentflow/oracles/issue101/browser install --force --ignore-scripts --ignore-workspace --store-dir \"$PWD/.agentflow/oracles/issue101/browser/.cache/pnpm-store\"",
+        "exit_code": 0,
+        "evidence": "browser/.runs/scoped-install.log"
+      },
+      {
+        "command": "CI=true pnpm --dir .agentflow/oracles/issue101/browser install --frozen-lockfile --ignore-scripts --ignore-workspace --store-dir \"$PWD/.agentflow/oracles/issue101/browser/.cache/pnpm-store\"",
+        "exit_code": 0,
+        "evidence": "browser/.runs/frozen-install.log"
+      },
+      {
+        "command": "PLAYWRIGHT_BROWSERS_PATH=\"$PWD/.agentflow/oracles/issue101/browser/.cache/ms-playwright\" pnpm --dir .agentflow/oracles/issue101/browser exec playwright install chromium",
+        "exit_code": 0,
+        "evidence": "browser/.runs/chromium-install.log"
+      },
+      {
+        "command": "pnpm --dir .agentflow/oracles/issue101/browser run probe",
+        "exit_code": 0,
+        "evidence": "browser/.runs/probe.log"
+      },
+      {
+        "command": "python3 inline JSON parse, unique/dependency IDs and selected literal sanity checks",
+        "exit_code": 0,
+        "evidence": "browser/.runs/validation.json"
+      },
+      {
+        "command": "git diff --check",
+        "exit_code": 0,
+        "result": "No tracked whitespace errors; deliverables remain untracked/uncommitted"
+      }
+    ]
+  },
+  "limits": [
+    "No candidate data evaluator, production browser suite, Cargo, performance corpus or Phase5/6 verdict",
+    "Storage projections are reference data, not a loader or production schema",
+    "No staging, commit, publication, service/runtime, credential or outbound app actions",
+    "No system package installation; shared pnpm cache side effect disclosed above"
+  ]
+}

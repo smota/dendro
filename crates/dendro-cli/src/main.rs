@@ -470,6 +470,9 @@ enum Commands {
         friction_thresholds: FrictionArgs,
         #[command(flatten)]
         advisory_thresholds: AdvisoryArgs,
+        /// Expected canonical evidence digest for direct_overview reproduction verification.
+        #[arg(long)]
+        expect_evidence_digest: Option<String>,
     },
     /// Emit an advisory CI verdict: 0 pass, 2 breach, 3 insufficient evidence.
     #[command(next_help_heading = "Governance")]
@@ -1469,6 +1472,7 @@ async fn main() -> Result<()> {
             handoff_loop_returns,
             friction_thresholds,
             advisory_thresholds,
+            expect_evidence_digest,
         } => {
             let thresholds = dendro_core::LoopThresholds {
                 tool_loop_failures,
@@ -1496,6 +1500,18 @@ async fn main() -> Result<()> {
                 )?;
                 if let Some(m) = mode {
                     r["window_resolution"] = serde_json::json!(m);
+                }
+                if let Some(expected) = expect_evidence_digest {
+                    let actual_digest = r["value"]["digest"]
+                        .as_str()
+                        .or_else(|| r["digest"].as_str());
+                    if actual_digest != Some(&expected) {
+                        anyhow::bail!(
+                            "evidence digest mismatch: expected {}, got {:?}",
+                            expected,
+                            actual_digest
+                        );
+                    }
                 }
                 Ok(r)
             })
