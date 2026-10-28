@@ -3,7 +3,8 @@ name = "dendro-resolver"
 description = "Seat and session correlation resolver for multi-agent fleets in Dendro."
 version.workspace = true
 edition.workspace = true
-license.workspace = true
+license-file = "LICENSE"
+readme = "README.md"
 authors.workspace = true
 repository.workspace = true
 

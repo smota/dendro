@@ -3,7 +3,8 @@ name = "dendro-core"
 description = "Core domain models, storage engine, and telemetry facts for Dendro."
 version.workspace = true
 edition.workspace = true
-license.workspace = true
+license-file = "LICENSE"
+readme = "README.md"
 authors.workspace = true
 repository.workspace = true
 

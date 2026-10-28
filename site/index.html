@@ -99,9 +99,64 @@
       text-decoration: none !important;
     }
     .d-brand img {
-      width: 36px;
-      height: 36px;
+      width: 34px;
+      height: 34px;
       border-radius: 8px;
+    }
+    .d-brand-text {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.15;
+    }
+    .d-brand-title {
+      font-weight: 800;
+      font-size: 1.1rem;
+      color: var(--text-primary);
+    }
+    .d-brand-tagline {
+      font-size: 0.68rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      letter-spacing: 0.01em;
+      margin-top: 2px;
+    }
+    .d-schema-callout {
+      margin-top: 0.9rem;
+      padding: 0.9rem 1rem;
+      border-radius: 10px;
+      background: var(--bg-obsidian);
+      border: 1px solid var(--border-subtle);
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+    .d-schema-callout strong {
+      font-size: 0.86rem;
+      color: var(--text-primary);
+    }
+    .d-schema-callout p {
+      margin: 0;
+      font-size: 0.82rem;
+      color: var(--text-secondary);
+    }
+    .d-schema-links {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.55rem;
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+      margin-top: 0.2rem;
+    }
+    .d-schema-links a {
+      color: #67E8F9;
+      text-decoration: none;
+    }
+    .d-schema-links a:hover {
+      text-decoration: underline;
+    }
+    .d-schema-links span {
+      color: var(--text-muted);
     }
     .d-version-pill {
       font-family: var(--font-mono);
@@ -884,9 +939,12 @@
        ======================================================================== -->
   <header class="d-navbar">
     <div class="d-wrap d-navbar-inner">
-      <a class="d-brand" href="./">
-        <img src="assets/mark.svg" alt="Dendro brand mark" width="36" height="36">
-        <span>Dendro</span>
+      <a href="./" class="d-brand" aria-label="Dendro Home">
+        <img src="assets/mark.svg" alt="Dendro Logo" width="30" height="30">
+        <span class="d-brand-text">
+          <span class="d-brand-title">Dendro</span>
+          <small class="d-brand-tagline">The Local-First Flight Recorder</small>
+        </span>
       </a>
       <nav class="d-nav-links" aria-label="Dendro primary navigation">
         <a href="./" aria-current="page">Overview</a>
@@ -897,10 +955,6 @@
         <a href="https://github.com/smota/dendro">GitHub ↗</a>
       </nav>
       <div class="d-nav-right">
-        <span id="dual-serving-indicator" class="d-status-pill" title="Static snapshot preview; switches to LIVE DUCKDB when served via dendro dashboard">
-          <span class="d-status-dot" aria-hidden="true"></span>
-          <span id="dual-serving-text">● ILLUSTRATIVE SNAPSHOT</span>
-        </span>
         <a class="d-btn primary" href="#quickstart" style="padding:0.45rem 0.9rem;font-size:0.82rem;">Quickstart</a>
       </div>
     </div>
@@ -929,14 +983,6 @@
                 <span class="d-copy-label">Copy</span>
               </button>
             </div>
-          </div>
-
-          <div class="d-explorer-links" aria-label="Offline Fleet Explorer demo dataset and JSON format documentation">
-            <span style="color:var(--layer-model);font-weight:700;">Offline Fleet Explorer Resources:</span>
-            <a href="viewer.html">⚡ Load Interactive Demo in Explorer →</a>
-            <a href="https://github.com/smota/dendro/blob/main/docs/assets/fleet-explorer-demo.json" target="_blank" rel="noopener">📄 Example Demo JSON (GitHub) ↗</a>
-            <a href="fixtures/fleet-explorer-demo.json" download="fleet-explorer-demo.json">⬇ Download Demo JSON</a>
-            <a href="https://github.com/smota/dendro/blob/main/docs/OFFLINE_FLEET_EXPLORER_FORMAT.md" target="_blank" rel="noopener">📐 Fleet Explorer Format Spec ↗</a>
           </div>
 
           <div class="d-harness-row" aria-label="Supported native coding harnesses and optional orchestration adapters">
@@ -987,6 +1033,10 @@
               </button>
             </div>
             <div class="d-carousel-arrows" aria-label="Carousel scroll navigation">
+              <span id="dual-serving-indicator" class="d-status-pill" title="Static snapshot preview; switches to LIVE DUCKDB when served via dendro dashboard">
+                <span class="d-status-dot" aria-hidden="true"></span>
+                <span id="dual-serving-text">● ILLUSTRATIVE SNAPSHOT</span>
+              </span>
               <button type="button" class="d-carousel-arrow" id="carousel-prev" aria-label="Scroll to previous screenshot">← Prev</button>
               <button type="button" class="d-carousel-arrow" id="carousel-next" aria-label="Scroll to next screenshot">Next →</button>
             </div>
@@ -2029,10 +2079,16 @@ dendro ask "which handoff pairs had the highest return rate this week?"</code></
               <a class="d-btn" href="viewer.html">Open Offline Fleet Explorer →</a>
               <a class="d-btn" href="get-started.html">Full Installation Guide →</a>
             </div>
-            <div class="d-explorer-links" style="margin:0.5rem 0 0;">
-              <a href="https://github.com/smota/dendro/blob/main/docs/assets/fleet-explorer-demo.json" target="_blank" rel="noopener">📄 Example Demo JSON (GitHub) ↗</a>
-              <a href="fixtures/fleet-explorer-demo.json" download="fleet-explorer-demo.json">⬇ Local Demo JSON</a>
-              <a href="https://github.com/smota/dendro/blob/main/docs/OFFLINE_FLEET_EXPLORER_FORMAT.md" target="_blank" rel="noopener">📐 Offline Fleet Explorer Format Spec ↗</a>
+            <div class="d-schema-callout">
+              <strong>Offline Fleet Explorer &amp; Open JSON Schema</strong>
+              <p>Inspect exported multi-agent runs in a single zero-dependency HTML file, or integrate with Dendro's open JSON schema.</p>
+              <div class="d-schema-links">
+                <a href="viewer.html">Open Fleet Explorer →</a>
+                <span>·</span>
+                <a href="https://github.com/smota/dendro/blob/main/docs/assets/fleet-explorer-demo.json" target="_blank" rel="noopener">Sample 24h Demo JSON (GitHub) ↗</a>
+                <span>·</span>
+                <a href="https://github.com/smota/dendro/blob/main/docs/OFFLINE_FLEET_EXPLORER_FORMAT.md" target="_blank" rel="noopener">JSON Format Specification ↗</a>
+              </div>
             </div>
           </article>
 
