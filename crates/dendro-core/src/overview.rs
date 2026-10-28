@@ -1344,10 +1344,20 @@ mod tests {
         println!("  P95:  {:?}", p95);
         println!("  Max:  {:?}", max);
 
+        // Production latency is measured with optimized code. Keep the same
+        // full-census functional exercise in debug without calling it SLA proof.
+        let (limit_ms, criterion) = if cfg!(debug_assertions) {
+            println!("  Debug functional sanity only; production <50ms SLA requires the release-profile run");
+            (500, "debug functional sanity")
+        } else {
+            (50, "production SLA")
+        };
         assert!(
-            max < std::time::Duration::from_millis(50),
-            "SLA violation: max iteration was {:?}, must be < 50ms",
-            max
+            max < std::time::Duration::from_millis(limit_ms),
+            "{} violation: max iteration was {:?}, must be < {}ms",
+            criterion,
+            max,
+            limit_ms
         );
 
         let _ = fs::remove_dir_all(temp_dir);
