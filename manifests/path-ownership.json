@@ -1,0 +1,145 @@
+{
+  "version": 1,
+  "knownSeats": [
+    "pm.manager",
+    "pm.analyst",
+    "pm.lead",
+    "dev.build",
+    "dev.build-jr",
+    "dev.build-sr",
+    "dev.test-eng",
+    "dev.qa",
+    "arch.lead",
+    "rev.gate",
+    "rev.review",
+    "orch.lead",
+    "steer.lead",
+    "orch.arch"
+  ],
+  "rules": [
+    {
+      "id": "pm-write-guard",
+      "description": "PM seats write only product/goal/backlog and AgentFlow records.",
+      "seats": [
+        "pm.manager",
+        "pm.analyst",
+        "pm.lead",
+        "pm.*"
+      ],
+      "seatPrefixes": [
+        "pm."
+      ],
+      "allow": [
+        ".agentflow/**",
+        "goals/**",
+        "docs/BACKLOG.md"
+      ],
+      "deny": [
+        "crates/**",
+        "src/**",
+        "lib/**",
+        "tests/**",
+        "site/**",
+        "scripts/**",
+        ".github/workflows/**"
+      ],
+      "defaultDeny": true
+    },
+    {
+      "id": "steer-write-guard",
+      "description": "External steering seat is supervisory only and cannot write repository paths.",
+      "seats": [
+        "steer.lead",
+        "steer.*"
+      ],
+      "seatPrefixes": [
+        "steer."
+      ],
+      "allow": [],
+      "deny": [
+        "*"
+      ],
+      "defaultDeny": true
+    },
+    {
+      "id": "builder-oracle-guard",
+      "description": "Builder seats implement code and docs but cannot modify test oracles.",
+      "seats": [
+        "dev.build",
+        "dev.build-jr",
+        "dev.build-sr"
+      ],
+      "allow": [
+        "crates/**",
+        "site/**",
+        "docs/**",
+        "Cargo.toml",
+        "Cargo.lock",
+        "README.md"
+      ],
+      "deny": [
+        "tests/oracles/**",
+        "tests/**/oracles/**",
+        ".agentflow/oracles/**",
+        "crates/**/tests/oracles/**"
+      ],
+      "defaultDeny": false
+    },
+    {
+      "id": "test-eng-source-guard",
+      "description": "Test engineering seat writes tests, fixtures, and oracles but cannot modify production source.",
+      "seats": [
+        "dev.test-eng"
+      ],
+      "allow": [
+        "tests/**",
+        "crates/**/tests/**",
+        "site/*.test.cjs",
+        "site/fixtures/**",
+        ".agentflow/oracles/**",
+        "lib/__tests__/**",
+        "scripts/__tests__/**",
+        "guidance/**"
+      ],
+      "deny": [
+        "crates/**/src/**",
+        "src/**",
+        "site/dashboards/**"
+      ],
+      "defaultDeny": true
+    },
+    {
+      "id": "governance-files-guard",
+      "description": "Agent seats cannot self-modify path ownership, workflow governance, or CODEOWNERS.",
+      "seats": [
+        "*",
+        "pm.manager",
+        "pm.analyst",
+        "pm.lead",
+        "dev.build",
+        "dev.build-jr",
+        "dev.build-sr",
+        "dev.test-eng",
+        "dev.qa",
+        "arch.lead",
+        "rev.gate",
+        "rev.review",
+        "orch.lead",
+        "steer.lead",
+        "orch.arch"
+      ],
+      "seatPrefixes": [
+        ""
+      ],
+      "allow": [],
+      "deny": [
+        "manifests/path-ownership.json",
+        "scripts/validate-path-ownership.mjs",
+        "sdlc.config.json",
+        "agent-workflow.config.json",
+        ".github/CODEOWNERS"
+      ],
+      "defaultDeny": false
+    }
+  ]
+}

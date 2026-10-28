@@ -1,0 +1,118 @@
+name: AgentFlow Governance & Guardrails
+
+on:
+  pull_request:
+    branches: [main, development, 'rc/**']
+  push:
+    branches: [main, development, 'rc/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: agentflow-governance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-pr-governance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      RUSTUP_TOOLCHAIN: 1.98.1
+      CARGO_TERM_COLOR: never
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
+
+      - name: Branch Promotion Topology & SemVer Guard
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          echo "Checking PR topology: head=${HEAD_REF} -> base=${BASE_REF}"
+          if [[ "$BASE_REF" == "main" ]]; then
+            if [[ "$HEAD_REF" != rc/v* && "$HEAD_REF" != hotfix/* ]]; then
+              echo "::error::Direct feature PRs to main are forbidden; target development first, then promote via rc/vX.Y.Z"
+              exit 1
+            fi
+            echo "Valid release candidate / hotfix promotion branch targeting main."
+          elif [[ "$BASE_REF" == "development" ]]; then
+            if git rev-parse --verify origin/development >/dev/null 2>&1; then
+              if git diff origin/development...HEAD -- Cargo.toml | grep -E '^\+version\s*=' >/dev/null 2>&1; then
+                echo "::error::rejectIncidentalSemver: SemVer version bumps in Cargo.toml are forbidden on PRs targeting development. Bump versions exclusively on rc/v* or hotfix/* branches."
+                exit 1
+              fi
+            fi
+            echo "Verified zero incidental SemVer bump on PR targeting development."
+          fi
+
+      - name: AgentFlow Catalogs & Path Ownership Validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/validate-path-ownership.mjs
+          node scripts/validate-role-catalog.mjs
+          node scripts/validate-skill-catalog.mjs
+
+      - name: Architectural & Design System Guardrails
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/verify-architecture-guardrails.mjs
+          node scripts/verify-design-guardrails.mjs
+
+      - name: Offline & Connected Web Suite (site.test.cjs)
+        shell: bash
+        run: node --test site/site.test.cjs
+
+      - name: CLI & Schema 5 Documentation Parity
+        shell: bash
+        run: cargo test -p dendro-cli --test cli_doc_parity --locked
+
+  verify-release-candidate:
+    runs-on: ubuntu-24.04
+    if: github.base_ref == 'main' || startsWith(github.ref, 'refs/heads/rc/v')
+    timeout-minutes: 45
+    env:
+      RUSTUP_TOOLCHAIN: 1.98.1
+      CARGO_TERM_COLOR: never
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
+
+      - name: Verify Release Notes & Workspace Check
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "Detected workspace version: v${VERSION}"
+          if [[ ! -f "docs/RELEASE_NOTES_v${VERSION}.md" ]]; then
+            echo "::error::Missing release notes file docs/RELEASE_NOTES_v${VERSION}.md for release candidate v${VERSION}"
+            exit 1
+          fi
+          echo "Verified docs/RELEASE_NOTES_v${VERSION}.md exists."
+          cargo check --workspace --locked

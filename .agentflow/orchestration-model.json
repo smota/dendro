@@ -1,5 +1,5 @@
 {
-  "lifecycle": "dual-gate",
+  "lifecycle": "parallel-spec-fork",
   "preCodeReview": {
     "enabled": true,
     "gate": "specification-sparring",
@@ -12,9 +12,23 @@
       "structural"
     ]
   },
+  "parallelTracks": {
+    "afterG1Contract": [
+      "dev.test-eng",
+      "dev.build",
+      "technical-writer"
+    ],
+    "onPullRequest": [
+      "dev.qa",
+      "rev.review"
+    ]
+  },
   "concurrency": {
-    "maxWriters": 1,
+    "maxWriters": 4,
+    "maxConcurrentSlices": 4,
+    "maxWritersPerWorktree": 1,
     "maxAdvisors": 3,
-    "isolatedWorktreeRequired": false
+    "isolatedWorktreeRequired": true,
+    "worktreeRoot": ".worktrees"
   }
 }

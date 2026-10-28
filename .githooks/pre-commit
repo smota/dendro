@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${ALLOW_PROTECTED_BRANCH_COMMIT:-0}" == "1" ]]; then
+  exit 0
+fi
+
+branch="$(git symbolic-ref --short HEAD 2>/dev/null || true)"
+
+case "$branch" in
+  main|development)
+    echo "ERROR: Direct commits to protected branch '$branch' are forbidden." >&2
+    echo "Create an isolated work branch first:" >&2
+    echo "  scripts/worktree-slice.sh create <issue-id> <slug>" >&2
+    echo "  # or: git checkout -b feature/<issue-id>-<slug>" >&2
+    exit 1
+    ;;
+  rc/*)
+    if [[ "${ALLOW_RC_COMMIT:-0}" != "1" ]]; then
+      echo "ERROR: Direct commits to release candidate branch '$branch' require ALLOW_RC_COMMIT=1 for release-prep commits." >&2
+      echo "For normal feature or fix work, create a bounded work branch:" >&2
+      echo "  scripts/worktree-slice.sh create <issue-id> <slug> hotfix" >&2
+      echo "  # or: git checkout -b hotfix/<issue-id>-<slug>" >&2
+      exit 1
+    fi
+    ;;
+esac
+
+exit 0

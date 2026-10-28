@@ -1,0 +1,146 @@
+name: Automated Release & Crates.io Publish
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      force_publish:
+        description: 'Force publication steps even if tag already exists'
+        required: false
+        default: 'false'
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: dendro-release-main
+  cancel-in-progress: false
+
+jobs:
+  publish-release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      RUSTUP_TOOLCHAIN: 1.98.1
+      CARGO_TERM_COLOR: never
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
+
+      - name: Check Release Version & Tag Idempotency
+        id: version_check
+        shell: bash
+        env:
+          FORCE_PUBLISH: ${{ inputs.force_publish || 'false' }}
+        run: |
+          set -euo pipefail
+          VERSION=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          if git rev-parse "v${VERSION}" >/dev/null 2>&1 && [[ "$FORCE_PUBLISH" != "true" ]]; then
+            echo "Tag v${VERSION} already released — skipping publication."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Verify Release Notes & Pre-Release Gates
+        if: steps.version_check.outputs.skip != 'true'
+        shell: bash
+        env:
+          VERSION: ${{ steps.version_check.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ ! -f "docs/RELEASE_NOTES_v${VERSION}.md" ]]; then
+            echo "::error::Missing docs/RELEASE_NOTES_v${VERSION}.md"
+            exit 1
+          fi
+          node scripts/verify-architecture-guardrails.mjs
+          cargo test -p dendro-cli --test cli_doc_parity --locked
+
+      - name: Create Annotated Git Tag & GitHub Release
+        if: steps.version_check.outputs.skip != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version_check.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if ! git rev-parse "v${VERSION}" >/dev/null 2>&1; then
+            git tag -a "v${VERSION}" -m "Dendro v${VERSION}"
+            git push origin "refs/tags/v${VERSION}"
+          fi
+          if ! gh release view "v${VERSION}" >/dev/null 2>&1; then
+            gh release create "v${VERSION}" \
+              --title "Dendro v${VERSION}" \
+              --notes-file "docs/RELEASE_NOTES_v${VERSION}.md"
+          fi
+
+      - name: Publish Workspace Crates to crates.io in Topological Order
+        if: steps.version_check.outputs.skip != 'true'
+        shell: bash
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          VERSION: ${{ steps.version_check.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${CARGO_REGISTRY_TOKEN:-}" ]]; then
+            echo "CARGO_REGISTRY_TOKEN is not configured — skipping crates.io publication."
+            exit 0
+          fi
+          CRATES=(
+            "dendro-platform-policy"
+            "dendro-windows-private-io"
+            "dendro-core"
+            "dendro-connectors"
+            "dendro-resolver"
+            "dendro-watcher"
+            "dendro-cli"
+          )
+          for crate in "${CRATES[@]}"; do
+            if cargo search "$crate" --limit 5 | grep -F "${crate} = \"${VERSION}\"" >/dev/null 2>&1; then
+              echo "Crate ${crate} v${VERSION} is already published on crates.io — skipping."
+              continue
+            fi
+            echo "Publishing ${crate} v${VERSION} to crates.io..."
+            cargo publish -p "$crate" --locked
+            if [[ "$crate" != "dendro-cli" ]]; then
+              echo "Waiting 25s for crates.io index propagation..."
+              sleep 25
+            fi
+          done
+
+      - name: Sync main back into development
+        if: steps.version_check.outputs.skip != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version_check.outputs.version }}
+        run: |
+          set -euo pipefail
+          if git push origin HEAD:refs/heads/development; then
+            echo "Successfully fast-forwarded development to match main (v${VERSION})."
+          else
+            echo "Direct push to development rejected (branch protection); opening sync PR if needed..."
+            SYNC_BRANCH="chore/sync-main-v${VERSION}"
+            git push origin "HEAD:refs/heads/${SYNC_BRANCH}" --force
+            gh pr create \
+              --base development \
+              --head "$SYNC_BRANCH" \
+              --title "chore(release): sync main v${VERSION} into development" \
+              --body "Automated post-release back-merge of \`main\` (\`v${VERSION}\`) into \`development\`." || true
+          fi

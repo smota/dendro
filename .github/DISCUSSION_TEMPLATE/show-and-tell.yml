@@ -1,0 +1,22 @@
+title: "[Show and Tell] "
+labels: ["show-and-tell"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Share how you use **Dendro** to observe your multi-agent fleet, custom BYOC connectors, DuckDB queries, or sanitized offline HTML snapshots!
+  - type: input
+    id: fleet_setup
+    attributes:
+      label: Fleet & Harness Setup
+      description: Which coding harnesses or orchestrators are in your fleet?
+      placeholder: "OpenRig + Claude Code + Codex + AGY"
+    validations:
+      required: true
+  - type: textarea
+    id: showcase
+    attributes:
+      label: What You Built or Discovered
+      description: Share your workflow, custom insight query, connector script, or findings.
+    validations:
+      required: true

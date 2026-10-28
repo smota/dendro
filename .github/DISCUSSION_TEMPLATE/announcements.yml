@@ -1,0 +1,29 @@
+title: "[Announcement] "
+labels: ["announcement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Official project announcements, release notes, schema migrations, and roadmap milestones for **Dendro**.
+  - type: input
+    id: release_or_milestone
+    attributes:
+      label: Release Version or Milestone
+      description: Applicable Dendro release version (e.g., v0.9.0) or architectural milestone.
+      placeholder: "v0.9.0"
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Announcement Summary
+      description: Key highlights, new insights, connectors, or operational changes.
+    validations:
+      required: true
+  - type: textarea
+    id: upgrade_notes
+    attributes:
+      label: Upgrade & Migration Notes
+      description: Instructions for upgrading (`dendro migrate`, CLI flags, or schema updates).
+    validations:
+      required: false

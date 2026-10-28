@@ -3,9 +3,9 @@ name: Native foundation
 # Release gates: four Rust gates on native Windows and Linux, plus the Linux historical upgrade/rollback proof.
 on:
   push:
-    branches: [codex/foundation-completion]
+    branches: [main, development, 'rc/**']
   pull_request:
-    branches: [main]
+    branches: [main, development, 'rc/**']
   workflow_dispatch:
 
 permissions:

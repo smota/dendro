@@ -1,0 +1,11 @@
+# Dendro Code Owners & Governance Authority
+* @smota
+
+# Protected Governance, Release & Licensing Surfaces
+/sdlc.config.json @smota
+/agent-workflow.config.json @smota
+/manifests/ @smota
+/.github/ @smota
+/Cargo.toml @smota
+/LICENSE @smota
+/openrig/ @smota

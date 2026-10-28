@@ -81,16 +81,36 @@ cargo fmt --check
 
 # 5. Dashboard web test suite
 node --test site/site.test.cjs
+
+# 6. Deterministic architecture, design, and path ownership guardrails
+node scripts/verify-architecture-guardrails.mjs
+node scripts/verify-design-guardrails.mjs
+node scripts/validate-path-ownership.mjs
 ```
+
+---
+
+## 3-Branch Managed Release Workflow (`feature/* -> development -> rc/vX.Y.Z -> main`)
+
+Dendro enforces a governed 3-branch promotion topology:
+
+1. **Feature Development (`feature/* -> development`):**
+   - Branch off `development` (`git checkout -b feature/my-change development`).
+   - Open feature pull requests targeting `development`. Do **not** bump `[workspace.package]` `version` in `Cargo.toml` on feature branches (`rejectIncidentalSemver: true`).
+2. **Release Candidate Cut (`development -> rc/vX.Y.Z`):**
+   - When preparing a release, cut `rc/vX.Y.Z` from `development`, bump the version in `Cargo.toml`, and author `docs/RELEASE_NOTES_vX.Y.Z.md`.
+3. **Production Promotion (`rc/vX.Y.Z -> main`):**
+   - Open the release promotion pull request from `rc/vX.Y.Z` (or `hotfix/*` for urgent security patches) into `main`. Direct feature pull requests to `main` are rejected by `.github/workflows/agentflow-governance.yml`.
+   - Merging to `main` triggers `.github/workflows/release.yml`, which tags `vX.Y.Z`, publishes the GitHub Release, publishes crates to `crates.io` in topological order, and syncs `main` back into `development`.
 
 ---
 
 ## Submitting a Pull Request
 
-1. Create a descriptive feature branch: `git checkout -b feature/my-new-connector`.
+1. Create a descriptive feature branch from `development`: `git checkout -b feature/my-new-connector development`.
 2. Keep commits atomic with clear, imperative commit messages.
-3. Verify that all 5 quality gates above pass with zero warnings.
-4. Open a pull request against `main`. All pull requests are reviewed under governed autonomous delivery standards.
+3. Verify that all quality gates and local guardrail scripts (`node scripts/verify-architecture-guardrails.mjs`, `node scripts/verify-design-guardrails.mjs`, `node scripts/validate-path-ownership.mjs`) pass with zero warnings.
+4. Open a pull request against `development` (or `main` only from `rc/vX.Y.Z` / `hotfix/*`). All pull requests are reviewed under governed autonomous delivery standards.
 
 ---
 

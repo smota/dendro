@@ -1,0 +1,500 @@
+# OpenRig Topology Specification — Dendro (smota/dendro)
+# Governed 2-Squad Parallel Delivery & Community Triage Topology
+rig: dendro
+version: 1
+distribution: subscription-balanced-v1
+profileDigest: ee486327708eb3de6b1cb67c825358af8679d9e0d9a8b6ca0164f14c1cfe8fcc
+
+repository:
+  slug: smota/dendro
+  workspaceRoot: /home/sam/code/dendro
+
+# 3-Tier Release Flow & Parallel Worktree Model
+gitFlow:
+  promotionOrder:
+    - work/*
+    - development
+    - rc/vX.Y.Z
+    - main
+  branches:
+    workPrefix: work/
+    integration: development
+    releaseCandidatePattern: rc/v*.*.*
+    trunk: main
+  mergePolicy:
+    workToDevelopment:
+      authority: orch.arch
+      mode: auto-merge-on-green
+      requiredGates:
+        - ci-check-and-test
+        - dev.qa-verification-receipt
+        - rev.review-orthogonal-four-eyes
+    developmentToReleaseCandidate:
+      authority: steer.lead
+      executor: orch.arch
+      mode: ephemeral-release-freeze
+    releaseCandidateToMain:
+      authority: "@smota"
+      mode: human-merge-only
+      directPushDenied:
+        - main
+        - development
+
+worktreePool:
+  enabled: true
+  worktreeRoot: .worktrees
+  namingPattern: .worktrees/issue-<N>
+  maxConcurrentSlices: 4
+  singleWriterPerWorktree: true
+  sharedReadOnlyControlPlane: true
+
+# Inner Sub-Agent Tier Definitions (S0-S3)
+subagentTiers:
+  S0:
+    name: Mechanical Reader & Diff Extractor
+    model: gemini-3.8-flash
+    effort: low
+    providerFamily: google
+    contract: >
+      Mandatory Step-0 read/search fan-out (> 4 files or > 1 turn) and PR diff extraction.
+      Returns extractive file:line citations and structured tables only. Read-only.
+  S1:
+    name: Rapid Iteration, Docs & UI Worker
+    model: grok-4.7-build-fast
+    effort: medium
+    providerFamily: xai
+    contract: >
+      Bounded documentation updates, community draft formatting, and rapid UI/site iteration.
+  S2:
+    name: Bounded Rust & Test Implementation Worker
+    models:
+      - model: gpt-6.1-sol
+        effort: high
+        providerFamily: openai
+      - model: gemini-3.1-pro
+        effort: high
+        providerFamily: google
+    contract: >
+      Multi-file (> 1 file or > 30 LOC) Rust implementation or isolated oracle test authoring
+      inside an assigned worktree slice (.worktrees/issue-<N>).
+  S3:
+    name: High-Assurance Architecture & Spec-Sparring Worker
+    model: claude-sonnet-5-5
+    effort: high
+    providerFamily: anthropic
+    contract: >
+      Conserved strictly for pre-code specification-sparring, invariants stress-testing,
+      and adversarial security/architecture review after S0 context extraction.
+
+# Pods & Seats
+pods:
+  # ============================================================================
+  # Pod 1: dendro-steer — Supervisory & Portfolio Plane
+  # ============================================================================
+  dendro-steer:
+    description: Supervisory & Portfolio Plane owning milestone prioritization, release freeze authorization, and cross-pod unblocking.
+    plane: supervisory
+    seats:
+      steer.lead:
+        canonicalAddress: steer-lead@dendro-steer
+        role: Executive Steering Lead
+        mode: persistent-conversational
+        interfaceRole: Operator's main executive interface for portfolio strategy, milestone prioritization, authorizing ephemeral rc/vX.Y.Z freeze, and cross-pod unblocking.
+        routing:
+          primary:
+            client: codex
+            runtime: codex
+            providerFamily: openai
+            model: gpt-6.1-sol
+            effort: medium
+          fallbacks:
+            - client: pi
+              runtime: pi
+              providerFamily: google
+              model: gemini-3.1-pro
+              effort: medium
+            - client: claude
+              runtime: claude-code
+              providerFamily: anthropic
+              model: claude-sonnet-5-5
+              effort: medium
+        pathOwnership:
+          guard: steer-write-guard
+          access: read-only
+          writablePaths: []
+          deniedPaths:
+            - "**"
+        subagents:
+          allowedTiers:
+            - S0
+          rules:
+            - tier: S0
+              model: gemini-3.8-flash
+              effort: low
+              trigger: Portfolio state inspection, milestone audit, or cross-repo readiness checks (> 4 files).
+
+  # ============================================================================
+  # Pod 2: dendro-pm — Product & Community Squad
+  # ============================================================================
+  dendro-pm:
+    description: Product framing, G1 specification catalogs, and inbound GitHub Issues/Discussions triage.
+    plane: product-and-community
+    seats:
+      pm.manager:
+        canonicalAddress: pm-manager@dendro-pm
+        role: Product & Community Manager
+        mode: persistent-conversational
+        interfaceRole: >
+          Operator's product & community front. Owns automatic classification and labeling of
+          inbound GitHub Issues & Discussions, stages human-gated draft replies in .agentflow/community/,
+          and curates .agentflow/PRODUCT.md and docs/BACKLOG.md.
+        routing:
+          primary:
+            client: grok
+            runtime: grok-cli
+            providerFamily: xai
+            model: grok-4.7
+            effort: medium
+          fallbacks:
+            - client: agy
+              runtime: agy
+              providerFamily: google
+              model: gemini-3.8-flash
+              effort: medium
+            - client: codex
+              runtime: codex
+              providerFamily: openai
+              model: gpt-6-luna
+              effort: medium
+        pathOwnership:
+          guard: pm-write-guard
+          defaultDeny: true
+          writablePaths:
+            - .agentflow/**
+            - goals/**
+            - docs/BACKLOG.md
+          deniedPaths:
+            - crates/**
+            - src/**
+            - tests/**
+            - site/**
+        communityAuthority:
+          autonomous:
+            - classify-inbound-issues-and-discussions
+            - apply-github-labels-from-catalog
+            - stage-draft-replies-in-agentflow-community
+          humanGatedBySmota:
+            - post-public-github-comment-or-discussion-reply
+            - assign-sprint-milestone
+            - close-or-lock-community-threads
+        subagents:
+          allowedTiers:
+            - S0
+            - S1
+          rules:
+            - tier: S0
+              model: gemini-3.8-flash
+              effort: low
+              trigger: Scanning inbound issue history, duplicate detection, and backlog cross-referencing.
+            - tier: S1
+              model: grok-4.7-build-fast
+              effort: medium
+              trigger: Drafting staged community responses (.agentflow/community/draft-*) and backlog synthesis.
+
+      pm.analyst:
+        canonicalAddress: pm-analyst@dendro-pm
+        role: Requirements & Catalog Analyst
+        mode: persistent-conversational
+        interfaceRole: >
+          Frames testable G1 acceptance criteria and maintains canonical capability, journey,
+          and invariant catalogs before handing pinned G1 contracts across the seam to dendro-dev.
+        routing:
+          primary:
+            client: agy
+            runtime: agy
+            providerFamily: google
+            model: gemini-3.8-flash
+            effort: medium
+          fallbacks:
+            - client: codex
+              runtime: codex
+              providerFamily: openai
+              model: gpt-6.1-sol
+              effort: medium
+            - client: claude
+              runtime: claude-code
+              providerFamily: anthropic
+              model: claude-sonnet-5-5
+              effort: medium
+        pathOwnership:
+          guard: pm-write-guard
+          defaultDeny: true
+          writablePaths:
+            - .agentflow/**
+            - goals/**
+          ownedArtifacts:
+            - .agentflow/capabilities.catalog.yaml
+            - .agentflow/journeys.catalog.yaml
+            - .agentflow/invariants.catalog.yaml
+          deniedPaths:
+            - crates/**
+            - src/**
+            - tests/**
+            - site/**
+        subagents:
+          allowedTiers:
+            - S0
+          rules:
+            - tier: S0
+              model: gemini-3.8-flash
+              effort: low
+              trigger: Extractive codebase/catalog traceability checks prior to G1 contract pin.
+
+  # ============================================================================
+  # Pod 3: dendro-dev — Architecture, Parallel Build & Assurance Squad
+  # ============================================================================
+  dendro-dev:
+    description: Technical sparring, parallel worktree engineering, independent oracle authoring, QA gatekeeping, and orthogonal 4-eyes review.
+    plane: delivery-and-assurance
+    seats:
+      orch.arch:
+        canonicalAddress: orch-arch@dendro-dev
+        role: Lead Architect & Delivery Orchestrator
+        mode: persistent-conversational
+        interfaceRole: >
+          Operator's technical & architecture sparring front. Runs pre-code specification-sparring,
+          dispatches parallel worktree slices (.worktrees/issue-<N>), auto-merges PRs into development
+          once orthogonal rev.review + dev.qa + CI pass, cuts ephemeral rc/vX.Y.Z branches, and opens
+          rc/vX.Y.Z -> main PRs for @smota.
+        routing:
+          primary:
+            client: codex
+            runtime: codex
+            providerFamily: openai
+            model: gpt-6.1-sol
+            effort: medium
+          fallbacks:
+            - client: pi
+              runtime: pi
+              providerFamily: google
+              model: gemini-3.1-pro
+              effort: medium
+            - client: claude
+              runtime: claude-code
+              providerFamily: anthropic
+              model: claude-sonnet-5-5
+              effort: medium
+        pathOwnership:
+          guard: arch-orchestrator-guard
+          writablePaths:
+            - .agentflow/**
+            - docs/**
+          worktreeDispatchAuthority: true
+          autoMergeTarget: development
+          releaseCandidateBranchPrefix: rc/v
+        subagents:
+          allowedTiers:
+            - S0
+            - S3
+          rules:
+            - tier: S0
+              model: gemini-3.8-flash
+              effort: low
+              trigger: Architectural boundary discovery and multi-crate dependency inspection (> 4 files).
+            - tier: S3
+              model: claude-sonnet-5-5
+              effort: high
+              trigger: Pre-code specification-sparring on high-risk architecture, DuckDB schema, or security boundaries.
+
+      dev.test-eng:
+        canonicalAddress: dev-test-eng@dendro-dev
+        role: Independent Oracle & Test Engineer
+        mode: parallel-worktree-worker
+        interfaceRole: >
+          Independent oracle author running in parallel with dev.build immediately after G1 contract pin.
+          Translates G1 acceptance criteria and invariants into executable test suites and oracle fixtures.
+        routing:
+          primary:
+            client: agy
+            runtime: agy
+            providerFamily: google
+            model: gemini-3.1-pro
+            effort: medium
+          fallbacks:
+            - client: codex
+              runtime: codex
+              providerFamily: openai
+              model: gpt-6.1-sol
+              effort: medium
+        pathOwnership:
+          guard: test-eng-source-guard
+          defaultDeny: true
+          writablePaths:
+            - tests/**
+            - crates/**/tests/**
+            - site/*.test.cjs
+            - .agentflow/oracles/**
+          deniedPaths:
+            - crates/**/src/**
+            - sdlc.config.json
+            - agent-workflow.config.json
+        subagents:
+          allowedTiers:
+            - S0
+            - S2
+          rules:
+            - tier: S0
+              model: gemini-3.8-flash
+              effort: low
+              trigger: Reading existing test harnesses, fixtures, and G1 catalog invariants.
+            - tier: S2
+              model: gemini-3.1-pro
+              effort: high
+              trigger: Multi-file integration test and oracle suite generation (> 1 file or > 30 LOC).
+
+      dev.build:
+        canonicalAddress: dev-build@dendro-dev
+        role: Parallel Worktree Builder Pool
+        mode: parallel-worktree-worker
+        worktreeAllocation:
+          maxConcurrentSlices: 4
+          worktreeRoot: .worktrees
+          slicePattern: .worktrees/issue-<N>
+          writersPerWorktree: 1
+        interfaceRole: >
+          Executes bounded implementation slices in isolated git worktrees (.worktrees/issue-<N>)
+          against pinned G1 contracts and dev.test-eng oracles without blocking conversational seats.
+        routing:
+          primary:
+            client: codex
+            runtime: codex
+            providerFamily: openai
+            model: gpt-6.1-sol
+            effort: medium-high
+          fallbacks:
+            - client: agy
+              runtime: agy
+              providerFamily: google
+              model: gemini-3.1-pro
+              effort: high
+        pathOwnership:
+          guard: builder-oracle-guard
+          writablePaths:
+            - crates/**/src/**
+            - Cargo.toml
+            - Cargo.lock
+            - site/**
+            - docs/**
+          deniedPaths:
+            - .agentflow/oracles/**
+            - tests/**
+            - crates/**/tests/**
+            - site/*.test.cjs
+            - sdlc.config.json
+            - agent-workflow.config.json
+            - openrig/**
+        subagents:
+          allowedTiers:
+            - S0
+            - S1
+            - S2
+          rules:
+            - tier: S0
+              model: gemini-3.8-flash
+              effort: low
+              trigger: Mandatory Step-0 read gate whenever discovery touches > 4 files or > 1 turn.
+            - tier: S1
+              model: grok-4.7-build-fast
+              effort: medium
+              trigger: Bounded UI, static site (site/**), and documentation subtasks.
+            - tier: S2
+              model: gpt-6.1-sol
+              fallbackModel: gemini-3.1-pro
+              effort: high
+              trigger: Multi-file (> 1 file or > 30 LOC) Rust crate implementation subtasks.
+
+      dev.qa:
+        canonicalAddress: dev-qa@dendro-dev
+        role: Quality Gatekeeper & Community Bug Reproducer
+        mode: parallel-worktree-worker
+        interfaceRole: >
+          True quality gatekeeper running in parallel with rev.review on PRs targeting development,
+          and executing clean-sandbox reproduction of inbound community bug reports.
+        routing:
+          primary:
+            client: agy
+            runtime: agy
+            providerFamily: google
+            model: gemini-3.8-flash
+            effort: low-medium
+          fallbacks:
+            - client: claude
+              runtime: claude-code
+              providerFamily: anthropic
+              model: claude-haiku-5-5
+              effort: low
+        pathOwnership:
+          guard: qa-receipt-guard
+          defaultDeny: true
+          writablePaths:
+            - .agentflow/runs/**
+            - .agentflow/community/**
+          deniedPaths:
+            - crates/**
+            - tests/**
+            - site/**
+        subagents:
+          allowedTiers:
+            - S0
+          rules:
+            - tier: S0
+              model: gemini-3.8-flash
+              effort: low
+              trigger: Log inspection, test output triage, and reproduction trace extraction.
+
+      rev.review:
+        canonicalAddress: rev-review@dendro-dev
+        role: Orthogonal Four-Eyes Adversarial Reviewer
+        mode: parallel-worktree-worker
+        interfaceRole: >
+          Four-eyes adversarial PR reviewer for security, architecture, Rust safety/performance
+          invariants, and UI/UX guardrails. Enforces orthogonal provider family relative to dev.build
+          via resolveFourEyesReviewerTarget.
+        routing:
+          orthogonalPolicy: resolveFourEyesReviewerTarget
+          requireOrthogonalReviewFamily: true
+          primary:
+            client: claude
+            runtime: claude-code
+            providerFamily: anthropic
+            model: claude-sonnet-5-5
+            effort: medium-high
+          fallbacks:
+            - client: agy
+              runtime: agy
+              providerFamily: google
+              model: gemini-3.1-pro
+              effort: high
+            - client: grok
+              runtime: grok-cli
+              providerFamily: xai
+              model: grok-4.7
+              effort: high
+        pathOwnership:
+          guard: reviewer-audit-guard
+          defaultDeny: true
+          writablePaths:
+            - .agentflow/runs/**
+            - .agentflow/community/pr-*-audit.md
+          deniedPaths:
+            - crates/**
+            - tests/**
+            - site/**
+        subagents:
+          allowedTiers:
+            - S0
+          rules:
+            - tier: S0
+              model: gemini-3.8-flash
+              effort: low
+              trigger: Mandatory pre-review diff context and symbol extraction before spending Claude tokens on high-assurance judgment.

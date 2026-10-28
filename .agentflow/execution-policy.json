@@ -13,5 +13,53 @@
     "onQuotaExhausted": "inner-subagent",
     "onSubagentExhausted": "human-gate",
     "recordDegradationInEvidence": true
+  },
+  "innerSubagentRouting": {
+    "enabled": true,
+    "maxSubagentDepth": 1,
+    "step0ReadGateMaxInlineFiles": 4,
+    "mandatoryBuildGateMaxInlineFiles": 1,
+    "mandatoryBuildGateMaxInlineLoc": 30,
+    "rungs": {
+      "S0-discovery-extractive": {
+        "subagentType": "research",
+        "primaryModel": "gemini-3.8-flash",
+        "fallbackModel": "flash_lite",
+        "effort": "low",
+        "readOnly": true,
+        "outputContract": "extractive-citations-and-tables-only"
+      },
+      "S1-fast-iteration": {
+        "subagentType": "self",
+        "primaryModel": "grok-4.7-build-fast",
+        "fallbackModel": "gemini-3.8-flash",
+        "effort": "medium",
+        "scope": [
+          "docs/**",
+          "site/**/*.html",
+          "site/**/*.css",
+          ".agentflow/**"
+        ]
+      },
+      "S2-bounded-builder": {
+        "subagentType": "self",
+        "primaryModel": "gpt-6.1-sol",
+        "fallbackModel": "gemini-3.1-pro",
+        "effort": "high",
+        "scope": [
+          "crates/**",
+          "site/**/*.js",
+          "scripts/**"
+        ]
+      },
+      "S3-adversarial-second-model": {
+        "subagentType": "self",
+        "primaryModel": "claude-sonnet-5-5",
+        "fallbackModel": "grok-4.7",
+        "effort": "high",
+        "cleanContextRequired": true,
+        "triggerContextTokens": 40000
+      }
+    }
   }
 }

@@ -1,0 +1,34 @@
+title: "[Q&A] "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ask the community or maintainers about configuring Dendro, ingesting AI coding harnesses, querying `dendro.duckdb`, or operating the Connected Intelligence Studio.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Topic Area
+      options:
+        - CLI & DuckDB Storage (`dendro-cli` / `dendro-core`)
+        - Harness Connectors (Claude Code, Codex, AGY, Grok, Pi, Cursor, Windsurf, Goose, Devin)
+        - OpenRig Topology & Seat Resolution (`dendro-resolver`)
+        - 25-Insight Reference Catalog (`I01`–`I25`)
+        - Connected Web Studio & Offline HTML Exports (`site/`)
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment (OS & Dendro Version)
+      placeholder: "Ubuntu 24.04 / WSL2 — dendro 0.9.0"
+    validations:
+      required: true
+  - type: textarea
+    id: question
+    attributes:
+      label: Question & Context
+      description: Describe what you are trying to achieve and share any relevant command output (ensure no secrets or paths are included).
+    validations:
+      required: true

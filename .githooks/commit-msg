@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+msg_file="${1:-}"
+if [[ -z "$msg_file" || ! -f "$msg_file" ]]; then
+  exit 0
+fi
+
+seat="${AGENTFLOW_SEAT:-${OPENRIG_NODE_ID:-}}"
+if [[ -z "$seat" && -n "${OPENRIG_SESSION_NAME:-}" ]]; then
+  session_user="${OPENRIG_SESSION_NAME%@*}"
+  if [[ -n "$session_user" && "$session_user" != "${OPENRIG_SESSION_NAME}" ]]; then
+    seat="${session_user//-/.}"
+  fi
+fi
+
+if [[ -n "$seat" ]]; then
+  if ! grep -qiE '^Seat:[[:space:]]*[^[:space:]]+' "$msg_file"; then
+    printf '\nSeat: %s\n' "$seat" >> "$msg_file"
+  fi
+fi
+
+exit 0

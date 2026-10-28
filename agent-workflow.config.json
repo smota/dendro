@@ -16,13 +16,17 @@
   },
   "branching": {
     "trunk": "main",
-    "releaseCandidate": null,
-    "integration": "main",
+    "releaseCandidate": "rc/*",
+    "integration": "development",
     "directEditDeniedBranches": [
-      "main"
+      "main",
+      "development",
+      "rc/*"
     ],
-    "defaultPrTarget": "main",
+    "defaultPrTarget": "development",
     "promotionOrder": [
+      "development",
+      "rc/*",
       "main"
     ],
     "workBranchPrefixes": [
@@ -41,16 +45,21 @@
     "requireBoundedWorkBranch": true
   },
   "integrationLifecycle": {
-    "integrationBranch": "main",
+    "integrationBranch": "development",
     "trunkBranch": "main",
     "referenceKeywords": [
-      "Implements"
+      "Implements",
+      "Closes"
     ],
     "addLabels": [
-      "integrated:main",
+      "integrated:development",
       "awaiting-release"
     ],
-    "closeIntegratedIssues": true
+    "closeIntegratedIssues": true,
+    "agentMergeAllowedOnIntegration": true,
+    "agentMergeRole": "orch.arch",
+    "humanMergeRequiredOnTrunk": true,
+    "trunkMergeApprover": "smota"
   },
   "routing": {
     "defaultMode": "single-agent"

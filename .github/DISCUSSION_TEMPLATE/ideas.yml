@@ -1,0 +1,34 @@
+title: "[Idea] "
+labels: ["enhancement", "idea"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Propose a new diagnostic insight (`I26+`), AI harness connector, export format adapter, or visualization for **Dendro**.
+  - type: dropdown
+    id: category
+    attributes:
+      label: Capability Layer
+      options:
+        - "Layer 1: Model Layer & Token Economics"
+        - "Layer 2: Harness Mechanics & Tool Trajectories"
+        - "Layer 3: Coordination, Lineage & Handoffs"
+        - "Layer 4: Environment, Sandbox & Security Posture"
+        - "Connector / Export Adapter (BYOC)"
+        - "CLI / TUI / Connected Web Studio UX"
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Fleet Operational Question or Problem
+      description: What operational blind spot or multi-agent failure mode does this idea address?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Solution or Metric Definition
+      description: Describe the proposed DuckDB facts, epistemic status rules (`ok`, `partial`, `insufficient_evidence`, `refused`), or UI surface.
+    validations:
+      required: true
