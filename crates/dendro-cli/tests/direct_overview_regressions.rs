@@ -73,7 +73,7 @@ fn b1_native_parent_with_active_child_derives_unparked_container_hold() {
         .unwrap();
     f.activity("hold:idle", "2026-10-01T01:00:00Z", "idle", 1);
     f.queue((
-        "hold:parent-created",
+        "events:queue.created:1",
         1,
         "parent",
         "2026-10-01T00:20:00Z",
@@ -93,7 +93,7 @@ fn b1_native_parent_with_active_child_derives_unparked_container_hold() {
         SEAT,
     ));
     f.queue((
-        "hold:child-created",
+        "events:queue.created:3",
         3,
         "child",
         "2026-10-01T01:20:00Z",

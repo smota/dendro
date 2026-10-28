@@ -255,7 +255,7 @@ impl Fixture {
             ));
         }
         self.queue((
-            "stall:created",
+            "events:queue.created:20",
             20,
             "live-leaf",
             "2026-10-01T02:59:00Z",
