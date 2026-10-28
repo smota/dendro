@@ -1249,7 +1249,20 @@ async fn send_raw_ipc(socket_path: &Path, payload: &str) -> Result<String> {
         let pipe_name = socket_path
             .to_str()
             .unwrap_or(r"\\.\pipe\LOCAL\dendro-quack");
-        let client = ClientOptions::new().open(pipe_name)?;
+        const MAX_BUSY_RETRIES: u32 = 25;
+        let mut busy_retries = 0;
+        // ERROR_PIPE_BUSY can occur while the server cycles its pipe instance.
+        // Retry only opening the connection, before any payload bytes are written.
+        let client = loop {
+            match ClientOptions::new().open(pipe_name) {
+                Ok(client) => break client,
+                Err(err) if err.raw_os_error() == Some(231) && busy_retries < MAX_BUSY_RETRIES => {
+                    busy_retries += 1;
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                }
+                Err(err) => return Err(err.into()),
+            }
+        };
         let (reader, mut writer) = tokio::io::split(client);
         let mut buf_reader = BufReader::new(reader);
 
