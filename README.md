@@ -7,6 +7,7 @@
     <a href="Cargo.toml"><img src="https://img.shields.io/badge/stack-Rust-F74C00?style=flat-square&logo=rust&logoColor=white" alt="Stack: Rust" /></a>
     <a href="#why-dendro"><img src="https://img.shields.io/badge/architecture-Local--First-10B981?style=flat-square" alt="Architecture: Local-First" /></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-FSL--1.1--Apache--2.0-F2A541?style=flat-square" alt="License: FSL-1.1-Apache-2.0" /></a>
+    <a href="https://github.com/mvschwarz/openrig"><img src="https://img.shields.io/badge/Built--with-Openrig-8B5CF6?style=flat-square" alt="Built-with: Openrig" /></a>
     <a href="https://github.com/smota/dendro"><img src="https://img.shields.io/badge/GitHub-smota%2Fdendro-181717?style=flat-square&logo=github" alt="GitHub Repository" /></a>
     <a href="https://github.com/smota/dendro/stargazers"><img src="https://img.shields.io/github/stars/smota/dendro?style=flat-square&logo=github&color=06B6D4" alt="GitHub Stars" /></a>
   </p>

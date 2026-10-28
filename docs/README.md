@@ -44,4 +44,5 @@ Bring your own stack or help improve Dendro.
 - [Supported Export Formats](extensions/formats.md) — Verify schema support and coverage for Cursor, Windsurf, Goose, and Devin exports.
 - [Contributing Guide](../CONTRIBUTING.md) — Help add the next component.
 - [Maintainer Guide](maintainers/README.md) — Navigate the Rust workspace and quality checks.
-- [Release Notes (`v0.8.0`)](RELEASE_NOTES_v0.8.0.md) — See what's new in the connected studio.
+- [Release Notes (`v0.9.0`)](RELEASE_NOTES_v0.9.0.md) — See what's new in the connected studio and 5-layer capability matrix.
+- [Release Notes (`v0.8.0`)](RELEASE_NOTES_v0.8.0.md) — Storage privacy, lineage, process & security facts, and insights.

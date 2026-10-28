@@ -1,9 +1,11 @@
 [package]
 name = "dendro-connectors"
+description = "Harness log collectors and session parsers for Claude, Codex, AGY, and OpenRig."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
+repository.workspace = true
 
 [dependencies]
 dendro-core.workspace = true

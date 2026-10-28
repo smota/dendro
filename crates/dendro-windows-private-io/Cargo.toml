@@ -1,15 +1,15 @@
 [package]
 name = "dendro-windows-private-io"
+description = "Private Windows I/O abstractions and handle custody for Dendro."
 version.workspace = true
-edition = "2021"
+edition.workspace = true
 rust-version = "1.98"
-publish = false
-
 license.workspace = true
 authors.workspace = true
+repository.workspace = true
 
 [dependencies]
-dendro-platform-policy = { path = "../dendro-platform-policy" }
+dendro-platform-policy.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "=0.61.2", features = ["Wdk_Storage_FileSystem", "Wdk_Foundation", "Win32_Security_Authorization", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Threading", "Win32_Foundation"] }

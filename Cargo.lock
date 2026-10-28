@@ -741,7 +741,7 @@ checksum = "5729f5117e208430e437df2f4843f5e5952997175992d1414f94c57d61e270b4"
 
 [[package]]
 name = "dendro-cli"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -769,7 +769,7 @@ dependencies = [
 
 [[package]]
 name = "dendro-connectors"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -787,7 +787,7 @@ dependencies = [
 
 [[package]]
 name = "dendro-core"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -814,11 +814,11 @@ dependencies = [
 
 [[package]]
 name = "dendro-platform-policy"
-version = "0.8.0"
+version = "0.9.0"
 
 [[package]]
 name = "dendro-resolver"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -830,7 +830,7 @@ dependencies = [
 
 [[package]]
 name = "dendro-watcher"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "dendro-core",
@@ -842,7 +842,7 @@ dependencies = [
 
 [[package]]
 name = "dendro-windows-private-io"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "bound-platform",
  "dendro-platform-policy",
