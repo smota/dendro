@@ -701,12 +701,21 @@ fn atif_nonzero_cached_prompt_semantics_are_refused() {
 #[cfg(unix)]
 #[test]
 fn direct_socket_export_is_rejected_before_opening_a_special_file() {
-    use std::os::unix::net::UnixListener;
-    let f = Fixture::new(b"{}\n");
-    let socket = f.dir.join("special.jsonl");
-    let _listener = UnixListener::bind(&socket).unwrap();
+    use std::os::unix::{fs::DirBuilderExt, net::UnixListener};
+    // Worktree paths can exceed sockaddr_un.sun_path before export validation.
+    let dir = PathBuf::from("/tmp").join(format!(
+        "dce-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::DirBuilder::new().mode(0o700).create(&dir).unwrap();
+    let f = Fixture {
+        file: dir.join("special.jsonl"),
+        dir,
+    };
+    let _listener = UnixListener::bind(&f.file).unwrap();
     let error = ExportRoot::new(&f.dir)
-        .read_batch(&socket, None)
+        .read_batch(&f.file, None)
         .unwrap_err_string();
     assert!(error.contains("regular file"));
 }
