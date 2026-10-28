@@ -24,7 +24,7 @@ Dendro is a local-first AI Fleet Intelligence engine for multi-agent fleets, wri
 * **Orchestrator Integration:** OpenRig (`~/.openrig`) correlating Rigs, Seats, and Missions with low-level execution logs.
 * **Harnesses:** Claude Code, Codex, AGY, Grok, Pi.
 * **Conversational Layer:** Nao (`getnao/nao`) via pre-configured semantic models.
-* **License:** MIT.
+* **License:** FSL-1.1-Apache-2.0 (Functional Source License 1.1, converting to Apache 2.0 after 2 years).
 
 ---
 

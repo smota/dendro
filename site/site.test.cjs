@@ -8,7 +8,7 @@ class Node {
  setAttribute(k,v){this.attrs[k]=String(v);}getAttribute(k){return this.attrs[k];}addEventListener(k,fn){this.listeners[k]=fn;}focus(){this.focused=true;}
 }
 const read=p=>fs.readFileSync(path.join(__dirname,p),'utf8');
-function viewer(){const html=read('viewer.html'),nodes=new Map(),tabs=['pulse','flow','trace'].map(id=>{const n=new Node('button');n.setAttribute('aria-controls',id);return n;});
+function viewer(){const html=read('viewer.html'),nodes=new Map(),tabs=['pulse','flow','trace','insights'].map(id=>{const n=new Node('button');n.setAttribute('aria-controls',id);return n;});
  const document={getElementById(id){if(!nodes.has(id))nodes.set(id,new Node(id==='seat'?'select':'div'));return nodes.get(id);},createElement:tag=>new Node(tag),createElementNS:(_,tag)=>new Node(tag),createTextNode:t=>{const n=new Node('#text');n.textContent=t;return n;},querySelectorAll:()=>tabs};
  document.getElementById('dendro-data').textContent='null';const context=vm.createContext({document,console});const script=html.match(/<script>\n([\s\S]*)<\/script>/)[1];vm.runInContext(script,context);return {context,nodes,tabs,run:code=>vm.runInContext(code,context)};}
 test('scenario retains fractional returns, uses fleet totals, and handles endpoints',()=>{const context=vm.createContext({document:{addEventListener(){}}});vm.runInContext(read('app.js'),context);
@@ -34,6 +34,85 @@ test('timestamped context-drop markers use only numeric counts and actual positi
 test('existing CLI handoff report and trace fixtures render using their real envelopes',{skip:!process.env.DENDRO_SITE_FIXTURE_DIR},()=>{const v=viewer();for(const name of ['loops.handoffs.candidate.json','loops.trace.candidate.json']){const raw=JSON.parse(fs.readFileSync(path.join(process.env.DENDRO_SITE_FIXTURE_DIR,name),'utf8'));v.context.fixture=raw;v.run(`load(fixture,'verified fixture')`);assert.match(v.nodes.get('status').textContent,/verified fixture/);assert.doesNotMatch(v.nodes.get('status').textContent,/Synthetic/);}});
 
 test('committed native CLI fixture preserves actual numeric projection and aliased flows',()=>{const v=viewer();v.context.fixture=JSON.parse(read('fixtures/canonical-handoffs.json'));v.run("load(fixture,'native synthetic CLI fixture')");assert.equal(v.run('current.edges.length'),4);assert.equal(v.run('current.histogram[0].secs'),3600);assert.equal(v.run('current.pairs[0].exec_median'),9);assert.match(v.nodes.get('sankey').textContent,/Actor 1/);assert.match(v.nodes.get('concurrency').textContent,/3,600/);});
+
+test('offline fleet explorer demo dataset populates all 4 tabs, timeline, compactions, pairs, insights, and security',()=>{
+ const v=viewer();
+ const raw=JSON.parse(read('fixtures/fleet-explorer-demo.json'));
+ v.context.fixture=raw;
+ v.run("load(fixture,'Offline Fleet Explorer Demo')");
+
+ // Verify 4 tabs exist and are selectable
+ assert.equal(v.tabs.length,4);
+ ['pulse','flow','trace','insights'].forEach((id,idx)=>{
+  v.tabs[idx].listeners.click();
+  assert.equal(v.tabs[idx].attrs['aria-selected'],'true');
+  assert.equal(v.nodes.get(id).hidden,false);
+ });
+
+ // Tab 1: Pulse & Session Timeline
+ assert.match(v.nodes.get('metrics').textContent,/482,910,400/);
+ assert.match(v.nodes.get('metrics').textContent,/0\.79/);
+ assert.match(v.nodes.get('metrics').textContent,/6/);
+ assert.match(v.nodes.get('metrics').textContent,/4/);
+ assert.match(v.nodes.get('metrics').textContent,/3\.42/);
+
+ const aliases=[...v.run('current.aliases')];
+ assert.deepEqual(aliases,['Actor 1','Actor 2','Actor 3','Actor 4','Actor 5','Actor 6']);
+ assert.equal(v.nodes.get('bands').children.length,6);
+
+ const timelineSvg=v.nodes.get('timeline').children[0];
+ assert.equal(timelineSvg.tag,'svg');
+ const compactions=timelineSvg.children.filter(c=>c.tag==='line');
+ assert.equal(compactions.length,5);
+ assert.match(compactions[0].children[0].textContent,/198,500 → 32,400/);
+
+ const intervals=timelineSvg.children.filter(c=>c.tag==='rect'&&(c.attrs.fill==='#fbbf24'||c.attrs.fill==='url(#container-hatch)'));
+ assert.equal(intervals.length,8);
+
+ assert.match(v.nodes.get('concurrency').textContent,/k=0: 3,600 s/);
+ assert.match(v.nodes.get('concurrency').textContent,/k=6: 3,600 s/);
+
+ // Tab 2: Flow & Model Accounting
+ const sankeySvg=v.nodes.get('sankey').children[0];
+ assert.equal(sankeySvg.tag,'svg');
+ const returnRibbons=sankeySvg.children.filter(c=>c.tag==='path'&&c.attrs.class&&c.attrs.class.includes('return'));
+ assert.ok(returnRibbons.length>=3);
+
+ assert.match(v.nodes.get('tokens').textContent,/62,450,000/);
+ assert.match(v.nodes.get('tokens').textContent,/348,120,400/);
+ assert.match(v.nodes.get('attribution').textContent,/396,420,000/);
+ assert.match(v.nodes.get('attribution').textContent,/54,180,000/);
+
+ assert.equal(v.nodes.get('heatmap').children[0].tag,'table');
+ assert.equal(v.nodes.get('heatmap').children[0].children.length,7);
+
+ assert.equal(v.nodes.get('pairs').children[0].tag,'table');
+ assert.equal(v.nodes.get('pairs').children[0].children.length,11);
+
+ // Tab 3: Actor Evidence (Trace)
+ assert.equal(v.nodes.get('seat').children.length,6);
+ assert.match(v.nodes.get('inspection').textContent,/Actor 1/);
+ assert.match(v.nodes.get('inspection').textContent,/38,450,000/);
+ assert.match(v.nodes.get('inspection').textContent,/142/);
+
+ // Tab 4: Insights & Security
+ const insightCards=v.nodes.get('insight-list').children;
+ assert.equal(insightCards.length,21);
+ assert.match(v.nodes.get('lineage').textContent,/I09/);
+ assert.match(v.nodes.get('lineage').textContent,/roots/);
+ assert.match(v.nodes.get('environment').textContent,/I14/);
+ assert.match(v.nodes.get('environment').textContent,/cpu_time_delta_us/);
+
+ assert.match(v.nodes.get('security').textContent,/permission_mode/);
+ assert.match(v.nodes.get('security').textContent,/permission_decision/);
+ assert.match(v.nodes.get('security').textContent,/sandbox_policy/);
+ assert.match(v.nodes.get('security').textContent,/approval_policy/);
+ assert.match(v.nodes.get('security').textContent,/permission_profile/);
+ assert.match(v.nodes.get('security').textContent,/approved_prefix_count/);
+ assert.match(v.nodes.get('security').textContent,/sandbox_override_requested/);
+ assert.match(v.nodes.get('security').textContent,/dangerous_command/);
+ assert.match(v.nodes.get('security').textContent,/pipe_to_shell/);
+});
 test('parallel return ribbons have distinct geometry and absent life remains unknown',()=>{const v=viewer();v.run("load({product:'AI Fleet Intelligence',from:'2026-01-01T00:00:00Z',to:'2026-01-01T01:00:00Z',handoff_edges:[{from:'a',to:'b'},{from:'a',to:'b',is_return:true}],activity_events:[{seat:'a',ts:'2026-01-01T00:00:00Z',state:'running'}]},'test')");const paths=v.nodes.get('sankey').children[0].children.filter(n=>n.tag==='path');assert.notEqual(paths[0].attrs.d,paths[1].attrs.d);assert.equal(v.nodes.get('timeline').children[0].children.filter(n=>n.tag==='rect'&&n.attrs.fill==='#10b981').length,0);});
 
 test('source-backed container intervals render exact timeline positions without activity inference',()=>{const v=viewer();v.run("load({product:'AI Fleet Intelligence',from:'2026-01-01T00:00:00Z',to:'2026-01-01T01:00:00Z',advisory_idle_claimed:{intervals:[{seat:'private-seat',from:'2026-01-01T00:15:00Z',to:'2026-01-01T00:30:00Z',classification:'unparked_container_hold'}]}},'test')");const rects=v.nodes.get('timeline').children[0].children.filter(n=>n.tag==='rect'&&n.attrs.fill==='url(#container-hatch)');assert.equal(rects.length,1);assert.equal(Number(rects[0].attrs.x),332.5);assert.equal(Number(rects[0].attrs.width),212.5);assert.doesNotMatch(rects[0].textContent,/private-seat/);});

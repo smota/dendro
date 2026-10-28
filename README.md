@@ -4,6 +4,13 @@
   <p><strong>Decipher the growth layers of your AI agent fleets.</strong></p>
   <p>The Local-First Flight Recorder, Causal X-Ray &amp; Operational Intelligence Studio for Multi-Agent Engineering.</p>
   <p>
+    <a href="Cargo.toml"><img src="https://img.shields.io/badge/stack-Rust-F74C00?style=flat-square&logo=rust&logoColor=white" alt="Stack: Rust" /></a>
+    <a href="#why-dendro"><img src="https://img.shields.io/badge/architecture-Local--First-10B981?style=flat-square" alt="Architecture: Local-First" /></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-FSL--1.1--Apache--2.0-F2A541?style=flat-square" alt="License: FSL-1.1-Apache-2.0" /></a>
+    <a href="https://github.com/smota/dendro"><img src="https://img.shields.io/badge/GitHub-smota%2Fdendro-181717?style=flat-square&logo=github" alt="GitHub Repository" /></a>
+    <a href="https://github.com/smota/dendro/stargazers"><img src="https://img.shields.io/github/stars/smota/dendro?style=flat-square&logo=github&color=06B6D4" alt="GitHub Stars" /></a>
+  </p>
+  <p>
     <a href="#visual-tour">Visual Tour</a> ·
     <a href="#why-dendro">Why Dendro</a> ·
     <a href="#architecture">4-Layer + 5-Capability Architecture</a> ·
@@ -218,4 +225,12 @@ The real-local-log performance test is explicitly ignored by default and require
 
 Source logs are read-only. No prompts, agent thoughts, code completions, or secrets (`sk-`, `ghp_`, Bearer tokens) are ever captured or stored. Everything runs locally on your machine—nothing is proxied or sent to a third-party cloud. You choose whether to export or share a report.
 
-MIT License. Copyright 2026 Samuel Mota.
+### Licensing (`FSL-1.1-Apache-2.0`)
+
+Dendro is licensed under the **Functional Source License, Version 1.1, Apache 2.0 Future License ([`FSL-1.1-Apache-2.0`](LICENSE))**:
+
+- **Free for internal, personal, and team use:** Run Dendro on your own machines and engineering fleets, inspect the source, modify it for your workflows, and contribute improvements at no cost.
+- **IP & non-competing protection:** You may not offer Dendro (or a derivative work) as a competing commercial product or managed service. Trademarks (`Dendro`, `Move the Needle`) and brand assets are reserved ([`NOTICE`](NOTICE)).
+- **Automatic Apache 2.0 conversion:** Every release automatically converts to the **Apache License 2.0** two years after publication.
+
+For complete license text, trademark terms, and contribution guidelines, see [`LICENSE`](LICENSE), [`NOTICE`](NOTICE), and [`CONTRIBUTING.md`](CONTRIBUTING.md). Copyright 2026 Samuel Mota (Move the Needle).

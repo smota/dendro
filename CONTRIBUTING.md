@@ -91,3 +91,16 @@ node --test site/site.test.cjs
 2. Keep commits atomic with clear, imperative commit messages.
 3. Verify that all 5 quality gates above pass with zero warnings.
 4. Open a pull request against `main`. All pull requests are reviewed under governed autonomous delivery standards.
+
+---
+
+## Licensing & Contributor Grant (`FSL-1.1-Apache-2.0`)
+
+Dendro is made available under the **Functional Source License, Version 1.1, Apache 2.0 Future License ([`FSL-1.1-Apache-2.0`](LICENSE))**.
+
+By submitting a pull request, issue patch, or other contribution to Dendro:
+1. **You retain copyright:** You preserve ownership and copyright of your original work.
+2. **Contributor Inbound Grant:** You grant Samuel Mota (Move the Needle) a perpetual, worldwide, non-exclusive, royalty-free, irrevocable copyright and patent license to use, reproduce, modify, prepare derivative works of, publicly display, publicly perform, sublicense, and distribute your contributions under `FSL-1.1-Apache-2.0`, future `Apache-2.0` conversions (effective two years from release), and any commercial or alternative editions.
+3. **No conflicting obligations:** You represent that you are legally entitled to grant this license and that your contributions are your original creation or licensed appropriately.
+
+For more details, please review [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).

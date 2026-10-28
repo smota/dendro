@@ -33,6 +33,7 @@ Understand how the evidence is collected, organized, and explained.
 - [System Architecture Blueprint](ARCHITECTURE.md) — The execution stack, analytical engine, and privacy design.
 - [Data Flow & Live Sync](ARCHITECTURE_FLOWS.md) — Follow records from source to connected view.
 - [Data Dictionary (Schema 5)](DATA_DICTIONARY.md) — Tables, fields, and metric definitions.
+- [Offline Fleet Explorer Format](OFFLINE_FLEET_EXPLORER_FORMAT.md) — Standalone analytical report envelope and schema specification.
 - [Product Specification](PRODUCT_SPECIFICATION.md) — Operator outcomes, product scope, and release decisions.
 
 ## Extend & Contribute

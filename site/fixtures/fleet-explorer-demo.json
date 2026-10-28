@@ -1,0 +1,1696 @@
+{
+  "definition_version": "report-v1",
+  "metric": "fleet_intelligence",
+  "payload": {
+    "product": "AI Fleet Intelligence",
+    "from": "2026-10-27T00:00:00Z",
+    "to": "2026-10-28T00:00:00Z",
+    "tokens": 482910400,
+    "m1_yield": 0.785,
+    "m3_rework_chains": 4,
+    "m1_by_seat": [
+      {
+        "seat": "arch-planner@core-rig",
+        "tokens": 38450000,
+        "closed_items": 14,
+        "nonreturn_deliveries": 14,
+        "tokens_per_closed_item": 2746428.57
+      },
+      {
+        "seat": "builder-backend@core-rig",
+        "tokens": 164820000,
+        "closed_items": 38,
+        "nonreturn_deliveries": 32,
+        "tokens_per_closed_item": 4337368.42
+      },
+      {
+        "seat": "builder-ui@core-rig",
+        "tokens": 128640000,
+        "closed_items": 32,
+        "nonreturn_deliveries": 28,
+        "tokens_per_closed_item": 4020000.0
+      },
+      {
+        "seat": "qa-verifier@core-rig",
+        "tokens": 64200000,
+        "closed_items": 26,
+        "nonreturn_deliveries": 24,
+        "tokens_per_closed_item": 2469230.77
+      },
+      {
+        "seat": "sec-reviewer@core-rig",
+        "tokens": 48900000,
+        "closed_items": 18,
+        "nonreturn_deliveries": 17,
+        "tokens_per_closed_item": 2716666.67
+      },
+      {
+        "seat": "release-steward@gateway-rig",
+        "tokens": 37900400,
+        "closed_items": 12,
+        "nonreturn_deliveries": 12,
+        "tokens_per_closed_item": 3158366.67
+      }
+    ],
+    "activity": [
+      {
+        "seat": "arch-planner@core-rig",
+        "observed_spans": [
+          {
+            "from": "2026-10-27T00:00:00Z",
+            "to": "2026-10-27T11:00:00Z"
+          },
+          {
+            "from": "2026-10-27T13:00:00Z",
+            "to": "2026-10-27T23:00:00Z"
+          }
+        ],
+        "observed_secs": 75600,
+        "active_secs": 34200,
+        "idle_with_work_secs": 18000,
+        "idle_without_work_secs": 14400,
+        "waiting_human_secs": 7200,
+        "unknown_secs": 1800,
+        "unparked_container_secs": 3600,
+        "leaf_stall_secs": 1800,
+        "engineering_calls": 142,
+        "ceremony_calls": 38
+      },
+      {
+        "seat": "builder-backend@core-rig",
+        "observed_spans": [
+          {
+            "from": "2026-10-27T01:00:00Z",
+            "to": "2026-10-27T12:00:00Z"
+          },
+          {
+            "from": "2026-10-27T13:00:00Z",
+            "to": "2026-10-28T00:00:00Z"
+          }
+        ],
+        "observed_secs": 79200,
+        "active_secs": 52400,
+        "idle_with_work_secs": 16800,
+        "idle_without_work_secs": 7200,
+        "waiting_human_secs": 1800,
+        "unknown_secs": 1000,
+        "unparked_container_secs": 5400,
+        "leaf_stall_secs": 3200,
+        "engineering_calls": 864,
+        "ceremony_calls": 92
+      },
+      {
+        "seat": "builder-ui@core-rig",
+        "observed_spans": [
+          {
+            "from": "2026-10-27T02:00:00Z",
+            "to": "2026-10-27T13:30:00Z"
+          },
+          {
+            "from": "2026-10-27T15:00:00Z",
+            "to": "2026-10-28T00:00:00Z"
+          }
+        ],
+        "observed_secs": 73800,
+        "active_secs": 46800,
+        "idle_with_work_secs": 15200,
+        "idle_without_work_secs": 8400,
+        "waiting_human_secs": 2400,
+        "unknown_secs": 1000,
+        "unparked_container_secs": 4200,
+        "leaf_stall_secs": 2800,
+        "engineering_calls": 612,
+        "ceremony_calls": 74
+      },
+      {
+        "seat": "qa-verifier@core-rig",
+        "observed_spans": [
+          {
+            "from": "2026-10-27T03:00:00Z",
+            "to": "2026-10-27T12:00:00Z"
+          },
+          {
+            "from": "2026-10-27T14:00:00Z",
+            "to": "2026-10-27T23:30:00Z"
+          }
+        ],
+        "observed_secs": 66600,
+        "active_secs": 38200,
+        "idle_with_work_secs": 14400,
+        "idle_without_work_secs": 10800,
+        "waiting_human_secs": 1800,
+        "unknown_secs": 1400,
+        "unparked_container_secs": 2800,
+        "leaf_stall_secs": 3600,
+        "engineering_calls": 428,
+        "ceremony_calls": 56
+      },
+      {
+        "seat": "sec-reviewer@core-rig",
+        "observed_spans": [
+          {
+            "from": "2026-10-27T04:00:00Z",
+            "to": "2026-10-27T11:30:00Z"
+          },
+          {
+            "from": "2026-10-27T13:30:00Z",
+            "to": "2026-10-27T22:00:00Z"
+          }
+        ],
+        "observed_secs": 57600,
+        "active_secs": 31200,
+        "idle_with_work_secs": 12600,
+        "idle_without_work_secs": 9600,
+        "waiting_human_secs": 3000,
+        "unknown_secs": 1200,
+        "unparked_container_secs": 1800,
+        "leaf_stall_secs": 2400,
+        "engineering_calls": 284,
+        "ceremony_calls": 42
+      },
+      {
+        "seat": "release-steward@gateway-rig",
+        "observed_spans": [
+          {
+            "from": "2026-10-27T06:00:00Z",
+            "to": "2026-10-27T14:00:00Z"
+          },
+          {
+            "from": "2026-10-27T16:00:00Z",
+            "to": "2026-10-27T23:00:00Z"
+          }
+        ],
+        "observed_secs": 54000,
+        "active_secs": 24600,
+        "idle_with_work_secs": 11400,
+        "idle_without_work_secs": 12000,
+        "waiting_human_secs": 4800,
+        "unknown_secs": 1200,
+        "unparked_container_secs": 1200,
+        "leaf_stall_secs": 1600,
+        "engineering_calls": 196,
+        "ceremony_calls": 48
+      }
+    ],
+    "activity_events": [
+      {
+        "seat": "arch-planner@core-rig",
+        "ts": "2026-10-27T00:00:00Z",
+        "state": "running"
+      },
+      {
+        "seat": "arch-planner@core-rig",
+        "ts": "2026-10-27T04:30:00Z",
+        "state": "idle"
+      },
+      {
+        "seat": "arch-planner@core-rig",
+        "ts": "2026-10-27T08:00:00Z",
+        "state": "running"
+      },
+      {
+        "seat": "arch-planner@core-rig",
+        "ts": "2026-10-27T13:00:00Z",
+        "state": "needs_input"
+      },
+      {
+        "seat": "arch-planner@core-rig",
+        "ts": "2026-10-27T15:30:00Z",
+        "state": "running"
+      },
+      {
+        "seat": "arch-planner@core-rig",
+        "ts": "2026-10-27T20:00:00Z",
+        "state": "idle"
+      },
+      {
+        "seat": "builder-backend@core-rig",
+        "ts": "2026-10-27T01:00:00Z",
+        "state": "idle"
+      },
+      {
+        "seat": "builder-backend@core-rig",
+        "ts": "2026-10-27T02:00:00Z",
+        "state": "running"
+      },
+      {
+        "seat": "builder-backend@core-rig",
+        "ts": "2026-10-27T07:30:00Z",
+        "state": "needs_input"
+      },
+      {
+        "seat": "builder-backend@core-rig",
+        "ts": "2026-10-27T08:30:00Z",
+        "state": "running"
+      },
+      {
+        "seat": "builder-backend@core-rig",
+        "ts": "2026-10-27T13:00:00Z",
+        "state": "running"
+      },
+      {
+        "seat": "builder-backend@core-rig",
+        "ts": "2026-10-27T19:00:00Z",
+        "state": "idle"
+      },
+      {
+        "seat": "builder-backend@core-rig",
+        "ts": "2026-10-27T21:00:00Z",
+        "state": "running"
+      },
+      {
+        "seat": "builder-ui@core-rig",
+        "ts": "2026-10-27T02:00:00Z",
+        "state": "running"
+      },
+      {
+        "seat": "builder-ui@core-rig",
+        "ts": "2026-10-27T06:00:00Z",
+        "state": "idle"
+      },
+      {
+        "seat": "builder-ui@core-rig",
+        "ts": "2026-10-27T09:00:00Z",
+        "state": "running"
+      },
+      {
+        "seat": "builder-ui@core-rig",
+        "ts": "2026-10-27T15:00:00Z",
+        "state": "running"
+      },
+      {
+        "seat": "builder-ui@core-rig",
+        "ts": "2026-10-27T18:30:00Z",
+        "state": "needs_input"
+      },
+      {
+        "seat": "builder-ui@core-rig",
+        "ts": "2026-10-27T19:30:00Z",
+        "state": "running"
+      },
+      {
+        "seat": "qa-verifier@core-rig",
+        "ts": "2026-10-27T03:00:00Z",
+        "state": "idle"
+      },
+      {
+        "seat": "qa-verifier@core-rig",
+        "ts": "2026-10-27T05:00:00Z",
+        "state": "running"
+      },
+      {
+        "seat": "qa-verifier@core-rig",
+        "ts": "2026-10-27T10:00:00Z",
+        "state": "idle"
+      },
+      {
+        "seat": "qa-verifier@core-rig",
+        "ts": "2026-10-27T14:00:00Z",
+        "state": "running"
+      },
+      {
+        "seat": "qa-verifier@core-rig",
+        "ts": "2026-10-27T18:00:00Z",
+        "state": "needs_input"
+      },
+      {
+        "seat": "qa-verifier@core-rig",
+        "ts": "2026-10-27T20:00:00Z",
+        "state": "running"
+      },
+      {
+        "seat": "sec-reviewer@core-rig",
+        "ts": "2026-10-27T04:00:00Z",
+        "state": "running"
+      },
+      {
+        "seat": "sec-reviewer@core-rig",
+        "ts": "2026-10-27T07:00:00Z",
+        "state": "idle"
+      },
+      {
+        "seat": "sec-reviewer@core-rig",
+        "ts": "2026-10-27T10:00:00Z",
+        "state": "running"
+      },
+      {
+        "seat": "sec-reviewer@core-rig",
+        "ts": "2026-10-27T13:30:00Z",
+        "state": "needs_input"
+      },
+      {
+        "seat": "sec-reviewer@core-rig",
+        "ts": "2026-10-27T15:00:00Z",
+        "state": "running"
+      },
+      {
+        "seat": "sec-reviewer@core-rig",
+        "ts": "2026-10-27T20:30:00Z",
+        "state": "idle"
+      },
+      {
+        "seat": "release-steward@gateway-rig",
+        "ts": "2026-10-27T06:00:00Z",
+        "state": "idle"
+      },
+      {
+        "seat": "release-steward@gateway-rig",
+        "ts": "2026-10-27T08:30:00Z",
+        "state": "running"
+      },
+      {
+        "seat": "release-steward@gateway-rig",
+        "ts": "2026-10-27T12:00:00Z",
+        "state": "needs_input"
+      },
+      {
+        "seat": "release-steward@gateway-rig",
+        "ts": "2026-10-27T16:00:00Z",
+        "state": "idle"
+      },
+      {
+        "seat": "release-steward@gateway-rig",
+        "ts": "2026-10-27T18:00:00Z",
+        "state": "running"
+      },
+      {
+        "seat": "release-steward@gateway-rig",
+        "ts": "2026-10-27T22:00:00Z",
+        "state": "idle"
+      }
+    ],
+    "advisory_idle_claimed": {
+      "intervals": [
+        {
+          "seat": "builder-backend@core-rig",
+          "from": "2026-10-27T05:00:00Z",
+          "to": "2026-10-27T06:30:00Z",
+          "classification": "unparked_container_hold"
+        },
+        {
+          "seat": "builder-backend@core-rig",
+          "from": "2026-10-27T19:00:00Z",
+          "to": "2026-10-27T19:53:20Z",
+          "classification": "true_leaf_stall"
+        },
+        {
+          "seat": "builder-ui@core-rig",
+          "from": "2026-10-27T06:00:00Z",
+          "to": "2026-10-27T07:10:00Z",
+          "classification": "unparked_container_hold"
+        },
+        {
+          "seat": "builder-ui@core-rig",
+          "from": "2026-10-27T17:00:00Z",
+          "to": "2026-10-27T17:46:40Z",
+          "classification": "true_leaf_stall"
+        },
+        {
+          "seat": "qa-verifier@core-rig",
+          "from": "2026-10-27T10:00:00Z",
+          "to": "2026-10-27T10:46:40Z",
+          "classification": "unparked_container_hold"
+        },
+        {
+          "seat": "qa-verifier@core-rig",
+          "from": "2026-10-27T16:30:00Z",
+          "to": "2026-10-27T17:30:00Z",
+          "classification": "true_leaf_stall"
+        },
+        {
+          "seat": "arch-planner@core-rig",
+          "from": "2026-10-27T04:30:00Z",
+          "to": "2026-10-27T05:30:00Z",
+          "classification": "unparked_container_hold"
+        },
+        {
+          "seat": "arch-planner@core-rig",
+          "from": "2026-10-27T20:00:00Z",
+          "to": "2026-10-27T20:30:00Z",
+          "classification": "true_leaf_stall"
+        }
+      ]
+    },
+    "context_compactions": {
+      "events": [
+        {
+          "seat": "builder-backend@core-rig",
+          "ts": "2026-10-27T06:30:00Z",
+          "pre_drop_context_tokens": 198500,
+          "post_drop_context_tokens": 32400
+        },
+        {
+          "seat": "builder-backend@core-rig",
+          "ts": "2026-10-27T17:45:00Z",
+          "pre_drop_context_tokens": 186200,
+          "post_drop_context_tokens": 34100
+        },
+        {
+          "seat": "builder-ui@core-rig",
+          "ts": "2026-10-27T11:15:00Z",
+          "pre_drop_context_tokens": 172800,
+          "post_drop_context_tokens": 28600
+        },
+        {
+          "seat": "builder-ui@core-rig",
+          "ts": "2026-10-27T21:30:00Z",
+          "pre_drop_context_tokens": 164000,
+          "post_drop_context_tokens": 27200
+        },
+        {
+          "seat": "qa-verifier@core-rig",
+          "ts": "2026-10-27T18:15:00Z",
+          "pre_drop_context_tokens": 142000,
+          "post_drop_context_tokens": 25400
+        }
+      ]
+    },
+    "handoff_members": [
+      {
+        "from": "arch-planner@core-rig",
+        "to": "builder-backend@core-rig",
+        "is_return": false
+      },
+      {
+        "from": "arch-planner@core-rig",
+        "to": "builder-backend@core-rig",
+        "is_return": false
+      },
+      {
+        "from": "arch-planner@core-rig",
+        "to": "builder-backend@core-rig",
+        "is_return": false
+      },
+      {
+        "from": "arch-planner@core-rig",
+        "to": "builder-ui@core-rig",
+        "is_return": false
+      },
+      {
+        "from": "arch-planner@core-rig",
+        "to": "builder-ui@core-rig",
+        "is_return": false
+      },
+      {
+        "from": "builder-backend@core-rig",
+        "to": "qa-verifier@core-rig",
+        "is_return": false
+      },
+      {
+        "from": "builder-backend@core-rig",
+        "to": "qa-verifier@core-rig",
+        "is_return": false
+      },
+      {
+        "from": "builder-backend@core-rig",
+        "to": "qa-verifier@core-rig",
+        "is_return": false
+      },
+      {
+        "from": "builder-backend@core-rig",
+        "to": "qa-verifier@core-rig",
+        "is_return": false
+      },
+      {
+        "from": "builder-backend@core-rig",
+        "to": "qa-verifier@core-rig",
+        "is_return": false
+      },
+      {
+        "from": "builder-ui@core-rig",
+        "to": "qa-verifier@core-rig",
+        "is_return": false
+      },
+      {
+        "from": "builder-ui@core-rig",
+        "to": "qa-verifier@core-rig",
+        "is_return": false
+      },
+      {
+        "from": "builder-ui@core-rig",
+        "to": "qa-verifier@core-rig",
+        "is_return": false
+      },
+      {
+        "from": "qa-verifier@core-rig",
+        "to": "builder-backend@core-rig",
+        "is_return": true
+      },
+      {
+        "from": "qa-verifier@core-rig",
+        "to": "builder-backend@core-rig",
+        "is_return": true
+      },
+      {
+        "from": "qa-verifier@core-rig",
+        "to": "builder-ui@core-rig",
+        "is_return": true
+      },
+      {
+        "from": "qa-verifier@core-rig",
+        "to": "sec-reviewer@core-rig",
+        "is_return": false
+      },
+      {
+        "from": "qa-verifier@core-rig",
+        "to": "sec-reviewer@core-rig",
+        "is_return": false
+      },
+      {
+        "from": "qa-verifier@core-rig",
+        "to": "sec-reviewer@core-rig",
+        "is_return": false
+      },
+      {
+        "from": "sec-reviewer@core-rig",
+        "to": "builder-backend@core-rig",
+        "is_return": true
+      },
+      {
+        "from": "sec-reviewer@core-rig",
+        "to": "release-steward@gateway-rig",
+        "is_return": false
+      },
+      {
+        "from": "sec-reviewer@core-rig",
+        "to": "release-steward@gateway-rig",
+        "is_return": false
+      },
+      {
+        "from": "release-steward@gateway-rig",
+        "to": "arch-planner@core-rig",
+        "is_return": false
+      }
+    ],
+    "pair_medians": [
+      {
+        "from": "arch-planner@core-rig",
+        "to": "builder-backend@core-rig",
+        "wait_median": 145,
+        "wait_samples": 3,
+        "exec_median": 840,
+        "exec_samples": 3
+      },
+      {
+        "from": "arch-planner@core-rig",
+        "to": "builder-ui@core-rig",
+        "wait_median": 190,
+        "wait_samples": 2,
+        "exec_median": 720,
+        "exec_samples": 2
+      },
+      {
+        "from": "builder-backend@core-rig",
+        "to": "qa-verifier@core-rig",
+        "wait_median": 110,
+        "wait_samples": 5,
+        "exec_median": 480,
+        "exec_samples": 5
+      },
+      {
+        "from": "builder-ui@core-rig",
+        "to": "qa-verifier@core-rig",
+        "wait_median": 130,
+        "wait_samples": 3,
+        "exec_median": 420,
+        "exec_samples": 3
+      },
+      {
+        "from": "qa-verifier@core-rig",
+        "to": "builder-backend@core-rig",
+        "wait_median": 85,
+        "wait_samples": 2,
+        "exec_median": 540,
+        "exec_samples": 2
+      },
+      {
+        "from": "qa-verifier@core-rig",
+        "to": "builder-ui@core-rig",
+        "wait_median": 95,
+        "wait_samples": 1,
+        "exec_median": 380,
+        "exec_samples": 1
+      },
+      {
+        "from": "qa-verifier@core-rig",
+        "to": "sec-reviewer@core-rig",
+        "wait_median": 160,
+        "wait_samples": 3,
+        "exec_median": 620,
+        "exec_samples": 3
+      },
+      {
+        "from": "sec-reviewer@core-rig",
+        "to": "builder-backend@core-rig",
+        "wait_median": 210,
+        "wait_samples": 1,
+        "exec_median": 920,
+        "exec_samples": 1
+      },
+      {
+        "from": "sec-reviewer@core-rig",
+        "to": "release-steward@gateway-rig",
+        "wait_median": 280,
+        "wait_samples": 2,
+        "exec_median": 780,
+        "exec_samples": 2
+      },
+      {
+        "from": "release-steward@gateway-rig",
+        "to": "arch-planner@core-rig",
+        "wait_median": 340,
+        "wait_samples": 1,
+        "exec_median": 650,
+        "exec_samples": 1
+      }
+    ],
+    "m2_pairs": [
+      {
+        "from": "arch-planner@core-rig",
+        "to": "builder-backend@core-rig",
+        "handoffs": 3,
+        "return_rate": 0.0
+      },
+      {
+        "from": "arch-planner@core-rig",
+        "to": "builder-ui@core-rig",
+        "handoffs": 2,
+        "return_rate": 0.0
+      },
+      {
+        "from": "builder-backend@core-rig",
+        "to": "qa-verifier@core-rig",
+        "handoffs": 5,
+        "return_rate": 0.2857
+      },
+      {
+        "from": "builder-ui@core-rig",
+        "to": "qa-verifier@core-rig",
+        "handoffs": 3,
+        "return_rate": 0.25
+      },
+      {
+        "from": "qa-verifier@core-rig",
+        "to": "builder-backend@core-rig",
+        "handoffs": 2,
+        "return_rate": 1.0
+      },
+      {
+        "from": "qa-verifier@core-rig",
+        "to": "builder-ui@core-rig",
+        "handoffs": 1,
+        "return_rate": 1.0
+      },
+      {
+        "from": "qa-verifier@core-rig",
+        "to": "sec-reviewer@core-rig",
+        "handoffs": 3,
+        "return_rate": 0.25
+      },
+      {
+        "from": "sec-reviewer@core-rig",
+        "to": "builder-backend@core-rig",
+        "handoffs": 1,
+        "return_rate": 1.0
+      },
+      {
+        "from": "sec-reviewer@core-rig",
+        "to": "release-steward@gateway-rig",
+        "handoffs": 2,
+        "return_rate": 0.0
+      },
+      {
+        "from": "release-steward@gateway-rig",
+        "to": "arch-planner@core-rig",
+        "handoffs": 1,
+        "return_rate": 0.0
+      }
+    ],
+    "ring_boundaries": {
+      "edges": [
+        {
+          "from": "arch-planner@core-rig",
+          "to": "builder-backend@core-rig",
+          "boundary": "in_ring"
+        },
+        {
+          "from": "arch-planner@core-rig",
+          "to": "builder-ui@core-rig",
+          "boundary": "in_ring"
+        },
+        {
+          "from": "builder-backend@core-rig",
+          "to": "qa-verifier@core-rig",
+          "boundary": "in_ring"
+        },
+        {
+          "from": "builder-ui@core-rig",
+          "to": "qa-verifier@core-rig",
+          "boundary": "in_ring"
+        },
+        {
+          "from": "qa-verifier@core-rig",
+          "to": "builder-backend@core-rig",
+          "boundary": "in_ring"
+        },
+        {
+          "from": "qa-verifier@core-rig",
+          "to": "builder-ui@core-rig",
+          "boundary": "in_ring"
+        },
+        {
+          "from": "qa-verifier@core-rig",
+          "to": "sec-reviewer@core-rig",
+          "boundary": "in_ring"
+        },
+        {
+          "from": "sec-reviewer@core-rig",
+          "to": "builder-backend@core-rig",
+          "boundary": "in_ring"
+        },
+        {
+          "from": "sec-reviewer@core-rig",
+          "to": "release-steward@gateway-rig",
+          "boundary": "cross_rig_seam"
+        },
+        {
+          "from": "release-steward@gateway-rig",
+          "to": "arch-planner@core-rig",
+          "boundary": "supervisory_plane"
+        },
+        {
+          "from": "arch-planner@core-rig",
+          "to": "sec-reviewer@core-rig",
+          "boundary": "supervisory_plane"
+        }
+      ]
+    },
+    "token_categories": {
+      "input_uncached": 62450000,
+      "cache_read": 348120400,
+      "cache_write": 44180000,
+      "output": 28160000
+    },
+    "task_intake_overhead": {
+      "assigned_mission_tokens": 396420000,
+      "task_intake_overhead": 54180000,
+      "ambiguous_tokens": 21850000,
+      "unlinked_session": 10460400
+    },
+    "fleet_concurrency": {
+      "effective_parallelism": 3.42,
+      "histogram": [
+        {
+          "active_seats": 0,
+          "secs": 3600
+        },
+        {
+          "active_seats": 1,
+          "secs": 7200
+        },
+        {
+          "active_seats": 2,
+          "secs": 14400
+        },
+        {
+          "active_seats": 3,
+          "secs": 25200
+        },
+        {
+          "active_seats": 4,
+          "secs": 21600
+        },
+        {
+          "active_seats": 5,
+          "secs": 10800
+        },
+        {
+          "active_seats": 6,
+          "secs": 3600
+        }
+      ]
+    },
+    "insights": [
+      {
+        "id": "I01",
+        "name": "model.invocations",
+        "version": "1.0.0",
+        "domain": "model",
+        "status": {
+          "state": "computed"
+        },
+        "population": {
+          "what": "call_facts",
+          "n": 2486
+        },
+        "measures": [
+          {
+            "id": "I01.distinct_calls",
+            "name": "distinct_calls",
+            "value": 2486,
+            "unit": "count"
+          },
+          {
+            "id": "I01.usage_only",
+            "name": "usage_only",
+            "value": 142,
+            "unit": "count"
+          }
+        ]
+      },
+      {
+        "id": "I02",
+        "name": "model.tokens.direct",
+        "version": "1.0.0",
+        "domain": "model",
+        "status": {
+          "state": "computed"
+        },
+        "population": {
+          "what": "usage_facts",
+          "n": 2486
+        },
+        "measures": [
+          {
+            "id": "I02.input_uncached",
+            "name": "input_uncached",
+            "value": 62450000,
+            "unit": "tokens"
+          },
+          {
+            "id": "I02.cache_read",
+            "name": "cache_read",
+            "value": 348120400,
+            "unit": "tokens"
+          },
+          {
+            "id": "I02.cache_write",
+            "name": "cache_write",
+            "value": 44180000,
+            "unit": "tokens"
+          },
+          {
+            "id": "I02.output",
+            "name": "output",
+            "value": 28160000,
+            "unit": "tokens"
+          },
+          {
+            "id": "I02.cache_read_ratio_of_sums",
+            "name": "cache_read_ratio_of_sums",
+            "value": 0.8477,
+            "unit": "ratio"
+          }
+        ]
+      },
+      {
+        "id": "I03",
+        "name": "model.tokens.inclusive",
+        "version": "1.0.0",
+        "domain": "model",
+        "status": {
+          "state": "computed"
+        },
+        "population": {
+          "what": "usage_facts",
+          "n": 2486
+        },
+        "measures": [
+          {
+            "id": "inclusive_tokens",
+            "name": "inclusive_tokens",
+            "value": 482910400,
+            "unit": "tokens"
+          },
+          {
+            "id": "I03.fleet_deduped",
+            "name": "fleet_deduped",
+            "value": 438720000,
+            "unit": "tokens"
+          }
+        ]
+      },
+      {
+        "id": "I04",
+        "name": "model.cost",
+        "version": "1.0.0",
+        "domain": "model",
+        "status": {
+          "state": "computed"
+        },
+        "population": {
+          "what": "usage_facts",
+          "n": 2486
+        },
+        "measures": [
+          {
+            "id": "I04.observed_usd",
+            "name": "observed_usd",
+            "value": 312.45,
+            "unit": "usd"
+          },
+          {
+            "id": "I04.estimated_usd",
+            "name": "estimated_usd",
+            "value": 418.9,
+            "unit": "usd"
+          }
+        ]
+      },
+      {
+        "id": "I05",
+        "name": "model.configuration_divergence",
+        "version": "1.0.0",
+        "domain": "model",
+        "status": {
+          "state": "partial",
+          "reason": "source coverage is partial"
+        },
+        "population": {
+          "what": "tier_profiles",
+          "n": 6
+        },
+        "measures": [
+          {
+            "id": "I05.divergent_pairs",
+            "name": "divergent_pairs",
+            "value": 2,
+            "unit": "count"
+          },
+          {
+            "id": "I05.matched_pairs",
+            "name": "matched_pairs",
+            "value": 13,
+            "unit": "count"
+          },
+          {
+            "id": "I05.excluded_unknown",
+            "name": "excluded_unknown",
+            "value": 1,
+            "unit": "count"
+          }
+        ]
+      },
+      {
+        "id": "I06",
+        "name": "harness.capability_funnel",
+        "version": "1.0.0",
+        "domain": "harness",
+        "status": {
+          "state": "computed"
+        },
+        "population": {
+          "what": "capability_facts",
+          "n": 48
+        },
+        "measures": [
+          {
+            "id": "loaded",
+            "name": "loaded",
+            "value": 48,
+            "unit": "count"
+          },
+          {
+            "id": "invoked",
+            "name": "invoked",
+            "value": 38,
+            "unit": "count"
+          },
+          {
+            "id": "funnel_rate",
+            "name": "funnel_rate",
+            "value": 0.7917,
+            "unit": "ratio"
+          }
+        ]
+      },
+      {
+        "id": "I07",
+        "name": "harness.context_pressure",
+        "version": "1.0.0",
+        "domain": "harness",
+        "status": {
+          "state": "computed"
+        },
+        "population": {
+          "what": "context_observations",
+          "n": 142
+        },
+        "measures": [
+          {
+            "id": "context_used",
+            "name": "context_used",
+            "value": 198500,
+            "unit": "tokens"
+          },
+          {
+            "id": "context_limit",
+            "name": "context_limit",
+            "value": 200000,
+            "unit": "tokens"
+          },
+          {
+            "id": "context_pressure",
+            "name": "context_pressure",
+            "value": 0.9925,
+            "unit": "ratio"
+          }
+        ]
+      },
+      {
+        "id": "I08",
+        "name": "harness.action_failure",
+        "version": "1.0.0",
+        "domain": "harness",
+        "status": {
+          "state": "computed"
+        },
+        "population": {
+          "what": "tool_facts",
+          "n": 2526
+        },
+        "measures": [
+          {
+            "id": "I08.failed",
+            "name": "failed",
+            "value": 84,
+            "unit": "actions"
+          },
+          {
+            "id": "I08.settled",
+            "name": "settled",
+            "value": 2420,
+            "unit": "actions"
+          },
+          {
+            "id": "I08.unsettled",
+            "name": "unsettled",
+            "value": 22,
+            "unit": "actions"
+          },
+          {
+            "id": "I08.failure_rate",
+            "name": "failure_rate",
+            "value": 0.0347,
+            "unit": "ratio"
+          }
+        ]
+      },
+      {
+        "id": "I09",
+        "name": "work.lineage_shape",
+        "version": "1.0.0",
+        "domain": "coordination",
+        "status": {
+          "state": "computed"
+        },
+        "population": {
+          "what": "session_edges",
+          "n": 42
+        },
+        "measures": [
+          {
+            "id": "I09.roots",
+            "name": "roots",
+            "value": 3,
+            "unit": "sessions"
+          },
+          {
+            "id": "I09.max_depth",
+            "name": "max_depth",
+            "value": 5,
+            "unit": "edges"
+          },
+          {
+            "id": "I09.cycles",
+            "name": "cycles",
+            "value": 0,
+            "unit": "edges"
+          },
+          {
+            "id": "I09.multi_parent_children",
+            "name": "multi_parent_children",
+            "value": 4,
+            "unit": "sessions"
+          },
+          {
+            "id": "I09.unresolved_parents",
+            "name": "unresolved_parents",
+            "value": 0,
+            "unit": "sessions"
+          }
+        ]
+      },
+      {
+        "id": "I10",
+        "name": "work.duration",
+        "version": "1.0.0",
+        "domain": "coordination",
+        "status": {
+          "state": "computed"
+        },
+        "population": {
+          "what": "work_intervals",
+          "n": 86
+        },
+        "measures": [
+          {
+            "id": "wall_union",
+            "name": "wall_union",
+            "value": 82800,
+            "unit": "seconds"
+          },
+          {
+            "id": "attempt_seconds",
+            "name": "attempt_seconds",
+            "value": 227400,
+            "unit": "seconds"
+          },
+          {
+            "id": "concurrency_ratio",
+            "name": "concurrency_ratio",
+            "value": 2.746,
+            "unit": "ratio"
+          }
+        ]
+      },
+      {
+        "id": "I13",
+        "name": "environment.placement",
+        "version": "1.0.0",
+        "domain": "environment",
+        "status": {
+          "state": "computed"
+        },
+        "population": {
+          "what": "placement_intervals",
+          "n": 18
+        },
+        "measures": [
+          {
+            "id": "incarnations",
+            "name": "incarnations",
+            "value": 18,
+            "unit": "count"
+          },
+          {
+            "id": "rebuild_count",
+            "name": "rebuild_count",
+            "value": 2,
+            "unit": "count"
+          }
+        ]
+      },
+      {
+        "id": "I14",
+        "name": "environment.resources",
+        "version": "1.0.0",
+        "domain": "environment",
+        "status": {
+          "state": "computed"
+        },
+        "population": {
+          "what": "process_samples",
+          "n": 524
+        },
+        "measures": [
+          {
+            "id": "I14.cpu_time_delta_us",
+            "name": "cpu_time_delta_us",
+            "value": 18450000000,
+            "unit": "microseconds"
+          },
+          {
+            "id": "I14.max_rss",
+            "name": "max_rss",
+            "value": 4294967296,
+            "unit": "bytes"
+          },
+          {
+            "id": "I14.disk_read_delta_bytes",
+            "name": "disk_read_delta_bytes",
+            "value": 12884901888,
+            "unit": "bytes"
+          },
+          {
+            "id": "I14.disk_write_delta_bytes",
+            "name": "disk_write_delta_bytes",
+            "value": 8589934592,
+            "unit": "bytes"
+          }
+        ]
+      },
+      {
+        "id": "I16",
+        "name": "security.isolation",
+        "version": "1.0.0",
+        "domain": "security",
+        "status": {
+          "state": "computed"
+        },
+        "population": {
+          "what": "syscall_traces",
+          "n": 3410
+        },
+        "measures": [
+          {
+            "id": "syscall_ok",
+            "name": "syscall_ok",
+            "value": 3402,
+            "unit": "count"
+          },
+          {
+            "id": "syscall_failed",
+            "name": "syscall_failed",
+            "value": 8,
+            "unit": "count"
+          },
+          {
+            "id": "isolation_consistent",
+            "name": "isolation_consistent",
+            "value": 1,
+            "unit": "count"
+          }
+        ]
+      },
+      {
+        "id": "I17",
+        "name": "security.authority",
+        "version": "1.0.0",
+        "domain": "security",
+        "status": {
+          "state": "computed"
+        },
+        "population": {
+          "what": "authority_decisions",
+          "n": 64
+        },
+        "measures": [
+          {
+            "id": "authority_consistent",
+            "name": "authority_consistent",
+            "value": 62,
+            "unit": "count"
+          },
+          {
+            "id": "authority_mismatch",
+            "name": "authority_mismatch",
+            "value": 2,
+            "unit": "count"
+          },
+          {
+            "id": "authority_insufficient",
+            "name": "authority_insufficient",
+            "value": 0,
+            "unit": "count"
+          }
+        ]
+      },
+      {
+        "id": "I18",
+        "name": "coverage.source",
+        "version": "1.0.0",
+        "domain": "environment",
+        "status": {
+          "state": "computed"
+        },
+        "population": {
+          "what": "source_files",
+          "n": 146
+        },
+        "measures": [
+          {
+            "id": "I18.read",
+            "name": "read",
+            "value": 142,
+            "unit": "sources"
+          },
+          {
+            "id": "I18.projected",
+            "name": "projected",
+            "value": 138,
+            "unit": "sources"
+          },
+          {
+            "id": "I18.unprojected",
+            "name": "unprojected",
+            "value": 4,
+            "unit": "sources"
+          },
+          {
+            "id": "I18.refused",
+            "name": "refused",
+            "value": 0,
+            "unit": "sources"
+          }
+        ]
+      },
+      {
+        "id": "I19",
+        "name": "outcome.acceptance",
+        "version": "1.0.0",
+        "domain": "coordination",
+        "status": {
+          "state": "computed"
+        },
+        "population": {
+          "what": "acceptance_evaluations",
+          "n": 46
+        },
+        "measures": [
+          {
+            "id": "accepted",
+            "name": "accepted",
+            "value": 42,
+            "unit": "count"
+          },
+          {
+            "id": "eligible",
+            "name": "eligible",
+            "value": 46,
+            "unit": "count"
+          }
+        ]
+      },
+      {
+        "id": "I20",
+        "name": "outcome.resource_efficiency",
+        "version": "1.0.0",
+        "domain": "coordination",
+        "status": {
+          "state": "computed"
+        },
+        "population": {
+          "what": "efficiency_pairs",
+          "n": 42
+        },
+        "measures": [
+          {
+            "id": "cost_per_accepted",
+            "name": "cost_per_accepted",
+            "value": 7.44,
+            "unit": "usd"
+          },
+          {
+            "id": "mean_ratio",
+            "name": "mean_ratio",
+            "value": 1.14,
+            "unit": "ratio"
+          }
+        ]
+      },
+      {
+        "id": "I22",
+        "name": "harness.trajectory_vortex",
+        "version": "1.0.0",
+        "domain": "harness",
+        "status": {
+          "state": "computed"
+        },
+        "population": {
+          "what": "trajectory_turns",
+          "n": 384
+        },
+        "measures": [
+          {
+            "id": "self_transition_rate",
+            "name": "self_transition_rate",
+            "value": 0.0625,
+            "unit": "ratio"
+          },
+          {
+            "id": "tripped",
+            "name": "tripped",
+            "value": 0,
+            "unit": "count"
+          }
+        ]
+      },
+      {
+        "id": "I23",
+        "name": "harness.schema_drift",
+        "version": "1.0.0",
+        "domain": "harness",
+        "status": {
+          "state": "computed"
+        },
+        "population": {
+          "what": "envelope_shapes",
+          "n": 12
+        },
+        "measures": [
+          {
+            "id": "l1_distance",
+            "name": "l1_distance",
+            "value": 0.015,
+            "unit": "ratio"
+          },
+          {
+            "id": "keys_added",
+            "name": "keys_added",
+            "value": 1,
+            "unit": "count"
+          },
+          {
+            "id": "keys_removed",
+            "name": "keys_removed",
+            "value": 0,
+            "unit": "count"
+          },
+          {
+            "id": "keys_retyped",
+            "name": "keys_retyped",
+            "value": 0,
+            "unit": "count"
+          }
+        ]
+      },
+      {
+        "id": "I24",
+        "name": "security.authority_blast_radius",
+        "version": "1.0.0",
+        "domain": "security",
+        "status": {
+          "state": "computed"
+        },
+        "population": {
+          "what": "authority_edges",
+          "n": 16
+        },
+        "measures": [
+          {
+            "id": "downstream_sessions",
+            "name": "downstream_sessions",
+            "value": 4,
+            "unit": "sessions"
+          },
+          {
+            "id": "max_hop",
+            "name": "max_hop",
+            "value": 2,
+            "unit": "edges"
+          },
+          {
+            "id": "cycles_touched",
+            "name": "cycles_touched",
+            "value": 0,
+            "unit": "edges"
+          }
+        ]
+      },
+      {
+        "id": "I25",
+        "name": "model.counterfactual_routing",
+        "version": "1.0.0",
+        "domain": "model",
+        "status": {
+          "state": "computed"
+        },
+        "population": {
+          "what": "usage_facts",
+          "n": 2486
+        },
+        "measures": [
+          {
+            "id": "simulated_cost",
+            "name": "simulated_cost",
+            "value": 218.4,
+            "unit": "usd"
+          },
+          {
+            "id": "simulated_context_pressure",
+            "name": "simulated_context_pressure",
+            "value": 0.724,
+            "unit": "ratio"
+          },
+          {
+            "id": "cache_bleed_inflection",
+            "name": "cache_bleed_inflection",
+            "value": 3,
+            "unit": "count"
+          }
+        ]
+      }
+    ],
+    "lineage": {
+      "id": "I09",
+      "name": "work.lineage_shape",
+      "version": "1.0.0",
+      "domain": "coordination",
+      "status": {
+        "state": "computed"
+      },
+      "population": {
+        "what": "session_edges",
+        "n": 42
+      },
+      "measures": [
+        {
+          "id": "I09.roots",
+          "name": "roots",
+          "value": 3,
+          "unit": "sessions"
+        },
+        {
+          "id": "I09.max_depth",
+          "name": "max_depth",
+          "value": 5,
+          "unit": "edges"
+        },
+        {
+          "id": "I09.cycles",
+          "name": "cycles",
+          "value": 0,
+          "unit": "edges"
+        },
+        {
+          "id": "I09.multi_parent_children",
+          "name": "multi_parent_children",
+          "value": 4,
+          "unit": "sessions"
+        },
+        {
+          "id": "I09.unresolved_parents",
+          "name": "unresolved_parents",
+          "value": 0,
+          "unit": "sessions"
+        }
+      ]
+    },
+    "environment": {
+      "id": "I14",
+      "name": "environment.resources",
+      "version": "1.0.0",
+      "domain": "environment",
+      "status": {
+        "state": "computed"
+      },
+      "population": {
+        "what": "process_samples",
+        "n": 524
+      },
+      "measures": [
+        {
+          "id": "I14.cpu_time_delta_us",
+          "name": "cpu_time_delta_us",
+          "value": 18450000000,
+          "unit": "microseconds"
+        },
+        {
+          "id": "I14.max_rss",
+          "name": "max_rss",
+          "value": 4294967296,
+          "unit": "bytes"
+        },
+        {
+          "id": "I14.disk_read_delta_bytes",
+          "name": "disk_read_delta_bytes",
+          "value": 12884901888,
+          "unit": "bytes"
+        },
+        {
+          "id": "I14.disk_write_delta_bytes",
+          "name": "disk_write_delta_bytes",
+          "value": 8589934592,
+          "unit": "bytes"
+        }
+      ]
+    },
+    "security": {
+      "status": {
+        "state": "computed"
+      },
+      "population": {
+        "what": "security_facts",
+        "n": 64
+      },
+      "counts": [
+        {
+          "kind": "permission_mode",
+          "value": "acceptEdits",
+          "n": 38
+        },
+        {
+          "kind": "permission_mode",
+          "value": "default",
+          "n": 26
+        },
+        {
+          "kind": "permission_decision",
+          "value": "allow",
+          "n": 58
+        },
+        {
+          "kind": "permission_decision",
+          "value": "deny",
+          "n": 6
+        },
+        {
+          "kind": "sandbox_policy",
+          "value": "workspace-write",
+          "n": 48
+        },
+        {
+          "kind": "sandbox_policy",
+          "value": "read-only",
+          "n": 16
+        },
+        {
+          "kind": "approval_policy",
+          "value": "on-request",
+          "n": 42
+        },
+        {
+          "kind": "approval_policy",
+          "value": "never",
+          "n": 22
+        },
+        {
+          "kind": "permission_profile",
+          "value": "other",
+          "n": 14
+        },
+        {
+          "kind": "approved_prefix_count",
+          "value": "42",
+          "n": 42
+        },
+        {
+          "kind": "sandbox_override_requested",
+          "value": "true",
+          "n": 3
+        },
+        {
+          "kind": "dangerous_command",
+          "value": "pipe_to_shell",
+          "n": 2
+        },
+        {
+          "kind": "dangerous_command",
+          "value": "force_push_with_lease",
+          "n": 1
+        }
+      ]
+    }
+  }
+}

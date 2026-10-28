@@ -148,7 +148,7 @@ Transition into **One studio across every layer of your stack**. Present the fou
 | **Cross-Layer Breadth** | Model layer only (tokens and latency). Blind to OS and tools. | Blind to structure; requires complex custom scripts to join. | **4-Layer Unified Stack:** Model + Harness + Coordination + Environment/OS. |
 | **Query & Slicing Speed** | Slow cloud UI; rate-limited queries; aggregation lag. | Painful `jq` scripts taking minutes over gigabyte logs. | **Sub-15ms local queries** via vectorized columnar DuckDB and Ratatui TUI. |
 | **Loop & Anomaly Physics** | Post-facto cost alerts after token limits have already burned. | Discovered only when terminal freezes or budget limit is hit. | **Pre-Loop Distance tripwires (`I22`)** & Schema Drift detection (`I23`). |
-| **Cost & Licensing** | $500–$3,000/mo SaaS subscription seat fees + usage egress. | Free, but high engineering toil. | **100% Free & Open-Source (MIT).** Runs on your own hardware forever. |
+| **Cost & Licensing** | $500–$3,000/mo SaaS subscription seat fees + usage egress. | Free, but high engineering toil. | **100% Free for Internal Use (FSL-1.1-Apache-2.0).** Runs on your own hardware forever. |
 
 ---
 
@@ -374,7 +374,7 @@ This section outlines the recommended architecture for a world-class revamp of `
 - **Right:** Status pill: `● ILLUSTRATIVE SNAPSHOT` (or live sync badge when attached) + Quickstart CTA button.
 
 #### Section 2: Hero Section & Interactive Screenshot Switcher
-- **Eyebrow:** `THE LOCAL-FIRST FLIGHT RECORDER FOR MULTI-AGENT AI FLEETS · OPEN SOURCE (MIT)`
+- **Eyebrow:** `THE LOCAL-FIRST FLIGHT RECORDER FOR MULTI-AGENT AI FLEETS · FSL-1.1-APACHE-2.0`
 - **Headline:** `Read the growth rings of your AI workflows.`
 - **Subheadline:** `Six open agent terminals look productive—even when four are waiting on a handoff and two are trapped in a loop. Dendro turns existing local session logs into clear, causal answers about where time, handoffs, and token budget actually go.`
 - **Action Buttons:**
@@ -443,7 +443,7 @@ This section outlines the recommended architecture for a world-class revamp of `
 - **Build and Open the Studio:** Follow the current [README quickstart](README.md#quickstart). Show the clone/build commands, `dendro run`, and `dendro dashboard --serve 127.0.0.1:4242 --site-dir ./site`. State that source build time depends on the machine.
 - **Terminal Alternative:** `dendro dashboard --auto-ingest` opens the cockpit; `dendro status` checks coverage and `dendro ask "where do tokens go?"` explores recorded work.
 - **Advanced Usage:** Link to the [Operator Guide](docs/adoption/README.md) and [CLI Reference](docs/CLI_R1.md) for source roots, storage, fixed windows, exports, and daemon setup.
-- **Footer:** GitHub link, MIT License notice, Move the Needle umbrella links, and software version `v0.8.0`.
+- **Footer:** GitHub link, FSL-1.1-Apache-2.0 notice, Move the Needle umbrella links, and software version `v0.8.0`.
 
 ---
 
