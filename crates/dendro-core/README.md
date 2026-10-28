@@ -8,6 +8,8 @@
     <a href="#why-dendro"><img src="https://img.shields.io/badge/architecture-Local--First-10B981?style=flat-square" alt="Architecture: Local-First" /></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-FSL--1.1--Apache--2.0-F2A541?style=flat-square" alt="License: FSL-1.1-Apache-2.0" /></a>
     <a href="https://github.com/mvschwarz/openrig"><img src="https://img.shields.io/badge/Built--with-Openrig-8B5CF6?style=flat-square" alt="Built-with: Openrig" /></a>
+    <a href="https://github.com/smota/agentflow-sdlc"><img src="https://img.shields.io/badge/Built--with-AgentFlow-06B6D4?style=flat-square" alt="Built-with: AgentFlow" /></a>
+    <a href="https://www.movetheneedle.info"><img src="https://img.shields.io/badge/Sponsored%20by-Move%20the%20Needle-0A66C2?style=flat-square" alt="Sponsored by: Move the Needle" /></a>
     <a href="https://github.com/smota/dendro"><img src="https://img.shields.io/badge/GitHub-smota%2Fdendro-181717?style=flat-square&logo=github" alt="GitHub Repository" /></a>
     <a href="https://github.com/smota/dendro/stargazers"><img src="https://img.shields.io/github/stars/smota/dendro?style=flat-square&logo=github&color=06B6D4" alt="GitHub Stars" /></a>
   </p>
@@ -236,4 +238,17 @@ Dendro is licensed under the **Functional Source License, Version 1.1, Apache 2.
 - **IP & non-competing protection:** You may not offer Dendro (or a derivative work) as a competing commercial product or managed service. Trademarks (`Dendro`, `Move the Needle`) and brand assets are reserved ([`NOTICE`](NOTICE)).
 - **Automatic Apache 2.0 conversion:** Every release automatically converts to the **Apache License 2.0** two years after publication.
 
-For complete license text, trademark terms, and contribution guidelines, see [`LICENSE`](LICENSE), [`NOTICE`](NOTICE), and [`CONTRIBUTING.md`](CONTRIBUTING.md). Copyright 2026 Samuel Mota (Move the Needle).
+For complete license text, trademark terms, and contribution guidelines, see [`LICENSE`](LICENSE), [`NOTICE`](NOTICE), and [`CONTRIBUTING.md`](CONTRIBUTING.md). Copyright 2026 Samuel Mota ([Move the Needle](https://www.movetheneedle.info)).
+
+---
+
+<div align="center">
+  <p><strong>Sponsored by</strong></p>
+  <a href="https://www.movetheneedle.info">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/assets/movetheneedle-logo-white.png" />
+      <img src="docs/assets/movetheneedle-logo.png" alt="Move the Needle" width="220" />
+    </picture>
+  </a>
+  <p><a href="https://www.movetheneedle.info"><strong>movetheneedle.info</strong></a></p>
+</div>
