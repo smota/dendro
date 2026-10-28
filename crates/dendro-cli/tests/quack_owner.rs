@@ -26,15 +26,19 @@ static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 struct TestDir(PathBuf);
 impl TestDir {
-    fn new(prefix: &str) -> Self {
+    fn new(_prefix: &str) -> Self {
         let unique = format!(
-            "dendro-test-quack-{}-{}-{}",
-            prefix,
+            "dq-{}-{}",
             std::process::id(),
             TEST_COUNTER.fetch_add(1, Ordering::Relaxed)
         );
+        // CI's TMPDIR can already consume most of sockaddr_un.sun_path.
+        // Keep synthetic Unix sockets short, private and cleaned by Drop.
+        #[cfg(unix)]
+        let path = Path::new("/tmp").join(unique);
+        #[cfg(not(unix))]
         let path = std::env::temp_dir().join(unique);
-        fs::create_dir_all(&path).unwrap();
+        fs::create_dir(&path).unwrap();
         #[cfg(unix)]
         {
             fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
@@ -51,6 +55,14 @@ impl Drop for TestDir {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
     }
+}
+
+#[cfg(unix)]
+#[test]
+fn test_socket_fixture_path_fits_portable_unix_limit() {
+    let test_dir = TestDir::new("numeric_serialization");
+    let socket = test_dir.path().join("dendro.sock");
+    assert!(socket.as_os_str().as_encoded_bytes().len() < 104);
 }
 
 #[tokio::test]
