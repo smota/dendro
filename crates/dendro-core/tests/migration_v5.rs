@@ -345,3 +345,159 @@ fn mode(_path: &Path) -> u32 {
 
 #[cfg(not(unix))]
 fn restrict(_path: &Path) {}
+
+#[cfg(windows)]
+#[test]
+fn windows_provenance_aliases_backup_once_and_preserve_rollback() {
+    let (root, database, privacy) = provenance_fixture("dendro-v5-alias-");
+    let provenance = root.path().join("dendro.duckdb.provenance");
+    fs::write(&provenance, b"same-provenance-file").unwrap();
+    let verbatim = provenance.canonicalize().unwrap();
+    let normal = std::path::PathBuf::from(
+        verbatim
+            .to_str()
+            .unwrap()
+            .strip_prefix(r"\\?\")
+            .expect("native fixture must have a verbatim Windows drive path"),
+    );
+    assert!(normal.is_absolute());
+    assert_ne!(
+        normal, verbatim,
+        "the request must exercise different spellings"
+    );
+    assert_eq!(normal.canonicalize().unwrap(), verbatim);
+    let before = fs::read(&database).unwrap();
+
+    // Keep both spellings in the request; normalizing fixture inputs would mask the defect.
+    let receipt = migrate_schema4_to_schema5(MigrateV5Request {
+        database: &database,
+        privacy_key: &privacy,
+        provenance_sidecars: &[normal, verbatim],
+        live_writer_active: false,
+        stop_before_cutover: false,
+    })
+    .expect("normal and verbatim aliases of one sidecar must migrate");
+    assert_eq!(
+        receipt.target_schema_version,
+        MIGRATION_V5_TARGET_SCHEMA_VERSION
+    );
+    let provenance_members: Vec<_> = receipt
+        .members
+        .iter()
+        .filter(|member| member.role == "provenance")
+        .collect();
+    assert_eq!(
+        provenance_members.len(),
+        1,
+        "one file must be backed up once"
+    );
+    assert_eq!(provenance_members[0].name, "dendro.duckdb.provenance");
+    let backup = root.path().join(BACKUP_DIR_NAME);
+    assert_eq!(fs::read(backup.join("dendro.duckdb")).unwrap(), before);
+    assert_eq!(
+        fs::read(backup.join("dendro.duckdb.provenance")).unwrap(),
+        b"same-provenance-file"
+    );
+    let backup_before_rollback = backup_snapshot(&backup);
+    rollback_to_pre_v200(&database, false).expect("deduplicated provenance must preserve rollback");
+    assert_eq!(fs::read(&database).unwrap(), before);
+    assert_eq!(backup_snapshot(&backup), backup_before_rollback);
+    assert_eq!(fs::read(&provenance).unwrap(), b"same-provenance-file");
+    assert_eq!(fs::read(&privacy).unwrap(), b"privacy-key-material");
+    let pointer = read_pointer(root.path()).unwrap();
+    assert_eq!(pointer.selected, "schema4-live");
+    assert_eq!(pointer.live_schema_version, 4);
+    remove_provenance_fixture(root);
+}
+
+#[test]
+fn distinct_provenance_files_with_one_basename_still_refuse_collision() {
+    let (root, database, privacy) = provenance_fixture("dendro-v5-collision-");
+    let other = platform::create_user_private_root_with_choice(
+        "dendro-v5-collision-other-",
+        &StorageRootChoice::UserProfile,
+    )
+    .expect("second private root");
+    let first = root.path().join("duplicate.provenance");
+    let second = other.path().join("duplicate.provenance");
+    fs::write(&first, b"first-distinct-provenance").unwrap();
+    fs::write(&second, b"second-distinct-provenance").unwrap();
+    restrict(&first);
+    restrict(&second);
+    assert_ne!(
+        first.canonicalize().unwrap(),
+        second.canonicalize().unwrap()
+    );
+    let before = fs::read(&database).unwrap();
+
+    let error = migrate_schema4_to_schema5(MigrateV5Request {
+        database: &database,
+        privacy_key: &privacy,
+        provenance_sidecars: &[first.clone(), second.clone()],
+        live_writer_active: false,
+        stop_before_cutover: false,
+    })
+    .expect_err("different files sharing one backup basename must not be deduplicated");
+    assert!(
+        matches!(&error, MigrationV5Error::Io(message)
+            if message.contains("duplicate.provenance") && message.contains("already exists")),
+        "expected exclusive backup-member collision, got: {error}"
+    );
+    assert!(!root.path().join(BACKUP_DIR_NAME).exists());
+    assert!(!root.path().join("dendro.pointer.json").exists());
+    assert_eq!(fs::read(&database).unwrap(), before);
+    assert_eq!(fs::read(&privacy).unwrap(), b"privacy-key-material");
+    assert_eq!(fs::read(&first).unwrap(), b"first-distinct-provenance");
+    assert_eq!(fs::read(&second).unwrap(), b"second-distinct-provenance");
+    remove_provenance_fixture(other);
+    remove_provenance_fixture(root);
+}
+
+#[test]
+fn missing_explicit_provenance_still_refuses_before_backup_creation() {
+    let (root, database, privacy) = provenance_fixture("dendro-v5-missing-");
+    let missing = root.path().join("missing.provenance");
+    let before = fs::read(&database).unwrap();
+    let error = migrate_schema4_to_schema5(MigrateV5Request {
+        database: &database,
+        privacy_key: &privacy,
+        provenance_sidecars: std::slice::from_ref(&missing),
+        live_writer_active: false,
+        stop_before_cutover: false,
+    })
+    .expect_err("missing explicit sidecar must remain a missing-member refusal");
+    assert!(
+        matches!(error, MigrationV5Error::MissingMember(ref name) if name == "missing.provenance")
+    );
+    assert!(!root.path().join(BACKUP_DIR_NAME).exists());
+    assert!(!root.path().join("dendro.pointer.json").exists());
+    assert!(!missing.exists());
+    assert_eq!(fs::read(&database).unwrap(), before);
+    assert_eq!(fs::read(&privacy).unwrap(), b"privacy-key-material");
+    remove_provenance_fixture(root);
+}
+
+fn provenance_fixture(
+    prefix: &str,
+) -> (
+    platform::PrivateRoot,
+    std::path::PathBuf,
+    std::path::PathBuf,
+) {
+    let root =
+        platform::create_user_private_root_with_choice(prefix, &StorageRootChoice::UserProfile)
+            .expect("private provenance fixture root");
+    let database = root.path().join("dendro.duckdb");
+    write_schema4(&database);
+    let privacy = root.path().join("dendro.duckdb.key");
+    fs::write(&privacy, b"privacy-key-material").unwrap();
+    restrict(&database);
+    restrict(&privacy);
+    (root, database, privacy)
+}
+
+fn remove_provenance_fixture(root: platform::PrivateRoot) {
+    let path = root.path().to_path_buf();
+    drop(root);
+    fs::remove_dir_all(path).unwrap();
+}
