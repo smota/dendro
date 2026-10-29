@@ -583,14 +583,26 @@ fn export_issue101_browser_fixture() {
         .expect("set an unused absolute fixture path under this worktree .agent-runs/");
     let path = std::path::PathBuf::from(path);
     let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .canonicalize()
-        .unwrap();
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    #[cfg(not(windows))]
+    let repo = repo.canonicalize().unwrap();
     assert!(
         path.is_absolute() && path.starts_with(repo.join(".agent-runs")),
         "fixture export stays inside this worktree scratch authority"
     );
-    let mut f = Fixture::at(path);
+    assert!(!path.exists(), "fixture export path must be new");
+    #[cfg(windows)]
+    let mut f = {
+        // Only the public receipt lives in the checkout; DB/key admission stays native.
+        fs::create_dir_all(&path).unwrap();
+        Fixture::empty()
+    };
+    #[cfg(not(windows))]
+    let mut f = Fixture::at(path.clone());
     f.populate();
     let head = Command::new("git")
         .args(["rev-parse", "HEAD"])
@@ -619,15 +631,15 @@ fn export_issue101_browser_fixture() {
     let binary = Path::new(env!("CARGO_BIN_EXE_dendro"))
         .canonicalize()
         .unwrap();
-    let receipt = json!({"kind":"issue101-native-populated-fixture","source_sha":String::from_utf8(head.stdout).unwrap().trim(),"binary":binary,"binary_sha256":file_sha256(&binary),"database":f.db.canonicalize().unwrap(),"site_dir":repo.join("site"),"rig":RIG,"from":FROM,"to":TO,"literal_expected":{"tokens":160,"cost_usd":30,"closed_issue_qitems":3,"avg_cost_usd":10,"uncalled_tools_count":2,"active_hours":1,"fingerprint":"fp-a81f"}});
+    let receipt = json!({"kind":"issue101-native-populated-fixture","source_sha":String::from_utf8(head.stdout).unwrap().trim(),"binary":binary,"binary_sha256":file_sha256(&binary),"database":f.db.clone(),"site_dir":repo.join("site"),"rig":RIG,"from":FROM,"to":TO,"literal_expected":{"tokens":160,"cost_usd":30,"closed_issue_qitems":3,"avg_cost_usd":10,"uncalled_tools_count":2,"active_hours":1,"fingerprint":"fp-a81f"}});
     fs::write(
-        f.root.join("fixture.json"),
+        path.join("fixture.json"),
         serde_json::to_vec_pretty(&receipt).unwrap(),
     )
     .unwrap();
     f.keep = true;
     println!(
         "ISSUE101_FIXTURE_RECEIPT={}",
-        f.root.join("fixture.json").display()
+        path.join("fixture.json").display()
     );
 }

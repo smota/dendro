@@ -49,19 +49,39 @@ pub fn request() -> OverviewRequest {
 
 impl Fixture {
     pub fn empty() -> Self {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../..")
-            .canonicalize()
-            .unwrap()
-            .join(".agent-runs/issue101-regressions")
-            .join(format!(
-                "{}-{}",
+        #[cfg(windows)]
+        {
+            let prefix = format!(
+                "dendro-issue101-{}-{}-",
                 std::process::id(),
                 NEXT.fetch_add(1, Ordering::Relaxed)
-            ));
-        Self::at(root)
+            );
+            let private = dendro_core::platform_v1::create_user_private_root_with_choice(
+                &prefix,
+                &dendro_core::platform_v1::StorageRootChoice::UserProfile,
+            )
+            .expect("native Windows fixture requires an admitted user-owned private root");
+            let root = private.path().to_path_buf();
+            drop(private);
+            Self::initialize(root)
+        }
+        #[cfg(not(windows))]
+        {
+            let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../..")
+                .canonicalize()
+                .unwrap()
+                .join(".agent-runs/issue101-regressions")
+                .join(format!(
+                    "{}-{}",
+                    std::process::id(),
+                    NEXT.fetch_add(1, Ordering::Relaxed)
+                ));
+            Self::at(root)
+        }
     }
 
+    #[cfg(not(windows))]
     pub fn at(root: PathBuf) -> Self {
         assert!(
             !root.exists(),
@@ -89,6 +109,11 @@ impl Fixture {
                 fs::set_permissions(dir, fs::Permissions::from_mode(mode & !0o022)).unwrap();
             }
         }
+        Self::initialize(root)
+    }
+
+    fn initialize(root: PathBuf) -> Self {
+        #[cfg(not(windows))]
         let root = root.canonicalize().unwrap();
         let db = root.join("dendro.duckdb");
         // A new synthetic key is local test state, never an owner's credential.
