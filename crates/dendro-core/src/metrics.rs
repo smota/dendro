@@ -102,7 +102,6 @@ pub fn activity_bands(
     window: Window,
     lives: &[SeatBound],
 ) -> Bands {
-    let spans = observation_spans(window, lives);
     let mut bands = Bands {
         active_secs: 0,
         idle_with_work_secs: 0,
@@ -110,6 +109,34 @@ pub fn activity_bands(
         waiting_human_secs: 0,
         unknown_secs: 0,
     };
+    for interval in activity_intervals(seat, events, queue, window, lives) {
+        add_band(&mut bands, interval.state, interval.demand, interval.secs);
+    }
+    bands
+}
+
+/// Canonical disjoint activity intervals, clipped to recorded seat lives. The
+/// observation origin preserves whole-second conservation when consumers split
+/// an interval further (for example, at evidenced project boundaries).
+pub struct ActivityInterval<'a> {
+    pub from: DateTime<Utc>,
+    pub to: DateTime<Utc>,
+    pub observation_start: DateTime<Utc>,
+    pub state: &'a str,
+    pub source_key: Option<&'a str>,
+    pub demand: bool,
+    pub secs: i64,
+}
+
+pub fn activity_intervals<'a>(
+    seat: &str,
+    events: &'a [ActivityFact],
+    queue: &[QueueFact],
+    window: Window,
+    lives: &[SeatBound],
+) -> Vec<ActivityInterval<'a>> {
+    let spans = observation_spans(window, lives);
+    let mut intervals = Vec::new();
     let mut mine: Vec<&ActivityFact> = events.iter().filter(|e| e.seat == seat).collect();
     mine.sort_by(|a, b| a.ts.cmp(&b.ts).then(a.seq.cmp(&b.seq)));
     let any_observed_event = mine.iter().any(|e| {
@@ -118,8 +145,18 @@ pub fn activity_bands(
             .any(|span| e.ts >= span.start && e.ts < span.end)
     });
     if !any_observed_event {
-        add_band(&mut bands, "unknown", false, observed_secs(&spans));
-        return bands;
+        return spans
+            .into_iter()
+            .map(|span| ActivityInterval {
+                from: span.start,
+                to: span.end,
+                observation_start: span.start,
+                state: "unknown",
+                source_key: None,
+                demand: false,
+                secs: (span.end - span.start).num_seconds(),
+            })
+            .collect();
     }
     for span in &spans {
         // A state never outlives a stop: only this life's events can carry in.
@@ -153,17 +190,19 @@ pub fn activity_bands(
             if secs <= 0 {
                 continue;
             }
-            let state = life
-                .iter()
-                .rev()
-                .find(|e| e.ts <= a)
-                .map(|e| e.state.as_str())
-                .unwrap_or("unknown");
-            let demand = idle_demand(seat, queue, a);
-            add_band(&mut bands, state, demand, secs);
+            let event = life.iter().rev().find(|e| e.ts <= a);
+            intervals.push(ActivityInterval {
+                from: a,
+                to: b,
+                observation_start: span.start,
+                state: event.map(|e| e.state.as_str()).unwrap_or("unknown"),
+                source_key: event.map(|e| e.source_key.as_str()),
+                demand: idle_demand(seat, queue, a),
+                secs,
+            });
         }
     }
-    bands
+    intervals
 }
 
 pub fn idle_demand(seat: &str, queue: &[QueueFact], at: DateTime<Utc>) -> bool {

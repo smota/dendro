@@ -47,6 +47,20 @@ impl TestDir {
     fn path(&self) -> &Path {
         &self.0
     }
+
+    fn socket_path(&self) -> PathBuf {
+        #[cfg(windows)]
+        {
+            PathBuf::from(format!(
+                r"\\.\pipe\LOCAL\dendro-test-{}",
+                self.path().file_name().unwrap().to_string_lossy()
+            ))
+        }
+        #[cfg(not(windows))]
+        {
+            self.path().join("dendro.sock")
+        }
+    }
 }
 
 impl Drop for TestDir {
@@ -279,11 +293,12 @@ async fn test_connected_dashboard_server_full_lifecycle() {
 async fn test_quack_query_view_is_uncapped_without_limit() {
     let test_dir = TestDir::new("quack_uncapped");
     let db_path = test_dir.path().join("dendro.duckdb");
-    let socket_path = test_dir.path().join("dendro.sock");
+    let socket_path = test_dir.socket_path();
 
     let daemon =
         dendro_cli::serve_v1::QuackOwnerDaemon::open(db_path.clone(), Some(socket_path.clone()))
             .expect("daemon should open database");
+    let socket_path = daemon.socket_path().to_path_buf();
 
     let cli_token = daemon.token_for_role(dendro_cli::serve_v1::ClientRole::Cli);
     let daemon_handle = tokio::spawn(async move {

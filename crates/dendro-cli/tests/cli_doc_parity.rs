@@ -1,7 +1,33 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Output};
+
+fn cli_output(bin_path: &str, flag: &str) -> (Output, String) {
+    let output = Command::new(bin_path)
+        .arg(flag)
+        .output()
+        .unwrap_or_else(|error| {
+            panic!("binary={bin_path:?} flag={flag:?} spawn_error={error}; status=not started; hex_exit=unavailable; stdout=unavailable; stderr=unavailable")
+        });
+    let hex_exit = output
+        .status
+        .code()
+        .map(|code| format!("0x{:08X}", code as u32))
+        .unwrap_or_else(|| "unavailable".to_string());
+    let diagnostics = format!(
+        "binary={bin_path:?} flag={flag:?} status={} code={:?} hex_exit={hex_exit} stdout={:?} stderr={:?}",
+        output.status,
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        output.status.success(),
+        "CLI subprocess failed: {diagnostics}"
+    );
+    (output, diagnostics)
+}
 
 fn repo_root() -> PathBuf {
     if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
@@ -155,15 +181,12 @@ fn test_cli_subcommands_appear_in_cli_docs() {
     // If binary is available, verify dendro --help lists commands
     if let Ok(bin_path) = std::env::var("CARGO_BIN_EXE_dendro") {
         if Path::new(&bin_path).exists() {
-            let output = Command::new(&bin_path)
-                .arg("--help")
-                .output()
-                .expect("dendro --help must succeed");
+            let (output, diagnostics) = cli_output(&bin_path, "--help");
             let help_str = String::from_utf8_lossy(&output.stdout);
             for cmd in ["status", "run", "dashboard", "ui", "ask", "report", "trace"] {
                 assert!(
                     help_str.contains(cmd),
-                    "dendro --help output missing command: {cmd}"
+                    "dendro --help output missing command: {cmd}; {diagnostics}"
                 );
             }
         }
@@ -263,14 +286,11 @@ fn test_version_stamps_match_backlog_and_cli() {
     // Verify version against CLI --version if binary exists
     if let Ok(bin_path) = std::env::var("CARGO_BIN_EXE_dendro") {
         if Path::new(&bin_path).exists() {
-            let output = Command::new(&bin_path)
-                .arg("--version")
-                .output()
-                .expect("dendro --version must succeed");
+            let (output, diagnostics) = cli_output(&bin_path, "--version");
             let version_output = String::from_utf8_lossy(&output.stdout);
             assert!(
                 version_output.contains(&version),
-                "dendro --version ({version_output}) must match Cargo.toml version ({version})"
+                "dendro --version ({version_output}) must match Cargo.toml version ({version}); {diagnostics}"
             );
         }
     }

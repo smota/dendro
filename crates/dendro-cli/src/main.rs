@@ -8,7 +8,7 @@ pub mod tui;
 
 use anyhow::Result;
 use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand};
-use std::io::IsTerminal;
+use std::io::{IsTerminal, Write};
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio::task::JoinHandle;
@@ -550,7 +550,7 @@ async fn run_ingest(
         }
         cause = events.next() => cause,
     };
-    std::process::exit(stop_cooperatively(worker, events, cause).await);
+    exit_with_flush(stop_cooperatively(worker, events, cause).await);
 }
 
 /// `500ms`, `30s`, `5m` or `1h`; never zero.
@@ -993,8 +993,24 @@ fn hex_selection(digest: &[u8; 32]) -> String {
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn exit_with_flush(code: i32) -> ! {
+    let _ = std::io::stdout().flush();
+    let _ = std::io::stderr().flush();
+    std::process::exit(code);
+}
+
+fn main() -> Result<()> {
+    // Both Clap's generated command builders and the async command future need
+    // more stack than the process main thread provides on Windows.
+    std::thread::Builder::new()
+        .name("dendro-runtime".into())
+        .stack_size(4 * 1024 * 1024)
+        .spawn(run_cli)?
+        .join()
+        .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+}
+
+fn run_cli() -> Result<()> {
     tracing_subscriber::fmt::init();
     let parse_result = if std::env::args_os().len() == 1 {
         Cli::command().try_get_matches_from(["dendro", "status"])
@@ -1013,14 +1029,22 @@ async fn main() -> Result<()> {
                 ErrorKind::DisplayHelp | ErrorKind::DisplayVersion
             ) {
                 err.print()?;
-                std::process::exit(0);
+                exit_with_flush(0);
             }
             let code = err.exit_code();
             eprintln!("{}", dendro_core::redact(&err.to_string()));
-            std::process::exit(code);
+            exit_with_flush(code);
         }
     };
 
+    // Parse help, version and errors before constructing the command future or runtime.
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?
+        .block_on(Box::pin(run_async(cli, db_explicit)))
+}
+
+async fn run_async(cli: Cli, db_explicit: bool) -> Result<()> {
     let mut command = cli.command;
     if matches!(command, Commands::StorageInit) {
         if cli.storage_root.is_some() {
@@ -1191,7 +1215,7 @@ async fn main() -> Result<()> {
                 );
                 let receipt = tokio::select! {
                     joined = &mut worker => joined??,
-                    cause = events.next() => { std::process::exit(stop_cooperatively(worker, events, cause).await); }
+                    cause = events.next() => { exit_with_flush(stop_cooperatively(worker, events, cause).await); }
                 };
                 println!("{receipt}");
             }
@@ -1308,7 +1332,7 @@ async fn main() -> Result<()> {
                 max_idle_rate,
             );
             eprintln!("{verdict}");
-            std::process::exit(verdict["exit_code"].as_i64().unwrap_or(3) as i32);
+            exit_with_flush(verdict["exit_code"].as_i64().unwrap_or(3) as i32);
         }
         Commands::Watch {
             db,
@@ -1330,7 +1354,7 @@ async fn main() -> Result<()> {
             command,
         } => {
             let code = run_agent(db, harness, interval, flush_every, command).await?;
-            std::process::exit(code);
+            exit_with_flush(code);
         }
         Commands::Run {
             db,

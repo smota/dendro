@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 
@@ -198,7 +199,13 @@ def main():
         candidate = scratch / "dendro-candidate"
         shutil.copy2(targets["candidate"] / "debug/dendro", candidate)
         candidate_version = smoke("candidate-version", [candidate, "--version"], runtime=True).stdout.strip()
-        assert candidate_version == "dendro 0.8.0"
+        cargo_toml = (current / "Cargo.toml").read_text()
+        package_section = re.search(r"(?ms)^\[(?:workspace\.package|package)\][^\[]*", cargo_toml)
+        assert package_section is not None, "candidate manifest has no package section"
+        version_match = re.search(r'(?m)^version\s*=\s*"([^"]+)"', package_section.group())
+        assert version_match is not None, "candidate manifest has no package version"
+        expected_version = version_match.group(1)
+        assert candidate_version == f"dendro {expected_version}"
         smoke_logs = scratch / "candidate-smoke-logs"
         smoke_logs.mkdir(mode=0o700)
         os.chmod(smoke_logs, 0o700)

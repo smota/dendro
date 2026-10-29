@@ -764,6 +764,8 @@ fn provenance_members(
     explicit: &[PathBuf],
 ) -> Result<Vec<PathBuf>, MigrationV5Error> {
     let mut found = Vec::new();
+    // Compare canonical identities while retaining source paths for backup names.
+    let mut identities = std::collections::HashSet::new();
     if let Some(parent) = database.parent() {
         let db_name = database
             .file_name()
@@ -776,7 +778,12 @@ fn provenance_members(
                 let name = entry.file_name();
                 let name = name.to_string_lossy();
                 if path.is_file() && (name.starts_with(&prefix) || name.ends_with(".provenance")) {
-                    found.push(path);
+                    let identity = path
+                        .canonicalize()
+                        .map_err(|error| MigrationV5Error::Io(error.to_string()))?;
+                    if identities.insert(identity) {
+                        found.push(path);
+                    }
                 }
             }
         }
@@ -790,12 +797,113 @@ fn provenance_members(
                     .to_string(),
             ));
         }
-        if !found.iter().any(|have| have == path) {
+        let identity = path
+            .canonicalize()
+            .map_err(|error| MigrationV5Error::Io(error.to_string()))?;
+        if identities.insert(identity) {
             found.push(path.clone());
         }
     }
     found.sort();
     Ok(found)
+}
+
+#[cfg(test)]
+mod provenance_tests {
+    use super::*;
+    use crate::platform_v1::{create_user_private_root_with_choice, StorageRootChoice};
+
+    #[test]
+    fn discovered_and_explicit_aliases_are_one_member() {
+        let root = create_user_private_root_with_choice(
+            "dendro-provenance-alias-",
+            &StorageRootChoice::UserProfile,
+        )
+        .unwrap();
+        let database = root.path().join("dendro.duckdb");
+        let sidecar = root.path().join("dendro.duckdb.provenance");
+        fs::write(&database, b"database").unwrap();
+        fs::write(&sidecar, b"provenance").unwrap();
+        fs::create_dir(root.path().join("nested")).unwrap();
+        let alias = root.path().join("nested/../dendro.duckdb.provenance");
+        let database = database.canonicalize().unwrap();
+
+        let members = provenance_members(&database, &[sidecar, alias]).unwrap();
+
+        assert_eq!(
+            members,
+            vec![database.parent().unwrap().join("dendro.duckdb.provenance")]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn explicit_symlink_alias_keeps_its_copy_name() {
+        let root = create_user_private_root_with_choice(
+            "dendro-provenance-symlink-",
+            &StorageRootChoice::UserProfile,
+        )
+        .unwrap();
+        let target = root.path().join("original");
+        let alias = root.path().join("alias");
+        fs::write(&target, b"provenance").unwrap();
+        std::os::unix::fs::symlink(&target, &alias).unwrap();
+
+        let members =
+            provenance_members(&root.path().join("dendro.duckdb"), &[alias.clone(), target])
+                .unwrap();
+
+        assert_eq!(members, vec![alias]);
+    }
+
+    #[test]
+    fn missing_explicit_member_keeps_missing_member_error() {
+        let root = create_user_private_root_with_choice(
+            "dendro-provenance-missing-",
+            &StorageRootChoice::UserProfile,
+        )
+        .unwrap();
+        let database = root.path().join("dendro.duckdb");
+        let missing = root.path().join("missing.provenance");
+
+        assert_eq!(
+            provenance_members(&database, &[missing]),
+            Err(MigrationV5Error::MissingMember("missing.provenance".into()))
+        );
+    }
+
+    #[test]
+    fn distinct_files_with_same_basename_still_collide_exclusively() {
+        let root = create_user_private_root_with_choice(
+            "dendro-provenance-collision-",
+            &StorageRootChoice::UserProfile,
+        )
+        .unwrap();
+        let first_dir = root.path().join("first");
+        let second_dir = root.path().join("second");
+        let backup = root.path().join("backup");
+        fs::create_dir(&first_dir).unwrap();
+        fs::create_dir(&second_dir).unwrap();
+        fs::create_dir(&backup).unwrap();
+        let first = first_dir.join("same.provenance");
+        let second = second_dir.join("same.provenance");
+        fs::write(&first, b"first").unwrap();
+        fs::write(&second, b"second").unwrap();
+
+        let members = provenance_members(
+            &root.path().join("dendro.duckdb"),
+            &[first.clone(), second.clone()],
+        )
+        .unwrap();
+
+        assert_eq!(members, vec![first, second]);
+        copy_member(&members[0], &backup, "provenance").unwrap();
+        assert!(matches!(
+            copy_member(&members[1], &backup, "provenance"),
+            Err(MigrationV5Error::Io(_))
+        ));
+        assert_eq!(fs::read(backup.join("same.provenance")).unwrap(), b"first");
+    }
 }
 
 fn copy_backup_set(
@@ -883,12 +991,14 @@ fn create_backup_dir(path: &Path) -> Result<(), MigrationV5Error> {
     if path.symlink_metadata().is_ok() {
         return Err(MigrationV5Error::BackupExists);
     }
-    let mut builder = fs::DirBuilder::new();
+    let builder = fs::DirBuilder::new();
     #[cfg(unix)]
-    {
+    let builder = {
+        let mut builder = builder;
         use std::os::unix::fs::DirBuilderExt;
         builder.mode(0o700);
-    }
+        builder
+    };
     builder.create(path).map_err(|error| {
         if error.kind() == std::io::ErrorKind::AlreadyExists {
             MigrationV5Error::BackupExists

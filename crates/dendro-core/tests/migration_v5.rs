@@ -47,7 +47,10 @@ fn exclusive_backup_pointer_cutover_and_rollback() {
         MIGRATION_V5_TARGET_SCHEMA_VERSION
     );
     let backup = root.path().join(BACKUP_DIR_NAME);
+    #[cfg(unix)]
     assert_eq!(mode(&backup), 0o700, "backup directory mode");
+    #[cfg(windows)]
+    assert_windows_private_object(&backup, platform::ObjectKind::Directory);
     assert!(receipt
         .members
         .iter()
@@ -78,12 +81,27 @@ fn exclusive_backup_pointer_cutover_and_rollback() {
         .iter()
         .any(|member| member.role == "provenance"));
     for member in receipt.members.iter().filter(|member| !member.absent) {
+        #[cfg(unix)]
         assert_eq!(mode(&backup.join(&member.name)), 0o600, "{}", member.name);
+        #[cfg(windows)]
+        assert_windows_private_object(
+            &backup.join(&member.name),
+            platform::ObjectKind::RegularFile,
+        );
     }
+    #[cfg(unix)]
     assert_eq!(mode(&backup.join("receipt.json")), 0o600);
+    #[cfg(windows)]
+    assert_windows_private_object(
+        &backup.join("receipt.json"),
+        platform::ObjectKind::RegularFile,
+    );
 
     let pointer_path = root.path().join("dendro.pointer.json");
+    #[cfg(unix)]
     assert_eq!(mode(&pointer_path), 0o600);
+    #[cfg(windows)]
+    assert_windows_private_object(&pointer_path, platform::ObjectKind::RegularFile);
     let pointer = read_pointer(root.path()).unwrap();
     assert_eq!(pointer.selected, "schema5-live");
     assert_eq!(pointer.live_database, "dendro.duckdb");
@@ -339,9 +357,293 @@ fn restrict(path: &Path) {
 }
 
 #[cfg(not(unix))]
-fn mode(_path: &Path) -> u32 {
-    0o600
+fn restrict(_path: &Path) {}
+
+#[cfg(windows)]
+#[test]
+fn windows_provenance_aliases_backup_once_and_preserve_rollback() {
+    let (root, database, privacy) = provenance_fixture("dendro-v5-alias-");
+    let provenance = root.path().join("dendro.duckdb.provenance");
+    fs::write(&provenance, b"same-provenance-file").unwrap();
+    let verbatim = provenance.canonicalize().unwrap();
+    let normal = std::path::PathBuf::from(
+        verbatim
+            .to_str()
+            .unwrap()
+            .strip_prefix(r"\\?\")
+            .expect("native fixture must have a verbatim Windows drive path"),
+    );
+    assert!(normal.is_absolute());
+    assert_ne!(
+        normal, verbatim,
+        "the request must exercise different spellings"
+    );
+    assert_eq!(normal.canonicalize().unwrap(), verbatim);
+    let before = fs::read(&database).unwrap();
+
+    // Keep both spellings in the request; normalizing fixture inputs would mask the defect.
+    let receipt = migrate_schema4_to_schema5(MigrateV5Request {
+        database: &database,
+        privacy_key: &privacy,
+        provenance_sidecars: &[normal, verbatim],
+        live_writer_active: false,
+        stop_before_cutover: false,
+    })
+    .expect("normal and verbatim aliases of one sidecar must migrate");
+    assert_eq!(
+        receipt.target_schema_version,
+        MIGRATION_V5_TARGET_SCHEMA_VERSION
+    );
+    let provenance_members: Vec<_> = receipt
+        .members
+        .iter()
+        .filter(|member| member.role == "provenance")
+        .collect();
+    assert_eq!(
+        provenance_members.len(),
+        1,
+        "one file must be backed up once"
+    );
+    assert_eq!(provenance_members[0].name, "dendro.duckdb.provenance");
+    let backup = root.path().join(BACKUP_DIR_NAME);
+    assert_eq!(fs::read(backup.join("dendro.duckdb")).unwrap(), before);
+    assert_eq!(
+        fs::read(backup.join("dendro.duckdb.provenance")).unwrap(),
+        b"same-provenance-file"
+    );
+    let backup_before_rollback = backup_snapshot(&backup);
+    rollback_to_pre_v200(&database, false).expect("deduplicated provenance must preserve rollback");
+    assert_eq!(fs::read(&database).unwrap(), before);
+    assert_eq!(backup_snapshot(&backup), backup_before_rollback);
+    assert_eq!(fs::read(&provenance).unwrap(), b"same-provenance-file");
+    assert_eq!(fs::read(&privacy).unwrap(), b"privacy-key-material");
+    let pointer = read_pointer(root.path()).unwrap();
+    assert_eq!(pointer.selected, "schema4-live");
+    assert_eq!(pointer.live_schema_version, 4);
+    remove_provenance_fixture(root);
 }
 
-#[cfg(not(unix))]
-fn restrict(_path: &Path) {}
+#[test]
+fn distinct_provenance_files_with_one_basename_still_refuse_collision() {
+    let (root, database, privacy) = provenance_fixture("dendro-v5-collision-");
+    let other = platform::create_user_private_root_with_choice(
+        "dendro-v5-collision-other-",
+        &StorageRootChoice::UserProfile,
+    )
+    .expect("second private root");
+    let first = root.path().join("duplicate.provenance");
+    let second = other.path().join("duplicate.provenance");
+    fs::write(&first, b"first-distinct-provenance").unwrap();
+    fs::write(&second, b"second-distinct-provenance").unwrap();
+    restrict(&first);
+    restrict(&second);
+    assert_ne!(
+        first.canonicalize().unwrap(),
+        second.canonicalize().unwrap()
+    );
+    let before = fs::read(&database).unwrap();
+
+    let error = migrate_schema4_to_schema5(MigrateV5Request {
+        database: &database,
+        privacy_key: &privacy,
+        provenance_sidecars: &[first.clone(), second.clone()],
+        live_writer_active: false,
+        stop_before_cutover: false,
+    })
+    .expect_err("different files sharing one backup basename must not be deduplicated");
+    assert!(
+        matches!(&error, MigrationV5Error::Io(message)
+            if message.contains("duplicate.provenance") && message.contains("already exists")),
+        "expected exclusive backup-member collision, got: {error}"
+    );
+    assert!(!root.path().join(BACKUP_DIR_NAME).exists());
+    assert!(!root.path().join("dendro.pointer.json").exists());
+    assert_eq!(fs::read(&database).unwrap(), before);
+    assert_eq!(fs::read(&privacy).unwrap(), b"privacy-key-material");
+    assert_eq!(fs::read(&first).unwrap(), b"first-distinct-provenance");
+    assert_eq!(fs::read(&second).unwrap(), b"second-distinct-provenance");
+    remove_provenance_fixture(other);
+    remove_provenance_fixture(root);
+}
+
+#[test]
+fn missing_explicit_provenance_still_refuses_before_backup_creation() {
+    let (root, database, privacy) = provenance_fixture("dendro-v5-missing-");
+    let missing = root.path().join("missing.provenance");
+    let before = fs::read(&database).unwrap();
+    let error = migrate_schema4_to_schema5(MigrateV5Request {
+        database: &database,
+        privacy_key: &privacy,
+        provenance_sidecars: std::slice::from_ref(&missing),
+        live_writer_active: false,
+        stop_before_cutover: false,
+    })
+    .expect_err("missing explicit sidecar must remain a missing-member refusal");
+    assert!(
+        matches!(error, MigrationV5Error::MissingMember(ref name) if name == "missing.provenance")
+    );
+    assert!(!root.path().join(BACKUP_DIR_NAME).exists());
+    assert!(!root.path().join("dendro.pointer.json").exists());
+    assert!(!missing.exists());
+    assert_eq!(fs::read(&database).unwrap(), before);
+    assert_eq!(fs::read(&privacy).unwrap(), b"privacy-key-material");
+    remove_provenance_fixture(root);
+}
+
+fn provenance_fixture(
+    prefix: &str,
+) -> (
+    platform::PrivateRoot,
+    std::path::PathBuf,
+    std::path::PathBuf,
+) {
+    let root =
+        platform::create_user_private_root_with_choice(prefix, &StorageRootChoice::UserProfile)
+            .expect("private provenance fixture root");
+    let database = root.path().join("dendro.duckdb");
+    write_schema4(&database);
+    let privacy = root.path().join("dendro.duckdb.key");
+    fs::write(&privacy, b"privacy-key-material").unwrap();
+    restrict(&database);
+    restrict(&privacy);
+    (root, database, privacy)
+}
+
+fn remove_provenance_fixture(root: platform::PrivateRoot) {
+    let path = root.path().to_path_buf();
+    drop(root);
+    fs::remove_dir_all(path).unwrap();
+}
+
+#[cfg(windows)]
+fn windows_effective_privacy(
+    path: &Path,
+    expected_kind: platform::ObjectKind,
+) -> Result<platform::Verdict, String> {
+    use platform::{AceView, OwnerEvidence, PrivateObjectInput, TrustPolicy, Trustee};
+    use std::os::windows::fs::OpenOptionsExt;
+    use win_custody::{current_user_sid_string, ObjectSecurityDescriptor, OwnedSid};
+
+    // Hold the inspected object without following a reparse point or sharing deletion.
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .share_mode(0x0000_0001 | 0x0000_0002)
+        .custom_flags(0x0200_0000 | 0x0020_0000)
+        .open(path)
+        .map_err(|error| error.to_string())?;
+    let metadata = platform::metadata_from_handle(&file).map_err(|error| error.to_string())?;
+    if metadata.kind != expected_kind || metadata.reparse {
+        return Err(format!(
+            "expected plain {expected_kind:?}, observed {:?}, reparse={}",
+            metadata.kind, metadata.reparse
+        ));
+    }
+    let descriptor =
+        ObjectSecurityDescriptor::query_kernel_object(&file).map_err(|error| error.to_string())?;
+    let owner = descriptor.owner().map_err(|error| error.to_string())?;
+    let control = descriptor.control().map_err(|error| error.to_string())?;
+    // Validation rejects missing/null DACLs and unsupported ACE types, including denies.
+    let dacl = descriptor.dacl().map_err(|error| error.to_string())?;
+    let user = current_user_sid_string().map_err(|error| error.to_string())?;
+    let known = [
+        (user.as_str(), Trustee::CurrentUser),
+        ("S-1-5-18", Trustee::LocalSystem),
+        ("S-1-5-32-544", Trustee::BuiltinAdministrators),
+        (
+            "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464",
+            Trustee::TrustedInstaller,
+        ),
+        ("S-1-3-0", Trustee::CreatorOwner),
+        ("S-1-3-4", Trustee::OwnerRights),
+    ]
+    .into_iter()
+    .map(|(sid, trustee)| OwnedSid::from_string(sid).map(|sid| (sid, trustee)))
+    .collect::<std::io::Result<Vec<_>>>()
+    .map_err(|error| error.to_string())?;
+    let owner = match known
+        .iter()
+        .find(|(sid, _)| owner.matches(sid))
+        .map(|(_, trustee)| *trustee)
+    {
+        Some(Trustee::CurrentUser) => OwnerEvidence::CurrentUser,
+        Some(Trustee::LocalSystem) => OwnerEvidence::LocalSystem,
+        Some(Trustee::BuiltinAdministrators) => OwnerEvidence::BuiltinAdministrators,
+        Some(Trustee::TrustedInstaller) => OwnerEvidence::TrustedService,
+        _ => OwnerEvidence::Foreign,
+    };
+    let aces = dacl
+        .allowed_aces()
+        .map(|ace| AceView {
+            trustee: known
+                .iter()
+                .find(|(sid, _)| ace.trustee_matches(sid))
+                .map(|(_, trustee)| *trustee)
+                .unwrap_or(Trustee::Untrusted),
+            mask: ace.mask(),
+            flags: ace.flags(),
+        })
+        .collect();
+    Ok(platform::evaluate_private_object(&PrivateObjectInput {
+        owner,
+        dacl_present: true,
+        dacl_protected: control & 0x1000 != 0,
+        // Backup artifacts require private effective grants, not storage-root admission.
+        require_protected: false,
+        trust: TrustPolicy::FROZEN_HOST,
+        aces,
+        read_only_attribute: metadata.read_only_attribute,
+        deny_ace_present: false,
+    }))
+}
+
+#[cfg(windows)]
+fn assert_windows_private_object(path: &Path, expected_kind: platform::ObjectKind) {
+    let verdict = windows_effective_privacy(path, expected_kind).unwrap_or_else(|error| {
+        panic!(
+            "native privacy inspection failed for {}: {error}",
+            path.display()
+        )
+    });
+    assert!(
+        verdict.is_allow(),
+        "native private grants required for {}: {verdict:?}",
+        path.display()
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_backup_privacy_check_rejects_broad_grant_on_owned_file() {
+    use win_custody::{current_user_sid_string, SecurityDescriptor};
+
+    let root = platform::create_user_private_root_with_choice(
+        "dendro-v5-acl-control-",
+        &StorageRootChoice::UserProfile,
+    )
+    .expect("owned private ACL-control fixture");
+    let directory = root.path().join("inherited-private");
+    fs::create_dir(&directory).unwrap();
+    assert_windows_private_object(&directory, platform::ObjectKind::Directory);
+    let path = directory.join("synthetic-control.bin");
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .unwrap();
+    file.write_all(b"synthetic ACL control only").unwrap();
+    drop(file);
+    assert_windows_private_object(&path, platform::ObjectKind::RegularFile);
+    assert!(windows_effective_privacy(&path, platform::ObjectKind::Directory).is_err());
+
+    let user = current_user_sid_string().unwrap();
+    let broad =
+        SecurityDescriptor::from_sddl(&format!("D:P(A;;FA;;;{user})(A;;FA;;;SY)(A;;FR;;;WD)"))
+            .unwrap();
+    // This existing safe API changes only this newly created owned synthetic file.
+    broad.apply_to_tree(&path, true).unwrap();
+    let refused = windows_effective_privacy(&path, platform::ObjectKind::RegularFile)
+        .expect("the broadened owned file descriptor must remain readable");
+    assert!(!refused.is_allow());
+    assert_eq!(refused.code, "untrusted_allow_ace");
+    remove_provenance_fixture(root);
+}
