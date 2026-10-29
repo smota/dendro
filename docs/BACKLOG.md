@@ -2,7 +2,7 @@
 
 This document serves as the authoritative, human-readable index of **Dendro's Multi-Goal Product Backlog**, maintained autonomously under the **AgentFlow SDLC** governance framework.
 
-**Synced:** 2026-10-28. **Delivered through:** v0.9.0 on `main` (workspace `0.9.0`; newest git tag is `v0.9.0`). **Active backlog:** v1.0.0 / vNext (Goal 10).
+**Synced:** 2026-10-29. **Release preparation:** v0.9.1 (workspace `0.9.1`; newest git tag is `v0.9.0`). **Active backlog:** v1.0.0 / vNext (Goal 10).
 
 ## Backlog Fulfillment — 2026-10-19 (delivered on `main`)
 
