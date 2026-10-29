@@ -2236,6 +2236,32 @@ pub fn trace_json_with_analysis_physical(
     friction: crate::FrictionThresholds,
     advisory: crate::advisory::AdvisoryOptions,
 ) -> Result<Value> {
+    if metric_id == "direct_overview" {
+        // One shared snapshot owns both metric values and replay provenance.
+        // Legacy report inputs must not be mixed in from a second DB snapshot.
+        let from_dt = chrono::DateTime::parse_from_rfc3339(from)?.with_timezone(&chrono::Utc);
+        let to_dt = chrono::DateTime::parse_from_rfc3339(to)?.with_timezone(&chrono::Utc);
+        let req = crate::overview::OverviewRequest {
+            rig: rig.map(str::to_owned),
+            from: from_dt,
+            to: to_dt,
+            observation_clock: Some(chrono::Utc::now()),
+            evidence_as_of: None,
+            advisory_options: advisory,
+            friction_thresholds: friction,
+            expect_evidence_digest: None,
+        };
+        let overview = crate::overview::evaluate_overview_snapshot_path(db, &req)?;
+        return Ok(json!({
+            "metric_id":"direct_overview","formula_version":crate::overview::FORMULA_VERSION,
+            "formula":crate::overview::FORMULA_VERSION,"value":overview,
+            "inputs":{"scope":overview.scope,"source_keys":overview.source_keys,
+                "evidence_as_of":overview.evidence_as_of,"coverage":overview.coverage,
+                "source_coverage":overview.source_coverage,"digest":overview.digest},
+            "from":crate::overview::to_iso_z(&from_dt),"to":crate::overview::to_iso_z(&to_dt),
+            "rig":req.rig,"digest":overview.digest,
+        }));
+    }
     let mut evaluation = evaluate_report(
         db,
         "decisions",
@@ -2415,6 +2441,8 @@ pub fn trace_json_with_analysis_physical(
         else if metric_id == "anomaly_spotlights" {"anomaly-spotlights-v1"}
         else if metric_id == "handoff_friction" {
             crate::vortex::FORMULA_VERSION
+        } else if metric_id == "direct_overview" {
+            crate::overview::FORMULA_VERSION
         } else if metric_id == "medians" {
             "acceptance-r1-a1-wait-fractional-v1"
         } else {
@@ -2426,6 +2454,7 @@ pub fn trace_json_with_analysis_physical(
         "from": redact(from),
         "to": redact(to),
         "rig": rig.map(redact),
+        "digest": if metric_id == "direct_overview" { value["digest"].clone() } else { Value::Null },
     }))
 }
 

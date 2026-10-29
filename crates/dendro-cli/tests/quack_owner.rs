@@ -26,15 +26,19 @@ static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 struct TestDir(PathBuf);
 impl TestDir {
-    fn new(prefix: &str) -> Self {
+    fn new(_prefix: &str) -> Self {
         let unique = format!(
-            "dendro-test-quack-{}-{}-{}",
-            prefix,
+            "dq-{}-{}",
             std::process::id(),
             TEST_COUNTER.fetch_add(1, Ordering::Relaxed)
         );
+        // CI's TMPDIR can already consume most of sockaddr_un.sun_path.
+        // Keep synthetic Unix sockets short, private and cleaned by Drop.
+        #[cfg(unix)]
+        let path = Path::new("/tmp").join(unique);
+        #[cfg(not(unix))]
         let path = std::env::temp_dir().join(unique);
-        fs::create_dir_all(&path).unwrap();
+        fs::create_dir(&path).unwrap();
         #[cfg(unix)]
         {
             fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
@@ -45,6 +49,20 @@ impl TestDir {
     fn path(&self) -> &Path {
         &self.0
     }
+
+    fn socket_path(&self) -> PathBuf {
+        #[cfg(windows)]
+        {
+            PathBuf::from(format!(
+                r"\\.\pipe\LOCAL\dendro-test-{}",
+                self.path().file_name().unwrap().to_string_lossy()
+            ))
+        }
+        #[cfg(not(windows))]
+        {
+            self.path().join("dendro.sock")
+        }
+    }
 }
 
 impl Drop for TestDir {
@@ -53,11 +71,19 @@ impl Drop for TestDir {
     }
 }
 
+#[cfg(unix)]
+#[test]
+fn test_socket_fixture_path_fits_portable_unix_limit() {
+    let test_dir = TestDir::new("numeric_serialization");
+    let socket = test_dir.path().join("dendro.sock");
+    assert!(socket.as_os_str().as_encoded_bytes().len() < 104);
+}
+
 #[tokio::test]
 async fn test_single_owner_daemon_locks_database() {
     let test_dir = TestDir::new("owner_lock");
     let db_path = test_dir.path().join("dendro.duckdb");
-    let socket_path = test_dir.path().join("dendro.sock");
+    let socket_path = test_dir.socket_path();
 
     // 1. Daemon starts and holds the raw exclusive DuckDB session
     let daemon = QuackOwnerDaemon::open(db_path.clone(), Some(socket_path.clone()))
@@ -153,10 +179,11 @@ async fn test_socket_directory_permissions_and_token_sidecar() {
 async fn test_same_user_containment_and_raw_sql_rejection() {
     let test_dir = TestDir::new("containment");
     let db_path = test_dir.path().join("dendro.duckdb");
-    let socket_path = test_dir.path().join("dendro.sock");
+    let socket_path = test_dir.socket_path();
 
     let daemon = QuackOwnerDaemon::open(db_path.clone(), Some(socket_path.clone()))
         .expect("daemon should start");
+    let socket_path = daemon.socket_path().to_path_buf();
 
     let hook_token = daemon.token_for_role(ClientRole::Hook);
     let cli_token = daemon.token_for_role(ClientRole::Cli);
@@ -367,10 +394,11 @@ async fn test_same_user_containment_and_raw_sql_rejection() {
 async fn test_query_view_numeric_column_serialization() {
     let test_dir = TestDir::new("numeric_serialization");
     let db_path = test_dir.path().join("dendro.duckdb");
-    let socket_path = test_dir.path().join("dendro.sock");
+    let socket_path = test_dir.socket_path();
 
     let daemon = QuackOwnerDaemon::open(db_path.clone(), Some(socket_path.clone()))
         .expect("daemon should open database");
+    let socket_path = daemon.socket_path().to_path_buf();
 
     let cli_token = daemon.token_for_role(ClientRole::Cli);
     let daemon_handle = tokio::spawn(async move {
@@ -449,10 +477,11 @@ async fn test_query_view_numeric_column_serialization() {
 async fn test_quack_append_fact_required_fields_validation() {
     let test_dir = TestDir::new("req_fields");
     let db_path = test_dir.path().join("dendro.duckdb");
-    let socket_path = test_dir.path().join("dendro.sock");
+    let socket_path = test_dir.socket_path();
 
     let daemon = QuackOwnerDaemon::open(db_path.clone(), Some(socket_path.clone()))
         .expect("daemon should open database");
+    let socket_path = daemon.socket_path().to_path_buf();
 
     let cli_token = daemon.token_for_role(ClientRole::Cli);
     let daemon_handle = tokio::spawn(async move {
@@ -573,4 +602,130 @@ async fn test_quack_append_fact_required_fields_validation() {
     assert_eq!(res.status, "ok");
 
     daemon_handle.abort();
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn test_windows_rpc_recovers_from_busy_pipe_before_sending_once() {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    use tokio::net::windows::named_pipe::{ClientOptions, ServerOptions};
+
+    let test_dir = TestDir::new("busy_pipe");
+    let socket_path = test_dir.socket_path();
+    let occupied_server = ServerOptions::new()
+        .first_pipe_instance(true)
+        .max_instances(2)
+        .create(&socket_path)
+        .unwrap();
+    let occupied = ClientOptions::new().open(&socket_path).unwrap();
+    occupied_server.connect().await.unwrap();
+    let busy = ClientOptions::new()
+        .open(&socket_path)
+        .err()
+        .expect("the only pipe instance must be occupied");
+    assert_eq!(busy.raw_os_error(), Some(231));
+
+    let payload = r#"{"method":"busy_fixture"}"#;
+    let mut request = Box::pin(send_raw_rpc(&socket_path, payload));
+    assert!(
+        futures::poll!(&mut request).is_pending(),
+        "a busy pipe must wait for availability instead of failing its first open"
+    );
+
+    // Keep the busy instance alive and publish a fresh available instance.
+    let server = ServerOptions::new()
+        .max_instances(2)
+        .create(&socket_path)
+        .unwrap();
+    let exchange = async move {
+        server.connect().await.unwrap();
+        let mut reader = BufReader::new(server);
+        let mut line = String::new();
+        reader.read_line(&mut line).await.unwrap();
+        assert_eq!(line, format!("{payload}\n"));
+        reader
+            .get_mut()
+            .write_all(b"{\"status\":\"ok\",\"result\":{\"delivered\":1},\"error\":null}\n")
+            .await
+            .unwrap();
+        let mut duplicate = String::new();
+        assert_eq!(
+            reader.read_line(&mut duplicate).await.unwrap(),
+            0,
+            "one recovered connection must carry exactly one request"
+        );
+    };
+    let ((), response) = tokio::time::timeout(Duration::from_secs(5), async {
+        tokio::join!(biased; exchange, request)
+    })
+    .await
+    .expect("controlled busy pipe exchange must finish");
+    let response = response.expect("RPC must recover once the busy instance is available");
+    assert_eq!(response.status, "ok");
+    assert_eq!(response.result.unwrap()["delivered"], serde_json::json!(1));
+    drop(occupied);
+    drop(occupied_server);
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn test_windows_rpc_returns_nonbusy_open_error_without_waiting() {
+    let test_dir = TestDir::new("missing_pipe");
+    let socket_path = test_dir.socket_path();
+    let mut request = Box::pin(send_raw_rpc(
+        &socket_path,
+        r#"{"method":"missing_fixture"}"#,
+    ));
+    let error = match futures::poll!(&mut request) {
+        std::task::Poll::Ready(Err(error)) => error,
+        other => panic!("a nonexistent pipe must fail its first open without retry: {other:?}"),
+    };
+    let error = error
+        .downcast_ref::<std::io::Error>()
+        .expect("missing pipe must preserve the native I/O error");
+    assert_eq!(error.raw_os_error(), Some(2));
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn test_windows_rpc_does_not_replay_after_server_disconnects() {
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    use tokio::net::windows::named_pipe::ServerOptions;
+
+    let test_dir = TestDir::new("disconnected_pipe");
+    let socket_path = test_dir.socket_path();
+    let server = ServerOptions::new()
+        .first_pipe_instance(true)
+        .create(&socket_path)
+        .unwrap();
+    let payload = r#"{"method":"no_replay_fixture"}"#;
+    let mut request = Box::pin(send_raw_rpc(&socket_path, payload));
+    tokio::time::timeout(Duration::from_secs(5), async {
+        let receive = async move {
+            server.connect().await.unwrap();
+            let mut reader = BufReader::new(server);
+            let mut line = String::new();
+            reader.read_line(&mut line).await.unwrap();
+            assert_eq!(line, format!("{payload}\n"));
+            reader
+        };
+        let connected = tokio::select! {
+            result = &mut request => panic!("RPC finished before the controlled disconnect: {result:?}"),
+            connected = receive => connected,
+        };
+        // A replacement instance makes any forbidden replay observable as a connection.
+        let replay_detector = ServerOptions::new().create(&socket_path).unwrap();
+        drop(connected);
+        let result = tokio::select! {
+            biased;
+            connection = replay_detector.connect() => {
+                connection.unwrap();
+                panic!("RPC must not reconnect after its request was already delivered");
+            },
+            result = &mut request => result,
+        };
+        assert!(result.is_err(), "a disconnected response must remain a failure");
+    })
+    .await
+    .expect("controlled disconnect must fail without replaying the RPC");
 }

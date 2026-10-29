@@ -177,6 +177,8 @@ pub fn execute_live_query(
         "schema_drift" | "v_schema_drift" => "v_schema_drift",
         "authority_blast_radius" | "v_authority_blast_radius" => "v_authority_blast_radius",
         "counterfactual_routing" | "v_counterfactual_routing" => "v_counterfactual_routing",
+        "direct_overview" | "v_direct_overview" => "direct_overview",
+        "cwd_projects" | "v_cwd_fingerprint_rollup" => "v_cwd_fingerprint_rollup",
         other => other,
     };
 
@@ -318,16 +320,16 @@ pub fn execute_live_query(
 // Temporary views are private to this request's connection. They filter every
 // downstream query without changing telemetry or persisted semantic snapshots.
 const LIVE_FACTS: &[(&str, &str, &str)] = &[
-    ("usage_facts", "ts", "source_key VARCHAR, harness VARCHAR, native_session VARCHAR, ts TIMESTAMP, input_uncached BIGINT, output_tokens BIGINT, cache_read BIGINT, cache_write BIGINT, currency_total DOUBLE, model VARCHAR"),
+    ("usage_facts", "ts", "source_key VARCHAR, harness VARCHAR, native_session VARCHAR, ts TIMESTAMP, input_uncached BIGINT, output_tokens BIGINT, cache_read BIGINT, cache_write BIGINT, currency_total DOUBLE, model VARCHAR, seq BIGINT"),
     ("message_facts", "ts", "source_key VARCHAR, harness VARCHAR, native_session VARCHAR, ts TIMESTAMP, role VARCHAR, direction VARCHAR, modalities VARCHAR"),
-    ("activity_facts", "ts", "source_key VARCHAR, seat VARCHAR, ts TIMESTAMP, state VARCHAR"),
-    ("queue_facts", "ts", "source_key VARCHAR, qitem_id VARCHAR, ts TIMESTAMP, state VARCHAR, source_seat VARCHAR, dest_seat VARCHAR, is_recovery BOOLEAN"),
+    ("activity_facts", "ts", "source_key VARCHAR, seat VARCHAR, ts TIMESTAMP, state VARCHAR, seq BIGINT"),
+    ("queue_facts", "ts", "source_key VARCHAR, transition_id BIGINT, qitem_id VARCHAR, ts TIMESTAMP, state VARCHAR, source_seat VARCHAR, dest_seat VARCHAR, closure_reason VARCHAR, closure_target VARCHAR, is_recovery BOOLEAN, recovery_reason VARCHAR, issue_tags VARCHAR, chain_id VARCHAR, parent_qitem_id VARCHAR"),
     ("security_facts", "ts", "source_key VARCHAR, harness VARCHAR, native_session VARCHAR, ts TIMESTAMP, kind VARCHAR, value VARCHAR, source_field VARCHAR"),
     ("session_edges", "observed_at", "source_key VARCHAR, harness VARCHAR, parent_session VARCHAR, child_session VARCHAR, observed_at TIMESTAMP, relation VARCHAR, status VARCHAR"),
-    ("tool_facts", "ts", "source_key VARCHAR, harness VARCHAR, native_session VARCHAR, ts TIMESTAMP, failed BOOLEAN, category VARCHAR"),
+    ("tool_facts", "ts", "source_key VARCHAR, harness VARCHAR, native_session VARCHAR, ts TIMESTAMP, failed BOOLEAN, category VARCHAR, tool_name VARCHAR"),
     ("skill_facts", "", "source_key VARCHAR, seat VARCHAR, skill VARCHAR, invoked BOOLEAN"),
     ("identity_facts", "", "source_key VARCHAR, harness VARCHAR, native_session VARCHAR, rig VARCHAR, seat VARCHAR, ts TIMESTAMP"),
-    ("process_identities", "last_seen", "identity_key VARCHAR, root_key VARCHAR, harness VARCHAR, attribution VARCHAR, session_link VARCHAR, first_seen TIMESTAMP, last_seen TIMESTAMP"),
+    ("process_identities", "last_seen", "identity_key VARCHAR, root_key VARCHAR, harness VARCHAR, attribution VARCHAR, session_link VARCHAR, cwd_fingerprint VARCHAR, first_seen TIMESTAMP, last_seen TIMESTAMP, ended_at TIMESTAMP"),
     ("process_samples", "ts", "identity_key VARCHAR, ts TIMESTAMP, rss_unit VARCHAR, rss_bytes BIGINT"),
     ("envelope_fingerprints", "", "harness VARCHAR, ts TIMESTAMP, fingerprint VARCHAR, harness_version VARCHAR"),
 ];
@@ -552,6 +554,14 @@ fn query_live_payload(
 ) -> Result<serde_json::Value> {
     use serde_json::json;
     let sources = prepare_live_facts(conn)?;
+    for (name, schema) in [
+        ("seat_bounds", "seat VARCHAR, created_at TIMESTAMP, stopped_at TIMESTAMP"),
+        ("destination_snapshots", "qitem_id VARCHAR, destination VARCHAR, snapshot_cutoff VARCHAR, reroute_marked BOOLEAN, missions VARCHAR"),
+    ] {
+        if conn.prepare(&format!("SELECT * FROM {name} LIMIT 0")).is_err() {
+            conn.execute_batch(&format!("CREATE TEMP TABLE {name} ({schema})"))?;
+        }
+    }
     let (first, last): (Option<String>, Option<String>) = conn.query_row(
         "SELECT MIN(t)::VARCHAR, MAX(t)::VARCHAR FROM (
             SELECT ts t FROM usage_facts UNION ALL SELECT ts FROM message_facts
@@ -565,6 +575,23 @@ fn query_live_payload(
         |r| Ok((r.get(0)?, r.get(1)?)),
     )?;
     let window = LiveWindow::resolve(requested_window, first.as_deref(), last.as_deref())?;
+    // Capture the shared overview before request-local presentation views discard
+    // pre-window ownership, lifecycle and project-interval support.
+    let overview = if matches!(
+        view,
+        "direct_overview"
+            | "v_cwd_fingerprint_rollup"
+            | "skill_facts"
+            | "hub"
+            | "general"
+            | "status"
+            | "v_seat_idle_ranking"
+            | "v_handoff_rework_analysis"
+    ) {
+        Some(direct_overview_payload(conn, &window, rig)?)
+    } else {
+        None
+    };
     conn.execute_batch("CREATE TEMP TABLE IF NOT EXISTS _dashboard_window (start_ts TIMESTAMP, end_ts TIMESTAMP, rig VARCHAR); DELETE FROM _dashboard_window;")?;
     conn.execute(
         "INSERT INTO _dashboard_window VALUES (?::TIMESTAMP, ?::TIMESTAMP, ?)",
@@ -696,7 +723,34 @@ fn query_live_payload(
         "v_handoff_rework_analysis" => handoff_payload(conn, &mut payload, &rows)?,
         "v_mission_token_burn" => mission_payload(conn, &mut payload, &rows)?,
         "v_executive_governance" => governance_payload(conn, &mut payload, &rows, &window)?,
+        "direct_overview" => {
+            let ov = overview.clone().context("overview capture missing")?;
+            payload["direct_overview"] = ov.clone();
+            payload["rows"] = ov["project_groups"].clone();
+            payload["summary"] = ov;
+        }
+        "v_cwd_fingerprint_rollup" => {
+            let ov = overview.clone().context("overview capture missing")?;
+            payload["direct_overview"] = ov.clone();
+            payload["rows"] = ov["project_groups"].clone();
+        }
+        "skill_facts" => {
+            let ov = overview.clone().context("overview capture missing")?;
+            payload["direct_overview"] = ov.clone();
+            payload["rows"] = json!(ov["context_tax"]["uncalled_skills"].as_array().into_iter().flatten().map(|skill| json!({"skill":skill,"invoked":false,"status":ov["context_tax"]["declaration_status"]})).collect::<Vec<_>>());
+        }
         _ => {}
+    }
+    if matches!(view, "hub" | "general" | "status") {
+        if let Some(ref ov) = overview {
+            payload["direct_overview"] = ov.clone();
+        }
+    }
+    if let Some(ov) = overview.as_ref() {
+        payload["direct_overview"] = ov.clone();
+        if let Some(lens) = ov["lens_rows"].get(view) {
+            payload["lens_rows"] = lens.clone();
+        }
     }
     enrich_payload_groupings(conn, &mut payload, view)?;
     Ok(payload)
@@ -1265,6 +1319,27 @@ fn anomaly_markers(conn: &duckdb::Connection) -> Result<serde_json::Value> {
     markers.sort_by(|a, b| b["t"].as_str().cmp(&a["t"].as_str()));
     markers.truncate(24);
     Ok(json!(markers))
+}
+
+fn direct_overview_payload(
+    conn: &duckdb::Connection,
+    window: &LiveWindow,
+    rig: Option<&str>,
+) -> Result<serde_json::Value> {
+    use dendro_core::overview::*;
+    let req = OverviewRequest {
+        rig: rig.map(str::to_string),
+        from: window.from,
+        to: parse_live_timestamp(&window.query_to())?,
+        observation_clock: Some(chrono::Utc::now()),
+        evidence_as_of: None,
+        advisory_options: dendro_core::advisory::AdvisoryOptions::default(),
+        friction_thresholds: dendro_core::vortex::FrictionThresholds::default(),
+        expect_evidence_digest: None,
+    };
+    let mut stmts = OverviewStatements::prepare(conn)?;
+    let overview = stmts.evaluate(&req)?;
+    serde_json::to_value(&overview).map_err(Into::into)
 }
 
 fn seat_payload(
@@ -2266,9 +2341,12 @@ async fn handle_http_connection(
         let params = parse_query_string(query);
         let view_id = params.get("view").map(|s| s.as_str()).unwrap_or("hub");
         let query_rig = params.get("rig").cloned().or_else(|| rig.clone());
-        let query_window = params.get("window").cloned().or_else(|| window.clone());
+        let query_window = match (params.get("from"), params.get("to")) {
+            (Some(from), Some(to)) => Some(format!("{from}..{to}")),
+            _ => params.get("window").cloned().or_else(|| window.clone()),
+        };
 
-        let payload = match execute_live_query_async(
+        let mut payload = match execute_live_query_async(
             &db_path,
             view_id,
             query_window.as_deref(),
@@ -2286,6 +2364,11 @@ async fn handle_http_connection(
             }),
         };
 
+        if let Some(expected) = params.get("expect_evidence_digest") {
+            if payload["direct_overview"]["digest"].as_str() != Some(expected.as_str()) {
+                payload = serde_json::json!({"error":"evidence digest mismatch; refresh the overview before reopening this lens","rows":[]});
+            }
+        }
         let body = serde_json::to_vec(&payload)?;
         let header = format!(
             "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: http://127.0.0.1:4242\r\n{NO_CACHE_HEADERS}Connection: close\r\n\r\n",
@@ -2303,7 +2386,10 @@ async fn handle_http_connection(
         let params = parse_query_string(query);
         let view_id = params.get("view").map(|s| s.as_str()).unwrap_or("hub");
         let query_rig = params.get("rig").cloned().or_else(|| rig.clone());
-        let query_window = params.get("window").cloned().or_else(|| window.clone());
+        let query_window = match (params.get("from"), params.get("to")) {
+            (Some(from), Some(to)) => Some(format!("{from}..{to}")),
+            _ => params.get("window").cloned().or_else(|| window.clone()),
+        };
 
         let header = format!(
             "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n{NO_CACHE_HEADERS}Connection: keep-alive\r\nAccess-Control-Allow-Origin: http://127.0.0.1:4242\r\n\r\n"

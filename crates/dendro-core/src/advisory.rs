@@ -261,6 +261,12 @@ pub fn evaluate(input: Input<'_>) -> Value {
             );
             continue;
         }
+        // With no idle reading there can be no idle-claimed interval. Keep
+        // observed coverage and failed-wake evaluation, without constructing
+        // queue boundaries for continuously running seats.
+        if !mine.iter().any(|a| a.state == "idle") {
+            continue;
+        }
         for life in spans {
             let mut marks = vec![life.start, life.end];
             marks.extend(

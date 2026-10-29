@@ -282,20 +282,24 @@ fn ancestry<'a>(id: &'a str, items: &BTreeMap<&'a str, Item<'a>>) -> (Vec<&'a st
 }
 
 fn dedup<T: Serialize>(rows: &[T], key: impl Fn(&T) -> &str) -> (Vec<&T>, BTreeSet<String>) {
-    let mut unique = BTreeMap::<&str, (&T, Value)>::new();
+    let mut unique = BTreeMap::<&str, &T>::new();
     let mut conflicts = BTreeSet::new();
     for row in rows {
         let k = key(row);
-        let value = serde_json::to_value(row).expect("fact serialization");
-        if let Some((_, prior)) = unique.get(k) {
-            if *prior != value {
+        if let Some(prior) = unique.get(k) {
+            // Native fact tables already have unique source keys. Serialize only
+            // collisions; constructing a JSON copy of every retained fact adds
+            // cost without contributing evidence to the comparison.
+            if serde_json::to_value(*prior).expect("fact serialization")
+                != serde_json::to_value(row).expect("fact serialization")
+            {
                 conflicts.insert(k.to_owned());
             }
         } else {
-            unique.insert(k, (row, value));
+            unique.insert(k, row);
         }
     }
-    (unique.into_values().map(|(r, _)| r).collect(), conflicts)
+    (unique.into_values().collect(), conflicts)
 }
 
 /// Evaluate only accepted facts. No source files, keys or runtime state are read.
@@ -536,6 +540,7 @@ pub fn evaluate(input: Input<'_>) -> Evaluation {
     let bindings = metrics::session_bindings(input.identities);
     let mut usage_by_seat = BTreeMap::<String, Vec<&UsageFact>>::new();
     let mut usage_evidence = BTreeMap::<String, Value>::new();
+    let mut usage_dispositions = BTreeMap::<&str, bool>::new();
     let mut seat_coverage = BTreeMap::<String, Coverage>::new();
     for u in &usage {
         let tokens = amount(u);
@@ -576,7 +581,10 @@ pub fn evaluate(input: Input<'_>) -> Evaluation {
             }
         }
         if let Some(reason) = reason {
-            usage_evidence.insert(u.source_key.clone(), json!({"source_key":u.source_key,"tokens":tokens,"status":"excluded","reason":reason}));
+            usage_dispositions.insert(&u.source_key, false);
+            if input.capture_replay {
+                usage_evidence.insert(u.source_key.clone(), json!({"source_key":u.source_key,"tokens":tokens,"status":"excluded","reason":reason}));
+            }
         } else if let Some(seat) = binding.seat() {
             usage_by_seat.entry(seat.into()).or_default().push(u);
         }
@@ -640,21 +648,27 @@ pub fn evaluate(input: Input<'_>) -> Evaluation {
             } else {
                 None
             };
-            usage_evidence.insert(u.source_key.clone(), json!({"source_key":u.source_key,"tokens":tokens,
+            usage_dispositions.insert(&u.source_key, edge.is_some());
+            if input.capture_replay {
+                usage_evidence.insert(u.source_key.clone(), json!({"source_key":u.source_key,"tokens":tokens,
                 "status":if edge.is_some(){"assigned"}else{"excluded"},"reason":status,"edge_source_key":edge,
                 "seat":seat,"candidate_edge_keys":candidates.iter().map(|i| &edges[*i].row.source_key).collect::<Vec<_>>(),
                 "competing_claim_keys":active.iter().map(|i| &runs[*i].claim.source_key).collect::<Vec<_>>()}));
+            }
         }
     }
     // Seats without a retained run still contribute exclusion evidence and coverage.
     for (seat, usages) in &usage_by_seat {
         for u in usages {
-            usage_evidence
-                .entry(u.source_key.clone())
-                .or_insert_with(|| {
-                    json!({"source_key":u.source_key,
+            usage_dispositions.entry(&u.source_key).or_insert(false);
+            if input.capture_replay {
+                usage_evidence
+                    .entry(u.source_key.clone())
+                    .or_insert_with(|| {
+                        json!({"source_key":u.source_key,
                 "tokens":amount(u),"status":"excluded","reason":"no_seat_runs","seat":seat})
-                });
+                    });
+            }
         }
     }
     for &i in &selected_indices {
@@ -884,8 +898,8 @@ pub fn evaluate(input: Input<'_>) -> Evaluation {
         "window":{"from":input.window.from,"to":input.window.to},"thresholds":input.thresholds,
         "seats":seats,"pairs":pair_values,"chains":chain_values,"vortex_loops":loops.into_values().collect::<Vec<_>>(),
         "coverage":coverage.name(),"rework_tokens":global_tokens,"assigned_usage_tokens":global_assigned,"evidence_census":{"usage_unique":usage.len(),"usage_conflicts":usage_conflicts,
-            "queue_conflicts":queue_conflicts,"assigned_usage":usage_evidence.values().filter(|v|v["status"]=="assigned").count(),
-            "excluded_usage":usage_evidence.values().filter(|v|v["status"]=="excluded").count()},
+            "queue_conflicts":queue_conflicts,"assigned_usage":usage_dispositions.values().filter(|assigned|**assigned).count(),
+            "excluded_usage":usage_dispositions.values().filter(|assigned|!**assigned).count()},
         "history_limit":"conflicts discarded before storage or collapsed by redaction cannot be reconstructed" });
     let replay = if input.capture_replay {
         let mut necessary_items = BTreeSet::new();

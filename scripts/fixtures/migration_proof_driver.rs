@@ -4,6 +4,7 @@ use dendro_core::migration_v4 as mig;
 use duckdb::Connection;
 use serde_json::json;
 use sha2::{Digest, Sha256};
+use std::io::Read;
 use std::path::Path;
 
 fn hash(path: &Path) -> String {
@@ -48,10 +49,19 @@ fn main() -> anyhow::Result<()> {
         std::fs::copy(&args[2], &database)?;
         std::fs::copy(&args[3], &sidecar)?;
     } else {
-        let conn = Connection::open(&database)?;
+        let config = duckdb::Config::default().with("storage_compatibility_version", "v1.5.6")?;
+        let conn = Connection::open_with_flags(&database, config)?;
         conn.execute_batch(&std::fs::read_to_string(&args[2])?)?;
         conn.execute_batch("CHECKPOINT")?;
         drop(conn);
+        let mut header = [0u8; 20];
+        std::fs::File::open(&database)?.read_exact(&mut header)?;
+        anyhow::ensure!(&header[8..12] == b"DUCK", "invalid DuckDB fixture magic");
+        let storage_version = u64::from_le_bytes(header[12..20].try_into()?);
+        anyhow::ensure!(
+            storage_version == 68,
+            "fixture storage version must be 68, got {storage_version}"
+        );
         let mut key = [0u8; 32];
         for (index, byte) in key.iter_mut().enumerate() {
             *byte = index as u8;
