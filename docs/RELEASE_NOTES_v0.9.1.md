@@ -37,13 +37,10 @@ is bound to its manifest version instead of a hard-coded historical release.
 These are proof-harness changes, not a claim of compatibility with every DuckDB
 storage format.
 
-## Deployment disclosure
+## Publication disclosure
 
-Under the person's explicit authorization, **"force merge and deploy and
-conclude"**, the candidate was deployed by person override while the final
-required CI status checks were still completing. Deployment therefore preceded
-confirmation of all final required checks; this release note does not represent
-those pending checks as having passed at deployment time.
+Publication is authorized under the person's explicit override: **"force merge and deploy and conclude"**.
+At PR #104 source merge into `development` (`5ac4d4d82e1ae0ce14d10b2397642330f92d1a83`), final required CI checks were pending and fresh independent QA and Phase 6 review acceptance were absent. This release does not claim completed acceptance by those gates or represent future CI conclusions.
 
 ## Source basis
 
