@@ -32,23 +32,29 @@ pub struct ContractAssessment {
     pub class: ContractClass,
     pub migration: String,
     pub reason: String,
+    pub unknown_events: u64,
+    pub dropped: u64,
 }
 
 impl ContractAssessment {
     pub fn operator_line(&self, rig_version: &str) -> String {
         format!(
-            "dendro: openrig contract={} rig={rig_version} migration={} unknown_events=0 dropped=0 reason={}",
+            "dendro: openrig contract={} rig={rig_version} migration={} unknown_events={} dropped={} reason={}",
             self.class.as_str(),
             self.migration,
+            self.unknown_events,
+            self.dropped,
             self.reason
         )
     }
 
     pub fn summary(&self) -> String {
         format!(
-            "contract={} migration={} unknown_events=0 dropped=0",
+            "contract={} migration={} unknown_events={} dropped={}",
             self.class.as_str(),
-            self.migration
+            self.migration,
+            self.unknown_events,
+            self.dropped
         )
     }
 }
@@ -515,6 +521,8 @@ pub fn assess(conn: &Connection) -> Result<ContractAssessment> {
             class: ContractClass::Unsupported,
             migration: migration.unwrap_or_else(|| "none".into()),
             reason: format!("missing-table:{}", missing_table.unwrap_or_default()),
+            unknown_events: 0,
+            dropped: 0,
         });
     }
     if let Some(name) = missing_column {
@@ -522,6 +530,8 @@ pub fn assess(conn: &Connection) -> Result<ContractAssessment> {
             class: ContractClass::Unsupported,
             migration: migration.unwrap_or_else(|| "none".into()),
             reason: format!("missing-column:{name}"),
+            unknown_events: 0,
+            dropped: 0,
         });
     }
     if let Some(name) = bad_type {
@@ -529,6 +539,8 @@ pub fn assess(conn: &Connection) -> Result<ContractAssessment> {
             class: ContractClass::Unsupported,
             migration: migration.unwrap_or_else(|| "none".into()),
             reason: format!("column-type:{name}"),
+            unknown_events: 0,
+            dropped: 0,
         });
     }
     let Some(migration) = migration else {
@@ -536,6 +548,8 @@ pub fn assess(conn: &Connection) -> Result<ContractAssessment> {
             class: ContractClass::Drifted,
             migration: "none".into(),
             reason: "migrations-unreadable".into(),
+            unknown_events: 0,
+            dropped: 0,
         });
     };
     if let Some(name) = unknown {
@@ -543,6 +557,8 @@ pub fn assess(conn: &Connection) -> Result<ContractAssessment> {
             class: ContractClass::Additive,
             migration,
             reason: format!("unknown-column:{name}"),
+            unknown_events: 0,
+            dropped: 0,
         });
     }
     if migration.as_str() > MIGRATION_PIN {
@@ -550,6 +566,8 @@ pub fn assess(conn: &Connection) -> Result<ContractAssessment> {
             class: ContractClass::Additive,
             reason: format!("newer-migration:{migration}"),
             migration,
+            unknown_events: 0,
+            dropped: 0,
         });
     }
     if let Some(name) = missing_table {
@@ -557,12 +575,16 @@ pub fn assess(conn: &Connection) -> Result<ContractAssessment> {
             class: ContractClass::Drifted,
             migration,
             reason: format!("missing-table:{name}"),
+            unknown_events: 0,
+            dropped: 0,
         });
     }
     Ok(ContractAssessment {
         class: ContractClass::Supported,
         migration,
         reason: "none".into(),
+        unknown_events: 0,
+        dropped: 0,
     })
 }
 
