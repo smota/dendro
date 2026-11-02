@@ -4,9 +4,39 @@ use std::{
     fs::{self, OpenOptions},
     os::windows::fs::OpenOptionsExt,
     path::Path,
+    process::Command,
 };
 fn name(s: &str) -> ChildName {
     ChildName::parse(s).unwrap()
+}
+fn restart_manager_note(path: &Path) -> String {
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/restart_manager_note.ps1");
+    let output = Command::new("powershell.exe")
+        .arg("-NoProfile")
+        .arg("-NonInteractive")
+        .arg("-ExecutionPolicy")
+        .arg("Bypass")
+        .arg("-File")
+        .arg(&script)
+        .arg(path)
+        .output();
+    match output {
+        Ok(output) if output.status.success() => String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .find(|line| line.starts_with("restart-manager:"))
+            .unwrap_or("restart-manager: unavailable error=empty")
+            .trim()
+            .to_string(),
+        Ok(output) => format!(
+            "restart-manager: unavailable exit={} {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+                .chars()
+                .take(180)
+                .collect::<String>()
+        ),
+        Err(error) => format!("restart-manager: unavailable {error}"),
+    }
 }
 fn raw_dir(path: &Path) -> File {
     OpenOptions::new()
@@ -120,7 +150,18 @@ fn native_staging_rework() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(step("admin write_all"))?;
     admin_source
         .publish_replace(&admin_parent, &name("admin-published.txt"))
-        .map_err(step("admin publish_replace"))?;
+        .map_err(|error| {
+            let note = if error.raw_os_error() == Some(32) {
+                format!(
+                    " source={} dest={}",
+                    restart_manager_note(&root.join("admin").join("admin-source.txt")),
+                    restart_manager_note(&root.join("admin").join("admin-published.txt"))
+                )
+            } else {
+                String::new()
+            };
+            format!("admin publish_replace: {error:?}{note}")
+        })?;
     println!("PASS Administrators grant accepted consistently with FROZEN_HOST");
     let conditional = ffi::fixture_directory(
         &raw,
