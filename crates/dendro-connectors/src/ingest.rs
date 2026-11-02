@@ -440,7 +440,12 @@ fn ingest_openrig(
                 return Err(error);
             }
         };
-    if contract.class == crate::openrig_contract::ContractClass::Unsupported {
+    let strict = std::env::var("DENDRO_OPENRIG_CONTRACT")
+        .ok()
+        .is_some_and(|value| value == "strict");
+    if contract.class == crate::openrig_contract::ContractClass::Unsupported
+        || (strict && contract.class == crate::openrig_contract::ContractClass::Drifted)
+    {
         let line = contract.operator_line(&crate::openrig_contract::rig_version());
         eprintln!("{line}");
         let _ = remove_snapshot_copy(stage_dir, &snapshot.path);
