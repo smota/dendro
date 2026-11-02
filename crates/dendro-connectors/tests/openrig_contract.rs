@@ -60,6 +60,23 @@ fn notes(value: &serde_json::Value) -> String {
         .join("\n")
 }
 
+fn handed_off_facts(db: &Path) -> usize {
+    let report = dendro_core::report_json(
+        db,
+        "decisions",
+        None,
+        "2026-11-02T00:00:00Z",
+        "2026-11-03T00:00:00Z",
+    )
+    .unwrap();
+    report["payload"]["demand_events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|row| row["state"] == "handed-off")
+        .count()
+}
+
 #[test]
 fn openrig_home_is_the_openrig_directory() {
     assert_eq!(
@@ -153,4 +170,92 @@ fn added_nullable_column_is_additive_and_not_a_row_mutation() {
     let second = notes(&ingest(&db, &source).unwrap());
     assert!(second.contains("contract=additive"), "{second}");
     assert!(!second.contains("openrig source changed"), "{second}");
+}
+
+#[test]
+fn stateless_seat_ping_keeps_agent_activity() {
+    let dir = Scratch::new();
+    let source = dir.0.join("openrig.sqlite");
+    let db = dir.0.join("analytics.duckdb");
+    write_db(
+        &source,
+        &format!(
+            "{SCHEMA}
+             INSERT INTO events (type, payload, created_at) VALUES
+             ('seat.activity_changed', '{{\"sessionName\":\"seat\",\"at\":\"2026-11-02T04:36:36Z\"}}', '2026-11-02 04:36:36'),
+             ('agent.activity', '{{\"sessionName\":\"seat\",\"activity\":{{\"state\":\"idle\",\"eventAt\":\"2026-11-02T04:36:36Z\"}}}}', '2026-11-02 04:36:36');"
+        ),
+    );
+    ingest(&db, &source).unwrap();
+    let report = dendro_core::report_json(
+        &db,
+        "decisions",
+        None,
+        "2026-11-02T00:00:00Z",
+        "2026-11-03T00:00:00Z",
+    )
+    .unwrap();
+    let events = report["payload"]["activity_events"].as_array().unwrap();
+    assert_eq!(events.len(), 1, "{events:?}");
+    assert_eq!(events[0]["state"], "idle");
+}
+
+#[test]
+fn unknown_event_is_counted_and_handoff_is_not_doubled() {
+    let dir = Scratch::new();
+    let source = dir.0.join("openrig.sqlite");
+    let db = dir.0.join("analytics.duckdb");
+    write_db(
+        &source,
+        &format!(
+            "{SCHEMA}
+             INSERT INTO events (type, payload, created_at) VALUES
+             ('watchdog.evaluation_skipped', '{{}}', '2026-11-02 04:36:36'),
+             ('queue.handed_off', '{{\"qitemId\":\"q1\",\"fromSession\":\"seat-a\",\"toSession\":\"seat-b\",\"closureReason\":\"done\"}}', '2026-11-02 04:40:00');
+             INSERT INTO queue_transitions (qitem_id, ts, state, actor_session, closure_target)
+             VALUES ('q1', '2026-11-02T04:40:00Z', 'handed-off', 'seat-a', 'seat-b');"
+        ),
+    );
+    let ran = ingest(&db, &source).unwrap();
+    let text = notes(&ran);
+    assert!(text.contains("unknown_events=1"), "{text}");
+    assert_eq!(
+        handed_off_facts(&db),
+        1,
+        "event and transition handoff were both stored"
+    );
+}
+
+#[test]
+fn event_only_handoff_is_one_queue_fact() {
+    let dir = Scratch::new();
+    let source = dir.0.join("openrig.sqlite");
+    let db = dir.0.join("analytics.duckdb");
+    write_db(
+        &source,
+        &format!(
+            "{SCHEMA}
+             INSERT INTO events (type, payload, created_at) VALUES
+             ('queue.handed_off', '{{\"qitemId\":\"q1\",\"fromSession\":\"seat-a\",\"toSession\":\"seat-b\"}}', '2026-11-02 04:40:00');"
+        ),
+    );
+    ingest(&db, &source).unwrap();
+    assert_eq!(handed_off_facts(&db), 1);
+}
+
+#[test]
+fn transition_only_handoff_is_one_queue_fact() {
+    let dir = Scratch::new();
+    let source = dir.0.join("openrig.sqlite");
+    let db = dir.0.join("analytics.duckdb");
+    write_db(
+        &source,
+        &format!(
+            "{SCHEMA}
+             INSERT INTO queue_transitions (qitem_id, ts, state, actor_session, closure_target)
+             VALUES ('q1', '2026-11-02T04:40:00Z', 'handed-off', 'seat-a', 'seat-b');"
+        ),
+    );
+    ingest(&db, &source).unwrap();
+    assert_eq!(handed_off_facts(&db), 1);
 }

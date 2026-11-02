@@ -429,16 +429,17 @@ fn ingest_openrig(
                 }
             },
         )?;
-    let contract = match crate::openrig_contract::assess(&rusqlite::Connection::open_with_flags(
-        &snapshot.path,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )?) {
-        Ok(contract) => contract,
-        Err(error) => {
-            let _ = remove_snapshot_copy(stage_dir, &snapshot.path);
-            return Err(error);
-        }
-    };
+    let mut contract =
+        match crate::openrig_contract::assess(&rusqlite::Connection::open_with_flags(
+            &snapshot.path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )?) {
+            Ok(contract) => contract,
+            Err(error) => {
+                let _ = remove_snapshot_copy(stage_dir, &snapshot.path);
+                return Err(error);
+            }
+        };
     if contract.class == crate::openrig_contract::ContractClass::Unsupported {
         let line = contract.operator_line(&crate::openrig_contract::rig_version());
         eprintln!("{line}");
@@ -496,7 +497,8 @@ fn ingest_openrig(
         read_openrig_with_source(store, &snapshot.path, key, lives, Some(&source_id))
     });
     let removed = remove_snapshot_copy(stage_dir, &snapshot.path);
-    let count = result?;
+    let (count, unknown_events) = result?;
+    contract.unknown_events = unknown_events;
     removed.map_err(|_| anyhow::anyhow!("snapshot cleanup failed"))?;
     Ok((
         count,
@@ -545,7 +547,7 @@ fn read_openrig_with_source(
     key: &[u8],
     lives: &mut Vec<dendro_core::SeatBound>,
     source_id: Option<&str>,
-) -> Result<i64> {
+) -> Result<(i64, u64)> {
     let fact_key = |table: &str, row: &str, key: String| -> Result<String> {
         match source_id {
             Some(source) => store.qualify_openrig_fact(source, table, row, &key),
@@ -569,6 +571,27 @@ fn read_openrig_with_source(
     let mut item_meta = queue_item_metadata(&conn, &created_items)?;
     let mut event_nudges = std::collections::BTreeMap::new();
     let mut count = 0i64;
+    let mut unknown_events = 0u64;
+    let mut covered_handoffs = std::collections::BTreeSet::<(String, String, String)>::new();
+    if let Ok(mut handoffs) =
+        conn.prepare("SELECT qitem_id, state, actor_session, closure_target FROM queue_transitions")
+    {
+        let rows = handoffs.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, Option<String>>(3)?,
+            ))
+        })?;
+        for row in rows.flatten() {
+            if row.1 == "handed-off" {
+                if let (Some(from), Some(to)) = (row.2, row.3) {
+                    covered_handoffs.insert((row.0, from, to));
+                }
+            }
+        }
+    }
     let mut lifecycle = Vec::new();
     // K5 reroute marks, by raw qitem id.
     let mut rerouted = std::collections::BTreeSet::<String>::new();
@@ -772,6 +795,34 @@ fn read_openrig_with_source(
                 chain_id: chain_of(qitem),
                 missions: Vec::new(),
             })?;
+        } else if kind == "queue.handed_off" {
+            let text = |name: &str| parsed.get(name).and_then(|v| v.as_str());
+            let Some(qitem) = text("qitemId") else {
+                continue;
+            };
+            let Some(from) = text("fromSession") else {
+                continue;
+            };
+            let Some(to) = text("toSession") else {
+                continue;
+            };
+            if covered_handoffs.contains(&(qitem.to_string(), from.to_string(), to.to_string())) {
+                continue;
+            }
+            let Some(when) = ts else { continue };
+            store.insert_queue(&QueueFact {
+                source_key: fact_key("events", &seq.to_string(), format!("events:{kind}:{seq}"))?,
+                transition_id: seq,
+                qitem_id: dendro_core::seal_identifier(key, "qitem", qitem),
+                ts: when,
+                state: "handed-off".to_string(),
+                source_seat: dendro_core::seal_identifier(key, "seat", from),
+                dest_seat: dendro_core::seal_identifier(key, "seat", to),
+                closure_reason: dendro_core::closure_reason(text("closureReason")),
+                closure_target: Some(dendro_core::seal_identifier(key, "seat", to)),
+                chain_id: chain_of(qitem),
+                missions: Vec::new(),
+            })?;
         } else if kind == "queue.created" || kind == "queue.claimed" {
             let Some(qitem) = parsed.get("qitemId").and_then(|v| v.as_str()) else {
                 continue;
@@ -816,6 +867,8 @@ fn read_openrig_with_source(
                     Vec::new()
                 },
             })?;
+        } else {
+            unknown_events += 1;
         }
     }
     store.purge_stateless_activity(&stale_activity_seqs)?;
@@ -1020,7 +1073,7 @@ fn read_openrig_with_source(
                 .map(|value| dendro_core::seal_identifier(key, "qitem", value)),
         })?;
     }
-    Ok(count)
+    Ok((count, unknown_events))
 }
 
 #[derive(Default)]
