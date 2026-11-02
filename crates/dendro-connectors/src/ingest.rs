@@ -77,7 +77,7 @@ pub fn ingest_staged_with_manifest(
                 if !seen_openrig.insert(id.clone()) {
                     continue;
                 }
-                let (count, snapshot, cutoff, changed) =
+                let (count, snapshot, cutoff, changed, contract) =
                     ingest_openrig(&store, root, key, &mut lives, stage_dir, &id, entry)?;
                 manifest.openrig.push(cutoff);
                 let changed_note = if changed {
@@ -85,10 +85,13 @@ pub fn ingest_staged_with_manifest(
                 } else {
                     ""
                 };
+                let line = contract.operator_line(&crate::openrig_contract::rig_version());
+                eprintln!("{line}");
                 notes.push(format!(
-                    "openrig events={count} revision={} attempts={} main_bytes={} wal_bytes={} copy_ms={} check_ms={}{changed_note}",
+                    "openrig events={count} revision={} attempts={} main_bytes={} wal_bytes={} copy_ms={} check_ms={}{changed_note} {}",
                     &snapshot.revision[..16], snapshot.attempts, snapshot.main_bytes,
-                    snapshot.wal_bytes.unwrap_or(0), snapshot.copy_ms, snapshot.check_ms
+                    snapshot.wal_bytes.unwrap_or(0), snapshot.copy_ms, snapshot.check_ms,
+                    contract.summary()
                 ));
             }
             name => {
@@ -410,6 +413,7 @@ fn ingest_openrig(
     crate::snapshot::Snapshot,
     dendro_core::OpenRigCutoff,
     bool,
+    crate::openrig_contract::ContractAssessment,
 )> {
     let snap_dir = stage_dir.join(dendro_core::lifecycle::SNAPSHOT_DIR);
     let snapshot =
@@ -425,8 +429,44 @@ fn ingest_openrig(
                 }
             },
         )?;
+    let contract = match crate::openrig_contract::assess(&rusqlite::Connection::open_with_flags(
+        &snapshot.path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )?) {
+        Ok(contract) => contract,
+        Err(error) => {
+            let _ = remove_snapshot_copy(stage_dir, &snapshot.path);
+            return Err(error);
+        }
+    };
+    if contract.class == crate::openrig_contract::ContractClass::Unsupported {
+        let line = contract.operator_line(&crate::openrig_contract::rig_version());
+        eprintln!("{line}");
+        let _ = remove_snapshot_copy(stage_dir, &snapshot.path);
+        anyhow::bail!(line);
+    }
     let mut prepared =
         crate::openrig::prepare_openrig_snapshot(&snapshot.path, manifest_id, key, sealed)?;
+    if contract.class == crate::openrig_contract::ContractClass::Additive {
+        let digest_conn = rusqlite::Connection::open_with_flags(
+            &snapshot.path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )?;
+        for table in ["events", "queue_transitions", "snapshots"] {
+            let digests = crate::openrig::contract_row_digests(
+                &digest_conn,
+                table,
+                crate::openrig_contract::known_columns(table),
+            )?;
+            for row in &mut prepared.rows {
+                if row.table_name == table {
+                    if let Some(digest) = digests.get(&row.row_id) {
+                        row.row_digest.clone_from(digest);
+                    }
+                }
+            }
+        }
+    }
     let source_id = stable_source_id(&root.name, &root.path, &root.path, key);
     prepared.rows.push(dendro_core::OpenRigRow {
         table_name: "source_identity".into(),
@@ -458,7 +498,13 @@ fn ingest_openrig(
     let removed = remove_snapshot_copy(stage_dir, &snapshot.path);
     let count = result?;
     removed.map_err(|_| anyhow::anyhow!("snapshot cleanup failed"))?;
-    Ok((count, snapshot, prepared.cutoff, provenance.changed))
+    Ok((
+        count,
+        snapshot,
+        prepared.cutoff,
+        provenance.changed,
+        contract,
+    ))
 }
 
 /// Cleanup accepts only a snapshot-role direct child of the current stage.
