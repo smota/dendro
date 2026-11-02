@@ -1140,11 +1140,63 @@ fn remove_if_present(path: &Path) -> Result<(), MigrationV5Error> {
     Ok(())
 }
 
-/// `sync_all` on a file, or on a directory opened read-only.
+/// `sync_all` on a file or a directory.
+///
+/// Windows `FlushFileBuffers` requires `GENERIC_WRITE`. A read-only handle
+/// returns `ERROR_ACCESS_DENIED` (os error 5). A directory also needs
+/// `FILE_FLAG_BACKUP_SEMANTICS`, or `CreateFile` itself returns error 5.
 fn fsync_path(path: &Path) -> Result<(), MigrationV5Error> {
-    let file = File::open(path).map_err(|error| MigrationV5Error::Io(error.to_string()))?;
+    let file = open_for_sync(path)?;
     file.sync_all()
         .map_err(|error| MigrationV5Error::Io(error.to_string()))
+}
+
+fn open_for_sync(path: &Path) -> Result<File, MigrationV5Error> {
+    #[cfg(windows)]
+    {
+        open_for_sync_windows(path)
+    }
+    #[cfg(not(windows))]
+    {
+        File::open(path).map_err(|error| MigrationV5Error::Io(error.to_string()))
+    }
+}
+
+#[cfg(windows)]
+fn open_for_sync_windows(path: &Path) -> Result<File, MigrationV5Error> {
+    use std::os::windows::fs::OpenOptionsExt;
+    const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+    let metadata =
+        fs::symlink_metadata(path).map_err(|error| MigrationV5Error::Io(error.to_string()))?;
+    let mut options = OpenOptions::new();
+    options.write(true);
+    if metadata.is_dir() {
+        options.read(true).custom_flags(FILE_FLAG_BACKUP_SEMANTICS);
+    }
+    options
+        .open(path)
+        .map_err(|error| MigrationV5Error::Io(error.to_string()))
+}
+
+#[cfg(test)]
+mod fsync_tests {
+    use super::fsync_path;
+    use crate::platform_v1::{create_user_private_root_with_choice, StorageRootChoice};
+    use std::fs;
+
+    #[test]
+    fn owned_synthetic_file_and_directory_flush() {
+        let root =
+            create_user_private_root_with_choice("dendro-fsync-", &StorageRootChoice::UserProfile)
+                .expect("owned synthetic root");
+        let file = root.path().join("synthetic.bin");
+        fs::write(&file, b"owned-synthetic").unwrap();
+        fsync_path(&file).expect("file flush");
+        fsync_path(root.path()).expect("directory flush");
+        let path = root.path().to_path_buf();
+        drop(root);
+        fs::remove_dir_all(path).unwrap();
+    }
 }
 
 fn wal_is_dirty(database: &Path) -> bool {
