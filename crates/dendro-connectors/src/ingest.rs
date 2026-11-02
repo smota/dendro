@@ -1670,6 +1670,14 @@ mod tests {
             [],
         )
         .unwrap();
+        conn.execute(
+            "CREATE TABLE queue_transitions (
+                transition_id INTEGER, qitem_id TEXT, ts TEXT, state TEXT,
+                transition_note TEXT, actor_session TEXT, closure_reason TEXT, closure_target TEXT
+            )",
+            [],
+        )
+        .unwrap();
         let payload =
             format!("{{\"rigId\":\"{name}\",\"nodeId\":\"n\",\"sessionName\":\"{seat}\"}}");
         conn.execute(

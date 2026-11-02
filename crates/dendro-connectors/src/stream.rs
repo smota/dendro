@@ -4185,6 +4185,14 @@ mod tests {
         )
         .unwrap();
         conn.execute(
+            "CREATE TABLE queue_transitions (
+                transition_id INTEGER, qitem_id TEXT, ts TEXT, state TEXT,
+                transition_note TEXT, actor_session TEXT, closure_reason TEXT, closure_target TEXT
+            )",
+            [],
+        )
+        .unwrap();
+        conn.execute(
             "INSERT INTO events VALUES (1,'seat.activity_changed',?,?)",
             rusqlite::params![
                 "{\"sessionName\":\"plain-activity-seat\",\"state\":\"sk-ant-ZZZSTATE\",\"at\":\"2026-10-09T00:00:00Z\"}",
@@ -4549,6 +4557,14 @@ mod tests {
         let conn = rusqlite::Connection::open(&sqlite_path).unwrap();
         conn.execute(
             "CREATE TABLE events (seq INTEGER, type TEXT, payload TEXT, created_at TEXT)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "CREATE TABLE queue_transitions (
+                transition_id INTEGER, qitem_id TEXT, ts TEXT, state TEXT,
+                transition_note TEXT, actor_session TEXT, closure_reason TEXT, closure_target TEXT
+            )",
             [],
         )
         .unwrap();
