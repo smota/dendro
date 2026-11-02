@@ -2,11 +2,45 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 
 use dendro_connectors::openrig::openrig_sqlite_path;
 use dendro_connectors::{ingest_staged, SourceRoot};
 use dendro_core::run_locked_with_openrig;
 use rusqlite::Connection;
+
+static CONTRACT_MODE: Mutex<()> = Mutex::new(());
+
+struct ContractMode {
+    previous: Option<String>,
+    _guard: std::sync::MutexGuard<'static, ()>,
+}
+
+impl ContractMode {
+    fn set(value: Option<&str>) -> Self {
+        let guard = CONTRACT_MODE
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let previous = std::env::var("DENDRO_OPENRIG_CONTRACT").ok();
+        match value {
+            Some(value) => std::env::set_var("DENDRO_OPENRIG_CONTRACT", value),
+            None => std::env::remove_var("DENDRO_OPENRIG_CONTRACT"),
+        }
+        Self {
+            previous,
+            _guard: guard,
+        }
+    }
+}
+
+impl Drop for ContractMode {
+    fn drop(&mut self) {
+        match &self.previous {
+            Some(value) => std::env::set_var("DENDRO_OPENRIG_CONTRACT", value),
+            None => std::env::remove_var("DENDRO_OPENRIG_CONTRACT"),
+        }
+    }
+}
 
 const SCHEMA: &str = include_str!("fixtures/openrig_076_schema.sql");
 static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -37,6 +71,12 @@ impl Drop for Scratch {
 fn write_db(path: &Path, sql: &str) {
     let conn = Connection::open(path).unwrap();
     conn.execute_batch(sql).unwrap();
+}
+
+fn drifted_source(dir: &Path) -> PathBuf {
+    let source = dir.join("openrig.sqlite");
+    write_db(&source, &format!("{SCHEMA}\nDROP TABLE schema_migrations;"));
+    source
 }
 
 fn ingest(db: &Path, source: &Path) -> Result<serde_json::Value, anyhow::Error> {
@@ -241,6 +281,78 @@ fn event_only_handoff_is_one_queue_fact() {
     );
     ingest(&db, &source).unwrap();
     assert_eq!(handed_off_facts(&db), 1);
+}
+
+#[test]
+fn drifted_source_warns_and_still_ingests() {
+    let _mode = ContractMode::set(None);
+    let dir = Scratch::new();
+    let source = drifted_source(&dir.0);
+    let db = dir.0.join("analytics.duckdb");
+    let ran = ingest(&db, &source).unwrap();
+    let text = notes(&ran);
+    assert!(text.contains("contract=drifted"), "{text}");
+    assert!(text.contains("migration=none"), "{text}");
+    let report = dendro_core::report_json(
+        &db,
+        "decisions",
+        None,
+        "2026-11-02T00:00:00Z",
+        "2026-11-03T00:00:00Z",
+    )
+    .unwrap();
+    assert!(
+        report["payload"]["openrig_sources"]
+            .as_array()
+            .is_some_and(|rows| !rows.is_empty()),
+        "default drift wrote no openrig source"
+    );
+}
+
+#[test]
+fn strict_contract_refuses_drift_before_facts() {
+    let _mode = ContractMode::set(Some("strict"));
+    let dir = Scratch::new();
+    let source = drifted_source(&dir.0);
+    let db = dir.0.join("analytics.duckdb");
+    let error = ingest(&db, &source).unwrap_err().to_string();
+    assert!(error.contains("contract=drifted"), "{error}");
+    assert!(error.contains("reason=migrations-unreadable"), "{error}");
+    assert!(error.contains("unknown_events=0"), "{error}");
+    assert!(error.contains("dropped=0"), "{error}");
+    if db.exists() {
+        let report = dendro_core::report_json(
+            &db,
+            "decisions",
+            None,
+            "2026-11-01T00:00:00Z",
+            "2026-11-03T00:00:00Z",
+        );
+        match report {
+            Err(error) => assert!(
+                error.to_string().contains("no publication state yet"),
+                "{error}"
+            ),
+            Ok(report) => {
+                let sources = report["payload"]["openrig_sources"]
+                    .as_array()
+                    .map(Vec::len)
+                    .unwrap_or(0);
+                assert_eq!(sources, 0, "strict drift published an openrig source");
+            }
+        }
+    }
+}
+
+#[test]
+fn strict_contract_keeps_a_supported_source() {
+    let _mode = ContractMode::set(Some("strict"));
+    let dir = Scratch::new();
+    let source = dir.0.join("openrig.sqlite");
+    let db = dir.0.join("analytics.duckdb");
+    write_db(&source, SCHEMA);
+    let text = notes(&ingest(&db, &source).unwrap());
+    assert!(text.contains("contract=supported"), "{text}");
 }
 
 #[test]
