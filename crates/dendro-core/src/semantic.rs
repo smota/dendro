@@ -235,10 +235,15 @@ fn materialize(store: &AnalyticsStore, report: &Value, sig: &str) -> Result<()> 
     let p = &report["payload"];
     let started = std::time::Instant::now();
     c.execute_batch("CREATE TABLE IF NOT EXISTS dendro_semantic_snapshot (report JSON, signature VARCHAR, refreshed_at TIMESTAMP); DELETE FROM dendro_semantic_snapshot;")?;
-    c.execute(
-        "INSERT INTO dendro_semantic_snapshot VALUES (?, ?, current_timestamp)",
-        params![report.to_string(), sig],
-    )?;
+    // These bytes come from serde's Value serializer and are already valid JSON.
+    // Appending avoids a VARCHAR-to-JSON cast reparsing the entire report into an arena.
+    {
+        let mut a =
+            c.appender_with_columns("dendro_semantic_snapshot", &["report", "signature"])?;
+        a.append_row(params![report.to_string(), sig])?;
+        a.flush()?;
+    }
+    c.execute_batch("UPDATE dendro_semantic_snapshot SET refreshed_at = current_timestamp")?;
     stage("snapshot", started);
     let started = std::time::Instant::now();
     c.execute_batch(include_str!("semantic.sql"))?;
@@ -397,7 +402,35 @@ fn materialize(store: &AnalyticsStore, report: &Value, sig: &str) -> Result<()> 
     }
     stage("usage_rows", started);
     let started = std::time::Instant::now();
-    c.execute("INSERT INTO dendro_semantic_executive VALUES (?, CAST(CAST(? AS JSON) AS VARCHAR[]), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",params![p.to_string(),serde_json::to_string(&keys)?,p["m1_yield"].to_string(),p["m1_by_seat"].to_string(),p["m2_return_rate"].to_string(),p["m3_rework_chains"].to_string(),p["token_categories"].to_string(),p["link_rates"].to_string(),p["fleet_concurrency"].to_string(),p["watchdog_recovery"].to_string(),p["four_eyes_independence"].to_string(),p["context_compactions"].to_string(),p["cross_slice_cache_bleed"].to_string(),p["task_intake_overhead"].to_string(),p["issue_lineage"].to_string(),p["handoff_friction"]["vortex_loops"].to_string(),p["ring_boundaries"].to_string()])?;
+    {
+        let source_keys = duckdb::types::Value::List(
+            keys.iter()
+                .cloned()
+                .map(duckdb::types::Value::Text)
+                .collect(),
+        );
+        let mut a = c.appender("dendro_semantic_executive")?;
+        a.append_row(params![
+            p.to_string(),
+            source_keys,
+            p["m1_yield"].to_string(),
+            p["m1_by_seat"].to_string(),
+            p["m2_return_rate"].to_string(),
+            p["m3_rework_chains"].to_string(),
+            p["token_categories"].to_string(),
+            p["link_rates"].to_string(),
+            p["fleet_concurrency"].to_string(),
+            p["watchdog_recovery"].to_string(),
+            p["four_eyes_independence"].to_string(),
+            p["context_compactions"].to_string(),
+            p["cross_slice_cache_bleed"].to_string(),
+            p["task_intake_overhead"].to_string(),
+            p["issue_lineage"].to_string(),
+            p["handoff_friction"]["vortex_loops"].to_string(),
+            p["ring_boundaries"].to_string()
+        ])?;
+        a.flush()?;
+    }
     stage("executive_row", started);
     let started = std::time::Instant::now();
     materialize_optional_fact_tables(c)?;
@@ -1409,6 +1442,92 @@ mod tests {
         ActivityFact, IdentityFact, QueueFact, QueueItemMeta, SeatBound, SkillFact, ToolCategory,
         WarningNote,
     };
+    #[test]
+    fn dense_report_materializes_with_bounded_json_memory() -> Result<()> {
+        let store = AnalyticsStore::open_in_memory("dense")?;
+        let c = store.connection();
+        c.execute_batch("SET memory_limit='128MB'; SET threads=1; BEGIN TRANSACTION")?;
+        // Many small JSON nodes require a much larger parser arena than serialized bytes.
+        let report = json!({"payload": {"source_keys": ["source:z", "source:a", "source:z"], "extension": (0..1_000_000)
+            .map(|_| json!([0, 1, 2, 3, 4, 5, 6, 7])).collect::<Vec<_>>()}});
+        materialize(&store, &report, &signature(&store)?)?;
+        c.execute_batch("COMMIT")?;
+        let snapshot: String = c.query_row(
+            "SELECT report::VARCHAR FROM dendro_semantic_snapshot",
+            [],
+            |r| r.get(0),
+        )?;
+        assert_eq!(snapshot, report.to_string());
+        let executive: String = c.query_row(
+            "SELECT row_json::VARCHAR FROM v_executive_governance",
+            [],
+            |r| r.get(0),
+        )?;
+        assert_eq!(executive, report["payload"].to_string());
+        let keys: String = c.query_row(
+            "SELECT to_json(source_keys)::VARCHAR FROM v_executive_governance",
+            [],
+            |r| r.get(0),
+        )?;
+        assert_eq!(
+            serde_json::from_str::<Value>(&keys)?,
+            json!(["source:a", "source:z"])
+        );
+        assert!(c.query_row(
+            "SELECT refreshed_at IS NOT NULL FROM dendro_semantic_snapshot",
+            [],
+            |r| r.get::<_, bool>(0)
+        )?);
+        Ok(())
+    }
+
+    #[test]
+    fn failed_materialization_preserves_previous_snapshot() -> Result<()> {
+        let store = AnalyticsStore::open_in_memory("rollback")?;
+        let c = store.connection();
+        let before = json!({"payload": {"marker": "before"}});
+        c.execute_batch("BEGIN TRANSACTION")?;
+        materialize(&store, &before, &signature(&store)?)?;
+        c.execute_batch("COMMIT; BEGIN TRANSACTION")?;
+        let invalid = json!({"payload": {"trace_inputs": [{"source_key": "missing"}]}});
+        let error = materialize(&store, &invalid, &signature(&store)?).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("canonical usage lineage missing"));
+        c.execute_batch("ROLLBACK")?;
+        let assert_before = || -> Result<()> {
+            let snapshot: String = c.query_row(
+                "SELECT report::VARCHAR FROM dendro_semantic_snapshot",
+                [],
+                |r| r.get(0),
+            )?;
+            assert_eq!(snapshot, before.to_string());
+            let executive: String = c.query_row(
+                "SELECT row_json::VARCHAR FROM v_executive_governance",
+                [],
+                |r| r.get(0),
+            )?;
+            assert_eq!(executive, before["payload"].to_string());
+            assert!(c.query_row(
+                "SELECT source_keys IS NOT NULL AND len(source_keys) = 0 FROM v_executive_governance", [], |r| r.get::<_, bool>(0))?);
+            Ok(())
+        };
+        assert_before()?;
+        // Also roll back a complete replacement, after the executive appender has flushed.
+        c.execute_batch("BEGIN TRANSACTION")?;
+        let replacement = json!({"payload": {"marker": "replacement"}});
+        materialize(&store, &replacement, &signature(&store)?)?;
+        let during: String = c.query_row(
+            "SELECT row_json::VARCHAR FROM v_executive_governance",
+            [],
+            |r| r.get(0),
+        )?;
+        assert_eq!(during, replacement["payload"].to_string());
+        c.execute_batch("ROLLBACK")?;
+        assert_before()?;
+        Ok(())
+    }
+
     #[test]
     fn large_report_extension_materializes_without_parent_json_fanout() -> Result<()> {
         struct Directory(std::path::PathBuf);
