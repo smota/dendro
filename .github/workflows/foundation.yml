@@ -105,7 +105,7 @@ jobs:
         with:
           save-if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
           cache-on-failure: false
-          shared-key: foundation-fast
+          shared-key: foundation-fast-v2
       - name: Execute four Rust gates on native Windows
         shell: pwsh
         run: |
@@ -180,8 +180,9 @@ jobs:
         with:
           save-if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
           cache-on-failure: false
-          shared-key: foundation-fast
-          workspaces: ${{ env.FOUNDATION_ROOT }}/source -> ${{ env.CARGO_TARGET_DIR }}
+          shared-key: foundation-fast-v2
+          # rust-cache joins this onto the workspace, so it must stay relative.
+          workspaces: ${{ env.FOUNDATION_ROOT }}/source -> target
 
       - name: Execute four Rust gates on native Linux
         shell: bash
