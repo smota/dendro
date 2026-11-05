@@ -2258,6 +2258,7 @@ impl ConnectedServer {
     }
 
     pub async fn run(self) -> Result<()> {
+        let _ = tokio::task::spawn_blocking(dendro_cli::telemetry::init).await;
         let local_addr = self.local_addr()?;
         info!("Dendro Connected Dashboard Server active at http://{local_addr}/");
 
@@ -2302,6 +2303,19 @@ async fn execute_live_query_async(
 }
 
 async fn handle_http_connection(
+    stream: TcpStream,
+    db_path: PathBuf,
+    site_dir: PathBuf,
+    rig: Option<String>,
+    window: Option<String>,
+) -> Result<()> {
+    let operation = dendro_cli::telemetry::Operation::start("http.connection");
+    let result = handle_http_connection_inner(stream, db_path, site_dir, rig, window).await;
+    operation.finish(result.is_ok());
+    result
+}
+
+async fn handle_http_connection_inner(
     mut stream: TcpStream,
     db_path: PathBuf,
     site_dir: PathBuf,
