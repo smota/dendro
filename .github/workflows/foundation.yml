@@ -1,22 +1,49 @@
 name: Native foundation
 
-# Release gates: four Rust gates on native Windows and Linux, plus the Linux historical upgrade/rollback proof.
+# Fast PR gates run Rust checks with build caching; full proofs stay cold and include historical and native publication evidence.
 on:
   push:
     branches: [main, development, 'rc/**']
   pull_request:
     branches: [main, development, 'rc/**']
   workflow_dispatch:
+    inputs:
+      scope:
+        type: choice
+        options: [full, fast]
+        default: full
 
 permissions:
   contents: read
 
 concurrency:
-  group: foundation-linux-${{ github.ref }}
+  group: foundation-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # A failed plan leaves scope empty, and every job below then treats it as a full proof.
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      scope: ${{ steps.scope.outputs.scope }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Decide foundation scope
+        id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+          REQUESTED_SCOPE: ${{ inputs.scope }}
+        run: node scripts/ci-scope.mjs
   native-windows-cross-volume:
+    needs: plan
+    if: ${{ !cancelled() && needs.plan.outputs.scope != 'fast' && needs.plan.outputs.scope != 'skip' }}
     runs-on: windows-2022
     # Hosted D:\ root has an owner the ancestor guard (correctly) refuses; non-blocking until
     # a runner volume matches a real user setup. Linux proves the cross-volume path.
@@ -52,6 +79,8 @@ jobs:
           if-no-files-found: error
           retention-days: 7
   native-windows:
+    needs: plan
+    if: ${{ !cancelled() && needs.plan.outputs.scope != 'skip' }}
     runs-on: windows-2022
     timeout-minutes: 120
     env:
@@ -69,6 +98,14 @@ jobs:
       - name: Install pinned native Rust toolchain
         shell: pwsh
         run: rustup toolchain install 1.98.1 --profile minimal --component rustfmt --component clippy
+      # PRs only restore: untrusted pull requests cannot write the build cache.
+      - name: Cache fast gate build
+        if: needs.plan.outputs.scope == 'fast'
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+          cache-on-failure: false
+          shared-key: foundation-fast
       - name: Execute four Rust gates on native Windows
         shell: pwsh
         run: |
@@ -77,8 +114,10 @@ jobs:
           cargo clippy --workspace --locked -- -D warnings; if ($LASTEXITCODE) { exit $LASTEXITCODE }
           cargo test --workspace --locked; if ($LASTEXITCODE) { exit $LASTEXITCODE }
   native-linux:
+    needs: plan
+    if: ${{ !cancelled() && needs.plan.outputs.scope != 'skip' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 150
     env:
       RUSTUP_TOOLCHAIN: 1.98.1
       CARGO_BUILD_JOBS: 2
@@ -87,6 +126,7 @@ jobs:
       CARGO_PROFILE_TEST_DEBUG: 0
       RUST_TEST_THREADS: 2
       CARGO_TERM_COLOR: never
+      FOUNDATION_SCOPE: ${{ needs.plan.outputs.scope }}
       PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
       - name: Checkout exact candidate
@@ -100,7 +140,11 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
-          root="$HOME/dendro-foundation-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          if [[ "$FOUNDATION_SCOPE" == fast ]]; then
+            root="$HOME/dendro-foundation-fast"
+          else
+            root="$HOME/dendro-foundation-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          fi
           mkdir -m 700 "$root"
           mkdir -m 700 "$root/receipts" "$root/cargo" "$root/rustup" "$root/tmp" "$root/source"
           # Receipt storage exists before admission, including for refused runners.
@@ -113,6 +157,7 @@ jobs:
           bash scripts/foundation-ci-verify.sh prepare "$root"
 
       - name: Cache dependency downloads
+        if: needs.plan.outputs.scope != 'fast'
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           # Only Cargo's checksum-verified downloaded archives; never extracted source.
@@ -128,16 +173,27 @@ jobs:
           printf '%s\n' "$status" > "$FOUNDATION_RECEIPTS/toolchain.exit"
           exit "$status"
 
+      # PRs only restore: untrusted pull requests cannot write the build cache.
+      - name: Cache fast gate build
+        if: needs.plan.outputs.scope == 'fast'
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+          cache-on-failure: false
+          shared-key: foundation-fast
+          workspaces: ${{ env.FOUNDATION_ROOT }}/source -> ${{ env.CARGO_TARGET_DIR }}
+
       - name: Execute four Rust gates on native Linux
         shell: bash
         run: bash "$FOUNDATION_ROOT/source/scripts/foundation-ci-verify.sh" verify "$FOUNDATION_ROOT"
 
       - name: Prove historical binary migration and rollback
+        if: needs.plan.outputs.scope != 'fast'
         shell: bash
         run: bash "$FOUNDATION_ROOT/source/scripts/foundation-ci-verify.sh" historical "$FOUNDATION_ROOT"
 
       - name: Require actual cross-volume native publication proof
-        if: always() && env.FOUNDATION_ROOT != ''
+        if: always() && needs.plan.outputs.scope != 'fast' && env.FOUNDATION_ROOT != ''
         shell: bash
         run: bash scripts/foundation-ci-verify.sh native-fixtures "$FOUNDATION_ROOT"
 

@@ -41,10 +41,12 @@ if [[ "$phase" == collect ]]; then
   fi
   python3 - "$receipts" <<'PY'
 import json
+import os
 from pathlib import Path
 import sys
 
 receipts = Path(sys.argv[1])
+fast = os.environ.get("FOUNDATION_SCOPE") == "fast"
 def read_json(path):
     try:
         return json.loads(path.read_text())
@@ -52,7 +54,10 @@ def read_json(path):
         return {}
 
 checks = {}
-for name in ("prepare", "toolchain", "verify", "fmt", "check", "test", "clippy", "historical", "native-fixtures"):
+required = ("prepare", "toolchain", "verify", "fmt", "check", "test", "clippy")
+if not fast:
+    required += ("historical", "native-fixtures")
+for name in required:
     exit_file = receipts / f"{name}.exit"
     try:
         code = int(exit_file.read_text().strip())
@@ -65,18 +70,22 @@ fixture_markers = all(marker in fixture_text for marker in (
     "T24-29 actual distinct-device copy, private destination, unchanged closed source and verified local pointer: passed",
     "1 passed; 0 failed",
 ))
-if (receipts / "native-fixtures-notrun.json").exists():
+if not fast and (receipts / "native-fixtures-notrun.json").exists():
     checks["native-fixtures"]["status"] = "not_run_prerequisites_absent"
-elif checks["native-fixtures"]["exit_code"] == 0 and not fixture_markers:
+elif not fast and checks["native-fixtures"]["exit_code"] == 0 and not fixture_markers:
     checks["native-fixtures"]["status"] = "failed_positive_markers_absent"
 validation = receipts / "historical-ci-validation.json"
 historical_validated = read_json(validation).get("passed") is True
-passed = all(item["status"] == "passed" for item in checks.values()) and historical_validated and fixture_markers
+passed = all(item["status"] == "passed" for item in checks.values())
+if not fast:
+    passed = passed and historical_validated and fixture_markers
 source = receipts / "candidate-source.json"
 verdict = {
     "schema": "dendro.foundation-ci-verdict/v1", "passed": passed,
-    "status": "passed" if passed else "failed_or_incomplete",
-    "scope": "native Linux foundation validation only; not T27 certification or release approval",
+    "proof_scope": "fast" if fast else "full",
+    "full_foundation_proof": passed and not fast,
+    "status": ("fast_gate_passed" if fast else "passed") if passed else "failed_or_incomplete",
+    "scope": "PR fast gate only; not foundation evidence" if fast else "native Linux foundation validation only; not T27 certification or release approval",
     "candidate": read_json(source) or None,
     "checks": checks, "historical_receipt_validated": historical_validated,
     "native_fixture_positive_markers": fixture_markers,
