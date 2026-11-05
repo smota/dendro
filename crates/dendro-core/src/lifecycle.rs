@@ -412,9 +412,9 @@ pub fn stage_name(path: &Path) -> String {
 
 #[cfg(unix)]
 fn random_id() -> String {
-    use rand::RngCore;
+    use rand::Rng;
     let mut bytes = [0u8; 8];
-    rand::thread_rng().fill_bytes(&mut bytes);
+    rand::rng().fill_bytes(&mut bytes);
     hex::encode(bytes)
 }
 
