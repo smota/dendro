@@ -141,6 +141,9 @@ fn native_staging_rework() -> Result<(), Box<dyn std::error::Error>> {
         &format!("O:{me}D:P(A;OICI;FA;;;{me})(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"),
     )
     .map_err(step("admin fixture_directory"))?;
+    // Drop the fixture's DELETE access before publishing through a production-shaped handle.
+    drop(admin);
+    let admin = raw_dir(&root.join("admin"));
     let admin_parent = VerifiedDirectory::from_held(&admin).map_err(step("admin from_held"))?;
     let mut admin_source = admin_parent
         .create_source(&name("admin-source.txt"))
