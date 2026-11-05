@@ -78,6 +78,7 @@ jobs:
         run: |
           set -euo pipefail
           node --test scripts/__tests__/validate-dependency-automation.test.mjs
+          node --test scripts/__tests__/ci-scope.test.mjs
           if [[ "$PR_AUTHOR" == 'dependabot[bot]' ]]; then
             node scripts/validate-dependency-automation.mjs
           else
