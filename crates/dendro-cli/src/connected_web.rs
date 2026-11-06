@@ -410,10 +410,13 @@ struct LiveWindow {
 impl LiveWindow {
     fn resolve(window: Option<&str>, from: Option<&str>, to: Option<&str>) -> Result<Self> {
         let preset = window.unwrap_or("all");
-        let anchor = to
-            .map(parse_live_timestamp)
-            .transpose()?
-            .unwrap_or_else(chrono::Utc::now);
+        let recorded = to.map(parse_live_timestamp).transpose()?;
+        // "today" is the current UTC day. The newest stored fact must not move it.
+        let anchor = if preset == "today" {
+            chrono::Utc::now()
+        } else {
+            recorded.unwrap_or_else(chrono::Utc::now)
+        };
         let (start, end, include_end) = if let Some((f, t)) = preset.split_once("..") {
             // Date-only upper bounds cover the entire selected day, including
             // fractional seconds. Timestamp ranges retain half-open semantics.
@@ -2255,6 +2258,7 @@ impl ConnectedServer {
     }
 
     pub async fn run(self) -> Result<()> {
+        let _ = tokio::task::spawn_blocking(dendro_cli::telemetry::init).await;
         let local_addr = self.local_addr()?;
         info!("Dendro Connected Dashboard Server active at http://{local_addr}/");
 
@@ -2299,6 +2303,19 @@ async fn execute_live_query_async(
 }
 
 async fn handle_http_connection(
+    stream: TcpStream,
+    db_path: PathBuf,
+    site_dir: PathBuf,
+    rig: Option<String>,
+    window: Option<String>,
+) -> Result<()> {
+    let operation = dendro_cli::telemetry::Operation::start("http.connection");
+    let result = handle_http_connection_inner(stream, db_path, site_dir, rig, window).await;
+    operation.finish(result.is_ok());
+    result
+}
+
+async fn handle_http_connection_inner(
     mut stream: TcpStream,
     db_path: PathBuf,
     site_dir: PathBuf,
@@ -2672,7 +2689,13 @@ mod live_payload_tests {
             ALTER TABLE message_facts ADD COLUMN tool_name VARCHAR;
             INSERT INTO message_facts VALUES ('dup','codex','direct','2024-02-15 11:40:00','tool','out','tool_use','mcp__github__query'),('extra','codex','direct','2024-02-15 11:40:00','tool','out','tool_use','mcp__graph__query'),('old-mcp','codex','direct','2024-01-31 12:00:00','tool','out','tool_use','mcp__expired__query');
             INSERT INTO security_facts VALUES ('pre','codex','direct','2024-02-15 11:40:00','hook_event','PreInvocation','hook'),('pt','codex','direct','2024-02-15 11:40:00','hook_event','PreToolUse','hook'),('post-tool','codex','direct','2024-02-15 11:40:00','hook_event','PostToolUse','hook'),('post','codex','direct','2024-02-15 11:40:00','hook_event','PostInvocation','hook'),('stop','codex','direct','2024-02-15 11:40:00','hook_event','Stop','hook');").unwrap();
-        let p = query_live_payload(&c, "capability_intelligence", Some("today"), None).unwrap();
+        let p = query_live_payload(
+            &c,
+            "capability_intelligence",
+            Some("2024-02-15..2024-02-15"),
+            None,
+        )
+        .unwrap();
         let ci = &p["capability_intelligence"];
         assert_eq!(ci["summary"]["total_tool_calls"], 2);
         assert_eq!(ci["summary"]["mcp_calls"], 3);
@@ -2727,7 +2750,7 @@ mod live_payload_tests {
                 CREATE VIEW v_schema_drift AS SELECT 'stale' harness WHERE false;
                 CREATE VIEW v_authority_blast_radius AS SELECT 'stale' origin_session WHERE false;
                 CREATE VIEW v_counterfactual_routing AS SELECT 'stale' session_key WHERE false;").unwrap();
-            let p = query_live_payload(&c, view, Some("today"), None).unwrap();
+            let p = query_live_payload(&c, view, Some("2024-02-15..2024-02-15"), None).unwrap();
             let rows = p["rows"].as_array().unwrap();
             assert!(!rows.is_empty(), "{view}: {p}");
             assert!(
@@ -2849,7 +2872,13 @@ mod live_payload_tests {
     fn blast_radius_walks_observed_edges_and_stops_at_cycles() {
         let c = fixture();
         c.execute_batch("INSERT INTO session_edges VALUES ('e2','codex','child','grandchild','2024-02-15 11:59:00','spawn','finished'),('e3','codex','grandchild','leaf','2024-02-15 11:59:00','spawn','finished'),('e4','codex','leaf','parent','2024-02-15 11:59:00','spawn','finished');").unwrap();
-        let p = query_live_payload(&c, "v_authority_blast_radius", Some("today"), None).unwrap();
+        let p = query_live_payload(
+            &c,
+            "v_authority_blast_radius",
+            Some("2024-02-15..2024-02-15"),
+            None,
+        )
+        .unwrap();
         let parent = p["rows"]
             .as_array()
             .unwrap()
@@ -2913,7 +2942,7 @@ mod live_payload_tests {
             ("v_executive_governance", "records"),
         ] {
             let c = fixture();
-            let p = query_live_payload(&c, view, Some("today"), None).unwrap();
+            let p = query_live_payload(&c, view, Some("2024-02-15..2024-02-15"), None).unwrap();
             assert!(!p[key].as_array().unwrap().is_empty(), "{view}: {p}");
             if key == "missions" {
                 assert_eq!(p["summary"]["total_tokens"], 465);
@@ -2956,7 +2985,13 @@ mod live_payload_tests {
     fn partial_mission_snapshot_keeps_attribution_and_all_direct_usage() {
         let c = fixture();
         c.execute_batch("CREATE VIEW v_mission_token_burn AS SELECT 'builder' seat_id, '[\"mission-one\"]'::JSON missions, ['a'] source_keys, 100::BIGINT input_uncached,20::BIGINT output,30::BIGINT cache_read,5::BIGINT cache_write;").unwrap();
-        let p = query_live_payload(&c, "v_mission_token_burn", Some("today"), None).unwrap();
+        let p = query_live_payload(
+            &c,
+            "v_mission_token_burn",
+            Some("2024-02-15..2024-02-15"),
+            None,
+        )
+        .unwrap();
         let missions = p["missions"].as_array().unwrap();
         assert_eq!(missions.len(), 2);
         assert_eq!(
@@ -2992,7 +3027,13 @@ mod live_payload_tests {
     fn queue_transitions_count_items_once_and_measure_wait_and_execution() {
         let c = fixture();
         c.execute_batch("INSERT INTO queue_facts VALUES ('q0','item','2024-02-15 11:50:00','pending','planner','builder',false),('q2','item','2024-02-15 11:58:00','closed','planner','builder',false);").unwrap();
-        let p = query_live_payload(&c, "v_handoff_rework_analysis", Some("today"), None).unwrap();
+        let p = query_live_payload(
+            &c,
+            "v_handoff_rework_analysis",
+            Some("2024-02-15..2024-02-15"),
+            None,
+        )
+        .unwrap();
         assert_eq!(p["summary"]["total_handoffs"], 1);
         assert_eq!(p["pairs"][0]["median_wait_s"], 300.0);
         assert_eq!(p["pairs"][0]["median_exec_s"], 180.0);
@@ -3003,7 +3044,7 @@ mod live_payload_tests {
         let c = fixture();
         c.execute_batch("CREATE VIEW v_trajectory_vortex AS SELECT 'direct' session_key,'true' tripped,['a'] source_keys;
             CREATE VIEW v_schema_drift AS SELECT 'codex' harness,0.5 l1_distance,1 keys_added,0 keys_removed,0 keys_retyped,['old'] source_keys;").unwrap();
-        let p = query_live_payload(&c, "hub", Some("today"), None).unwrap();
+        let p = query_live_payload(&c, "hub", Some("2024-02-15..2024-02-15"), None).unwrap();
         let anomalies = p["anomalies"].as_array().unwrap();
         assert!(anomalies
             .iter()
@@ -3040,7 +3081,6 @@ mod live_payload_tests {
         for (preset, from) in [
             ("1h", "2024-03-15T11:00:00Z"),
             ("24h", "2024-03-14T12:00:00Z"),
-            ("today", "2024-03-15T00:00:00Z"),
             ("7d", "2024-03-08T00:00:00Z"),
             ("30d", "2024-02-14T00:00:00Z"),
             ("this_month", "2024-03-01T00:00:00Z"),
@@ -3065,5 +3105,23 @@ mod live_payload_tests {
                 }
             );
         }
+    }
+
+    #[test]
+    fn today_is_the_current_utc_day_without_recorded_adjustment() {
+        let before = chrono::Utc::now();
+        let w = LiveWindow::resolve(
+            Some("today"),
+            Some("2023-12-01T00:00:00Z"),
+            Some("2024-03-15T12:00:00Z"),
+        )
+        .unwrap();
+        let after = chrono::Utc::now();
+        let midnight = before.date_naive().and_hms_opt(0, 0, 0).unwrap().and_utc();
+        assert_eq!(w.preset, "today");
+        assert_eq!(w.from, midnight);
+        assert!(w.to >= before && w.to <= after);
+        assert!(w.include_end);
+        assert_ne!(iso(w.from), "2024-03-15T00:00:00Z");
     }
 }

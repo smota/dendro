@@ -194,6 +194,17 @@ fn test_cli_subcommands_appear_in_cli_docs() {
 }
 
 #[test]
+fn openrig_contract_line_is_documented() {
+    let cli_r1 = fs::read_to_string(repo_root().join("docs/CLI_R1.md"))
+        .expect("docs/CLI_R1.md must be readable");
+    assert!(cli_r1.contains(
+        "dendro: openrig contract=<supported|additive|drifted|unsupported> rig=<version|unknown> migration=<name|none> unknown_events=<n> dropped=<n> reason=<short>"
+    ));
+    assert!(cli_r1.contains("DENDRO_OPENRIG_CONTRACT=strict"));
+    assert!(cli_r1.contains("Any other value, including an unset variable, keeps the warning."));
+}
+
+#[test]
 fn test_canonical_schema5_tables_appear_in_docs() {
     let root = repo_root();
     let data_dict = fs::read_to_string(root.join("docs/DATA_DICTIONARY.md"))

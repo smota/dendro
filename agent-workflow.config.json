@@ -218,5 +218,12 @@
       "grantsPublicationOrMergePower": false
     },
     "confirmedDigest": "f29b9a0c99d9cbfdb107849bc5a10b8b3623404840d109d1def39ab2630be340"
+  },
+  "observability": {
+    "enabled": true,
+    "offline": false,
+    "otlpEndpoint": "http://127.0.0.1:24318",
+    "serviceName": "dendro-delivery",
+    "maxQueueSize": 256
   }
 }
