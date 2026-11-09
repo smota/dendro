@@ -1,0 +1,44 @@
+# AgentFlow Canonical Invariants Catalog — Dendro
+version: 1
+updated: "2026-10-28"
+
+invariants:
+  - id: INV-1080P-VIEWPORT-FIT
+    name: 1080p Single-Viewport Fit
+    scope: site/dashboards/index.html
+    assertion: All primary decision cards and query lenses in Modo Direto fit within a standard 1080p display (max height 900px) with zero initial vertical window scroll.
+
+  - id: INV-CRITICAL-FOCUS-DETERMINISM
+    name: Deterministic Critical Focus Ranking
+    scope: overview-critical-focus-banner
+    assertion: The Critical Focus Banner surfaces the Rank 1 bottleneck strictly adhering to priority hierarchy (stalls > holds > rework vortexes) with tie-breaks on duration then tokens, and temporal wording (Active vs Historical).
+
+  - id: INV-CWD-PRIVACY-PRESERVATION
+    name: CWD Privacy & Path Exclusion (AC10)
+    scope: overview-cwd-fingerprint-rollup
+    assertion: Working directory grouping uses cwd_fingerprint and approved project aliases; raw filesystem path strings are never displayed or emitted in HTML.
+
+  - id: INV-CONTEXT-TAX-EVIDENCE-STATES
+    name: Truthful Context-Tax Evidence States (Zero Constants)
+    scope: overview-context-tax-detector
+    assertion: Context-tax calculations strictly report ground truth uncalled tool counts; token overhead reports unavailable / null when raw schema token sizing is absent. Arbitrary constants (such as 250 tokens per tool) are forbidden.
+
+  - id: INV-CLOSED-ISSUE-TASK-ALIGNMENT
+    name: Closed Issue Task Accounting Alignment
+    scope: overview-fleet-throughput-rollup
+    assertion: The completion metric closed_issue_qitems strictly counts non-recovery queue items reaching state = 'done' with an associated issue:<id> tag; untagged internal tasks do not inflate deliverable throughput.
+
+  - id: INV-DRAWER-STATE-PRESERVATION
+    name: Lateral Drawer In-Place State Preservation
+    scope: overview-contextual-drawer
+    assertion: Opening and closing the lateral contextual drill-down drawer causes zero full-page reloads and zero layout shift on the underlying dashboard.
+
+  - id: INV-ROLLUP-LATENCY-SLA
+    name: Sub-50ms Rollup Query Latency SLA
+    scope: global
+    assertion: Warm query execution of overview rollup facts completes in strictly less than 50 milliseconds over standard 5,500-fact reference datasets.
+
+  - id: INV-READ-ONLY-SAFETY
+    name: Read-Only Analytical Safety (AC12)
+    scope: global
+    assertion: Overview analytics and context-tax calculations perform zero writes to agent prompt files, harness configs, or database records.

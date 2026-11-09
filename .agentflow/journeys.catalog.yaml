@@ -1,0 +1,37 @@
+# AgentFlow Canonical Public Journeys Catalog — Dendro
+version: 1
+updated: "2026-10-28"
+
+journeys:
+  - id: journey-direct-overview-operator
+    name: Direct Operator Overview Journey ("Modo Direto")
+    primaryPersona: fleet-operator
+    capabilityIds:
+      - overview-critical-focus-banner
+      - overview-cwd-folder-rollup
+      - overview-context-tax-detector
+      - overview-fleet-throughput-rollup
+      - overview-mode-toggle-layout
+      - overview-contextual-drawer
+    steps:
+      - step: 1
+        name: Load Intelligence Hub in Modo Direto
+        description: Page renders top fold above the fold in standard 1080p display with zero window scrolling.
+      - step: 2
+        name: Inspect Rank 1 Critical Focus
+        description: Operator immediately reads the single most urgent operational bottleneck requiring attention.
+      - step: 3
+        name: Compare Projects by CWD
+        description: Operator evaluates active hours, tokens, dollars, and completed issues grouped by directory.
+      - step: 4
+        name: Audit Silent Context-Tax
+        description: Operator identifies MCPs/skills loaded in context with zero calls and reviews wasted token/dollar cost.
+      - step: 5
+        name: Review Fleet Throughput & Cost
+        description: Operator checks total spend, deliverables completed, and average cost per delivery.
+      - step: 6
+        name: Slide-Out Drill-Down Drawer
+        description: Operator clicks any decision card to inspect AC7 source keys and copyable CLI trace commands without full-page reloads.
+      - step: 7
+        name: Toggle Modo Forense On-Demand
+        description: Operator switches to forensic mode for detailed graph telemetry with active filters preserved.
