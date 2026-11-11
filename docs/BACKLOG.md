@@ -284,8 +284,8 @@ Formulas, refusals, and the `A01`–`A15` proof table are in the addendum linked
 ## 🚧 Goal 10 (proposed): Family MVP alignment (council 2026-11-11)
 
 * **Origin:** Family MVP council of 2026-11-11, following an adversarial scope round and two planning cycles. Dendro source baseline: `cf40b10`; the council re-checked critical code claims before adopting them. This public record contains the Dendro scope and its shared contract prerequisites.
-* **Status:** Recommendation, not admitted. No ADR, work admission, implementation, merge, release, or publication is approved by this section. Dendro governance in [`sdlc.config.json`](../sdlc.config.json), [`agent-workflow.config.json`](../agent-workflow.config.json), and [`AGENTS.md`](../AGENTS.md) applies, including independent review on every path, no self-review, human approval for high-assurance work, and existing backlog and publication holds.
-* **Objective:** Repair Codex tool evidence and invocation identity, preserve historical git provenance, provide explicit opt-in pseudonymized fact snapshots, correct unsupported claims, and authenticate studio access. Sponsor decisions below remain pending.
+* **Status:** Sponsor decisions recorded on 2026-11-11; D8 and D9 are ready to start. Other work remains subject to its dependencies and admission gates. Approval and merge authority is limited to the S8 delegation below; release and publication are not approved by this section. Dendro governance in [`sdlc.config.json`](../sdlc.config.json), [`agent-workflow.config.json`](../agent-workflow.config.json), and [`AGENTS.md`](../AGENTS.md) applies, including independent review on every path, no self-review, human approval for high-assurance work, and existing backlog and publication holds.
+* **Objective:** Repair Codex tool evidence and invocation identity, preserve historical git provenance, provide explicit opt-in pseudonymized fact snapshots, correct unsupported claims, and authenticate studio access. Sponsor decisions below were approved or adopted on 2026-11-11.
 
 ### Verified Dendro facts (council baseline)
 
@@ -303,7 +303,7 @@ These are the council's verified findings at `cf40b10`, not claims that the prop
 
 ### Family MVP workplan (proposed)
 
-The selected council rows below are preserved verbatim, including issue mapping, size, dependencies, lane, acceptance evidence, and recommended executor. `NEW` denotes an unfiled issue. S ≤2 days; M 3–5 days. `*` marks the parallel or post-pilot P1 track. Executor recommendations do not override the pinned execution distribution or establish actual execution.
+The selected council rows below retain issue mapping, size, dependencies, lane, acceptance evidence, and recommended executor, with the sponsor-approved D8 follow-up and D8/D9 readiness recorded. `NEW` denotes an unfiled issue. S ≤2 days; M 3–5 days. `*` marks the parallel or post-pilot P1 track. Executor recommendations do not override the pinned execution distribution or establish actual execution.
 
 Lanes give exclusive write ownership: packages sharing a lane run serially; different lanes may run concurrently in separate worktrees after dependencies are met. DI owns Dendro ingestion and storage; DQ owns I01; DX owns export; DF owns fidelity; DU owns studio. G0a, C1a, and C1b are shared capture/contract prerequisites, not Dendro-only implementation. AOB denotes agent-otel-bridge.
 
@@ -320,8 +320,8 @@ Lanes give exclusive write ownership: packages sharing a lane run serially; diff
 | D4b | dendro#139 part 1 | M | D4c, C1b | DX | Pseudonymized snapshot export (F13) → atomic publication, correction replay | codex + claude review |
 | D5 | dendro#134 | M | D1, C1b | DF | Field-level fidelity on the existing registry → denominator matrix | codex |
 | D7* | dendro#138 | M | D1 | oracle | ccusage differential → pinned, adjudicated discrepancies | agy |
-| D8 | dendro#140, #141 | S | — | dendro-docs | Scope and claim corrections (F1) on the standard path → claim audit | agy |
-| D9 | dendro NEW | M | — | DU | Studio authentication (F11) → unauthorized query denied | codex + claude review |
+| D8 | dendro#140, #141 | S | — | dendro-docs | Ready to start: scope and claim corrections (F1) on the standard path; small docs follow-up to apply S1 wording in the spec/README as a separate work item → claim audit | agy |
+| D9 | dendro NEW | M | — | DU | Ready to start: studio authentication (F11) → unauthorized query denied | codex + claude review |
 
 The shared `fact-export-v1` and `link-id-v1` schemas and test vectors live in `agent-otel-bridge:docs/contracts/fact-export-v1/`; Dendro keeps digest-pinned copies. Session links use `agent.session.link_id` with HMAC-SHA256, purpose/team/epoch-derived keys, a jointly provisioned persistent endpoint namespace, and a closed canonical harness vocabulary. Only identifiable sessions receive a link; synthetic or otherwise unidentifiable sessions stay `unlinked`.
 
@@ -331,7 +331,7 @@ D4b is a new fact export, not reuse of the F3 aggregate: flat per-table Parquet 
 
 ### Deferred Dendro scope
 
-Outside the MVP gate, subject to S6:
+Outside the MVP gate, approved under S6 on 2026-11-11:
 
 * #132: `aob` connector; no local file loop in the MVP.
 * #133: contract crate extraction; use digest-pinned contract copies instead.
@@ -346,21 +346,23 @@ Shared G0a/C1a/C1b remain prerequisites in the workplan above. This projection p
 
 | Wave | Dendro packages | Dendro exit evidence / gate |
 | :--- | :--- | :--- |
-| **0** | D8, D9 | Corrected claims and authenticated studio; shared G0a capture hashes and historical provenance require S7 |
+| **0** | D8, D9 | D8 and D9 ready to start; corrected claims and authenticated studio; shared G0a capture hashes and historical provenance must follow approved S7 safeguards |
 | **1** | No Dendro implementation package | Reviewed C1a → C1b contract and vector digests; record relevant sponsor decisions before dependent work |
-| **2** | D1 → D3 → D4a → D4c → D4b; D2 and D5 after their own dependencies | Cross-product link equality; real Codex tool names and replay counts; crash consistency; historical provenance and missingness; private atomic snapshots and correction replay; qualified I01 and fidelity denominators; independent security acceptance. S1 blocks D4b and this wave |
+| **2** | D1 → D3 → D4a → D4c → D4b; D2 and D5 after their own dependencies | Cross-product link equality; real Codex tool names and replay counts; crash consistency; historical provenance and missingness; private atomic snapshots and correction replay; qualified I01 and fidelity denominators; independent security acceptance. S1 approved; D4b must satisfy its export rule |
 | **3** | No additional Dendro package | Preserve completed Dendro evidence for downstream integration |
 | **4** | No additional Dendro package | D2, D4b, D5, and D9 evidence supports the two-machine pilot; all P0 gates and sponsor acceptance remain required |
 | **P1 (parallel or post-pilot)** | D7 after D1 | Pinned, adjudicated ccusage discrepancies; outside the pilot's critical path and acceptance gate |
 
-### Sponsor decisions relevant to Dendro (pending)
+### Sponsor decisions relevant to Dendro (2026-11-11)
 
-| ID | Decision | Council recommendation | Blocks |
+| ID | Decision | Sponsor disposition | Applies to |
 | :--- | :--- | :--- | :--- |
-| **S1** | Amend the “no data leaves the machine” export invariant | Recommended wording: “Nothing leaves by default. With org export configured, only zero-content, pseudonymized `fact-export-v1` bundles are written to an operator-configured path” | D4b, wave 2 |
-| **S2** | #127 and product wording | Close or redesign #127 against Dendro's no-egress rule. Preserve the vocabulary ban in [`.agentflow/PRODUCT.md:7`](../.agentflow/PRODUCT.md#positioning) across positioning, docs, and interfaces | Dendro scope and messaging |
-| **S6** | MVP scope cut | Approve the Dendro deferrals above | All MVP scope |
-| **S7** | Authorize Gate-0 captures | Run Claude Code 2.1.322 and Codex 0.167.0 in disposable synthetic workspaces with a loopback fixture collector, using synthetic sentinels only | Shared G0a (and the separately scoped native capture track) |
-| **S8** | Human approval for high-assurance work | Sponsor is the human approver on PRs for shared C1a and Dendro D3 and D4b | Relevant merges |
+| **S1** | Amend the local-only export promise | **Approved:** "Nothing leaves by default. When an org export is explicitly configured, only zero-content, pseudonymized fact-export-v1 bundles are written to an operator-configured path." Dendro writes locally and never uploads. Applying this wording to the spec/README is a separate small docs follow-up under D8 | D4b, wave 2; D8 docs follow-up |
+| **S2** | #127 and product wording | **Adopted:** #127 remains open, re-scoped as opt-in, off by default, operation health only, with no session data, governed by S1. Preserve the vocabulary rule in [`.agentflow/PRODUCT.md:7`](../.agentflow/PRODUCT.md#positioning) across positioning, docs, and interfaces | Dendro scope and messaging |
+| **S6** | MVP scope cut | **Approved:** the Dendro deferrals above | All MVP scope |
+| **S7** | Authorize Gate-0 captures | **Approved with safeguards:** run Claude Code 2.1.322 and Codex 0.167.0 in disposable synthetic workspaces with a loopback fixture collector, using synthetic content and sentinels only. Raw captures remain private; only sanitized derivatives may be committed | Shared G0a (and the separately scoped native capture track) |
+| **S8** | Human approval for high-assurance work | **Approved by sponsor delegation:** the coordinating agent is delegated high-assurance approval authority. This delegation explicitly satisfies the human-approval requirement in `sdlc.config.json`, subject to the conditions below | Relevant approvals and merges, including shared C1a and Dendro D3 and D4b |
 
-Independent review applies to every path. The council recommends Claude security review for C1a, D3, D4b, and D9, and Grok or Agy review for standard-path work. S8 does not waive independent review or grant merge/publication authority. Pending decisions must be recorded through Dendro governance before admission.
+Under S8, the coordinating agent may approve and merge only when acceptance commands and repository gates pass, an independent reviewer (never the builder) has passed the work, Claude security review has passed for high-assurance work, no finding remains unresolved, and no gate is overridden. It must escalate to the sponsor for invariant, licence, or release changes; data deletion; overrides; or reviewer disagreement.
+
+Independent review applies to every path. Claude security review is required for high-assurance work under S8; the council also recommends Claude security review for C1a, D3, D4b, and D9, and Grok or Agy review for standard-path work. The delegation preserves no self-review, existing backlog and publication holds, and all other Dendro governance gates.
