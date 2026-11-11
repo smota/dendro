@@ -279,3 +279,88 @@ Formulas, refusals, and the `A01`–`A15` proof table are in the addendum linked
 | **I24** | `security.authority_blast_radius` | Bounded `duckpgq` reachability on `status = evidenced` only, from a revoked or failed grant, or an unverified sandbox, to downstream sessions. `spawn` / `delegate` / `handoff` walk parent → child. `return` / `join` walk child → parent. `session_lineage.rs` must match on fixtures. The count is dependency exposure, not inherited or effective authority. PageRank is not an input | Implemented (proof: `insight_v1.rs`, `lineage_graph.rs`) |
 | **I25** | `model.counterfactual_routing` | `ASOF JOIN` and `QUANTILE_CONT` cache-bleed inflection, then a fast-tier cost and context simulation from a versioned operator-pinned pricing/tier table. No hardcoded model name. Unpinned cohort or tier profile refuses the simulation and keeps observed `I02`. Labeled counterfactual | Implemented (proof: `insight_v1.rs`) |
 
+---
+
+## 🚧 Goal 10 (proposed): Family MVP alignment (council 2026-11-11)
+
+* **Origin:** Family MVP council of 2026-11-11, following an adversarial scope round and two planning cycles. Dendro source baseline: `cf40b10`; the council re-checked critical code claims before adopting them. This public record contains the Dendro scope and its shared contract prerequisites.
+* **Status:** Recommendation, not admitted. No ADR, work admission, implementation, merge, release, or publication is approved by this section. Dendro governance in [`sdlc.config.json`](../sdlc.config.json), [`agent-workflow.config.json`](../agent-workflow.config.json), and [`AGENTS.md`](../AGENTS.md) applies, including independent review on every path, no self-review, human approval for high-assurance work, and existing backlog and publication holds.
+* **Objective:** Repair Codex tool evidence and invocation identity, preserve historical git provenance, provide explicit opt-in pseudonymized fact snapshots, correct unsupported claims, and authenticate studio access. Sponsor decisions below remain pending.
+
+### Verified Dendro facts (council baseline)
+
+These are the council's verified findings at `cf40b10`, not claims that the proposed repairs have shipped.
+
+| ID | Fact | Evidence |
+| :--- | :--- | :--- |
+| **F1** | The Antigravity connector is not implemented | [`agy.rs:63`](https://github.com/smota/dendro/blob/cf40b10/crates/dendro-connectors/src/agy.rs#L63) |
+| **F2** | Codex tool calls are observed, but coarsely: stored under a constant name, outside the watermark guard and outside the shared tool scan | [`stream.rs:451`](https://github.com/smota/dendro/blob/cf40b10/crates/dendro-connectors/src/stream.rs#L451), [`stream.rs:621`](https://github.com/smota/dendro/blob/cf40b10/crates/dendro-connectors/src/stream.rs#L621), [`stream.rs:1862`](https://github.com/smota/dendro/blob/cf40b10/crates/dendro-connectors/src/stream.rs#L1862), [`facts.rs:146–147`](https://github.com/smota/dendro/blob/cf40b10/crates/dendro-core/src/facts.rs#L146-L147) |
+| **F3** | The existing “DuckLake export” is a four-column aggregate, not fact tables | [`retrieval_v1.rs:123`](https://github.com/smota/dendro/blob/cf40b10/crates/dendro-core/src/retrieval_v1.rs#L123) |
+| **F4** | I19/I20 outcome insights need OpenRig `queue_facts` | [`DATA_DICTIONARY.md:374–375`](https://github.com/smota/dendro/blob/cf40b10/docs/DATA_DICTIONARY.md#L374-L375) |
+| **F9** | I01 deduplicates on the bare `message_id` | [`i01_invocations.rs:42`](https://github.com/smota/dendro/blob/cf40b10/crates/dendro-core/src/insight_v1/reference/i01_invocations.rs#L42) |
+| **F11** | Studio's loopback `/api/query` is unauthenticated, against its own invariant | [`ARCHITECTURE.md:150`](https://github.com/smota/dendro/blob/cf40b10/docs/ARCHITECTURE.md#L150), [`connected_web.rs:2333`](https://github.com/smota/dendro/blob/cf40b10/crates/dendro-cli/src/connected_web.rs#L2333) |
+| **F13** | `seal_identifier` passes ordinary identifiers through unchanged; it is not pseudonymization | [`privacy.rs:93`](https://github.com/smota/dendro/blob/cf40b10/crates/dendro-core/src/privacy.rs#L93) |
+
+### Family MVP workplan (proposed)
+
+The selected council rows below are preserved verbatim, including issue mapping, size, dependencies, lane, acceptance evidence, and recommended executor. `NEW` denotes an unfiled issue. S ≤2 days; M 3–5 days. `*` marks the parallel or post-pilot P1 track. Executor recommendations do not override the pinned execution distribution or establish actual execution.
+
+Lanes give exclusive write ownership: packages sharing a lane run serially; different lanes may run concurrently in separate worktrees after dependencies are met. DI owns Dendro ingestion and storage; DQ owns I01; DX owns export; DF owns fidelity; DU owns studio. G0a, C1a, and C1b are shared capture/contract prerequisites, not Dendro-only implementation. AOB denotes agent-otel-bridge.
+
+| WP | Repo / issue | Size | Depends on | Lane | Scope → acceptance evidence | Executor |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| G0a | AOB#24, dendro#142 | M | S7 | captures-hook/log | Pinned identities and historical git provenance → sanitized matrix, receipt hashes | agy |
+| C1a | AOB NEW | M | G0a | contract-identity | Identity and keys → independently checked collision and rotation vectors | codex + claude review |
+| C1b | AOB NEW | M | C1a | contract-facts | Tables, snapshots, coverage → schema and replay vectors | codex |
+| D1 | dendro NEW | M | C1b | DI | Move `observe_codex` into the shared tool scan with watermark gating and real names (F2) → replay and late-result counts | codex |
+| D2 | dendro#135 (split) | M | C1a | DQ | Qualified I01 (F9) → cross-session collision fixtures | codex |
+| D3 | dendro NEW, #135 (split) | M | D1, C1a | DI | Link computed before sealing; synthetic sessions unlinked → cross-product link equality | codex + claude review |
+| D4a | dendro#139 part 1 | M | D3 | DI | Single-transaction fact commit (stream.rs:965) → crash-boundary consistency | codex |
+| D4c | dendro#139 part 1 | M | D4a, G0a | DI | Historical git bridge from session records only → provenance and missingness fixtures | codex |
+| D4b | dendro#139 part 1 | M | D4c, C1b | DX | Pseudonymized snapshot export (F13) → atomic publication, correction replay | codex + claude review |
+| D5 | dendro#134 | M | D1, C1b | DF | Field-level fidelity on the existing registry → denominator matrix | codex |
+| D7* | dendro#138 | M | D1 | oracle | ccusage differential → pinned, adjudicated discrepancies | agy |
+| D8 | dendro#140, #141 | S | — | dendro-docs | Scope and claim corrections (F1) on the standard path → claim audit | agy |
+| D9 | dendro NEW | M | — | DU | Studio authentication (F11) → unauthorized query denied | codex + claude review |
+
+The shared `fact-export-v1` and `link-id-v1` schemas and test vectors live in `agent-otel-bridge:docs/contracts/fact-export-v1/`; Dendro keeps digest-pinned copies. Session links use `agent.session.link_id` with HMAC-SHA256, purpose/team/epoch-derived keys, a jointly provisioned persistent endpoint namespace, and a closed canonical harness vocabulary. Only identifiable sessions receive a link; synthetic or otherwise unidentifiable sessions stay `unlinked`.
+
+D4b is a new fact export, not reuse of the F3 aggregate: flat per-table Parquet snapshots, a monotonic snapshot sequence, and an explicit replacement scope. Facts can change within a generation, including outcomes and model attribution. `usage` carries model, effort, and observed USD. D4c exports only fixture-proven historical git evidence from session records, never current HEAD.
+
+**D6 removed:** the outcome proxy is not computed locally. Any downstream proxy uses exported historical evidence, reports unmatched and ambiguous populations, and is named as a proxy, never “acceptance”. Existing I19/I20 semantics and their OpenRig evidence requirements (F4) are not replaced by that proxy.
+
+### Deferred Dendro scope
+
+Outside the MVP gate, subject to S6:
+
+* #132: `aob` connector; no local file loop in the MVP.
+* #133: contract crate extraction; use digest-pinned contract copies instead.
+* #136: non-token units.
+* #137: Agent Trace.
+* #139 part 2: derived-facts outbox.
+* Antigravity connector (F1): a separate future item.
+
+### Waves and exit gates (Dendro scope only)
+
+Shared G0a/C1a/C1b remain prerequisites in the workplan above. This projection preserves the family wave numbering and includes only Dendro packages; it does not admit downstream implementation here.
+
+| Wave | Dendro packages | Dendro exit evidence / gate |
+| :--- | :--- | :--- |
+| **0** | D8, D9 | Corrected claims and authenticated studio; shared G0a capture hashes and historical provenance require S7 |
+| **1** | No Dendro implementation package | Reviewed C1a → C1b contract and vector digests; record relevant sponsor decisions before dependent work |
+| **2** | D1 → D3 → D4a → D4c → D4b; D2 and D5 after their own dependencies | Cross-product link equality; real Codex tool names and replay counts; crash consistency; historical provenance and missingness; private atomic snapshots and correction replay; qualified I01 and fidelity denominators; independent security acceptance. S1 blocks D4b and this wave |
+| **3** | No additional Dendro package | Preserve completed Dendro evidence for downstream integration |
+| **4** | No additional Dendro package | D2, D4b, D5, and D9 evidence supports the two-machine pilot; all P0 gates and sponsor acceptance remain required |
+| **P1 (parallel or post-pilot)** | D7 after D1 | Pinned, adjudicated ccusage discrepancies; outside the pilot's critical path and acceptance gate |
+
+### Sponsor decisions relevant to Dendro (pending)
+
+| ID | Decision | Council recommendation | Blocks |
+| :--- | :--- | :--- | :--- |
+| **S1** | Amend the “no data leaves the machine” export invariant | Recommended wording: “Nothing leaves by default. With org export configured, only zero-content, pseudonymized `fact-export-v1` bundles are written to an operator-configured path” | D4b, wave 2 |
+| **S2** | #127 and product wording | Close or redesign #127 against Dendro's no-egress rule. Preserve the vocabulary ban in [`.agentflow/PRODUCT.md:7`](../.agentflow/PRODUCT.md#positioning) across positioning, docs, and interfaces | Dendro scope and messaging |
+| **S6** | MVP scope cut | Approve the Dendro deferrals above | All MVP scope |
+| **S7** | Authorize Gate-0 captures | Run Claude Code 2.1.322 and Codex 0.167.0 in disposable synthetic workspaces with a loopback fixture collector, using synthetic sentinels only | Shared G0a (and the separately scoped native capture track) |
+| **S8** | Human approval for high-assurance work | Sponsor is the human approver on PRs for shared C1a and Dendro D3 and D4b | Relevant merges |
+
+Independent review applies to every path. The council recommends Claude security review for C1a, D3, D4b, and D9, and Grok or Agy review for standard-path work. S8 does not waive independent review or grant merge/publication authority. Pending decisions must be recorded through Dendro governance before admission.
