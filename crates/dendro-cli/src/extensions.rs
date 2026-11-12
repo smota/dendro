@@ -58,8 +58,11 @@ pub enum Commands {
         /// Ingest default local harness roots first when the database is missing or not ready.
         #[arg(long, help_heading = "Cockpit")]
         auto_ingest: bool,
-        /// Run connected live HTTP & SSE dashboard server on local bind address (e.g. 127.0.0.1:4242).
-        #[arg(long, help_heading = "Connected Web")]
+        /// Run connected live HTTP & SSE dashboard (port 8080 by default).
+        /// Omit the address or use auto for OS-CSPRNG 127/8 excluding 127.0.0.1 on Linux/Windows.
+        /// macOS uses 127.0.0.1; explicit loopback addresses are preserved.
+        /// macOS and explicit shared hosts retain cross-port cookie exposure.
+        #[arg(long, num_args = 0..=1, default_missing_value = "auto", help_heading = "Connected Web")]
         serve: Option<String>,
         /// Path to static dashboard site assets (defaults to ./site or auto-detected site dir).
         #[arg(long, help_heading = "Connected Web")]
@@ -730,7 +733,58 @@ pub async fn run(command: Commands) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::Parser;
     use serde_json::json;
+
+    fn dashboard_serve(args: &[&str]) -> Option<String> {
+        let parsed = crate::Cli::try_parse_from(args).unwrap();
+        let crate::Commands::Extensions(Commands::Dashboard { serve, .. }) = parsed.command else {
+            panic!("expected dashboard command");
+        };
+        serve
+    }
+
+    #[test]
+    fn dashboard_bare_serve_selects_automatic_loopback() {
+        for args in [
+            vec!["dendro", "dashboard", "--serve"],
+            vec!["dendro", "dashboard", "--serve", "auto"],
+            vec!["dendro", "dashboard", "--serve", "--site-dir", "site"],
+        ] {
+            let bind = dashboard_serve(&args).expect("serve enabled");
+            let address = crate::connected_web::validate_dashboard_bind_address(&bind).unwrap();
+            assert_eq!(address.port(), 8080);
+            let std::net::IpAddr::V4(ip) = address.ip() else {
+                panic!("expected IPv4 loopback");
+            };
+            assert_eq!(ip.octets()[0], 127);
+            #[cfg(any(target_os = "linux", windows))]
+            assert_ne!(ip, std::net::Ipv4Addr::LOCALHOST);
+            #[cfg(not(any(target_os = "linux", windows)))]
+            assert_eq!(ip, std::net::Ipv4Addr::LOCALHOST);
+        }
+    }
+
+    #[test]
+    fn dashboard_serve_preserves_explicit_addresses_and_opt_in() {
+        assert!(dashboard_serve(&["dendro", "dashboard"]).is_none());
+        for (explicit, expected) in [
+            ("127.0.0.1:4242", "127.0.0.1:4242"),
+            ("localhost:4242", "127.0.0.1:4242"),
+            ("[::1]:4242", "[::1]:4242"),
+            ("127.12.34.56:0", "127.12.34.56:0"),
+        ] {
+            let bind = dashboard_serve(&["dendro", "dashboard", "--serve", explicit])
+                .expect("serve enabled");
+            assert_eq!(bind, explicit);
+            assert_eq!(
+                crate::connected_web::validate_dashboard_bind_address(&bind)
+                    .unwrap()
+                    .to_string(),
+                expected
+            );
+        }
+    }
 
     struct TempDir(PathBuf);
     impl TempDir {

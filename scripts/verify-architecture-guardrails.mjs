@@ -163,10 +163,21 @@ if (!fs.existsSync(connectedWebPath)) {
       'crates/dendro-cli/src/connected_web.rs must enforce 127.0.0.1 / is_loopback() binding',
     );
   }
-  if (!cw.includes('Access-Control-Allow-Origin: http://127.0.0.1:')) {
+  // The studio is same-origin only (D9, sponsor-approved 2026-11-12): production code must not emit
+  // any Access-Control-Allow-Origin header, and a test must keep asserting its absence. This replaces
+  // the former literal `Access-Control-Allow-Origin: http://127.0.0.1:` requirement, which would be
+  // wrong for the randomized 127.0.0.0/8 bind.
+  const cwProduction = cw.split('#[cfg(test)]')[0];
+  if (/Access-Control-Allow-Origin/i.test(cwProduction)) {
     fail(
-      'CORS_LOOPBACK_RESTRICTION_MISSING',
-      'crates/dendro-cli/src/connected_web.rs must restrict Access-Control-Allow-Origin to http://127.0.0.1:',
+      'CORS_CROSS_ORIGIN_FORBIDDEN',
+      'crates/dendro-cli/src/connected_web.rs production code must not emit Access-Control-Allow-Origin (studio is same-origin only)',
+    );
+  }
+  if (!cw.includes('!reply.contains("Access-Control-Allow-Origin")')) {
+    fail(
+      'CORS_ABSENCE_TEST_MISSING',
+      'crates/dendro-cli/src/connected_web.rs must keep a test asserting Access-Control-Allow-Origin is absent',
     );
   }
   if (/Access-Control-Allow-Origin:\s*\*/i.test(cw)) {

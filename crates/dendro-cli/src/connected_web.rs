@@ -7,23 +7,223 @@
 //! - Exposes uncapped live query API (`GET /api/query?view=<viewId>`).
 //! - Streams live updates over Server-Sent Events (`GET /api/events?view=<viewId>`).
 //!
-//! Security: Only loopback interfaces (`127.0.0.1`, `localhost`, `[::1]`) are allowed.
+//! Security: Only loopback interfaces (`127.0.0.0/8`, `localhost`, `[::1]`) are allowed.
 //! External or wildcard binding (`0.0.0.0`) is deterministically refused.
+//! Every route requires a per-launch session cookie except the one-time launch exchange.
+//! Host and supplied Origin headers must match the bound loopback authority.
 
 use anyhow::{bail, Context, Result};
+use hmac::{Hmac, Mac};
+use rand::{rngs::SysRng, TryRng};
+use sha2::Sha256;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
 use std::time::{Duration, SystemTime};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::net::TcpListener;
+use tokio::sync::Semaphore;
 use tracing::{info, warn};
 
 const NO_CACHE_HEADERS: &str =
-    "Cache-Control: no-store, no-cache, must-revalidate, max-age=0\r\nPragma: no-cache\r\nExpires: 0\r\n";
+    "Cache-Control: no-store, no-cache, must-revalidate, max-age=0\r\nPragma: no-cache\r\nExpires: 0\r\nReferrer-Policy: no-referrer\r\nX-Content-Type-Options: nosniff\r\nContent-Security-Policy: frame-ancestors 'none'\r\n";
+
+const LAUNCH_PATH: &str = "/_studio/launch/";
+const MAX_STUDIO_CONNECTIONS: usize = 64;
+
+// Deliberately no Debug: neither the launch capability nor session cookie may be logged.
+struct StudioAuth {
+    key: [u8; 32],
+    authority: String,
+    cookie_name: String,
+    launch_used: AtomicBool,
+    launch_file: Mutex<Option<PathBuf>>,
+}
+
+impl StudioAuth {
+    fn new(addr: SocketAddr) -> Result<Self> {
+        let mut key = [0; 32];
+        SysRng
+            .try_fill_bytes(&mut key)
+            .context("OS randomness unavailable for studio authentication")?;
+        Ok(Self {
+            key,
+            authority: addr.to_string(),
+            cookie_name: format!("dendro_studio_{}", addr.port()),
+            launch_used: AtomicBool::new(false),
+            launch_file: Mutex::new(None),
+        })
+    }
+
+    fn mac(&self, purpose: &[u8]) -> Hmac<Sha256> {
+        let mut mac =
+            Hmac::<Sha256>::new_from_slice(&self.key).expect("HMAC accepts a 32-byte key");
+        mac.update(purpose);
+        mac
+    }
+
+    fn token(&self, purpose: &[u8]) -> String {
+        hex::encode(self.mac(purpose).finalize().into_bytes())
+    }
+
+    fn verify(&self, purpose: &[u8], token: &str) -> bool {
+        let mut tag = [0; 32];
+        // Fixed-length tags are compared in constant time by the existing HMAC crate.
+        hex::decode_to_slice(token, &mut tag).is_ok()
+            && self.mac(purpose).verify_slice(&tag).is_ok()
+    }
+
+    fn authenticated(&self, cookie: Option<&str>) -> bool {
+        let mut tokens = cookie
+            .into_iter()
+            .flat_map(|s| s.split(';'))
+            .filter_map(|s| {
+                let (name, value) = s.trim().split_once('=')?;
+                (name == self.cookie_name).then_some(value)
+            });
+        let token = tokens.next();
+        tokens.next().is_none() && token.is_some_and(|t| self.verify(b"session", t))
+    }
+
+    fn write_launch_file(&self, parent: &Path) -> Result<PathBuf> {
+        use dendro_core::platform_v1::{
+            current_native_platform, open_existing_private_root, parse_child_name,
+        };
+        use std::io::Write;
+
+        let mut launch_file = self
+            .launch_file
+            .lock()
+            .map_err(|_| anyhow::anyhow!("studio launch state unavailable"))?;
+        if launch_file.is_some() || self.launch_used.load(Ordering::Acquire) {
+            bail!("studio launch file has already been issued");
+        }
+        // Reuse the native owner-only, no-follow, exclusive-create primitives.
+        // An unverified/non-private database directory fails closed.
+        let root = open_existing_private_root(parent).context(
+            "studio requires an owner-only database directory (Unix mode 0700 or a private Windows DACL)",
+        )?;
+        // Only sweep names emitted by this server. Never follow symlinks or remove
+        // directories/unrelated files in the operator's database directory.
+        for entry in std::fs::read_dir(root.path())? {
+            let entry = entry?;
+            let name = entry.file_name();
+            let generated = name.to_str().is_some_and(|name| {
+                name.strip_prefix("studio-launch-")
+                    .and_then(|name| name.strip_suffix(".html"))
+                    .is_some_and(|nonce| {
+                        nonce.len() == 16 && nonce.bytes().all(|b| b.is_ascii_hexdigit())
+                    })
+            });
+            if generated && entry.file_type()?.is_file() {
+                #[cfg(any(target_os = "linux", windows))]
+                root.check_anchor()?;
+                match std::fs::remove_file(entry.path()) {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => return Err(error.into()),
+                }
+            }
+        }
+        let name = parse_child_name(
+            &format!("studio-launch-{:016x}.html", rand::random::<u64>()),
+            current_native_platform(),
+        )
+        .map_err(|_| anyhow::anyhow!("invalid studio launch filename"))?;
+        let mut file = root.create_file(&name)?;
+        let path = file.path().to_path_buf();
+        *launch_file = Some(path.clone());
+        let url = format!(
+            "http://{}{LAUNCH_PATH}{}",
+            self.authority,
+            self.token(b"launch")
+        );
+        let written = (|| -> std::io::Result<()> {
+            write!(file.file_mut(), "<!doctype html><meta charset=\"utf-8\"><meta name=\"referrer\" content=\"no-referrer\"><title>Dendro Studio launch</title><a href=\"{url}\" rel=\"noreferrer\">Open Dendro Studio</a>")?;
+            file.file().sync_all()
+        })();
+        // Close the native handle before deleting (Windows denies delete sharing).
+        drop(file);
+        if let Err(error) = written {
+            let _ = std::fs::remove_file(&path);
+            *launch_file = None;
+            return Err(error.into());
+        }
+        Ok(path)
+    }
+
+    fn remove_launch_file(&self) {
+        if let Ok(mut path) = self.launch_file.lock() {
+            if let Some(path) = path.take() {
+                let _ = std::fs::remove_file(path);
+            }
+        }
+    }
+}
+
+impl Drop for StudioAuth {
+    fn drop(&mut self) {
+        self.remove_launch_file();
+    }
+}
+
+#[derive(Default)]
+struct StudioHeaders<'a> {
+    host: Option<&'a str>,
+    origin: Option<&'a str>,
+    cookie: Option<&'a str>,
+    fetch_site: Option<&'a str>,
+}
+
+impl<'a> StudioHeaders<'a> {
+    fn parse(lines: impl Iterator<Item = &'a str>) -> Option<Self> {
+        let mut headers = Self::default();
+        for line in lines {
+            let (name, value) = line.split_once(':')?;
+            if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') {
+                return None;
+            }
+            let slot = match name.to_ascii_lowercase().as_str() {
+                "host" => &mut headers.host,
+                "origin" => &mut headers.origin,
+                "cookie" => &mut headers.cookie,
+                "sec-fetch-site" => &mut headers.fetch_site,
+                _ => continue,
+            };
+            if slot.replace(value.trim()).is_some() {
+                return None; // Ambiguous security headers fail closed.
+            }
+        }
+        Some(headers)
+    }
+}
+
+async fn reject_http<S: AsyncWrite + Unpin>(stream: &mut S, status: &str) -> Result<()> {
+    stream.write_all(format!("HTTP/1.1 {status}\r\nContent-Length: 0\r\n{NO_CACHE_HEADERS}Connection: close\r\n\r\n").as_bytes()).await?;
+    Ok(())
+}
 
 /// Validates that a bind address is strictly a loopback address.
 pub fn validate_dashboard_bind_address(addr_str: &str) -> Result<SocketAddr> {
+    if addr_str.is_empty() || addr_str == "auto" {
+        #[cfg(any(target_os = "linux", windows))]
+        loop {
+            let mut bytes = [0; 3];
+            SysRng
+                .try_fill_bytes(&mut bytes)
+                .context("OS randomness unavailable for studio loopback address")?;
+            let ip = std::net::Ipv4Addr::new(127, bytes[0], bytes[1], bytes[2]);
+            if ip != std::net::Ipv4Addr::LOCALHOST {
+                return Ok(SocketAddr::new(ip.into(), 8080));
+            }
+        }
+        #[cfg(not(any(target_os = "linux", windows)))]
+        return Ok(SocketAddr::from(([127, 0, 0, 1], 8080)));
+    }
     let resolved = if let Some(rest) = addr_str.strip_prefix("localhost:") {
         format!("127.0.0.1:{rest}")
     } else if addr_str == "localhost" {
@@ -38,7 +238,7 @@ pub fn validate_dashboard_bind_address(addr_str: &str) -> Result<SocketAddr> {
 
     if !socket_addr.ip().is_loopback() {
         bail!(
-            "security refused: dashboard server must bind to a loopback address (127.0.0.1, localhost, [::1]); non-loopback bind address '{}' is forbidden",
+            "security refused: dashboard server must bind to a loopback address (127.0.0.0/8, localhost, [::1]); non-loopback bind address '{}' is forbidden",
             addr_str
         );
     }
@@ -2224,6 +2424,7 @@ fn intelligence_fallback(conn: &duckdb::Connection, view: &str) -> Result<Vec<se
 /// Connected HTTP & SSE Dashboard Server instance.
 pub struct ConnectedServer {
     listener: TcpListener,
+    auth: Arc<StudioAuth>,
     db_path: PathBuf,
     site_dir: PathBuf,
     rig: Option<String>,
@@ -2242,8 +2443,10 @@ impl ConnectedServer {
         let listener = TcpListener::bind(socket_addr)
             .await
             .with_context(|| format!("failed to bind dashboard server to {socket_addr}"))?;
+        let auth = Arc::new(StudioAuth::new(listener.local_addr()?)?);
         Ok(Self {
             listener,
+            auth,
             db_path,
             site_dir,
             rig,
@@ -2257,32 +2460,83 @@ impl ConnectedServer {
             .context("failed to query local address")
     }
 
+    /// Issue the one-time browser capability in an owner-only file, never in logs.
+    /// Open this file in a browser and follow its link to establish the session.
+    pub async fn write_browser_launch_file(&self) -> Result<PathBuf> {
+        let auth = Arc::clone(&self.auth);
+        let db = std::path::absolute(&self.db_path)?;
+        let parent = db
+            .parent()
+            .context("database has no parent directory")?
+            .to_path_buf();
+        tokio::task::spawn_blocking(move || auth.write_launch_file(&parent)).await?
+    }
+
     pub async fn run(self) -> Result<()> {
-        let _ = tokio::task::spawn_blocking(dendro_cli::telemetry::init).await;
-        let local_addr = self.local_addr()?;
-        info!("Dendro Connected Dashboard Server active at http://{local_addr}/");
+        self.run_until_shutdown(tokio::signal::ctrl_c()).await
+    }
 
-        loop {
-            let (socket, _) = match self.listener.accept().await {
-                Ok(conn) => conn,
-                Err(e) => {
-                    warn!("dashboard server accept error: {e}");
-                    tokio::time::sleep(Duration::from_millis(50)).await;
-                    continue;
-                }
+    async fn run_until_shutdown(
+        self,
+        shutdown: impl std::future::Future<Output = std::io::Result<()>>,
+    ) -> Result<()> {
+        let result = async {
+            tokio::pin!(shutdown);
+            let _ = tokio::select! {
+                result = &mut shutdown => return result.context("studio shutdown signal failed"),
+                initialized = tokio::task::spawn_blocking(dendro_cli::telemetry::init) => initialized,
             };
+            let local_addr = self.local_addr()?;
+            info!("Dendro Connected Dashboard Server active at http://{local_addr}/");
+            let capacity = Arc::new(Semaphore::new(MAX_STUDIO_CONNECTIONS));
+            // Dropping the set on shutdown/cancellation aborts even long-lived SSE.
+            let mut connections = tokio::task::JoinSet::new();
+            loop {
+                let accepted = tokio::select! {
+                    result = &mut shutdown => return result.context("studio shutdown signal failed"),
+                    Some(_) = connections.join_next(), if !connections.is_empty() => continue,
+                    connection = async {
+                        // Acquire before accepting: waiting clients stay in the OS
+                        // backlog instead of allocating more header buffers/tasks.
+                        let permit = Arc::clone(&capacity).acquire_owned().await
+                            .expect("studio connection semaphore remains open");
+                        self.listener.accept().await.map(|(socket, _)| (socket, permit))
+                    } => connection,
+                };
+                let (socket, permit) = match accepted {
+                    Ok(conn) => conn,
+                    Err(e) => {
+                        warn!("dashboard server accept error: {e}");
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                        continue;
+                    }
+                };
 
-            let db = self.db_path.clone();
-            let site = self.site_dir.clone();
-            let rig = self.rig.clone();
-            let window = self.window.clone();
+                let db = self.db_path.clone();
+                let site = self.site_dir.clone();
+                let rig = self.rig.clone();
+                let window = self.window.clone();
+                let auth = Arc::clone(&self.auth);
 
-            tokio::spawn(async move {
-                if let Err(e) = handle_http_connection(socket, db, site, rig, window).await {
-                    tracing::debug!("dashboard connection ended: {e}");
-                }
-            });
-        }
+                connections.spawn(async move {
+                    // Hold through the whole connection, including SSE streams.
+                    let _permit = permit;
+                    if let Err(e) = handle_http_connection(socket, db, site, rig, window, auth).await {
+                        tracing::debug!("dashboard connection ended: {e}");
+                    }
+                });
+            }
+        }.await;
+        // Explicit cleanup for Ctrl+C, shutdown errors, and run startup failures.
+        self.auth.remove_launch_file();
+        result
+    }
+}
+
+impl Drop for ConnectedServer {
+    fn drop(&mut self) {
+        // Cancellation must not wait for connection tasks' auth Arcs to disappear.
+        self.auth.remove_launch_file();
     }
 }
 
@@ -2302,43 +2556,109 @@ async fn execute_live_query_async(
     .await?
 }
 
-async fn handle_http_connection(
-    stream: TcpStream,
+async fn handle_http_connection<S: AsyncRead + AsyncWrite + Unpin>(
+    stream: S,
     db_path: PathBuf,
     site_dir: PathBuf,
     rig: Option<String>,
     window: Option<String>,
+    auth: Arc<StudioAuth>,
 ) -> Result<()> {
     let operation = dendro_cli::telemetry::Operation::start("http.connection");
-    let result = handle_http_connection_inner(stream, db_path, site_dir, rig, window).await;
+    let result = handle_http_connection_inner(stream, db_path, site_dir, rig, window, auth).await;
     operation.finish(result.is_ok());
     result
 }
 
-async fn handle_http_connection_inner(
-    mut stream: TcpStream,
+async fn handle_http_connection_inner<S: AsyncRead + AsyncWrite + Unpin>(
+    mut stream: S,
     db_path: PathBuf,
     site_dir: PathBuf,
     rig: Option<String>,
     window: Option<String>,
+    auth: Arc<StudioAuth>,
 ) -> Result<()> {
-    let mut buf = [0u8; 4096];
-    let n = stream.read(&mut buf).await?;
-    if n == 0 {
+    // TCP reads are not message boundaries: wait for the entire bounded header block.
+    let mut buf = [0u8; 16384];
+    let header_end = tokio::time::timeout(Duration::from_secs(5), async {
+        let mut len = 0;
+        loop {
+            if let Some(end) = buf[..len].windows(4).position(|w| w == b"\r\n\r\n") {
+                return Ok::<_, std::io::Error>(Some(end));
+            }
+            if len == buf.len() {
+                return Ok(None);
+            }
+            let n = stream.read(&mut buf[len..]).await?;
+            if n == 0 {
+                return Ok(None);
+            }
+            len += n;
+        }
+    })
+    .await;
+    let Ok(Ok(Some(header_end))) = header_end else {
+        return reject_http(&mut stream, "400 Bad Request").await;
+    };
+    let Ok(req_str) = std::str::from_utf8(&buf[..header_end]) else {
+        return reject_http(&mut stream, "400 Bad Request").await;
+    };
+    let mut lines = req_str.split("\r\n");
+    let first_line = lines.next().unwrap_or("");
+    let mut parts = first_line.split_whitespace();
+    let method = parts.next().unwrap_or("");
+    let uri = parts.next().unwrap_or("");
+    if parts.next() != Some("HTTP/1.1") || parts.next().is_some() || !uri.starts_with('/') {
+        return reject_http(&mut stream, "400 Bad Request").await;
+    }
+    let Some(headers) = StudioHeaders::parse(lines) else {
+        return reject_http(&mut stream, "400 Bad Request").await;
+    };
+    if headers.host != Some(auth.authority.as_str()) {
+        return reject_http(&mut stream, "421 Misdirected Request").await;
+    }
+    let origin = format!("http://{}", auth.authority);
+    if headers.origin.is_some_and(|value| value != origin) {
+        return reject_http(&mut stream, "403 Forbidden").await;
+    }
+
+    if let Some(token) = uri.strip_prefix(LAUNCH_PATH) {
+        if method != "GET" {
+            return reject_http(&mut stream, "405 Method Not Allowed").await;
+        }
+        if !auth.verify(b"launch", token)
+            || auth
+                .launch_used
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                .is_err()
+        {
+            return reject_http(&mut stream, "401 Unauthorized").await;
+        }
+        let cleanup = Arc::clone(&auth);
+        tokio::task::spawn_blocking(move || cleanup.remove_launch_file()).await?;
+        // Establish a same-origin document before navigating: Strict cookies may be
+        // withheld on a redirect chain originating at a file:// or cross-site page.
+        // replace() also removes the capability URL from this history entry.
+        let body = "<!doctype html><meta charset=\"utf-8\"><title>Dendro Studio</title><script>location.replace('/');</script><a href=\"/\" rel=\"noreferrer\">Continue to Studio</a>";
+        let header = format!("HTTP/1.1 200 OK\r\nSet-Cookie: {}={}; Path=/; HttpOnly; SameSite=Strict\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\n{NO_CACHE_HEADERS}Connection: close\r\n\r\n", auth.cookie_name, auth.token(b"session"), body.len());
+        stream.write_all(header.as_bytes()).await?;
+        stream.write_all(body.as_bytes()).await?;
         return Ok(());
     }
 
-    let req_str = String::from_utf8_lossy(&buf[..n]);
-    let first_line = req_str.lines().next().unwrap_or("");
-    let mut parts = first_line.split_whitespace();
-    let method = parts.next().unwrap_or("");
-    let uri = parts.next().unwrap_or("/");
+    // All routes are protected: static HTML can contain embedded snapshots too.
+    if !auth.authenticated(headers.cookie) {
+        return reject_http(&mut stream, "401 Unauthorized").await;
+    }
+    if headers
+        .fetch_site
+        .is_some_and(|site| !matches!(site, "same-origin" | "none"))
+    {
+        return reject_http(&mut stream, "403 Forbidden").await;
+    }
 
     if method != "GET" && method != "HEAD" {
-        let resp =
-            "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
-        stream.write_all(resp.as_bytes()).await?;
-        return Ok(());
+        return reject_http(&mut stream, "405 Method Not Allowed").await;
     }
 
     let (path, query) = match uri.find('?') {
@@ -2348,7 +2668,7 @@ async fn handle_http_connection_inner(
 
     // 1. Root redirect
     if path == "/" {
-        let resp = "HTTP/1.1 302 Found\r\nLocation: /dashboards/index.html\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+        let resp = format!("HTTP/1.1 302 Found\r\nLocation: /dashboards/index.html\r\nContent-Length: 0\r\n{NO_CACHE_HEADERS}Connection: close\r\n\r\n");
         stream.write_all(resp.as_bytes()).await?;
         return Ok(());
     }
@@ -2388,7 +2708,7 @@ async fn handle_http_connection_inner(
         }
         let body = serde_json::to_vec(&payload)?;
         let header = format!(
-            "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: http://127.0.0.1:4242\r\n{NO_CACHE_HEADERS}Connection: close\r\n\r\n",
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {}\r\n{NO_CACHE_HEADERS}Connection: close\r\n\r\n",
             body.len()
         );
         stream.write_all(header.as_bytes()).await?;
@@ -2409,7 +2729,7 @@ async fn handle_http_connection_inner(
         };
 
         let header = format!(
-            "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n{NO_CACHE_HEADERS}Connection: keep-alive\r\nAccess-Control-Allow-Origin: http://127.0.0.1:4242\r\n\r\n"
+            "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n{NO_CACHE_HEADERS}Connection: keep-alive\r\n\r\n"
         );
         stream.write_all(header.as_bytes()).await?;
 
@@ -2477,7 +2797,7 @@ async fn handle_http_connection_inner(
         if let Ok(content) = tokio::fs::read(&file_path).await {
             let mime = mime_type_for_path(&file_path);
             let header = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: {mime}\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: http://127.0.0.1:4242\r\n{NO_CACHE_HEADERS}Connection: close\r\n\r\n",
+                "HTTP/1.1 200 OK\r\nContent-Type: {mime}\r\nContent-Length: {}\r\n{NO_CACHE_HEADERS}Connection: close\r\n\r\n",
                 content.len()
             );
             stream.write_all(header.as_bytes()).await?;
@@ -2515,10 +2835,669 @@ pub async fn start_dashboard_server(
     )
     .await?;
 
-    let addr = server.local_addr()?;
-    println!("Dendro Connected Dashboard Server active at http://{addr}/");
-    println!("Press Ctrl+C to stop.");
+    let startup = async {
+        let launch_file = server.write_browser_launch_file().await?;
+        let addr = server.local_addr()?;
+        println!("Dendro Connected Dashboard Server active at http://{addr}/");
+        println!(
+            "Open {} in your browser and follow its one-time Studio link.",
+            launch_file.display()
+        );
+        println!("Press Ctrl+C to stop.");
+        Ok::<_, anyhow::Error>(())
+    }
+    .await;
+    if let Err(error) = startup {
+        server.auth.remove_launch_file();
+        return Err(error);
+    }
     server.run().await
+}
+
+#[cfg(test)]
+mod studio_security_tests {
+    use super::*;
+
+    fn auth() -> Arc<StudioAuth> {
+        Arc::new(StudioAuth::new("127.0.0.1:4242".parse().unwrap()).unwrap())
+    }
+
+    fn cookie(auth: &StudioAuth) -> String {
+        format!("{}={}", auth.cookie_name, auth.token(b"session"))
+    }
+
+    async fn response(auth: Arc<StudioAuth>, request: &str, site: PathBuf) -> String {
+        let (mut client, server) = tokio::io::duplex(32768);
+        let handler = tokio::spawn(handle_http_connection(
+            server,
+            PathBuf::from("absent.duckdb"),
+            site,
+            None,
+            None,
+            auth,
+        ));
+        client.write_all(request.as_bytes()).await.unwrap();
+        client.shutdown().await.unwrap();
+        let mut response = String::new();
+        tokio::time::timeout(
+            Duration::from_secs(30),
+            client.read_to_string(&mut response),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        handler.await.unwrap().unwrap();
+        response
+    }
+
+    async fn get(auth: Arc<StudioAuth>, path: &str, headers: &str) -> String {
+        response(
+            auth,
+            &format!("GET {path} HTTP/1.1\r\n{headers}\r\n"),
+            PathBuf::from("site"),
+        )
+        .await
+    }
+
+    fn assert_status(response: &str, status: u16) {
+        assert!(
+            response.starts_with(&format!("HTTP/1.1 {status} ")),
+            "unexpected status: {}",
+            response.lines().next().unwrap_or("empty")
+        );
+    }
+
+    #[test]
+    fn automatic_bind_selection_preserves_explicit_addresses() {
+        for explicit in ["127.0.0.1:4242", "127.12.34.56:0", "[::1]:4242"] {
+            assert_eq!(
+                validate_dashboard_bind_address(explicit)
+                    .unwrap()
+                    .to_string(),
+                explicit
+            );
+        }
+        assert_eq!(
+            validate_dashboard_bind_address("localhost:4242")
+                .unwrap()
+                .to_string(),
+            "127.0.0.1:4242"
+        );
+        let mut selected = BTreeSet::new();
+        for default in ["auto", ""] {
+            for _ in 0..32 {
+                let addr = validate_dashboard_bind_address(default).unwrap();
+                assert_eq!(addr.port(), 8080);
+                assert!(addr.ip().is_loopback());
+                #[cfg(any(target_os = "linux", windows))]
+                {
+                    let std::net::IpAddr::V4(ip) = addr.ip() else {
+                        panic!("expected IPv4 loopback")
+                    };
+                    assert_eq!(ip.octets()[0], 127);
+                    assert_ne!(ip, std::net::Ipv4Addr::LOCALHOST);
+                }
+                selected.insert(addr.ip());
+            }
+        }
+        #[cfg(any(target_os = "linux", windows))]
+        assert!(selected.len() > 1, "automatic bind reused a fixed address");
+    }
+
+    #[cfg(target_os = "linux")]
+    fn private_test_dir() -> PathBuf {
+        use std::os::unix::fs::DirBuilderExt;
+        let scratch = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target");
+        std::fs::create_dir_all(&scratch).unwrap();
+        let root = scratch.join(format!(
+            "dendro-studio-review-{:016x}",
+            rand::random::<u64>()
+        ));
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&root)
+            .unwrap();
+        root
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn non_private_database_directory_fails_closed_with_clear_error() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = private_test_dir();
+        std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let error = auth().write_launch_file(&root).unwrap_err().to_string();
+        assert!(
+            error.contains("studio requires an owner-only database directory"),
+            "{error}"
+        );
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 0);
+        assert_eq!(
+            std::fs::metadata(&root).unwrap().permissions().mode() & 0o777,
+            0o755
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn new_launch_removes_only_stale_generated_regular_files() {
+        use std::os::unix::fs::symlink;
+        let root = private_test_dir();
+        let stale = root.join("studio-launch-0123456789abcdef.html");
+        let unrelated = root.join("studio-launch-not-generated.html");
+        let directory = root.join("studio-launch-1111111111111111.html");
+        let link = root.join("studio-launch-2222222222222222.html");
+        std::fs::write(&stale, "expired capability").unwrap();
+        std::fs::write(&unrelated, "keep").unwrap();
+        std::fs::create_dir(&directory).unwrap();
+        symlink(&unrelated, &link).unwrap();
+        let auth = auth();
+        let launch = auth.write_launch_file(&root).unwrap();
+        assert!(!stale.exists());
+        assert!(launch.exists());
+        assert_eq!(std::fs::read_to_string(&unrelated).unwrap(), "keep");
+        assert!(directory.is_dir());
+        assert!(link.symlink_metadata().unwrap().file_type().is_symlink());
+        auth.remove_launch_file();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn missing_secret_is_unauthorized() {
+        for path in [
+            "/api/query",
+            "/api/events",
+            "/api/future",
+            "/",
+            "/dashboards/index.html",
+        ] {
+            assert_status(&get(auth(), path, "Host: 127.0.0.1:4242\r\n").await, 401);
+        }
+        let reply = response(
+            auth(),
+            "POST /api/future HTTP/1.1\r\nHost: 127.0.0.1:4242\r\n\r\n",
+            PathBuf::from("site"),
+        )
+        .await;
+        assert_status(&reply, 401);
+    }
+
+    #[tokio::test]
+    async fn wrong_secret_and_launch_token_cannot_authenticate_api() {
+        let auth = auth();
+        for token in ["00".repeat(32), "short".to_string(), auth.token(b"launch")] {
+            let headers = format!(
+                "Host: 127.0.0.1:4242\r\nCookie: {}={token}\r\n",
+                auth.cookie_name
+            );
+            assert_status(&get(Arc::clone(&auth), "/api/query", &headers).await, 401);
+        }
+        let stale_cookie = cookie(&auth);
+        assert_status(
+            &get(
+                self::auth(),
+                "/api/query",
+                &format!("Host: 127.0.0.1:4242\r\nCookie: {stale_cookie}\r\n"),
+            )
+            .await,
+            401,
+        );
+        let duplicate = format!(
+            "Host: 127.0.0.1:4242\r\nCookie: {}; {}\r\n",
+            cookie(&auth),
+            cookie(&auth)
+        );
+        assert_status(&get(auth, "/api/query", &duplicate).await, 401);
+    }
+
+    #[tokio::test]
+    async fn bad_host_and_cross_origin_are_rejected_even_with_valid_cookie() {
+        let auth = auth();
+        let cookie = cookie(&auth);
+        for host in [
+            "attacker.example:4242",
+            "localhost:4242",
+            "127.0.0.1:4243",
+            "127.0.0.1",
+            "[::1]:4242",
+            "",
+        ] {
+            let headers = format!("Host: {host}\r\nCookie: {cookie}\r\n");
+            assert_status(&get(Arc::clone(&auth), "/api/query", &headers).await, 421);
+        }
+        assert_status(
+            &get(
+                Arc::clone(&auth),
+                "/api/query",
+                &format!("Cookie: {cookie}\r\n"),
+            )
+            .await,
+            421,
+        );
+        for origin in [
+            "https://attacker.example",
+            "null",
+            "http://127.0.0.1:4243",
+            "https://127.0.0.1:4242",
+            "http://127.0.0.1:4242.attacker.example",
+        ] {
+            let headers =
+                format!("Host: 127.0.0.1:4242\r\nOrigin: {origin}\r\nCookie: {cookie}\r\n");
+            assert_status(&get(Arc::clone(&auth), "/api/query", &headers).await, 403);
+        }
+        for site in ["cross-site", "same-site"] {
+            let headers =
+                format!("Host: 127.0.0.1:4242\r\nSec-Fetch-Site: {site}\r\nCookie: {cookie}\r\n");
+            assert_status(&get(Arc::clone(&auth), "/api/events", &headers).await, 403);
+        }
+    }
+
+    #[tokio::test]
+    async fn valid_cookie_and_same_origin_query_succeed() {
+        let auth = auth();
+        let headers = format!("hOsT: 127.0.0.1:4242\r\nOrigin: http://127.0.0.1:4242\r\nSec-Fetch-Site: same-origin\r\nCookie: other=ignored; {}\r\n", cookie(&auth));
+        let reply = get(auth, "/api/query?view=hub", &headers).await;
+        assert_status(&reply, 200);
+        assert!(!reply.contains("Access-Control-Allow-Origin"));
+        let (_, body) = reply.split_once("\r\n\r\n").unwrap();
+        let payload: serde_json::Value = serde_json::from_str(body).unwrap();
+        assert_eq!(payload["live"], true);
+        assert!(payload["table_counts"].is_object());
+    }
+
+    #[tokio::test]
+    async fn launch_is_one_time_and_sets_strict_httponly_cookie() {
+        let auth = auth();
+        let path = format!("{LAUNCH_PATH}{}", auth.token(b"launch"));
+        assert_status(
+            &get(
+                Arc::clone(&auth),
+                &format!("{LAUNCH_PATH}{}", auth.token(b"session")),
+                "Host: 127.0.0.1:4242\r\n",
+            )
+            .await,
+            401,
+        );
+        assert_status(
+            &get(Arc::clone(&auth), &path, "Host: attacker.example\r\n").await,
+            421,
+        );
+        assert_status(
+            &get(
+                Arc::clone(&auth),
+                &path,
+                "Host: 127.0.0.1:4242\r\nOrigin: https://attacker.example\r\n",
+            )
+            .await,
+            403,
+        );
+        let reply = get(
+            Arc::clone(&auth),
+            &path,
+            "Host: 127.0.0.1:4242\r\nSec-Fetch-Site: cross-site\r\n",
+        )
+        .await;
+        assert_status(&reply, 200);
+        assert!(reply.contains(&format!(
+            "Set-Cookie: {}; Path=/; HttpOnly; SameSite=Strict\r\n",
+            cookie(&auth)
+        )));
+        assert!(reply.contains("Cache-Control: no-store"));
+        assert!(reply.contains("Referrer-Policy: no-referrer"));
+        let (_, body) = reply.split_once("\r\n\r\n").unwrap();
+        assert!(body.contains("location.replace('/')"));
+        assert!(!body.contains(&auth.token(b"launch")));
+        assert!(!body.contains(&auth.token(b"session")));
+        assert_status(
+            &get(Arc::clone(&auth), &path, "Host: 127.0.0.1:4242\r\n").await,
+            401,
+        );
+    }
+
+    #[tokio::test]
+    async fn launch_path_edges_fail_without_consuming_and_uppercase_hex_succeeds() {
+        let auth = auth();
+        let token = auth.token(b"launch");
+        for suffix in ["?ignored=1", "/"] {
+            assert_status(
+                &get(
+                    Arc::clone(&auth),
+                    &format!("{LAUNCH_PATH}{token}{suffix}"),
+                    "Host: 127.0.0.1:4242\r\n",
+                )
+                .await,
+                401,
+            );
+            assert!(!auth.launch_used.load(Ordering::Acquire));
+        }
+        let head = response(
+            Arc::clone(&auth),
+            &format!("HEAD {LAUNCH_PATH}{token} HTTP/1.1\r\nHost: 127.0.0.1:4242\r\n\r\n"),
+            PathBuf::from("site"),
+        )
+        .await;
+        assert_status(&head, 405);
+        assert_eq!(head.split_once("\r\n\r\n").unwrap().1, "");
+        assert!(!auth.launch_used.load(Ordering::Acquire));
+        assert_status(
+            &get(
+                auth,
+                &format!("{LAUNCH_PATH}{}", token.to_ascii_uppercase()),
+                "Host: 127.0.0.1:4242\r\n",
+            )
+            .await,
+            200,
+        );
+    }
+
+    #[tokio::test]
+    async fn localhost_selection_uses_numeric_authority_and_rejects_localhost_host() {
+        let address = validate_dashboard_bind_address("localhost:4242").unwrap();
+        let auth = Arc::new(StudioAuth::new(address).unwrap());
+        assert_eq!(auth.authority, "127.0.0.1:4242");
+        let path = format!("{LAUNCH_PATH}{}", auth.token(b"launch"));
+        assert_status(
+            &get(Arc::clone(&auth), &path, "Host: localhost:4242\r\n").await,
+            421,
+        );
+        assert!(!auth.launch_used.load(Ordering::Acquire));
+        assert_status(&get(auth, &path, "Host: 127.0.0.1:4242\r\n").await, 200);
+    }
+
+    #[tokio::test]
+    async fn random_loopback_authority_checks_follow_the_selected_address() {
+        let address = validate_dashboard_bind_address("auto").unwrap();
+        let auth = Arc::new(StudioAuth::new(address).unwrap());
+        let cookie = cookie(&auth);
+        let matching =
+            format!("Host: {address}\r\nOrigin: http://{address}\r\nCookie: {cookie}\r\n");
+        assert_status(&get(Arc::clone(&auth), "/", &matching).await, 302);
+        let foreign =
+            format!("Host: {address}\r\nOrigin: http://127.0.0.1:8081\r\nCookie: {cookie}\r\n");
+        assert_status(&get(auth, "/", &foreign).await, 403);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_launch_file_private_dacl_is_verified_and_broad_read_is_rejected() {
+        use dendro_core::platform_v1::{
+            create_user_private_root_with_choice, current_native_platform,
+            open_existing_private_file, parse_child_name, StorageRootChoice,
+        };
+        let root = create_user_private_root_with_choice(
+            ".dendro-studio-review-",
+            &StorageRootChoice::UserProfile,
+        )
+        .unwrap();
+        let path = root.path().to_path_buf();
+        let auth = auth();
+        let launch = auth.write_launch_file(&path).unwrap();
+        let name = parse_child_name(
+            launch.file_name().unwrap().to_str().unwrap(),
+            current_native_platform(),
+        )
+        .unwrap();
+        // The native opener rechecks ownership, effective DACL, identity and kind.
+        let verified = open_existing_private_file(&root, &name).unwrap();
+        assert_eq!(verified.path(), launch);
+        drop(verified);
+        let granted = std::process::Command::new("icacls")
+            .arg(&launch)
+            .args(["/grant", "*S-1-1-0:(R)"])
+            .output()
+            .unwrap();
+        assert!(
+            granted.status.success(),
+            "could not grant broad read on the test fixture"
+        );
+        assert!(
+            open_existing_private_file(&root, &name).is_err(),
+            "broadly readable launch file was admitted"
+        );
+        auth.remove_launch_file();
+        drop(root);
+        assert!(!launch.exists());
+        std::fs::remove_dir(path).unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn shutdown_and_shutdown_error_remove_launch_file_with_live_auth_clones() {
+        for failure in [false, true] {
+            let root = private_test_dir();
+            let server =
+                ConnectedServer::bind("127.0.0.1:0", root.join("db"), root.clone(), None, None)
+                    .await
+                    .unwrap();
+            let launch = server.write_browser_launch_file().await.unwrap();
+            let retained_auth = Arc::clone(&server.auth);
+            let result = server
+                .run_until_shutdown(async move {
+                    if failure {
+                        Err(std::io::Error::other("signal unavailable"))
+                    } else {
+                        Ok(())
+                    }
+                })
+                .await;
+            assert_eq!(result.is_err(), failure);
+            assert!(!launch.exists());
+            assert!(retained_auth.launch_file.lock().unwrap().is_none());
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn cancelled_server_removes_launch_file_despite_live_auth_clone() {
+        let root = private_test_dir();
+        let server =
+            ConnectedServer::bind("127.0.0.1:0", root.join("db"), root.clone(), None, None)
+                .await
+                .unwrap();
+        let launch = server.write_browser_launch_file().await.unwrap();
+        let retained_auth = Arc::clone(&server.auth);
+        let task = tokio::spawn(server.run());
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        assert!(!launch.exists());
+        assert!(retained_auth.launch_file.lock().unwrap().is_none());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn concurrent_launch_exchange_has_only_one_winner() {
+        let auth = auth();
+        let path = format!("{LAUNCH_PATH}{}", auth.token(b"launch"));
+        let (first, second) = tokio::join!(
+            get(Arc::clone(&auth), &path, "Host: 127.0.0.1:4242\r\n"),
+            get(Arc::clone(&auth), &path, "Host: 127.0.0.1:4242\r\n"),
+        );
+        let mut statuses: Vec<_> = [first, second]
+            .iter()
+            .map(|r| r[..12].to_string())
+            .collect();
+        statuses.sort();
+        assert_eq!(statuses, ["HTTP/1.1 200", "HTTP/1.1 401"]);
+    }
+
+    #[tokio::test]
+    async fn ipv6_authority_requires_brackets_and_bound_port() {
+        let auth = Arc::new(StudioAuth::new("[::1]:4242".parse().unwrap()).unwrap());
+        let cookie = cookie(&auth);
+        let headers =
+            format!("Host: [::1]:4242\r\nOrigin: http://[::1]:4242\r\nCookie: {cookie}\r\n");
+        assert_status(&get(Arc::clone(&auth), "/", &headers).await, 302);
+        let headers = format!("Host: [::1]:4243\r\nCookie: {cookie}\r\n");
+        assert_status(&get(Arc::clone(&auth), "/", &headers).await, 421);
+        let headers =
+            format!("Host: [::1]:4242\r\nOrigin: http://[::1]:4243\r\nCookie: {cookie}\r\n");
+        assert_status(&get(auth, "/", &headers).await, 403);
+    }
+
+    #[tokio::test]
+    async fn valid_cookie_opens_sse_stream_with_initial_frame() {
+        let auth = auth();
+        let cookie = cookie(&auth);
+        let (mut client, server) = tokio::io::duplex(32768);
+        let handler = tokio::spawn(handle_http_connection(
+            server,
+            PathBuf::from("absent.duckdb"),
+            PathBuf::from("site"),
+            None,
+            None,
+            auth,
+        ));
+        client.write_all(format!("GET /api/events?view=hub HTTP/1.1\r\nHost: 127.0.0.1:4242\r\nCookie: {cookie}\r\n\r\n").as_bytes()).await.unwrap();
+        let mut reply = Vec::new();
+        tokio::time::timeout(Duration::from_secs(30), async {
+            while !reply.windows(2).any(|w| w == b"\n\n") {
+                let mut buf = [0; 4096];
+                let n = client.read(&mut buf).await.unwrap();
+                assert_ne!(n, 0, "SSE stream closed before initial frame");
+                reply.extend_from_slice(&buf[..n]);
+            }
+        })
+        .await
+        .unwrap();
+        let reply = String::from_utf8(reply).unwrap();
+        assert_status(&reply, 200);
+        assert!(reply.contains("Content-Type: text/event-stream"));
+        assert!(reply.contains("\r\n\r\ndata: {"));
+        assert!(!reply.contains("Access-Control-Allow-Origin"));
+        handler.abort();
+    }
+
+    #[tokio::test]
+    async fn fragmented_headers_cannot_bypass_origin_checks() {
+        let auth = auth();
+        let (mut client, server) = tokio::io::duplex(32768);
+        let cookie = cookie(&auth);
+        let handler = tokio::spawn(handle_http_connection(
+            server,
+            PathBuf::from("absent.duckdb"),
+            PathBuf::from("site"),
+            None,
+            None,
+            auth,
+        ));
+        client
+            .write_all(
+                format!("GET /api/query HTTP/1.1\r\nHost: 127.0.0.1:4242\r\nCookie: {cookie}\r\n")
+                    .as_bytes(),
+            )
+            .await
+            .unwrap();
+        let mut byte = [0];
+        assert!(
+            tokio::time::timeout(Duration::from_millis(30), client.read(&mut byte))
+                .await
+                .is_err()
+        );
+        client
+            .write_all(b"Origin: https://attacker.example\r\n\r\n")
+            .await
+            .unwrap();
+        let mut reply = String::new();
+        client.read_to_string(&mut reply).await.unwrap();
+        handler.await.unwrap().unwrap();
+        assert_status(&reply, 403);
+    }
+
+    #[tokio::test]
+    async fn malformed_and_duplicate_security_headers_fail_closed() {
+        for headers in [
+            "Host: 127.0.0.1:4242\r\nHost: attacker.example\r\n",
+            "Host: 127.0.0.1:4242\r\nOrigin: http://127.0.0.1:4242\r\nOrigin: null\r\n",
+            "Host: 127.0.0.1:4242\r\nCookie: a=b\r\nCookie: c=d\r\n",
+            "Host : 127.0.0.1:4242\r\n",
+            "Host: 127.0.0.1:4242\r\n folded\r\n",
+        ] {
+            assert_status(&get(auth(), "/api/query", headers).await, 400);
+        }
+        let oversized = format!(
+            "GET /api/query HTTP/1.1\r\nHost: 127.0.0.1:4242\r\nX-Large: {}",
+            "x".repeat(16384)
+        );
+        assert_status(
+            &response(auth(), &oversized, PathBuf::from("site")).await,
+            400,
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn private_launch_file_is_consumed_and_cleaned_up_on_drop() {
+        use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+        let scratch = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target");
+        std::fs::create_dir_all(&scratch).unwrap();
+        let root = scratch.join(format!("dendro-studio-auth-{:016x}", rand::random::<u64>()));
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&root)
+            .unwrap();
+        let auth = auth();
+        let launch_file = auth.write_launch_file(&root).unwrap();
+        assert_eq!(
+            std::fs::metadata(&launch_file)
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
+        let html = std::fs::read_to_string(&launch_file).unwrap();
+        let url = html
+            .split("href=\"")
+            .nth(1)
+            .unwrap()
+            .split('"')
+            .next()
+            .unwrap();
+        let path = url.strip_prefix("http://127.0.0.1:4242").unwrap();
+        assert_status(
+            &get(Arc::clone(&auth), path, "Host: 127.0.0.1:4242\r\n").await,
+            200,
+        );
+        assert!(!launch_file.exists());
+        let other = self::auth();
+        let abandoned = other.write_launch_file(&root).unwrap();
+        drop(other);
+        assert!(!abandoned.exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn static_snapshots_require_cookie() {
+        let root = std::env::temp_dir().join(format!(
+            "dendro-studio-snapshot-{:016x}",
+            rand::random::<u64>()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let auth = auth();
+        std::fs::write(root.join("snapshot.html"), "private snapshot sentinel").unwrap();
+        let unauthenticated = response(
+            Arc::clone(&auth),
+            "GET /snapshot.html HTTP/1.1\r\nHost: 127.0.0.1:4242\r\n\r\n",
+            root.clone(),
+        )
+        .await;
+        assert_status(&unauthenticated, 401);
+        assert!(!unauthenticated.contains("private snapshot sentinel"));
+        let authenticated = response(
+            Arc::clone(&auth),
+            &format!(
+                "GET /snapshot.html HTTP/1.1\r\nHost: 127.0.0.1:4242\r\nCookie: {}\r\n\r\n",
+                cookie(&auth)
+            ),
+            root.clone(),
+        )
+        .await;
+        assert_status(&authenticated, 200);
+        assert!(authenticated.ends_with("private snapshot sentinel"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }
 
 #[cfg(test)]
