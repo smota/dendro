@@ -58,9 +58,16 @@ impl Collector {
                         }
                     }
                 }
-                socket
-                    .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
-                    .unwrap();
+                // The complete JSON body is captured above. A short-lived producer may
+                // disconnect before reading the acknowledgement (including on Windows).
+                if let Err(e) = socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n") {
+                    match e.kind() {
+                        std::io::ErrorKind::ConnectionReset
+                        | std::io::ErrorKind::BrokenPipe
+                        | std::io::ErrorKind::ConnectionAborted => {}
+                        _ => panic!("collector acknowledgement: {e}"),
+                    }
+                }
             }
             bodies
         });
