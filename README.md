@@ -26,7 +26,7 @@
 
 **Your fleet has a history. Now you can read it.** Dendro reads the local session history your AI tools already write on your machine—turning scattered agent runs into a unified flight recorder and operational intelligence studio. See where your budget goes, which tools and skills actually deliver, and where multi-agent handoffs slow down.
 
-Built on an **open, extensible architecture**, Dendro supports AI coding clients **Claude Code, OpenAI Codex, Google Antigravity, Grok, and Pi**, plus verified export adapters for **Cursor, Windsurf, Goose, and Devin**. Fleet orchestration runtimes such as **OpenRig, AgentFlow, and Meshloop** coordinate teams and handoffs across those clients. Dendro includes OpenRig integration out of the box. Bring your own client, orchestrator, or capability mapper through the [extension guide](docs/extensions/README.md). You keep control of your fleet; Dendro helps you understand it.
+Built on an **open, extensible architecture**, Dendro supports local session logs from **Claude Code, OpenAI Codex, Grok, and Pi** (Codex tool calls are currently recorded coarsely under constant names `CommandExecution` and `CodexSeatCall` in `crates/dendro-connectors/src/stream.rs:451,621,1862`; the Google Antigravity `agy` connector is registered as `pending` and not yet admitted, returning `source_not_admitted` in `crates/dendro-connectors/src/agy.rs:63`), plus verified local export adapters for **Cursor, Windsurf, Goose, and Devin**. Fleet orchestration runtimes such as **OpenRig, AgentFlow, and Meshloop** coordinate teams and handoffs across those clients; Dendro includes OpenRig integration out of the box, and other runtimes connect through the adapter contract. Bring your own client, orchestrator, or capability mapper through the [extension guide](docs/extensions/README.md). You keep control of your fleet; Dendro helps you understand it.
 
 <div align="center">
   <img src="docs/assets/screenshots/hub-living-growth-rings.png" alt="Dendro connected studio with Living Growth Rings, a date scrubber, and fleet story highlights" width="1200" />
@@ -64,12 +64,12 @@ Your **5 Capability Layers** reveal what your agents actually use within that st
 | Layer | What You See | What You Can Decide & Improve |
 | --- | --- | --- |
 | **Tool Families** | Your execution mix across Shell / Exec, Read / Inspect, Edit / Patch, Search / Grep, Subagent Spawn, MCP Call, Skill Load, Web / Fetch, Task / Queue, and Governance / Gate | You can see where effort concentrates and investigate repeated work. |
-| **Harness Primitives** | Your clients' native tools, observed outcomes, and failure patterns | You can repair unreliable tool paths and compare behavior across clients. |
+| **Harness Primitives** | Your clients' native tools, observed outcomes, and failure patterns (full per-tool scan for Claude Code, Grok, and Pi; coarse constant-name capture for Codex; `agy` pending / not admitted) | You can repair unreliable tool paths and compare behavior across clients. |
 | **Skills (Declared vs. Invoked)** | Your available skills alongside evidence of actual invocation | You can improve skill discovery and revisit unused instructions. |
 | **MCP Servers & Tools** | Your observed calls grouped by server and tool | You can identify dependable integrations and investigate silent failures. |
 | **Lifecycle Hooks & Guardrails** | Your recorded hook stages, interceptions, and gate observations | You can tune checks and review where approvals delay work. |
 
-**Your history stays yours.** Source logs are read-only. No prompts, agent thoughts, code completions, or secrets (`sk-`, `ghp_`, Bearer tokens) are ever captured or stored. Everything runs locally on your machine—nothing is proxied or sent to a third-party cloud.
+**Your history stays yours.** Source logs are read-only. No prompts, agent thoughts, code completions, or secrets (`sk-`, `ghp_`, Bearer tokens) are ever captured or stored. Nothing leaves by default. When an org export is explicitly configured, only zero-content, pseudonymized `fact-export-v1` bundles are written to an operator-configured path. These fact-export bundles are only written locally; Dendro never uploads them. The separate operation-health export (#127/#129) is opt-in, off by default, carries no session data, and is governed by S1. Its HTTP exporter requires an explicitly configured loopback endpoint (see the [CLI initialization path](crates/dendro-cli/src/main.rs#L1086)).
 
 You can follow each finding to its observation window and supporting evidence, with gaps kept visible. Compare recorded costs with your own pricing scenarios, while keeping token consumption separate from judgments about productivity.
 
@@ -116,7 +116,7 @@ Follow a fleet-wide signal into the stack, inspect the capabilities behind it, a
     <td width="50%" valign="top">
       <img src="docs/assets/screenshots/console-schema-drift.png" alt="I23 · Schema Drift console" width="600" />
       <p><strong>I23 · Schema Drift: Spot structural shifts after an upgrade.</strong></p>
-      <p>Compare telemetry shapes across Claude Code, OpenAI Codex, Google Antigravity, Grok, and Pi to identify the connector or version that needs attention.</p>
+      <p>Compare envelope shapes across admitted connectors (Claude Code, OpenAI Codex, Grok, and Pi; Google Antigravity <code>agy</code> is registered as pending and returns <code>source_not_admitted</code>) to identify the connector or version that needs attention.</p>
     </td>
   </tr>
   <tr>
@@ -156,7 +156,7 @@ Keep the tools and workflows you already trust. Start with the built-in connecto
 
 | Stack component | Supported out of the box today | Your path to more |
 | --- | --- | --- |
-| **Coding Clients** | Claude Code, OpenAI Codex, Google Antigravity, Grok, and Pi | Add a connector for the local session history your client writes. |
+| **Coding Clients** | Claude Code, OpenAI Codex (tool calls recorded coarsely under constant names `CommandExecution` / `CodexSeatCall`; `stream.rs:451,621,1862`), Grok, and Pi. Google Antigravity (`agy`) is registered as `pending` and not admitted (`agy.rs:63` returns `source_not_admitted`). | Add a connector for the local session history your client writes. |
 | **Editor/Agent Export Adapters** | Verified Cursor, Windsurf, Goose, and Devin export formats | Select a supported export format; coverage depends on what that format records. |
 | **Fleet Orchestration Runtimes** | OpenRig: rigs, seats, queues, and handoffs | Connect other runtimes, such as AgentFlow or Meshloop, through their available coordination records. |
 
@@ -228,7 +228,7 @@ The real-local-log performance test is explicitly ignored by default and require
 
 ## Privacy and license
 
-Source logs are read-only. No prompts, agent thoughts, code completions, or secrets (`sk-`, `ghp_`, Bearer tokens) are ever captured or stored. Everything runs locally on your machine—nothing is proxied or sent to a third-party cloud. You choose whether to export or share a report.
+Source logs are read-only. No prompts, agent thoughts, code completions, or secrets (`sk-`, `ghp_`, Bearer tokens) are ever captured or stored. Nothing leaves by default. When an org export is explicitly configured, only zero-content, pseudonymized `fact-export-v1` bundles are written to an operator-configured path. These fact-export bundles are only written locally; Dendro never uploads them. The separate operation-health export (#127/#129) is opt-in, off by default, carries no session data, and is governed by S1. Its HTTP exporter requires an explicitly configured loopback endpoint (see the [CLI initialization path](crates/dendro-cli/src/main.rs#L1086)). You choose whether to export or share a report.
 
 ### Licensing (`FSL-1.1-Apache-2.0`)
 
