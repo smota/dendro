@@ -53,7 +53,7 @@ Dendro refreshes missing or stale semantic views automatically. Supported intent
 
 ## Choose sources and a period
 
-Default discovery covers OpenRig, Claude Code, Codex, Pi, AGY, and Grok. Pi discovery includes both OpenRig-managed and standalone session roots. For custom locations, supply authorized roots explicitly:
+Default discovery covers OpenRig, Claude Code, Codex, Pi, AGY, and Grok (note: the `agy` connector is registered as `pending` and not admitted, returning `source_not_admitted` at `crates/dendro-connectors/src/agy.rs:63`, and Codex tool calls are recorded coarsely under a constant name at `crates/dendro-connectors/src/stream.rs:451,621,1862`). Pi discovery includes both OpenRig-managed and standalone session roots. For custom locations, supply authorized roots explicitly:
 
 ```sh
 ./target/release/dendro run \
@@ -96,4 +96,4 @@ Sealed replay consumes the recorded source prefixes and checks that accepted byt
 
 Source logs remain read-only. Dendro stores allowlisted operational facts and redacted diagnostics while keeping prompts, thoughts, responses, tool payloads, and secrets out of the analytics store. Select session roots, keeping authentication files and credential directories outside your input selection.
 
-Core reports run locally. Offline dashboard exports alias seat labels; inspect any artifact before sharing it. An optional third-party conversational client has its own model and network configuration.
+Nothing leaves by default. When an org export is explicitly configured, only zero-content, pseudonymized `fact-export-v1` bundles are written to an operator-configured path. Dendro writes locally and never uploads. Offline dashboard exports alias seat labels; inspect any artifact before sharing it. An optional third-party conversational client has its own model and network configuration.

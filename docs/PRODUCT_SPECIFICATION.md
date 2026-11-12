@@ -8,7 +8,7 @@ Dendro is a local-first AI Fleet Intelligence engine and investigation studio. I
 
 > When my agent fleet becomes slow, expensive, or difficult to understand, I want to see where time, tokens, and rework went so I can change the topology, handoffs, or budget with evidence.
 
-Dendro serves applied-AI engineers, fleet architects, token economists, and security and governance leads. Its core job is to make execution legible across Claude Code, Codex, AGY, Grok, Pi, and OpenRig.
+Dendro serves applied-AI engineers, fleet architects, token economists, and security and governance leads. Its core job is to make execution legible across Claude Code, Codex (with tool calls currently recorded coarsely under a constant name in `crates/dendro-connectors/src/stream.rs:451,621,1862`), Grok, Pi, and OpenRig; the Antigravity (`agy`) connector is registered as `pending` and not yet admitted (`crates/dendro-connectors/src/agy.rs:63` returns `source_not_admitted`).
 
 ## Product experience
 
@@ -27,7 +27,7 @@ Dendro serves applied-AI engineers, fleet architects, token economists, and secu
 | Console | Operator use |
 | --- | --- |
 | **I22 · Trajectory Vortex** | Catch repetitive behavioral loops and stalled reasoning orbits before runaway token burn. |
-| **I23 · Schema Drift** | Spot structural shifts across harness versions when upgrades change telemetry shapes. |
+| **I23 · Schema Drift** | Spot structural shifts across harness versions when upgrades change envelope shapes. |
 | **I24 · Authority Blast Radius** | Map downstream session reachability around a permission grant or failure to review dependency exposure. |
 | **I25 · Counterfactual Model Routing** | Test fast-tier thresholds and context-pressure inflections against recorded sessions without changing live traffic. |
 
@@ -43,7 +43,13 @@ See the [Operator Guide](adoption/README.md) for first-run steps and the [CLI Re
 
 ## Trust and scope
 
-Dendro reads authorized local sources without changing them and keeps prompts, thoughts, responses, tool payloads, and secrets out of the analytics store. Results preserve observation windows, evidence coverage, and assumptions. Cost uses recorded currency or operator-pinned pricing; simulations remain labeled, and missing evidence stays visible.
+Dendro reads authorized local sources without changing them and keeps prompts, thoughts, responses, tool payloads, and secrets out of the analytics store. Nothing leaves by default. When an org export is explicitly configured, only zero-content, pseudonymized `fact-export-v1` bundles are written to an operator-configured path. These fact-export bundles are only written locally; Dendro never uploads them. The separate operation-health export (#127/#129) is opt-in, off by default, carries no session data, and is governed by S1. Its HTTP exporter requires an explicitly configured loopback endpoint (see the [CLI initialization path](../crates/dendro-cli/src/main.rs#L1086)). Results preserve observation windows, evidence coverage, and assumptions. Cost uses recorded currency or operator-pinned pricing; simulations remain labeled, and missing evidence stays visible.
+
+Local harness coverage and parser boundaries:
+- **Antigravity (`agy`):** registered as `pending` and not admitted (`crates/dendro-connectors/src/agy.rs:63` returns `source_not_admitted`).
+- **Codex tool calls:** observed coarsely under constant names (`CommandExecution` and `CodexSeatCall` in `crates/dendro-connectors/src/stream.rs:451,621,1862`, `crates/dendro-core/src/facts.rs:146-147`), outside the watermark guard and shared per-tool scan.
+- **No cloud-session connectors (#140):** local Dendro ingests only local session logs and verified local export files; cloud-hosted session connectors are out of scope for local Dendro.
+- **Owned local parsers (#141):** local session parsers remain owned in-tree by Dendro; `agentparse` is tracked as an external reference rather than adopted as a dependency.
 
 Fleet governance stays with the operator. Dendro provides evidence and advisory results; the operator decides whether to change routing, permissions, prompts, or topology. The [Architecture Blueprint](ARCHITECTURE.md#45-connected-web-intelligence-studio) defines the analytical sources and connected-view contracts.
 
@@ -151,7 +157,7 @@ Evidence on this machine (2026-10-10):
  │ • hidden QA→Build rework     │     │ • reading transcripts        │
  │                              │     │   exposes secrets            │
  │ PULL                         │     │ • one more tool to maintain  │
- │ • local, no data leaves      │     │                              │
+ │ • nothing leaves by default  │     │                              │
  │ • natural-language answers   │     │ INERTIA                      │
  │ • decide topology with       │     │ • "I read the logs when I    │
  │   evidence                   │     │   need to"                   │
@@ -161,7 +167,7 @@ Evidence on this machine (2026-10-10):
 Product implications:
 
 1. **Trust before breadth.** Every number must lead to its source record. A wrong number costs more than a missing one.
-2. **Local and read-only.** Dendro never writes to sources. No data leaves the machine.
+2. **Local and read-only.** Dendro never writes to sources. Nothing leaves by default. When an org export is explicitly configured, only zero-content, pseudonymized `fact-export-v1` bundles are written to an operator-configured path. These fact-export bundles are only written locally; Dendro never uploads them.
 3. **Secrets stay out.** Prompt content does not enter the store by default. This preserves `no-raw-secrets-or-transcripts`.
 4. **Zero maintenance.** One command produces the answers. Re-running reads only what changed.
 
@@ -219,7 +225,7 @@ Architecture is owned by `orch.arch`. This section does not choose files, crates
 | G1.8 As an operator, I see each seat's yield. | For the reference rig, shows what each seat consumed and what it passed on that did not come back. |
 | G1.9 As an operator, I see skill exposure. | Shows which skills each seat had loaded. Impact shows "insufficient data" until a valid comparison exists. |
 
-Harnesses in G1: **OpenRig, Claude Code, Codex and Pi required.** AGY and Grok follow in the same release.
+Harnesses in G1: **OpenRig, Claude Code, Codex and Pi required.** The Grok reader is implemented; the [v0.8.0 release notes](RELEASE_NOTES_v0.8.0.md) still mark the release as TBD (not tagged). The Antigravity `agy` reader remains pending. (Implementation details: the Antigravity `agy` connector is not admitted at `crates/dendro-connectors/src/agy.rs:63`, which returns `source_not_admitted`; Codex tool calls are recorded coarsely under a constant name at `crates/dendro-connectors/src/stream.rs:451,621,1862`.)
 
 ### G2 — The operator asks in natural language (NEXT, not R1)
 
@@ -261,12 +267,14 @@ The sponsor approved G4 and the G3 documentation in parallel, owned by Antigravi
 
 ### Constraints
 
-1. Local-first. No data leaves the machine.
-2. Read-only on sources (`~/.openrig`, `~/.claude`, `~/.codex`, `~/.gemini`, `~/.pi`, `~/.grok`).
+1. Local-first. Nothing leaves by default. When an org export is explicitly configured, only zero-content, pseudonymized `fact-export-v1` bundles are written to an operator-configured path. These fact-export bundles are only written locally; Dendro never uploads them.
+2. Read-only on sources (`~/.openrig`, `~/.claude`, `~/.codex`, `~/.gemini`, `~/.pi`, `~/.grok`; `~/.gemini` `agy` extraction is not admitted and returns `source_not_admitted` at `crates/dendro-connectors/src/agy.rs:63`, while Codex tool calls are recorded coarsely under a constant name at `crates/dendro-connectors/src/stream.rs:451,621,1862`).
 3. No raw prompt content and no secrets in the store.
 4. Stack decided by the sponsor: Rust, DuckDB, Nao. Not reopened.
 5. Sources change format. An unknown format produces a warning, never a failure or wrong data.
 6. English for interfaces, docs, code and tickets (sponsor directive, 2026-10-10 17:57Z).
+7. Local parsers stay owned in-tree by Dendro; `agentparse` is tracked rather than adopted as a runtime dependency (#141).
+8. Issue #127 is re-scoped as opt-in, off by default, operation health only, with no session data, governed by the S1 export rule (S2).
 
 ### Anti-goals
 
@@ -275,6 +283,7 @@ The sponsor approved G4 and the G3 documentation in parallel, owned by Antigravi
 3. Does not judge the quality of code produced by agents.
 4. The site does not show invented numbers as if they were real.
 5. Does not guess links. "Unlinked" is better than a wrong link.
+6. No cloud-session connectors in local Dendro (#140); local Dendro reads only local session and verified export files, and never uploads bundles over the network.
 
 ---
 
@@ -677,3 +686,11 @@ Open items:
 `qitem-20261012062548-10a4c4d5e01c94be` ("G2 Phase 2 Dispatch: #12 and #13") shows `pm-manager@dendro-pm` as its source, with `identityProvenance: claimed:v1` (not transport-verified). **`pm.manager` did not create it.** It claims "Sponsor decision logged: Option B (Conversational Natural Language Interface / Nao) confirmed for G2 interface; task-intake overhead concept adopted for unlinked seat tokens". **No such decision exists.** E1 (sponsor, 2026-10-10 18:57Z) keeps the G2 interface choice open until the R1 review session (O8). F12-7 excludes interfaces. F12-2 keeps the unlinked and no-item bands unchanged.
 
 `orch.arch` correctly treated those lines as non-normative. The valid G2 route is the analyst's own Phase 1 (`goals/g2` 0006, acceptance `a8bda695`) and its held handoff `hold-20261012055648-da65e3`. The row's #12/#13 scope matches 0006. Its extra "decisions" are void.
+
+### Sponsor decisions: Goal 10 Family MVP alignment (2026-11-11, D8)
+
+- **S1 (Export boundary):** "Nothing leaves by default. When an org export is explicitly configured, only zero-content, pseudonymized `fact-export-v1` bundles are written to an operator-configured path." These fact-export bundles are only written locally; Dendro never uploads them.
+- **S2 (#127 and product wording):** Issue #127 remains open, re-scoped as opt-in, off by default, operation health only, with no session data, governed by the S1 rule. The positioning vocabulary rule in `.agentflow/PRODUCT.md:7` is preserved across positioning, docs, and interfaces.
+- **#140 (No cloud-session connectors in local Dendro):** Local Dendro does not include cloud-session connectors; ingestion is bounded to local session logs and verified local export files.
+- **#141 (Local parsers stay owned):** Local harness parsers remain owned in-tree by Dendro while `agentparse` is tracked.
+- **Harness coverage claims (F1, F2):** The Antigravity (`agy`) connector is not admitted (`crates/dendro-connectors/src/agy.rs:63` returns `source_not_admitted`) and Codex tool calls are recorded coarsely under a constant name (`CommandExecution` and `CodexSeatCall` in `crates/dendro-connectors/src/stream.rs:451,621,1862`).
