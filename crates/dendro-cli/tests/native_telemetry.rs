@@ -76,7 +76,19 @@ impl Collector {
     }
 }
 fn config(tag: &str, address: std::net::SocketAddr) -> PathBuf {
+    #[cfg(windows)]
+    let root = {
+        let private = dendro_core::platform_v1::create_user_private_root_with_choice(
+            &format!("native-telemetry-{tag}-{}-", std::process::id()),
+            &dendro_core::platform_v1::StorageRootChoice::UserProfile,
+        )
+        .expect("telemetry fixture requires an owner-only private directory");
+        private.path().to_path_buf()
+    };
+    #[cfg(not(windows))]
     let root = std::env::temp_dir().join(format!("native-telemetry-{tag}-{}", std::process::id()));
+    #[cfg(unix)]
+    dendro_core::lifecycle::create_private_dir(&root).unwrap();
     std::fs::create_dir_all(root.join("observability")).unwrap();
     std::fs::write(root.join("observability/consumer.env"),format!("OTEL_EXPORTER_OTLP_ENDPOINT=http://{address}\nOTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf\nOTEL_EXPORTER_OTLP_HEADERS=do-not-export\n")).unwrap();
     root
@@ -156,9 +168,9 @@ fn failed_native_cli_operation_is_safe_opt_in_and_fail_open() {
 
 #[test]
 fn native_http_fixture_helper() {
-    if std::env::var_os("DENDRO_TELEMETRY_HTTP_FIXTURE").is_none() {
+    let Ok(mode) = std::env::var("DENDRO_TELEMETRY_HTTP_FIXTURE") else {
         return;
-    }
+    };
     let root = std::env::current_dir().unwrap();
     tokio::runtime::Runtime::new().unwrap().block_on(async {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -172,10 +184,50 @@ fn native_http_fixture_helper() {
         .await
         .unwrap();
         let address = server.local_addr().unwrap();
+        let launch_file = server.write_browser_launch_file().await.unwrap();
+        let launch_html = std::fs::read_to_string(&launch_file).unwrap();
+        let launch_url = launch_html
+            .split("href=\"")
+            .nth(1)
+            .unwrap()
+            .split('"')
+            .next()
+            .unwrap();
+        let launch_uri = launch_url
+            .strip_prefix(&format!("http://{address}"))
+            .unwrap();
         let worker = tokio::spawn(server.run());
+        let cookie = if mode == "authenticated" {
+            let mut socket = tokio::net::TcpStream::connect(address).await.unwrap();
+            socket
+                .write_all(
+                    format!("GET {launch_uri} HTTP/1.1\r\nHost: {address}\r\n\r\n")
+                        .as_bytes(),
+                )
+                .await
+                .unwrap();
+            let mut response = String::new();
+            tokio::time::timeout(Duration::from_secs(2), socket.read_to_string(&mut response))
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(response.starts_with("HTTP/1.1 200"));
+            assert!(!launch_file.exists());
+            response
+                .lines()
+                .find_map(|line| line.strip_prefix("Set-Cookie: "))
+                .unwrap()
+                .split(';')
+                .next()
+                .unwrap()
+                .to_owned()
+        } else {
+            assert_eq!(mode, "unauthenticated");
+            String::new()
+        };
         let mut socket = tokio::net::TcpStream::connect(address).await.unwrap();
         socket
-            .write_all(b"GET /?private-session-content HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            .write_all(format!("GET /?private-session-content HTTP/1.1\r\nHost: {address}\r\nCookie: {cookie}\r\nX-Private: private-header-content\r\n\r\n").as_bytes())
             .await
             .unwrap();
         let mut response = String::new();
@@ -183,7 +235,8 @@ fn native_http_fixture_helper() {
             .await
             .unwrap()
             .unwrap();
-        assert!(response.starts_with("HTTP/1.1 302"));
+        let status = if mode == "authenticated" { "302" } else { "401" };
+        assert!(response.starts_with(&format!("HTTP/1.1 {status}")));
         worker.abort();
         let _ = worker.await;
         tokio::task::spawn_blocking(dendro_cli::telemetry::flush)
@@ -194,11 +247,20 @@ fn native_http_fixture_helper() {
 
 #[test]
 fn native_http_handler_exports_runtime_without_request_content() {
+    assert_native_http_export("authenticated");
+}
+
+#[test]
+fn native_http_handler_rejects_unauthenticated_requests_without_exporting_content() {
+    assert_native_http_export("unauthenticated");
+}
+
+fn assert_native_http_export(mode: &str) {
     let collector = Collector::start();
-    let root = config("dendro-http", collector.address);
+    let root = config(&format!("dendro-http-{mode}"), collector.address);
     let result = Command::new(std::env::current_exe().unwrap())
         .args(["--exact", "native_http_fixture_helper", "--nocapture"])
-        .env("DENDRO_TELEMETRY_HTTP_FIXTURE", "1")
+        .env("DENDRO_TELEMETRY_HTTP_FIXTURE", mode)
         .env("XDG_CONFIG_HOME", &root)
         .env_remove(OFF_SWITCH)
         .env_remove("OTEL_SDK_DISABLED")
@@ -212,8 +274,15 @@ fn native_http_handler_exports_runtime_without_request_content() {
     );
     let bodies = collector.finish();
     assert!(has(&bodies, "http.connection", "success"));
-    assert!(!serde_json::to_string(&bodies)
-        .unwrap()
-        .contains("private-session-content"));
+    let text = serde_json::to_string(&bodies).unwrap();
+    for private in [
+        "private-session-content",
+        "private-header-content",
+        "/_studio/launch/",
+        "Set-Cookie",
+        "do-not-export",
+    ] {
+        assert!(!text.contains(private), "export contained {private}");
+    }
     std::fs::remove_dir_all(root).unwrap();
 }

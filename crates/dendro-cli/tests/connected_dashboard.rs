@@ -35,12 +35,22 @@ impl TestDir {
             std::process::id(),
             TEST_COUNTER.fetch_add(1, Ordering::Relaxed)
         );
+        #[cfg(windows)]
+        let path = {
+            let root = dendro_core::platform_v1::create_user_private_root_with_choice(
+                &format!("{unique}-"),
+                &dendro_core::platform_v1::StorageRootChoice::UserProfile,
+            )
+            .expect("dashboard fixture requires an owner-only private directory");
+            root.path().to_path_buf()
+        };
+        #[cfg(not(windows))]
         let path = std::env::temp_dir().join(unique);
-        fs::create_dir_all(&path).unwrap();
         #[cfg(unix)]
-        {
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
-        }
+        dendro_core::lifecycle::create_private_dir(&path).unwrap();
+        #[cfg(any(windows, target_os = "linux"))]
+        dendro_core::platform_v1::open_existing_private_root(&path)
+            .expect("dashboard fixture directory must pass native privacy checks");
         Self(path)
     }
 
