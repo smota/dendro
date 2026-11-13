@@ -994,9 +994,43 @@ fn hex_selection(digest: &[u8; 32]) -> String {
 }
 
 fn exit_with_flush(code: i32) -> ! {
+    finish_cli_telemetry(code == 0);
+    dendro_cli::telemetry::flush();
     let _ = std::io::stdout().flush();
     let _ = std::io::stderr().flush();
     std::process::exit(code);
+}
+
+static CLI_TELEMETRY: std::sync::Mutex<Option<dendro_cli::telemetry::Operation>> =
+    std::sync::Mutex::new(None);
+
+fn finish_cli_telemetry(success: bool) {
+    if let Ok(mut slot) = CLI_TELEMETRY.lock() {
+        if let Some(operation) = slot.take() {
+            operation.finish(success);
+        }
+    }
+}
+
+fn telemetry_command(command: &Commands) -> &'static str {
+    match command {
+        Commands::Status { .. } => "cli.status",
+        Commands::Run { .. } => "cli.run",
+        Commands::Watch { .. } => "cli.watch",
+        Commands::RunAgent { .. } => "cli.run_agent",
+        Commands::Report { .. } => "cli.report",
+        Commands::Trace { .. } => "cli.trace",
+        Commands::Serve { .. } => "cli.serve",
+        Commands::Advise { .. } => "cli.advise",
+        Commands::Assert { .. } => "cli.assert",
+        Commands::IssueDraft { .. } => "cli.issue_draft",
+        Commands::Insights { .. } => "cli.insights",
+        Commands::StorageInit
+        | Commands::RecoverSelection { .. }
+        | Commands::Migrate { .. }
+        | Commands::Rollback { .. } => "cli.storage",
+        Commands::Extensions(_) => "cli.extension",
+    }
 }
 
 fn main() -> Result<()> {
@@ -1037,6 +1071,19 @@ fn run_cli() -> Result<()> {
         }
     };
 
+    if let Ok(mut slot) = CLI_TELEMETRY.lock() {
+        *slot = Some(dendro_cli::telemetry::Operation::start(telemetry_command(
+            &cli.command,
+        )));
+    }
+    let result = execute_cli(cli, db_explicit);
+    finish_cli_telemetry(result.is_ok());
+    dendro_cli::telemetry::flush();
+    result
+}
+
+fn execute_cli(cli: Cli, db_explicit: bool) -> Result<()> {
+    dendro_cli::telemetry::init();
     // Parse help, version and errors before constructing the command future or runtime.
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()

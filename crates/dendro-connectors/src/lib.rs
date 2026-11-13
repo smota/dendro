@@ -9,6 +9,7 @@ pub mod ingest;
 mod lineage;
 mod messages;
 pub mod openrig;
+mod openrig_contract;
 pub mod pi;
 mod security_facts;
 pub mod snapshot;

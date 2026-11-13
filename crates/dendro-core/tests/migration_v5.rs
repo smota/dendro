@@ -14,6 +14,32 @@ use dendro_core::migration_v5::{
 use dendro_core::platform_v1::{self as platform, StorageRootChoice};
 
 #[test]
+fn missing_database_names_the_canonicalize_step() {
+    let missing = std::env::temp_dir().join(format!(
+        "dendro-migration-v5-missing-{}-dendro.duckdb",
+        std::process::id()
+    ));
+    let error = migrate_schema4_to_schema5(MigrateV5Request {
+        database: &missing,
+        privacy_key: &missing,
+        provenance_sidecars: &[],
+        live_writer_active: false,
+        stop_before_cutover: false,
+    })
+    .expect_err("a missing database must fail before backup");
+    match error {
+        MigrationV5Error::Io(message) => {
+            assert!(
+                message.starts_with("canonicalize:"),
+                "io errors must name the step, got {message}"
+            );
+            assert!(message.contains(&missing.display().to_string()));
+        }
+        other => panic!("expected an io error, got {other}"),
+    }
+}
+
+#[test]
 fn exclusive_backup_pointer_cutover_and_rollback() {
     let root = platform::create_user_private_root_with_choice(
         "dendro-migration-v5-",

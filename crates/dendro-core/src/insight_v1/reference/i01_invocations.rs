@@ -1,4 +1,4 @@
-//! I01 model.invocations. Distinct evidenced call IDs at call grain.
+//! I01 model.invocations. Distinct qualified call identities at call grain.
 use super::super::contract::{
     finish, refused, Insight, InsightDomain, InsightInput, InsightPopulation, InsightResult,
     InsightStatus,
@@ -11,11 +11,36 @@ pub struct Invocations;
 
 pub static INSIGHT: Invocations = Invocations;
 
-const COVERAGE: &str = "call grain only; usage-only rows are counted separately and are not calls";
+const COVERAGE: &str = "qualified call grain only; usage-only and unqualified rows are counted separately and are not included in distinct_calls";
 
 struct Row {
     source_key: String,
     message_id: Option<String>,
+    harness: String,
+    native_session: String,
+}
+
+// link-id-v1/vocabulary.json (blob ad0865ef39898bf5a7f8d9e0741f2456049a9b3d).
+// Only harness identity is normalized; provider/model names never supply it.
+fn canonical_harness(raw: &str) -> Option<&'static str> {
+    if !raw.is_ascii() {
+        return None;
+    }
+    [
+        ("antigravity", "antigravity"),
+        ("agy", "antigravity"),
+        ("claude", "claude"),
+        ("claude-code", "claude"),
+        ("codex", "codex"),
+        ("grok", "grok"),
+        ("pi", "pi"),
+    ]
+    .into_iter()
+    .find_map(|(alias, canonical)| raw.eq_ignore_ascii_case(alias).then_some(canonical))
+}
+
+fn known_qualifier(value: &str) -> bool {
+    !value.trim().is_empty() && !value.eq_ignore_ascii_case("unknown")
 }
 
 impl Insight for Invocations {
@@ -26,7 +51,7 @@ impl Insight for Invocations {
         "model.invocations"
     }
     fn version(&self) -> &'static str {
-        "1.0.0"
+        "1.1.0"
     }
     fn domain(&self) -> InsightDomain {
         InsightDomain::Model
@@ -41,22 +66,29 @@ impl Insight for Invocations {
         }
         let mut calls = BTreeSet::new();
         let mut usage_only = 0i64;
+        let mut unqualified = 0i64;
         for row in &rows {
-            match row.message_id.as_deref().filter(|id| !id.is_empty()) {
-                Some(id) => {
-                    calls.insert(id.to_string());
+            let Some(id) = row.message_id.as_deref().filter(|id| !id.trim().is_empty()) else {
+                usage_only += 1;
+                continue;
+            };
+            match canonical_harness(&row.harness) {
+                Some(harness) if known_qualifier(&row.native_session) => {
+                    calls.insert((harness, row.native_session.as_str(), id));
                 }
-                None => usage_only += 1,
+                _ => unqualified += 1,
             }
         }
+        let distinct_calls = calls.len() as i64;
+        drop(calls);
         let evidence: Vec<String> = rows.into_iter().map(|row| row.source_key).collect();
         let measures = vec![
             count_measure(
                 "I01.distinct_calls",
                 "distinct_calls",
-                calls.len() as i64,
+                distinct_calls,
                 "calls",
-                "count of distinct non-empty usage_facts.message_id values",
+                "count of distinct (canonical_harness, native_session, message_id) tuples",
             ),
             count_measure(
                 "I01.usage_only",
@@ -65,10 +97,21 @@ impl Insight for Invocations {
                 "rows",
                 "usage rows with no call id; not included in distinct_calls",
             ),
+            count_measure(
+                "I01.unqualified",
+                "unqualified",
+                unqualified,
+                "rows",
+                "usage rows with a call id but missing/unknown harness or session; counted per row, not merged or included in distinct_calls",
+            ),
         ];
-        let status = if calls.is_empty() {
+        let status = if distinct_calls == 0 {
             InsightStatus::Refused {
                 reason: "not_observable".to_string(),
+            }
+        } else if unqualified > 0 {
+            InsightStatus::Partial {
+                reason: "unqualified_rows".to_string(),
             }
         } else {
             InsightStatus::Computed
@@ -92,7 +135,7 @@ impl Insight for Invocations {
 
 fn load(input: &InsightInput<'_>) -> anyhow::Result<Vec<Row>> {
     let mut stmt = input.connection().prepare(
-        "SELECT source_key, message_id
+        "SELECT source_key, message_id, harness, native_session
          FROM usage_facts
          WHERE (? IS NULL OR harness = ?)
            AND (? IS NULL OR native_session = ?)
@@ -111,8 +154,376 @@ fn load(input: &InsightInput<'_>) -> anyhow::Result<Vec<Row>> {
             Ok(Row {
                 source_key: row.get(0)?,
                 message_id: row.get(1)?,
+                harness: row.get(2)?,
+                native_session: row.get(3)?,
             })
         },
     )?;
     rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::insight_v1::contract::MeasureValue;
+    use crate::insight_v1::Scope;
+    use crate::AnalyticsStore;
+
+    fn insert(
+        store: &AnalyticsStore,
+        source_key: &str,
+        harness: &str,
+        native_session: &str,
+        message_id: Option<&str>,
+        seq: i64,
+        source_id: &str,
+    ) {
+        store
+            .connection()
+            .execute(
+                "INSERT INTO usage_facts (
+                    source_key, harness, native_session, message_id, seq,
+                    input_uncached, output_tokens, cache_read, cache_write, reasoning,
+                    generation, source_id
+                 ) VALUES (?, ?, ?, ?, ?, 10, 5, 0, 0, 0, 1, ?)",
+                params![
+                    source_key,
+                    harness,
+                    native_session,
+                    message_id,
+                    seq,
+                    source_id
+                ],
+            )
+            .unwrap();
+    }
+
+    fn measure_int(result: &InsightResult, id: &str) -> Option<i64> {
+        result.measures.iter().find_map(|measure| {
+            if measure.id != id {
+                return None;
+            }
+            match measure.value {
+                Some(MeasureValue::Int(value)) => Some(value),
+                _ => None,
+            }
+        })
+    }
+
+    #[test]
+    fn harness_vocabulary_is_closed_ascii_case_insensitive_and_never_trimmed() {
+        let store = AnalyticsStore::open_in_memory("insight-i01-vocabulary").unwrap();
+        for (i, harness) in [
+            "antigravity",
+            "AGY",
+            "claude",
+            "CLAUDE-CODE",
+            "codex",
+            "GROK",
+            "pi",
+            " claude",
+            "claude ",
+            "cl\u{e1}ude",
+            "gemini",
+            "anthropic",
+            "openai",
+            "xai",
+            "ai-agent",
+        ]
+        .iter()
+        .enumerate()
+        {
+            insert(
+                &store,
+                &format!("u-{i}"),
+                harness,
+                "s1",
+                Some("m1"),
+                i as i64,
+                "src",
+            );
+        }
+        let result = INSIGHT.compute(&InsightInput::new(&store, &Scope::default()));
+        assert_eq!(measure_int(&result, "I01.distinct_calls"), Some(5));
+        assert_eq!(measure_int(&result, "I01.unqualified"), Some(8));
+    }
+
+    #[test]
+    fn source_namespaces_do_not_split_identity_and_replays_dedupe() {
+        let store = AnalyticsStore::open_in_memory("insight-i01-sources").unwrap();
+        insert(&store, "u-1", "claude", "s1", Some("m1"), 1, "src-a");
+        insert(&store, "u-2", "claude", "s1", Some("m1"), 2, "src-b");
+        insert(&store, "u-3", "claude", "s1", Some("m1"), 3, "src-a");
+        let result = INSIGHT.compute(&InsightInput::new(&store, &Scope::default()));
+        assert_eq!(measure_int(&result, "I01.distinct_calls"), Some(1));
+        assert_eq!(measure_int(&result, "I01.unqualified"), Some(0));
+    }
+
+    #[test]
+    fn incomplete_qualifiers_are_counted_per_row_and_refuse_without_calls() {
+        let store = AnalyticsStore::open_in_memory("insight-i01-missing").unwrap();
+        for (i, (harness, session, source)) in [
+            ("", "s1", "src"),
+            ("unknown", "s1", "src"),
+            ("google", "s1", "src"),
+            ("claude", "\u{3000}", "src"),
+            ("claude", "unknown", "src"),
+        ]
+        .iter()
+        .enumerate()
+        {
+            insert(
+                &store,
+                &format!("u-{i}"),
+                harness,
+                session,
+                Some("m1"),
+                i as i64,
+                source,
+            );
+        }
+        let result = INSIGHT.compute(&InsightInput::new(&store, &Scope::default()));
+        assert_eq!(measure_int(&result, "I01.distinct_calls"), Some(0));
+        assert_eq!(measure_int(&result, "I01.unqualified"), Some(5));
+        assert_eq!(measure_int(&result, "I01.usage_only"), Some(0));
+        assert!(
+            matches!(result.status, InsightStatus::Refused { ref reason } if reason == "not_observable")
+        );
+    }
+
+    #[test]
+    fn absent_message_ids_remain_usage_only_even_with_missing_qualifiers() {
+        let store = AnalyticsStore::open_in_memory("insight-i01-usage-only").unwrap();
+        for (i, id) in [None, Some(""), Some(" \u{3000}")].into_iter().enumerate() {
+            insert(&store, &format!("u-{i}"), "", "", id, i as i64, "");
+        }
+        let result = INSIGHT.compute(&InsightInput::new(&store, &Scope::default()));
+        assert_eq!(measure_int(&result, "I01.distinct_calls"), Some(0));
+        assert_eq!(measure_int(&result, "I01.unqualified"), Some(0));
+        assert_eq!(measure_int(&result, "I01.usage_only"), Some(3));
+    }
+
+    #[test]
+    fn opaque_identity_fields_do_not_collapse_at_delimiters_or_whitespace() {
+        let store = AnalyticsStore::open_in_memory("insight-i01-opaque").unwrap();
+        for (i, (session, message)) in [("a:b", "c"), ("a", "b:c"), ("a", " b:c ")]
+            .iter()
+            .enumerate()
+        {
+            insert(
+                &store,
+                &format!("u-{i}"),
+                "claude",
+                session,
+                Some(message),
+                i as i64,
+                "src",
+            );
+        }
+        let result = INSIGHT.compute(&InsightInput::new(&store, &Scope::default()));
+        assert_eq!(measure_int(&result, "I01.distinct_calls"), Some(3));
+    }
+
+    #[test]
+    fn fixture_a_same_message_id_in_two_different_sessions_counts_two() {
+        let store = AnalyticsStore::open_in_memory("insight-i01-a").unwrap();
+        insert(&store, "u-1", "claude", "s1", Some("m-shared"), 1, "src");
+        insert(&store, "u-2", "claude", "s2", Some("m-shared"), 2, "src");
+        let scope = Scope::default();
+        let input = InsightInput::new(&store, &scope);
+        let result = INSIGHT.compute(&input);
+        assert!(matches!(result.status, InsightStatus::Computed));
+        assert_eq!(measure_int(&result, "I01.distinct_calls"), Some(2));
+        assert_eq!(measure_int(&result, "I01.usage_only"), Some(0));
+        assert_eq!(measure_int(&result, "I01.unqualified"), Some(0));
+    }
+
+    #[test]
+    fn fixture_b_same_message_id_across_claude_and_codex_counts_two() {
+        let store = AnalyticsStore::open_in_memory("insight-i01-b").unwrap();
+        insert(&store, "u-1", "claude", "s1", Some("m-shared"), 1, "src");
+        insert(&store, "u-2", "codex", "s1", Some("m-shared"), 2, "src");
+        let scope = Scope::default();
+        let input = InsightInput::new(&store, &scope);
+        let result = INSIGHT.compute(&input);
+        assert!(matches!(result.status, InsightStatus::Computed));
+        assert_eq!(measure_int(&result, "I01.distinct_calls"), Some(2));
+        assert_eq!(measure_int(&result, "I01.usage_only"), Some(0));
+        assert_eq!(measure_int(&result, "I01.unqualified"), Some(0));
+    }
+
+    #[test]
+    fn fixture_c_true_duplicate_same_session_harness_and_message_id_counts_one() {
+        let store = AnalyticsStore::open_in_memory("insight-i01-c").unwrap();
+        insert(&store, "u-1", "claude", "s1", Some("m-dup"), 1, "src");
+        insert(&store, "u-2", "claude-code", "s1", Some("m-dup"), 2, "src");
+        insert(&store, "u-3", "claude", "s1", Some("m-dup"), 3, "src");
+        let scope = Scope::default();
+        let input = InsightInput::new(&store, &scope);
+        let result = INSIGHT.compute(&input);
+        assert!(matches!(result.status, InsightStatus::Computed));
+        assert_eq!(measure_int(&result, "I01.distinct_calls"), Some(1));
+        assert_eq!(measure_int(&result, "I01.usage_only"), Some(0));
+        assert_eq!(measure_int(&result, "I01.unqualified"), Some(0));
+    }
+
+    #[test]
+    fn fixture_d_missing_session_id_counted_as_unqualified_not_merged() {
+        let store = AnalyticsStore::open_in_memory("insight-i01-d").unwrap();
+        insert(&store, "u-1", "claude", "", Some("m-shared"), 1, "src");
+        insert(&store, "u-2", "claude", "", Some("m-shared"), 2, "src");
+        insert(
+            &store,
+            "u-3",
+            "claude",
+            "unknown",
+            Some("m-shared"),
+            3,
+            "src",
+        );
+        insert(&store, "u-4", "claude", "s1", Some("m-shared"), 4, "src");
+        let scope = Scope::default();
+        let input = InsightInput::new(&store, &scope);
+        let result = INSIGHT.compute(&input);
+        assert!(
+            matches!(result.status, InsightStatus::Partial { ref reason } if reason == "unqualified_rows")
+        );
+        assert_eq!(measure_int(&result, "I01.distinct_calls"), Some(1));
+        assert_eq!(measure_int(&result, "I01.usage_only"), Some(0));
+        assert_eq!(measure_int(&result, "I01.unqualified"), Some(3));
+    }
+
+    #[test]
+    fn fixture_f_same_identity_in_two_source_ids_counts_one() {
+        let store = AnalyticsStore::open_in_memory("insight-i01-f").unwrap();
+        insert(&store, "u-1", "claude", "s1", Some("m-x"), 1, "src-a");
+        insert(&store, "u-2", "claude", "s1", Some("m-x"), 2, "src-b");
+        let result = INSIGHT.compute(&InsightInput::new(&store, &Scope::default()));
+        assert!(matches!(result.status, InsightStatus::Computed));
+        assert_eq!(measure_int(&result, "I01.distinct_calls"), Some(1));
+        assert_eq!(measure_int(&result, "I01.unqualified"), Some(0));
+    }
+
+    #[test]
+    fn fixture_g_g0a_s2_variant_repeated_message_id_in_both_sessions_counts_two() {
+        // Variant of the G0a S2 sample: one message id appears in both sessions.
+        // A bare message_id dedupe would give 1; qualified identity gives 2.
+        let store = AnalyticsStore::open_in_memory("insight-i01-g").unwrap();
+        for (key, session, seq) in [
+            ("s2v:1", "SESSION_82d7a11553f766a4", 1),
+            ("s2v:2", "SESSION_82d7a11553f766a4", 2),
+            ("s2v:3", "SESSION_fa2814579786c60e", 3),
+            ("s2v:4", "SESSION_fa2814579786c60e", 4),
+        ] {
+            insert(
+                &store,
+                key,
+                "claude",
+                session,
+                Some("MSG_f5e821758b6583fb"),
+                seq,
+                "g0a-s2",
+            );
+        }
+        let result = INSIGHT.compute(&InsightInput::new(&store, &Scope::default()));
+        assert!(matches!(result.status, InsightStatus::Computed));
+        assert_eq!(measure_int(&result, "I01.distinct_calls"), Some(2));
+    }
+
+    #[test]
+    fn fixture_e_g0a_s2_two_session_claude_capture_keeps_distinct_sessions_distinct() {
+        // Extracted assistant identities from G0a claude-2.1.322/S2/
+        // session-log-sanitized.jsonl, blob 327054ed9b1d590b011b0e41c75602c044f1807a.
+        // Lines 25, 26, 42, 71, 72, 88, 89: two sessions, four calls,
+        // three repeated assistant rows. Cost-state rows are not invocations.
+        let store = AnalyticsStore::open_in_memory("insight-i01-e").unwrap();
+        insert(
+            &store,
+            "s2:25",
+            "claude",
+            "SESSION_82d7a11553f766a4",
+            Some("MSG_f5e821758b6583fb"),
+            1,
+            "g0a-s2",
+        );
+        insert(
+            &store,
+            "s2:26",
+            "claude",
+            "SESSION_82d7a11553f766a4",
+            Some("MSG_f5e821758b6583fb"),
+            2,
+            "g0a-s2",
+        );
+        insert(
+            &store,
+            "s2:42",
+            "claude",
+            "SESSION_82d7a11553f766a4",
+            Some("MSG_93ea8b84a756ce1f"),
+            3,
+            "g0a-s2",
+        );
+        insert(
+            &store,
+            "s2:71",
+            "claude",
+            "SESSION_fa2814579786c60e",
+            Some("MSG_28861758043ece6d"),
+            5,
+            "g0a-s2",
+        );
+        insert(
+            &store,
+            "s2:72",
+            "claude",
+            "SESSION_fa2814579786c60e",
+            Some("MSG_28861758043ece6d"),
+            6,
+            "g0a-s2",
+        );
+        insert(
+            &store,
+            "s2:88",
+            "claude",
+            "SESSION_fa2814579786c60e",
+            Some("MSG_9d1d7224b0db2e4a"),
+            7,
+            "g0a-s2",
+        );
+        insert(
+            &store,
+            "s2:89",
+            "claude",
+            "SESSION_fa2814579786c60e",
+            Some("MSG_9d1d7224b0db2e4a"),
+            8,
+            "g0a-s2",
+        );
+        let all = INSIGHT.compute(&InsightInput::new(&store, &Scope::default()));
+        assert!(matches!(all.status, InsightStatus::Computed));
+        assert_eq!(measure_int(&all, "I01.distinct_calls"), Some(4));
+        assert_eq!(measure_int(&all, "I01.usage_only"), Some(0));
+        assert_eq!(measure_int(&all, "I01.unqualified"), Some(0));
+
+        let session_b = INSIGHT.compute(&InsightInput::new(
+            &store,
+            &Scope {
+                session: Some("SESSION_82d7a11553f766a4".to_string()),
+                ..Scope::default()
+            },
+        ));
+        assert_eq!(measure_int(&session_b, "I01.distinct_calls"), Some(2));
+        assert_eq!(measure_int(&session_b, "I01.usage_only"), Some(0));
+
+        let session_a = INSIGHT.compute(&InsightInput::new(
+            &store,
+            &Scope {
+                session: Some("SESSION_fa2814579786c60e".to_string()),
+                ..Scope::default()
+            },
+        ));
+        assert_eq!(measure_int(&session_a, "I01.distinct_calls"), Some(2));
+        assert_eq!(measure_int(&session_a, "I01.usage_only"), Some(0));
+    }
 }

@@ -8,7 +8,7 @@ use std::io::{self, Read};
 use std::os::fd::{AsFd, OwnedFd};
 use std::path::{Component, Path, PathBuf};
 
-use rand::RngCore;
+use rand::TryRng;
 use rustix::fs::{
     fchmod, fgetxattr, fstat, fstatfs, mkdirat, open, openat, renameat_with, Mode, OFlags,
     RenameFlags,
@@ -531,7 +531,7 @@ fn create_user_private_root_at(
 fn unique_dir_name(parent: &OwnedFd, prefix: &str) -> Result<String, PlatformError> {
     for _ in 0..16u32 {
         let mut nonce = [0u8; 16];
-        rand::rngs::OsRng
+        rand::rngs::SysRng
             .try_fill_bytes(&mut nonce)
             .map_err(|error| PlatformError::from(io::Error::other(error.to_string())))?;
         // The random name avoids namespace exhaustion; identity still comes

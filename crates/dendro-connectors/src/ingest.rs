@@ -77,7 +77,7 @@ pub fn ingest_staged_with_manifest(
                 if !seen_openrig.insert(id.clone()) {
                     continue;
                 }
-                let (count, snapshot, cutoff, changed) =
+                let (count, snapshot, cutoff, changed, contract) =
                     ingest_openrig(&store, root, key, &mut lives, stage_dir, &id, entry)?;
                 manifest.openrig.push(cutoff);
                 let changed_note = if changed {
@@ -85,10 +85,13 @@ pub fn ingest_staged_with_manifest(
                 } else {
                     ""
                 };
+                let line = contract.operator_line(&crate::openrig_contract::rig_version());
+                eprintln!("{line}");
                 notes.push(format!(
-                    "openrig events={count} revision={} attempts={} main_bytes={} wal_bytes={} copy_ms={} check_ms={}{changed_note}",
+                    "openrig events={count} revision={} attempts={} main_bytes={} wal_bytes={} copy_ms={} check_ms={}{changed_note} {}",
                     &snapshot.revision[..16], snapshot.attempts, snapshot.main_bytes,
-                    snapshot.wal_bytes.unwrap_or(0), snapshot.copy_ms, snapshot.check_ms
+                    snapshot.wal_bytes.unwrap_or(0), snapshot.copy_ms, snapshot.check_ms,
+                    contract.summary()
                 ));
             }
             name => {
@@ -410,6 +413,7 @@ fn ingest_openrig(
     crate::snapshot::Snapshot,
     dendro_core::OpenRigCutoff,
     bool,
+    crate::openrig_contract::ContractAssessment,
 )> {
     let snap_dir = stage_dir.join(dendro_core::lifecycle::SNAPSHOT_DIR);
     let snapshot =
@@ -425,8 +429,50 @@ fn ingest_openrig(
                 }
             },
         )?;
+    let mut contract =
+        match crate::openrig_contract::assess(&rusqlite::Connection::open_with_flags(
+            &snapshot.path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )?) {
+            Ok(contract) => contract,
+            Err(error) => {
+                let _ = remove_snapshot_copy(stage_dir, &snapshot.path);
+                return Err(error);
+            }
+        };
+    let strict = std::env::var("DENDRO_OPENRIG_CONTRACT")
+        .ok()
+        .is_some_and(|value| value == "strict");
+    if contract.class == crate::openrig_contract::ContractClass::Unsupported
+        || (strict && contract.class == crate::openrig_contract::ContractClass::Drifted)
+    {
+        let line = contract.operator_line(&crate::openrig_contract::rig_version());
+        eprintln!("{line}");
+        let _ = remove_snapshot_copy(stage_dir, &snapshot.path);
+        anyhow::bail!(line);
+    }
     let mut prepared =
         crate::openrig::prepare_openrig_snapshot(&snapshot.path, manifest_id, key, sealed)?;
+    if contract.class == crate::openrig_contract::ContractClass::Additive {
+        let digest_conn = rusqlite::Connection::open_with_flags(
+            &snapshot.path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )?;
+        for table in ["events", "queue_transitions", "snapshots"] {
+            let digests = crate::openrig::contract_row_digests(
+                &digest_conn,
+                table,
+                crate::openrig_contract::known_columns(table),
+            )?;
+            for row in &mut prepared.rows {
+                if row.table_name == table {
+                    if let Some(digest) = digests.get(&row.row_id) {
+                        row.row_digest.clone_from(digest);
+                    }
+                }
+            }
+        }
+    }
     let source_id = stable_source_id(&root.name, &root.path, &root.path, key);
     prepared.rows.push(dendro_core::OpenRigRow {
         table_name: "source_identity".into(),
@@ -456,9 +502,16 @@ fn ingest_openrig(
         read_openrig_with_source(store, &snapshot.path, key, lives, Some(&source_id))
     });
     let removed = remove_snapshot_copy(stage_dir, &snapshot.path);
-    let count = result?;
+    let (count, unknown_events) = result?;
+    contract.unknown_events = unknown_events;
     removed.map_err(|_| anyhow::anyhow!("snapshot cleanup failed"))?;
-    Ok((count, snapshot, prepared.cutoff, provenance.changed))
+    Ok((
+        count,
+        snapshot,
+        prepared.cutoff,
+        provenance.changed,
+        contract,
+    ))
 }
 
 /// Cleanup accepts only a snapshot-role direct child of the current stage.
@@ -499,7 +552,7 @@ fn read_openrig_with_source(
     key: &[u8],
     lives: &mut Vec<dendro_core::SeatBound>,
     source_id: Option<&str>,
-) -> Result<i64> {
+) -> Result<(i64, u64)> {
     let fact_key = |table: &str, row: &str, key: String| -> Result<String> {
         match source_id {
             Some(source) => store.qualify_openrig_fact(source, table, row, &key),
@@ -523,6 +576,27 @@ fn read_openrig_with_source(
     let mut item_meta = queue_item_metadata(&conn, &created_items)?;
     let mut event_nudges = std::collections::BTreeMap::new();
     let mut count = 0i64;
+    let mut unknown_events = 0u64;
+    let mut covered_handoffs = std::collections::BTreeSet::<(String, String, String)>::new();
+    if let Ok(mut handoffs) =
+        conn.prepare("SELECT qitem_id, state, actor_session, closure_target FROM queue_transitions")
+    {
+        let rows = handoffs.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, Option<String>>(3)?,
+            ))
+        })?;
+        for row in rows.flatten() {
+            if row.1 == "handed-off" {
+                if let (Some(from), Some(to)) = (row.2, row.3) {
+                    covered_handoffs.insert((row.0, from, to));
+                }
+            }
+        }
+    }
     let mut lifecycle = Vec::new();
     // K5 reroute marks, by raw qitem id.
     let mut rerouted = std::collections::BTreeSet::<String>::new();
@@ -726,6 +800,34 @@ fn read_openrig_with_source(
                 chain_id: chain_of(qitem),
                 missions: Vec::new(),
             })?;
+        } else if kind == "queue.handed_off" {
+            let text = |name: &str| parsed.get(name).and_then(|v| v.as_str());
+            let Some(qitem) = text("qitemId") else {
+                continue;
+            };
+            let Some(from) = text("fromSession") else {
+                continue;
+            };
+            let Some(to) = text("toSession") else {
+                continue;
+            };
+            if covered_handoffs.contains(&(qitem.to_string(), from.to_string(), to.to_string())) {
+                continue;
+            }
+            let Some(when) = ts else { continue };
+            store.insert_queue(&QueueFact {
+                source_key: fact_key("events", &seq.to_string(), format!("events:{kind}:{seq}"))?,
+                transition_id: seq,
+                qitem_id: dendro_core::seal_identifier(key, "qitem", qitem),
+                ts: when,
+                state: "handed-off".to_string(),
+                source_seat: dendro_core::seal_identifier(key, "seat", from),
+                dest_seat: dendro_core::seal_identifier(key, "seat", to),
+                closure_reason: dendro_core::closure_reason(text("closureReason")),
+                closure_target: Some(dendro_core::seal_identifier(key, "seat", to)),
+                chain_id: chain_of(qitem),
+                missions: Vec::new(),
+            })?;
         } else if kind == "queue.created" || kind == "queue.claimed" {
             let Some(qitem) = parsed.get("qitemId").and_then(|v| v.as_str()) else {
                 continue;
@@ -770,6 +872,8 @@ fn read_openrig_with_source(
                     Vec::new()
                 },
             })?;
+        } else {
+            unknown_events += 1;
         }
     }
     store.purge_stateless_activity(&stale_activity_seqs)?;
@@ -974,7 +1078,7 @@ fn read_openrig_with_source(
                 .map(|value| dendro_core::seal_identifier(key, "qitem", value)),
         })?;
     }
-    Ok(count)
+    Ok((count, unknown_events))
 }
 
 #[derive(Default)]
@@ -1563,6 +1667,14 @@ mod tests {
         let conn = rusqlite::Connection::open(&path).unwrap();
         conn.execute(
             "CREATE TABLE events (seq INTEGER, type TEXT, payload TEXT, created_at TEXT)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "CREATE TABLE queue_transitions (
+                transition_id INTEGER, qitem_id TEXT, ts TEXT, state TEXT,
+                transition_note TEXT, actor_session TEXT, closure_reason TEXT, closure_target TEXT
+            )",
             [],
         )
         .unwrap();

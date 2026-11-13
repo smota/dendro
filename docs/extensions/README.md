@@ -6,7 +6,7 @@ Dendro is built from the ground up as a modular, local-first intelligence engine
 
 ## Out-of-the-Box Coverage Today
 
-Dendro ingests and correlates execution telemetry across three distinct operational tiers:
+Dendro ingests and correlates operational execution records across three distinct tiers:
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
@@ -19,19 +19,19 @@ Dendro ingests and correlates execution telemetry across three distinct operatio
 │   Native AI Clients     │  │   Export Adapters       │  │ Orchestration Runtimes  │
 ├─────────────────────────┤  ├─────────────────────────┤  ├─────────────────────────┤
 │ • Claude Code           │  │ • Cursor CLI            │  │ • OpenRig (~/.openrig)  │
-│ • OpenAI Codex          │  │ • Windsurf (Cascade)    │  │ • AgentFlow SDLC        │
-│ • Google Antigravity    │  │ • Block Goose           │  │ • Meshloop Graph        │
+│ • OpenAI Codex (coarse) │  │ • Windsurf (Cascade)    │  │ • AgentFlow (adapter)   │
+│ • Antigravity (pending) │  │ • Block Goose           │  │ • Meshloop (adapter)    │
 │ • Grok                  │  │ • Devin (ATIF-v1.7)     │  │                         │
 │ • Pi                    │  │ (See formats.md)        │  │ (Multi-seat topology)   │
 └─────────────────────────┘  └─────────────────────────┘  └─────────────────────────┘
 ```
 
 1. **Native AI Coding Clients:**
-   Direct zero-copy streaming ingestion from local session logs for **Claude Code** (`~/.claude`), **OpenAI Codex** (`~/.codex`), **Google Antigravity** (`~/.gemini`), **xAI Grok** (`~/.grok`), and **Pi** (`~/.pi`).
+   Direct zero-copy streaming ingestion from local session logs for **Claude Code** (`~/.claude`), **OpenAI Codex** (`~/.codex`; tool calls are currently recorded coarsely under constant names `CommandExecution` and `CodexSeatCall` in `crates/dendro-connectors/src/stream.rs:451,621,1862`), **xAI Grok** (`~/.grok`), and **Pi** (`~/.pi`). **Google Antigravity** (`~/.gemini`, `agy`) is registered as `pending` and not yet admitted (`crates/dendro-connectors/src/agy.rs:63` returns `source_not_admitted`).
 2. **Verified Editor & Autonomous Agent Export Adapters:**
    Explicit export readers for **Cursor** (`stream-json`), **Windsurf / Cascade** (`post_cascade_response_with_transcript` NDJSON), **Block Goose** (legacy session JSONL), and **Devin** (`ATIF-v1.7`). For full format specifications and limitations, see [**`docs/extensions/formats.md`**](formats.md).
 3. **Fleet Orchestration Runtimes:**
-   Correlation engines that bind isolated client sessions to multi-agent fleet topology: **OpenRig** (`~/.openrig`), **AgentFlow SDLC**, and **Meshloop**, linking individual terminal sessions to lasting agent seats, durable task queues, and cross-seat delegation trees.
+   Correlation engines that bind isolated client sessions to multi-agent fleet topology: **OpenRig** (`~/.openrig`) is built in today, while **AgentFlow SDLC** and **Meshloop** connect through the runtime adapter contract, linking individual terminal sessions to lasting agent seats, durable task queues, and cross-seat delegation trees.
 
 ---
 
