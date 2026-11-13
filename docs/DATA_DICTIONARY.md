@@ -353,7 +353,7 @@ All reference insights adhere to the immutable contract:
 
 | ID | Name | Domain | Physical Facts | Contract & Output Measures |
 |:---|:---|:---|:---|:---|
-| **I01** | `model.invocations` | Model | `usage_facts`, `message_facts` | Distinct evidenced invocation count. Call grain only; usage-only rows counted separately. Empty population returns `not_observable`. |
+| **I01** | `model.invocations` | Model | `usage_facts` | Distinct qualified invocation count at call grain; dedupes on `(canonical_harness, native_session, source_id, message_id)`. `usage_only` and `unqualified` rows are counted separately. See identity and missingness below. |
 | **I02** | `model.tokens` | Model | `usage_facts` | Inclusive sum of tokens: `cache_read`, `cache_write`, `input_uncached`, `output_tokens`, and non-additive `reasoning`. |
 | **I03** | `model.tokens.inclusive` | Model | `usage_facts`, `session_edges` | Sum over reachable observation graph union. Incomplete lineage yields lower bound. Ambiguous duplicates refuse total. |
 | **I04** | `model.cost` | Model | `usage_facts`, `_dendro_pricing_tiers` | Monetary burn calculated from currency figures or pinned pricing tiers. Excludes estimated or unverified rates. |
@@ -378,6 +378,33 @@ All reference insights adhere to the immutable contract:
 | **I23** | `harness.schema_drift` | Harness | `harness_envelope` | L1 distance between `envelope_shape` key distributions across harness versions. Reports added, removed, and type-altered keys. |
 | **I24** | `security.authority_blast_radius` | Security | `session_edges`, `security_facts` | Bounded graph reachability (`duckpgq`) from revoked/failed grants. Traverses only `status = evidenced`. Carries dependency exposure non-claim. |
 | **I25** | `model.counterfactual_routing` | Model | `usage_facts`, `_dendro_pricing_tiers` | Counterfactual fast-tier simulation via `ASOF JOIN` and `QUANTILE_CONT` cache inflection. Refuses if cohort/tier profile is unpinned. |
+
+### I01 invocation identity and missingness
+
+`I01.distinct_calls` counts distinct tuples of `(canonical_harness, native_session,
+source_id, message_id)` from scoped `usage_facts`. Repeated observations of the same
+tuple count once; the same message ID in different sessions, harnesses, or sources
+counts separately. `source_id` is the existing ingestion-source namespace, not the
+per-row `source_key` or ingestion generation. This is local invocation qualification;
+it does not compute a session `link_id` or introduce machine, actor, or principal keys.
+
+Harness aliases follow the frozen `link-id-v1` vocabulary in
+[`smota/agent-otel-bridge`](https://github.com/smota/agent-otel-bridge/blob/main/docs/contracts/fact-export-v1/link-id-v1/vocabulary.json):
+`claude-code` and `claude` map to `claude`; `agy` and `antigravity` map to
+`antigravity`; `codex`, `grok`, and `pi` map to themselves. Input must be ASCII,
+ASCII case-insensitive, with no trimming. Unknown aliases (including model/provider
+names) do not qualify. Session, source, and message identifiers remain byte-exact;
+they are never concatenated into an ambiguous delimiter-separated key.
+
+`I01.usage_only` counts rows with absent, empty, or whitespace-only message IDs.
+Among rows with message IDs, `I01.unqualified` counts each row with a missing or
+unknown qualifier separately, without deduplicating or adding it to
+`distinct_calls`. Empty/whitespace-only values and literal `unknown` (ASCII
+case-insensitive) are missing session/source qualifiers. The two row counts are disjoint; the population
+includes all scoped usage rows. With no qualified call the result refuses with
+`not_observable`; an empty population also refuses. Existing qualified single-session
+counts are unchanged. The additive `unqualified` measure exposes missingness rather
+than guessing invocation identities.
 
 ---
 
