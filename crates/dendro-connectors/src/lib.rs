@@ -37,5 +37,6 @@ pub use windsurf::WindsurfConnector;
 
 pub mod capture_registry_v1;
 pub mod environment_v1;
+pub mod fidelity;
 pub mod syscall_v1;
 pub mod windows_events_v1;

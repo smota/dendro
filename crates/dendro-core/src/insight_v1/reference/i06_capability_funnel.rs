@@ -28,6 +28,18 @@ impl Insight for CapabilityFunnel {
     fn domain(&self) -> InsightDomain {
         InsightDomain::Harness
     }
+    fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::SkillInvocations, Field::ToolCallName]
+    }
+    fn optional_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[
+            Field::SkillDeclarations,
+            Field::NativeSession,
+            Field::TurnTimestamp,
+        ]
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         let skills = match load_skills(input) {
             Ok(rows) => rows,

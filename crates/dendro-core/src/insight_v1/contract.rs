@@ -42,11 +42,39 @@ impl Scope {
 pub struct InsightInput<'a> {
     store: &'a AnalyticsStore,
     scope: &'a Scope,
+    excluded_harnesses: Vec<String>,
 }
 
 impl<'a> InsightInput<'a> {
     pub(crate) fn new(store: &'a AnalyticsStore, scope: &'a Scope) -> Self {
-        Self { store, scope }
+        Self {
+            store,
+            scope,
+            excluded_harnesses: Vec::new(),
+        }
+    }
+
+    pub(crate) fn with_excluded_harnesses(
+        store: &'a AnalyticsStore,
+        scope: &'a Scope,
+        excluded_harnesses: Vec<String>,
+    ) -> Self {
+        Self {
+            store,
+            scope,
+            excluded_harnesses,
+        }
+    }
+
+    pub(crate) fn allows_harness(&self, harness: &str) -> bool {
+        if self.excluded_harnesses.is_empty() {
+            return true;
+        }
+        let canonical = super::fidelity::canonical_connector_id(harness).unwrap_or(harness);
+        !self
+            .excluded_harnesses
+            .iter()
+            .any(|excluded| excluded.eq_ignore_ascii_case(canonical))
     }
 
     pub(crate) fn store(&self) -> &'a AnalyticsStore {
@@ -64,7 +92,7 @@ impl<'a> InsightInput<'a> {
 
     pub(crate) fn usage_rows(&self) -> anyhow::Result<Vec<UsageRow>> {
         let mut stmt = self.connection().prepare(
-            "SELECT source_key, model, input_uncached, output_tokens, cache_read, cache_write, reasoning, currency_total
+            "SELECT source_key, harness, model, input_uncached, output_tokens, cache_read, cache_write, reasoning, currency_total
              FROM usage_facts
              WHERE (? IS NULL OR harness = ?)
                AND (? IS NULL OR native_session = ?)
@@ -79,19 +107,30 @@ impl<'a> InsightInput<'a> {
         let rows = stmt.query_map(
             params![harness, harness, session, session, from, from, to, to],
             |row| {
-                Ok(UsageRow {
-                    source_key: row.get(0)?,
-                    model: row.get(1)?,
-                    input_uncached: row.get(2)?,
-                    output: row.get(3)?,
-                    cache_read: row.get(4)?,
-                    cache_write: row.get(5)?,
-                    reasoning: row.get(6)?,
-                    currency_total: row.get(7)?,
-                })
+                let row_harness: String = row.get(1)?;
+                Ok((
+                    row_harness,
+                    UsageRow {
+                        source_key: row.get(0)?,
+                        model: row.get(2)?,
+                        input_uncached: row.get(3)?,
+                        output: row.get(4)?,
+                        cache_read: row.get(5)?,
+                        cache_write: row.get(6)?,
+                        reasoning: row.get(7)?,
+                        currency_total: row.get(8)?,
+                    },
+                ))
             },
         )?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+        let mut out = Vec::new();
+        for item in rows {
+            let (row_harness, usage) = item?;
+            if self.allows_harness(&row_harness) {
+                out.push(usage);
+            }
+        }
+        Ok(out)
     }
 
     pub(crate) fn warning_rows(&self) -> anyhow::Result<Vec<WarningRow>> {
@@ -131,6 +170,10 @@ pub trait Insight: Send + Sync {
     fn name(&self) -> &'static str;
     fn version(&self) -> &'static str;
     fn domain(&self) -> InsightDomain;
+    fn required_fields(&self) -> &'static [super::fidelity::Field];
+    fn optional_fields(&self) -> &'static [super::fidelity::Field] {
+        &[]
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult;
 }
 
@@ -205,7 +248,10 @@ pub fn display_status(status: &InsightStatus) -> &'static str {
         }
     };
     match reason {
-        Some("not_observable" | "insufficient_sample") => "insufficient_evidence",
+        Some("not_observable" | "insufficient_sample" | "not_computable") => {
+            "insufficient_evidence"
+        }
+        Some(value) if value.starts_with("not_computable:") => "insufficient_evidence",
         Some("not_applicable" | "NOT_ASSESSED") => "not_applicable",
         Some("threshold_exceeded") => "partial",
         Some("noncomparable") => "insufficient_evidence",

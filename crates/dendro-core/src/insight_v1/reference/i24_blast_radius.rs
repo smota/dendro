@@ -34,6 +34,18 @@ impl Insight for BlastRadiusInsight {
     fn domain(&self) -> InsightDomain {
         InsightDomain::Security
     }
+    fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[
+            Field::SessionEdges,
+            Field::SecurityPolicy,
+            Field::NativeSession,
+        ]
+    }
+    fn optional_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::SecurityCommandCheck]
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         let (edges, edge_keys) = match load_edges(input) {
             Ok(rows) => rows,

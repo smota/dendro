@@ -28,6 +28,14 @@ impl Insight for ResourceEfficiency {
     fn domain(&self) -> InsightDomain {
         InsightDomain::Coordination
     }
+    fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::QueueTransitions, Field::TurnTimestamp]
+    }
+    fn optional_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::ObservedCost, Field::NativeSession]
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         let acceptance = match load_acceptance(input) {
             Ok(Some(count)) => count,

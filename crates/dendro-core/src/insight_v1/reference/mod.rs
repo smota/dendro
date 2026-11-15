@@ -28,47 +28,88 @@ mod i24_blast_radius;
 mod i25_counterfactual;
 mod support;
 
-use super::contract::Insight;
+use super::contract::{Insight, InsightDomain, InsightInput, InsightResult};
+use super::fidelity::Field;
 use super::InsightRefusal;
 use crate::domain_v1::Identifier;
 
+struct RegisteredInsight {
+    inner: &'static dyn Insight,
+    required: &'static [Field],
+    optional: &'static [Field],
+}
+
+impl Insight for RegisteredInsight {
+    fn id(&self) -> &'static str {
+        self.inner.id()
+    }
+    fn name(&self) -> &'static str {
+        self.inner.name()
+    }
+    fn version(&self) -> &'static str {
+        self.inner.version()
+    }
+    fn domain(&self) -> InsightDomain {
+        self.inner.domain()
+    }
+    fn required_fields(&self) -> &'static [Field] {
+        self.required
+    }
+    fn optional_fields(&self) -> &'static [Field] {
+        self.optional
+    }
+    fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
+        self.inner.compute(input)
+    }
+}
+
+macro_rules! entry {
+    ($insight:expr, req: [$($req:ident),+ $(,)?], opt: [$($opt:ident),* $(,)?]) => {
+        &RegisteredInsight {
+            inner: $insight as &dyn Insight,
+            required: &[$(Field::$req),+],
+            optional: &[$(Field::$opt),*],
+        } as &dyn Insight
+    };
+}
+
 /// Shipped v0.8.0 analyzers. `evaluate` runs this set and no other.
 pub static REFERENCE: &[&dyn Insight] = &[
-    &i02_tokens::INSIGHT as &dyn Insight,
-    &i04_cost::INSIGHT as &dyn Insight,
-    &i08_action_failure::INSIGHT as &dyn Insight,
-    &i09_lineage_shape::INSIGHT as &dyn Insight,
-    &i14_resources::INSIGHT as &dyn Insight,
-    &i18_coverage::INSIGHT as &dyn Insight,
+    entry!(&i02_tokens::INSIGHT, req: [InputTokens, OutputTokens, CacheReadTokens, CacheWriteTokens], opt: [ReasoningTokens, Model, NativeSession, TurnTimestamp]),
+    entry!(&i04_cost::INSIGHT, req: [ObservedCost], opt: [Model, InputTokens, OutputTokens, CacheReadTokens, CacheWriteTokens, NativeSession, TurnTimestamp]),
+    entry!(&i08_action_failure::INSIGHT, req: [ToolCallName, ToolOutcome], opt: [ToolFingerprint, NativeSession, TurnTimestamp]),
+    entry!(&i09_lineage_shape::INSIGHT, req: [SessionEdges], opt: [NativeSession]),
+    entry!(&i14_resources::INSIGHT, req: [ProcessIdentity, ProcessResourceSamples], opt: [NativeSession]),
+    entry!(&i18_coverage::INSIGHT, req: [SourceCoverage], opt: []),
 ];
 
 /// A10 registry. A08 is `CATALOG[..21]` (I01–I21).
 pub static CATALOG: &[&dyn Insight] = &[
-    &i01_invocations::INSIGHT as &dyn Insight,
-    &i02_tokens::INSIGHT as &dyn Insight,
-    &i03_tokens_inclusive::INSIGHT as &dyn Insight,
-    &i04_cost::INSIGHT as &dyn Insight,
-    &i05_configuration_divergence::INSIGHT as &dyn Insight,
-    &i06_capability_funnel::INSIGHT as &dyn Insight,
-    &i07_context_pressure::INSIGHT as &dyn Insight,
-    &i08_action_failure::INSIGHT as &dyn Insight,
-    &i09_lineage_shape::INSIGHT as &dyn Insight,
-    &i10_duration::INSIGHT as &dyn Insight,
-    &i11_shared_allocation::INSIGHT as &dyn Insight,
-    &i12_queue_wait::INSIGHT as &dyn Insight,
-    &i13_placement::INSIGHT as &dyn Insight,
-    &i14_resources::INSIGHT as &dyn Insight,
-    &i15_effects::INSIGHT as &dyn Insight,
-    &i16_isolation::INSIGHT as &dyn Insight,
-    &i17_authority::INSIGHT as &dyn Insight,
-    &i18_coverage::INSIGHT as &dyn Insight,
-    &i19_acceptance::INSIGHT as &dyn Insight,
-    &i20_resource_efficiency::INSIGHT as &dyn Insight,
-    &i21_comparison::INSIGHT as &dyn Insight,
-    &i22_trajectory_vortex::INSIGHT as &dyn Insight,
-    &i23_schema_drift::INSIGHT as &dyn Insight,
-    &i24_blast_radius::INSIGHT as &dyn Insight,
-    &i25_counterfactual::INSIGHT as &dyn Insight,
+    entry!(&i01_invocations::INSIGHT, req: [MessageId, NativeSession], opt: [TurnTimestamp]),
+    entry!(&i02_tokens::INSIGHT, req: [InputTokens, OutputTokens, CacheReadTokens, CacheWriteTokens], opt: [ReasoningTokens, Model, NativeSession, TurnTimestamp]),
+    entry!(&i03_tokens_inclusive::INSIGHT, req: [InputTokens, OutputTokens, CacheReadTokens, CacheWriteTokens, NativeSession, SessionEdges], opt: [MessageId, TurnTimestamp]),
+    entry!(&i04_cost::INSIGHT, req: [ObservedCost], opt: [Model, InputTokens, OutputTokens, CacheReadTokens, CacheWriteTokens, NativeSession, TurnTimestamp]),
+    entry!(&i05_configuration_divergence::INSIGHT, req: [NativeSession, Model, Effort], opt: [TurnTimestamp]),
+    entry!(&i06_capability_funnel::INSIGHT, req: [SkillInvocations, ToolCallName], opt: [SkillDeclarations, NativeSession, TurnTimestamp]),
+    entry!(&i07_context_pressure::INSIGHT, req: [ContextWindowUsage], opt: [InputTokens, NativeSession, TurnTimestamp]),
+    entry!(&i08_action_failure::INSIGHT, req: [ToolCallName, ToolOutcome], opt: [ToolFingerprint, NativeSession, TurnTimestamp]),
+    entry!(&i09_lineage_shape::INSIGHT, req: [SessionEdges], opt: [NativeSession]),
+    entry!(&i10_duration::INSIGHT, req: [ActivityIntervals, TurnTimestamp], opt: [NativeSession]),
+    entry!(&i11_shared_allocation::INSIGHT, req: [InputTokens, OutputTokens, CacheReadTokens, CacheWriteTokens, NativeSession, SessionEdges], opt: [TurnTimestamp]),
+    entry!(&i12_queue_wait::INSIGHT, req: [QueueTransitions, TurnTimestamp], opt: [NativeSession]),
+    entry!(&i13_placement::INSIGHT, req: [ProcessIdentity], opt: []),
+    entry!(&i14_resources::INSIGHT, req: [ProcessIdentity, ProcessResourceSamples], opt: [NativeSession]),
+    entry!(&i15_effects::INSIGHT, req: [PrivilegedEffectTrace], opt: [ProcessIdentity]),
+    entry!(&i16_isolation::INSIGHT, req: [SecurityPolicy], opt: [NativeSession]),
+    entry!(&i17_authority::INSIGHT, req: [SecurityPolicy, SecurityCommandCheck], opt: [NativeSession]),
+    entry!(&i18_coverage::INSIGHT, req: [SourceCoverage], opt: []),
+    entry!(&i19_acceptance::INSIGHT, req: [QueueTransitions, TurnTimestamp], opt: [NativeSession]),
+    entry!(&i20_resource_efficiency::INSIGHT, req: [QueueTransitions, TurnTimestamp], opt: [ObservedCost, NativeSession]),
+    entry!(&i21_comparison::INSIGHT, req: [InputTokens, OutputTokens, CacheReadTokens, CacheWriteTokens, Model], opt: [NativeSession, TurnTimestamp]),
+    entry!(&i22_trajectory_vortex::INSIGHT, req: [TrajectoryVector], opt: [NativeSession]),
+    entry!(&i23_schema_drift::INSIGHT, req: [HarnessEnvelopeShape], opt: []),
+    entry!(&i24_blast_radius::INSIGHT, req: [SessionEdges, SecurityPolicy, NativeSession], opt: [SecurityCommandCheck]),
+    entry!(&i25_counterfactual::INSIGHT, req: [InputTokens, OutputTokens, CacheReadTokens, CacheWriteTokens], opt: [Model, TurnTimestamp, NativeSession]),
 ];
 
 /// Presentation catalog `(id, canonical name, domain)`.
@@ -197,5 +238,42 @@ mod tests {
             check_measure_admission(&measure),
             Err(InsightRefusal::RegistryNotAdmitted)
         );
+    }
+
+    #[test]
+    fn registry_line_field_declarations_match_insight_implementations() {
+        let direct: &[&dyn Insight] = &[
+            &i01_invocations::INSIGHT,
+            &i02_tokens::INSIGHT,
+            &i03_tokens_inclusive::INSIGHT,
+            &i04_cost::INSIGHT,
+            &i05_configuration_divergence::INSIGHT,
+            &i06_capability_funnel::INSIGHT,
+            &i07_context_pressure::INSIGHT,
+            &i08_action_failure::INSIGHT,
+            &i09_lineage_shape::INSIGHT,
+            &i10_duration::INSIGHT,
+            &i11_shared_allocation::INSIGHT,
+            &i12_queue_wait::INSIGHT,
+            &i13_placement::INSIGHT,
+            &i14_resources::INSIGHT,
+            &i15_effects::INSIGHT,
+            &i16_isolation::INSIGHT,
+            &i17_authority::INSIGHT,
+            &i18_coverage::INSIGHT,
+            &i19_acceptance::INSIGHT,
+            &i20_resource_efficiency::INSIGHT,
+            &i21_comparison::INSIGHT,
+            &i22_trajectory_vortex::INSIGHT,
+            &i23_schema_drift::INSIGHT,
+            &i24_blast_radius::INSIGHT,
+            &i25_counterfactual::INSIGHT,
+        ];
+        assert_eq!(CATALOG.len(), direct.len());
+        for (registered, inner) in CATALOG.iter().zip(direct.iter()) {
+            assert_eq!(registered.id(), inner.id());
+            assert_eq!(registered.required_fields(), inner.required_fields());
+            assert_eq!(registered.optional_fields(), inner.optional_fields());
+        }
     }
 }

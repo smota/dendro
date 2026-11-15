@@ -36,6 +36,14 @@ impl Insight for LineageShape {
     fn domain(&self) -> InsightDomain {
         InsightDomain::Coordination
     }
+    fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::SessionEdges]
+    }
+    fn optional_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::NativeSession]
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         let rows = match load_edges(input) {
             Ok(rows) => rows,

@@ -26,6 +26,14 @@ impl Insight for EnvironmentEffects {
     fn domain(&self) -> InsightDomain {
         InsightDomain::Environment
     }
+    fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::PrivilegedEffectTrace]
+    }
+    fn optional_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::ProcessIdentity]
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         if !table_exists(input.connection(), "syscall_facts") {
             return refused(self, "not_observable", "syscall_facts");

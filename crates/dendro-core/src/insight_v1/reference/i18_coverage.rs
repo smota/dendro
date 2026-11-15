@@ -23,6 +23,10 @@ impl Insight for CoverageSource {
     fn domain(&self) -> InsightDomain {
         InsightDomain::Environment
     }
+    fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::SourceCoverage]
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         if input.scope().from.is_some() || input.scope().to.is_some() {
             return refused(self, "undefined input", "source_files");

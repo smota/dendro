@@ -45,6 +45,21 @@ impl Insight for SharedAllocation {
     fn domain(&self) -> InsightDomain {
         InsightDomain::Coordination
     }
+    fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[
+            Field::InputTokens,
+            Field::OutputTokens,
+            Field::CacheReadTokens,
+            Field::CacheWriteTokens,
+            Field::NativeSession,
+            Field::SessionEdges,
+        ]
+    }
+    fn optional_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::TurnTimestamp]
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         let usage = match load_usage(input) {
             Ok(rows) => rows,

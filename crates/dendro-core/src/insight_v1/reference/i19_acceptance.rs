@@ -46,6 +46,14 @@ impl Insight for Acceptance {
     fn domain(&self) -> InsightDomain {
         InsightDomain::Coordination
     }
+    fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::QueueTransitions, Field::TurnTimestamp]
+    }
+    fn optional_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::NativeSession]
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         match load_acceptance(input) {
             Ok(None) => refused(self, "not_observable", "queue_facts"),

@@ -50,6 +50,14 @@ impl Insight for EnvironmentResources {
     fn domain(&self) -> InsightDomain {
         InsightDomain::Environment
     }
+    fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::ProcessIdentity, Field::ProcessResourceSamples]
+    }
+    fn optional_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::NativeSession]
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         let identities = match load_identities(input) {
             Ok(rows) => rows,

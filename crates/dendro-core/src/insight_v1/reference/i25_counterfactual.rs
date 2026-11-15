@@ -45,6 +45,19 @@ impl Insight for CounterfactualRouting {
     fn domain(&self) -> InsightDomain {
         InsightDomain::Model
     }
+    fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[
+            Field::InputTokens,
+            Field::OutputTokens,
+            Field::CacheReadTokens,
+            Field::CacheWriteTokens,
+        ]
+    }
+    fn optional_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::Model, Field::TurnTimestamp, Field::NativeSession]
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         let usage = match load_usage(input) {
             Ok(rows) => rows,

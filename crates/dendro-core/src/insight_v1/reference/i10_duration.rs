@@ -33,6 +33,14 @@ impl Insight for WorkDuration {
     fn domain(&self) -> InsightDomain {
         InsightDomain::Coordination
     }
+    fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::ActivityIntervals, Field::TurnTimestamp]
+    }
+    fn optional_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::NativeSession]
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         let events = match load(input) {
             Ok(rows) => rows,

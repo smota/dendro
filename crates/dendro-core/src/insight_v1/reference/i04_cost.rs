@@ -25,6 +25,22 @@ impl Insight for ModelCost {
     fn domain(&self) -> InsightDomain {
         InsightDomain::Model
     }
+    fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::ObservedCost]
+    }
+    fn optional_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[
+            Field::Model,
+            Field::InputTokens,
+            Field::OutputTokens,
+            Field::CacheReadTokens,
+            Field::CacheWriteTokens,
+            Field::NativeSession,
+            Field::TurnTimestamp,
+        ]
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         let rows = match input.usage_rows() {
             Ok(rows) => rows,

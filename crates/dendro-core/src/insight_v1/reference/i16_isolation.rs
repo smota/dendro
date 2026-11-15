@@ -26,6 +26,14 @@ impl Insight for Isolation {
     fn domain(&self) -> InsightDomain {
         InsightDomain::Security
     }
+    fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::SecurityPolicy]
+    }
+    fn optional_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::NativeSession]
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         let rows = match load(input) {
             Ok(rows) => rows,

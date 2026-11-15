@@ -45,6 +45,14 @@ impl Insight for TrajectoryVortex {
     fn domain(&self) -> InsightDomain {
         InsightDomain::Harness
     }
+    fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::TrajectoryVector]
+    }
+    fn optional_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::NativeSession]
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         evaluate_connection(input.connection(), input.scope().session.as_deref())
     }

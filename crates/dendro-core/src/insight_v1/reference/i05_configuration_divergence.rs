@@ -35,6 +35,14 @@ impl Insight for ConfigurationDivergence {
     fn domain(&self) -> InsightDomain {
         InsightDomain::Model
     }
+    fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::NativeSession, Field::Model, Field::Effort]
+    }
+    fn optional_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::TurnTimestamp]
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         let rows = match load(input) {
             Ok(rows) => rows,

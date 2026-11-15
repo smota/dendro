@@ -268,7 +268,7 @@ The sponsor approved G4 and the G3 documentation in parallel, owned by Antigravi
 ### Constraints
 
 1. Local-first. Nothing leaves by default. When an org export is explicitly configured, only zero-content, pseudonymized `fact-export-v1` bundles are written to an operator-configured path. These fact-export bundles are only written locally; Dendro never uploads them.
-2. Read-only on sources (`~/.openrig`, `~/.claude`, `~/.codex`, `~/.gemini`, `~/.pi`, `~/.grok`; `~/.gemini` `agy` extraction is not admitted and returns `source_not_admitted` at `crates/dendro-connectors/src/agy.rs:63`, while Codex tool calls are recorded coarsely under a constant name at `crates/dendro-connectors/src/stream.rs:451,621,1862`).
+2. Read-only on sources (`~/.openrig`, `~/.claude`, `~/.codex`, `~/.gemini`, `~/.pi`, `~/.grok`; `~/.gemini` `agy` extraction is not admitted and returns `source_not_admitted` at `crates/dendro-connectors/src/agy.rs:63`, while Codex tool calls record per-call names with `Partial(ExplicitSignalOnly)` outcome fidelity at `crates/dendro-connectors/src/stream.rs:437-504,1861-1940`). Each connector declares field-level fidelity (`Observed`, `Derived`, `Partial`, `Absent`) in `crates/dendro-core/src/insight_v1/fidelity.rs`, and each insight (`I01`–`I25`) declares its required fields in the registry so missing inputs yield `NotComputable` (`not_computable` refusal) and mixed-source denominators never pool connectors lacking a required field (`dendro#134`).
 3. No raw prompt content and no secrets in the store.
 4. Stack decided by the sponsor: Rust, DuckDB, Nao. Not reopened.
 5. Sources change format. An unknown format produces a warning, never a failure or wrong data.

@@ -40,6 +40,10 @@ impl Insight for SchemaDrift {
     fn domain(&self) -> InsightDomain {
         InsightDomain::Harness
     }
+    fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::HarnessEnvelopeShape]
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         if !table_exists(input.connection(), "harness_envelope") {
             return refused(self, "insufficient_sample", "harness_envelope");

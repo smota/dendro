@@ -36,6 +36,10 @@ impl Insight for Placement {
     fn domain(&self) -> InsightDomain {
         InsightDomain::Environment
     }
+    fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::ProcessIdentity]
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         let rows = match load(input) {
             Ok(rows) => rows,

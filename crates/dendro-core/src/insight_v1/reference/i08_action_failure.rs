@@ -34,6 +34,18 @@ impl Insight for ActionFailure {
     fn domain(&self) -> InsightDomain {
         InsightDomain::Harness
     }
+    fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::ToolCallName, Field::ToolOutcome]
+    }
+    fn optional_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[
+            Field::ToolFingerprint,
+            Field::NativeSession,
+            Field::TurnTimestamp,
+        ]
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         let rows = match load_tool_outcomes(input) {
             Ok(rows) => rows,
@@ -179,7 +191,14 @@ fn load_tool_outcomes(input: &InsightInput<'_>) -> anyhow::Result<Vec<ToolOutcom
             })
         },
     )?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    let mut out = Vec::new();
+    for item in rows {
+        let row = item?;
+        if input.allows_harness(&row.harness) {
+            out.push(row);
+        }
+    }
+    Ok(out)
 }
 
 fn count_measure(prefix: &str, name: &str, count: i64, basis: &str) -> Measure {

@@ -26,6 +26,18 @@ impl Insight for ContextPressure {
     fn domain(&self) -> InsightDomain {
         InsightDomain::Harness
     }
+    fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::ContextWindowUsage]
+    }
+    fn optional_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[
+            Field::InputTokens,
+            Field::NativeSession,
+            Field::TurnTimestamp,
+        ]
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         if !table_exists(input.connection(), "context_facts") {
             let usage = match usage_count(input) {

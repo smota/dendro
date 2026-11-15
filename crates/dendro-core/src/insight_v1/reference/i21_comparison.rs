@@ -34,6 +34,20 @@ impl Insight for Comparison {
     fn domain(&self) -> InsightDomain {
         InsightDomain::Model
     }
+    fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[
+            Field::InputTokens,
+            Field::OutputTokens,
+            Field::CacheReadTokens,
+            Field::CacheWriteTokens,
+            Field::Model,
+        ]
+    }
+    fn optional_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::NativeSession, Field::TurnTimestamp]
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         let rows = match load(input) {
             Ok(rows) => rows,
