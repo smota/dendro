@@ -31,13 +31,28 @@ impl Collector {
                     }
                     Err(e) => panic!("collector: {e}"),
                 };
+                // On Windows, accepted sockets inherit non-blocking mode from the listener.
+                socket.set_nonblocking(false).unwrap();
                 socket
                     .set_read_timeout(Some(Duration::from_secs(1)))
                     .unwrap();
+                let read_deadline = std::time::Instant::now() + Duration::from_secs(2);
                 let mut request = Vec::new();
                 let mut chunk = [0; 4096];
                 loop {
-                    let n = socket.read(&mut chunk).unwrap();
+                    let n = match socket.read(&mut chunk) {
+                        Ok(n) => n,
+                        Err(e)
+                            if matches!(
+                                e.kind(),
+                                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::Interrupted
+                            ) && std::time::Instant::now() < read_deadline =>
+                        {
+                            std::thread::sleep(Duration::from_millis(1));
+                            continue;
+                        }
+                        Err(e) => panic!("collector read: {e}"),
+                    };
                     assert_ne!(n, 0);
                     request.extend_from_slice(&chunk[..n]);
                     if let Some(split) = request.windows(4).position(|w| w == b"\r\n\r\n") {
@@ -292,4 +307,28 @@ fn assert_native_http_export(mode: &str) {
         assert!(!text.contains(private), "export contained {private}");
     }
     std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn nonblocking_listener_accepted_socket_reads_with_delayed_producer() {
+    let collector = Collector::start();
+    let address = collector.address;
+    let producer = std::thread::spawn(move || {
+        let mut stream = std::net::TcpStream::connect(address).unwrap();
+        // Delay writing so a non-blocking accepted socket on Windows would immediately return WouldBlock (os error 10035).
+        std::thread::sleep(Duration::from_millis(25));
+        let body = br#"{"resourceMetrics":[{"scopeMetrics":[{"metrics":[]}]}]}"#;
+        let req = format!(
+            "POST /v1/metrics HTTP/1.1\r\nHost: {address}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        );
+        stream.write_all(req.as_bytes()).unwrap();
+        std::thread::sleep(Duration::from_millis(10));
+        stream.write_all(body).unwrap();
+        let mut ack = [0u8; 64];
+        let _ = stream.read(&mut ack);
+    });
+    producer.join().unwrap();
+    let bodies = collector.finish();
+    assert_eq!(bodies.len(), 1);
 }
