@@ -35,9 +35,7 @@ pub fn ingest_staged_with_manifest(
     key: &[u8],
     sealed: Option<&dendro_core::CutoffManifest>,
 ) -> Result<(Vec<String>, dendro_core::CutoffManifest)> {
-    let stage_dir = staged_db.parent().unwrap_or_else(|| Path::new("."));
-    let private_root = stage_dir.parent().unwrap_or(stage_dir);
-    let link_config = dendro_core::SessionLinkConfig::from_env_with_root(Some(private_root));
+    let link_config = dendro_core::SessionLinkConfig::from_env();
     ingest_staged_with_manifest_and_link_config(staged_db, roots, frozen, key, sealed, &link_config)
 }
 

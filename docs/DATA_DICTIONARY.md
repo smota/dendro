@@ -362,22 +362,22 @@ CREATE TABLE IF NOT EXISTS session_facts (
     generation BIGINT NOT NULL
 );
 ```
-- **Grain:** One row per `(source_id, generation, native_session)` session observed during ingestion (`source_key = "{source_id}:{generation}:{native_session}"`).
+- **Grain:** One row per session identity `(source_id, harness, native_session)` observed during ingestion (`source_key = "{source_id}:{harness}:{native_session}"`), upserted across generations. If a session is unlinked in generation 1 (e.g. due to conflicting session headers), that `'unlinked'` state is latched across subsequent generations and appends.
 - **Compute-Before-Seal Invariant:** `link_id` is computed from the **raw** harness-minted session identifier (`native_session`) **before** `seal_session` is applied. `session_facts.native_session` stores the sealed session token (`session:<hex>`, identical to `usage_facts.native_session` and `tool_facts.native_session`); the raw `native_session` is never persisted anywhere in the database.
 - **Closed Harness Vocabulary (`I01`):** `link-id-v1` canonicalizes harness aliases strictly (`antigravity`/`agy` $\to$ `antigravity`, `claude`/`claude-code` $\to$ `claude`, `codex` $\to$ `codex`, `grok` $\to$ `grok`, `pi` $\to$ `pi`).
-- **Origin Rule:** An absent `origin` field (`None` / `null`) or exact `"harness"` means a harness-minted session. Any other `origin` value—including case-mismatched `"Harness"`, empty `""`, `"synthetic"`, `"fallback"`, or `"per-file"`—resolves to `link_id = 'unlinked'` with `unlinked_reason = 'non_harness_origin'`.
-- **Synthetic, Fallback & Header-less Sessions:** Any per-file fallback session (`{harness}-file:{source_id}` on header-less Codex/Pi/Grok files), fallback literal (`claude-session`, `codex-session`, `pi-session`, `grok-session`), or file with conflicting session headers resolves to `link_id = 'unlinked'` (`missing_native_session` when link key material is configured, or `invalid_key_material` when unconfigured).
+- **Origin Rule (Parser Provenance):** `origin` is assigned by Dendro's parser, never read from transcript content. Native harness-log parsers assign `origin = "harness"`; export or any non-native path sets a non-harness origin, which resolves to `link_id = 'unlinked'` with `unlinked_reason = 'non_harness_origin'`.
+- **Synthetic, Fallback & Header-less Sessions (Parser Provenance):** Sessions are marked unlinked when the parser assigns a fallback or synthetic identifier (per-file fallback `{harness}-file:{source_id}` on header-less Codex/Pi/Grok files, `claude-session` fallback when `sessionId` is absent on a Claude record, or files with conflicting session headers across the file or prior generations), resolving to `link_id = 'unlinked'` (`missing_native_session` when link key material is configured, or `invalid_key_material` when unconfigured).
 - **Closed `unlinked_reason` Vocabulary:** `NULL` when `link_id` is a 64-character lowercase hex digest (`^[0-9a-f]{64}$`); when `link_id = 'unlinked'`, one of:
   - `invalid_key_material`: No `K_link` configured, `K_link` shorter than 32 bytes / invalid hex, or forbidden `K_org` variable present on the endpoint path.
-  - `non_harness_origin`: Explicit `origin` is anything other than `"harness"` (e.g. `"Harness"`).
+  - `non_harness_origin`: Caller/parser `origin` is anything other than `"harness"`.
   - `missing_org`: Missing or whitespace-only `org` scope.
   - `missing_endpoint_scope`: Missing or whitespace-only `endpoint_scope`.
   - `missing_harness`: Missing or whitespace-only harness identifier.
   - `unknown_harness`: Harness identifier outside the closed `I01` vocabulary.
   - `conflicting_harness`: Disagreement between `agent.harness` and wire `client_id`.
-  - `missing_native_session`: Missing, whitespace-only, synthetic, fallback, or header-less `native_session`.
+  - `missing_native_session`: Missing, whitespace-only, or parser-fallback/header-less `native_session`.
   - `invalid_field_characters`: Scope slug (`org`, `endpoint_scope`) violates `^[\x21-\x7E]{1,1024}$`, or `native_session` exceeds 1024 UTF-8 bytes, has leading/trailing Unicode `White_Space`, or contains NUL / control (`Cc`) characters.
-- **Backward-Compatible Migration:** Existing pre-D3 databases open without data loss. Pre-D3 `session_facts` tables missing `link_id` or `unlinked_reason` are upgraded via `ALTER TABLE session_facts ADD COLUMN IF NOT EXISTS ...`, with existing rows receiving `'unlinked'` / `NULL` (never a guessed value). See [`docs/link-id-config.md`](link-id-config.md) for endpoint configuration.
+- **Pre-D3 Databases & Downstream Export (`D4b`):** `session_facts` is new in D3. Opening a pre-D3 database adds `session_facts` without touching existing tables. Pre-D3 sessions have no row in `session_facts` (`NULL` when joined = *"not computed; full rebuild computes it"*). Downstream export (`D4b`) **MUST** treat a missing `session_facts` row or `NULL` link as `'unlinked'`. See [`docs/link-id-config.md`](link-id-config.md) for endpoint configuration.
 
 ---
 

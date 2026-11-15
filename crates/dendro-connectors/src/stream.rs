@@ -292,7 +292,7 @@ fn ingest_jsonl_limited(
     after_header: impl FnOnce() -> Result<()>,
     limits: &crate::sdk::ReadLimits,
 ) -> Result<FileStats> {
-    let link_config = dendro_core::SessionLinkConfig::from_env();
+    let link_config = dendro_core::SessionLinkConfig::unconfigured();
     ingest_jsonl_limited_with_link(
         store,
         source_id,
@@ -549,11 +549,9 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
     let mut coverage = crate::sdk::Coverage::default();
     let mut coverage_defect = prior_partial;
     let mut reader_complete = true;
-    let mut header_conflict = false;
-    let mut observed_non_harness_origin = file_session
-        .as_ref()
-        .and_then(|s| s.origin.clone())
-        .filter(|o| o != "harness");
+    let mut header_conflict = store
+        .has_warning(&path.display().to_string(), "conflicting session header")?
+        || store.source_has_unlinked_session(source_id)?;
     let mut session_facts_by_key = std::collections::BTreeMap::new();
     let mut source_session = file_session.as_ref().map(|session| {
         let (sealed, fact) = link_and_seal_session(
@@ -563,8 +561,7 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
             generation,
             harness,
             &session.raw,
-            session.from_header,
-            session.origin.as_deref(),
+            session.from_header && !header_conflict,
         );
         record_session_fact(&mut session_facts_by_key, fact);
         sealed
@@ -727,16 +724,8 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
                 reader_complete = false;
             }
             usage_attribution.observe(harness, &value);
-            let line_origin = record_origin(&value);
-            if let Some(orig) = line_origin.as_ref() {
-                if orig != "harness" && observed_non_harness_origin.is_none() {
-                    observed_non_harness_origin = Some(orig.clone());
-                }
-            }
             if harness == "claude" {
                 if let Some(id) = value.get("sessionId").and_then(Value::as_str) {
-                    let is_minted = !id.trim().is_empty()
-                        && !dendro_core::is_synthetic_session_id(Some(harness), id);
                     let (sealed, fact) = link_and_seal_session(
                         link_config,
                         tool_key,
@@ -744,11 +733,25 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
                         generation,
                         harness,
                         id,
-                        is_minted,
-                        line_origin.as_deref(),
+                        true,
                     );
                     claude_sessions.insert(sealed);
                     record_session_fact(&mut session_facts_by_key, fact);
+                }
+            }
+            if let Some(session) = &file_session {
+                if session.from_header
+                    && line_no > 1
+                    && conflicting_session(harness, text, &session.raw)
+                {
+                    header_conflict = true;
+                    if is_new {
+                        warnings.push(WarningNote {
+                            path: path.display().to_string(),
+                            line: Some(line_no),
+                            reason: "conflicting session header".into(),
+                        });
+                    }
                 }
             }
             if !is_new {
@@ -758,19 +761,6 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
                     }
                 }
                 continue;
-            }
-            if let Some(session) = &file_session {
-                if session.from_header
-                    && line_no > 1
-                    && conflicting_session(harness, text, &session.raw)
-                {
-                    header_conflict = true;
-                    warnings.push(WarningNote {
-                        path: path.display().to_string(),
-                        line: Some(line_no),
-                        reason: "conflicting session header".into(),
-                    });
-                }
             }
             if let Some(reason) = unknown_record_type(harness, &value) {
                 coverage_defect = true;
@@ -895,11 +885,8 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
                             // The file's line-1 session wins over any per-line id.
                             bucket.native_session = session.raw.clone();
                         } else if harness == "claude" {
-                            let is_minted = !bucket.native_session.trim().is_empty()
-                                && !dendro_core::is_synthetic_session_id(
-                                    Some(harness),
-                                    &bucket.native_session,
-                                );
+                            let is_minted =
+                                value.get("sessionId").and_then(Value::as_str).is_some();
                             let (_, fact) = link_and_seal_session(
                                 link_config,
                                 tool_key,
@@ -908,7 +895,6 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
                                 harness,
                                 &bucket.native_session,
                                 is_minted,
-                                line_origin.as_deref(),
                             );
                             record_session_fact(&mut session_facts_by_key, fact);
                         }
@@ -1029,40 +1015,10 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
                     harness,
                     "claude-session",
                     false,
-                    observed_non_harness_origin.as_deref(),
                 );
                 record_session_fact(&mut session_facts_by_key, fact);
-            } else if let Some(non_harness) = observed_non_harness_origin.as_deref() {
-                if claude_sessions.len() <= 1 {
-                    let existing_keys: Vec<(String, String)> = session_facts_by_key
-                        .values()
-                        .map(|f| (f.source_key.clone(), f.native_session.clone()))
-                        .collect();
-                    for (source_key, native_session) in existing_keys {
-                        let (link_id, reason) = link_config.resolve_session_link(
-                            Some(harness),
-                            Some("placeholder"),
-                            Some(non_harness),
-                        );
-                        session_facts_by_key.insert(
-                            source_key.clone(),
-                            dendro_core::SessionFact {
-                                source_key,
-                                source_id: source_id.to_string(),
-                                harness: harness.to_string(),
-                                native_session,
-                                link_id,
-                                unlinked_reason: reason.map(|r| r.as_str().to_string()),
-                                generation,
-                            },
-                        );
-                    }
-                }
             }
         } else if let Some(session) = &file_session {
-            let effective_origin = observed_non_harness_origin
-                .as_deref()
-                .or(session.origin.as_deref());
             let is_minted = session.from_header && !header_conflict;
             let (_, fact) = link_and_seal_session(
                 link_config,
@@ -1072,7 +1028,6 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
                 harness,
                 &session.raw,
                 is_minted,
-                effective_origin,
             );
             session_facts_by_key.insert(fact.source_key.clone(), fact);
         }
@@ -1209,7 +1164,6 @@ fn stable_ingest_metadata(
 struct FileSession {
     raw: String,
     from_header: bool,
-    origin: Option<String>,
 }
 
 /// Longest line 1 read for the header; a longer first line is malformed.
@@ -1221,55 +1175,20 @@ fn file_session(harness: &str, file: &mut impl Read, source_id: &str) -> Result<
     BufReader::new(file.take(HEADER_LIMIT)).read_until(b'\n', &mut line)?;
     // Header identity is evidence only after its line is complete, just like
     // usage/tool records. Otherwise a zero-byte manifest could not replay it.
-    let parsed = line
+    let id = line
         .strip_suffix(b"\n")
-        .and_then(|line| serde_json::from_slice::<Value>(line).ok());
-    let origin = parsed.as_ref().and_then(record_origin);
-    let id = parsed.as_ref().and_then(|value| header_id(harness, value));
+        .and_then(|line| serde_json::from_slice::<Value>(line).ok())
+        .and_then(|value| header_id(harness, &value));
     Ok(match id {
         Some(raw) => FileSession {
             raw,
             from_header: true,
-            origin,
         },
         None => FileSession {
             raw: format!("{harness}-file:{source_id}"),
             from_header: false,
-            origin,
         },
     })
-}
-
-fn extract_origin_field(v: &Value) -> Option<String> {
-    match v {
-        Value::Null => None,
-        Value::String(s) => Some(s.clone()),
-        _ => Some("__non_string_origin__".to_string()),
-    }
-}
-
-/// Extracts an optional `origin` field from a JSON record.
-/// Absent (`None`) means `"harness"`; any value other than `"harness"` (including `"Harness"`)
-/// resolves to `"unlinked"` (`non_harness_origin`).
-fn record_origin(value: &Value) -> Option<String> {
-    value
-        .get("origin")
-        .and_then(extract_origin_field)
-        .or_else(|| {
-            value
-                .pointer("/payload/origin")
-                .and_then(extract_origin_field)
-        })
-        .or_else(|| {
-            value
-                .pointer("/params/origin")
-                .and_then(extract_origin_field)
-        })
-        .or_else(|| {
-            value
-                .pointer("/message/origin")
-                .and_then(extract_origin_field)
-        })
 }
 
 fn record_session_fact(
@@ -1349,7 +1268,7 @@ fn session_edge_fact(
 
 /// Computes `agent.session.link_id` (`link-id-v1`) from the RAW `native_session` BEFORE
 /// calling `seal_session`. Synthetic, fallback, or header-less sessions (`!is_harness_minted`)
-/// resolve to `"unlinked"`.
+/// resolve to `"unlinked"`. Native harness-log parsers assign `origin = "harness"`.
 #[allow(clippy::too_many_arguments)]
 fn link_and_seal_session(
     link_config: &dendro_core::SessionLinkConfig,
@@ -1359,16 +1278,10 @@ fn link_and_seal_session(
     harness: &str,
     raw_session: &str,
     is_harness_minted: bool,
-    origin: Option<&str>,
 ) -> (String, dendro_core::SessionFact) {
-    let candidate_raw =
-        if is_harness_minted && !dendro_core::is_synthetic_session_id(Some(harness), raw_session) {
-            Some(raw_session)
-        } else {
-            None
-        };
+    let candidate_raw = is_harness_minted.then_some(raw_session);
     let (link_id, unlinked_reason) =
-        link_config.resolve_session_link(Some(harness), candidate_raw, origin);
+        link_config.resolve_session_link(Some(harness), candidate_raw, Some("harness"));
 
     let sealed = seal_session(tool_key, harness, raw_session);
     let fact_sealed = match tool_key {
@@ -1380,7 +1293,7 @@ fn link_and_seal_session(
         ),
     };
     let fact = dendro_core::SessionFact {
-        source_key: format!("{source_id}:{generation}:{fact_sealed}"),
+        source_key: format!("{source_id}:{harness}:{fact_sealed}"),
         source_id: source_id.to_string(),
         harness: harness.to_string(),
         native_session: fact_sealed,
@@ -6907,20 +6820,33 @@ mod hostile_input_tests {
         let store = AnalyticsStore::open_in_memory("d3-key").unwrap();
         let tool_key = b"0123456789abcdef0123456789abcdef";
 
-        // Pre-derived K_link from docs/contracts/link-id-v1/vectors/g0a.json:
-        let g0a_k_link_hex = "86b94715f57c1401d2581781d01037aae105dd5b57b9160941db65e41b73bae6";
+        // Load expected values from vendored docs/contracts/link-id-v1/vectors/g0a.json:
+        let g0a_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../docs/contracts/link-id-v1/vectors/g0a.json");
+        let g0a_json: Value =
+            serde_json::from_str(&fs::read_to_string(&g0a_path).unwrap()).unwrap();
+        let vectors = g0a_json["vectors"].as_array().unwrap();
+        let find_vec = |id: &str| {
+            vectors
+                .iter()
+                .find(|v| v["id"].as_str() == Some(id))
+                .unwrap()
+        };
+        let claude_vec = find_vec("g0a_claude_s2_session_a_dendro_session");
+        let codex_vec = find_vec("g0a_codex_s2_session_1_rollout");
+
+        let g0a_k_link_hex = claude_vec["intermediates"]["k_link_hex"].as_str().unwrap();
         let link_cfg = dendro_core::SessionLinkConfig::from_key_hex(
             g0a_k_link_hex,
-            Some("smota-org"),
-            Some("g0a-wsl-runner-01"),
-            Some("mtn-pilot"),
-            Some("2026-11"),
+            claude_vec["inputs"]["org"].as_str(),
+            claude_vec["inputs"]["endpoint_scope"].as_str(),
+            claude_vec["inputs"]["team"].as_str(),
+            claude_vec["inputs"]["epoch"].as_str(),
         );
 
         // 1. Claude session with g0a raw sessionId (g0a_claude_s2_session_a_dendro_session)
-        let claude_raw = "SESSION_fa2814579786c60e";
-        let claude_expected_link =
-            "d564e425c6c86a1933d14e84d3fef8af1aa4610677fb0ca31ca550368722ed68";
+        let claude_raw = claude_vec["inputs"]["native_session"].as_str().unwrap();
+        let claude_expected_link = claude_vec["expected"]["link_id"].as_str().unwrap();
         let claude_path = dir.join("claude.jsonl");
         fs::write(
             &claude_path,
@@ -6940,9 +6866,8 @@ mod hostile_input_tests {
         .unwrap();
 
         // 2. Codex session with header (g0a_codex_s2_session_1_rollout)
-        let codex_raw = "SESSION_844c4f549f5485b2";
-        let codex_expected_link =
-            "fb3e1515dc914a554e2896c62878d63edd5f7aa87e18b3f8fce995131f1bff97";
+        let codex_raw = codex_vec["inputs"]["native_session"].as_str().unwrap();
+        let codex_expected_link = codex_vec["expected"]["link_id"].as_str().unwrap();
         let codex_path = dir.join("codex.jsonl");
         fs::write(
             &codex_path,
@@ -7096,11 +7021,11 @@ mod hostile_input_tests {
         )
         .unwrap();
 
-        // 2. Synthetic Claude session (`claude-file:abc` or missing sessionId) -> unlinked (missing_native_session)
+        // 2. Missing sessionId on Claude line -> parser fallback `claude-session` -> unlinked (missing_native_session)
         let claude_syn = dir.join("claude_syn.jsonl");
         fs::write(
             &claude_syn,
-            "{\"type\":\"assistant\",\"sessionId\":\"claude-file:synthetic\",\"timestamp\":\"2026-10-09T00:00:01Z\",\"message\":{\"id\":\"m-syn\",\"role\":\"assistant\",\"usage\":{\"input_tokens\":4,\"output_tokens\":2,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}\n",
+            "{\"type\":\"assistant\",\"timestamp\":\"2026-10-09T00:00:01Z\",\"message\":{\"id\":\"m-syn\",\"role\":\"assistant\",\"usage\":{\"input_tokens\":4,\"output_tokens\":2,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}\n",
         )
         .unwrap();
         ingest_jsonl_with_link_config(
@@ -7113,18 +7038,19 @@ mod hostile_input_tests {
         )
         .unwrap();
 
-        // 3. Origin "Harness" (non-harness origin) -> unlinked (non_harness_origin)
-        let claude_bad_origin = dir.join("claude_origin.jsonl");
+        // 3. Transcript line containing `"origin": "x"` does NOT unlink a native session
+        //    (origin is assigned by dendro's parser, never read from transcript content).
+        let claude_content_origin = dir.join("claude_origin.jsonl");
         fs::write(
-            &claude_bad_origin,
-            "{\"type\":\"assistant\",\"origin\":\"Harness\",\"sessionId\":\"real-session-123\",\"timestamp\":\"2026-10-09T00:00:01Z\",\"message\":{\"id\":\"m-orig\",\"role\":\"assistant\",\"usage\":{\"input_tokens\":4,\"output_tokens\":2,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}\n",
+            &claude_content_origin,
+            "{\"type\":\"assistant\",\"origin\":\"x\",\"sessionId\":\"real-session-123\",\"timestamp\":\"2026-10-09T00:00:01Z\",\"message\":{\"id\":\"m-orig\",\"origin\":\"x\",\"role\":\"assistant\",\"usage\":{\"input_tokens\":4,\"output_tokens\":2,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}\n",
         )
         .unwrap();
         ingest_jsonl_with_link_config(
             &store,
             "src-claude-origin",
             "claude",
-            &claude_bad_origin,
+            &claude_content_origin,
             Some(tool_key),
             &valid_cfg,
         )
@@ -7193,10 +7119,25 @@ mod hostile_input_tests {
             Some("missing_native_session")
         );
 
+        let (expected_origin_link, _) = valid_cfg.resolve_session_link(
+            Some("claude"),
+            Some("real-session-123"),
+            Some("harness"),
+        );
         let f_origin = find_fact("src-claude-origin");
-        assert_eq!(f_origin.link_id, "unlinked");
+        assert_eq!(f_origin.link_id, expected_origin_link);
+        assert_ne!(f_origin.link_id, "unlinked");
+        assert_eq!(f_origin.unlinked_reason, None);
+
+        // Non-native caller path (export / imported origin) sets non-harness origin -> unlinked:
+        let (non_native_link, non_native_reason) = valid_cfg.resolve_session_link(
+            Some("claude"),
+            Some("real-session-123"),
+            Some("imported"),
+        );
+        assert_eq!(non_native_link, "unlinked");
         assert_eq!(
-            f_origin.unlinked_reason.as_deref(),
+            non_native_reason.map(|r| r.as_str()),
             Some("non_harness_origin")
         );
 
@@ -7213,6 +7154,133 @@ mod hostile_input_tests {
             f_short.unlinked_reason.as_deref(),
             Some("invalid_key_material")
         );
+
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn d3_reingest_persists_header_conflict_and_upserts_one_row_per_session_identity() {
+        let dir = std::env::temp_dir().join(format!(
+            "dendro-d3-reingest-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let store = AnalyticsStore::open_in_memory("d3-reingest-key").unwrap();
+        let tool_key = b"0123456789abcdef0123456789abcdef";
+        let valid_cfg = dendro_core::SessionLinkConfig::from_key_hex(
+            &"33".repeat(32),
+            Some("acme"),
+            Some("host-01"),
+            Some("core"),
+            Some("2026-11"),
+        );
+
+        // 1. Plain append -> exactly one row across appends
+        let codex_plain = dir.join("codex_plain.jsonl");
+        let line1 = "{\"type\":\"session_meta\",\"payload\":{\"id\":\"sess-plain-1\"}}\n";
+        let usage1 = "{\"timestamp\":\"2026-10-09T00:00:01Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":10,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":2,\"reasoning_output_tokens\":0}}}}\n";
+        let usage2 = "{\"timestamp\":\"2026-10-09T00:00:02Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":20,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":4,\"reasoning_output_tokens\":0}}}}\n";
+        fs::write(&codex_plain, format!("{line1}{usage1}")).unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-codex-plain",
+            "codex",
+            &codex_plain,
+            Some(tool_key),
+            &valid_cfg,
+        )
+        .unwrap();
+        fs::write(&codex_plain, format!("{line1}{usage1}{usage2}")).unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-codex-plain",
+            "codex",
+            &codex_plain,
+            Some(tool_key),
+            &valid_cfg,
+        )
+        .unwrap();
+
+        let plain_rows: Vec<_> = store
+            .load_session_facts()
+            .unwrap()
+            .into_iter()
+            .filter(|f| f.source_id == "src-codex-plain")
+            .collect();
+        assert_eq!(plain_rows.len(), 1);
+        assert_ne!(plain_rows[0].link_id, "unlinked");
+        assert_eq!(plain_rows[0].unlinked_reason, None);
+
+        // 2. Conflicting header in gen 1 plus an appended batch -> still unlinked, with exactly one row
+        let codex_conflict = dir.join("codex_conflict.jsonl");
+        let hdr1 = "{\"type\":\"session_meta\",\"payload\":{\"id\":\"sess-conflict-a\"}}\n";
+        let hdr2 = "{\"type\":\"session_meta\",\"payload\":{\"id\":\"sess-conflict-b\"}}\n";
+        fs::write(&codex_conflict, format!("{hdr1}{hdr2}{usage1}")).unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-codex-conflict",
+            "codex",
+            &codex_conflict,
+            Some(tool_key),
+            &valid_cfg,
+        )
+        .unwrap();
+
+        // Append non-conflicting usage in second pass:
+        fs::write(&codex_conflict, format!("{hdr1}{hdr2}{usage1}{usage2}")).unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-codex-conflict",
+            "codex",
+            &codex_conflict,
+            Some(tool_key),
+            &valid_cfg,
+        )
+        .unwrap();
+
+        let conflict_rows_after_append: Vec<_> = store
+            .load_session_facts()
+            .unwrap()
+            .into_iter()
+            .filter(|f| f.source_id == "src-codex-conflict")
+            .collect();
+        assert_eq!(conflict_rows_after_append.len(), 1);
+        assert_eq!(conflict_rows_after_append[0].link_id, "unlinked");
+        assert_eq!(
+            conflict_rows_after_append[0].unlinked_reason.as_deref(),
+            Some("missing_native_session")
+        );
+
+        // Even if the file is rewritten in generation 2 without the conflicting second header,
+        // a session unlinked in generation 1 can never become linked in generation 2:
+        fs::write(&codex_conflict, format!("{hdr1}{usage1}")).unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-codex-conflict",
+            "codex",
+            &codex_conflict,
+            Some(tool_key),
+            &valid_cfg,
+        )
+        .unwrap();
+
+        let conflict_rows_gen2: Vec<_> = store
+            .load_session_facts()
+            .unwrap()
+            .into_iter()
+            .filter(|f| f.source_id == "src-codex-conflict")
+            .collect();
+        assert_eq!(conflict_rows_gen2.len(), 1);
+        assert_eq!(conflict_rows_gen2[0].link_id, "unlinked");
+        assert_eq!(
+            conflict_rows_gen2[0].unlinked_reason.as_deref(),
+            Some("missing_native_session")
+        );
+        assert_eq!(conflict_rows_gen2[0].generation, 2);
 
         fs::remove_dir_all(dir).unwrap();
     }

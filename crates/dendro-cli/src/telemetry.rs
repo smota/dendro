@@ -6,7 +6,6 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const DEADLINE: Duration = Duration::from_millis(50);
 const QUEUE: usize = 32;
-const MAX_CONFIG: u64 = 16 * 1024;
 static EXPORTER: OnceLock<Option<Exporter>> = OnceLock::new();
 
 struct Config {
@@ -48,25 +47,7 @@ impl Config {
         {
             return None;
         }
-        let root = std::env::var_os("XDG_CONFIG_HOME")
-            .map(std::path::PathBuf::from)
-            .or_else(|| {
-                std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config"))
-            })?;
-        let path = root.join("observability/consumer.env");
-        if !std::fs::metadata(&path).ok()?.is_file() {
-            return None;
-        }
-        let file = std::fs::File::open(path).ok()?;
-        let metadata = file.metadata().ok()?;
-        if !metadata.is_file() || metadata.len() > MAX_CONFIG {
-            return None;
-        }
-        let mut input = String::new();
-        file.take(MAX_CONFIG + 1).read_to_string(&mut input).ok()?;
-        if input.len() as u64 > MAX_CONFIG {
-            return None;
-        }
+        let input = dendro_core::read_consumer_env()?;
         Self::parse(&input)
     }
 }

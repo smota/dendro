@@ -267,48 +267,6 @@ pub fn is_valid_native_session(value: &str) -> bool {
     !value.chars().any(is_control_cc)
 }
 
-/// Checks whether a candidate session string is a synthetic/fallback placeholder
-/// (such as `codex-file:{source_id}` or `claude-session`) rather than a harness-minted session ID.
-#[must_use]
-pub fn is_synthetic_session_id(raw_harness: Option<&str>, candidate: &str) -> bool {
-    let trimmed = candidate.trim();
-    if trimmed.is_empty() {
-        return true;
-    }
-    if matches!(
-        trimmed,
-        "claude-session"
-            | "codex-session"
-            | "pi-session"
-            | "grok-session"
-            | "antigravity-session"
-            | "agy-session"
-            | "unknown"
-            | "default"
-    ) {
-        return true;
-    }
-    for prefix in [
-        "claude-file:",
-        "codex-file:",
-        "pi-file:",
-        "grok-file:",
-        "antigravity-file:",
-        "agy-file:",
-    ] {
-        if trimmed.starts_with(prefix) {
-            return true;
-        }
-    }
-    if let Some(h) = raw_harness {
-        let dynamic_prefix = format!("{}-file:", h.trim());
-        if trimmed.starts_with(&dynamic_prefix) {
-            return true;
-        }
-    }
-    false
-}
-
 /// Encodes a byte slice with a 4-byte unsigned big-endian length prefix (`LP(x)`).
 #[must_use]
 pub fn lp_encode(bytes: &[u8]) -> Vec<u8> {
@@ -338,9 +296,22 @@ pub fn hmac_sha256(key: &[u8], data: &[u8]) -> [u8; 32] {
 
 /// Zeroize-on-drop wrapper around the 32-byte endpoint-scoped `K_link` key.
 ///
-/// Never logs or serializes key bytes, and overwrites memory on drop.
-#[derive(Clone, PartialEq, Eq)]
+/// Never implements `Clone`, never logs or serializes key bytes, compares in constant time,
+/// and overwrites memory on drop.
 pub struct LinkKey([u8; LINK_KEY_BYTES]);
+
+impl PartialEq for LinkKey {
+    fn eq(&self, other: &Self) -> bool {
+        let diff = self
+            .0
+            .iter()
+            .zip(other.0.iter())
+            .fold(0u8, |acc, (&a, &b)| std::hint::black_box(acc | (a ^ b)));
+        diff == 0
+    }
+}
+
+impl Eq for LinkKey {}
 
 impl LinkKey {
     /// Creates a `LinkKey` from an exact 32-byte array.
@@ -539,29 +510,177 @@ pub fn derive_session_link_with_key(k_link: &LinkKey, input: &LinkIdInput<'_>) -
     }
 }
 
+/// Size cap for `$XDG_CONFIG_HOME/observability/consumer.env` (16 KiB), matching `telemetry.rs`.
+pub const MAX_CONSUMER_ENV_BYTES: u64 = 16 * 1024;
+
+/// Fixed, key-free warning message emitted at most once when a raw `K_org` variable is detected.
+pub const K_ORG_REFUSAL_WARNING: &str = "dendro: link-id configuration refused: raw K_org variable is forbidden on endpoints (reason=invalid_key_material)";
+
+static K_ORG_WARNING_ONCE: std::sync::Once = std::sync::Once::new();
+static K_ORG_WARNING_EMITTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+fn emit_k_org_warning_once() {
+    K_ORG_WARNING_ONCE.call_once(|| {
+        K_ORG_WARNING_EMITTED.store(true, std::sync::atomic::Ordering::SeqCst);
+        eprintln!("{K_ORG_REFUSAL_WARNING}");
+    });
+}
+
 const FORBIDDEN_K_ORG_VARS: &[&str] = &[
     "DENDRO_LINK_K_ORG_HEX",
     "DENDRO_K_ORG_HEX",
     "DENDRO_LINK_K_ORG_FILE",
     "DENDRO_K_ORG_FILE",
+    "DENDRO_LINK_K_ORG",
+    "DENDRO_K_ORG",
     "AGENT_OTEL_LINK_K_ORG_HEX",
     "AGENT_OTEL_K_ORG_HEX",
     "AGENT_OTEL_LINK_K_ORG_FILE",
     "AGENT_OTEL_K_ORG_FILE",
+    "AGENT_OTEL_LINK_K_ORG",
+    "AGENT_OTEL_K_ORG",
+    "K_ORG",
+    "K_ORG_HEX",
+    "K_ORG_FILE",
 ];
+
+fn is_k_org_var_name(name: &str) -> bool {
+    let upper = name.trim().to_ascii_uppercase();
+    FORBIDDEN_K_ORG_VARS.contains(&upper.as_str())
+        || upper.contains("_K_ORG")
+        || upper.starts_with("K_ORG")
+}
+
+/// Resolves the canonical `consumer.env` path (`$XDG_CONFIG_HOME/observability/consumer.env`
+/// or `$HOME/.config/observability/consumer.env`). Never resolves relative to the current directory.
+#[must_use]
+pub fn consumer_env_path() -> Option<PathBuf> {
+    let root = std::env::var_os("XDG_CONFIG_HOME")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .filter(|v| !v.is_empty())
+                .map(|h| PathBuf::from(h).join(".config"))
+        })?;
+    if !root.is_absolute() {
+        return None;
+    }
+    Some(root.join("observability/consumer.env"))
+}
+
+/// Reads `$XDG_CONFIG_HOME/observability/consumer.env` (or `$HOME/.config/observability/consumer.env`)
+/// with the 16 KiB size cap (`MAX_CONSUMER_ENV_BYTES`). Never reads relative to CWD.
+#[must_use]
+pub fn read_consumer_env() -> Option<String> {
+    let path = consumer_env_path()?;
+    read_consumer_env_from(&path)
+}
+
+/// Reads an explicit `consumer.env` file path with the 16 KiB size cap (`MAX_CONSUMER_ENV_BYTES`),
+/// refusing relative paths, non-regular files, and symlinks.
+#[must_use]
+pub fn read_consumer_env_from(path: &Path) -> Option<String> {
+    use std::io::Read;
+    if !path.is_absolute() {
+        return None;
+    }
+    let sym = std::fs::symlink_metadata(path).ok()?;
+    if !sym.file_type().is_file() || sym.len() > MAX_CONSUMER_ENV_BYTES {
+        return None;
+    }
+    let file = std::fs::File::open(path).ok()?;
+    let metadata = file.metadata().ok()?;
+    if !metadata.is_file() || metadata.len() > MAX_CONSUMER_ENV_BYTES {
+        return None;
+    }
+    let mut input = String::new();
+    file.take(MAX_CONSUMER_ENV_BYTES + 1)
+        .read_to_string(&mut input)
+        .ok()?;
+    if input.len() as u64 > MAX_CONSUMER_ENV_BYTES {
+        zeroize_string(&mut input);
+        return None;
+    }
+    Some(input)
+}
+
+/// Resolves Dendro's verified private data root (`$XDG_DATA_HOME/dendro` or
+/// `$HOME/.local/share/dendro` on Linux/Unix, `%LOCALAPPDATA%\Dendro` on Windows).
+/// Never resolves relative to the output DB's parent or the current working directory.
+#[must_use]
+pub fn default_private_data_root() -> Option<PathBuf> {
+    #[cfg(target_os = "linux")]
+    {
+        let base = std::env::var_os("XDG_DATA_HOME")
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
+            .or_else(|| {
+                std::env::var_os("HOME")
+                    .filter(|v| !v.is_empty())
+                    .map(|h| PathBuf::from(h).join(".local/share"))
+            })?;
+        if !base.is_absolute() {
+            return None;
+        }
+        let candidate = base.join("dendro");
+        crate::platform_v1::open_existing_private_root(&candidate)
+            .ok()
+            .map(|root| root.path().to_path_buf())
+    }
+    #[cfg(windows)]
+    {
+        let base = std::env::var_os("LOCALAPPDATA")
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)?;
+        if !base.is_absolute() {
+            return None;
+        }
+        let candidate = base.join("Dendro");
+        crate::platform_v1::open_existing_private_root(&candidate)
+            .ok()
+            .map(|root| root.path().to_path_buf())
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
+    {
+        let base = std::env::var_os("XDG_DATA_HOME")
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
+            .or_else(|| {
+                std::env::var_os("HOME")
+                    .filter(|v| !v.is_empty())
+                    .map(|h| PathBuf::from(h).join(".local/share"))
+            })?;
+        if !base.is_absolute() {
+            return None;
+        }
+        let candidate = base.join("dendro");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let sym = std::fs::symlink_metadata(&candidate).ok()?;
+            if !sym.file_type().is_dir() || (sym.permissions().mode() & 0o077 != 0) {
+                return None;
+            }
+        }
+        Some(candidate)
+    }
+}
 
 /// Endpoint-scoped `link-id-v1` configuration for Dendro session ingestion.
 ///
 /// Holds only the pre-derived `K_link` ([`LinkKey`]) and scope identifiers (`org`, `endpoint_scope`,
 /// optional `team` and `epoch`). Without valid link configuration, every session resolves to
 /// `("unlinked", Some(UnlinkedReason::InvalidKeyMaterial))` without failing ingestion.
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub struct SessionLinkConfig {
     org: Option<String>,
     endpoint_scope: Option<String>,
     team: Option<String>,
     epoch: Option<String>,
     key: Option<LinkKey>,
+    k_org_rejected: bool,
 }
 
 impl fmt::Debug for SessionLinkConfig {
@@ -572,6 +691,7 @@ impl fmt::Debug for SessionLinkConfig {
             .field("team", &self.team)
             .field("epoch", &self.epoch)
             .field("has_key", &self.key.is_some())
+            .field("k_org_rejected", &self.k_org_rejected)
             .finish()
     }
 }
@@ -599,6 +719,7 @@ impl SessionLinkConfig {
             team,
             epoch,
             key: Some(k_link),
+            k_org_rejected: false,
         }
     }
 
@@ -619,6 +740,7 @@ impl SessionLinkConfig {
             team: team.map(ToOwned::to_owned),
             epoch: epoch.map(ToOwned::to_owned),
             key: LinkKey::from_slice(key_bytes).ok(),
+            k_org_rejected: false,
         }
     }
 
@@ -639,82 +761,153 @@ impl SessionLinkConfig {
             team: team.map(ToOwned::to_owned),
             epoch: epoch.map(ToOwned::to_owned),
             key: LinkKey::from_hex(key_hex).ok(),
+            k_org_rejected: false,
         }
     }
 
-    /// Loads `SessionLinkConfig` from environment variables (and optional `observability/consumer.env`).
+    /// Loads `SessionLinkConfig` from process environment variables, `<private_data_root>/link.key`
+    /// inside Dendro's verified private data root, and `$XDG_CONFIG_HOME/observability/consumer.env`.
+    /// Never reads configuration or key files relative to the current working directory.
     #[must_use]
     pub fn from_env() -> Self {
-        Self::from_env_with_root(None)
+        let root = default_private_data_root();
+        let consumer = consumer_env_path();
+        Self::from_env_and_paths(root.as_deref(), consumer.as_deref())
     }
 
-    /// Loads `SessionLinkConfig` from environment variables, optional `<private_data_root>/link.key`,
-    /// and optional `observability/consumer.env`.
+    /// Loads `SessionLinkConfig` from process environment variables, optional `<private_data_root>/link.key`,
+    /// and `$XDG_CONFIG_HOME/observability/consumer.env`.
     #[must_use]
     pub fn from_env_with_root(private_data_root: Option<&Path>) -> Self {
-        let mut vars = BTreeMap::new();
-        for (k, v) in load_consumer_env_defaults() {
-            vars.insert(k, v);
-        }
+        let consumer = consumer_env_path();
+        Self::from_env_and_paths(private_data_root, consumer.as_deref())
+    }
+
+    /// Loads `SessionLinkConfig` from the process environment, an explicit private data root, and
+    /// an explicit `consumer.env` path.
+    #[must_use]
+    pub fn from_env_and_paths(
+        private_data_root: Option<&Path>,
+        consumer_env_file: Option<&Path>,
+    ) -> Self {
+        let mut process_env = BTreeMap::new();
         for (k, v) in std::env::vars() {
-            if k.starts_with("DENDRO_") || k.starts_with("AGENT_OTEL_") {
-                vars.insert(k, v);
+            if k.starts_with("DENDRO_") || k.starts_with("AGENT_OTEL_") || is_k_org_var_name(&k) {
+                process_env.insert(k, v);
             }
         }
-        let result = Self::from_vars(&vars, private_data_root);
-        for (_, mut val) in vars {
+        let result = Self::from_sources(&process_env, private_data_root, consumer_env_file);
+        for (_, mut val) in process_env {
             zeroize_string(&mut val);
         }
         result
     }
 
-    /// Loads `SessionLinkConfig` from a map of configuration variables and an optional private data root.
-    ///
-    /// Security rules:
-    /// - If any `*_K_ORG_HEX` or `*_K_ORG_FILE` key is present and non-empty, refuses key material
-    ///   (`key = None`), failing closed to `"unlinked"` (`invalid_key_material`).
-    /// - Resolves `K_link` from `DENDRO_LINK_KEY_FILE` / `AGENT_OTEL_LINK_KEY_FILE`, then
-    ///   `<private_data_root>/link.key` (when `private_data_root` is provided), then
-    ///   `DENDRO_LINK_KEY_HEX` / `AGENT_OTEL_LINK_KEY_HEX`.
+    /// Loads `SessionLinkConfig` from a map of process environment variables and an optional private data root.
     #[must_use]
     pub fn from_vars(vars: &BTreeMap<String, String>, private_data_root: Option<&Path>) -> Self {
-        let org = pick_var(vars, &["DENDRO_LINK_ORG", "AGENT_OTEL_LINK_ORG"]);
-        let endpoint_scope = pick_var(
-            vars,
+        Self::from_sources(vars, private_data_root, None)
+    }
+
+    /// Loads `SessionLinkConfig` from explicit process environment variables, an optional private
+    /// data root (`<private_data_root>/link.key`), and an optional `consumer.env` file path.
+    ///
+    /// Security and precedence rules:
+    /// 1. Any `K_org` variable present anywhere (process env, `consumer.env`, or key file) refuses
+    ///    link configuration (`key = None`, `unlinked_reason = invalid_key_material`) and emits a
+    ///    one-time warning containing no key material.
+    /// 2. Key precedence (highest first):
+    ///    - (a) Process env `DENDRO_LINK_KEY_HEX` (`AGENT_OTEL_LINK_KEY_HEX`), or process env
+    ///      `DENDRO_LINK_KEY_FILE` (`AGENT_OTEL_LINK_KEY_FILE`) which is accepted ONLY from the
+    ///      process environment and MUST be an absolute path,
+    ///    - (b) `<private_data_root>/link.key` inside Dendro's private data root,
+    ///    - (c) `consumer.env` `DENDRO_LINK_KEY_HEX` (`AGENT_OTEL_LINK_KEY_HEX`). `DENDRO_LINK_KEY_FILE`
+    ///      inside `consumer.env` is ignored.
+    #[must_use]
+    pub fn from_sources(
+        process_env: &BTreeMap<String, String>,
+        private_data_root: Option<&Path>,
+        consumer_env_file: Option<&Path>,
+    ) -> Self {
+        let consumer_vars = consumer_env_file
+            .and_then(read_consumer_env_from)
+            .map(|mut content| {
+                let parsed = parse_consumer_env_vars(&content);
+                zeroize_string(&mut content);
+                parsed
+            })
+            .unwrap_or_default();
+
+        let org = pick_var_with_fallback(
+            process_env,
+            &consumer_vars,
+            &["DENDRO_LINK_ORG", "AGENT_OTEL_LINK_ORG"],
+        );
+        let endpoint_scope = pick_var_with_fallback(
+            process_env,
+            &consumer_vars,
             &[
                 "DENDRO_LINK_ENDPOINT_SCOPE",
                 "AGENT_OTEL_LINK_ENDPOINT_SCOPE",
             ],
         );
-        let team = pick_var(vars, &["DENDRO_LINK_TEAM", "AGENT_OTEL_LINK_TEAM"]);
-        let epoch = pick_var(vars, &["DENDRO_LINK_EPOCH", "AGENT_OTEL_LINK_EPOCH"]);
+        let team = pick_var_with_fallback(
+            process_env,
+            &consumer_vars,
+            &["DENDRO_LINK_TEAM", "AGENT_OTEL_LINK_TEAM"],
+        );
+        let epoch = pick_var_with_fallback(
+            process_env,
+            &consumer_vars,
+            &["DENDRO_LINK_EPOCH", "AGENT_OTEL_LINK_EPOCH"],
+        );
 
-        // Reject raw K_org on the endpoint/ingest path.
-        if FORBIDDEN_K_ORG_VARS
-            .iter()
-            .any(|k| vars.get(*k).is_some_and(|v| !v.trim().is_empty()))
-        {
-            return Self {
-                org,
-                endpoint_scope,
-                team,
-                epoch,
-                key: None,
-            };
-        }
+        let mut k_org_rejected = process_env.keys().any(|k| is_k_org_var_name(k))
+            || consumer_vars.keys().any(|k| is_k_org_var_name(k));
 
-        let explicit_key_file =
-            pick_var(vars, &["DENDRO_LINK_KEY_FILE", "AGENT_OTEL_LINK_KEY_FILE"])
-                .map(PathBuf::from);
-        let default_key_file = private_data_root
+        let key = if k_org_rejected {
+            None
+        } else if let Some(mut raw_hex) = pick_var(
+            process_env,
+            &["DENDRO_LINK_KEY_HEX", "AGENT_OTEL_LINK_KEY_HEX"],
+        ) {
+            let parsed = LinkKey::from_hex(&raw_hex).ok();
+            zeroize_string(&mut raw_hex);
+            parsed
+        } else if let Some(raw_file) = pick_var_raw(
+            process_env,
+            &["DENDRO_LINK_KEY_FILE", "AGENT_OTEL_LINK_KEY_FILE"],
+        ) {
+            let path = Path::new(raw_file.trim());
+            if raw_file.trim().is_empty() || !path.is_absolute() {
+                None
+            } else {
+                match load_link_key_file(path) {
+                    Ok(k) => Some(k),
+                    Err(KeyFileLoadError::KOrgPresent) => {
+                        k_org_rejected = true;
+                        None
+                    }
+                    Err(KeyFileLoadError::Invalid) => None,
+                }
+            }
+        } else if let Some(default_file) = private_data_root
+            .filter(|root| root.is_absolute())
             .map(|root| root.join("link.key"))
-            .filter(|path| path.is_file());
-
-        let key = if let Some(path) = explicit_key_file.or(default_key_file) {
-            load_link_key_file(&path).ok()
-        } else if let Some(mut raw_hex) =
-            pick_var(vars, &["DENDRO_LINK_KEY_HEX", "AGENT_OTEL_LINK_KEY_HEX"])
+            .filter(|path| std::fs::symlink_metadata(path).is_ok())
         {
+            match load_link_key_file(&default_file) {
+                Ok(k) => Some(k),
+                Err(KeyFileLoadError::KOrgPresent) => {
+                    k_org_rejected = true;
+                    None
+                }
+                Err(KeyFileLoadError::Invalid) => None,
+            }
+        } else if let Some(mut raw_hex) = pick_var(
+            &consumer_vars,
+            &["DENDRO_LINK_KEY_HEX", "AGENT_OTEL_LINK_KEY_HEX"],
+        ) {
             let parsed = LinkKey::from_hex(&raw_hex).ok();
             zeroize_string(&mut raw_hex);
             parsed
@@ -722,12 +915,21 @@ impl SessionLinkConfig {
             None
         };
 
+        for (_, mut val) in consumer_vars {
+            zeroize_string(&mut val);
+        }
+
+        if k_org_rejected {
+            emit_k_org_warning_once();
+        }
+
         Self {
             org,
             endpoint_scope,
             team,
             epoch,
             key,
+            k_org_rejected,
         }
     }
 
@@ -735,6 +937,22 @@ impl SessionLinkConfig {
     #[must_use]
     pub const fn has_valid_key(&self) -> bool {
         self.key.is_some()
+    }
+
+    /// Returns `true` if link configuration was refused due to a `K_org` variable.
+    #[must_use]
+    pub const fn k_org_rejected(&self) -> bool {
+        self.k_org_rejected
+    }
+
+    /// Returns the redacted one-time refusal warning when `k_org_rejected` is true.
+    #[must_use]
+    pub const fn k_org_warning(&self) -> Option<&'static str> {
+        if self.k_org_rejected {
+            Some(K_ORG_REFUSAL_WARNING)
+        } else {
+            None
+        }
     }
 
     /// Evaluates `link-id-v1` for a session before sealing.
@@ -746,17 +964,15 @@ impl SessionLinkConfig {
         raw_native_session: Option<&str>,
         origin: Option<&str>,
     ) -> LinkIdOutcome {
+        if self.k_org_rejected {
+            return LinkIdOutcome::Unlinked {
+                reason: UnlinkedReason::InvalidKeyMaterial,
+            };
+        }
         let Some(k_link) = self.key.as_ref() else {
             return LinkIdOutcome::Unlinked {
                 reason: UnlinkedReason::InvalidKeyMaterial,
             };
-        };
-
-        // Synthetic or fallback session IDs (e.g. `codex-file:<id>`, `claude-session`) are not
-        // harness-minted session IDs and must resolve to `"unlinked"`.
-        let filtered_native_session = match raw_native_session {
-            Some(ns) if is_synthetic_session_id(raw_harness, ns) => None,
-            other => other,
         };
 
         let input = LinkIdInput {
@@ -766,7 +982,7 @@ impl SessionLinkConfig {
             epoch: self.epoch.as_deref(),
             harness: raw_harness,
             wire_client_id,
-            native_session: filtered_native_session,
+            native_session: raw_native_session,
             origin,
         };
 
@@ -797,9 +1013,81 @@ fn pick_var(vars: &BTreeMap<String, String>, names: &[&str]) -> Option<String> {
     None
 }
 
-fn load_link_key_file(path: &Path) -> Result<LinkKey, UnlinkedReason> {
-    let mut raw = std::fs::read_to_string(path).map_err(|_| UnlinkedReason::InvalidKeyMaterial)?;
-    let parsed = LinkKey::from_hex(&raw);
+fn pick_var_raw(vars: &BTreeMap<String, String>, names: &[&str]) -> Option<String> {
+    for name in names {
+        if let Some(val) = vars.get(*name) {
+            return Some(val.clone());
+        }
+    }
+    None
+}
+
+fn pick_var_with_fallback(
+    primary: &BTreeMap<String, String>,
+    fallback: &BTreeMap<String, String>,
+    names: &[&str],
+) -> Option<String> {
+    pick_var(primary, names).or_else(|| pick_var(fallback, names))
+}
+
+enum KeyFileLoadError {
+    Invalid,
+    KOrgPresent,
+}
+
+fn load_link_key_file(path: &Path) -> Result<LinkKey, KeyFileLoadError> {
+    use std::io::Read;
+    if !path.is_absolute() {
+        return Err(KeyFileLoadError::Invalid);
+    }
+    let sym = std::fs::symlink_metadata(path).map_err(|_| KeyFileLoadError::Invalid)?;
+    if !sym.file_type().is_file() || sym.len() > MAX_CONSUMER_ENV_BYTES {
+        return Err(KeyFileLoadError::Invalid);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if sym.permissions().mode() & 0o077 != 0 {
+            return Err(KeyFileLoadError::Invalid);
+        }
+    }
+    let file = std::fs::File::open(path).map_err(|_| KeyFileLoadError::Invalid)?;
+    let held = file.metadata().map_err(|_| KeyFileLoadError::Invalid)?;
+    if !held.is_file() || held.len() > MAX_CONSUMER_ENV_BYTES {
+        return Err(KeyFileLoadError::Invalid);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        if held.permissions().mode() & 0o077 != 0
+            || held.nlink() != 1
+            || sym.dev() != held.dev()
+            || sym.ino() != held.ino()
+        {
+            return Err(KeyFileLoadError::Invalid);
+        }
+    }
+    let mut raw = String::new();
+    file.take(MAX_CONSUMER_ENV_BYTES + 1)
+        .read_to_string(&mut raw)
+        .map_err(|_| KeyFileLoadError::Invalid)?;
+    if raw.len() as u64 > MAX_CONSUMER_ENV_BYTES {
+        zeroize_string(&mut raw);
+        return Err(KeyFileLoadError::Invalid);
+    }
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        if let Some((k, _)) = trimmed.split_once('=') {
+            if is_k_org_var_name(k) {
+                zeroize_string(&mut raw);
+                return Err(KeyFileLoadError::KOrgPresent);
+            }
+        }
+    }
+    let parsed = LinkKey::from_hex(&raw).map_err(|_| KeyFileLoadError::Invalid);
     zeroize_string(&mut raw);
     parsed
 }
@@ -814,12 +1102,8 @@ fn zeroize_string(value: &mut String) {
     }
 }
 
-fn load_consumer_env_defaults() -> BTreeMap<String, String> {
+fn parse_consumer_env_vars(content: &str) -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
-    let Some(content) = std::fs::read_to_string(Path::new("observability/consumer.env")).ok()
-    else {
-        return out;
-    };
     for line in content.lines() {
         let trimmed = line.trim();
         if trimmed.is_empty() || trimmed.starts_with('#') {
@@ -828,7 +1112,14 @@ fn load_consumer_env_defaults() -> BTreeMap<String, String> {
         if let Some((key, value)) = trimmed.split_once('=') {
             let key = key.trim();
             let value = value.trim().trim_matches('"').trim_matches('\'');
-            if key.starts_with("DENDRO_LINK_") || key.starts_with("AGENT_OTEL_LINK_") {
+            if key == "DENDRO_LINK_KEY_FILE" || key == "AGENT_OTEL_LINK_KEY_FILE" {
+                // Key-file paths are accepted ONLY from the process environment, never consumer.env.
+                continue;
+            }
+            if key.starts_with("DENDRO_")
+                || key.starts_with("AGENT_OTEL_")
+                || is_k_org_var_name(key)
+            {
                 out.insert(key.to_string(), value.to_string());
             }
         }
@@ -849,7 +1140,6 @@ pub mod admin {
 
     /// Zeroize-on-drop wrapper around an organization master key (`K_org`) used strictly in admin
     /// provisioning and contract vector checks.
-    #[derive(Clone, PartialEq, Eq)]
     pub struct AdminOrgMasterKey(Vec<u8>);
 
     impl AdminOrgMasterKey {
@@ -1075,6 +1365,12 @@ mod tests {
         );
         assert_eq!(digest_file, expected_digest_file);
 
+        // Verify vendored LICENSE exists alongside the contract bundle without altering CONTRACT-DIGEST
+        let license_text =
+            std::fs::read_to_string(root.join("LICENSE")).expect("read vendored contract LICENSE");
+        assert!(license_text.contains("Apache License"));
+        assert!(license_text.contains("Version 2.0, January 2004"));
+
         // 3. Tamper test: 1-byte mutation in SPEC.md must fail digest check
         let mut tampered = bundle_files.clone();
         tampered[0].1.push(b' ');
@@ -1285,8 +1581,28 @@ mod tests {
                     case.id
                 );
             }
-            LinkIdOutcome::Unlinked { .. } => {
+            LinkIdOutcome::Unlinked { reason } => {
                 assert_eq!(case.expected.link_id, AGENT_SESSION_LINK_UNLINKED);
+                let key_hex = derived_k_link_hex.as_deref().unwrap_or(raw_k_org);
+                let cfg = SessionLinkConfig::from_key_hex(
+                    key_hex,
+                    link_input.org,
+                    link_input.endpoint_scope,
+                    link_input.team,
+                    link_input.epoch,
+                );
+                let endpoint_outcome = cfg.evaluate_session_link(
+                    link_input.harness,
+                    link_input.wire_client_id,
+                    link_input.native_session,
+                    link_input.origin,
+                );
+                assert_eq!(
+                    endpoint_outcome,
+                    LinkIdOutcome::Unlinked { reason: *reason },
+                    "vector {} SessionLinkConfig unlinked mismatch",
+                    case.id
+                );
             }
         }
 
@@ -1403,17 +1719,28 @@ mod tests {
             )
         );
 
-        // 3. Forbidden K_org env var in vars -> refuses key even if K_link is also supplied
+        // 3. Forbidden K_org env var in vars -> refuses key even if K_link is also supplied,
+        //    and emits a one-time warning that contains no key material.
+        let secret_k_org = "deadbeefcafebabe00112233445566778899aabbccddeeff0011223344556677";
+        let secret_k_link = "11".repeat(32);
         let mut vars = BTreeMap::new();
         vars.insert("DENDRO_LINK_ORG".to_string(), "acme".to_string());
         vars.insert(
             "DENDRO_LINK_ENDPOINT_SCOPE".to_string(),
             "macbook-01".to_string(),
         );
-        vars.insert("DENDRO_LINK_KEY_HEX".to_string(), "11".repeat(32));
-        vars.insert("DENDRO_LINK_K_ORG_HEX".to_string(), "22".repeat(32));
+        vars.insert("DENDRO_LINK_KEY_HEX".to_string(), secret_k_link.clone());
+        vars.insert(
+            "DENDRO_LINK_K_ORG_HEX".to_string(),
+            secret_k_org.to_string(),
+        );
         let rejected_cfg = SessionLinkConfig::from_vars(&vars, None);
         assert!(!rejected_cfg.has_valid_key());
+        assert!(rejected_cfg.k_org_rejected());
+        assert!(K_ORG_WARNING_EMITTED.load(std::sync::atomic::Ordering::SeqCst));
+        let warning = rejected_cfg.k_org_warning().expect("k_org warning");
+        assert!(!warning.contains(secret_k_org));
+        assert!(!warning.contains(&secret_k_link));
         assert_eq!(
             rejected_cfg.resolve_session_link(Some("claude"), Some("sess-123"), None),
             (
@@ -1448,5 +1775,248 @@ mod tests {
         assert!(reason_harness.is_none());
         assert_eq!(lid_none, lid_harness);
         assert!(is_valid_persisted_link_id(&lid_none));
+
+        // 6. LinkKey constant-time equality works as expected
+        let k1 = LinkKey::from_bytes([0xAA; 32]);
+        let k2 = LinkKey::from_bytes([0xAA; 32]);
+        let k3 = LinkKey::from_bytes([0xAB; 32]);
+        assert_eq!(k1, k2);
+        assert_ne!(k1, k3);
+    }
+
+    fn write_private_key_file(path: &Path, content: &str) {
+        std::fs::write(path, content).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        }
+    }
+
+    #[test]
+    fn config_precedence_and_cwd_isolation_and_key_file_rules() {
+        let dir = std::env::temp_dir().join(format!(
+            "dendro-link-cfg-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let key_env_hex = "11".repeat(32);
+        let key_file_hex = "22".repeat(32);
+        let key_root_hex = "33".repeat(32);
+        let key_consumer_hex = "44".repeat(32);
+
+        let expected_for = |k_hex: &str| -> String {
+            SessionLinkConfig::from_key_hex(k_hex, Some("acme"), Some("ws-01"), None, None)
+                .resolve_session_link(Some("claude"), Some("sess-1"), None)
+                .0
+        };
+
+        // 1. A consumer.env in the CWD (or relative path) is NEVER read
+        let cwd_obs_dir = dir.join("cwd_sim").join("observability");
+        std::fs::create_dir_all(&cwd_obs_dir).unwrap();
+        let cwd_consumer = cwd_obs_dir.join("consumer.env");
+        std::fs::write(
+            &cwd_consumer,
+            format!(
+                "DENDRO_LINK_ORG=acme\nDENDRO_LINK_ENDPOINT_SCOPE=ws-01\nDENDRO_LINK_KEY_HEX={key_consumer_hex}\n"
+            ),
+        )
+        .unwrap();
+        assert!(
+            read_consumer_env_from(Path::new("observability/consumer.env")).is_none(),
+            "relative consumer.env path must always be refused"
+        );
+        let rel_consumer_cfg = SessionLinkConfig::from_sources(
+            &BTreeMap::new(),
+            None,
+            Some(Path::new("observability/consumer.env")),
+        );
+        assert!(
+            !rel_consumer_cfg.has_valid_key(),
+            "relative observability/consumer.env must be ignored"
+        );
+        let cwd_cfg = SessionLinkConfig::from_sources(&BTreeMap::new(), None, None);
+        assert!(
+            !cwd_cfg.has_valid_key(),
+            "unconfigured sources must never read observability/consumer.env from CWD"
+        );
+
+        // Prepare private data root `<private_data_root>/link.key` and XDG `consumer.env`
+        let private_root = dir.join("private_data_root");
+        std::fs::create_dir_all(&private_root).unwrap();
+        let root_key_path = private_root.join("link.key");
+        write_private_key_file(&root_key_path, &format!("{key_root_hex}\n"));
+
+        let explicit_key_path = dir.join("explicit_link.key");
+        write_private_key_file(&explicit_key_path, &format!("{key_file_hex}\n"));
+
+        let xdg_consumer = dir.join("xdg").join("observability").join("consumer.env");
+        std::fs::create_dir_all(xdg_consumer.parent().unwrap()).unwrap();
+        std::fs::write(
+            &xdg_consumer,
+            format!(
+                "DENDRO_LINK_ORG=acme\nDENDRO_LINK_ENDPOINT_SCOPE=ws-01\nDENDRO_LINK_KEY_HEX={key_consumer_hex}\n"
+            ),
+        )
+        .unwrap();
+
+        // 2. Precedence:
+        //    (a) process env DENDRO_LINK_KEY_HEX beats private_root/link.key and consumer.env
+        let mut env_a = BTreeMap::new();
+        env_a.insert("DENDRO_LINK_KEY_HEX".to_string(), key_env_hex.clone());
+        let cfg_a =
+            SessionLinkConfig::from_sources(&env_a, Some(&private_root), Some(&xdg_consumer));
+        assert_eq!(
+            cfg_a
+                .resolve_session_link(Some("claude"), Some("sess-1"), None)
+                .0,
+            expected_for(&key_env_hex)
+        );
+
+        //    Process env DENDRO_LINK_KEY_HEX also beats process env DENDRO_LINK_KEY_FILE
+        let mut env_a_and_file = env_a;
+        env_a_and_file.insert(
+            "DENDRO_LINK_KEY_FILE".to_string(),
+            explicit_key_path.display().to_string(),
+        );
+        let cfg_a_file = SessionLinkConfig::from_sources(
+            &env_a_and_file,
+            Some(&private_root),
+            Some(&xdg_consumer),
+        );
+        assert_eq!(
+            cfg_a_file
+                .resolve_session_link(Some("claude"), Some("sess-1"), None)
+                .0,
+            expected_for(&key_env_hex)
+        );
+
+        //    (b) private key file in dendro's private data root beats consumer.env
+        let cfg_b = SessionLinkConfig::from_sources(
+            &BTreeMap::new(),
+            Some(&private_root),
+            Some(&xdg_consumer),
+        );
+        assert_eq!(
+            cfg_b
+                .resolve_session_link(Some("claude"), Some("sess-1"), None)
+                .0,
+            expected_for(&key_root_hex)
+        );
+
+        //    (c) consumer.env values are used when neither process env nor private_root/link.key is present
+        let empty_root = dir.join("empty_private_root");
+        std::fs::create_dir_all(&empty_root).unwrap();
+        let cfg_c = SessionLinkConfig::from_sources(
+            &BTreeMap::new(),
+            Some(&empty_root),
+            Some(&xdg_consumer),
+        );
+        assert_eq!(
+            cfg_c
+                .resolve_session_link(Some("claude"), Some("sess-1"), None)
+                .0,
+            expected_for(&key_consumer_hex)
+        );
+
+        // 3. DENDRO_LINK_KEY_FILE inside consumer.env is ignored
+        let consumer_with_key_file = dir.join("consumer_with_key_file.env");
+        std::fs::write(
+            &consumer_with_key_file,
+            format!(
+                "DENDRO_LINK_ORG=acme\nDENDRO_LINK_ENDPOINT_SCOPE=ws-01\nDENDRO_LINK_KEY_FILE={}\nAGENT_OTEL_LINK_KEY_FILE={}\n",
+                explicit_key_path.display(),
+                explicit_key_path.display()
+            ),
+        )
+        .unwrap();
+        let cfg_ignored_file = SessionLinkConfig::from_sources(
+            &BTreeMap::new(),
+            Some(&empty_root),
+            Some(&consumer_with_key_file),
+        );
+        assert!(
+            !cfg_ignored_file.has_valid_key(),
+            "DENDRO_LINK_KEY_FILE inside consumer.env must be ignored"
+        );
+        assert_eq!(
+            cfg_ignored_file.resolve_session_link(Some("claude"), Some("sess-1"), None),
+            (
+                AGENT_SESSION_LINK_UNLINKED.to_string(),
+                Some(UnlinkedReason::InvalidKeyMaterial)
+            )
+        );
+
+        // 4. Relative DENDRO_LINK_KEY_FILE path in process env is refused (even if consumer.env has a key)
+        let mut env_rel = BTreeMap::new();
+        env_rel.insert(
+            "DENDRO_LINK_KEY_FILE".to_string(),
+            "relative/link.key".to_string(),
+        );
+        let cfg_rel =
+            SessionLinkConfig::from_sources(&env_rel, Some(&private_root), Some(&xdg_consumer));
+        assert!(
+            !cfg_rel.has_valid_key(),
+            "relative DENDRO_LINK_KEY_FILE must be refused without falling back"
+        );
+        assert_eq!(
+            cfg_rel.resolve_session_link(Some("claude"), Some("sess-1"), None),
+            (
+                AGENT_SESSION_LINK_UNLINKED.to_string(),
+                Some(UnlinkedReason::InvalidKeyMaterial)
+            )
+        );
+
+        // 5. K_org variable inside consumer.env refuses link configuration even when process env has valid key
+        let consumer_with_k_org = dir.join("consumer_with_k_org.env");
+        std::fs::write(
+            &consumer_with_k_org,
+            "DENDRO_LINK_ORG=acme\nDENDRO_LINK_ENDPOINT_SCOPE=ws-01\nK_ORG_HEX=deadbeef\n",
+        )
+        .unwrap();
+        let mut env_valid_key = BTreeMap::new();
+        env_valid_key.insert("DENDRO_LINK_KEY_HEX".to_string(), key_env_hex);
+        let cfg_k_org_in_consumer = SessionLinkConfig::from_sources(
+            &env_valid_key,
+            Some(&private_root),
+            Some(&consumer_with_k_org),
+        );
+        assert!(!cfg_k_org_in_consumer.has_valid_key());
+        assert!(cfg_k_org_in_consumer.k_org_rejected());
+        assert_eq!(
+            cfg_k_org_in_consumer.resolve_session_link(Some("claude"), Some("sess-1"), None),
+            (
+                AGENT_SESSION_LINK_UNLINKED.to_string(),
+                Some(UnlinkedReason::InvalidKeyMaterial)
+            )
+        );
+
+        // 6. On Unix, group- or world-readable key files are refused
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let world_readable = dir.join("world_readable.key");
+            std::fs::write(&world_readable, &format!("{key_file_hex}\n")).unwrap();
+            std::fs::set_permissions(&world_readable, std::fs::Permissions::from_mode(0o644))
+                .unwrap();
+            let mut env_bad_perms = BTreeMap::new();
+            env_bad_perms.insert(
+                "DENDRO_LINK_KEY_FILE".to_string(),
+                world_readable.display().to_string(),
+            );
+            let cfg_bad_perms =
+                SessionLinkConfig::from_sources(&env_bad_perms, None, Some(&xdg_consumer));
+            assert!(
+                !cfg_bad_perms.has_valid_key(),
+                "world/group-readable key file must be refused on Unix"
+            );
+        }
+
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }
