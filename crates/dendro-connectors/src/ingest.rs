@@ -517,30 +517,41 @@ fn ingest_openrig(
         row_id: "file".into(),
         row_digest: snapshot.source_identity_sha256.clone(),
     });
-    let provenance = store.begin_openrig_ingest(&source_id, &snapshot.revision, &prepared.rows)?;
-    store.commit_file_batch(
-        &source_id,
-        "openrig",
-        &root.path.display().to_string(),
-        provenance.generation,
-        snapshot.main_bytes as i64 + snapshot.wal_bytes.unwrap_or(0) as i64,
-        &snapshot.revision,
-        None,
-        &[],
-        &[],
-    )?;
-    for disclosure in &prepared.disclosures {
-        store.record_mutable_source_disclosure(
-            &disclosure.qitem_id,
-            &disclosure.seat,
-            &disclosure.reason,
-        )?;
-    }
+    let display_path = root.path.display().to_string();
+    let byte_offset = snapshot.main_bytes as i64 + snapshot.wal_bytes.unwrap_or(0) as i64;
+    let mut snapshot_lives = Vec::new();
     let result = store.with_openrig_fact_batch(|| {
-        read_openrig_with_source(store, &snapshot.path, key, lives, Some(&source_id))
+        let provenance =
+            store.begin_openrig_ingest(&source_id, &snapshot.revision, &prepared.rows)?;
+        for disclosure in &prepared.disclosures {
+            store.record_mutable_source_disclosure(
+                &disclosure.qitem_id,
+                &disclosure.seat,
+                &disclosure.reason,
+            )?;
+        }
+        let (count, unknown_events) = read_openrig_with_source(
+            store,
+            &snapshot.path,
+            key,
+            &mut snapshot_lives,
+            Some(&source_id),
+        )?;
+        store.flush_openrig_pending_records()?;
+        let batch = dendro_core::IngestBatch::new(
+            &source_id,
+            "openrig",
+            &display_path,
+            provenance.generation,
+            byte_offset,
+            &snapshot.revision,
+        );
+        crate::stream::commit_ingest_batch_checked(store, &batch)?;
+        Ok((provenance, count, unknown_events))
     });
     let removed = remove_snapshot_copy(stage_dir, &snapshot.path);
-    let (count, unknown_events) = result?;
+    let (provenance, count, unknown_events) = result?;
+    lives.extend(snapshot_lives);
     contract.unknown_events = unknown_events;
     removed.map_err(|_| anyhow::anyhow!("snapshot cleanup failed"))?;
     Ok((
@@ -2499,6 +2510,321 @@ mod tests {
 
         let usage = store.load_usage().unwrap();
         assert_eq!(usage.len(), 2);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn io_error_continues_path_after_batch1_does_not_publish_inconsistent_partial_state() {
+        #[cfg(any(windows, target_os = "linux"))]
+        let fixture_root = dendro_core::platform_v1::create_user_private_root_with_choice(
+            "dendro-ingest-io-partial-",
+            &dendro_core::platform_v1::StorageRootChoice::UserProfile,
+        )
+        .expect("explicit UserProfile staged ingest fixture");
+        #[cfg(any(windows, target_os = "linux"))]
+        let dir = fixture_root.path().to_path_buf();
+        #[cfg(not(any(windows, target_os = "linux")))]
+        let dir = std::env::temp_dir().join(format!(
+            "dendro-ingest-io-partial-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        #[cfg(not(any(windows, target_os = "linux")))]
+        let _ = std::fs::remove_dir_all(&dir);
+        let claude_root = dir.join("claude");
+        std::fs::create_dir_all(&claude_root).unwrap();
+
+        // Registry::reader_limits("claude") sets decoded_records_per_batch = 1024.
+        // Build a 1026-line Claude file: line 1 has sessionId "claude-io-sess" + usage;
+        // lines 2..=1024 are user records without sessionId; lines 1025..=1026 are in Batch 2
+        // (also without sessionId, so resuming Batch 2 must rely on seeded session state).
+        let l1 = "{\"type\":\"assistant\",\"sessionId\":\"claude-io-sess\",\"timestamp\":\"2026-10-15T12:00:00Z\",\"message\":{\"id\":\"m-io-1\",\"role\":\"assistant\",\"usage\":{\"input_tokens\":25,\"output_tokens\":5,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}\n";
+        let filler = "{\"type\":\"user\",\"timestamp\":\"2026-10-15T12:00:01Z\",\"message\":{\"role\":\"user\",\"content\":\"ok\"}}\n";
+        let mut body = String::from(l1);
+        for _ in 2..=1026 {
+            body.push_str(filler);
+        }
+        let batch1_bytes = (l1.len() + filler.len() * 1023) as i64;
+
+        let claude_file = claude_root.join("session.jsonl");
+        std::fs::write(&claude_file, &body).unwrap();
+
+        let db = dir.join("analytics.duckdb");
+        drop(AnalyticsStore::open_path(&db, "key").unwrap());
+        let roots = vec![SourceRoot {
+            name: "claude".into(),
+            path: claude_root.clone(),
+        }];
+        let key = b"io-partial-test-key-0123456789ab";
+        let link_cfg = dendro_core::SessionLinkConfig::from_key_hex(
+            &"99".repeat(32),
+            Some("acme"),
+            Some("host-io"),
+            Some("core"),
+            Some("2026-11"),
+        );
+
+        // Inject std::io::Error on Batch 2 (batch_idx == 1) so ingest.rs ~193 takes the
+        // `Err(error) if sealed.is_none() && error.is::<std::io::Error>()` continue branch.
+        let notes = crate::stream::with_ingest_failpoint(
+            |batch_idx, stage| {
+                if batch_idx == 1 && stage == dendro_core::IngestBatchStage::BeforeCommit {
+                    return Err(std::io::Error::other("simulated batch-2 io read failure").into());
+                }
+                Ok(())
+            },
+            || ingest_staged_with_link_config(&db, &roots, false, key, &link_cfg),
+        )
+        .expect("std::io::Error on unsealed file must record warning and continue");
+
+        assert!(
+            notes
+                .iter()
+                .any(|n| n.contains("coverage=refused reason=native_file_unreadable")),
+            "expected native_file_unreadable note, got {notes:?}"
+        );
+
+        let src_id = stable_source_id("claude", &claude_root, &claude_file, key);
+        let expected_sealed = dendro_core::seal_identifier(key, "session:claude", "claude-io-sess");
+        let (expected_link, _) =
+            link_cfg.resolve_session_link(Some("claude"), Some("claude-io-sess"), Some("harness"));
+
+        let store = AnalyticsStore::open_path(&db, "key").unwrap();
+        let state = store
+            .source_state(&src_id)
+            .unwrap()
+            .expect("Batch 1 watermark must be committed");
+        assert_eq!(state.1, batch1_bytes, "watermark must equal Batch 1 bytes");
+        assert_eq!(
+            store.source_native_session(&src_id).unwrap(),
+            Some(expected_sealed.clone()),
+            "Batch 1 native_session must be durable even when Batch 2 hits I/O error"
+        );
+        let sf = store.load_session_facts().unwrap();
+        assert_eq!(
+            sf.len(),
+            1,
+            "Batch 1 session_facts must be durable so partial state is never inconsistent"
+        );
+        assert_eq!(sf[0].native_session, expected_sealed);
+        assert_eq!(sf[0].link_id, expected_link);
+        assert_eq!(store.load_usage().unwrap().len(), 1);
+        drop(store);
+
+        // Subsequent clean run resumes from Batch 1 watermark and completes Batch 2 without
+        // emitting any spurious claude-session fallback despite lines 1025..=1026 lacking sessionId.
+        let notes2 = ingest_staged_with_link_config(&db, &roots, false, key, &link_cfg).unwrap();
+        assert!(
+            note_has(
+                &notes2,
+                "claude files=1",
+                &["records_read=2", "usage_records=0"]
+            ),
+            "{notes2:?}"
+        );
+        let store2 = AnalyticsStore::open_path(&db, "key").unwrap();
+        let sf2 = store2.load_session_facts().unwrap();
+        assert_eq!(
+            sf2.len(),
+            1,
+            "resumed pass must keep only claude-io-sess without spurious claude-session fallback"
+        );
+        assert_eq!(sf2[0].native_session, expected_sealed);
+        assert_eq!(sf2[0].link_id, expected_link);
+        assert_eq!(
+            store2.source_native_session(&src_id).unwrap(),
+            Some(expected_sealed)
+        );
+        assert_eq!(store2.load_usage().unwrap().len(), 1);
+        drop(store2);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn openrig_snapshot_ingest_routes_through_commit_ingest_batch_and_rolls_back_on_failpoint() {
+        #[cfg(any(windows, target_os = "linux"))]
+        let fixture_root = dendro_core::platform_v1::create_user_private_root_with_choice(
+            "dendro-openrig-tx-",
+            &dendro_core::platform_v1::StorageRootChoice::UserProfile,
+        )
+        .expect("explicit UserProfile staged ingest fixture");
+        #[cfg(any(windows, target_os = "linux"))]
+        let dir = fixture_root.path().to_path_buf();
+        #[cfg(not(any(windows, target_os = "linux")))]
+        let dir = std::env::temp_dir().join(format!(
+            "dendro-openrig-tx-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        #[cfg(not(any(windows, target_os = "linux")))]
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let root = openrig_root(&dir, "rig-tx", "dev.build");
+        {
+            let conn = rusqlite::Connection::open(&root.path).unwrap();
+            conn.execute(
+                "CREATE TABLE queue_items (
+                    qitem_id TEXT, destination_session TEXT, ts_updated TEXT, chain_of_record TEXT
+                )",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO queue_items VALUES ('q-mut-1', 'dev.build', '2026-10-09T01:00:00Z', '[]')",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO queue_transitions VALUES (1, 'q-mut-1', '2026-10-09T01:05:00Z', 'done', 'ok', 'dev.lead', 'completed', 'dev.build')",
+                [],
+            )
+            .unwrap();
+        }
+
+        let roots = vec![root.clone()];
+        let key = b"openrig-single-tx-test-key-00000";
+        let key_id = dendro_core::key_id(key);
+        let link_cfg = dendro_core::SessionLinkConfig::unconfigured();
+
+        // Capture a sealed manifest before mutating `queue_items` in place so
+        // `prepare_openrig_snapshot` emits a `mutable_source_disclosures` row.
+        let seal_db = dir.join("openrig_seal.duckdb");
+        drop(AnalyticsStore::open_path(&seal_db, &key_id).unwrap());
+        let (_, manifest) = ingest_staged_with_manifest_and_link_config(
+            &seal_db, &roots, false, key, None, &link_cfg,
+        )
+        .unwrap();
+        {
+            let conn = rusqlite::Connection::open(&root.path).unwrap();
+            conn.execute(
+                "UPDATE queue_items SET destination_session = 'dev.other' WHERE qitem_id = 'q-mut-1'",
+                [],
+            )
+            .unwrap();
+        }
+
+        let ref_db = dir.join("openrig_ref.duckdb");
+        drop(AnalyticsStore::open_path(&ref_db, &key_id).unwrap());
+        ingest_staged_with_manifest_and_link_config(
+            &ref_db,
+            &roots,
+            false,
+            key,
+            Some(&manifest),
+            &link_cfg,
+        )
+        .unwrap();
+        let (expected_snap, expected_records, expected_disclosures, expected_seats) = {
+            let store = AnalyticsStore::open_path(&ref_db, &key_id).unwrap();
+            assert_eq!(store.load_sources().unwrap().len(), 1);
+            assert!(!store.load_openrig_row_records().unwrap().is_empty());
+            assert!(!store.load_mutable_source_disclosures().unwrap().is_empty());
+            assert_eq!(store.load_queue().unwrap().len(), 1);
+            assert_eq!(store.load_seat_bounds().unwrap().len(), 1);
+            (
+                store.canonical_table_snapshot().unwrap(),
+                store.load_openrig_row_records().unwrap().len(),
+                store.load_mutable_source_disclosures().unwrap(),
+                store.load_seat_bounds().unwrap(),
+            )
+        };
+
+        for (idx, stage) in [
+            dendro_core::IngestBatchStage::AfterWatermark,
+            dendro_core::IngestBatchStage::BeforeCommit,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let db = dir.join(format!("openrig_fail_{idx}.duckdb"));
+            drop(AnalyticsStore::open_path(&db, &key_id).unwrap());
+            let err = crate::stream::with_ingest_failpoint(
+                move |_, at| {
+                    if at == stage {
+                        anyhow::bail!("openrig snapshot failpoint at {stage:?}");
+                    }
+                    Ok(())
+                },
+                || {
+                    ingest_staged_with_manifest_and_link_config(
+                        &db,
+                        &roots,
+                        false,
+                        key,
+                        Some(&manifest),
+                        &link_cfg,
+                    )
+                    .map(|(notes, _)| notes)
+                },
+            )
+            .unwrap_err();
+            assert!(
+                err.to_string().contains("openrig snapshot failpoint"),
+                "must fail at {stage:?}: {err}"
+            );
+
+            // Verify atomic rollback: source_files revision, openrig_row_records,
+            // mutable_source_disclosures, and OpenRig facts must all roll back together.
+            let store = AnalyticsStore::open_path(&db, &key_id).unwrap();
+            assert!(
+                store.load_sources().unwrap().is_empty(),
+                "OpenRig source_files revision must roll back at {stage:?}"
+            );
+            assert!(
+                store.load_openrig_row_records().unwrap().is_empty(),
+                "openrig_row_records must roll back at {stage:?}"
+            );
+            assert!(
+                store.load_mutable_source_disclosures().unwrap().is_empty(),
+                "mutable_source_disclosures must roll back at {stage:?}"
+            );
+            assert!(
+                store.load_queue().unwrap().is_empty(),
+                "OpenRig queue_facts must roll back at {stage:?}"
+            );
+            assert!(
+                store.load_seat_bounds().unwrap().is_empty(),
+                "OpenRig seat_bounds must not be written after rollback at {stage:?}"
+            );
+            drop(store);
+
+            // Re-run cleanly -> restores all OpenRig facts, disclosures, and provenance with no gap.
+            ingest_staged_with_manifest_and_link_config(
+                &db,
+                &roots,
+                false,
+                key,
+                Some(&manifest),
+                &link_cfg,
+            )
+            .unwrap();
+            let store_after = AnalyticsStore::open_path(&db, &key_id).unwrap();
+            assert_eq!(
+                store_after.canonical_table_snapshot().unwrap(),
+                expected_snap
+            );
+            assert_eq!(
+                store_after.load_openrig_row_records().unwrap().len(),
+                expected_records
+            );
+            assert_eq!(
+                store_after.load_mutable_source_disclosures().unwrap(),
+                expected_disclosures
+            );
+            assert_eq!(
+                format!("{:?}", store_after.load_seat_bounds().unwrap()),
+                format!("{:?}", expected_seats)
+            );
+        }
 
         let _ = std::fs::remove_dir_all(&dir);
     }

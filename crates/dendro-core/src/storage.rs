@@ -118,7 +118,6 @@ pub enum IngestBatchStage {
     AfterSessionEdges,
     AfterSecurityFacts,
     AfterSessionFacts,
-    AfterProcessSamples,
     AfterWarnings,
     AfterWatermark,
     BeforeReaderReplacement,
@@ -157,8 +156,6 @@ pub struct IngestBatch<'a> {
     pub security_facts: &'a [SecurityFact],
     pub session_facts: &'a [SessionFact],
     pub retired_fallback_keys: &'a [String],
-    pub process_identities: &'a [ProcessIdentityFact],
-    pub process_samples: &'a [ProcessSampleFact],
     pub warnings: &'a [WarningNote],
     pub reader: Option<&'a ReaderState>,
     pub baseline: Option<&'a FileBaselineAttempt>,
@@ -192,8 +189,6 @@ impl<'a> IngestBatch<'a> {
             security_facts: &[],
             session_facts: &[],
             retired_fallback_keys: &[],
-            process_identities: &[],
-            process_samples: &[],
             warnings: &[],
             reader: None,
             baseline: None,
@@ -757,7 +752,7 @@ impl AnalyticsStore {
         })
     }
 
-    fn record_warnings_in_tx(tx: &duckdb::Transaction<'_>, warnings: &[WarningNote]) -> Result<()> {
+    fn record_warnings_in_tx(tx: &Connection, warnings: &[WarningNote]) -> Result<()> {
         if warnings.is_empty() {
             return Ok(());
         }
@@ -822,17 +817,18 @@ impl AnalyticsStore {
         }
     }
 
-    /// Commits a complete per-file ingest batch (`MTN-20 / D4a`) in ONE DuckDB transaction.
+    /// Commits a complete per-file or per-snapshot ingest batch (`MTN-20 / D4a`) in ONE DuckDB transaction.
     ///
     /// Writes all fact families (`file_source_baselines`, `codex_counters`, `usage_facts`,
     /// `usage_models`, `tool_facts`, `tool_categories`, `settled`, `message_facts`,
     /// `skill_facts`, `session_edges`, `security_facts`, `session_facts` + `retired_fallback_keys`,
-    /// `process_identities` + `process_samples`, and `warnings`) first, and advances the
-    /// `source_files` watermark and `dendro-internal:reader:` marker last before `tx.commit()`.
+    /// and `warnings`) first, and advances the `source_files` watermark and
+    /// `dendro-internal:reader:` marker last before `tx.commit()`.
     ///
     /// Large-batch memory stays bounded under the 1 GB refresh cap (`docs/BACKLOG.md`)
-    /// by staging `usage_facts` and `tool_facts` through transaction-scoped `TEMP` tables
-    /// (`usage_stage`, `tool_stage`) populated via `tx.appender(...)`, followed by a single
+    /// by staging `usage_facts` and `tool_facts` through connection-scoped `TEMP` tables
+    /// (`usage_stage`, `tool_stage`) whose creation (`CREATE TEMP TABLE`) and drop (`DROP TABLE`)
+    /// are transactional inside `tx`, populated via `tx.appender(...)`, followed by a single
     /// `INSERT INTO ... SELECT ... ON CONFLICT DO NOTHING; DROP TABLE ...` inside `tx`.
     /// Any error before `tx.commit()` drops `tx` and rolls back the entire transaction,
     /// including temp staging tables, optional DDL, all fact rows, and the watermark.
@@ -856,74 +852,83 @@ impl AnalyticsStore {
         batch: &IngestBatch<'_>,
         mut checkpoint: impl FnMut(IngestBatchStage) -> Result<()>,
     ) -> Result<()> {
+        if self.canonical_write_active.get() {
+            self.invalidate_semantic()?;
+            Self::commit_ingest_batch_on_conn(&self.conn, batch, &mut checkpoint)?;
+            checkpoint(IngestBatchStage::BeforeCommit)?;
+            return Ok(());
+        }
         let tx = self.conn.unchecked_transaction()?;
         self.invalidate_semantic()?;
+        Self::commit_ingest_batch_on_conn(&tx, batch, &mut checkpoint)?;
+        checkpoint(IngestBatchStage::BeforeCommit)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    fn commit_ingest_batch_on_conn(
+        tx: &Connection,
+        batch: &IngestBatch<'_>,
+        checkpoint: &mut impl FnMut(IngestBatchStage) -> Result<()>,
+    ) -> Result<()> {
         if let Some(attempt) = batch.baseline {
-            Self::commit_baseline_in_tx(&tx, batch.source_id, batch.generation, attempt)?;
+            Self::commit_baseline_in_tx(tx, batch.source_id, batch.generation, attempt)?;
         }
         checkpoint(IngestBatchStage::AfterBaseline)?;
         if let Some(c) = batch.counters {
-            Self::commit_codex_counters_in_tx(&tx, batch.source_id, batch.generation, c)?;
+            Self::commit_codex_counters_in_tx(tx, batch.source_id, batch.generation, c)?;
         }
         checkpoint(IngestBatchStage::AfterCounters)?;
         if !batch.usages.is_empty() {
-            Self::commit_usage_facts_in_tx(&tx, batch.source_id, batch.usages)?;
+            Self::commit_usage_facts_in_tx(tx, batch.source_id, batch.usages)?;
         }
         checkpoint(IngestBatchStage::AfterUsageFacts)?;
         if !batch.usage_models.is_empty() {
-            Self::record_usage_models_in_tx(&tx, batch.usage_models)?;
+            Self::record_usage_models_in_tx(tx, batch.usage_models)?;
         }
         checkpoint(IngestBatchStage::AfterUsageModels)?;
         if !batch.tools.is_empty() {
-            Self::commit_tool_facts_in_tx(&tx, batch.source_id, batch.tools)?;
+            Self::commit_tool_facts_in_tx(tx, batch.source_id, batch.tools)?;
         }
         checkpoint(IngestBatchStage::AfterToolFacts)?;
         if !batch.tool_categories.is_empty() {
-            Self::record_tool_categories_in_tx(&tx, batch.tool_categories)?;
+            Self::record_tool_categories_in_tx(tx, batch.tool_categories)?;
         }
         checkpoint(IngestBatchStage::AfterToolCategories)?;
         if !batch.settled.is_empty() {
-            Self::settle_tool_facts_in_tx(&tx, batch.settled)?;
+            Self::settle_tool_facts_in_tx(tx, batch.settled)?;
         }
         checkpoint(IngestBatchStage::AfterToolSettlement)?;
         if !batch.messages.is_empty() {
-            Self::commit_message_facts_in_tx(&tx, batch.source_id, batch.messages)?;
+            Self::commit_message_facts_in_tx(tx, batch.source_id, batch.messages)?;
         }
         checkpoint(IngestBatchStage::AfterMessageFacts)?;
         if !batch.skills.is_empty() {
-            Self::commit_skill_facts_in_tx(&tx, batch.skills)?;
+            Self::commit_skill_facts_in_tx(tx, batch.skills)?;
         }
         checkpoint(IngestBatchStage::AfterSkillFacts)?;
         if !batch.session_edges.is_empty() {
-            Self::commit_session_edges_in_tx(&tx, batch.session_edges)?;
+            Self::commit_session_edges_in_tx(tx, batch.session_edges)?;
         }
         checkpoint(IngestBatchStage::AfterSessionEdges)?;
         if !batch.security_facts.is_empty() {
-            Self::commit_security_facts_in_tx(&tx, batch.security_facts)?;
+            Self::commit_security_facts_in_tx(tx, batch.security_facts)?;
         }
         checkpoint(IngestBatchStage::AfterSecurityFacts)?;
         if !batch.session_facts.is_empty() || !batch.retired_fallback_keys.is_empty() {
             Self::commit_session_facts_retiring_in_tx(
-                &tx,
+                tx,
                 batch.session_facts,
                 batch.retired_fallback_keys,
             )?;
         }
         checkpoint(IngestBatchStage::AfterSessionFacts)?;
-        if !batch.process_identities.is_empty() || !batch.process_samples.is_empty() {
-            Self::commit_process_samples_in_tx(
-                &tx,
-                batch.process_identities,
-                batch.process_samples,
-            )?;
-        }
-        checkpoint(IngestBatchStage::AfterProcessSamples)?;
         if !batch.warnings.is_empty() {
-            Self::record_warnings_in_tx(&tx, batch.warnings)?;
+            Self::record_warnings_in_tx(tx, batch.warnings)?;
         }
         checkpoint(IngestBatchStage::AfterWarnings)?;
         Self::commit_watermark_in_tx(
-            &tx,
+            tx,
             batch.source_id,
             batch.harness,
             batch.display_path,
@@ -934,23 +939,21 @@ impl AnalyticsStore {
         checkpoint(IngestBatchStage::AfterWatermark)?;
         if let Some(reader) = batch.reader {
             Self::commit_reader_state_in_tx(
-                &tx,
+                tx,
                 batch.source_id,
                 batch.harness,
                 batch.generation,
                 batch.byte_offset,
                 batch.prefix_sha256,
                 reader,
-                &mut checkpoint,
+                checkpoint,
             )?;
         }
-        checkpoint(IngestBatchStage::BeforeCommit)?;
-        tx.commit()?;
         Ok(())
     }
 
     fn commit_baseline_in_tx(
-        tx: &duckdb::Transaction<'_>,
+        tx: &Connection,
         source_id: &str,
         generation: i64,
         attempt: &FileBaselineAttempt,
@@ -993,7 +996,7 @@ impl AnalyticsStore {
     }
 
     fn commit_watermark_in_tx(
-        tx: &duckdb::Transaction<'_>,
+        tx: &Connection,
         source_id: &str,
         harness: &str,
         display_path: &str,
@@ -1021,7 +1024,7 @@ impl AnalyticsStore {
     }
 
     fn commit_codex_counters_in_tx(
-        tx: &duckdb::Transaction<'_>,
+        tx: &Connection,
         source_id: &str,
         generation: i64,
         c: &CodexCounters,
@@ -1053,7 +1056,7 @@ impl AnalyticsStore {
     // Bulk-append into a temp table, then one conflict-tolerant insert.
     // A prepared INSERT per row keeps DuckDB result memory growing with the file.
     fn commit_usage_facts_in_tx(
-        tx: &duckdb::Transaction<'_>,
+        tx: &Connection,
         source_id: &str,
         usages: &[UsageFact],
     ) -> Result<()> {
@@ -1117,11 +1120,7 @@ impl AnalyticsStore {
         Ok(())
     }
 
-    fn commit_tool_facts_in_tx(
-        tx: &duckdb::Transaction<'_>,
-        source_id: &str,
-        tools: &[ToolFact],
-    ) -> Result<()> {
+    fn commit_tool_facts_in_tx(tx: &Connection, source_id: &str, tools: &[ToolFact]) -> Result<()> {
         tx.execute_batch(
             "CREATE TEMP TABLE tool_stage (
                 source_key VARCHAR, harness VARCHAR, native_session VARCHAR,
@@ -1162,7 +1161,7 @@ impl AnalyticsStore {
     }
 
     fn commit_message_facts_in_tx(
-        tx: &duckdb::Transaction<'_>,
+        tx: &Connection,
         source_id: &str,
         messages: &[MessageFact],
     ) -> Result<()> {
@@ -1196,10 +1195,7 @@ impl AnalyticsStore {
 
     // A tool result appended after its call was stored settles the call's
     // outcome again from every result seen so far (#37).
-    fn settle_tool_facts_in_tx(
-        tx: &duckdb::Transaction<'_>,
-        settled: &[(String, Option<bool>)],
-    ) -> Result<()> {
+    fn settle_tool_facts_in_tx(tx: &Connection, settled: &[(String, Option<bool>)]) -> Result<()> {
         let mut settle_stmt =
             tx.prepare("UPDATE tool_facts SET failed = ? WHERE source_key = ?")?;
         for (source_key, failed) in settled {
@@ -1208,7 +1204,7 @@ impl AnalyticsStore {
         Ok(())
     }
 
-    fn commit_skill_facts_in_tx(tx: &duckdb::Transaction<'_>, skills: &[SkillFact]) -> Result<()> {
+    fn commit_skill_facts_in_tx(tx: &Connection, skills: &[SkillFact]) -> Result<()> {
         let mut stmt = tx.prepare(
             r#"INSERT INTO skill_facts (source_key, seat, skill, invoked) VALUES (?, ?, ?, ?)
                ON CONFLICT (source_key) DO NOTHING"#,
@@ -1226,7 +1222,7 @@ impl AnalyticsStore {
 
     #[allow(clippy::too_many_arguments)]
     fn commit_reader_state_in_tx(
-        tx: &duckdb::Transaction<'_>,
+        tx: &Connection,
         source_id: &str,
         harness: &str,
         generation: i64,
@@ -1610,10 +1606,7 @@ impl AnalyticsStore {
         Ok(())
     }
 
-    fn commit_session_edges_in_tx(
-        tx: &duckdb::Transaction<'_>,
-        edges: &[SessionEdgeFact],
-    ) -> Result<()> {
+    fn commit_session_edges_in_tx(tx: &Connection, edges: &[SessionEdgeFact]) -> Result<()> {
         if edges.is_empty() {
             return Ok(());
         }
@@ -1675,10 +1668,7 @@ impl AnalyticsStore {
         Ok(())
     }
 
-    fn commit_security_facts_in_tx(
-        tx: &duckdb::Transaction<'_>,
-        facts: &[SecurityFact],
-    ) -> Result<()> {
+    fn commit_security_facts_in_tx(tx: &Connection, facts: &[SecurityFact]) -> Result<()> {
         if facts.is_empty() {
             return Ok(());
         }
@@ -1803,6 +1793,49 @@ impl AnalyticsStore {
         Ok(rows.next()?.is_some())
     }
 
+    /// Returns existing `session_facts` rows for `source_id`, ordered by `source_key`.
+    pub fn source_session_facts(&self, source_id: &str) -> Result<Vec<SessionFact>> {
+        let exists: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'session_facts'",
+            [],
+            |row| row.get(0),
+        )?;
+        if exists == 0 {
+            return Ok(Vec::new());
+        }
+        let mut stmt = self.conn.prepare(
+            "SELECT source_key, source_id, harness, native_session,
+                    COALESCE(link_id, 'unlinked'), unlinked_reason,
+                    COALESCE(header_conflict, FALSE), generation
+             FROM session_facts WHERE source_id = ? ORDER BY source_key",
+        )?;
+        let rows = stmt.query_map(params![redact(source_id)], |row| {
+            Ok(SessionFact {
+                source_key: row.get(0)?,
+                source_id: row.get(1)?,
+                harness: row.get(2)?,
+                native_session: row.get(3)?,
+                link_id: row.get(4)?,
+                unlinked_reason: row.get(5)?,
+                header_conflict: row.get(6)?,
+                generation: row.get(7)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    /// Returns the stored `source_files.native_session` for `source_id`, if any.
+    pub fn source_native_session(&self, source_id: &str) -> Result<Option<String>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT native_session FROM source_files WHERE source_id = ?")?;
+        let mut rows = stmt.query(params![redact(source_id)])?;
+        match rows.next()? {
+            Some(row) => Ok(row.get(0)?),
+            None => Ok(None),
+        }
+    }
+
     /// Upsert session-level link facts (`MTN-19 / D3`).
     pub fn commit_session_facts(&self, facts: &[SessionFact]) -> Result<()> {
         self.commit_session_facts_retiring(facts, &[])
@@ -1832,7 +1865,7 @@ impl AnalyticsStore {
     }
 
     fn commit_session_facts_retiring_in_tx(
-        tx: &duckdb::Transaction<'_>,
+        tx: &Connection,
         facts: &[SessionFact],
         retired_fallback_keys: &[String],
     ) -> Result<()> {
@@ -2025,7 +2058,7 @@ impl AnalyticsStore {
     }
 
     fn record_tool_categories_in_tx(
-        tx: &duckdb::Transaction<'_>,
+        tx: &Connection,
         categories: &[(String, ToolCategory)],
     ) -> Result<()> {
         let mut stmt = tx.prepare("UPDATE tool_facts SET category = ? WHERE source_key = ?")?;
@@ -2062,7 +2095,7 @@ impl AnalyticsStore {
     }
 
     fn record_usage_models_in_tx(
-        tx: &duckdb::Transaction<'_>,
+        tx: &Connection,
         models: &[(String, Option<String>, Option<String>)],
     ) -> Result<()> {
         let mut stmt =
@@ -4741,38 +4774,6 @@ mod tests {
             generation: 2,
         };
         let retired_keys = ["src-1:codex:session:fallback".to_string()];
-        let proc_id = ProcessIdentityFact {
-            identity_key: "pid-1".into(),
-            root_key: "root-1".into(),
-            pid: 4242,
-            parent_pid: Some(1),
-            platform: "windows".into(),
-            start_time_unix_s: 1_700_000_000,
-            exe_name: "codex".into(),
-            harness: Some("codex".into()),
-            cwd_fingerprint: None,
-            session_link: Some("session:real".into()),
-            environment_kind: crate::domain_v1::EnvironmentKind::Host,
-            isolation_hint: "none".into(),
-            first_seen: ts,
-            last_seen: ts,
-            ended_at: None,
-            visibility_limits: std::collections::BTreeSet::new(),
-            attribution: Some("launched".into()),
-        };
-        let proc_sample = ProcessSampleFact {
-            watch_id: "watch-1".into(),
-            identity_key: "pid-1".into(),
-            seq: 1,
-            ts,
-            cpu_time_us: Some(500),
-            rss_bytes: Some(4096),
-            rss_unit: crate::domain_v1::Unit::Bytes,
-            disk_read_bytes: Some(0),
-            disk_write_bytes: Some(0),
-            capture_method: crate::domain_v1::CaptureMethod::WindowsProcessApi,
-            visibility_limits: std::collections::BTreeSet::new(),
-        };
         let warning = WarningNote {
             path: "sealed-path".into(),
             line: Some(2),
@@ -4803,8 +4804,6 @@ mod tests {
             security_facts: std::slice::from_ref(&sec),
             session_facts: std::slice::from_ref(&session_fact),
             retired_fallback_keys: &retired_keys,
-            process_identities: std::slice::from_ref(&proc_id),
-            process_samples: std::slice::from_ref(&proc_sample),
             warnings: std::slice::from_ref(&warning),
             reader: Some(&reader),
             baseline: Some(&baseline),
@@ -4842,7 +4841,6 @@ mod tests {
             IngestBatchStage::AfterSessionEdges,
             IngestBatchStage::AfterSecurityFacts,
             IngestBatchStage::AfterSessionFacts,
-            IngestBatchStage::AfterProcessSamples,
             IngestBatchStage::AfterWarnings,
             IngestBatchStage::AfterWatermark,
             IngestBatchStage::BeforeReaderReplacement,

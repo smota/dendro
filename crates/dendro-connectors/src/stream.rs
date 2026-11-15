@@ -527,6 +527,49 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
     let mut header_conflict = store.source_has_header_conflict(source_id)?;
     let mut session_facts_by_key = std::collections::BTreeMap::new();
     let mut claude_sessions = HashSet::new();
+    if !reset_generation && prefix_end > 0 {
+        let fallback_raw = if harness == "claude" {
+            Some("claude-session".to_string())
+        } else {
+            file_session
+                .as_ref()
+                .map(|_| format!("{harness}-file:{source_id}"))
+        };
+        let fallback_source_key = fallback_raw.as_deref().map(|raw| {
+            link_and_seal_session(
+                link_config,
+                tool_key,
+                source_id,
+                generation,
+                harness,
+                raw,
+                false,
+                false,
+            )
+            .1
+            .source_key
+        });
+        for existing in store.source_session_facts(source_id)? {
+            if existing.generation == generation
+                && fallback_source_key.as_deref() != Some(existing.source_key.as_str())
+            {
+                if harness == "claude" && tool_key.is_some() {
+                    claude_sessions.insert(existing.native_session.clone());
+                }
+                record_session_fact(&mut session_facts_by_key, existing);
+            }
+        }
+        if harness == "claude" && tool_key.is_none() {
+            if let Some(existing_session) = store.source_native_session(source_id)? {
+                if !existing_session.is_empty() {
+                    claude_sessions.insert(existing_session);
+                }
+            }
+        }
+    }
+    let mut source_session = file_session
+        .as_ref()
+        .map(|session| seal_session(tool_key, harness, &session.raw));
 
     // Claude, Pi, Grok, and Codex tool calls are read through the shared
     // watermark-gated tool scan over every complete line of this generation
@@ -975,67 +1018,71 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
         }
         let is_final_batch = !(batch_capped && consumed != batch_start);
         let mut retired_fallback_keys = Vec::new();
-        let mut source_session = None;
-        // Session-level final facts (D3 link_id, header_conflict, and unique
-        // source_session) are committed only with the final batch of the pass
-        // that determines them, so an earlier batch of a multi-batch pass never
-        // briefly commits a linked row that a later batch would override.
-        let session_facts: Vec<dendro_core::SessionFact> = if is_final_batch {
-            if harness == "claude" {
-                // A file with several session identities has no unique source linkage.
-                source_session = if claude_sessions.len() == 1 {
-                    claude_sessions.iter().next().cloned()
-                } else {
-                    None
-                };
+        // Every batch's transaction persists all facts derived from the lines
+        // covered by its committed watermark, including session_facts observed
+        // in that batch, the sticky header_conflict latch, and source_session.
+        // The final batch recomputes the final link decision for the pass.
+        // Intermediate states are safe because each committed state reflects
+        // the exact lines covered by its watermark: a later header conflict can
+        // only flip linked -> unlinked (never unlinked -> linked), and the D3
+        // session_facts upsert enforces that sticky transition.
+        let session_facts: Vec<dendro_core::SessionFact> = if harness == "claude" {
+            // A file with several session identities has no unique source linkage.
+            source_session = if claude_sessions.len() == 1 {
+                claude_sessions.iter().next().cloned()
+            } else {
+                None
+            };
+            let (_, fallback_fact) = link_and_seal_session(
+                link_config,
+                tool_key,
+                source_id,
+                generation,
+                harness,
+                "claude-session",
+                false,
+                false,
+            );
+            if session_facts_by_key.is_empty() {
+                vec![fallback_fact]
+            } else {
+                if !claude_sessions.is_empty()
+                    && !session_facts_by_key.contains_key(&fallback_fact.source_key)
+                {
+                    retired_fallback_keys.push(fallback_fact.source_key);
+                }
+                session_facts_by_key.values().cloned().collect()
+            }
+        } else if let Some(session) = &file_session {
+            let is_minted = session.from_header && !header_conflict;
+            let (sealed, fact) = link_and_seal_session(
+                link_config,
+                tool_key,
+                source_id,
+                generation,
+                harness,
+                &session.raw,
+                is_minted,
+                header_conflict,
+            );
+            source_session = Some(sealed);
+            record_session_fact(&mut session_facts_by_key, fact);
+            if session.from_header {
                 let (_, fallback_fact) = link_and_seal_session(
                     link_config,
                     tool_key,
                     source_id,
                     generation,
                     harness,
-                    "claude-session",
+                    &format!("{harness}-file:{source_id}"),
                     false,
                     false,
                 );
-                if session_facts_by_key.is_empty() {
-                    record_session_fact(&mut session_facts_by_key, fallback_fact);
-                } else if !claude_sessions.is_empty()
-                    && !session_facts_by_key.contains_key(&fallback_fact.source_key)
-                {
-                    retired_fallback_keys.push(fallback_fact.source_key);
-                }
-            } else if let Some(session) = &file_session {
-                let is_minted = session.from_header && !header_conflict;
-                let (sealed, fact) = link_and_seal_session(
-                    link_config,
-                    tool_key,
-                    source_id,
-                    generation,
-                    harness,
-                    &session.raw,
-                    is_minted,
-                    header_conflict,
-                );
-                source_session = Some(sealed);
-                session_facts_by_key.insert(fact.source_key.clone(), fact);
-                if session.from_header {
-                    let (_, fallback_fact) = link_and_seal_session(
-                        link_config,
-                        tool_key,
-                        source_id,
-                        generation,
-                        harness,
-                        &format!("{harness}-file:{source_id}"),
-                        false,
-                        false,
-                    );
-                    retired_fallback_keys.push(fallback_fact.source_key);
-                }
+                retired_fallback_keys.push(fallback_fact.source_key);
             }
             session_facts_by_key.values().cloned().collect()
         } else {
-            Vec::new()
+            session_facts_by_key.values().cloned().collect()
         };
         coverage_defect |= coverage.unknown_kind
             + coverage.quarantined_oversize
@@ -1104,7 +1151,7 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
         }
         let reader_state = dendro_core::ReaderState {
             complete: batch_complete,
-            native_session: source_session,
+            native_session: source_session.clone(),
         };
         let ingest_batch = dendro_core::IngestBatch {
             source_id,
@@ -1125,8 +1172,6 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
             security_facts: &security_facts,
             session_facts: &session_facts,
             retired_fallback_keys: &retired_fallback_keys,
-            process_identities: &[],
-            process_samples: &[],
             warnings: &warnings,
             reader: Some(&reader_state),
             baseline: Some(&baseline),
@@ -8003,8 +8048,8 @@ mod hostile_input_tests {
     }
 
     #[test]
-    fn two_consecutive_batches_mid_pass_failure_converges_and_never_commits_interim_linked_session()
-    {
+    fn two_consecutive_batches_mid_pass_failure_persists_batch1_session_facts_and_converges_on_rerun(
+    ) {
         use super::tests::{open_test_analytics, AdmittedTestDir};
         use dendro_core::IngestBatchStage;
 
@@ -8032,8 +8077,8 @@ mod hostile_input_tests {
         }
 
         // Part A: 4-record Codex file spanning 2 batches (2 records per batch).
-        // Batch 0 emits an unsettled function_call (c1); Batch 1 settles c1, emits token_count usage,
-        // and finalizes the linked session_facts row.
+        // Batch 0 emits an unsettled function_call (c1) and commits the batch-0 session_facts
+        // row + native_session; Batch 1 settles c1 and emits token_count usage.
         let codex_multi = dir.join("codex_two_batches.jsonl");
         let line1 = "{\"type\":\"session_meta\",\"timestamp\":\"2026-10-15T12:00:00Z\",\"payload\":{\"id\":\"codex-multi-1\"}}\n";
         let line2 = "{\"type\":\"response_item\",\"timestamp\":\"2026-10-15T12:00:01Z\",\"payload\":{\"type\":\"function_call\",\"call_id\":\"c1\",\"name\":\"exec_command\",\"arguments\":\"{\\\"cmd\\\":\\\"cargo check\\\"}\"}}\n";
@@ -8041,6 +8086,7 @@ mod hostile_input_tests {
         let line4 = "{\"type\":\"event_msg\",\"timestamp\":\"2026-10-15T12:00:03Z\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":50,\"cached_input_tokens\":10,\"cache_write_input_tokens\":0,\"output_tokens\":20,\"reasoning_output_tokens\":5}}}}\n";
         fs::write(&codex_multi, format!("{line1}{line2}{line3}{line4}")).unwrap();
         let batch0_bytes = (line1.len() + line2.len()) as i64;
+        let expected_codex_sealed = seal_session(Some(tool_key), "codex", "codex-multi-1");
 
         let multi_ref_db = dir.join("multi_ref.duckdb");
         fs::copy(&empty_db, &multi_ref_db).unwrap();
@@ -8110,21 +8156,32 @@ mod hostile_input_tests {
                 );
             }
 
-            // Reopen after mid-pass failure: Batch 1 is committed, Batch 2 is completely rolled back.
+            // Reopen after mid-pass failure: Batch 1 is committed (including its session_facts
+            // and source_files.native_session), and Batch 2 is completely rolled back.
             let reopened = AnalyticsStore::open_existing(&db_path, "key").unwrap();
             let state = reopened.source_state("src-multi").unwrap().unwrap();
             assert_eq!(
                 state.1, batch0_bytes,
                 "watermark must stay at batch 1 boundary after batch 2 fails at {stage:?}"
             );
+            assert_eq!(
+                reopened.source_native_session("src-multi").unwrap(),
+                Some(expected_codex_sealed.clone()),
+                "source_files.native_session must be durable after batch 1 commits ({stage:?})"
+            );
             assert!(
                 reopened.load_usage().unwrap().is_empty(),
                 "batch 2 usage must not persist after failure at {stage:?}"
             );
-            assert!(
-                reopened.load_session_facts().unwrap().is_empty(),
-                "session_facts must not be committed before the final batch ({stage:?})"
+            let sf_after_b1 = reopened.load_session_facts().unwrap();
+            assert_eq!(
+                sf_after_b1.len(),
+                1,
+                "batch 1 must persist session_facts covered by its watermark ({stage:?})"
             );
+            assert_eq!(sf_after_b1[0].native_session, expected_codex_sealed);
+            assert_ne!(sf_after_b1[0].link_id, "unlinked");
+            assert!(!sf_after_b1[0].header_conflict);
             let tools_after_b1 = reopened.load_tools().unwrap();
             assert_eq!(tools_after_b1.len(), 1);
             assert_eq!(
@@ -8161,7 +8218,8 @@ mod hostile_input_tests {
             );
         }
 
-        // Part B: Conflicting session_meta header in Batch 2 never exposes an interim linked row after Batch 1.
+        // Part B: Conflicting session_meta header in Batch 2 flips Batch 1's linked row to unlinked
+        // via D3 sticky-conflict upsert and converges to the uninterrupted state.
         let codex_conflict = dir.join("codex_conflict_batches.jsonl");
         let c_line1 = "{\"type\":\"session_meta\",\"timestamp\":\"2026-10-15T12:00:00Z\",\"payload\":{\"id\":\"codex-conflict-a\"}}\n";
         let c_line2 = "{\"type\":\"event_msg\",\"timestamp\":\"2026-10-15T12:00:01Z\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":10,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":5,\"reasoning_output_tokens\":0}}}}\n";
@@ -8227,10 +8285,13 @@ mod hostile_input_tests {
             assert!(err.to_string().contains("stop after batch 1 committed"));
         }
         let reopened_conflict = AnalyticsStore::open_existing(&conflict_test_db, "key").unwrap();
-        assert!(
-            reopened_conflict.load_session_facts().unwrap().is_empty(),
-            "Batch 1 must never commit an interim linked session_facts row before Batch 2 sees the conflicting header"
+        let sf_b1 = reopened_conflict.load_session_facts().unwrap();
+        assert_eq!(sf_b1.len(), 1);
+        assert_ne!(
+            sf_b1[0].link_id, "unlinked",
+            "Batch 1 reflects lines 1..2 before the conflict on line 3"
         );
+        assert!(!sf_b1[0].header_conflict);
         ingest_jsonl_limited_with_link(
             &reopened_conflict,
             "src-conflict",
@@ -8247,6 +8308,426 @@ mod hostile_input_tests {
             reopened_conflict.canonical_table_snapshot().unwrap(),
             conflict_expected,
             "Conflicting multi-batch file must converge to uninterrupted header_conflict state after mid-pass failure"
+        );
+    }
+
+    #[test]
+    fn claude_multi_batch_session_in_batch1_only_batch2_fails_rerun_keeps_session_fact_without_fallback(
+    ) {
+        use super::tests::{open_test_analytics, AdmittedTestDir};
+        use dendro_core::IngestBatchStage;
+
+        let scratch = AdmittedTestDir::new("dendro-d4a-claude-b1-session");
+        let dir = scratch.path();
+        let tool_key = b"d4a-claude-b1-tool-key-00000000";
+        let link_cfg = dendro_core::SessionLinkConfig::from_key_hex(
+            &"66".repeat(32),
+            Some("acme"),
+            Some("host-d4a"),
+            Some("core"),
+            Some("2026-11"),
+        );
+        let limits = crate::sdk::ReadLimits {
+            encoded_bytes: 1 << 20,
+            nesting_depth: 64,
+            decoded_records_per_batch: 2,
+            line_attempts: None,
+        };
+
+        let empty_db = dir.join("empty_seed.duckdb");
+        {
+            let store = open_test_analytics(&empty_db);
+            store.checkpoint().unwrap();
+        }
+
+        // Case 1(a): sessionId "claude-session-X" appears ONLY in Batch 1 (lines 1-2).
+        // Batch 2 (lines 3-4) has valid Claude records with NO sessionId and NO /message/usage.
+        let claude_file = dir.join("claude_b1_only.jsonl");
+        let l1 = "{\"type\":\"assistant\",\"sessionId\":\"claude-session-X\",\"timestamp\":\"2026-10-15T12:00:00Z\",\"message\":{\"id\":\"m-x1\",\"role\":\"assistant\",\"usage\":{\"input_tokens\":40,\"output_tokens\":10,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}\n";
+        let l2 = "{\"type\":\"user\",\"sessionId\":\"claude-session-X\",\"timestamp\":\"2026-10-15T12:00:01Z\",\"message\":{\"role\":\"user\",\"content\":\"hello\"}}\n";
+        let l3 = "{\"type\":\"system\",\"timestamp\":\"2026-10-15T12:00:02Z\"}\n";
+        let l4 = "{\"type\":\"custom-title\",\"timestamp\":\"2026-10-15T12:00:03Z\"}\n";
+        fs::write(&claude_file, format!("{l1}{l2}{l3}{l4}")).unwrap();
+
+        let expected_sealed_x = seal_session(Some(tool_key), "claude", "claude-session-X");
+        let (expected_link_x, _) = link_cfg.resolve_session_link(
+            Some("claude"),
+            Some("claude-session-X"),
+            Some("harness"),
+        );
+        assert_ne!(expected_link_x, "unlinked");
+
+        let ref_db = dir.join("claude_b1_ref.duckdb");
+        fs::copy(&empty_db, &ref_db).unwrap();
+        let expected_snap = {
+            let store = AnalyticsStore::open_existing(&ref_db, "key").unwrap();
+            ingest_jsonl_limited_with_link(
+                &store,
+                "src-claude-b1",
+                "claude",
+                &claude_file,
+                Some(tool_key),
+                None,
+                || Ok(()),
+                &limits,
+                &link_cfg,
+            )
+            .unwrap();
+            let sf = store.load_session_facts().unwrap();
+            assert_eq!(
+                sf.len(),
+                1,
+                "uninterrupted run must have exactly one session_facts row"
+            );
+            assert_eq!(sf[0].native_session, expected_sealed_x);
+            assert_eq!(sf[0].link_id, expected_link_x);
+            assert_eq!(
+                store.source_native_session("src-claude-b1").unwrap(),
+                Some(expected_sealed_x.clone())
+            );
+            store.checkpoint().unwrap();
+            store.canonical_table_snapshot().unwrap()
+        };
+
+        let test_db = dir.join("claude_b1_test.duckdb");
+        fs::copy(&empty_db, &test_db).unwrap();
+        {
+            let store = AnalyticsStore::open_existing(&test_db, "key").unwrap();
+            let err = with_ingest_failpoint(
+                move |batch_idx, at| {
+                    if batch_idx == 1 && at == IngestBatchStage::AfterWatermark {
+                        anyhow::bail!("claude batch-2 failpoint");
+                    }
+                    Ok(())
+                },
+                || {
+                    ingest_jsonl_limited_with_link(
+                        &store,
+                        "src-claude-b1",
+                        "claude",
+                        &claude_file,
+                        Some(tool_key),
+                        None,
+                        || Ok(()),
+                        &limits,
+                        &link_cfg,
+                    )
+                },
+            )
+            .unwrap_err();
+            assert!(err.to_string().contains("claude batch-2 failpoint"));
+        }
+
+        // Right after Batch 2 fails: Batch 1's session_facts row for X and native_session are durable.
+        let reopened = AnalyticsStore::open_existing(&test_db, "key").unwrap();
+        let sf_after_b1 = reopened.load_session_facts().unwrap();
+        assert_eq!(
+            sf_after_b1.len(),
+            1,
+            "X must already have its session_facts row after batch 1 commits"
+        );
+        assert_eq!(sf_after_b1[0].native_session, expected_sealed_x);
+        assert_eq!(sf_after_b1[0].link_id, expected_link_x);
+        assert_eq!(
+            reopened.source_native_session("src-claude-b1").unwrap(),
+            Some(expected_sealed_x.clone())
+        );
+
+        // Rerun from Batch 1's watermark -> X keeps its session_facts row, no spurious claude-session
+        // fallback is added, and the final state equals the uninterrupted run.
+        ingest_jsonl_limited_with_link(
+            &reopened,
+            "src-claude-b1",
+            "claude",
+            &claude_file,
+            Some(tool_key),
+            None,
+            || Ok(()),
+            &limits,
+            &link_cfg,
+        )
+        .unwrap();
+        let sf_final = reopened.load_session_facts().unwrap();
+        assert_eq!(
+            sf_final.len(),
+            1,
+            "rerun must not emit a spurious claude-session fallback row"
+        );
+        assert_eq!(sf_final[0].native_session, expected_sealed_x);
+        assert_eq!(sf_final[0].link_id, expected_link_x);
+        assert_eq!(
+            reopened.canonical_table_snapshot().unwrap(),
+            expected_snap,
+            "resumed Claude multi-batch state must equal uninterrupted run"
+        );
+
+        // Reverse case: Batch 1 has no sessionId and no usage (so Batch 1 persists the temporary
+        // claude-session fallback); Batch 2 has sessionId "claude-session-X" and retires the fallback.
+        let claude_rev_file = dir.join("claude_b2_only.jsonl");
+        fs::write(&claude_rev_file, format!("{l3}{l4}{l1}{l2}")).unwrap();
+        let rev_db = dir.join("claude_b2_rev.duckdb");
+        fs::copy(&empty_db, &rev_db).unwrap();
+        let rev_store = AnalyticsStore::open_existing(&rev_db, "key").unwrap();
+        ingest_jsonl_limited_with_link(
+            &rev_store,
+            "src-claude-b2",
+            "claude",
+            &claude_rev_file,
+            Some(tool_key),
+            None,
+            || Ok(()),
+            &limits,
+            &link_cfg,
+        )
+        .unwrap();
+        let sf_rev = rev_store.load_session_facts().unwrap();
+        assert_eq!(
+            sf_rev.len(),
+            1,
+            "Batch 2 real sessionId must retire Batch 1's temporary claude-session fallback"
+        );
+        assert_eq!(sf_rev[0].native_session, expected_sealed_x);
+        assert_eq!(sf_rev[0].link_id, expected_link_x);
+    }
+
+    #[test]
+    fn codex_multi_batch_conflicting_session_meta_in_batch1_batch2_fails_rerun_agrees_with_uninterrupted(
+    ) {
+        use super::tests::{open_test_analytics, AdmittedTestDir};
+        use dendro_core::IngestBatchStage;
+
+        let scratch = AdmittedTestDir::new("dendro-d4a-codex-b1-conflict");
+        let dir = scratch.path();
+        let tool_key = b"d4a-codex-b1-conflict-key-000000";
+        let link_cfg = dendro_core::SessionLinkConfig::from_key_hex(
+            &"77".repeat(32),
+            Some("acme"),
+            Some("host-d4a"),
+            Some("core"),
+            Some("2026-11"),
+        );
+        let limits = crate::sdk::ReadLimits {
+            encoded_bytes: 1 << 20,
+            nesting_depth: 64,
+            decoded_records_per_batch: 2,
+            line_attempts: None,
+        };
+
+        let empty_db = dir.join("empty_seed.duckdb");
+        {
+            let store = open_test_analytics(&empty_db);
+            store.checkpoint().unwrap();
+        }
+
+        // Case 1(b): conflicting session_meta is in Batch 1 (lines 1-2); Batch 2 (lines 3-4) fails.
+        let codex_file = dir.join("codex_b1_conflict.jsonl");
+        let l1 = "{\"type\":\"session_meta\",\"timestamp\":\"2026-10-15T12:00:00Z\",\"payload\":{\"id\":\"codex-b1-a\"}}\n";
+        let l2 = "{\"type\":\"session_meta\",\"timestamp\":\"2026-10-15T12:00:01Z\",\"payload\":{\"id\":\"codex-b1-b\"}}\n";
+        let l3 = "{\"type\":\"event_msg\",\"timestamp\":\"2026-10-15T12:00:02Z\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":30,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":10,\"reasoning_output_tokens\":0}}}}\n";
+        let l4 = "{\"type\":\"event_msg\",\"timestamp\":\"2026-10-15T12:00:03Z\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":60,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":20,\"reasoning_output_tokens\":0}}}}\n";
+        fs::write(&codex_file, format!("{l1}{l2}{l3}{l4}")).unwrap();
+
+        let ref_db = dir.join("codex_b1_conflict_ref.duckdb");
+        fs::copy(&empty_db, &ref_db).unwrap();
+        let expected_snap = {
+            let store = AnalyticsStore::open_existing(&ref_db, "key").unwrap();
+            ingest_jsonl_limited_with_link(
+                &store,
+                "src-codex-b1-conflict",
+                "codex",
+                &codex_file,
+                Some(tool_key),
+                None,
+                || Ok(()),
+                &limits,
+                &link_cfg,
+            )
+            .unwrap();
+            let sf = store.load_session_facts().unwrap();
+            assert_eq!(sf.len(), 1);
+            assert_eq!(sf[0].link_id, "unlinked");
+            assert!(sf[0].header_conflict);
+            assert_eq!(
+                sf[0].unlinked_reason.as_deref(),
+                Some("missing_native_session")
+            );
+            assert!(store
+                .warning_reasons()
+                .unwrap()
+                .contains(&"conflicting session header".to_string()));
+            store.checkpoint().unwrap();
+            store.canonical_table_snapshot().unwrap()
+        };
+
+        let test_db = dir.join("codex_b1_conflict_test.duckdb");
+        fs::copy(&empty_db, &test_db).unwrap();
+        {
+            let store = AnalyticsStore::open_existing(&test_db, "key").unwrap();
+            let err = with_ingest_failpoint(
+                move |batch_idx, at| {
+                    if batch_idx == 1 && at == IngestBatchStage::AfterUsageFacts {
+                        anyhow::bail!("codex batch-2 failpoint");
+                    }
+                    Ok(())
+                },
+                || {
+                    ingest_jsonl_limited_with_link(
+                        &store,
+                        "src-codex-b1-conflict",
+                        "codex",
+                        &codex_file,
+                        Some(tool_key),
+                        None,
+                        || Ok(()),
+                        &limits,
+                        &link_cfg,
+                    )
+                },
+            )
+            .unwrap_err();
+            assert!(err.to_string().contains("codex batch-2 failpoint"));
+        }
+
+        // Right after Batch 2 fails: warnings and session_facts already agree on the conflict in Batch 1.
+        let reopened = AnalyticsStore::open_existing(&test_db, "key").unwrap();
+        let sf_after_b1 = reopened.load_session_facts().unwrap();
+        assert_eq!(sf_after_b1.len(), 1);
+        assert_eq!(sf_after_b1[0].link_id, "unlinked");
+        assert!(
+            sf_after_b1[0].header_conflict,
+            "Batch 1 must persist header_conflict=true alongside the conflicting-header warning"
+        );
+        assert_eq!(
+            sf_after_b1[0].unlinked_reason.as_deref(),
+            Some("missing_native_session")
+        );
+        assert!(reopened
+            .warning_reasons()
+            .unwrap()
+            .contains(&"conflicting session header".to_string()));
+
+        // Rerun from Batch 1's watermark -> remains unlinked with header_conflict=true,
+        // warnings and session_facts agree, and final state equals uninterrupted run.
+        ingest_jsonl_limited_with_link(
+            &reopened,
+            "src-codex-b1-conflict",
+            "codex",
+            &codex_file,
+            Some(tool_key),
+            None,
+            || Ok(()),
+            &limits,
+            &link_cfg,
+        )
+        .unwrap();
+        let sf_final = reopened.load_session_facts().unwrap();
+        assert_eq!(sf_final.len(), 1);
+        assert_eq!(sf_final[0].link_id, "unlinked");
+        assert!(sf_final[0].header_conflict);
+        assert_eq!(
+            reopened.canonical_table_snapshot().unwrap(),
+            expected_snap,
+            "resumed Codex conflicting-header state must equal uninterrupted run"
+        );
+    }
+
+    #[test]
+    fn appended_multi_batch_run_with_batch2_failing_keeps_native_session_and_reader_marker() {
+        use super::tests::{open_test_analytics, AdmittedTestDir};
+        use dendro_core::IngestBatchStage;
+
+        let scratch = AdmittedTestDir::new("dendro-d4a-appended-native-session");
+        let dir = scratch.path();
+        let tool_key = b"d4a-append-native-session-key-00";
+        let link_cfg = dendro_core::SessionLinkConfig::from_key_hex(
+            &"88".repeat(32),
+            Some("acme"),
+            Some("host-d4a"),
+            Some("core"),
+            Some("2026-11"),
+        );
+        let limits = crate::sdk::ReadLimits {
+            encoded_bytes: 1 << 20,
+            nesting_depth: 64,
+            decoded_records_per_batch: 2,
+            line_attempts: None,
+        };
+
+        let db_path = dir.join("append_native.duckdb");
+        let store = open_test_analytics(&db_path);
+        let codex_file = dir.join("codex_append.jsonl");
+        let l1 = "{\"type\":\"session_meta\",\"timestamp\":\"2026-10-15T12:00:00Z\",\"payload\":{\"id\":\"sess-keep-S\"}}\n";
+        let l2 = "{\"type\":\"event_msg\",\"timestamp\":\"2026-10-15T12:00:01Z\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":10,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":2,\"reasoning_output_tokens\":0}}}}\n";
+        fs::write(&codex_file, format!("{l1}{l2}")).unwrap();
+
+        let expected_s = seal_session(Some(tool_key), "codex", "sess-keep-S");
+        ingest_jsonl_limited_with_link(
+            &store,
+            "src-append-s",
+            "codex",
+            &codex_file,
+            Some(tool_key),
+            None,
+            || Ok(()),
+            &limits,
+            &link_cfg,
+        )
+        .unwrap();
+        assert_eq!(
+            store.source_native_session("src-append-s").unwrap(),
+            Some(expected_s.clone())
+        );
+
+        // Append 4 more lines (2 batches of 2 lines each) and make Batch 2 of the appended pass fail.
+        let l3 = "{\"type\":\"event_msg\",\"timestamp\":\"2026-10-15T12:00:02Z\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":20,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":4,\"reasoning_output_tokens\":0}}}}\n";
+        let l4 = "{\"type\":\"event_msg\",\"timestamp\":\"2026-10-15T12:00:03Z\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":30,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":6,\"reasoning_output_tokens\":0}}}}\n";
+        let l5 = "{\"type\":\"event_msg\",\"timestamp\":\"2026-10-15T12:00:04Z\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":40,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":8,\"reasoning_output_tokens\":0}}}}\n";
+        let l6 = "{\"type\":\"event_msg\",\"timestamp\":\"2026-10-15T12:00:05Z\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":50,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":10,\"reasoning_output_tokens\":0}}}}\n";
+        fs::write(&codex_file, format!("{l1}{l2}{l3}{l4}{l5}{l6}")).unwrap();
+
+        let err = with_ingest_failpoint(
+            move |batch_idx, at| {
+                if batch_idx == 1 && at == IngestBatchStage::BeforeCommit {
+                    anyhow::bail!("appended batch-2 failpoint");
+                }
+                Ok(())
+            },
+            || {
+                ingest_jsonl_limited_with_link(
+                    &store,
+                    "src-append-s",
+                    "codex",
+                    &codex_file,
+                    Some(tool_key),
+                    None,
+                    || Ok(()),
+                    &limits,
+                    &link_cfg,
+                )
+            },
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("appended batch-2 failpoint"));
+        drop(store);
+
+        let reopened = AnalyticsStore::open_existing(&db_path, "key").unwrap();
+        assert_eq!(
+            reopened.source_native_session("src-append-s").unwrap(),
+            Some(expected_s.clone()),
+            "appended multi-batch run with batch 2 failing must keep source_files.native_session = S"
+        );
+        let reader_marker_session: String = reopened
+            .with_private_connection(|conn| {
+                Ok(conn.query_row(
+                    "SELECT native_session FROM tool_facts WHERE starts_with(source_key, 'dendro-internal:reader:') AND source_id = ?",
+                    [dendro_core::redact("src-append-s")],
+                    |row| row.get(0),
+                )?)
+            })
+            .unwrap();
+        assert_eq!(
+            reader_marker_session, expected_s,
+            "reader-marker session in tool_facts must remain S (never '' or NULL) after batch 1 commits and batch 2 fails"
         );
     }
 }
