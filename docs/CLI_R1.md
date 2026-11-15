@@ -253,6 +253,19 @@ dendro advise --mcp-schema
 
 `dendro advise` evaluates `model_cohort_baseline`, `skill_effectiveness_audit`, `delegation_loop_risk`, or `environment_readiness`. Use `--db`, `--harness`, `--skill`, and `--session` to select the relevant evidence; `--json` returns structured output and `--mcp-schema` prints the advisory tool schema. `--budget-ms` sets the evaluation budget. The warm p95 target is **<=15ms**; an exceeded budget returns `advisory_budget_exceeded` rather than partial advice. This is not a cold-start guarantee. Advice remains operator-facing and pull-only.
 
+### Release-profile latency SLA enforcement
+
+Wall-clock latency SLAs are enforced in release-profile test gates (`cfg!(not(debug_assertions))`), while debug-profile test runs retain all functional, schema, conservation, and zero-write assertions without failing on unoptimized wall-clock variance under load:
+
+- **Direct Overview (`<50ms` max across 20 warm iterations on the 5,500-fact census):**
+  ```sh
+  cargo test --release -p dendro-core --lib --locked overview::tests::test_direct_overview_performance_5500_facts
+  ```
+- **`dendro advise` (`<=15ms` warm p95 across 30 runs on the frozen fixture, `A11`):**
+  ```sh
+  cargo test --release -p dendro-cli --test advise --locked test_warm_p95_under_15ms_and_zero_writes
+  ```
+
 `dendro ask` remains the supported-intent entry point over Nao semantic projections. Use `dendro ask --list-intents` for the catalog; materialization and missing-evidence rules remain unchanged.
 
 ## Canonical CLI Subcommand Reference (`A15` Parity)
