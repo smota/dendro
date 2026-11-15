@@ -189,8 +189,53 @@ pub fn ingest_jsonl_with_link_config(
     tool_key: Option<&[u8]>,
     link_config: &dendro_core::SessionLinkConfig,
 ) -> Result<FileStats> {
+    let export_config = dendro_core::FactExportConfig::unconfigured();
+    ingest_jsonl_with_configs(
+        store,
+        source_id,
+        harness,
+        path,
+        tool_key,
+        link_config,
+        &export_config,
+    )
+}
+
+/// Ingest a JSONL session file using an explicit [`dendro_core::FactExportConfig`]
+/// to derive `fact-export-v1` pseudonyms (`commit_hmac`, `parent_hmacs`, `session_key`, `git_evidence_key`).
+pub fn ingest_jsonl_with_export_config(
+    store: &AnalyticsStore,
+    source_id: &str,
+    harness: &str,
+    path: &Path,
+    tool_key: Option<&[u8]>,
+    fact_export_config: &dendro_core::FactExportConfig,
+) -> Result<FileStats> {
+    let link_config = dendro_core::SessionLinkConfig::unconfigured();
+    ingest_jsonl_with_configs(
+        store,
+        source_id,
+        harness,
+        path,
+        tool_key,
+        &link_config,
+        fact_export_config,
+    )
+}
+
+/// Ingest a JSONL session file with explicit [`dendro_core::SessionLinkConfig`] and
+/// [`dendro_core::FactExportConfig`].
+pub fn ingest_jsonl_with_configs(
+    store: &AnalyticsStore,
+    source_id: &str,
+    harness: &str,
+    path: &Path,
+    tool_key: Option<&[u8]>,
+    link_config: &dendro_core::SessionLinkConfig,
+    fact_export_config: &dendro_core::FactExportConfig,
+) -> Result<FileStats> {
     let limits = crate::capture_registry_v1::Registry::reader_limits(harness);
-    ingest_jsonl_limited_with_link(
+    ingest_jsonl_limited_with_configs(
         store,
         source_id,
         harness,
@@ -200,6 +245,7 @@ pub fn ingest_jsonl_with_link_config(
         || Ok(()),
         &limits,
         link_config,
+        fact_export_config,
     )
 }
 
@@ -225,8 +271,32 @@ pub fn ingest_jsonl_with_cutoff_and_link_config(
     cutoff: Option<&dendro_core::FileCutoff>,
     link_config: &dendro_core::SessionLinkConfig,
 ) -> Result<FileStats> {
+    let export_config = dendro_core::FactExportConfig::unconfigured();
+    ingest_jsonl_with_cutoff_and_configs(
+        store,
+        source_id,
+        harness,
+        path,
+        tool_key,
+        cutoff,
+        link_config,
+        &export_config,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn ingest_jsonl_with_cutoff_and_configs(
+    store: &AnalyticsStore,
+    source_id: &str,
+    harness: &str,
+    path: &Path,
+    tool_key: Option<&[u8]>,
+    cutoff: Option<&dendro_core::FileCutoff>,
+    link_config: &dendro_core::SessionLinkConfig,
+    fact_export_config: &dendro_core::FactExportConfig,
+) -> Result<FileStats> {
     let limits = crate::capture_registry_v1::Registry::reader_limits(harness);
-    ingest_jsonl_limited_with_link(
+    ingest_jsonl_limited_with_configs(
         store,
         source_id,
         harness,
@@ -236,6 +306,7 @@ pub fn ingest_jsonl_with_cutoff_and_link_config(
         || Ok(()),
         &limits,
         link_config,
+        fact_export_config,
     )
 }
 
@@ -318,6 +389,34 @@ fn ingest_jsonl_limited_with_link(
     limits: &crate::sdk::ReadLimits,
     link_config: &dendro_core::SessionLinkConfig,
 ) -> Result<FileStats> {
+    let export_config = dendro_core::FactExportConfig::unconfigured();
+    ingest_jsonl_limited_with_configs(
+        store,
+        source_id,
+        harness,
+        path,
+        tool_key,
+        cutoff,
+        after_header,
+        limits,
+        link_config,
+        &export_config,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn ingest_jsonl_limited_with_configs(
+    store: &AnalyticsStore,
+    source_id: &str,
+    harness: &str,
+    path: &Path,
+    tool_key: Option<&[u8]>,
+    cutoff: Option<&dendro_core::FileCutoff>,
+    after_header: impl FnOnce() -> Result<()>,
+    limits: &crate::sdk::ReadLimits,
+    link_config: &dendro_core::SessionLinkConfig,
+    fact_export_config: &dendro_core::FactExportConfig,
+) -> Result<FileStats> {
     let mut header = Some(after_header);
     ingest_jsonl_file(
         store,
@@ -329,6 +428,7 @@ fn ingest_jsonl_limited_with_link(
         &mut header,
         limits,
         link_config,
+        fact_export_config,
     )
 }
 
@@ -419,6 +519,7 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
     after_header: &mut Option<F>,
     limits: &crate::sdk::ReadLimits,
     link_config: &dendro_core::SessionLinkConfig,
+    fact_export_config: &dendro_core::FactExportConfig,
 ) -> Result<FileStats> {
     let mismatch = |reason: &str| {
         anyhow::anyhow!(
@@ -599,6 +700,7 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
     let attempt_limit = limits.effective_line_attempts();
     let mut usage_records = 0u64;
     let initial_offset = offset;
+    let mut git_scanner = dendro_core::GitEvidenceScanner::new();
     // One streaming pass: each full batch is committed and the same reader,
     // hasher and tool scan carry on from the committed position, so every
     // line is parsed once however many batches the file needs.
@@ -769,6 +871,15 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
                         });
                     }
                 }
+            }
+            if unknown_record_type(harness, &value).is_none() {
+                observe_record_git_evidence(
+                    harness,
+                    &value,
+                    file_session.as_ref(),
+                    header_conflict,
+                    &mut git_scanner,
+                );
             }
             if !is_new {
                 if let Some(scan) = tool_scan.as_mut() {
@@ -1153,6 +1264,15 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
             complete: batch_complete,
             native_session: source_session.clone(),
         };
+        let (git_evidence, git_coverage) = git_scanner.materialize(
+            source_id,
+            generation,
+            harness,
+            header_conflict,
+            tool_key,
+            fact_export_config,
+            |raw_s| seal_session(tool_key, harness, raw_s),
+        );
         let ingest_batch = dendro_core::IngestBatch {
             source_id,
             harness,
@@ -1172,6 +1292,9 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
             security_facts: &security_facts,
             session_facts: &session_facts,
             retired_fallback_keys: &retired_fallback_keys,
+            git_evidence: &git_evidence,
+            git_coverage: git_coverage.has_activity().then_some(&git_coverage),
+            fact_export_config: Some(fact_export_config),
             warnings: &warnings,
             reader: Some(&reader_state),
             baseline: Some(&baseline),
@@ -1381,6 +1504,556 @@ fn seal_skill(key: Option<&[u8]>, raw: &str) -> String {
     match key {
         Some(key) => dendro_core::seal_identifier(key, "skill", raw),
         None => dendro_core::seal_identifier(b"", "skill", raw),
+    }
+}
+
+/// Extract git evidence from a single decoded session record across Claude, Codex, Pi, and Grok
+/// strictly from record content (no repository access, no process spawning).
+fn observe_record_git_evidence(
+    harness: &str,
+    value: &Value,
+    file_session: Option<&FileSession>,
+    header_conflict: bool,
+    scanner: &mut dendro_core::GitEvidenceScanner,
+) {
+    match harness {
+        "claude" => observe_claude_git_evidence(value, scanner),
+        "codex" => observe_codex_git_evidence(value, file_session, header_conflict, scanner),
+        "pi" => observe_pi_git_evidence(value, file_session, header_conflict, scanner),
+        "grok" => observe_grok_git_evidence(value, file_session, header_conflict, scanner),
+        _ => {}
+    }
+}
+
+fn extract_json_command_string(val: &Value) -> Option<String> {
+    if let Some(s) = val.as_str() {
+        if let Ok(parsed) = serde_json::from_str::<Value>(s) {
+            if let Some(cmd) = extract_json_command_string(&parsed) {
+                return Some(cmd);
+            }
+        }
+        return (!s.trim().is_empty()).then(|| s.to_string());
+    }
+    if let Some(arr) = val.as_array() {
+        let parts: Vec<&str> = arr.iter().filter_map(Value::as_str).collect();
+        if !parts.is_empty() {
+            return Some(parts.join(" "));
+        }
+        return None;
+    }
+    if let Some(obj) = val.as_object() {
+        for key in ["command", "cmd", "raw_command"] {
+            if let Some(v) = obj.get(key) {
+                if let Some(cmd) = extract_json_command_string(v) {
+                    return Some(cmd);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn extract_json_output_text(val: &Value) -> Option<String> {
+    match val {
+        Value::String(s) => Some(s.clone()),
+        Value::Array(arr) => {
+            let mut out = String::new();
+            for item in arr.iter().take(64) {
+                if let Some(s) = item.as_str() {
+                    if !out.is_empty() {
+                        out.push('\n');
+                    }
+                    out.push_str(s);
+                } else if let Some(t) = item
+                    .get("text")
+                    .or_else(|| item.get("output"))
+                    .or_else(|| item.get("stdout"))
+                    .or_else(|| item.get("content"))
+                    .and_then(Value::as_str)
+                {
+                    if !out.is_empty() {
+                        out.push('\n');
+                    }
+                    out.push_str(t);
+                }
+            }
+            (!out.is_empty()).then_some(out)
+        }
+        Value::Object(obj) => {
+            for key in ["stdout", "output", "aggregated_output", "text", "content"] {
+                if let Some(v) = obj.get(key) {
+                    if let Some(s) = extract_json_output_text(v) {
+                        return Some(s);
+                    }
+                }
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+fn observe_structured_git_metadata(
+    value: &Value,
+    raw_session: Option<&str>,
+    header_conflict: bool,
+    ts: Option<chrono::DateTime<chrono::Utc>>,
+    scanner: &mut dendro_core::GitEvidenceScanner,
+) {
+    let git_obj = value
+        .pointer("/payload/git")
+        .or_else(|| value.get("git"))
+        .or_else(|| value.pointer("/params/git"));
+
+    let branch = value
+        .get("gitBranch")
+        .or_else(|| git_obj.and_then(|g| g.get("branch").or_else(|| g.get("gitBranch"))))
+        .and_then(Value::as_str);
+
+    let default_branch = value
+        .get("defaultBranch")
+        .or_else(|| value.get("default_branch"))
+        .or_else(|| {
+            git_obj.and_then(|g| g.get("default_branch").or_else(|| g.get("defaultBranch")))
+        })
+        .and_then(Value::as_str);
+
+    let on_default_branch = value
+        .get("onDefaultBranch")
+        .or_else(|| value.get("on_default_branch"))
+        .or_else(|| {
+            git_obj.and_then(|g| {
+                g.get("on_default_branch")
+                    .or_else(|| g.get("onDefaultBranch"))
+            })
+        })
+        .and_then(Value::as_bool);
+
+    let commit_candidate = value
+        .get("gitCommit")
+        .or_else(|| value.get("commitHash"))
+        .or_else(|| value.get("commit_hash"))
+        .or_else(|| {
+            git_obj.and_then(|g| {
+                g.get("commit_hash")
+                    .or_else(|| g.get("commitHash"))
+                    .or_else(|| g.get("commit"))
+                    .or_else(|| g.get("sha"))
+                    .or_else(|| g.get("head"))
+            })
+        })
+        .and_then(Value::as_str);
+
+    if branch.is_some()
+        || default_branch.is_some()
+        || on_default_branch.is_some()
+        || commit_candidate.is_some()
+    {
+        scanner.observe_structured_metadata(
+            raw_session,
+            header_conflict,
+            ts,
+            branch,
+            default_branch,
+            on_default_branch,
+            commit_candidate,
+        );
+    }
+}
+
+fn observe_claude_git_evidence(value: &Value, scanner: &mut dendro_core::GitEvidenceScanner) {
+    let raw_session = value
+        .get("sessionId")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let ts = timestamp_of(value);
+
+    observe_structured_git_metadata(value, raw_session, false, ts, scanner);
+
+    let mut saw_tool_result_block = false;
+    if let Some(content) = value.pointer("/message/content").and_then(Value::as_array) {
+        for block in content {
+            match block.get("type").and_then(Value::as_str) {
+                Some("tool_use") => {
+                    let id = block
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .filter(|s| !s.is_empty());
+                    let cmd = block
+                        .get("input")
+                        .or_else(|| block.get("arguments"))
+                        .and_then(extract_json_command_string);
+                    if let (Some(call_id), Some(cmd_str)) = (id, cmd.as_deref()) {
+                        scanner.observe_tool_call(Some(call_id), cmd_str);
+                    }
+                    if let Some(inline_out) = block
+                        .get("output")
+                        .or_else(|| block.get("stdout"))
+                        .and_then(extract_json_output_text)
+                    {
+                        let is_err = block.get("is_error").and_then(Value::as_bool);
+                        scanner.observe_tool_output(
+                            id,
+                            cmd.as_deref(),
+                            raw_session,
+                            false,
+                            ts,
+                            is_err,
+                            &inline_out,
+                        );
+                    }
+                }
+                Some("tool_result") => {
+                    saw_tool_result_block = true;
+                    let id = block
+                        .get("tool_use_id")
+                        .and_then(Value::as_str)
+                        .filter(|s| !s.is_empty());
+                    let is_err = block.get("is_error").and_then(Value::as_bool);
+                    let inline_cmd = block
+                        .get("command")
+                        .or_else(|| block.get("cmd"))
+                        .and_then(extract_json_command_string);
+                    let out_text = block
+                        .get("content")
+                        .and_then(extract_json_output_text)
+                        .or_else(|| {
+                            value
+                                .get("toolUseResult")
+                                .and_then(extract_json_output_text)
+                        });
+                    if let Some(text) = out_text {
+                        scanner.observe_tool_output(
+                            id,
+                            inline_cmd.as_deref(),
+                            raw_session,
+                            false,
+                            ts,
+                            is_err,
+                            &text,
+                        );
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    if !saw_tool_result_block {
+        if let Some(tool_res) = value.get("toolUseResult") {
+            if let Some(text) = extract_json_output_text(tool_res) {
+                let id = tool_res
+                    .get("tool_use_id")
+                    .or_else(|| tool_res.get("id"))
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.is_empty());
+                let inline_cmd = tool_res
+                    .get("command")
+                    .or_else(|| tool_res.get("cmd"))
+                    .and_then(extract_json_command_string);
+                let is_err = tool_res
+                    .get("is_error")
+                    .or_else(|| tool_res.get("interrupted"))
+                    .and_then(Value::as_bool);
+                scanner.observe_tool_output(
+                    id,
+                    inline_cmd.as_deref(),
+                    raw_session,
+                    false,
+                    ts,
+                    is_err,
+                    &text,
+                );
+            }
+        }
+    }
+}
+
+fn resolve_file_or_record_session<'a>(
+    harness: &str,
+    value: &'a Value,
+    file_session: Option<&'a FileSession>,
+    header_conflict: bool,
+) -> Option<&'a str> {
+    if header_conflict {
+        return None;
+    }
+    if let Some(fs) = file_session {
+        if fs.from_header {
+            return Some(fs.raw.as_str());
+        }
+    }
+    match harness {
+        "codex" => value
+            .pointer("/payload/session_id")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty()),
+        "grok" => value
+            .pointer("/params/sessionId")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty()),
+        _ => None,
+    }
+}
+
+fn observe_codex_git_evidence(
+    value: &Value,
+    file_session: Option<&FileSession>,
+    header_conflict: bool,
+    scanner: &mut dendro_core::GitEvidenceScanner,
+) {
+    let raw_session = resolve_file_or_record_session("codex", value, file_session, header_conflict);
+    let ts = timestamp_of(value);
+
+    observe_structured_git_metadata(value, raw_session, header_conflict, ts, scanner);
+
+    let envelope = value.get("type").and_then(Value::as_str);
+    let kind = value.pointer("/payload/type").and_then(Value::as_str);
+    match (envelope, kind) {
+        (Some("event_msg"), Some("item_completed")) => {
+            if let Some(item) = value.pointer("/payload/item") {
+                if item.get("type").and_then(Value::as_str) == Some("CommandExecution") {
+                    let id = item
+                        .get("id")
+                        .or_else(|| item.get("call_id"))
+                        .and_then(Value::as_str)
+                        .filter(|s| !s.is_empty());
+                    let cmd = item.get("command").and_then(extract_json_command_string);
+                    let failed = item
+                        .get("exit_code")
+                        .and_then(Value::as_i64)
+                        .map(|code| code != 0)
+                        .or_else(|| {
+                            item.get("exit_code")
+                                .and_then(Value::as_u64)
+                                .map(|code| code != 0)
+                        });
+                    if let Some(out_text) = extract_json_output_text(item) {
+                        scanner.observe_tool_output(
+                            id,
+                            cmd.as_deref(),
+                            raw_session,
+                            header_conflict,
+                            ts,
+                            failed,
+                            &out_text,
+                        );
+                    }
+                }
+            }
+        }
+        (
+            Some("response_item"),
+            Some("custom_tool_call" | "function_call" | "tool_call" | "local_shell_call"),
+        ) => {
+            if let Some(payload) = value.pointer("/payload") {
+                let id = payload
+                    .get("call_id")
+                    .or_else(|| payload.get("id"))
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.is_empty());
+                let cmd = payload
+                    .get("arguments")
+                    .or_else(|| payload.get("input"))
+                    .or_else(|| payload.get("action"))
+                    .or_else(|| payload.get("command"))
+                    .and_then(extract_json_command_string);
+                if let (Some(call_id), Some(cmd_str)) = (id, cmd.as_deref()) {
+                    scanner.observe_tool_call(Some(call_id), cmd_str);
+                }
+            }
+        }
+        (
+            Some("response_item"),
+            Some(
+                "custom_tool_call_output"
+                | "function_call_output"
+                | "tool_call_output"
+                | "local_shell_call_output",
+            ),
+        ) => {
+            if let Some(payload) = value.pointer("/payload") {
+                let id = payload
+                    .get("call_id")
+                    .or_else(|| payload.get("id"))
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.is_empty());
+                let failed = codex_output_outcome(payload);
+                let inline_cmd = payload
+                    .get("command")
+                    .or_else(|| payload.get("cmd"))
+                    .and_then(extract_json_command_string);
+                if let Some(out_text) = payload
+                    .get("output")
+                    .and_then(extract_json_output_text)
+                    .or_else(|| extract_json_output_text(payload))
+                {
+                    scanner.observe_tool_output(
+                        id,
+                        inline_cmd.as_deref(),
+                        raw_session,
+                        header_conflict,
+                        ts,
+                        failed,
+                        &out_text,
+                    );
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn observe_pi_git_evidence(
+    value: &Value,
+    file_session: Option<&FileSession>,
+    header_conflict: bool,
+    scanner: &mut dendro_core::GitEvidenceScanner,
+) {
+    let raw_session = resolve_file_or_record_session("pi", value, file_session, header_conflict);
+    let ts = timestamp_of(value);
+
+    observe_structured_git_metadata(value, raw_session, header_conflict, ts, scanner);
+
+    if value.pointer("/message/role").and_then(Value::as_str) == Some("toolResult") {
+        let id = value
+            .pointer("/message/toolCallId")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty());
+        let is_err = value.pointer("/message/isError").and_then(Value::as_bool);
+        let inline_cmd = value
+            .pointer("/message/command")
+            .or_else(|| value.pointer("/message/details/command"))
+            .and_then(extract_json_command_string);
+        let out_text = value
+            .pointer("/message/content")
+            .and_then(extract_json_output_text)
+            .or_else(|| {
+                value
+                    .pointer("/message/details")
+                    .and_then(extract_json_output_text)
+            })
+            .or_else(|| {
+                value
+                    .pointer("/message/output")
+                    .and_then(extract_json_output_text)
+            });
+        if let Some(text) = out_text {
+            scanner.observe_tool_output(
+                id,
+                inline_cmd.as_deref(),
+                raw_session,
+                header_conflict,
+                ts,
+                is_err,
+                &text,
+            );
+        }
+        return;
+    }
+
+    if let Some(content) = value.pointer("/message/content").and_then(Value::as_array) {
+        for block in content {
+            if block.get("type").and_then(Value::as_str) == Some("toolCall") {
+                let id = block
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.is_empty());
+                let cmd = block
+                    .get("arguments")
+                    .or_else(|| block.get("input"))
+                    .and_then(extract_json_command_string);
+                if let (Some(call_id), Some(cmd_str)) = (id, cmd.as_deref()) {
+                    scanner.observe_tool_call(Some(call_id), cmd_str);
+                }
+            }
+        }
+    }
+}
+
+fn observe_grok_git_evidence(
+    value: &Value,
+    file_session: Option<&FileSession>,
+    header_conflict: bool,
+    scanner: &mut dendro_core::GitEvidenceScanner,
+) {
+    let raw_session = resolve_file_or_record_session("grok", value, file_session, header_conflict);
+    let ts = grok_timestamp(value);
+
+    observe_structured_git_metadata(value, raw_session, header_conflict, ts, scanner);
+
+    let Some(update) = value.pointer("/params/update") else {
+        return;
+    };
+    match grok_session_update(value) {
+        Some("tool_call") => {
+            let id = update
+                .get("toolCallId")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty());
+            let cmd = update
+                .get("rawInput")
+                .or_else(|| update.get("input"))
+                .and_then(extract_json_command_string);
+            if let (Some(call_id), Some(cmd_str)) = (id, cmd.as_deref()) {
+                scanner.observe_tool_call(Some(call_id), cmd_str);
+            }
+            if let Some(out_text) = update
+                .get("rawOutput")
+                .or_else(|| update.get("output"))
+                .and_then(extract_json_output_text)
+            {
+                let failed = match update.get("status").and_then(Value::as_str) {
+                    Some("failed") => Some(true),
+                    Some("completed") => Some(false),
+                    _ => None,
+                };
+                scanner.observe_tool_output(
+                    id,
+                    cmd.as_deref(),
+                    raw_session,
+                    header_conflict,
+                    ts,
+                    failed,
+                    &out_text,
+                );
+            }
+        }
+        Some("tool_call_update") => {
+            let id = update
+                .get("toolCallId")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty());
+            let failed = match update.get("status").and_then(Value::as_str) {
+                Some("failed") => Some(true),
+                Some("completed") => Some(false),
+                _ => None,
+            };
+            let inline_cmd = update
+                .get("rawInput")
+                .or_else(|| update.get("command"))
+                .and_then(extract_json_command_string);
+            if let Some(out_text) = update
+                .get("rawOutput")
+                .or_else(|| update.get("output"))
+                .or_else(|| update.get("content"))
+                .and_then(extract_json_output_text)
+            {
+                scanner.observe_tool_output(
+                    id,
+                    inline_cmd.as_deref(),
+                    raw_session,
+                    header_conflict,
+                    ts,
+                    failed,
+                    &out_text,
+                );
+            }
+        }
+        _ => {}
     }
 }
 
@@ -8729,5 +9402,737 @@ mod hostile_input_tests {
             reader_marker_session, expected_s,
             "reader-marker session in tool_facts must remain S (never '' or NULL) after batch 1 commits and batch 2 fails"
         );
+    }
+}
+
+#[cfg(test)]
+mod d4c_git_bridge_tests {
+    use super::tests::{open_test_analytics, AdmittedTestDir};
+    use super::*;
+    use std::fs;
+
+    fn independent_lp_hmac(key: &[u8], domain: &str, fields: &[&str]) -> String {
+        use sha2::{Digest, Sha256};
+        let mut key_block = [0u8; 64];
+        if key.len() > 64 {
+            let hashed = Sha256::digest(key);
+            key_block[..32].copy_from_slice(&hashed);
+        } else {
+            key_block[..key.len()].copy_from_slice(key);
+        }
+        let mut ipad = [0x36u8; 64];
+        let mut opad = [0x5cu8; 64];
+        for i in 0..64 {
+            ipad[i] ^= key_block[i];
+            opad[i] ^= key_block[i];
+        }
+        let mut inner = Sha256::new();
+        inner.update(ipad);
+        for s in std::iter::once(domain).chain(fields.iter().copied()) {
+            let b = s.as_bytes();
+            inner.update((b.len() as u32).to_be_bytes());
+            inner.update(b);
+        }
+        let inner_digest = inner.finalize();
+        let mut outer = Sha256::new();
+        outer.update(opad);
+        outer.update(inner_digest);
+        let bytes = outer.finalize();
+        let mut hex_out = String::with_capacity(64);
+        for byte in bytes {
+            use std::fmt::Write as _;
+            let _ = write!(&mut hex_out, "{byte:02x}");
+        }
+        hex_out
+    }
+
+    #[test]
+    fn rev_parse_head_produces_matched_evidence_with_record_observed_at_and_contract_commit_hmac() {
+        let scratch = AdmittedTestDir::new("dendro-d4c-rev-parse");
+        let dir = scratch.path();
+        let db_path = dir.join("rev_parse.duckdb");
+        let store = open_test_analytics(&db_path);
+        let tool_key = b"d4c-rev-parse-tool-key-000000000";
+        let raw_export_key = b"fact-export-v1-public-test-key";
+        let export_cfg =
+            dendro_core::FactExportConfig::from_raw_key(raw_export_key, "kh_customer_v1");
+
+        let sha_a = "a".repeat(40);
+        let sha_256 = "d".repeat(64);
+
+        // 1. Claude session with `git rev-parse HEAD` tool_use + tool_result
+        let claude_file = dir.join("claude_rev_parse.jsonl");
+        let claude_lines = format!(
+            concat!(
+                "{{\"type\":\"assistant\",\"sessionId\":\"claude-s1\",\"timestamp\":\"2026-11-12T10:15:30Z\",\"message\":{{\"id\":\"m1\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5\",\"content\":[{{\"type\":\"tool_use\",\"id\":\"tu-rp-1\",\"name\":\"Bash\",\"input\":{{\"command\":\"git rev-parse HEAD\"}}}}]}}}}\n",
+                "{{\"type\":\"user\",\"sessionId\":\"claude-s1\",\"timestamp\":\"2026-11-12T10:15:31Z\",\"message\":{{\"role\":\"user\",\"content\":[{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-rp-1\",\"is_error\":false,\"content\":\"{sha_a}\\n\"}}]}}}}\n"
+            ),
+            sha_a = sha_a
+        );
+        fs::write(&claude_file, claude_lines).unwrap();
+
+        ingest_jsonl_with_export_config(
+            &store,
+            "fixture-source-a",
+            "claude",
+            &claude_file,
+            Some(tool_key),
+            &export_cfg,
+        )
+        .unwrap();
+
+        // 2. Codex session with 64-hex SHA-256 commit in `git rev-parse HEAD`
+        let codex_file = dir.join("codex_rev_parse.jsonl");
+        let codex_lines = format!(
+            concat!(
+                "{{\"type\":\"session_meta\",\"timestamp\":\"2026-11-12T11:00:00Z\",\"payload\":{{\"id\":\"codex-a\"}}}}\n",
+                "{{\"type\":\"event_msg\",\"timestamp\":\"2026-11-12T11:00:05Z\",\"payload\":{{\"type\":\"item_completed\",\"item\":{{\"id\":\"cmd-1\",\"type\":\"CommandExecution\",\"command\":[\"git\",\"rev-parse\",\"HEAD\"],\"exit_code\":0,\"aggregated_output\":\"{sha_256}\\n\"}}}}}}\n"
+            ),
+            sha_256 = sha_256
+        );
+        fs::write(&codex_file, codex_lines).unwrap();
+
+        ingest_jsonl_with_export_config(
+            &store,
+            "fixture-source-b",
+            "codex",
+            &codex_file,
+            Some(tool_key),
+            &export_cfg,
+        )
+        .unwrap();
+
+        let rows = store.load_git_evidence().unwrap();
+        assert_eq!(rows.len(), 2);
+
+        let claude_row = rows
+            .iter()
+            .find(|r| r.source_id == "fixture-source-a")
+            .unwrap();
+        assert_eq!(claude_row.session_match_status, "matched");
+        assert_eq!(
+            claude_row.native_session.as_deref(),
+            Some(seal_session(Some(tool_key), "claude", "claude-s1").as_str())
+        );
+        assert_eq!(
+            claude_row.observed_at,
+            Some(
+                chrono::DateTime::parse_from_rfc3339("2026-11-12T10:15:31Z")
+                    .unwrap()
+                    .with_timezone(&chrono::Utc)
+            )
+        );
+        assert_eq!(claude_row.observed_at_status, "observed");
+        assert_eq!(claude_row.export_status, "exportable");
+        assert_eq!(
+            claude_row.pseudonym_key_id.as_deref(),
+            Some("kh_customer_v1")
+        );
+
+        // Contract vector + independent HMAC check
+        let independent_commit_a =
+            independent_lp_hmac(raw_export_key, "fact-export.v1/commit", &[&sha_a]);
+        assert_eq!(
+            independent_commit_a,
+            "bc07f227444a11a858de0f4321da9826c54d4c5def78f1110d799ee523e11137"
+        );
+        assert_eq!(
+            claude_row.commit_hmac.as_deref(),
+            Some(independent_commit_a.as_str())
+        );
+
+        let codex_row = rows
+            .iter()
+            .find(|r| r.source_id == "fixture-source-b")
+            .unwrap();
+        assert_eq!(codex_row.session_match_status, "matched");
+        let independent_commit_256 =
+            independent_lp_hmac(raw_export_key, "fact-export.v1/commit", &[&sha_256]);
+        assert_eq!(
+            independent_commit_256,
+            "64b5f1c4221dd313c441f42af4cf19f248f862f6898e51aaadb9df915d01c47b"
+        );
+        assert_eq!(
+            codex_row.commit_hmac.as_deref(),
+            Some(independent_commit_256.as_str())
+        );
+    }
+
+    #[test]
+    fn git_log_format_parents_merge_single_and_root_commits() {
+        let scratch = AdmittedTestDir::new("dendro-d4c-log-parents");
+        let dir = scratch.path();
+        let db_path = dir.join("log_parents.duckdb");
+        let store = open_test_analytics(&db_path);
+        let tool_key = b"d4c-log-parents-tool-key-0000000";
+        let raw_export_key = b"fact-export-v1-public-test-key";
+        let export_cfg =
+            dendro_core::FactExportConfig::from_raw_key(raw_export_key, "kh_customer_v1");
+
+        let sha_merge = "a".repeat(40);
+        let sha_p1 = "b".repeat(40);
+        let sha_p2 = "c".repeat(40);
+        let sha_single = "d".repeat(40);
+        let sha_root = "e".repeat(40);
+
+        let log_out =
+            format!("{sha_merge} {sha_p1} {sha_p2}\\n{sha_single} {sha_p1}\\n{sha_root}\\n");
+        let claude_file = dir.join("claude_log.jsonl");
+        let claude_lines = format!(
+            concat!(
+                "{{\"type\":\"assistant\",\"sessionId\":\"claude-log-s1\",\"timestamp\":\"2026-11-12T12:00:00Z\",\"message\":{{\"id\":\"m1\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5\",\"content\":[{{\"type\":\"tool_use\",\"id\":\"tu-log-1\",\"name\":\"Bash\",\"input\":{{\"command\":\"git log -3 --format='%H %P'\"}}}}]}}}}\n",
+                "{{\"type\":\"user\",\"sessionId\":\"claude-log-s1\",\"timestamp\":\"2026-11-12T12:00:02Z\",\"message\":{{\"role\":\"user\",\"content\":[{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-log-1\",\"is_error\":false,\"content\":\"{log_out}\"}}]}}}}\n"
+            ),
+            log_out = log_out
+        );
+        fs::write(&claude_file, claude_lines).unwrap();
+
+        ingest_jsonl_with_export_config(
+            &store,
+            "src-log",
+            "claude",
+            &claude_file,
+            Some(tool_key),
+            &export_cfg,
+        )
+        .unwrap();
+
+        let rows = store.load_git_evidence().unwrap();
+        assert_eq!(rows.len(), 3);
+
+        let sealed_merge = dendro_core::seal_commit(Some(tool_key), &sha_merge);
+        let sealed_single = dendro_core::seal_commit(Some(tool_key), &sha_single);
+        let sealed_root = dendro_core::seal_commit(Some(tool_key), &sha_root);
+
+        let exp_p1_hmac =
+            "fc234836df3c3fdda2c9fba641de25da4385401bccb4b72c42ab186026fb1138".to_string();
+        let exp_p2_hmac =
+            "ea0c2c4cac64a682cd4e0536629f337406009c747f5c5d04d316fbdecb4e097b".to_string();
+
+        // 1. Two parents -> is_merge = Some(true), ordered parent_hmacs
+        let r_merge = rows
+            .iter()
+            .find(|r| r.commit_sealed == sealed_merge)
+            .unwrap();
+        assert_eq!(r_merge.merge_status, "observed");
+        assert_eq!(r_merge.is_merge, Some(true));
+        assert_eq!(r_merge.merge_missing_reason, None);
+        assert_eq!(r_merge.parent_hmacs, vec![exp_p1_hmac.clone(), exp_p2_hmac]);
+
+        // 2. Single parent -> is_merge = Some(false), 1 parent_hmac
+        let r_single = rows
+            .iter()
+            .find(|r| r.commit_sealed == sealed_single)
+            .unwrap();
+        assert_eq!(r_single.merge_status, "observed");
+        assert_eq!(r_single.is_merge, Some(false));
+        assert_eq!(r_single.merge_missing_reason, None);
+        assert_eq!(r_single.parent_hmacs, vec![exp_p1_hmac]);
+
+        // 3. Root commit (empty parents in `%H %P`) -> merge_status = "observed", is_merge = Some(false), empty parent_hmacs
+        let r_root = rows
+            .iter()
+            .find(|r| r.commit_sealed == sealed_root)
+            .unwrap();
+        assert_eq!(r_root.merge_status, "observed");
+        assert_eq!(r_root.is_merge, Some(false));
+        assert_eq!(r_root.merge_missing_reason, None);
+        assert!(r_root.parent_hmacs.is_empty());
+
+        let cov = store.total_git_evidence_coverage().unwrap();
+        assert_eq!(cov.observed, 3);
+        assert_eq!(cov.missing_parents, 0);
+    }
+
+    #[test]
+    fn abbreviated_sha_only_emits_no_evidence_row_and_increments_unresolved_counter() {
+        let scratch = AdmittedTestDir::new("dendro-d4c-abbrev");
+        let dir = scratch.path();
+        let db_path = dir.join("abbrev.duckdb");
+        let store = open_test_analytics(&db_path);
+        let tool_key = b"d4c-abbrev-tool-key-000000000000";
+
+        let claude_file = dir.join("claude_abbrev.jsonl");
+        let claude_lines = concat!(
+            "{\"type\":\"assistant\",\"sessionId\":\"claude-ab-1\",\"timestamp\":\"2026-11-12T13:00:00Z\",\"message\":{\"id\":\"m1\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5\",\"content\":[{\"type\":\"tool_use\",\"id\":\"tu-c-1\",\"name\":\"Bash\",\"input\":{\"command\":\"git commit -m 'feat: test'\"}},{\"type\":\"tool_use\",\"id\":\"tu-rp-s\",\"name\":\"Bash\",\"input\":{\"command\":\"git rev-parse --short HEAD\"}}]}}\n",
+            "{\"type\":\"user\",\"sessionId\":\"claude-ab-1\",\"timestamp\":\"2026-11-12T13:00:01Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"tu-c-1\",\"is_error\":false,\"content\":\"[main abc1234] feat: test\\n 1 file changed, 2 insertions(+)\\n\"},{\"type\":\"tool_result\",\"tool_use_id\":\"tu-rp-s\",\"is_error\":false,\"content\":\"abc1234\\n\"}]}}\n"
+        );
+        fs::write(&claude_file, claude_lines).unwrap();
+
+        ingest_jsonl_with_key(&store, "src-abbrev", "claude", &claude_file, Some(tool_key))
+            .unwrap();
+
+        let rows = store.load_git_evidence().unwrap();
+        assert!(
+            rows.is_empty(),
+            "abbreviated SHAs must never emit a git_evidence_facts row"
+        );
+
+        let cov = store.total_git_evidence_coverage().unwrap();
+        assert_eq!(cov.observed, 0);
+        assert_eq!(
+            cov.unresolved_abbreviated, 2,
+            "both abbreviated observations must increment unresolved_abbreviated"
+        );
+    }
+
+    #[test]
+    fn same_sha_in_two_sessions_resolves_to_ambiguous_with_null_session() {
+        let scratch = AdmittedTestDir::new("dendro-d4c-ambiguous");
+        let dir = scratch.path();
+        let db_path = dir.join("ambiguous.duckdb");
+        let store = open_test_analytics(&db_path);
+        let tool_key = b"d4c-ambiguous-tool-key-000000000";
+        let export_cfg = dendro_core::FactExportConfig::from_raw_key(
+            b"fact-export-v1-public-test-key",
+            "kh_customer_v1",
+        );
+
+        let sha_same_file = "1".repeat(40);
+        let sha_cross_file = "2".repeat(40);
+
+        // Case A: Same SHA observed in two sessions inside a single Claude JSONL file
+        let file_a = dir.join("claude_two_sessions.jsonl");
+        let lines_a = format!(
+            concat!(
+                "{{\"type\":\"assistant\",\"sessionId\":\"sess-A1\",\"timestamp\":\"2026-11-12T14:00:00Z\",\"message\":{{\"id\":\"m1\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5\",\"content\":[{{\"type\":\"tool_use\",\"id\":\"tu-1\",\"name\":\"Bash\",\"input\":{{\"command\":\"git rev-parse HEAD\"}}}}]}}}}\n",
+                "{{\"type\":\"user\",\"sessionId\":\"sess-A1\",\"timestamp\":\"2026-11-12T14:00:01Z\",\"message\":{{\"role\":\"user\",\"content\":[{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-1\",\"is_error\":false,\"content\":\"{sha_same_file}\\n\"}}]}}}}\n",
+                "{{\"type\":\"assistant\",\"sessionId\":\"sess-A2\",\"timestamp\":\"2026-11-12T14:00:02Z\",\"message\":{{\"id\":\"m2\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5\",\"content\":[{{\"type\":\"tool_use\",\"id\":\"tu-2\",\"name\":\"Bash\",\"input\":{{\"command\":\"git rev-parse HEAD\"}}}}]}}}}\n",
+                "{{\"type\":\"user\",\"sessionId\":\"sess-A2\",\"timestamp\":\"2026-11-12T14:00:03Z\",\"message\":{{\"role\":\"user\",\"content\":[{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-2\",\"is_error\":false,\"content\":\"{sha_same_file}\\n\"}}]}}}}\n"
+            ),
+            sha_same_file = sha_same_file
+        );
+        fs::write(&file_a, lines_a).unwrap();
+        ingest_jsonl_with_export_config(
+            &store,
+            "src-same-file",
+            "claude",
+            &file_a,
+            Some(tool_key),
+            &export_cfg,
+        )
+        .unwrap();
+
+        // Case B: Same SHA observed across two separate session files ingested into the same store
+        let codex_1 = dir.join("codex_s1.jsonl");
+        let codex_2 = dir.join("codex_s2.jsonl");
+        fs::write(
+            &codex_1,
+            format!(
+                "{{\"type\":\"session_meta\",\"timestamp\":\"2026-11-12T14:10:00Z\",\"payload\":{{\"id\":\"codex-sess-1\",\"git\":{{\"commit_hash\":\"{sha_cross_file}\"}}}}}}\n"
+            ),
+        )
+        .unwrap();
+        fs::write(
+            &codex_2,
+            format!(
+                "{{\"type\":\"session_meta\",\"timestamp\":\"2026-11-12T14:20:00Z\",\"payload\":{{\"id\":\"codex-sess-2\",\"git\":{{\"commit_hash\":\"{sha_cross_file}\"}}}}}}\n"
+            ),
+        )
+        .unwrap();
+
+        ingest_jsonl_with_export_config(
+            &store,
+            "src-codex-1",
+            "codex",
+            &codex_1,
+            Some(tool_key),
+            &export_cfg,
+        )
+        .unwrap();
+        ingest_jsonl_with_export_config(
+            &store,
+            "src-codex-2",
+            "codex",
+            &codex_2,
+            Some(tool_key),
+            &export_cfg,
+        )
+        .unwrap();
+
+        let rows = store.load_git_evidence().unwrap();
+        assert_eq!(rows.len(), 2);
+        for row in &rows {
+            assert_eq!(
+                row.session_match_status, "ambiguous",
+                "row {} must be marked ambiguous",
+                row.source_key
+            );
+            assert_eq!(
+                row.native_session, None,
+                "ambiguous commit must have NULL native_session"
+            );
+            assert_eq!(
+                row.session_key, None,
+                "ambiguous commit must have NULL session_key"
+            );
+        }
+    }
+
+    #[test]
+    fn no_parents_recorded_and_branch_main_alone_produce_not_observed_statuses() {
+        let scratch = AdmittedTestDir::new("dendro-d4c-not-observed");
+        let dir = scratch.path();
+        let db_path = dir.join("not_observed.duckdb");
+        let store = open_test_analytics(&db_path);
+        let tool_key = b"d4c-not-observed-tool-key-000000";
+
+        let sha_no_parents = "3".repeat(40);
+        let sha_with_default = "4".repeat(40);
+
+        // File 1: Branch name "main" alone + `git rev-parse HEAD` (no parents recorded)
+        let claude_main_only = dir.join("claude_main_only.jsonl");
+        let lines_1 = format!(
+            concat!(
+                "{{\"type\":\"assistant\",\"sessionId\":\"sess-m1\",\"gitBranch\":\"main\",\"timestamp\":\"2026-11-12T15:00:00Z\",\"message\":{{\"id\":\"m1\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5\",\"content\":[{{\"type\":\"tool_use\",\"id\":\"tu-1\",\"name\":\"Bash\",\"input\":{{\"command\":\"git rev-parse HEAD\"}}}}]}}}}\n",
+                "{{\"type\":\"user\",\"sessionId\":\"sess-m1\",\"gitBranch\":\"main\",\"timestamp\":\"2026-11-12T15:00:01Z\",\"message\":{{\"role\":\"user\",\"content\":[{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-1\",\"is_error\":false,\"content\":\"{sha_no_parents}\\n\"}}]}}}}\n"
+            ),
+            sha_no_parents = sha_no_parents
+        );
+        fs::write(&claude_main_only, lines_1).unwrap();
+        ingest_jsonl_with_key(
+            &store,
+            "src-main-only",
+            "claude",
+            &claude_main_only,
+            Some(tool_key),
+        )
+        .unwrap();
+
+        let rows_1 = store.load_git_evidence().unwrap();
+        assert_eq!(rows_1.len(), 1);
+        assert_eq!(rows_1[0].merge_status, "not_observed");
+        assert_eq!(
+            rows_1[0].merge_missing_reason.as_deref(),
+            Some("parents_not_recorded")
+        );
+        assert_eq!(rows_1[0].is_merge, None);
+        assert_eq!(
+            rows_1[0].default_branch_status, "not_observed",
+            "branch name 'main' alone must never infer default_branch_status = observed"
+        );
+        assert_eq!(rows_1[0].on_default_branch, None);
+
+        // File 2: Explicit `git symbolic-ref refs/remotes/origin/HEAD` -> `refs/remotes/origin/main`
+        let claude_explicit_def = dir.join("claude_explicit_default.jsonl");
+        let lines_2 = format!(
+            concat!(
+                "{{\"type\":\"assistant\",\"sessionId\":\"sess-m2\",\"gitBranch\":\"main\",\"timestamp\":\"2026-11-12T15:10:00Z\",\"message\":{{\"id\":\"m2\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5\",\"content\":[{{\"type\":\"tool_use\",\"id\":\"tu-sym\",\"name\":\"Bash\",\"input\":{{\"command\":\"git symbolic-ref refs/remotes/origin/HEAD\"}}}},{{\"type\":\"tool_use\",\"id\":\"tu-rp\",\"name\":\"Bash\",\"input\":{{\"command\":\"git rev-parse HEAD\"}}}}]}}}}\n",
+                "{{\"type\":\"user\",\"sessionId\":\"sess-m2\",\"gitBranch\":\"main\",\"timestamp\":\"2026-11-12T15:10:01Z\",\"message\":{{\"role\":\"user\",\"content\":[{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-sym\",\"is_error\":false,\"content\":\"refs/remotes/origin/main\\n\"}},{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-rp\",\"is_error\":false,\"content\":\"{sha_with_default}\\n\"}}]}}}}\n"
+            ),
+            sha_with_default = sha_with_default
+        );
+        fs::write(&claude_explicit_def, lines_2).unwrap();
+        ingest_jsonl_with_key(
+            &store,
+            "src-explicit-def",
+            "claude",
+            &claude_explicit_def,
+            Some(tool_key),
+        )
+        .unwrap();
+
+        let rows_2 = store.load_git_evidence().unwrap();
+        let exp_row = rows_2
+            .iter()
+            .find(|r| r.source_id == "src-explicit-def")
+            .unwrap();
+        assert_eq!(exp_row.default_branch_status, "observed");
+        assert_eq!(exp_row.on_default_branch, Some(true));
+    }
+
+    #[test]
+    fn no_key_material_is_non_exportable_and_recomputed_on_next_ingest_once_configured() {
+        let scratch = AdmittedTestDir::new("dendro-d4c-recompute-key");
+        let dir = scratch.path();
+        let db_path = dir.join("recompute.duckdb");
+        let store = open_test_analytics(&db_path);
+        let tool_key = b"d4c-recompute-tool-key-000000000";
+
+        let sha_c = "a".repeat(40);
+        let sha_p = "b".repeat(40);
+
+        let pi_file = dir.join("pi_session.jsonl");
+        let pi_lines = format!(
+            concat!(
+                "{{\"type\":\"session\",\"id\":\"pi-sess-1\",\"timestamp\":\"2026-11-12T16:00:00Z\"}}\n",
+                "{{\"type\":\"message\",\"timestamp\":\"2026-11-12T16:00:01Z\",\"message\":{{\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5\",\"content\":[{{\"type\":\"toolCall\",\"id\":\"tc-1\",\"name\":\"bash\",\"arguments\":{{\"command\":\"git log -1 --format='%H %P'\"}}}}]}}}}\n",
+                "{{\"type\":\"message\",\"timestamp\":\"2026-11-12T16:00:02Z\",\"message\":{{\"role\":\"toolResult\",\"toolCallId\":\"tc-1\",\"isError\":false,\"content\":\"{sha_c} {sha_p}\\n\"}}}}\n"
+            ),
+            sha_c = sha_c,
+            sha_p = sha_p
+        );
+        fs::write(&pi_file, pi_lines).unwrap();
+
+        // Pass 1: No fact-export key material configured -> non_exportable
+        ingest_jsonl_with_export_config(
+            &store,
+            "fixture-source-a",
+            "pi",
+            &pi_file,
+            Some(tool_key),
+            &dendro_core::FactExportConfig::unconfigured(),
+        )
+        .unwrap();
+
+        let pass1 = store.load_git_evidence().unwrap();
+        assert_eq!(pass1.len(), 1);
+        assert_eq!(pass1[0].export_status, "non_exportable");
+        assert_eq!(pass1[0].pseudonym_key_id, None);
+        assert_eq!(pass1[0].commit_hmac, None);
+        assert!(pass1[0].parent_hmacs.is_empty());
+        assert_eq!(pass1[0].session_key, None);
+        assert_eq!(pass1[0].git_evidence_key, None);
+        assert_eq!(
+            pass1[0].commit_sealed,
+            dendro_core::seal_commit(Some(tool_key), &sha_c)
+        );
+        assert_eq!(
+            pass1[0].parent_sealed,
+            vec![dendro_core::seal_commit(Some(tool_key), &sha_p)]
+        );
+
+        // Pass 2: Fact-export key material is now configured; re-ingest the unchanged file
+        let export_cfg = dendro_core::FactExportConfig::from_raw_key(
+            b"fact-export-v1-public-test-key",
+            "kh_customer_v1",
+        );
+        ingest_jsonl_with_export_config(
+            &store,
+            "fixture-source-a",
+            "pi",
+            &pi_file,
+            Some(tool_key),
+            &export_cfg,
+        )
+        .unwrap();
+
+        let pass2 = store.load_git_evidence().unwrap();
+        assert_eq!(pass2.len(), 1);
+        assert_eq!(pass2[0].export_status, "exportable");
+        assert_eq!(pass2[0].pseudonym_key_id.as_deref(), Some("kh_customer_v1"));
+        assert_eq!(
+            pass2[0].commit_hmac.as_deref(),
+            Some("bc07f227444a11a858de0f4321da9826c54d4c5def78f1110d799ee523e11137")
+        );
+        assert_eq!(
+            pass2[0].parent_hmacs,
+            vec!["fc234836df3c3fdda2c9fba641de25da4385401bccb4b72c42ab186026fb1138".to_string()]
+        );
+        assert!(pass2[0].session_key.is_some());
+        assert!(pass2[0].git_evidence_key.is_some());
+    }
+
+    #[test]
+    fn raw_sha_branch_name_and_commit_message_are_never_stored_in_db() {
+        let scratch = AdmittedTestDir::new("dendro-d4c-privacy-grep");
+        let dir = scratch.path();
+        let db_path = dir.join("privacy_grep.duckdb");
+        let store = open_test_analytics(&db_path);
+        let tool_key = b"d4c-privacy-grep-tool-key-000000";
+        let export_cfg = dendro_core::FactExportConfig::from_raw_key(
+            b"fact-export-v1-public-test-key",
+            "kh_customer_v1",
+        );
+
+        let raw_commit_sha = "deadbeefcafe0123456789abcdef0123456789ab";
+        let raw_parent_sha = "0123456789abcdef0123456789abcdefdeadbeef";
+        let raw_branch = "secret-branch-d4c-alpha-999";
+        let raw_commit_msg = "super-secret-commit-message-d4c-omega-777";
+
+        let claude_file = dir.join("claude_secret_git.jsonl");
+        let lines = format!(
+            concat!(
+                "{{\"type\":\"assistant\",\"sessionId\":\"sess-priv-1\",\"gitBranch\":\"{raw_branch}\",\"timestamp\":\"2026-11-12T17:00:00Z\",\"message\":{{\"id\":\"m1\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5\",\"content\":[{{\"type\":\"tool_use\",\"id\":\"tu-c\",\"name\":\"Bash\",\"input\":{{\"command\":\"git commit -m '{raw_commit_msg}' && git log -1 --format='%H %P'\"}}}}]}}}}\n",
+                "{{\"type\":\"user\",\"sessionId\":\"sess-priv-1\",\"gitBranch\":\"{raw_branch}\",\"timestamp\":\"2026-11-12T17:00:01Z\",\"message\":{{\"role\":\"user\",\"content\":[{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-c\",\"is_error\":false,\"content\":\"[{raw_branch} {raw_commit_sha}] {raw_commit_msg}\\n{raw_commit_sha} {raw_parent_sha}\\n\"}}]}}}}\n"
+            ),
+            raw_branch = raw_branch,
+            raw_commit_msg = raw_commit_msg,
+            raw_commit_sha = raw_commit_sha,
+            raw_parent_sha = raw_parent_sha,
+        );
+        fs::write(&claude_file, lines).unwrap();
+
+        ingest_jsonl_with_export_config(
+            &store,
+            "src-privacy",
+            "claude",
+            &claude_file,
+            Some(tool_key),
+            &export_cfg,
+        )
+        .unwrap();
+        store.checkpoint().unwrap();
+
+        let rows = store.load_git_evidence().unwrap();
+        assert_eq!(rows.len(), 1);
+
+        // 1. Check every table in canonical_table_snapshot()
+        let snap = store.canonical_table_snapshot().unwrap();
+        for (table, table_rows) in &snap {
+            for r in table_rows {
+                for forbidden in [raw_commit_sha, raw_parent_sha, raw_branch, raw_commit_msg] {
+                    assert!(
+                        !r.contains(forbidden),
+                        "table {table} leaked forbidden git string {forbidden} in row: {r}"
+                    );
+                }
+            }
+        }
+        drop(store);
+
+        // 2. Grep the raw DuckDB file bytes on disk
+        let db_bytes = fs::read(&db_path).unwrap();
+        let db_lossy = String::from_utf8_lossy(&db_bytes);
+        for forbidden in [raw_commit_sha, raw_parent_sha, raw_branch, raw_commit_msg] {
+            assert!(
+                !db_lossy.contains(forbidden),
+                "raw DuckDB file on disk leaked forbidden git string: {forbidden}"
+            );
+        }
+    }
+
+    #[test]
+    fn multi_batch_crash_failpoints_preserve_atomicity_and_converge_on_replay() {
+        use dendro_core::IngestBatchStage;
+
+        let scratch = AdmittedTestDir::new("dendro-d4c-failpoints");
+        let dir = scratch.path();
+        let tool_key = b"d4c-failpoints-tool-key-00000000";
+        let link_cfg = dendro_core::SessionLinkConfig::from_key_hex(
+            &"55".repeat(32),
+            Some("acme"),
+            Some("host-d4c"),
+            Some("core"),
+            Some("2026-11"),
+        );
+        let export_cfg = dendro_core::FactExportConfig::from_raw_key(
+            b"fact-export-v1-public-test-key",
+            "kh_customer_v1",
+        );
+        let limits = crate::sdk::ReadLimits {
+            encoded_bytes: 1 << 20,
+            nesting_depth: 64,
+            decoded_records_per_batch: 2,
+            line_attempts: None,
+        };
+
+        let sha_b1 = "a".repeat(40);
+        let sha_b2 = "b".repeat(40);
+        let sha_p = "c".repeat(40);
+
+        // 4 lines -> 2 batches of 2 lines each:
+        // Batch 1 (lines 1-2): commit sha_b1 via rev-parse HEAD
+        // Batch 2 (lines 3-4): commit sha_b2 with parent sha_p via git log -1 --format='%H %P'
+        let claude_file = dir.join("claude_multibatch_git.jsonl");
+        let l1 = "{\"type\":\"assistant\",\"sessionId\":\"claude-mb-1\",\"timestamp\":\"2026-11-12T18:00:00Z\",\"message\":{\"id\":\"m1\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5\",\"usage\":{\"input_tokens\":40,\"output_tokens\":10,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0},\"content\":[{\"type\":\"tool_use\",\"id\":\"tu-b1\",\"name\":\"Bash\",\"input\":{\"command\":\"git rev-parse HEAD\"}}]}}\n";
+        let l2 = format!(
+            "{{\"type\":\"user\",\"sessionId\":\"claude-mb-1\",\"timestamp\":\"2026-11-12T18:00:01Z\",\"message\":{{\"role\":\"user\",\"content\":[{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-b1\",\"is_error\":false,\"content\":\"{sha_b1}\\n\"}}]}}}}\n"
+        );
+        let l3 = "{\"type\":\"assistant\",\"sessionId\":\"claude-mb-1\",\"timestamp\":\"2026-11-12T18:00:02Z\",\"message\":{\"id\":\"m2\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5\",\"usage\":{\"input_tokens\":50,\"output_tokens\":15,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0},\"content\":[{\"type\":\"tool_use\",\"id\":\"tu-b2\",\"name\":\"Bash\",\"input\":{\"command\":\"git log -1 --format='%H %P'\"}}]}}\n";
+        let l4 = format!(
+            "{{\"type\":\"user\",\"sessionId\":\"claude-mb-1\",\"timestamp\":\"2026-11-12T18:00:03Z\",\"message\":{{\"role\":\"user\",\"content\":[{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-b2\",\"is_error\":false,\"content\":\"{sha_b2} {sha_p}\\n\"}}]}}}}\n"
+        );
+        fs::write(&claude_file, format!("{l1}{l2}{l3}{l4}")).unwrap();
+
+        let empty_db = dir.join("empty_seed.duckdb");
+        {
+            let store = open_test_analytics(&empty_db);
+            store.checkpoint().unwrap();
+        }
+
+        let ref_db = dir.join("uninterrupted.duckdb");
+        fs::copy(&empty_db, &ref_db).unwrap();
+        let expected_snap = {
+            let store = AnalyticsStore::open_existing(&ref_db, "key").unwrap();
+            ingest_jsonl_limited_with_configs(
+                &store,
+                "src-mb-git",
+                "claude",
+                &claude_file,
+                Some(tool_key),
+                None,
+                || Ok(()),
+                &limits,
+                &link_cfg,
+                &export_cfg,
+            )
+            .unwrap();
+            assert_eq!(store.load_git_evidence().unwrap().len(), 2);
+            store.checkpoint().unwrap();
+            store.canonical_table_snapshot().unwrap()
+        };
+
+        for stage in [
+            IngestBatchStage::AfterSessionFacts,
+            IngestBatchStage::AfterGitEvidence,
+            IngestBatchStage::AfterWatermark,
+            IngestBatchStage::BeforeCommit,
+        ] {
+            let test_db = dir.join(format!("fail_b2_{stage:?}.duckdb"));
+            fs::copy(&empty_db, &test_db).unwrap();
+            {
+                let store = AnalyticsStore::open_existing(&test_db, "key").unwrap();
+                let err = with_ingest_failpoint(
+                    move |batch_idx, at| {
+                        if batch_idx == 1 && at == stage {
+                            anyhow::bail!("injected batch-2 failpoint at {stage:?}");
+                        }
+                        Ok(())
+                    },
+                    || {
+                        ingest_jsonl_limited_with_configs(
+                            &store,
+                            "src-mb-git",
+                            "claude",
+                            &claude_file,
+                            Some(tool_key),
+                            None,
+                            || Ok(()),
+                            &limits,
+                            &link_cfg,
+                            &export_cfg,
+                        )
+                    },
+                )
+                .unwrap_err();
+                assert!(err.to_string().contains("injected batch-2 failpoint"));
+            }
+
+            // Reopen after Batch 2 crash: Batch 1's 1 git evidence row is durable, Batch 2 rolled back
+            let reopened = AnalyticsStore::open_existing(&test_db, "key").unwrap();
+            let after_b1 = reopened.load_git_evidence().unwrap();
+            assert_eq!(
+                after_b1.len(),
+                1,
+                "Batch 1 git evidence must survive Batch 2 crash at {stage:?}"
+            );
+            assert_eq!(
+                after_b1[0].commit_sealed,
+                dendro_core::seal_commit(Some(tool_key), &sha_b1)
+            );
+            assert_eq!(reopened.total_git_evidence_coverage().unwrap().observed, 1);
+
+            // Replay from Batch 1 watermark -> converges to exact uninterrupted snapshot
+            ingest_jsonl_limited_with_configs(
+                &reopened,
+                "src-mb-git",
+                "claude",
+                &claude_file,
+                Some(tool_key),
+                None,
+                || Ok(()),
+                &limits,
+                &link_cfg,
+                &export_cfg,
+            )
+            .unwrap();
+            assert_eq!(reopened.load_git_evidence().unwrap().len(), 2);
+            assert_eq!(
+                reopened.canonical_table_snapshot().unwrap(),
+                expected_snap,
+                "replay after {stage:?} must converge to exact uninterrupted snapshot"
+            );
+        }
     }
 }

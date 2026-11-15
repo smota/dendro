@@ -12,6 +12,7 @@ pub mod explanation_v1;
 pub mod facts;
 pub mod file_metadata;
 mod file_state;
+pub mod git_evidence;
 pub mod insight_v1;
 pub mod lifecycle;
 pub mod lineage_graph_v1;
@@ -48,6 +49,23 @@ pub use vortex::{parse_friction_duration, FrictionThresholds};
 
 pub use concurrency::*;
 pub use facts::*;
+pub use git_evidence::{
+    classify_shell_command, derive_export_branch_hmac, derive_export_commit_hmac,
+    derive_export_git_evidence_key, derive_export_repo_remote_hmac, derive_export_session_key,
+    derive_export_source_id, derive_fact_export_pseudonym, is_abbreviated_commit_sha,
+    is_canonical_commit_sha, is_valid_pseudonym_key_id, parse_git_output, seal_commit,
+    unwrap_command_output_text, FactExportConfig, FactExportKey, FactExportKeyState,
+    GitCommandKind, GitEvidenceCoverage, GitEvidenceFact, GitEvidenceScanner,
+    ParsedCommitObservation, ParsedGitOutput, DEFAULT_BRANCH_STATUS_NOT_OBSERVED,
+    DEFAULT_BRANCH_STATUS_OBSERVED, DEFAULT_FACT_EXPORT_KEY_FILENAME,
+    DEFAULT_FACT_EXPORT_KEY_ID_FILENAME, ENV_ALT_FACT_EXPORT_KEY_FILE, ENV_ALT_FACT_EXPORT_KEY_HEX,
+    ENV_ALT_FACT_EXPORT_KEY_ID, ENV_FACT_EXPORT_KEY_FILE, ENV_FACT_EXPORT_KEY_HEX,
+    ENV_FACT_EXPORT_KEY_ID, EVIDENCE_SOURCE_LOCAL_GIT_HISTORY, EXPORT_STATUS_EXPORTABLE,
+    EXPORT_STATUS_NON_EXPORTABLE, MERGE_REASON_ABBREVIATED_PARENTS,
+    MERGE_REASON_PARENTS_NOT_RECORDED, MERGE_STATUS_NOT_OBSERVED, MERGE_STATUS_OBSERVED,
+    OBSERVED_AT_STATUS_NOT_OBSERVABLE, OBSERVED_AT_STATUS_OBSERVED, SESSION_MATCH_AMBIGUOUS,
+    SESSION_MATCH_MATCHED, SESSION_MATCH_UNKNOWN, SESSION_MATCH_UNMATCHED,
+};
 pub use lifecycle::{Cancel, Interrupted, RUN_CANCEL};
 pub use link_id::{
     consumer_env_path, default_private_data_root, derive_session_link_with_key,

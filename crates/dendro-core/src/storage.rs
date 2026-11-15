@@ -118,6 +118,7 @@ pub enum IngestBatchStage {
     AfterSessionEdges,
     AfterSecurityFacts,
     AfterSessionFacts,
+    AfterGitEvidence,
     AfterWarnings,
     AfterWatermark,
     BeforeReaderReplacement,
@@ -156,6 +157,9 @@ pub struct IngestBatch<'a> {
     pub security_facts: &'a [SecurityFact],
     pub session_facts: &'a [SessionFact],
     pub retired_fallback_keys: &'a [String],
+    pub git_evidence: &'a [crate::git_evidence::GitEvidenceFact],
+    pub git_coverage: Option<&'a crate::git_evidence::GitEvidenceCoverage>,
+    pub fact_export_config: Option<&'a crate::git_evidence::FactExportConfig>,
     pub warnings: &'a [WarningNote],
     pub reader: Option<&'a ReaderState>,
     pub baseline: Option<&'a FileBaselineAttempt>,
@@ -189,6 +193,9 @@ impl<'a> IngestBatch<'a> {
             security_facts: &[],
             session_facts: &[],
             retired_fallback_keys: &[],
+            git_evidence: &[],
+            git_coverage: None,
+            fact_export_config: None,
             warnings: &[],
             reader: None,
             baseline: None,
@@ -360,6 +367,48 @@ impl AnalyticsStore {
         generation BIGINT NOT NULL
     )";
 
+    /// Historical git evidence derived solely from session records (`MTN-21 / D4c`)
+    /// plus per-source coverage and missingness counters. Additive and idempotent;
+    /// no schema bump. Raw commit SHAs, branch names, and commit messages are never stored.
+    pub(super) const GIT_EVIDENCE_SCHEMA: &'static str =
+        "CREATE TABLE IF NOT EXISTS git_evidence_facts (
+        commit_sealed VARCHAR PRIMARY KEY,
+        source_key VARCHAR NOT NULL,
+        source_id VARCHAR NOT NULL,
+        generation BIGINT NOT NULL,
+        harness VARCHAR NOT NULL,
+        canonical_harness VARCHAR NOT NULL,
+        native_session VARCHAR,
+        parent_sealed VARCHAR NOT NULL DEFAULT '[]',
+        is_merge BOOLEAN,
+        merge_status VARCHAR NOT NULL,
+        merge_missing_reason VARCHAR,
+        on_default_branch BOOLEAN,
+        default_branch_status VARCHAR NOT NULL,
+        observed_at TIMESTAMP,
+        observed_at_status VARCHAR NOT NULL,
+        session_match_status VARCHAR NOT NULL,
+        evidence_source VARCHAR NOT NULL DEFAULT 'local_git_history',
+        export_status VARCHAR NOT NULL DEFAULT 'non_exportable',
+        pseudonym_key_id VARCHAR,
+        git_evidence_key VARCHAR,
+        session_key VARCHAR,
+        commit_hmac VARCHAR,
+        parent_hmacs VARCHAR NOT NULL DEFAULT '[]'
+    );
+    CREATE TABLE IF NOT EXISTS git_evidence_coverage (
+        source_id VARCHAR NOT NULL,
+        generation BIGINT NOT NULL,
+        harness VARCHAR NOT NULL,
+        observed BIGINT NOT NULL DEFAULT 0,
+        unresolved_abbreviated BIGINT NOT NULL DEFAULT 0,
+        missing_parents BIGINT NOT NULL DEFAULT 0,
+        ambiguous BIGINT NOT NULL DEFAULT 0,
+        unmatched BIGINT NOT NULL DEFAULT 0,
+        default_branch_not_observed BIGINT NOT NULL DEFAULT 0,
+        PRIMARY KEY (source_id, generation)
+    )";
+
     pub(super) const SEMANTIC_STATE_SCHEMA: &'static str = "CREATE TABLE IF NOT EXISTS dendro_semantic_state (id INTEGER PRIMARY KEY, dirty BOOLEAN NOT NULL); INSERT INTO dendro_semantic_state VALUES (1, TRUE) ON CONFLICT DO NOTHING";
 
     pub(super) fn invalidate_semantic(&self) -> Result<()> {
@@ -487,6 +536,7 @@ impl AnalyticsStore {
         }
         conn.execute_batch(Self::SEMANTIC_STATE_SCHEMA)?;
         conn.execute_batch(Self::SESSION_FACTS_SCHEMA)?;
+        conn.execute_batch(Self::GIT_EVIDENCE_SCHEMA)?;
         let store = Self {
             conn,
             key_id: key_id.to_string(),
@@ -519,6 +569,7 @@ impl AnalyticsStore {
         conn.execute_batch(openrig_provenance::SCHEMA)?;
         conn.execute_batch(Self::SEMANTIC_STATE_SCHEMA)?;
         conn.execute_batch(Self::SESSION_FACTS_SCHEMA)?;
+        conn.execute_batch(Self::GIT_EVIDENCE_SCHEMA)?;
         let store = Self {
             conn,
             key_id,
@@ -725,6 +776,7 @@ impl AnalyticsStore {
         self.conn.execute_batch(Self::SESSION_EDGES_SCHEMA)?;
         self.conn.execute_batch(Self::SECURITY_FACTS_SCHEMA)?;
         self.conn.execute_batch(Self::SESSION_FACTS_SCHEMA)?;
+        self.conn.execute_batch(Self::GIT_EVIDENCE_SCHEMA)?;
         self.conn.execute_batch(openrig_provenance::SCHEMA)?;
         self.conn.execute(
             "INSERT INTO dendro_meta (schema_version, key_id) VALUES (?, ?)",
@@ -923,6 +975,18 @@ impl AnalyticsStore {
             )?;
         }
         checkpoint(IngestBatchStage::AfterSessionFacts)?;
+        if !batch.git_evidence.is_empty() || batch.git_coverage.is_some() {
+            Self::commit_git_evidence_in_tx(
+                tx,
+                batch.source_id,
+                batch.harness,
+                batch.generation,
+                batch.git_evidence,
+                batch.git_coverage,
+                batch.fact_export_config,
+            )?;
+        }
+        checkpoint(IngestBatchStage::AfterGitEvidence)?;
         if !batch.warnings.is_empty() {
             Self::record_warnings_in_tx(tx, batch.warnings)?;
         }
@@ -1743,6 +1807,8 @@ impl AnalyticsStore {
             "session_edges",
             "security_facts",
             "session_facts",
+            "git_evidence_facts",
+            "git_evidence_coverage",
             "process_identities",
             "process_samples",
             "warnings",
@@ -1961,6 +2027,505 @@ impl AnalyticsStore {
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    /// Upsert git evidence facts and per-source coverage counters (`MTN-21 / D4c`).
+    pub fn commit_git_evidence(
+        &self,
+        source_id: &str,
+        harness: &str,
+        generation: i64,
+        facts: &[crate::git_evidence::GitEvidenceFact],
+        coverage: Option<&crate::git_evidence::GitEvidenceCoverage>,
+        fact_export_config: Option<&crate::git_evidence::FactExportConfig>,
+    ) -> Result<()> {
+        if facts.is_empty() && coverage.is_none() {
+            return Ok(());
+        }
+        let tx = self.conn.unchecked_transaction()?;
+        Self::commit_git_evidence_in_tx(
+            &tx,
+            source_id,
+            harness,
+            generation,
+            facts,
+            coverage,
+            fact_export_config,
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn commit_git_evidence_in_tx(
+        tx: &Connection,
+        source_id: &str,
+        harness: &str,
+        generation: i64,
+        facts: &[crate::git_evidence::GitEvidenceFact],
+        coverage: Option<&crate::git_evidence::GitEvidenceCoverage>,
+        fact_export_config: Option<&crate::git_evidence::FactExportConfig>,
+    ) -> Result<()> {
+        use crate::git_evidence::*;
+        tx.execute_batch(Self::GIT_EVIDENCE_SCHEMA)?;
+        let redacted_source_id = redact(source_id);
+        let redacted_harness = redact(harness);
+        tx.execute(
+            "DELETE FROM git_evidence_facts WHERE source_id = ? AND generation < ?",
+            params![&redacted_source_id, generation],
+        )?;
+        tx.execute(
+            "DELETE FROM git_evidence_coverage WHERE source_id = ? AND generation < ?",
+            params![&redacted_source_id, generation],
+        )?;
+
+        let mut cross_source_ambiguous = 0i64;
+        let mut other_sources_made_ambiguous: Vec<(String, i64)> = Vec::new();
+
+        for fact in facts {
+            if !fact.commit_sealed.starts_with("commit:")
+                || crate::privacy::contains_secret(&fact.commit_sealed)
+            {
+                anyhow::bail!("git_evidence_facts.commit_sealed must be a sealed commit token");
+            }
+            for ps in &fact.parent_sealed {
+                if !ps.starts_with("commit:") || crate::privacy::contains_secret(ps) {
+                    anyhow::bail!(
+                        "git_evidence_facts.parent_sealed must contain sealed commit tokens"
+                    );
+                }
+            }
+            match fact.merge_status.as_str() {
+                MERGE_STATUS_OBSERVED => {
+                    if fact.is_merge != Some(fact.parent_sealed.len() > 1)
+                        || fact.merge_missing_reason.is_some()
+                    {
+                        anyhow::bail!("observed merge_status requires matching is_merge and no merge_missing_reason");
+                    }
+                }
+                MERGE_STATUS_NOT_OBSERVED => {
+                    if fact.is_merge.is_some()
+                        || !fact.parent_sealed.is_empty()
+                        || fact.merge_missing_reason.is_none()
+                    {
+                        anyhow::bail!("not_observed merge_status requires NULL is_merge, empty parents, and a reason");
+                    }
+                }
+                _ => anyhow::bail!("invalid git_evidence_facts.merge_status"),
+            }
+            match fact.default_branch_status.as_str() {
+                DEFAULT_BRANCH_STATUS_OBSERVED => {
+                    if fact.on_default_branch.is_none() {
+                        anyhow::bail!(
+                            "observed default_branch_status requires non-null on_default_branch"
+                        );
+                    }
+                }
+                DEFAULT_BRANCH_STATUS_NOT_OBSERVED => {
+                    if fact.on_default_branch.is_some() {
+                        anyhow::bail!(
+                            "not_observed default_branch_status requires NULL on_default_branch"
+                        );
+                    }
+                }
+                _ => anyhow::bail!("invalid git_evidence_facts.default_branch_status"),
+            }
+            match fact.session_match_status.as_str() {
+                SESSION_MATCH_MATCHED => {
+                    if fact.native_session.is_none() {
+                        anyhow::bail!(
+                            "matched session_match_status requires non-null native_session"
+                        );
+                    }
+                }
+                SESSION_MATCH_AMBIGUOUS | SESSION_MATCH_UNMATCHED | SESSION_MATCH_UNKNOWN => {
+                    if fact.native_session.is_some() || fact.session_key.is_some() {
+                        anyhow::bail!(
+                            "non-matched session_match_status requires NULL session columns"
+                        );
+                    }
+                }
+                _ => anyhow::bail!("invalid git_evidence_facts.session_match_status"),
+            }
+            match fact.export_status.as_str() {
+                EXPORT_STATUS_EXPORTABLE => {
+                    if fact.pseudonym_key_id.is_none()
+                        || fact.git_evidence_key.is_none()
+                        || fact.commit_hmac.is_none()
+                    {
+                        anyhow::bail!("exportable git_evidence_facts row requires HMAC columns");
+                    }
+                }
+                EXPORT_STATUS_NON_EXPORTABLE => {
+                    if fact.pseudonym_key_id.is_some()
+                        || fact.git_evidence_key.is_some()
+                        || fact.session_key.is_some()
+                        || fact.commit_hmac.is_some()
+                        || !fact.parent_hmacs.is_empty()
+                    {
+                        anyhow::bail!(
+                            "non_exportable git_evidence_facts row must not carry HMAC columns"
+                        );
+                    }
+                }
+                _ => anyhow::bail!("invalid git_evidence_facts.export_status"),
+            }
+
+            let mut resolved = fact.clone();
+            resolved.source_key = redact(&fact.source_key);
+            resolved.source_id = redacted_source_id.clone();
+            resolved.harness = redacted_harness.clone();
+            resolved.canonical_harness = redact(&fact.canonical_harness);
+            resolved.native_session = fact.native_session.as_deref().map(redact);
+            resolved.commit_sealed = redact(&fact.commit_sealed);
+
+            struct ExistingGitEvidenceRow {
+                source_key: String,
+                source_id: String,
+                generation: i64,
+                harness: String,
+                canonical_harness: String,
+                native_session: Option<String>,
+                session_match_status: String,
+                merge_status: String,
+                is_merge: Option<bool>,
+                merge_missing_reason: Option<String>,
+                parent_sealed_json: String,
+                parent_hmacs_json: String,
+                default_branch_status: String,
+                on_default_branch: Option<bool>,
+                observed_at_str: Option<String>,
+            }
+
+            // Check if an observation for `commit_sealed` already exists in the store.
+            let existing: Option<ExistingGitEvidenceRow> = {
+                let mut q = tx.prepare(
+                    "SELECT source_key, source_id, generation, harness, canonical_harness,
+                            native_session, session_match_status, merge_status, is_merge,
+                            merge_missing_reason, parent_sealed, parent_hmacs,
+                            default_branch_status, on_default_branch,
+                            CAST(observed_at AS VARCHAR)
+                     FROM git_evidence_facts WHERE commit_sealed = ?",
+                )?;
+                let mut rows = q.query(params![&resolved.commit_sealed])?;
+                if let Some(r) = rows.next()? {
+                    Some(ExistingGitEvidenceRow {
+                        source_key: r.get(0)?,
+                        source_id: r.get(1)?,
+                        generation: r.get(2)?,
+                        harness: r.get(3)?,
+                        canonical_harness: r.get(4)?,
+                        native_session: r.get(5)?,
+                        session_match_status: r.get(6)?,
+                        merge_status: r.get(7)?,
+                        is_merge: r.get(8)?,
+                        merge_missing_reason: r.get(9)?,
+                        parent_sealed_json: r.get(10)?,
+                        parent_hmacs_json: r.get(11)?,
+                        default_branch_status: r.get(12)?,
+                        on_default_branch: r.get(13)?,
+                        observed_at_str: r.get(14)?,
+                    })
+                } else {
+                    None
+                }
+            };
+
+            if let Some(ExistingGitEvidenceRow {
+                source_key: ex_source_key,
+                source_id: ex_source_id,
+                generation: ex_gen,
+                harness: ex_harness,
+                canonical_harness: ex_canon_harness,
+                native_session: ex_native_session,
+                session_match_status: ex_session_status,
+                merge_status: ex_merge_status,
+                is_merge: ex_is_merge,
+                merge_missing_reason: ex_merge_reason,
+                parent_sealed_json: ex_parent_sealed_json,
+                parent_hmacs_json: ex_parent_hmacs_json,
+                default_branch_status: ex_def_status,
+                on_default_branch: ex_on_def,
+                observed_at_str: ex_obs_at_str,
+            }) = existing
+            {
+                let same_source = ex_source_id == resolved.source_id;
+                if !same_source || ex_session_status == SESSION_MATCH_AMBIGUOUS {
+                    let same_session = ex_session_status == SESSION_MATCH_MATCHED
+                        && resolved.session_match_status == SESSION_MATCH_MATCHED
+                        && ex_native_session.is_some()
+                        && ex_native_session == resolved.native_session
+                        && ex_harness == resolved.harness;
+
+                    if !same_source {
+                        resolved.source_key = ex_source_key;
+                        resolved.source_id = ex_source_id.clone();
+                        resolved.generation = ex_gen;
+                        resolved.harness = ex_harness;
+                        resolved.canonical_harness = ex_canon_harness;
+                    }
+
+                    if let Some(ex_ts) = ex_obs_at_str.as_deref().and_then(parse_utc_time) {
+                        if resolved.observed_at.is_none() || Some(ex_ts) < resolved.observed_at {
+                            resolved.observed_at = Some(ex_ts);
+                            resolved.observed_at_status = OBSERVED_AT_STATUS_OBSERVED.to_string();
+                        }
+                    }
+
+                    if !same_session {
+                        if resolved.session_match_status != SESSION_MATCH_AMBIGUOUS {
+                            cross_source_ambiguous += 1;
+                        }
+                        if ex_session_status != SESSION_MATCH_AMBIGUOUS && !same_source {
+                            other_sources_made_ambiguous.push((ex_source_id, ex_gen));
+                        }
+                        resolved.session_match_status = SESSION_MATCH_AMBIGUOUS.to_string();
+                        resolved.native_session = None;
+                        resolved.session_key = None;
+                    }
+
+                    if resolved.merge_status != MERGE_STATUS_OBSERVED
+                        && ex_merge_status == MERGE_STATUS_OBSERVED
+                    {
+                        resolved.merge_status = ex_merge_status;
+                        resolved.is_merge = ex_is_merge;
+                        resolved.merge_missing_reason = ex_merge_reason;
+                        resolved.parent_sealed =
+                            serde_json::from_str(&ex_parent_sealed_json).unwrap_or_default();
+                        if resolved.export_status == EXPORT_STATUS_EXPORTABLE {
+                            resolved.parent_hmacs =
+                                serde_json::from_str(&ex_parent_hmacs_json).unwrap_or_default();
+                        }
+                    }
+
+                    if resolved.default_branch_status != DEFAULT_BRANCH_STATUS_OBSERVED
+                        && ex_def_status == DEFAULT_BRANCH_STATUS_OBSERVED
+                    {
+                        resolved.default_branch_status = ex_def_status;
+                        resolved.on_default_branch = ex_on_def;
+                    }
+
+                    // Re-derive `git_evidence_key` when exportable so it reflects the resolved
+                    // `source_id`, `observed_at`, `session_key`, and `session_match_status`.
+                    if resolved.export_status == EXPORT_STATUS_EXPORTABLE {
+                        if let (Some(cfg), Some(c_hmac)) =
+                            (fact_export_config, resolved.commit_hmac.as_deref())
+                        {
+                            let obs_us = resolved.observed_at.map(|ts| ts.timestamp_micros());
+                            resolved.git_evidence_key = cfg.derive_git_evidence_key(
+                                &resolved.source_id,
+                                c_hmac,
+                                obs_us,
+                                resolved.session_key.as_deref(),
+                                &resolved.session_match_status,
+                            );
+                        }
+                    }
+                }
+            }
+
+            let parent_sealed_json = serde_json::to_string(&resolved.parent_sealed)?;
+            let parent_hmacs_json = serde_json::to_string(&resolved.parent_hmacs)?;
+
+            tx.execute(
+                "INSERT INTO git_evidence_facts (
+                    commit_sealed, source_key, source_id, generation, harness, canonical_harness,
+                    native_session, parent_sealed, is_merge, merge_status, merge_missing_reason,
+                    on_default_branch, default_branch_status, observed_at, observed_at_status,
+                    session_match_status, evidence_source, export_status, pseudonym_key_id,
+                    git_evidence_key, session_key, commit_hmac, parent_hmacs
+                ) VALUES (
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS TIMESTAMP), ?, ?, ?, ?, ?, ?, ?, ?, ?
+                )
+                ON CONFLICT (commit_sealed) DO UPDATE SET
+                    source_key = excluded.source_key,
+                    source_id = excluded.source_id,
+                    generation = excluded.generation,
+                    harness = excluded.harness,
+                    canonical_harness = excluded.canonical_harness,
+                    native_session = excluded.native_session,
+                    parent_sealed = excluded.parent_sealed,
+                    is_merge = excluded.is_merge,
+                    merge_status = excluded.merge_status,
+                    merge_missing_reason = excluded.merge_missing_reason,
+                    on_default_branch = excluded.on_default_branch,
+                    default_branch_status = excluded.default_branch_status,
+                    observed_at = excluded.observed_at,
+                    observed_at_status = excluded.observed_at_status,
+                    session_match_status = excluded.session_match_status,
+                    evidence_source = excluded.evidence_source,
+                    export_status = excluded.export_status,
+                    pseudonym_key_id = excluded.pseudonym_key_id,
+                    git_evidence_key = excluded.git_evidence_key,
+                    session_key = excluded.session_key,
+                    commit_hmac = excluded.commit_hmac,
+                    parent_hmacs = excluded.parent_hmacs",
+                params![
+                    resolved.commit_sealed,
+                    resolved.source_key,
+                    resolved.source_id,
+                    resolved.generation,
+                    resolved.harness,
+                    resolved.canonical_harness,
+                    resolved.native_session,
+                    parent_sealed_json,
+                    resolved.is_merge,
+                    resolved.merge_status,
+                    resolved.merge_missing_reason,
+                    resolved.on_default_branch,
+                    resolved.default_branch_status,
+                    resolved.observed_at.map(|ts| ts.to_rfc3339()),
+                    resolved.observed_at_status,
+                    resolved.session_match_status,
+                    resolved.evidence_source,
+                    resolved.export_status,
+                    resolved.pseudonym_key_id,
+                    resolved.git_evidence_key,
+                    resolved.session_key,
+                    resolved.commit_hmac,
+                    parent_hmacs_json,
+                ],
+            )?;
+        }
+
+        for (other_src, other_gen) in other_sources_made_ambiguous {
+            tx.execute(
+                "UPDATE git_evidence_coverage
+                 SET ambiguous = ambiguous + 1
+                 WHERE source_id = ? AND generation = ?",
+                params![other_src, other_gen],
+            )?;
+        }
+
+        if let Some(cov) = coverage {
+            if cov.has_activity() || !facts.is_empty() {
+                tx.execute(
+                    "INSERT INTO git_evidence_coverage (
+                        source_id, generation, harness, observed, unresolved_abbreviated,
+                        missing_parents, ambiguous, unmatched, default_branch_not_observed
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT (source_id, generation) DO UPDATE SET
+                        harness = excluded.harness,
+                        observed = excluded.observed,
+                        unresolved_abbreviated = excluded.unresolved_abbreviated,
+                        missing_parents = excluded.missing_parents,
+                        ambiguous = excluded.ambiguous,
+                        unmatched = excluded.unmatched,
+                        default_branch_not_observed = excluded.default_branch_not_observed",
+                    params![
+                        &redacted_source_id,
+                        generation,
+                        &redacted_harness,
+                        cov.observed,
+                        cov.unresolved_abbreviated,
+                        cov.missing_parents,
+                        cov.ambiguous + cross_source_ambiguous,
+                        cov.unmatched,
+                        cov.default_branch_not_observed,
+                    ],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Load all persisted `git_evidence_facts` rows ordered by `commit_sealed`.
+    pub fn load_git_evidence(&self) -> Result<Vec<crate::git_evidence::GitEvidenceFact>> {
+        let exists: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'git_evidence_facts'",
+            [],
+            |row| row.get(0),
+        )?;
+        if exists == 0 {
+            return Ok(Vec::new());
+        }
+        let mut stmt = self.conn.prepare(
+            "SELECT commit_sealed, source_key, source_id, generation, harness, canonical_harness,
+                    native_session, parent_sealed, is_merge, merge_status, merge_missing_reason,
+                    on_default_branch, default_branch_status, CAST(observed_at AS VARCHAR),
+                    observed_at_status, session_match_status, evidence_source, export_status,
+                    pseudonym_key_id, git_evidence_key, session_key, commit_hmac, parent_hmacs
+             FROM git_evidence_facts ORDER BY commit_sealed",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let parent_sealed_str: String = row.get(7)?;
+            let observed_at_str: Option<String> = row.get(13)?;
+            let parent_hmacs_str: String = row.get(22)?;
+            Ok(crate::git_evidence::GitEvidenceFact {
+                commit_sealed: row.get(0)?,
+                source_key: row.get(1)?,
+                source_id: row.get(2)?,
+                generation: row.get(3)?,
+                harness: row.get(4)?,
+                canonical_harness: row.get(5)?,
+                native_session: row.get(6)?,
+                parent_sealed: serde_json::from_str(&parent_sealed_str).unwrap_or_default(),
+                is_merge: row.get(8)?,
+                merge_status: row.get(9)?,
+                merge_missing_reason: row.get(10)?,
+                on_default_branch: row.get(11)?,
+                default_branch_status: row.get(12)?,
+                observed_at: observed_at_str.as_deref().and_then(parse_utc_time),
+                observed_at_status: row.get(14)?,
+                session_match_status: row.get(15)?,
+                evidence_source: row.get(16)?,
+                export_status: row.get(17)?,
+                pseudonym_key_id: row.get(18)?,
+                git_evidence_key: row.get(19)?,
+                session_key: row.get(20)?,
+                commit_hmac: row.get(21)?,
+                parent_hmacs: serde_json::from_str(&parent_hmacs_str).unwrap_or_default(),
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    /// Load persisted `git_evidence_coverage` rows ordered by `(source_id, generation)`.
+    pub fn load_git_evidence_coverage(
+        &self,
+    ) -> Result<Vec<crate::git_evidence::GitEvidenceCoverage>> {
+        let exists: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'git_evidence_coverage'",
+            [],
+            |row| row.get(0),
+        )?;
+        if exists == 0 {
+            return Ok(Vec::new());
+        }
+        let mut stmt = self.conn.prepare(
+            "SELECT source_id, generation, harness, observed, unresolved_abbreviated,
+                    missing_parents, ambiguous, unmatched, default_branch_not_observed
+             FROM git_evidence_coverage ORDER BY source_id, generation",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(crate::git_evidence::GitEvidenceCoverage {
+                source_id: row.get(0)?,
+                generation: row.get(1)?,
+                harness: row.get(2)?,
+                observed: row.get(3)?,
+                unresolved_abbreviated: row.get(4)?,
+                missing_parents: row.get(5)?,
+                ambiguous: row.get(6)?,
+                unmatched: row.get(7)?,
+                default_branch_not_observed: row.get(8)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    /// Aggregate `GitEvidenceCoverage` counters across all active sources in the store.
+    pub fn total_git_evidence_coverage(&self) -> Result<crate::git_evidence::GitEvidenceCoverage> {
+        let rows = self.load_git_evidence_coverage()?;
+        let mut total = crate::git_evidence::GitEvidenceCoverage::default();
+        for r in rows {
+            total.observed += r.observed;
+            total.unresolved_abbreviated += r.unresolved_abbreviated;
+            total.missing_parents += r.missing_parents;
+            total.ambiguous += r.ambiguous;
+            total.unmatched += r.unmatched;
+            total.default_branch_not_observed += r.default_branch_not_observed;
+        }
+        Ok(total)
     }
 
     pub fn session_edge_parent(&self, source_key: &str) -> Result<Option<String>> {
@@ -4774,6 +5339,42 @@ mod tests {
             generation: 2,
         };
         let retired_keys = ["src-1:codex:session:fallback".to_string()];
+        let git_fact = crate::GitEvidenceFact {
+            source_key: "src-1:git:commit:1111".into(),
+            source_id: "src-1".into(),
+            harness: "codex".into(),
+            canonical_harness: "codex".into(),
+            commit_sealed: "commit:1111".into(),
+            parent_sealed: vec!["commit:2222".into()],
+            merge_status: "observed".into(),
+            is_merge: Some(false),
+            merge_missing_reason: None,
+            default_branch_status: "not_observed".into(),
+            on_default_branch: None,
+            observed_at: Some(ts),
+            observed_at_status: "observed".into(),
+            session_match_status: "matched".into(),
+            native_session: Some("session:real".into()),
+            export_status: "non_exportable".into(),
+            pseudonym_key_id: None,
+            commit_hmac: None,
+            parent_hmacs: Vec::new(),
+            session_key: None,
+            git_evidence_key: None,
+            evidence_source: "rev_parse".into(),
+            generation: 2,
+        };
+        let git_cov = crate::GitEvidenceCoverage {
+            source_id: "src-1".into(),
+            harness: "codex".into(),
+            generation: 2,
+            observed: 1,
+            unresolved_abbreviated: 0,
+            missing_parents: 0,
+            ambiguous: 0,
+            unmatched: 0,
+            default_branch_not_observed: 1,
+        };
         let warning = WarningNote {
             path: "sealed-path".into(),
             line: Some(2),
@@ -4804,6 +5405,9 @@ mod tests {
             security_facts: std::slice::from_ref(&sec),
             session_facts: std::slice::from_ref(&session_fact),
             retired_fallback_keys: &retired_keys,
+            git_evidence: std::slice::from_ref(&git_fact),
+            git_coverage: Some(&git_cov),
+            fact_export_config: None,
             warnings: std::slice::from_ref(&warning),
             reader: Some(&reader),
             baseline: Some(&baseline),
@@ -4841,6 +5445,7 @@ mod tests {
             IngestBatchStage::AfterSessionEdges,
             IngestBatchStage::AfterSecurityFacts,
             IngestBatchStage::AfterSessionFacts,
+            IngestBatchStage::AfterGitEvidence,
             IngestBatchStage::AfterWarnings,
             IngestBatchStage::AfterWatermark,
             IngestBatchStage::BeforeReaderReplacement,

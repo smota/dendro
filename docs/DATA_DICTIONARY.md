@@ -381,11 +381,81 @@ CREATE TABLE IF NOT EXISTS session_facts (
 - **Pre-D3 Databases & Downstream Export (`D4b`):** `session_facts` is new in D3. Opening a pre-D3 database adds `session_facts` without touching existing tables. Pre-D3 sessions have no row in `session_facts` (`NULL` when joined = *"not computed; full rebuild computes it"*). Downstream export (`D4b`) **MUST** treat a missing `session_facts` row or `NULL` link as `'unlinked'`. See [`docs/link-id-config.md`](link-id-config.md) for endpoint configuration.
 
 ### 3.14. Per-Batch Atomicity, Watermarks & Replay Guarantee (`MTN-20 / D4a`)
-- **Single-Transaction Batch Commit (`AnalyticsStore::commit_ingest_batch`):** For every per-file ingestion batch across native harness streams (`stream.rs`) and export connectors (`exports.rs`), all emitted fact families (`file_source_baselines`, `codex_counters`, `usage_facts`, `tool_facts`, `message_facts`, `skill_facts`, `session_edges`, `security_facts`, `session_facts` + fallback retirements, `warnings`) and the covering `source_files` watermark + `dendro-internal:reader:<source_id>:<generation>` checkpoint commit atomically in one DuckDB transaction. OpenRig per-snapshot ingestion (`ingest_openrig` in `ingest.rs`) likewise commits `openrig_row_records`, `mutable_source_disclosures`, OpenRig fact tables, and the `source_files` revision watermark in one transaction via `with_openrig_fact_batch` + `commit_ingest_batch`.
+- **Single-Transaction Batch Commit (`AnalyticsStore::commit_ingest_batch`):** For every per-file ingestion batch across native harness streams (`stream.rs`) and export connectors (`exports.rs`), all emitted fact families (`file_source_baselines`, `codex_counters`, `usage_facts`, `tool_facts`, `message_facts`, `skill_facts`, `session_edges`, `security_facts`, `session_facts` + fallback retirements, `git_evidence_facts` + `git_evidence_coverage`, `warnings`) and the covering `source_files` watermark + `dendro-internal:reader:<source_id>:<generation>` checkpoint commit atomically in one DuckDB transaction. OpenRig per-snapshot ingestion (`ingest_openrig` in `ingest.rs`) likewise commits `openrig_row_records`, `mutable_source_disclosures`, OpenRig fact tables, and the `source_files` revision watermark in one transaction via `with_openrig_fact_batch` + `commit_ingest_batch`.
 - **Stage-and-Insert Appenders:** Inside the transaction, `usage_facts` and `tool_facts` bulk-load into connection-scoped temporary tables (`usage_stage`, `tool_stage`) whose creation (`CREATE TEMP TABLE`) and drop (`DROP TABLE`) are transactional inside `tx`, populated via `tx.appender(...)`, and merge via `INSERT INTO ... SELECT ... ON CONFLICT (source_key) DO NOTHING` before dropping the staging table. This retains typed appender throughput and the 1 GB connection memory ceiling while ensuring uncommitted rows and staging tables roll back if the transaction aborts.
-- **Per-Batch `session_facts` & `native_session` Durability:** Every committed batch persists all facts derived from the lines covered by its watermark, including `session_facts` observed up to that watermark, the sticky `header_conflict` latch, `retired_fallback_keys`, and `source_files.native_session` / the reader-marker session (written on every batch once known from batch 1, never overwritten with `NULL` or `''` on single-session sources). Intermediate multi-batch states are safe because each committed state reflects the exact lines covered by its watermark, and a later header conflict can only flip a session row from linked to `'unlinked'` (never the reverse), enforced by the D3 sticky-conflict upsert. On resume, in-memory per-pass session state (`header_conflict` and existing session rows for `source_id`) is seeded from the store so a resumed pass converges to the exact same final state as an uninterrupted pass.
+- **Per-Batch `session_facts` & `native_session` Durability:** Every committed batch persists all facts derived from the lines covered by its watermark, including `session_facts` observed up to that watermark, the sticky `header_conflict` latch, `retired_fallback_keys`, `git_evidence_facts` / `git_evidence_coverage` (`IngestBatchStage::AfterGitEvidence`), and `source_files.native_session` / the reader-marker session (written on every batch once known from batch 1, never overwritten with `NULL` or `''` on single-session sources). Intermediate multi-batch states are safe because each committed state reflects the exact lines covered by its watermark, and a later header conflict can only flip a session row from linked to `'unlinked'` (never the reverse), enforced by the D3 sticky-conflict upsert. On resume, in-memory per-pass session state (`header_conflict` and existing session rows for `source_id`) is seeded from the store so a resumed pass converges to the exact same final state as an uninterrupted pass.
 - **Intentional Separate Writers:** Staged discovery and unreadable-file warnings (`source <name> missing`, `native_entry_unreadable`, `native_file_unreadable`, `export_discovery_failed`), export refusal warnings (`ExportRefused`), live watch process samples (`AnalyticsStore::commit_process_samples`), and post-loop OpenRig seat-lifetime replacement (`AnalyticsStore::replace_seat_bounds`) operate outside per-file batch watermarks in their own bounded transactions.
 - **Deterministic Crash Replay:** If any write stage or `BeforeCommit` fails, the transaction rolls back completely, leaving `source_files` and all fact/warning tables unchanged for that batch. Re-running ingestion from the preserved watermark converges to the exact same row set and content as an uninterrupted run.
+
+### 3.15. `git_evidence_facts` & `git_evidence_coverage` (`fact-export-v1` Historical Git Bridge, `MTN-21 / D4c`)
+Historical git provenance and missingness facts derived strictly from ingested session records (`claude`, `codex`, `pi`, `grok`), without opening any `.git` repository, spawning `git` processes, or performing network lookups.
+
+```sql
+CREATE TABLE IF NOT EXISTS git_evidence_facts (
+    source_key VARCHAR PRIMARY KEY,
+    source_id VARCHAR NOT NULL,
+    harness VARCHAR NOT NULL,
+    canonical_harness VARCHAR NOT NULL,
+    commit_sealed VARCHAR NOT NULL,
+    parent_sealed VARCHAR NOT NULL DEFAULT '[]',
+    merge_status VARCHAR NOT NULL,
+    is_merge BOOLEAN,
+    merge_missing_reason VARCHAR,
+    default_branch_status VARCHAR NOT NULL,
+    on_default_branch BOOLEAN,
+    observed_at TIMESTAMP,
+    observed_at_status VARCHAR NOT NULL,
+    session_match_status VARCHAR NOT NULL,
+    native_session VARCHAR,
+    export_status VARCHAR NOT NULL,
+    pseudonym_key_id VARCHAR,
+    commit_hmac VARCHAR,
+    parent_hmacs VARCHAR NOT NULL DEFAULT '[]',
+    session_key VARCHAR,
+    git_evidence_key VARCHAR,
+    evidence_source VARCHAR NOT NULL,
+    generation BIGINT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS git_evidence_coverage (
+    source_id VARCHAR PRIMARY KEY,
+    harness VARCHAR NOT NULL,
+    generation BIGINT NOT NULL,
+    observed BIGINT NOT NULL DEFAULT 0,
+    unresolved_abbreviated BIGINT NOT NULL DEFAULT 0,
+    missing_parents BIGINT NOT NULL DEFAULT 0,
+    ambiguous BIGINT NOT NULL DEFAULT 0,
+    unmatched BIGINT NOT NULL DEFAULT 0,
+    default_branch_not_observed BIGINT NOT NULL DEFAULT 0
+);
+```
+
+- **Grain:**
+  - `git_evidence_facts`: One row per `(source_id, commit_sealed)` (`source_key = "{source_id}:git:{commit_sealed}"`), committed inside `AnalyticsStore::commit_ingest_batch` (`IngestBatchStage::AfterGitEvidence`).
+  - `git_evidence_coverage`: One row per `source_id`, recording per-source observation and missingness counters (`observed`, `unresolved_abbreviated`, `missing_parents`, `ambiguous`, `unmatched`, `default_branch_not_observed`).
+- **Session-Records-Only & Hostile-Input Bounds:**
+  - `dendro_core::git_evidence` parses only structured harness git fields (`gitBranch`, `/payload/git/commit_hash`, `/payload/git/branch`, `defaultBranch`, `onDefaultBranch`) and the captured inputs/outputs of git commands executed during the session (`git rev-parse HEAD`, `git log --format='%H %P'`, `git cat-file -p <sha>`, `git commit`, `git symbolic-ref refs/remotes/origin/HEAD`, `git remote show origin`).
+  - Parsing uses linear-time slice scans with zero regular expressions and strict caps (`MAX_GIT_COMMAND_BYTES = 16 KiB`, `MAX_GIT_OUTPUT_BYTES = 64 KiB`, `MAX_GIT_LINES_PER_RECORD = 512`, `MAX_PARENTS_PER_COMMIT = 32`). Non-zero exit codes / `is_error = true` tool results are ignored.
+- **Canonical Full Commit Identity & Unresolved Abbreviations:**
+  - Commit identities are accepted **only** as canonical lowercase full 40-hex SHA-1 or 64-hex SHA-256 digests (`is_canonical_commit_sha`).
+  - Abbreviated commit SHAs (`7..=39` lowercase hex, such as `[main abc1234] msg` or `git rev-parse --short HEAD`) are **never** resolved or guessed; they emit no row in `git_evidence_facts` and increment `git_evidence_coverage.unresolved_abbreviated`.
+- **Merge Status & Parent Provenance (`merge_status`, `is_merge`, `merge_missing_reason`):**
+  - `merge_status = 'observed'` only when a record in the session explicitly records the commit's parents in full canonical form (`git log --format='%H %P'`, `git log --parents`, or `git cat-file -p <sha>`), preserving local recorded parent order in `parent_sealed` (JSON array of sealed commit tokens) and `parent_hmacs` (JSON array of 64-hex `fact-export.v1/commit` HMACs when exportable). When `merge_status = 'observed'`, `is_merge` is `TRUE` if `len(parents) > 1` and `FALSE` if `len(parents) <= 1` (both single-parent commits and root commits with `0` parents have `merge_status = 'observed'` and `is_merge = FALSE`).
+  - Otherwise, `merge_status = 'not_observed'`, `is_merge = NULL`, `parent_sealed = '[]'`, `parent_hmacs = '[]'`, `git_evidence_coverage.missing_parents` is incremented, and `merge_missing_reason` is set to `'parents_not_recorded'` (e.g. `git rev-parse HEAD`) or `'abbreviated_parents'` (e.g. `git log --format='%H %p'`).
+- **Default Branch Provenance (`default_branch_status`, `on_default_branch`):**
+  - `default_branch_status = 'observed'` and `on_default_branch = TRUE | FALSE` **only** when a record explicitly establishes the repository's default branch (e.g. `git symbolic-ref refs/remotes/origin/HEAD` $\to$ `refs/remotes/origin/<branch>`, `git remote show origin` $\to$ `HEAD branch: <branch>`, or explicit `defaultBranch` / `onDefaultBranch` metadata).
+  - Never inferred from a branch name such as `"main"` or `"master"` alone; without explicit default-branch evidence, `default_branch_status = 'not_observed'`, `on_default_branch = NULL`, and `git_evidence_coverage.default_branch_not_observed` is incremented.
+- **Historical `observed_at` Timestamp (`observed_at`, `observed_at_status`):**
+  - `observed_at` is the historical record timestamp when the commit was first observed (`observed_at_status = 'observed'`), or `NULL` with `observed_at_status = 'not_observable'` when the record lacks a valid timestamp. Current wall-clock time (`now()`) and current repository `HEAD` are never substituted.
+- **Session Match Status (`session_match_status`, `native_session`, `session_key`):**
+  - `'matched'`: Commit is observed in exactly one harness-minted session across all ingested sources. `native_session` stores the locally sealed session identifier (`seal_session`) and `session_key` stores the `fact-export.v1/session` HMAC (when exportable).
+  - `'ambiguous'`: Commit is observed in more than one session (within the same file or across different session files in the store) or in a file with `header_conflict = TRUE`. `native_session` and `session_key` are both `NULL` (and cleared across all rows for that `commit_sealed` if a second session observes the same commit later).
+  - `'unmatched'` / `'unknown'`: Commit is observed only in records without a harness-minted session (e.g. Claude records without `sessionId` or header-less files). `native_session` and `session_key` are `NULL`.
+- **Privacy & Fact-Export Pseudonym Key Configuration (`FactExportConfig`, Reuse by `D4b`):**
+  - Raw commit SHAs, branch names, and commit messages are **never** persisted to DuckDB. `commit_sealed` and `parent_sealed` always seal canonical SHAs with `hmac_domain(tool_key, "git_commit", canonical_sha)` (`commit:<64-hex>`).
+  - `commit_hmac` (`fact-export.v1/commit`), `parent_hmacs`, `session_key` (`fact-export.v1/session`), and `git_evidence_key` (`fact-export.v1/git_evidence`) are computed using length-prefixed HMAC-SHA256 (`LP(s) = u32be(len(s)) || utf8(s)`) **only** when `dendro_core::FactExportConfig` is `Ready` (`export_status = 'exportable'`, `pseudonym_key_id` populated).
+  - Without valid fact-export key material (`Unconfigured` or `Refused`), rows are stored with `export_status = 'non_exportable'` and `NULL` / empty pseudonym columns (`pseudonym_key_id = NULL`, `commit_hmac = NULL`, `parent_hmacs = '[]'`, `session_key = NULL`, `git_evidence_key = NULL`). Once key material is configured on a later ingest pass, D4a re-reads the source from byte `0` and upgrades existing rows in place to `export_status = 'exportable'` with all HMAC columns populated.
+  - **Downstream `D4b` (`fact-export-v1`) Contract:** `D4b` reuses `dendro_core::FactExportConfig` (see [`docs/link-id-config.md`](link-id-config.md#4-fact-export-v1-pseudonym-key-configuration-mtn-21--d4c--d4b)). When exporting the `fact-export-v1` `git_evidence` table, `D4b` filters to `export_status = 'exportable'` rows (excluding `'non_exportable'` rows and reporting them in export missingness disclosures) and maps local `'not_observed'` values of `merge_status` and `default_branch_status` to the wire contract's `'unknown'` enum value.
 
 ---
 

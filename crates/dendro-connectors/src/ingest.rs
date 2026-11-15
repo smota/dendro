@@ -47,11 +47,31 @@ pub fn ingest_staged_with_link_config(
         .map(|(notes, _)| notes)
 }
 
+pub fn ingest_staged_with_configs(
+    staged_db: &Path,
+    roots: &[SourceRoot],
+    frozen: bool,
+    key: &[u8],
+    link_config: &dendro_core::SessionLinkConfig,
+    fact_export_config: &dendro_core::FactExportConfig,
+) -> Result<Vec<String>> {
+    ingest_staged_with_manifest_and_configs(
+        staged_db,
+        roots,
+        frozen,
+        key,
+        None,
+        link_config,
+        fact_export_config,
+    )
+    .map(|(notes, _)| notes)
+}
+
 /// A sealed run rebuilds its stage using only named prefixes. Existing output
 /// history may contain facts beyond the requested cutoff and cannot be reused.
 ///
 /// This is the sole production entry point (`dendro-cli`) that calls
-/// [`dendro_core::SessionLinkConfig::from_env`].
+/// [`dendro_core::SessionLinkConfig::from_env`] and [`dendro_core::FactExportConfig::from_env`].
 pub fn ingest_staged_with_manifest(
     staged_db: &Path,
     roots: &[SourceRoot],
@@ -60,16 +80,46 @@ pub fn ingest_staged_with_manifest(
     sealed: Option<&dendro_core::CutoffManifest>,
 ) -> Result<(Vec<String>, dendro_core::CutoffManifest)> {
     let link_config = dendro_core::SessionLinkConfig::from_env();
-    ingest_staged_with_manifest_and_link_config(staged_db, roots, frozen, key, sealed, &link_config)
+    let fact_export_config = dendro_core::FactExportConfig::load(staged_db.parent());
+    ingest_staged_with_manifest_and_configs(
+        staged_db,
+        roots,
+        frozen,
+        key,
+        sealed,
+        &link_config,
+        &fact_export_config,
+    )
 }
 
 pub fn ingest_staged_with_manifest_and_link_config(
+    staged_db: &Path,
+    roots: &[SourceRoot],
+    frozen: bool,
+    key: &[u8],
+    sealed: Option<&dendro_core::CutoffManifest>,
+    link_config: &dendro_core::SessionLinkConfig,
+) -> Result<(Vec<String>, dendro_core::CutoffManifest)> {
+    let fact_export_config = dendro_core::FactExportConfig::unconfigured();
+    ingest_staged_with_manifest_and_configs(
+        staged_db,
+        roots,
+        frozen,
+        key,
+        sealed,
+        link_config,
+        &fact_export_config,
+    )
+}
+
+pub fn ingest_staged_with_manifest_and_configs(
     staged_db: &Path,
     roots: &[SourceRoot],
     _frozen: bool,
     key: &[u8],
     sealed: Option<&dendro_core::CutoffManifest>,
     link_config: &dendro_core::SessionLinkConfig,
+    fact_export_config: &dendro_core::FactExportConfig,
 ) -> Result<(Vec<String>, dendro_core::CutoffManifest)> {
     if sealed.is_some() {
         std::fs::remove_file(staged_db)?;
@@ -180,7 +230,7 @@ pub fn ingest_staged_with_manifest_and_link_config(
                                 continue;
                             }
                             let source_id = stable_source_id(&root.name, &root.path, file, key);
-                            let stats = match stream::ingest_jsonl_with_cutoff_and_link_config(
+                            let stats = match stream::ingest_jsonl_with_cutoff_and_configs(
                                 &store,
                                 &source_id,
                                 &root.name,
@@ -188,6 +238,7 @@ pub fn ingest_staged_with_manifest_and_link_config(
                                 Some(key),
                                 entry,
                                 link_config,
+                                fact_export_config,
                             ) {
                                 Ok(stats) => stats,
                                 Err(error) if sealed.is_none() && error.is::<std::io::Error>() => {

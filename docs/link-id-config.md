@@ -50,3 +50,28 @@ Dendro implements the [`link-id-v1`](contracts/link-id-v1/SPEC.md) contract (pin
 - **Short or Malformed Keys:** Any key shorter than 32 bytes (or non-32-byte hex) fails closed to `link_id = 'unlinked'` (`unlinked_reason = 'invalid_key_material'`).
 - **Compute Before Seal, Parser Provenance & Re-Link Eligibility:** During JSONL ingestion (`crates/dendro-connectors/src/stream.rs`), `link_id` is computed from the **raw** harness-minted `native_session` **before** `seal_session` is called. `origin` is assigned by Dendro's parser (`"harness"` for native harness-log parsers; non-harness for export or non-native paths), never probed from transcript content. Sessions where the parser synthesizes a fallback identifier (header-less files, per-file fallbacks, `claude-session` when `sessionId` is absent, or conflicting headers across generations) resolve to `"unlinked"`. **Only a real header conflict (`session_facts.header_conflict = TRUE`, keyed by `source_id`) permanently locks a source to `"unlinked"` across generations.** Sessions unlinked for configuration or input reasons (`invalid_key_material`, `missing_org`, `missing_endpoint_scope`, missing/invalid `team` or `epoch`) and fallback `{harness}-file:` / `claude-session` rows are recomputed on the next ingest, and a fallback row created before a real session header appeared (zero-byte or partial line-1 first pass) is retired when the real header session is ingested.
 - **Pre-D3 Databases & Downstream Export (`D4b`):** `session_facts` is new in D3. Opening a pre-D3 database creates `session_facts` without modifying existing tables; pre-D3 sessions have no row in `session_facts` (`NULL` on `LEFT JOIN` means *"not computed; full rebuild computes it"*). Downstream export (`D4b`) **must** treat a missing `session_facts` row or `NULL` link as `"unlinked"`.
+
+---
+
+## 4. `fact-export-v1` Pseudonym Key Configuration (`MTN-21 / D4c` & `D4b`)
+
+`dendro_core::FactExportConfig` (`crates/dendro-core/src/git_evidence.rs`) loads customer-held key material and `pseudonym_key_id` for `fact-export-v1` HMAC-SHA256 pseudonyms (`fact-export.v1/source`, `fact-export.v1/session`, `fact-export.v1/commit`, `fact-export.v1/git_evidence`, `fact-export.v1/branch`, `fact-export.v1/repo_remote`) under **the exact same security and precedence rules as D3's `SessionLinkConfig`**:
+
+1. **Precedence (Highest First):**
+   - **Process Environment:** `DENDRO_FACT_EXPORT_KEY_HEX` (or `AGENT_OTEL_FACT_EXPORT_KEY_HEX`), or process-env-only `DENDRO_FACT_EXPORT_KEY_FILE` (or `AGENT_OTEL_FACT_EXPORT_KEY_FILE`, must be an absolute path to a verified private regular file), plus `DENDRO_FACT_EXPORT_KEY_ID` (or `AGENT_OTEL_FACT_EXPORT_KEY_ID`).
+   - **Private Key File in Dendro's Private Data Root:** `<private_data_root>/fact_export.key` (and optional companion `<private_data_root>/fact_export.key_id`), opened via `platform_v1` private-root and private-file verification (`0600` / `SE_DACL_PROTECTED`).
+   - **`$XDG_CONFIG_HOME/observability/consumer.env` (or `$HOME/.config/observability/consumer.env`):** Non-symlink regular file $\le 16\text{ KiB}$. `*_KEY_FILE` entries inside `consumer.env` are refused.
+2. **Never CWD, Refused if Malformed, Zeroize-on-Drop, No Logging:**
+   - Never reads configuration or key files from the current working directory (`CWD`).
+   - Any forbidden organization master key variable (`DENDRO_ORG_KEY*`, `DENDRO_K_ORG*`, `DENDRO_LINK_K_ORG*`, `DENDRO_FACT_EXPORT_K_ORG*`, `AGENT_OTEL_*_K_ORG*`, `K_ORG*`), malformed/short hex key, missing/invalid `pseudonym_key_id` when a key is present, or conflicting primary/fallback values transitions `FactExportConfig` to `Refused(FactExportRefusalReason)`.
+   - `FactExportKey` overwrites key bytes with zeros on drop (`fill(0)` + `std::hint::black_box`), redacts `Debug` output, and is never logged or persisted to DuckDB.
+3. **Behavior Without Key Material & Reuse by `D4b`:**
+   - When `FactExportConfig` is `Unconfigured` or `Refused`, `git_evidence_facts` rows are persisted with their locally sealed commit identity (`commit_sealed`, `parent_sealed`) and `export_status = 'non_exportable'` (`commit_hmac = NULL`, `parent_hmacs = '[]'`, `session_key = NULL`, `git_evidence_key = NULL`).
+   - Once valid key material and `pseudonym_key_id` are configured on a later ingest pass, D4a re-reads the source from byte `0` and recomputes all `fact-export-v1` HMAC columns in place (`export_status = 'exportable'`).
+   - `D4b` (`fact-export-v1` exporter) reuses `dendro_core::FactExportConfig` and the `derive_export_*` helpers in `dendro_core::git_evidence`, exporting only `export_status = 'exportable'` rows from `git_evidence_facts` and mapping local `'not_observed'` statuses (`merge_status`, `default_branch_status`) to the `fact-export-v1` wire enum `'unknown'`.
+
+| Parameter | Primary Variable | Shared AOB Fallback | Format / Rule |
+| :--- | :--- | :--- | :--- |
+| Export key hex | `DENDRO_FACT_EXPORT_KEY_HEX` | `AGENT_OTEL_FACT_EXPORT_KEY_HEX` | 64 hex chars (32 bytes); process env > `<private_data_root>/fact_export.key` > `consumer.env` |
+| Export key file | `DENDRO_FACT_EXPORT_KEY_FILE` | `AGENT_OTEL_FACT_EXPORT_KEY_FILE` | Process-env only; absolute path to private regular file containing 64 hex chars |
+| `pseudonym_key_id` | `DENDRO_FACT_EXPORT_KEY_ID` | `AGENT_OTEL_FACT_EXPORT_KEY_ID` | Required when key is present; printable ASCII slug `^[\x21-\x7E]{1,128}$` (process env > `<private_data_root>/fact_export.key_id` > `consumer.env`) |
