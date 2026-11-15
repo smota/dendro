@@ -1,0 +1,382 @@
+[
+  {
+    "id": "I02",
+    "name": "model.tokens.direct",
+    "version": "1.0.0",
+    "domain": "model",
+    "status": {
+      "state": "computed"
+    },
+    "population": {
+      "what": "usage_facts",
+      "n": 3
+    },
+    "measures": [
+      {
+        "id": "I02.claude-sonnet-4-5.cache_read",
+        "name": "cache_read",
+        "value": 55,
+        "unit": "tokens",
+        "basis": "sum"
+      },
+      {
+        "id": "I02.claude-sonnet-4-5.cache_read_mean_of_ratios",
+        "name": "cache_read_mean_of_ratios",
+        "value": 0.1835016835016835,
+        "unit": "ratio",
+        "basis": "mean of per-invocation cache_read/(input_uncached+cache_write+cache_read); undefined invocations omitted"
+      },
+      {
+        "id": "I02.claude-sonnet-4-5.cache_read_ratio_of_sums",
+        "name": "cache_read_ratio_of_sums",
+        "value": 0.18333333333333332,
+        "unit": "ratio",
+        "basis": "sum(cache_read)/sum(input_uncached+cache_write+cache_read)"
+      },
+      {
+        "id": "I02.claude-sonnet-4-5.cache_write",
+        "name": "cache_write",
+        "value": 25,
+        "unit": "tokens",
+        "basis": "sum"
+      },
+      {
+        "id": "I02.claude-sonnet-4-5.input_uncached",
+        "name": "input_uncached",
+        "value": 220,
+        "unit": "tokens",
+        "basis": "sum"
+      },
+      {
+        "id": "I02.claude-sonnet-4-5.output",
+        "name": "output",
+        "value": 85,
+        "unit": "tokens",
+        "basis": "output_tokens; reasoning is included in this component"
+      },
+      {
+        "id": "I02.claude-sonnet-4-5.reasoning",
+        "name": "reasoning",
+        "value": 12,
+        "unit": "tokens",
+        "basis": "included in output; not added to the disjoint sum or to either cache ratio"
+      },
+      {
+        "id": "I02.gpt-5-codex.cache_read",
+        "name": "cache_read",
+        "value": 50,
+        "unit": "tokens",
+        "basis": "sum"
+      },
+      {
+        "id": "I02.gpt-5-codex.cache_read_mean_of_ratios",
+        "name": "cache_read_mean_of_ratios",
+        "value": 0.25,
+        "unit": "ratio",
+        "basis": "mean of per-invocation cache_read/(input_uncached+cache_write+cache_read); undefined invocations omitted"
+      },
+      {
+        "id": "I02.gpt-5-codex.cache_read_ratio_of_sums",
+        "name": "cache_read_ratio_of_sums",
+        "value": 0.25,
+        "unit": "ratio",
+        "basis": "sum(cache_read)/sum(input_uncached+cache_write+cache_read)"
+      },
+      {
+        "id": "I02.gpt-5-codex.cache_write",
+        "name": "cache_write",
+        "value": 20,
+        "unit": "tokens",
+        "basis": "sum"
+      },
+      {
+        "id": "I02.gpt-5-codex.input_uncached",
+        "name": "input_uncached",
+        "value": 130,
+        "unit": "tokens",
+        "basis": "sum"
+      },
+      {
+        "id": "I02.gpt-5-codex.output",
+        "name": "output",
+        "value": 80,
+        "unit": "tokens",
+        "basis": "output_tokens; reasoning is included in this component"
+      },
+      {
+        "id": "I02.gpt-5-codex.reasoning",
+        "name": "reasoning",
+        "value": 25,
+        "unit": "tokens",
+        "basis": "included in output; not added to the disjoint sum or to either cache ratio"
+      }
+    ],
+    "coverage": "reasoning is included in output and is not part of the disjoint sum",
+    "evidence": [
+      "claude\ntests/fixtures/d5_golden/sources/claude\nsession-claude.jsonl:1:2",
+      "codex\ntests/fixtures/d5_golden/sources/codex\nrollout-codex.jsonl:1:6",
+      "pi\ntests/fixtures/d5_golden/sources/pi\nsession-pi.jsonl:1:3"
+    ]
+  },
+  {
+    "id": "I04",
+    "name": "model.cost",
+    "version": "1.0.0",
+    "domain": "model",
+    "status": {
+      "state": "partial",
+      "reason": "claude-sonnet-4-5 observed=partial unknown_rows=1; claude-sonnet-4-5 estimated=unknown unknown_rows=2; gpt-5-codex observed=unknown unknown_rows=1; gpt-5-codex estimated=unknown unknown_rows=1"
+    },
+    "population": {
+      "what": "usage_facts",
+      "n": 3
+    },
+    "measures": [
+      {
+        "id": "I04.claude-sonnet-4-5.estimated_usd",
+        "name": "estimated_usd",
+        "value": null,
+        "unit": "usd",
+        "basis": "status=unknown; known_rows=0; unknown_rows=2"
+      },
+      {
+        "id": "I04.claude-sonnet-4-5.observed_usd",
+        "name": "observed_usd",
+        "value": null,
+        "unit": "usd",
+        "basis": "status=partial; known_rows=1; unknown_rows=1"
+      },
+      {
+        "id": "I04.gpt-5-codex.estimated_usd",
+        "name": "estimated_usd",
+        "value": null,
+        "unit": "usd",
+        "basis": "status=unknown; known_rows=0; unknown_rows=1"
+      },
+      {
+        "id": "I04.gpt-5-codex.observed_usd",
+        "name": "observed_usd",
+        "value": null,
+        "unit": "usd",
+        "basis": "status=unknown; known_rows=0; unknown_rows=1"
+      }
+    ],
+    "coverage": "observed and estimated are never added; unknown is not zero",
+    "evidence": [
+      "claude\ntests/fixtures/d5_golden/sources/claude\nsession-claude.jsonl:1:2",
+      "codex\ntests/fixtures/d5_golden/sources/codex\nrollout-codex.jsonl:1:6",
+      "pi\ntests/fixtures/d5_golden/sources/pi\nsession-pi.jsonl:1:3"
+    ]
+  },
+  {
+    "id": "I08",
+    "name": "harness.action_failure",
+    "version": "1.0.0",
+    "domain": "harness",
+    "status": {
+      "state": "partial",
+      "reason": "unsettled actions excluded from failure rate denominator"
+    },
+    "population": {
+      "what": "tool_facts",
+      "n": 5
+    },
+    "measures": [
+      {
+        "id": "I08.claude.failed",
+        "name": "failed",
+        "value": 0,
+        "unit": "actions",
+        "basis": "count(failed = true); settled terminal actions only"
+      },
+      {
+        "id": "I08.claude.failure_rate",
+        "name": "failure_rate",
+        "value": 0.0,
+        "unit": "ratio",
+        "basis": "failed/settled where failed IS NOT NULL; unknown when settled is 0"
+      },
+      {
+        "id": "I08.claude.settled",
+        "name": "settled",
+        "value": 2,
+        "unit": "actions",
+        "basis": "count(failed IS NOT NULL); denominator for failure_rate"
+      },
+      {
+        "id": "I08.claude.unsettled",
+        "name": "unsettled",
+        "value": 0,
+        "unit": "actions",
+        "basis": "count(failed IS NULL); excluded from failure_rate denominator"
+      },
+      {
+        "id": "I08.codex.failed",
+        "name": "failed",
+        "value": 0,
+        "unit": "actions",
+        "basis": "count(failed = true); settled terminal actions only"
+      },
+      {
+        "id": "I08.codex.failure_rate",
+        "name": "failure_rate",
+        "value": 0.0,
+        "unit": "ratio",
+        "basis": "failed/settled where failed IS NOT NULL; unknown when settled is 0"
+      },
+      {
+        "id": "I08.codex.settled",
+        "name": "settled",
+        "value": 1,
+        "unit": "actions",
+        "basis": "count(failed IS NOT NULL); denominator for failure_rate"
+      },
+      {
+        "id": "I08.codex.unsettled",
+        "name": "unsettled",
+        "value": 0,
+        "unit": "actions",
+        "basis": "count(failed IS NULL); excluded from failure_rate denominator"
+      },
+      {
+        "id": "I08.pi.failed",
+        "name": "failed",
+        "value": 0,
+        "unit": "actions",
+        "basis": "count(failed = true); settled terminal actions only"
+      },
+      {
+        "id": "I08.pi.failure_rate",
+        "name": "failure_rate",
+        "value": 0.0,
+        "unit": "ratio",
+        "basis": "failed/settled where failed IS NOT NULL; unknown when settled is 0"
+      },
+      {
+        "id": "I08.pi.settled",
+        "name": "settled",
+        "value": 1,
+        "unit": "actions",
+        "basis": "count(failed IS NOT NULL); denominator for failure_rate"
+      },
+      {
+        "id": "I08.pi.unsettled",
+        "name": "unsettled",
+        "value": 1,
+        "unit": "actions",
+        "basis": "count(failed IS NULL); excluded from failure_rate denominator"
+      }
+    ],
+    "coverage": "settled terminal actions (failed IS NOT NULL) form the denominator; unsettled (failed IS NULL) are counted separately and never treated as succeeded",
+    "evidence": [
+      "claude\ntests/fixtures/d5_golden/sources/claude\nsession-claude.jsonl:1:2:0",
+      "claude\ntests/fixtures/d5_golden/sources/claude\nsession-claude.jsonl:1:2:1",
+      "codex\ntests/fixtures/d5_golden/sources/codex\nrollout-codex.jsonl:1:4:codex:0",
+      "pi\ntests/fixtures/d5_golden/sources/pi\nsession-pi.jsonl:1:3:0",
+      "pi\ntests/fixtures/d5_golden/sources/pi\nsession-pi.jsonl:1:3:1"
+    ]
+  },
+  {
+    "id": "I09",
+    "name": "work.lineage_shape",
+    "version": "1.0.0",
+    "domain": "coordination",
+    "status": {
+      "state": "computed"
+    },
+    "population": {
+      "what": "session_edges",
+      "n": 2
+    },
+    "measures": [
+      {
+        "id": "I09.cycles",
+        "name": "cycles",
+        "value": 0,
+        "unit": "sessions",
+        "basis": "sessions whose parent walk encountered a cycle"
+      },
+      {
+        "id": "I09.max_depth",
+        "name": "max_depth",
+        "value": 1,
+        "unit": "edges",
+        "basis": "longest root-to-descendant path via session_lineage::children_of; unknown when cycles or unresolved parents exist"
+      },
+      {
+        "id": "I09.multi_parent_children",
+        "name": "multi_parent_children",
+        "value": 0,
+        "unit": "sessions",
+        "basis": "children with more than one distinct resolved parent_session (diamonds)"
+      },
+      {
+        "id": "I09.relation.spawn",
+        "name": "relation.spawn",
+        "value": 2,
+        "unit": "edges",
+        "basis": "count of session_edges with relation=spawn"
+      },
+      {
+        "id": "I09.roots",
+        "name": "roots",
+        "value": 2,
+        "unit": "sessions",
+        "basis": "distinct root sessions from session_lineage::lineage_roots; unresolved parents never invent roots"
+      },
+      {
+        "id": "I09.status.started",
+        "name": "status.started",
+        "value": 2,
+        "unit": "edges",
+        "basis": "count of session_edges with status=started"
+      },
+      {
+        "id": "I09.unresolved_parents",
+        "name": "unresolved_parents",
+        "value": 0,
+        "unit": "edges",
+        "basis": "edges with empty parent_session; counted and never invented as roots"
+      }
+    ],
+    "coverage": "explicit session_edges only; unresolved parents are counted and never invented as roots; cycles stop the walk",
+    "evidence": [
+      "claude\ntests/fixtures/d5_golden/sources/claude\nsession-claude.jsonl:lineage:spawn:agent-child-1",
+      "codex\ntests/fixtures/d5_golden/sources/codex\nrollout-codex.jsonl:lineage:spawn:codex-s1"
+    ]
+  },
+  {
+    "id": "I14",
+    "name": "environment.resources",
+    "version": "1.0.0",
+    "domain": "environment",
+    "status": {
+      "state": "refused",
+      "reason": "empty population"
+    },
+    "population": {
+      "what": "process_samples",
+      "n": 0
+    },
+    "measures": [],
+    "coverage": "empty population",
+    "evidence": []
+  },
+  {
+    "id": "I18",
+    "name": "coverage.source",
+    "version": "1.0.0",
+    "domain": "environment",
+    "status": {
+      "state": "refused",
+      "reason": "undefined input"
+    },
+    "population": {
+      "what": "source_files",
+      "n": 0
+    },
+    "measures": [],
+    "coverage": "undefined input",
+    "evidence": []
+  }
+]

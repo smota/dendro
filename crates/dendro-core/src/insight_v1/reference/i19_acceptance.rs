@@ -31,6 +31,7 @@ pub(super) struct AcceptanceCount {
     pub unevaluated: i64,
     pub evidence: Vec<String>,
     pub accepted_items: Vec<String>,
+    pub excluded_connectors: std::collections::BTreeSet<&'static str>,
 }
 
 impl Insight for Acceptance {
@@ -74,8 +75,10 @@ pub(super) fn load_acceptance(input: &InsightInput<'_>) -> anyhow::Result<Option
     if rules.is_empty() {
         return Ok(None);
     }
-    let rows = load_queue(input)?;
-    Ok(Some(count_acceptance(&rows, &rules)))
+    let (rows, excluded) = load_queue(input)?;
+    let mut count = count_acceptance(&rows, &rules);
+    count.excluded_connectors = excluded;
+    Ok(Some(count))
 }
 
 pub(super) fn count_acceptance(
@@ -93,6 +96,7 @@ pub(super) fn count_acceptance(
         unevaluated: 0,
         evidence: rows.iter().map(|row| row.key.clone()).collect(),
         accepted_items: Vec::new(),
+        excluded_connectors: std::collections::BTreeSet::new(),
     };
     for (item, mut group) in by_item {
         group.sort_by(|left, right| {
@@ -135,6 +139,18 @@ fn answer(insight: &Acceptance, count: AcceptanceCount) -> InsightResult {
     } else {
         InsightStatus::Computed
     };
+    let mut coverage = COVERAGE.to_string();
+    if !count.excluded_connectors.is_empty() {
+        let mut all: Vec<&str> = vec!["openrig"];
+        all.extend(count.excluded_connectors.iter().copied());
+        if let crate::insight_v1::DenominatorEvaluation::Computable { scope } =
+            crate::insight_v1::evaluate_denominator(insight, &all)
+        {
+            if let Some(disc) = crate::insight_v1::format_denominator_disclosure(&scope) {
+                coverage = format!("{coverage}; {disc}");
+            }
+        }
+    }
     InsightResult {
         id: insight.id(),
         name: insight.name(),
@@ -182,7 +198,7 @@ fn answer(insight: &Acceptance, count: AcceptanceCount) -> InsightResult {
                 "accepted / evaluated; unknown when no work was evaluated",
             ),
         ],
-        coverage: COVERAGE.to_string(),
+        coverage,
         evidence: count.evidence,
     }
 }
@@ -207,9 +223,11 @@ fn load_rules(input: &InsightInput<'_>) -> anyhow::Result<BTreeMap<String, Strin
     Ok(rules)
 }
 
-fn load_queue(input: &InsightInput<'_>) -> anyhow::Result<Vec<Transition>> {
+fn load_queue(
+    input: &InsightInput<'_>,
+) -> anyhow::Result<(Vec<Transition>, std::collections::BTreeSet<&'static str>)> {
     let mut stmt = input.connection().prepare(
-        "SELECT source_key, qitem_id, CAST(ts AS VARCHAR), transition_id, closure_reason
+        "SELECT source_key, qitem_id, CAST(ts AS VARCHAR), transition_id, closure_reason, COALESCE(source_seat, ''), COALESCE(dest_seat, '')
          FROM queue_facts
          WHERE (? IS NULL OR qitem_id = ?)
            AND (? IS NULL OR ts >= CAST(? AS TIMESTAMP))
@@ -221,26 +239,31 @@ fn load_queue(input: &InsightInput<'_>) -> anyhow::Result<Vec<Transition>> {
     let from = scope.from.as_deref();
     let to = scope.to.as_deref();
     let rows = stmt.query_map(params![session, session, from, from, to, to], |row| {
-        Ok(Transition {
-            key: row.get(0)?,
-            item: row.get(1)?,
-            ts: row.get(2)?,
-            transition: row.get(3)?,
-            closure_reason: row.get(4)?,
-        })
+        Ok((
+            Transition {
+                key: row.get(0)?,
+                item: row.get(1)?,
+                ts: row.get(2)?,
+                transition: row.get(3)?,
+                closure_reason: row.get(4)?,
+            },
+            row.get::<_, String>(5)?,
+            row.get::<_, String>(6)?,
+        ))
     })?;
     let mut out = Vec::new();
-    for row in rows {
-        let row = row?;
-        let conn = row
-            .key
-            .split_once(':')
-            .map(|(prefix, _)| prefix)
-            .filter(|prefix| crate::insight_v1::fidelity::canonical_connector_id(prefix).is_some())
-            .unwrap_or("openrig");
+    let mut excluded = std::collections::BTreeSet::new();
+    for item in rows {
+        let (row, source_seat, dest_seat) = item?;
+        let conn = crate::insight_v1::fidelity::infer_seat_or_key_connector(
+            &row.key,
+            &[&source_seat, &dest_seat],
+        );
         if input.allows_harness(conn) {
             out.push(row);
+        } else {
+            excluded.insert(conn);
         }
     }
-    Ok(out)
+    Ok((out, excluded))
 }

@@ -1616,14 +1616,12 @@ fn truncate_public_coverage(coverage: &str) -> String {
         return coverage.to_string();
     }
     let parts: Vec<&str> = coverage.split("; ").collect();
-    let total_exclusions = parts.iter().filter(|p| p.starts_with("excluded: ")).count();
+    let total_parts = parts.len();
     let mut kept = Vec::new();
-    let mut kept_exclusions = 0usize;
     for part in &parts {
-        let is_exc = part.starts_with("excluded: ");
-        let remaining_exc = total_exclusions.saturating_sub(kept_exclusions + usize::from(is_exc));
-        let suffix = if remaining_exc > 0 {
-            format!("; …(+{remaining_exc} more exclusions)")
+        let remaining = total_parts.saturating_sub(kept.len() + 1);
+        let suffix = if remaining > 0 {
+            format!("; …(+{remaining} more exclusions)")
         } else {
             String::new()
         };
@@ -1637,15 +1635,12 @@ fn truncate_public_coverage(coverage: &str) -> String {
         };
         if candidate_len <= MAX_LEN {
             kept.push(*part);
-            if is_exc {
-                kept_exclusions += 1;
-            }
         } else {
             break;
         }
     }
-    let dropped_exc = total_exclusions.saturating_sub(kept_exclusions).max(1);
-    let suffix = format!("…(+{dropped_exc} more exclusions)");
+    let dropped = total_parts.saturating_sub(kept.len());
+    let suffix = format!("…(+{dropped} more exclusions)");
     if !kept.is_empty() {
         let prefix = kept.join("; ");
         let joined = format!("{prefix}; {suffix}");
@@ -3236,6 +3231,25 @@ mod tests {
         assert!(
             cov.ends_with("more exclusions)") && cov.contains("…(+"),
             "truncated coverage must end with `…(+N more exclusions)`: {cov}"
+        );
+
+        // Verify that when there are no `excluded: ` parts and 3 parts are cut off, every part cut
+        // off is counted (never hardcoded to `+1`).
+        let non_exc_parts = [
+            "a".repeat(800),
+            "b".repeat(200),
+            "c".repeat(200),
+            "d".repeat(200),
+        ]
+        .join("; ");
+        let truncated_non_exc = super::truncate_public_coverage(&non_exc_parts);
+        assert!(
+            truncated_non_exc.len() <= 1024,
+            "truncated coverage must be <= 1024 bytes"
+        );
+        assert!(
+            truncated_non_exc.ends_with("…(+3 more exclusions)"),
+            "expected all 3 cut-off parts to be counted: {truncated_non_exc}"
         );
     }
 }

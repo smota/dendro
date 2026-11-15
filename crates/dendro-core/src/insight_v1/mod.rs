@@ -8,13 +8,16 @@ pub use contract::{
     InsightPopulation, InsightResult, InsightStatus, Measure, MeasureValue, Scope,
 };
 pub use fidelity::{
-    canonical_connector_id, canonical_population_what, connector_declaration, denominator_matrix,
-    evaluate_denominator, evaluate_denominator_by_id, evaluate_denominator_in_store,
-    format_denominator_disclosure, format_exclusions_list, format_not_computable_reason,
-    populated_fields_in_store, present_connectors_for_insight, render_provider_fidelity_markdown,
-    token_field_in_store, ConnectorDeclaration, ConnectorExclusion, DenominatorEvaluation,
-    DenominatorMatrixRow, DenominatorScope, Field, FieldDeclaration, FieldFidelity,
-    IncludedConnector, PartialFidelityReason, CONNECTOR_DECLARATIONS,
+    canonical_connector_id, canonical_population_what, computable_connectors_for_insight,
+    connector_declaration, denominator_matrix, evaluate_denominator, evaluate_denominator_by_id,
+    evaluate_denominator_in_store, format_denominator_disclosure,
+    format_denominator_disclosure_with_unregistered, format_exclusions_list,
+    format_exclusions_list_with_unregistered, format_not_computable_reason,
+    infer_seat_or_key_connector, infer_trajectory_row_connector, populated_fields_in_store,
+    present_connectors_for_insight, render_provider_fidelity_markdown, token_field_in_store,
+    ConnectorDeclaration, ConnectorExclusion, DenominatorEvaluation, DenominatorMatrixRow,
+    DenominatorScope, Field, FieldDeclaration, FieldFidelity, IncludedConnector,
+    PartialFidelityReason, CONNECTOR_DECLARATIONS,
 };
 pub use reference::{evaluate_i22_scoped, CATALOG, REFERENCE};
 
@@ -77,9 +80,33 @@ pub fn evaluate_insight_for_connectors<S: AsRef<str>>(
     scope: &Scope,
     connectors: &[S],
 ) -> InsightResult {
+    let denom_cache = fidelity::StoreDenominatorCache::new(store, scope);
+    evaluate_insight_with_cache(insight, store, scope, connectors, &denom_cache)
+}
+
+fn append_disclosure_dedup(coverage: &mut String, disclosure: &str) {
+    let existing: std::collections::BTreeSet<String> =
+        coverage.split("; ").map(str::to_string).collect();
+    for part in disclosure.split("; ") {
+        if !part.is_empty() && !existing.contains(part) {
+            coverage.push_str("; ");
+            coverage.push_str(part);
+        }
+    }
+}
+
+fn evaluate_insight_with_cache<S: AsRef<str>>(
+    insight: &dyn Insight,
+    store: &crate::AnalyticsStore,
+    scope: &Scope,
+    connectors: &[S],
+    denom_cache: &fidelity::StoreDenominatorCache<'_>,
+) -> InsightResult {
     if let Some(reason) = scope.refusal() {
         return refused(insight, reason, "undefined");
     }
+    let unreg_stats = denom_cache.unregistered_stats(insight);
+    let unreg_opt = (unreg_stats.0 > 0).then_some(unreg_stats);
     match evaluate_denominator(insight, connectors) {
         DenominatorEvaluation::NotComputable {
             missing,
@@ -87,7 +114,7 @@ pub fn evaluate_insight_for_connectors<S: AsRef<str>>(
             ..
         } => {
             let reason = format_not_computable_reason(&missing, &by_connector);
-            let exc = format_exclusions_list(&by_connector);
+            let exc = format_exclusions_list_with_unregistered(&by_connector, unreg_opt);
             not_computable(
                 insight,
                 &reason,
@@ -103,8 +130,10 @@ pub fn evaluate_insight_for_connectors<S: AsRef<str>>(
                 .collect();
             let input = Input::with_allowed_harnesses(store, scope, allowed_harnesses);
             let mut result = insight.compute(&input);
-            if let Some(disclosure) = format_denominator_disclosure(&denom_scope) {
-                result.coverage = format!("{}; {disclosure}", result.coverage);
+            if let Some(disclosure) =
+                format_denominator_disclosure_with_unregistered(&denom_scope, unreg_opt)
+            {
+                append_disclosure_dedup(&mut result.coverage, &disclosure);
             }
             result
         }
@@ -117,9 +146,12 @@ fn run_for_connectors<S: AsRef<str>>(
     scope: &Scope,
     connectors: &[S],
 ) -> Vec<InsightResult> {
+    let denom_cache = fidelity::StoreDenominatorCache::new(store, scope);
     let mut results: Vec<_> = insights
         .iter()
-        .map(|insight| evaluate_insight_for_connectors(*insight, store, scope, connectors))
+        .map(|insight| {
+            evaluate_insight_with_cache(*insight, store, scope, connectors, &denom_cache)
+        })
         .collect();
     results.sort_by(|left, right| left.id.cmp(right.id).then(left.name.cmp(right.name)));
     results
@@ -130,7 +162,6 @@ fn run(
     store: &crate::AnalyticsStore,
     scope: &Scope,
 ) -> Vec<InsightResult> {
-    let unfiltered_input = Input::new(store, scope);
     let denom_cache = fidelity::StoreDenominatorCache::new(store, scope);
     let mut results: Vec<_> = insights
         .iter()
@@ -138,13 +169,20 @@ fn run(
             if let Some(reason) = scope.refusal() {
                 refused(*insight, reason, "undefined")
             } else if let Some(harness) = scope.harness.as_deref() {
-                evaluate_insight_for_connectors(*insight, store, scope, &[harness])
+                evaluate_insight_with_cache(*insight, store, scope, &[harness], &denom_cache)
             } else {
                 let present = denom_cache.present_connectors(*insight);
                 if present.is_empty() {
-                    insight.compute(&unfiltered_input)
+                    let allowed =
+                        if insight.id() == "I07" && !fidelity::context_facts_table_exists(store) {
+                            fidelity::connectors_supplying_field(Field::InputTokens)
+                        } else {
+                            computable_connectors_for_insight(*insight)
+                        };
+                    let input = Input::with_allowed_harnesses(store, scope, allowed);
+                    insight.compute(&input)
                 } else {
-                    evaluate_insight_for_connectors(*insight, store, scope, &present)
+                    evaluate_insight_with_cache(*insight, store, scope, &present, &denom_cache)
                 }
             }
         })

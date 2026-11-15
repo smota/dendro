@@ -30,6 +30,7 @@ struct Turn {
     subject: String,
     turn: i64,
     vector: Vec<f64>,
+    connector: String,
 }
 
 impl Insight for TrajectoryVortex {
@@ -96,21 +97,9 @@ fn evaluate_connection_with_input(
     };
     let turns: Vec<Turn> = turns
         .into_iter()
-        .filter(|turn| {
-            let Some(input) = input else {
-                return true;
-            };
-            let prefix = turn
-                .subject
-                .split_once(':')
-                .map(|(p, _)| p)
-                .filter(|p| crate::insight_v1::fidelity::canonical_connector_id(p).is_some())
-                .or_else(|| {
-                    turn.id.split_once(':').map(|(p, _)| p).filter(|p| {
-                        crate::insight_v1::fidelity::canonical_connector_id(p).is_some()
-                    })
-                });
-            prefix.is_none_or(|p| input.allows_harness(p))
+        .filter(|turn| match input {
+            Some(input) => input.allows_harness(&turn.connector),
+            None => true,
         })
         .collect();
     if turns.is_empty() {
@@ -213,7 +202,8 @@ fn load(conn: &Connection) -> anyhow::Result<Vec<Turn>> {
         "SELECT COALESCE(observation_id, session_key, 'obs'),
                 COALESCE(subject_key, session_key, 'unscoped'),
                 COALESCE(turn_k, 0),
-                COALESCE(CAST(embedding AS VARCHAR), CAST(vec AS VARCHAR))
+                COALESCE(CAST(embedding AS VARCHAR), CAST(vec AS VARCHAR)),
+                harness
          FROM harness_trajectory
          ORDER BY 2, 3, 1",
     )?;
@@ -223,16 +213,23 @@ fn load(conn: &Connection) -> anyhow::Result<Vec<Turn>> {
             row.get::<_, String>(1)?,
             row.get::<_, i64>(2)?,
             row.get::<_, String>(3)?,
+            row.get::<_, Option<String>>(4)?,
         ))
     })?;
     let mut out = Vec::new();
     for row in rows {
-        let (id, subject, turn, text) = row?;
+        let (id, subject, turn, text, harness) = row?;
+        let connector = crate::insight_v1::fidelity::infer_trajectory_row_connector(
+            harness.as_deref(),
+            &subject,
+            &id,
+        );
         out.push(Turn {
             id,
             subject,
             turn,
             vector: parse_vector(&text)?,
+            connector,
         });
     }
     Ok(out)

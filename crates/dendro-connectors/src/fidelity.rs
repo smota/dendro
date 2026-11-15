@@ -1248,6 +1248,328 @@ mod tests {
     }
 
     #[test]
+    fn pre_d5_golden_regression_guard_ingested_claude_codex_pi_windowed() {
+        let key = b"0123456789abcdef0123456789abcdef";
+        let tmp = TempDir::new("pre-d5-golden-windowed");
+        let roots = vec![
+            SourceRoot {
+                name: "claude".into(),
+                path: PathBuf::from("tests/fixtures/d5_golden/sources/claude"),
+            },
+            SourceRoot {
+                name: "codex".into(),
+                path: PathBuf::from("tests/fixtures/d5_golden/sources/codex"),
+            },
+            SourceRoot {
+                name: "pi".into(),
+                path: PathBuf::from("tests/fixtures/d5_golden/sources/pi"),
+            },
+        ];
+        let store = ingest_roots_into_store(tmp.path(), &roots, key);
+        let scope = Scope {
+            from: Some("2026-10-10T00:00:00Z".into()),
+            to: Some("2026-10-11T00:00:00Z".into()),
+            ..Scope::default()
+        };
+
+        let golden_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures")
+            .join("d5_golden");
+        let golden_eval_raw =
+            std::fs::read_to_string(golden_dir.join("pre_d5_evaluate_windowed.json")).unwrap();
+        let golden_cat_raw =
+            std::fs::read_to_string(golden_dir.join("pre_d5_evaluate_catalog_windowed.json"))
+                .unwrap();
+        let golden_eval: Vec<serde_json::Value> = serde_json::from_str(&golden_eval_raw).unwrap();
+        let golden_cat: Vec<serde_json::Value> = serde_json::from_str(&golden_cat_raw).unwrap();
+
+        let actual_eval = evaluate(&store, &scope);
+        let actual_cat = evaluate_catalog(&store, &scope);
+
+        let expected_policy_diffs: BTreeMap<&str, &str> = BTreeMap::from([
+            (
+                "I03",
+                "pi is present in usage_facts in window but lacks session_edges; excluded from I03 denominator and disclosed in coverage",
+            ),
+            (
+                "I04",
+                "claude and codex are present in usage_facts in window but lack observed_cost; excluded from I04 denominator and disclosed in coverage",
+            ),
+            (
+                "I06",
+                "claude, codex, and pi are present in tool_facts/skill_facts in window but none supplies skill_declarations; I06 refuses as NotComputable",
+            ),
+            (
+                "I11",
+                "pi is present in usage_facts in window but lacks session_edges; excluded from I11 denominator and disclosed in coverage",
+            ),
+            (
+                "I16",
+                "pi is present in security_facts in window (via SecurityCommandCheck) but lacks SecurityPolicy; excluded from I16 denominator and disclosed in coverage",
+            ),
+            (
+                "I17",
+                "pi is present in security_facts (session-only filter) but lacks SecurityPolicy; excluded from I17 denominator and disclosed in coverage",
+            ),
+            (
+                "I20",
+                "pi is present in usage_facts with currency_total but lacks queue_transitions; I20 refuses as NotComputable instead of not_observable",
+            ),
+            (
+                "I24",
+                "pi is present in security_facts (session-only filter) but lacks SessionEdges and SecurityPolicy; excluded from I24 denominator and disclosed in coverage",
+            ),
+        ]);
+
+        let denom_cache =
+            dendro_core::insight_v1::fidelity::StoreDenominatorCache::new(&store, &scope);
+        assert_eq!(actual_cat.len(), golden_cat.len());
+        for (actual, golden) in actual_cat.iter().zip(golden_cat.iter()) {
+            let id = actual.id;
+            assert_eq!(golden["id"].as_str(), Some(id));
+            let actual_val = serde_json::to_value(actual).unwrap();
+
+            let insight = CATALOG.iter().copied().find(|i| i.id() == id).unwrap();
+            let present = denom_cache.present_connectors(insight);
+            let all_present_computable = present.is_empty()
+                || matches!(
+                    evaluate_denominator(insight, &present),
+                    DenominatorEvaluation::Computable { ref scope } if scope.excluded.is_empty()
+                );
+
+            if all_present_computable {
+                assert!(
+                    !expected_policy_diffs.contains_key(id),
+                    "{id} has all present connectors computable ({present:?}), so it must not be in expected_policy_diffs"
+                );
+                assert_eq!(
+                    serde_json::to_string_pretty(&actual_val).unwrap(),
+                    serde_json::to_string_pretty(golden).unwrap(),
+                    "windowed byte-identical PRE-D5 golden regression guard failed for {id} (present={present:?})"
+                );
+            } else {
+                let reason = expected_policy_diffs.get(id).unwrap_or_else(|| {
+                    panic!("{id} changed from windowed pre-D5 golden output without an explicit entry in expected_policy_diffs")
+                });
+                assert!(!reason.is_empty());
+                assert_ne!(
+                    serde_json::to_string_pretty(&actual_val).unwrap(),
+                    serde_json::to_string_pretty(golden).unwrap(),
+                    "{id} is listed in expected_policy_diffs ({reason}) but did not differ from windowed pre-D5 golden output"
+                );
+            }
+        }
+
+        assert_eq!(actual_eval.len(), golden_eval.len());
+        for (actual, golden) in actual_eval.iter().zip(golden_eval.iter()) {
+            let id = actual.id;
+            let actual_val = serde_json::to_value(actual).unwrap();
+            if id == "I04" {
+                assert_eq!(actual.population.n, 1);
+                assert!(actual
+                    .coverage
+                    .contains("excluded: claude — missing observed_cost; excluded: codex — missing observed_cost"));
+            } else {
+                assert_eq!(
+                    serde_json::to_string_pretty(&actual_val).unwrap(),
+                    serde_json::to_string_pretty(golden).unwrap(),
+                    "windowed REFERENCE byte-identical PRE-D5 golden regression guard failed for {id}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn time_window_scope_multi_connector_with_unregistered_harness_never_pools_or_computes_not_computable(
+    ) {
+        let key = b"0123456789abcdef0123456789abcdef";
+        let tmp = TempDir::new("time-window-multi-unreg");
+        let roots = vec![
+            SourceRoot {
+                name: "claude".into(),
+                path: PathBuf::from("tests/fixtures/d5_golden/sources/claude"),
+            },
+            SourceRoot {
+                name: "codex".into(),
+                path: PathBuf::from("tests/fixtures/d5_golden/sources/codex"),
+            },
+            SourceRoot {
+                name: "pi".into(),
+                path: PathBuf::from("tests/fixtures/d5_golden/sources/pi"),
+            },
+        ];
+        let db_path = tmp.path().join("staged.duckdb");
+        drop(AnalyticsStore::open_path(&db_path, &dendro_core::key_id(key)).unwrap());
+        let _warnings = ingest_staged(&db_path, &roots, false, key).unwrap();
+
+        // Populate non-computable (`agy`) and unregistered harness rows (`unreg_alpha`, `unreg_beta`),
+        // including rows with NULL or out-of-window timestamps in `security_facts`, `source_files`,
+        // `harness_trajectory`, and `harness_envelope`.
+        let vec_one = format!(
+            "[{}]::FLOAT[32]",
+            std::iter::once("1.0")
+                .chain(std::iter::repeat("0.0").take(31))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        let vec_alt = format!(
+            "[{}]::FLOAT[32]",
+            std::iter::once("0.0")
+                .chain(std::iter::once("1.0"))
+                .chain(std::iter::repeat("0.0").take(30))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        {
+            let conn = duckdb::Connection::open(&db_path).unwrap();
+            conn.execute_batch(&format!(
+                "INSERT INTO source_files (source_id, harness, display_path, generation, byte_offset, prefix_sha256, native_session) VALUES
+                    ('src-agy', 'agy', 'agy.pb', 1, 100, 'aa', 'agy-s1'),
+                    ('src-unreg-a', 'unreg_alpha', 'ua.jsonl', 1, 100, 'bb', 'ua-s1'),
+                    ('src-unreg-b', 'unreg_beta', 'ub.jsonl', 1, 100, 'cc', 'ub-s1');
+                INSERT INTO security_facts (source_key, source_id, harness, native_session, ts, kind, value, source_field, generation) VALUES
+                    ('sec-agy', 'src-agy', 'agy', 'agy-s1', NULL, 'permission_mode', 'default', 'permission_mode', 1),
+                    ('sec-ua-1', 'src-unreg-a', 'unreg_alpha', 'ua-s1', TIMESTAMP '2026-01-01 00:00:00', 'permission_mode', 'bypass', 'permission_mode', 1),
+                    ('sec-ua-2', 'src-unreg-a', 'unreg_alpha', 'ua-s1', NULL, 'sandbox_policy', 'none', 'sandbox_policy', 1),
+                    ('sec-ub-1', 'src-unreg-b', 'unreg_beta', 'ub-s1', TIMESTAMP '2025-05-05 00:00:00', 'permission_mode', 'bypass', 'permission_mode', 1);
+                CREATE TABLE IF NOT EXISTS harness_trajectory (
+                    observation_id VARCHAR,
+                    session_key VARCHAR,
+                    subject_key VARCHAR,
+                    harness VARCHAR,
+                    turn_k BIGINT,
+                    embedding FLOAT[32],
+                    vec FLOAT[32]
+                );
+                INSERT INTO harness_trajectory (observation_id, session_key, subject_key, harness, turn_k, embedding) VALUES
+                    ('claude:r0', 'claude:s0', 'claude:ref-0', 'claude', 0, {vec_one}),
+                    ('claude:r1', 'claude:s1', 'claude:ref-1', 'claude', 0, {vec_one}),
+                    ('claude:r2', 'claude:s2', 'claude:ref-2', 'claude', 0, {vec_one}),
+                    ('claude:r3', 'claude:s3', 'claude:ref-3', 'claude', 0, {vec_one}),
+                    ('claude:r4', 'claude:s4', 'claude:ref-4', 'claude', 0, {vec_one}),
+                    ('unreg_alpha:c0', 'ua:s', 'unreg_alpha:cand', 'unreg_alpha', 0, {vec_alt}),
+                    ('unreg_alpha:c1', 'ua:s', 'unreg_alpha:cand', 'unreg_alpha', 1, {vec_alt}),
+                    ('unreg_beta:c2', 'ub:s', 'unreg_beta:cand', 'unreg_beta', 2, {vec_alt});
+                CREATE TABLE IF NOT EXISTS harness_envelope (
+                    observation_id VARCHAR,
+                    harness VARCHAR,
+                    harness_version VARCHAR,
+                    captured_at TIMESTAMP,
+                    envelope_shape VARIANT
+                );
+                INSERT INTO harness_envelope (observation_id, harness, harness_version, captured_at, envelope_shape) VALUES
+                    ('env-c1', 'claude', '1.0', TIMESTAMP '2025-01-01 00:00:00', CAST('{{\"a\":1}}' AS JSON)),
+                    ('env-c2', 'claude', '1.0', TIMESTAMP '2025-01-01 00:00:01', CAST('{{\"a\":1}}' AS JSON)),
+                    ('env-c3', 'claude', '1.0', TIMESTAMP '2025-01-01 00:00:02', CAST('{{\"a\":1}}' AS JSON)),
+                    ('env-c4', 'claude', '1.0', TIMESTAMP '2025-01-01 00:00:03', CAST('{{\"a\":1}}' AS JSON)),
+                    ('env-c5', 'claude', '1.0', TIMESTAMP '2025-01-01 00:00:04', CAST('{{\"a\":1}}' AS JSON)),
+                    ('env-c6', 'claude', '2.0', TIMESTAMP '2025-01-01 00:00:05', CAST('{{\"a\":1,\"b\":2}}' AS JSON)),
+                    ('env-c7', 'claude', '2.0', TIMESTAMP '2025-01-01 00:00:06', CAST('{{\"a\":1,\"b\":2}}' AS JSON)),
+                    ('env-c8', 'claude', '2.0', TIMESTAMP '2025-01-01 00:00:07', CAST('{{\"a\":1,\"b\":2}}' AS JSON)),
+                    ('env-c9', 'claude', '2.0', TIMESTAMP '2025-01-01 00:00:08', CAST('{{\"a\":1,\"b\":2}}' AS JSON)),
+                    ('env-c10', 'claude', '2.0', TIMESTAMP '2025-01-01 00:00:09', CAST('{{\"a\":1,\"b\":2}}' AS JSON)),
+                    ('env-ua1', 'unreg_alpha', '1.0', TIMESTAMP '2025-01-01 00:00:10', CAST('{{\"x\":1}}' AS JSON)),
+                    ('env-ub1', 'unreg_beta', '1.0', TIMESTAMP '2025-01-01 00:00:11', CAST('{{\"y\":1}}' AS JSON));"
+            ))
+            .unwrap();
+        }
+        let store = AnalyticsStore::open_path(&db_path, &dendro_core::key_id(key)).unwrap();
+
+        // Site always sets `from` / `to` (connected_web.rs ~416).
+        let window_scope = Scope {
+            from: Some("2026-10-10T00:00:00Z".into()),
+            to: Some("2026-10-11T00:00:00Z".into()),
+            ..Scope::default()
+        };
+        let results = evaluate_catalog(&store, &window_scope);
+
+        // I17: presence uses `security_session_only()` (matching the I17 query), so `pi`, `agy`, and
+        // unregistered harnesses (`unreg_alpha`, `unreg_beta`) with NULL or out-of-window `ts` are
+        // detected as present, excluded from computation (only `claude` + `codex` are pooled), and
+        // disclosed in `coverage`.
+        let i17 = results.iter().find(|r| r.id == "I17").unwrap();
+        assert_eq!(
+            i17.population.n, 7,
+            "I17 must only include claude (3) and codex (4) security_facts; pi, agy, and unregistered rows must be excluded"
+        );
+        assert!(
+            i17.coverage
+                .contains("excluded: agy — missing security_policy")
+                && i17
+                    .coverage
+                    .contains("excluded: pi — missing security_policy")
+                && i17
+                    .coverage
+                    .contains("excluded: unregistered harness (2 values, 3 rows)"),
+            "I17 coverage must list agy, pi, and unregistered harness exclusions: {}",
+            i17.coverage
+        );
+        assert!(
+            !i17.coverage.contains("unreg_alpha") && !i17.coverage.contains("unreg_beta"),
+            "I17 coverage must not print raw unregistered harness names: {}",
+            i17.coverage
+        );
+
+        // I18: `sources()` does not return empty when `from`/`to` is set, so `agy` and the
+        // unregistered harnesses in `source_files` are detected and disclosed in `coverage`.
+        let i18 = results.iter().find(|r| r.id == "I18").unwrap();
+        assert!(
+            i18.coverage.contains("excluded: agy — missing source_coverage")
+                && i18.coverage.contains("excluded: unregistered harness (2 values, 2 rows)"),
+            "I18 coverage under time-window scope must list agy and unregistered harness exclusions: {}",
+            i18.coverage
+        );
+
+        // I22: matrix says NotComputable for all connectors; under a time-window scope (and even
+        // when `session` is also set), I22 never computes a number, returns NotComputable, and lists
+        // the exclusions in coverage.
+        let i22 = results.iter().find(|r| r.id == "I22").unwrap();
+        assert!(
+            matches!(&i22.status, InsightStatus::Refused { reason } if reason.starts_with("not_computable: missing trajectory_vector")),
+            "I22 must return NotComputable under time-window scope, got {:?}",
+            i22.status
+        );
+        assert!(
+            i22.measures.is_empty(),
+            "I22 must never show a number where the matrix says NotComputable"
+        );
+        assert!(
+            i22.coverage
+                .contains("excluded: claude — missing trajectory_vector")
+                && i22
+                    .coverage
+                    .contains("excluded: unregistered harness (2 values, 3 rows)"),
+            "I22 coverage must list claude and unregistered exclusions: {}",
+            i22.coverage
+        );
+
+        // I23: `harness_envelope` rows have `captured_at` in 2025 (outside the 2026-10-10 window),
+        // and the I23 query has no `captured_at` filter. Because I23 presence matches the I23 query,
+        // I23 never falls through to unfiltered compute, returns NotComputable with no measures,
+        // and lists the exclusions in coverage.
+        let i23 = results.iter().find(|r| r.id == "I23").unwrap();
+        assert!(
+            matches!(&i23.status, InsightStatus::Refused { reason } if reason.starts_with("not_computable: missing harness_envelope_shape")),
+            "I23 must return NotComputable under time-window scope even when captured_at is outside [from, to), got {:?}",
+            i23.status
+        );
+        assert!(
+            i23.measures.is_empty(),
+            "I23 must never show a number where the matrix says NotComputable"
+        );
+        assert!(
+            i23.coverage
+                .contains("excluded: claude — missing harness_envelope_shape")
+                && i23
+                    .coverage
+                    .contains("excluded: unregistered harness (2 values, 2 rows)"),
+            "I23 coverage must list claude and unregistered exclusions: {}",
+            i23.coverage
+        );
+    }
+
+    #[test]
     fn drift_test_provider_matrix_md_matches_compiled_declarations() {
         let matrix_path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()

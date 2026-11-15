@@ -46,6 +46,7 @@ pub struct InsightInput<'a> {
 }
 
 impl<'a> InsightInput<'a> {
+    #[cfg(test)]
     pub(crate) fn new(store: &'a AnalyticsStore, scope: &'a Scope) -> Self {
         Self {
             store,

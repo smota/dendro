@@ -1,0 +1,975 @@
+[
+  {
+    "id": "I01",
+    "name": "model.invocations",
+    "version": "1.1.0",
+    "domain": "model",
+    "status": {
+      "state": "computed"
+    },
+    "population": {
+      "what": "usage_facts",
+      "n": 3
+    },
+    "measures": [
+      {
+        "id": "I01.distinct_calls",
+        "name": "distinct_calls",
+        "value": 2,
+        "unit": "calls",
+        "basis": "count of distinct (canonical_harness, native_session, message_id) tuples"
+      },
+      {
+        "id": "I01.unqualified",
+        "name": "unqualified",
+        "value": 0,
+        "unit": "rows",
+        "basis": "usage rows with a call id but missing/unknown harness or session; counted per row, not merged or included in distinct_calls"
+      },
+      {
+        "id": "I01.usage_only",
+        "name": "usage_only",
+        "value": 1,
+        "unit": "rows",
+        "basis": "usage rows with no call id; not included in distinct_calls"
+      }
+    ],
+    "coverage": "qualified call grain only; usage-only and unqualified rows are counted separately and are not included in distinct_calls",
+    "evidence": [
+      "claude\ntests/fixtures/d5_golden/sources/claude\nsession-claude.jsonl:1:2",
+      "codex\ntests/fixtures/d5_golden/sources/codex\nrollout-codex.jsonl:1:6",
+      "pi\ntests/fixtures/d5_golden/sources/pi\nsession-pi.jsonl:1:3"
+    ]
+  },
+  {
+    "id": "I02",
+    "name": "model.tokens.direct",
+    "version": "1.0.0",
+    "domain": "model",
+    "status": {
+      "state": "computed"
+    },
+    "population": {
+      "what": "usage_facts",
+      "n": 3
+    },
+    "measures": [
+      {
+        "id": "I02.claude-sonnet-4-5.cache_read",
+        "name": "cache_read",
+        "value": 55,
+        "unit": "tokens",
+        "basis": "sum"
+      },
+      {
+        "id": "I02.claude-sonnet-4-5.cache_read_mean_of_ratios",
+        "name": "cache_read_mean_of_ratios",
+        "value": 0.1835016835016835,
+        "unit": "ratio",
+        "basis": "mean of per-invocation cache_read/(input_uncached+cache_write+cache_read); undefined invocations omitted"
+      },
+      {
+        "id": "I02.claude-sonnet-4-5.cache_read_ratio_of_sums",
+        "name": "cache_read_ratio_of_sums",
+        "value": 0.18333333333333332,
+        "unit": "ratio",
+        "basis": "sum(cache_read)/sum(input_uncached+cache_write+cache_read)"
+      },
+      {
+        "id": "I02.claude-sonnet-4-5.cache_write",
+        "name": "cache_write",
+        "value": 25,
+        "unit": "tokens",
+        "basis": "sum"
+      },
+      {
+        "id": "I02.claude-sonnet-4-5.input_uncached",
+        "name": "input_uncached",
+        "value": 220,
+        "unit": "tokens",
+        "basis": "sum"
+      },
+      {
+        "id": "I02.claude-sonnet-4-5.output",
+        "name": "output",
+        "value": 85,
+        "unit": "tokens",
+        "basis": "output_tokens; reasoning is included in this component"
+      },
+      {
+        "id": "I02.claude-sonnet-4-5.reasoning",
+        "name": "reasoning",
+        "value": 12,
+        "unit": "tokens",
+        "basis": "included in output; not added to the disjoint sum or to either cache ratio"
+      },
+      {
+        "id": "I02.gpt-5-codex.cache_read",
+        "name": "cache_read",
+        "value": 50,
+        "unit": "tokens",
+        "basis": "sum"
+      },
+      {
+        "id": "I02.gpt-5-codex.cache_read_mean_of_ratios",
+        "name": "cache_read_mean_of_ratios",
+        "value": 0.25,
+        "unit": "ratio",
+        "basis": "mean of per-invocation cache_read/(input_uncached+cache_write+cache_read); undefined invocations omitted"
+      },
+      {
+        "id": "I02.gpt-5-codex.cache_read_ratio_of_sums",
+        "name": "cache_read_ratio_of_sums",
+        "value": 0.25,
+        "unit": "ratio",
+        "basis": "sum(cache_read)/sum(input_uncached+cache_write+cache_read)"
+      },
+      {
+        "id": "I02.gpt-5-codex.cache_write",
+        "name": "cache_write",
+        "value": 20,
+        "unit": "tokens",
+        "basis": "sum"
+      },
+      {
+        "id": "I02.gpt-5-codex.input_uncached",
+        "name": "input_uncached",
+        "value": 130,
+        "unit": "tokens",
+        "basis": "sum"
+      },
+      {
+        "id": "I02.gpt-5-codex.output",
+        "name": "output",
+        "value": 80,
+        "unit": "tokens",
+        "basis": "output_tokens; reasoning is included in this component"
+      },
+      {
+        "id": "I02.gpt-5-codex.reasoning",
+        "name": "reasoning",
+        "value": 25,
+        "unit": "tokens",
+        "basis": "included in output; not added to the disjoint sum or to either cache ratio"
+      }
+    ],
+    "coverage": "reasoning is included in output and is not part of the disjoint sum",
+    "evidence": [
+      "claude\ntests/fixtures/d5_golden/sources/claude\nsession-claude.jsonl:1:2",
+      "codex\ntests/fixtures/d5_golden/sources/codex\nrollout-codex.jsonl:1:6",
+      "pi\ntests/fixtures/d5_golden/sources/pi\nsession-pi.jsonl:1:3"
+    ]
+  },
+  {
+    "id": "I03",
+    "name": "model.tokens.inclusive",
+    "version": "1.0.0",
+    "domain": "model",
+    "status": {
+      "state": "partial",
+      "reason": "observed lower bound"
+    },
+    "population": {
+      "what": "usage_facts",
+      "n": 3
+    },
+    "measures": [
+      {
+        "id": "I03.fleet_deduped",
+        "name": "fleet_deduped",
+        "value": 665,
+        "unit": "tokens",
+        "basis": "each usage source_key once; summing node inclusives is not a fleet total"
+      },
+      {
+        "id": "I03.node.claude-s1",
+        "name": "inclusive_tokens",
+        "value": 210,
+        "unit": "tokens",
+        "basis": "deduped sum of disjoint token components on this node and its evidenced descendants"
+      },
+      {
+        "id": "I03.node.codex-s1",
+        "name": "inclusive_tokens",
+        "value": 280,
+        "unit": "tokens",
+        "basis": "deduped sum of disjoint token components on this node and its evidenced descendants"
+      },
+      {
+        "id": "I03.node.pi-s1",
+        "name": "inclusive_tokens",
+        "value": 175,
+        "unit": "tokens",
+        "basis": "deduped sum of disjoint token components on this node and its evidenced descendants"
+      }
+    ],
+    "coverage": "inclusive totals are the deduped observation union and are nonadditive across nodes; fleet_deduped is the only fleet total",
+    "evidence": [
+      "claude\ntests/fixtures/d5_golden/sources/claude\nsession-claude.jsonl:1:2",
+      "codex\ntests/fixtures/d5_golden/sources/codex\nrollout-codex.jsonl:1:6",
+      "pi\ntests/fixtures/d5_golden/sources/pi\nsession-pi.jsonl:1:3"
+    ]
+  },
+  {
+    "id": "I04",
+    "name": "model.cost",
+    "version": "1.0.0",
+    "domain": "model",
+    "status": {
+      "state": "partial",
+      "reason": "claude-sonnet-4-5 observed=partial unknown_rows=1; claude-sonnet-4-5 estimated=unknown unknown_rows=2; gpt-5-codex observed=unknown unknown_rows=1; gpt-5-codex estimated=unknown unknown_rows=1"
+    },
+    "population": {
+      "what": "usage_facts",
+      "n": 3
+    },
+    "measures": [
+      {
+        "id": "I04.claude-sonnet-4-5.estimated_usd",
+        "name": "estimated_usd",
+        "value": null,
+        "unit": "usd",
+        "basis": "status=unknown; known_rows=0; unknown_rows=2"
+      },
+      {
+        "id": "I04.claude-sonnet-4-5.observed_usd",
+        "name": "observed_usd",
+        "value": null,
+        "unit": "usd",
+        "basis": "status=partial; known_rows=1; unknown_rows=1"
+      },
+      {
+        "id": "I04.gpt-5-codex.estimated_usd",
+        "name": "estimated_usd",
+        "value": null,
+        "unit": "usd",
+        "basis": "status=unknown; known_rows=0; unknown_rows=1"
+      },
+      {
+        "id": "I04.gpt-5-codex.observed_usd",
+        "name": "observed_usd",
+        "value": null,
+        "unit": "usd",
+        "basis": "status=unknown; known_rows=0; unknown_rows=1"
+      }
+    ],
+    "coverage": "observed and estimated are never added; unknown is not zero",
+    "evidence": [
+      "claude\ntests/fixtures/d5_golden/sources/claude\nsession-claude.jsonl:1:2",
+      "codex\ntests/fixtures/d5_golden/sources/codex\nrollout-codex.jsonl:1:6",
+      "pi\ntests/fixtures/d5_golden/sources/pi\nsession-pi.jsonl:1:3"
+    ]
+  },
+  {
+    "id": "I05",
+    "name": "model.configuration_divergence",
+    "version": "1.0.0",
+    "domain": "model",
+    "status": {
+      "state": "refused",
+      "reason": "not_observable"
+    },
+    "population": {
+      "what": "usage_facts",
+      "n": 3
+    },
+    "measures": [
+      {
+        "id": "I05.excluded_unknown",
+        "name": "excluded",
+        "value": 0,
+        "unit": "sessions",
+        "basis": "sessions missing model, effort, or a paired desired binding"
+      }
+    ],
+    "coverage": "paired observed bindings only; unknown model or effort is excluded and counted; divergence is not a violation",
+    "evidence": [
+      "claude-s1",
+      "codex-s1",
+      "pi-s1"
+    ]
+  },
+  {
+    "id": "I06",
+    "name": "harness.capability_funnel",
+    "version": "1.0.0",
+    "domain": "harness",
+    "status": {
+      "state": "partial",
+      "reason": "absent loaded evidence"
+    },
+    "population": {
+      "what": "skill_facts",
+      "n": 8
+    },
+    "measures": [
+      {
+        "id": "I06.actions",
+        "name": "actions",
+        "value": 5,
+        "unit": "actions",
+        "basis": "tool_facts rows in scope; counted even when the rate is refused"
+      },
+      {
+        "id": "I06.intersection",
+        "name": "intersection",
+        "value": 0,
+        "unit": "capabilities",
+        "basis": "skills that are both loaded and invoked"
+      },
+      {
+        "id": "I06.invoked",
+        "name": "invoked",
+        "value": 3,
+        "unit": "capabilities",
+        "basis": "distinct skills with invoked = true"
+      },
+      {
+        "id": "I06.loaded",
+        "name": "loaded",
+        "value": 0,
+        "unit": "capabilities",
+        "basis": "distinct skills with invoked = false"
+      },
+      {
+        "id": "I06.rate",
+        "name": "rate",
+        "value": null,
+        "unit": "ratio",
+        "basis": "intersection / loaded; unknown when loaded evidence is absent"
+      }
+    ],
+    "coverage": "rate is invoked intersect loaded over loaded; absent loaded evidence refuses the rate and still counts actions",
+    "evidence": [
+      "claude\ntests/fixtures/d5_golden/sources/claude\nsession-claude.jsonl:1:2:0",
+      "claude\ntests/fixtures/d5_golden/sources/claude\nsession-claude.jsonl:1:2:1",
+      "codex\ntests/fixtures/d5_golden/sources/codex\nrollout-codex.jsonl:1:4:codex:0",
+      "commit",
+      "pi\ntests/fixtures/d5_golden/sources/pi\nsession-pi.jsonl:1:3:0"
+    ]
+  },
+  {
+    "id": "I07",
+    "name": "harness.context_pressure",
+    "version": "1.0.0",
+    "domain": "harness",
+    "status": {
+      "state": "partial",
+      "reason": "missing context limit"
+    },
+    "population": {
+      "what": "context_facts",
+      "n": 3
+    },
+    "measures": [
+      {
+        "id": "I07.peak_ratio",
+        "name": "peak_ratio",
+        "value": null,
+        "unit": "ratio",
+        "basis": "unknown; prompt tokens are not used as context-used and no context limit was recorded"
+      }
+    ],
+    "coverage": "prompt tokens do not substitute for context-used; a missing limit refuses the ratio",
+    "evidence": []
+  },
+  {
+    "id": "I08",
+    "name": "harness.action_failure",
+    "version": "1.0.0",
+    "domain": "harness",
+    "status": {
+      "state": "partial",
+      "reason": "unsettled actions excluded from failure rate denominator"
+    },
+    "population": {
+      "what": "tool_facts",
+      "n": 5
+    },
+    "measures": [
+      {
+        "id": "I08.claude.failed",
+        "name": "failed",
+        "value": 0,
+        "unit": "actions",
+        "basis": "count(failed = true); settled terminal actions only"
+      },
+      {
+        "id": "I08.claude.failure_rate",
+        "name": "failure_rate",
+        "value": 0.0,
+        "unit": "ratio",
+        "basis": "failed/settled where failed IS NOT NULL; unknown when settled is 0"
+      },
+      {
+        "id": "I08.claude.settled",
+        "name": "settled",
+        "value": 2,
+        "unit": "actions",
+        "basis": "count(failed IS NOT NULL); denominator for failure_rate"
+      },
+      {
+        "id": "I08.claude.unsettled",
+        "name": "unsettled",
+        "value": 0,
+        "unit": "actions",
+        "basis": "count(failed IS NULL); excluded from failure_rate denominator"
+      },
+      {
+        "id": "I08.codex.failed",
+        "name": "failed",
+        "value": 0,
+        "unit": "actions",
+        "basis": "count(failed = true); settled terminal actions only"
+      },
+      {
+        "id": "I08.codex.failure_rate",
+        "name": "failure_rate",
+        "value": 0.0,
+        "unit": "ratio",
+        "basis": "failed/settled where failed IS NOT NULL; unknown when settled is 0"
+      },
+      {
+        "id": "I08.codex.settled",
+        "name": "settled",
+        "value": 1,
+        "unit": "actions",
+        "basis": "count(failed IS NOT NULL); denominator for failure_rate"
+      },
+      {
+        "id": "I08.codex.unsettled",
+        "name": "unsettled",
+        "value": 0,
+        "unit": "actions",
+        "basis": "count(failed IS NULL); excluded from failure_rate denominator"
+      },
+      {
+        "id": "I08.pi.failed",
+        "name": "failed",
+        "value": 0,
+        "unit": "actions",
+        "basis": "count(failed = true); settled terminal actions only"
+      },
+      {
+        "id": "I08.pi.failure_rate",
+        "name": "failure_rate",
+        "value": 0.0,
+        "unit": "ratio",
+        "basis": "failed/settled where failed IS NOT NULL; unknown when settled is 0"
+      },
+      {
+        "id": "I08.pi.settled",
+        "name": "settled",
+        "value": 1,
+        "unit": "actions",
+        "basis": "count(failed IS NOT NULL); denominator for failure_rate"
+      },
+      {
+        "id": "I08.pi.unsettled",
+        "name": "unsettled",
+        "value": 1,
+        "unit": "actions",
+        "basis": "count(failed IS NULL); excluded from failure_rate denominator"
+      }
+    ],
+    "coverage": "settled terminal actions (failed IS NOT NULL) form the denominator; unsettled (failed IS NULL) are counted separately and never treated as succeeded",
+    "evidence": [
+      "claude\ntests/fixtures/d5_golden/sources/claude\nsession-claude.jsonl:1:2:0",
+      "claude\ntests/fixtures/d5_golden/sources/claude\nsession-claude.jsonl:1:2:1",
+      "codex\ntests/fixtures/d5_golden/sources/codex\nrollout-codex.jsonl:1:4:codex:0",
+      "pi\ntests/fixtures/d5_golden/sources/pi\nsession-pi.jsonl:1:3:0",
+      "pi\ntests/fixtures/d5_golden/sources/pi\nsession-pi.jsonl:1:3:1"
+    ]
+  },
+  {
+    "id": "I09",
+    "name": "work.lineage_shape",
+    "version": "1.0.0",
+    "domain": "coordination",
+    "status": {
+      "state": "computed"
+    },
+    "population": {
+      "what": "session_edges",
+      "n": 2
+    },
+    "measures": [
+      {
+        "id": "I09.cycles",
+        "name": "cycles",
+        "value": 0,
+        "unit": "sessions",
+        "basis": "sessions whose parent walk encountered a cycle"
+      },
+      {
+        "id": "I09.max_depth",
+        "name": "max_depth",
+        "value": 1,
+        "unit": "edges",
+        "basis": "longest root-to-descendant path via session_lineage::children_of; unknown when cycles or unresolved parents exist"
+      },
+      {
+        "id": "I09.multi_parent_children",
+        "name": "multi_parent_children",
+        "value": 0,
+        "unit": "sessions",
+        "basis": "children with more than one distinct resolved parent_session (diamonds)"
+      },
+      {
+        "id": "I09.relation.spawn",
+        "name": "relation.spawn",
+        "value": 2,
+        "unit": "edges",
+        "basis": "count of session_edges with relation=spawn"
+      },
+      {
+        "id": "I09.roots",
+        "name": "roots",
+        "value": 2,
+        "unit": "sessions",
+        "basis": "distinct root sessions from session_lineage::lineage_roots; unresolved parents never invent roots"
+      },
+      {
+        "id": "I09.status.started",
+        "name": "status.started",
+        "value": 2,
+        "unit": "edges",
+        "basis": "count of session_edges with status=started"
+      },
+      {
+        "id": "I09.unresolved_parents",
+        "name": "unresolved_parents",
+        "value": 0,
+        "unit": "edges",
+        "basis": "edges with empty parent_session; counted and never invented as roots"
+      }
+    ],
+    "coverage": "explicit session_edges only; unresolved parents are counted and never invented as roots; cycles stop the walk",
+    "evidence": [
+      "claude\ntests/fixtures/d5_golden/sources/claude\nsession-claude.jsonl:lineage:spawn:agent-child-1",
+      "codex\ntests/fixtures/d5_golden/sources/codex\nrollout-codex.jsonl:lineage:spawn:codex-s1"
+    ]
+  },
+  {
+    "id": "I10",
+    "name": "work.duration",
+    "version": "1.0.0",
+    "domain": "coordination",
+    "status": {
+      "state": "refused",
+      "reason": "empty population"
+    },
+    "population": {
+      "what": "activity_facts",
+      "n": 0
+    },
+    "measures": [],
+    "coverage": "empty population",
+    "evidence": []
+  },
+  {
+    "id": "I11",
+    "name": "work.shared_allocation",
+    "version": "1.0.0",
+    "domain": "coordination",
+    "status": {
+      "state": "computed"
+    },
+    "population": {
+      "what": "usage_facts",
+      "n": 3
+    },
+    "measures": [
+      {
+        "id": "I11.residual_tokens",
+        "name": "residual_tokens",
+        "value": 0,
+        "unit": "tokens",
+        "basis": "no weight policy; the shared bucket stays unallocated"
+      },
+      {
+        "id": "I11.shared_tokens",
+        "name": "shared_tokens",
+        "value": 0,
+        "unit": "tokens",
+        "basis": "direct disjoint tokens on workers with more than one evidenced caller"
+      }
+    ],
+    "coverage": "absent allocation policy leaves the shared bucket; excessive weights reject allocation and keep direct usage",
+    "evidence": [
+      "claude\ntests/fixtures/d5_golden/sources/claude\nsession-claude.jsonl:1:2",
+      "codex\ntests/fixtures/d5_golden/sources/codex\nrollout-codex.jsonl:1:6",
+      "pi\ntests/fixtures/d5_golden/sources/pi\nsession-pi.jsonl:1:3"
+    ]
+  },
+  {
+    "id": "I12",
+    "name": "coord.queue_wait",
+    "version": "1.0.0",
+    "domain": "coordination",
+    "status": {
+      "state": "refused",
+      "reason": "empty population"
+    },
+    "population": {
+      "what": "queue_facts",
+      "n": 0
+    },
+    "measures": [],
+    "coverage": "empty population",
+    "evidence": []
+  },
+  {
+    "id": "I13",
+    "name": "environment.placement",
+    "version": "1.0.0",
+    "domain": "environment",
+    "status": {
+      "state": "refused",
+      "reason": "empty population"
+    },
+    "population": {
+      "what": "process_identities",
+      "n": 0
+    },
+    "measures": [],
+    "coverage": "empty population",
+    "evidence": []
+  },
+  {
+    "id": "I14",
+    "name": "environment.resources",
+    "version": "1.0.0",
+    "domain": "environment",
+    "status": {
+      "state": "refused",
+      "reason": "empty population"
+    },
+    "population": {
+      "what": "process_samples",
+      "n": 0
+    },
+    "measures": [],
+    "coverage": "empty population",
+    "evidence": []
+  },
+  {
+    "id": "I15",
+    "name": "environment.effects",
+    "version": "1.0.0",
+    "domain": "environment",
+    "status": {
+      "state": "refused",
+      "reason": "not_observable"
+    },
+    "population": {
+      "what": "syscall_facts",
+      "n": 0
+    },
+    "measures": [],
+    "coverage": "not_observable",
+    "evidence": []
+  },
+  {
+    "id": "I16",
+    "name": "security.isolation",
+    "version": "1.0.0",
+    "domain": "security",
+    "status": {
+      "state": "partial",
+      "reason": "insufficient"
+    },
+    "population": {
+      "what": "security_facts",
+      "n": 9
+    },
+    "measures": [
+      {
+        "id": "I16.configured",
+        "name": "observed_configuration",
+        "value": 1,
+        "unit": "observations",
+        "basis": "sandbox_policy rows; equality with a declaration is not verification"
+      },
+      {
+        "id": "I16.declared",
+        "name": "declared",
+        "value": 2,
+        "unit": "observations",
+        "basis": "permission_mode, approval_policy, and permission_profile rows"
+      },
+      {
+        "id": "I16.tested",
+        "name": "verified_effective",
+        "value": 0,
+        "unit": "observations",
+        "basis": "isolation_test rows only; namespace equality does not increment this count"
+      }
+    ],
+    "coverage": "a lone declaration is insufficient; namespace equality is configuration, not a universal verification",
+    "evidence": [
+      "claude\ntests/fixtures/d5_golden/sources/claude\nsession-claude.jsonl:1:security:dangerous_command:2:0:recursive_delete",
+      "claude\ntests/fixtures/d5_golden/sources/claude\nsession-claude.jsonl:1:security:permission_mode:permissionMode:1",
+      "claude\ntests/fixtures/d5_golden/sources/claude\nsession-claude.jsonl:1:security:sandbox_override_requested:2:0",
+      "codex\ntests/fixtures/d5_golden/sources/codex\nrollout-codex.jsonl:1:security:approval_policy:payload.approval_policy:2",
+      "codex\ntests/fixtures/d5_golden/sources/codex\nrollout-codex.jsonl:1:security:dangerous_command:4:0:recursive_delete"
+    ]
+  },
+  {
+    "id": "I17",
+    "name": "security.authority",
+    "version": "1.0.0",
+    "domain": "security",
+    "status": {
+      "state": "partial",
+      "reason": "insufficient"
+    },
+    "population": {
+      "what": "security_facts",
+      "n": 9
+    },
+    "measures": [
+      {
+        "id": "I17.consistent",
+        "name": "consistent",
+        "value": null,
+        "unit": "rules",
+        "basis": "unknown without an explicit rule"
+      },
+      {
+        "id": "I17.insufficient",
+        "name": "insufficient",
+        "value": 9,
+        "unit": "observations",
+        "basis": "policy observations with no admitted comparator rule"
+      },
+      {
+        "id": "I17.mismatch",
+        "name": "mismatch",
+        "value": null,
+        "unit": "rules",
+        "basis": "unknown without an explicit rule; not a zero violation count"
+      }
+    ],
+    "coverage": "NOT_ASSESSED is not a zero violation count; a mismatch requires an explicit rule and the required facts",
+    "evidence": [
+      "claude\ntests/fixtures/d5_golden/sources/claude\nsession-claude.jsonl:1:security:dangerous_command:2:0:recursive_delete",
+      "claude\ntests/fixtures/d5_golden/sources/claude\nsession-claude.jsonl:1:security:permission_mode:permissionMode:1",
+      "claude\ntests/fixtures/d5_golden/sources/claude\nsession-claude.jsonl:1:security:sandbox_override_requested:2:0",
+      "codex\ntests/fixtures/d5_golden/sources/codex\nrollout-codex.jsonl:1:security:approval_policy:payload.approval_policy:2",
+      "codex\ntests/fixtures/d5_golden/sources/codex\nrollout-codex.jsonl:1:security:dangerous_command:4:0:recursive_delete"
+    ]
+  },
+  {
+    "id": "I18",
+    "name": "coverage.source",
+    "version": "1.0.0",
+    "domain": "environment",
+    "status": {
+      "state": "refused",
+      "reason": "undefined input"
+    },
+    "population": {
+      "what": "source_files",
+      "n": 0
+    },
+    "measures": [],
+    "coverage": "undefined input",
+    "evidence": []
+  },
+  {
+    "id": "I19",
+    "name": "outcome.acceptance",
+    "version": "1.0.0",
+    "domain": "coordination",
+    "status": {
+      "state": "refused",
+      "reason": "not_observable"
+    },
+    "population": {
+      "what": "queue_facts",
+      "n": 0
+    },
+    "measures": [],
+    "coverage": "not_observable",
+    "evidence": []
+  },
+  {
+    "id": "I20",
+    "name": "outcome.resource_efficiency",
+    "version": "1.0.0",
+    "domain": "coordination",
+    "status": {
+      "state": "refused",
+      "reason": "not_observable"
+    },
+    "population": {
+      "what": "queue_facts",
+      "n": 0
+    },
+    "measures": [],
+    "coverage": "not_observable",
+    "evidence": []
+  },
+  {
+    "id": "I21",
+    "name": "comparison.descriptive",
+    "version": "1.0.0",
+    "domain": "model",
+    "status": {
+      "state": "refused",
+      "reason": "noncomparable"
+    },
+    "population": {
+      "what": "usage_facts",
+      "n": 3
+    },
+    "measures": [
+      {
+        "id": "I21.claude.claude-sonnet-4-5",
+        "name": "stratum_tokens",
+        "value": 210,
+        "unit": "tokens",
+        "basis": "disjoint token sum for this harness and model; not a rank"
+      },
+      {
+        "id": "I21.codex.gpt-5-codex",
+        "name": "stratum_tokens",
+        "value": 280,
+        "unit": "tokens",
+        "basis": "disjoint token sum for this harness and model; not a rank"
+      },
+      {
+        "id": "I21.pi.claude-sonnet-4-5",
+        "name": "stratum_tokens",
+        "value": 175,
+        "unit": "tokens",
+        "basis": "disjoint token sum for this harness and model; not a rank"
+      }
+    ],
+    "coverage": "raw stratum totals stay available; a mixed model or harness without one cohort is noncomparable and is not a ranking",
+    "evidence": [
+      "claude\ntests/fixtures/d5_golden/sources/claude\nsession-claude.jsonl:1:2",
+      "codex\ntests/fixtures/d5_golden/sources/codex\nrollout-codex.jsonl:1:6",
+      "pi\ntests/fixtures/d5_golden/sources/pi\nsession-pi.jsonl:1:3"
+    ]
+  },
+  {
+    "id": "I22",
+    "name": "harness.trajectory_vortex",
+    "version": "1.0.0",
+    "domain": "harness",
+    "status": {
+      "state": "refused",
+      "reason": "insufficient_sample"
+    },
+    "population": {
+      "what": "harness_trajectory",
+      "n": 0
+    },
+    "measures": [],
+    "coverage": "insufficient_sample",
+    "evidence": []
+  },
+  {
+    "id": "I23",
+    "name": "harness.schema_drift",
+    "version": "1.0.0",
+    "domain": "harness",
+    "status": {
+      "state": "refused",
+      "reason": "insufficient_sample"
+    },
+    "population": {
+      "what": "harness_envelope",
+      "n": 0
+    },
+    "measures": [],
+    "coverage": "insufficient_sample",
+    "evidence": []
+  },
+  {
+    "id": "I24",
+    "name": "security.authority_blast_radius",
+    "version": "1.0.0",
+    "domain": "security",
+    "status": {
+      "state": "refused",
+      "reason": "NOT_ASSESSED"
+    },
+    "population": {
+      "what": "session_edges",
+      "n": 2
+    },
+    "measures": [
+      {
+        "id": "I24.artifacts",
+        "name": "artifacts",
+        "value": null,
+        "unit": "artifacts",
+        "basis": "not_observable; no typed artifact identity is stored on this graph"
+      },
+      {
+        "id": "I24.cycles",
+        "name": "cycles",
+        "value": 0,
+        "unit": "cycles",
+        "basis": "cycles touched by the evidenced walk; edges are reported and not deleted"
+      },
+      {
+        "id": "I24.downstream_sessions",
+        "name": "downstream_sessions",
+        "value": null,
+        "unit": "sessions",
+        "basis": "unknown because no applicable decision exists; this is not a zero violation count"
+      },
+      {
+        "id": "I24.truncated_frontier",
+        "name": "truncated_frontier",
+        "value": 0,
+        "unit": "sessions",
+        "basis": "sessions past hop cap 8; the walk stops and counts the frontier"
+      }
+    ],
+    "coverage": "downstream session count is dependency exposure and not security authority | assumption: only status=evidenced edges are walked and the hop cap is 8 | alternative: a downstream session can be reachable without holding the revoked grant | formula: bounded evidenced walk from a revoked or failed grant or an unverified sandbox | dependency_exposure_only: structural reachability does not imply inherited or effective security authority",
+    "evidence": [
+      "claude\ntests/fixtures/d5_golden/sources/claude\nsession-claude.jsonl:1:security:dangerous_command:2:0:recursive_delete",
+      "claude\ntests/fixtures/d5_golden/sources/claude\nsession-claude.jsonl:1:security:permission_mode:permissionMode:1",
+      "claude\ntests/fixtures/d5_golden/sources/claude\nsession-claude.jsonl:1:security:sandbox_override_requested:2:0",
+      "claude\ntests/fixtures/d5_golden/sources/claude\nsession-claude.jsonl:lineage:spawn:agent-child-1",
+      "codex\ntests/fixtures/d5_golden/sources/codex\nrollout-codex.jsonl:1:security:approval_policy:payload.approval_policy:2"
+    ]
+  },
+  {
+    "id": "I25",
+    "name": "model.counterfactual_routing",
+    "version": "1.0.0",
+    "domain": "model",
+    "status": {
+      "state": "refused",
+      "reason": "unpinned tier profile"
+    },
+    "population": {
+      "what": "usage_facts",
+      "n": 3
+    },
+    "measures": [
+      {
+        "id": "I25.observed_cache_read_ratio",
+        "name": "observed_cache_read_ratio",
+        "value": 0.21,
+        "unit": "ratio",
+        "basis": "observed I02 cache-read ratio of sums; the simulation is refused"
+      },
+      {
+        "id": "I25.simulated_cost",
+        "name": "simulated_cost",
+        "value": null,
+        "unit": "usd",
+        "basis": "unknown; the fast tier is unpinned or the cohort is noncomparable"
+      }
+    ],
+    "coverage": "counterfactual fast-tier simulation is not an effect and not a routing change | assumption: prices and the fast tier come only from the operator-pinned pricing table | alternative: the same cache-read series can be explained without a routing change | formula: ASOF JOIN of cache-read fraction to the cohort baseline and QUANTILE_CONT inflection at 0.9",
+    "evidence": []
+  }
+]
