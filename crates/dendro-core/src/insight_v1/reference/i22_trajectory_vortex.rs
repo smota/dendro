@@ -53,8 +53,15 @@ impl Insight for TrajectoryVortex {
         use crate::insight_v1::Field;
         &[Field::NativeSession]
     }
+    fn coverage(&self) -> &'static str {
+        COVERAGE
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
-        evaluate_connection(input.connection(), input.scope().session.as_deref())
+        evaluate_connection_with_input(
+            input.connection(),
+            input.scope().session.as_deref(),
+            Some(input),
+        )
     }
 }
 
@@ -67,10 +74,14 @@ pub(super) fn evaluate_scoped(conn: &Connection, subject_key: &str) -> InsightRe
     } else {
         Some(subject_key)
     };
-    evaluate_connection(conn, session)
+    evaluate_connection_with_input(conn, session, None)
 }
 
-fn evaluate_connection(conn: &Connection, session: Option<&str>) -> InsightResult {
+fn evaluate_connection_with_input(
+    conn: &Connection,
+    session: Option<&str>,
+    input: Option<&InsightInput<'_>>,
+) -> InsightResult {
     let session = match session {
         Some("unscoped") => None,
         other => other,
@@ -83,6 +94,25 @@ fn evaluate_connection(conn: &Connection, session: Option<&str>) -> InsightResul
         Ok(rows) => rows,
         Err(_) => return refused(insight, "store read failed", "harness_trajectory"),
     };
+    let turns: Vec<Turn> = turns
+        .into_iter()
+        .filter(|turn| {
+            let Some(input) = input else {
+                return true;
+            };
+            let prefix = turn
+                .subject
+                .split_once(':')
+                .map(|(p, _)| p)
+                .filter(|p| crate::insight_v1::fidelity::canonical_connector_id(p).is_some())
+                .or_else(|| {
+                    turn.id.split_once(':').map(|(p, _)| p).filter(|p| {
+                        crate::insight_v1::fidelity::canonical_connector_id(p).is_some()
+                    })
+                });
+            prefix.is_none_or(|p| input.allows_harness(p))
+        })
+        .collect();
     if turns.is_empty() {
         return refused(insight, "insufficient_sample", "harness_trajectory");
     }

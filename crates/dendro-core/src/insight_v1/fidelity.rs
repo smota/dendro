@@ -221,15 +221,19 @@ pub enum PartialFidelityReason {
     /// Codex `tool_outcome`: `failed` is `Some(bool)` only when an explicit exit code, error
     /// object, or terminal status marker is present; prose output remains `None` (`unsettled`).
     ExplicitSignalOnly,
-    /// Windsurf `tool_outcome`: only `code_action` steps with `status == "completed"` emit
-    /// `failed = Some(false)`; non-completed steps are skipped.
+    /// Windsurf `tool_outcome`: only `code_action` steps with `status == "done"` emit
+    /// `failed = Some(false)`; other steps are skipped.
     CompletedCodeActionOnly,
     /// Goose `input_tokens` / `output_tokens`: only legacy v0.8 header rows carry
     /// `total_input_tokens` / `total_output_tokens`; v1.x message lines carry no token counts.
     LegacyHeaderLifetimeTotals,
-    /// Grok `observed_cost`: session-level `cost_nanodollars` is attributed only when a session
-    /// has a single turn or all turns share one model; multi-model sessions emit `None`.
+    /// Grok `observed_cost`: turn `costUsdTicks` is attributed to a model row only on
+    /// single-model turns; multi-model turns without per-model cost emit a zero-token
+    /// `grok_turn_cost` row with `model = None`.
     SingleModelTurnOnly,
+    /// Claude `effort`: field is parsed when present (`thinkingMetadata.level` / `effort`),
+    /// but not observed in G0a captures.
+    ParsedWhenPresentNotObservedInCaptures,
 }
 
 impl PartialFidelityReason {
@@ -239,6 +243,9 @@ impl PartialFidelityReason {
             PartialFidelityReason::CompletedCodeActionOnly => "completed code_action only",
             PartialFidelityReason::LegacyHeaderLifetimeTotals => "legacy header lifetime totals",
             PartialFidelityReason::SingleModelTurnOnly => "single-model turn only",
+            PartialFidelityReason::ParsedWhenPresentNotObservedInCaptures => {
+                "field parsed when present; not observed in captures"
+            }
         }
     }
 }
@@ -452,9 +459,9 @@ const CLAUDE_FIELDS: &[FieldDeclaration] = &[
     // crates/dendro-connectors/src/stream.rs:87-91 (`extract_usage_model_effort` reads `thinkingMetadata.level` / `effort`)
     decl!(
         Effort,
-        FieldFidelity::Observed,
+        FieldFidelity::Partial(PartialFidelityReason::ParsedWhenPresentNotObservedInCaptures),
         "crates/dendro-connectors/src/stream.rs:87-91",
-        "thinkingMetadata.level or effort parsed per turn"
+        "field parsed when present; not observed in captures"
     ),
     // crates/dendro-core/src/insight_v1/reference/i07_context_pressure.rs:30 (`context_facts` not populated by connector)
     decl!(
@@ -571,12 +578,12 @@ const CLAUDE_FIELDS: &[FieldDeclaration] = &[
 ];
 
 const CODEX_FIELDS: &[FieldDeclaration] = &[
-    // crates/dendro-connectors/src/stream.rs:1414-1478 (delta from `total_token_usage` / `last_token_usage` minus cached_input_tokens)
+    // crates/dendro-connectors/src/stream.rs:1414-1478 (delta from `total_token_usage` / `last_token_usage` minus cached_input_tokens and cache_creation_input_tokens; errors on negative uncached delta)
     decl!(
         InputTokens,
         FieldFidelity::Derived,
         "crates/dendro-connectors/src/stream.rs:1414-1478",
-        "derived from cumulative total_token_usage delta (or last_token_usage) minus cached_input_tokens"
+        "derived from cumulative total_token_usage delta (or last_token_usage) minus cached_input_tokens and cache_creation_input_tokens, erroring if negative"
     ),
     // crates/dendro-connectors/src/stream.rs:1418,1441-1445,1479 (delta from `total_token_usage.output_tokens`)
     decl!(
@@ -688,12 +695,12 @@ const CODEX_FIELDS: &[FieldDeclaration] = &[
         "crates/dendro-connectors/src/stream.rs:1206-1240",
         "Codex rollout logs emit invoked skills ($skill / skills/path), not static loaded manifests"
     ),
-    // crates/dendro-connectors/src/stream.rs:1206-1240,2309-2324
+    // crates/dendro-connectors/src/stream.rs:1206-1240,2309-2324 (heuristic $skill token and skills/<name>/SKILL.md path matching)
     decl!(
         SkillInvocations,
-        FieldFidelity::Observed,
+        FieldFidelity::Derived,
         "crates/dendro-connectors/src/stream.rs:1206-1240",
-        "skill references in user prompts and tool calls recorded with invoked=true"
+        "derived via heuristic $skill token and skills/<name>/SKILL.md path matching in prompts and tool calls"
     ),
     decl!(
         ActivityIntervals,
@@ -878,12 +885,12 @@ const PI_FIELDS: &[FieldDeclaration] = &[
         "crates/dendro-connectors/src/stream.rs:2186-2222",
         "Pi transcripts emit invoked skills, not static loaded skill manifests"
     ),
-    // crates/dendro-connectors/src/stream.rs:2186-2222
+    // crates/dendro-connectors/src/stream.rs:2186-2222 (heuristic /skill: command and skills/<name>/SKILL.md read path matching)
     decl!(
         SkillInvocations,
-        FieldFidelity::Observed,
+        FieldFidelity::Derived,
         "crates/dendro-connectors/src/stream.rs:2186-2222",
-        "skill reads and slash commands recorded with invoked=true"
+        "derived via heuristic /skill: command and skills/<name>/SKILL.md path matching"
     ),
     decl!(
         ActivityIntervals,
@@ -986,12 +993,12 @@ const GROK_FIELDS: &[FieldDeclaration] = &[
         "crates/dendro-connectors/src/stream.rs:1743",
         "usage.reasoning_tokens or completion_tokens_details.reasoning_tokens parsed directly"
     ),
-    // crates/dendro-connectors/src/stream.rs:1573-1591,1647-1665,1733-1736 (`cost_nanodollars` on single-model sessions)
+    // crates/dendro-connectors/src/stream.rs:1573-1591,1647-1665,1733-1736 (`costUsdTicks` on single-model turns; multi-model turns without per-model cost emit a zero-token `grok_turn_cost` row with `model: None`)
     decl!(
         ObservedCost,
         FieldFidelity::Partial(PartialFidelityReason::SingleModelTurnOnly),
         "crates/dendro-connectors/src/stream.rs:1647-1665",
-        "session cost_nanodollars attributed only when session has one turn or a single model across all turns"
+        "turn costUsdTicks attributed to the model row on single-model turns; multi-model turns without per-model cost emit a zero-token grok_turn_cost row with model=None"
     ),
     // crates/dendro-connectors/src/stream.rs:1686,1745 (`message_id: None`)
     decl!(
@@ -1569,12 +1576,12 @@ const WINDSURF_FIELDS: &[FieldDeclaration] = &[
         "crates/dendro-connectors/src/exports.rs:322-347",
         "code_action step_type and action_type parsed into tool_facts"
     ),
-    // crates/dendro-connectors/src/exports.rs:327-345 (only `status == "completed"` emits `Some(false)`)
+    // crates/dendro-connectors/src/exports.rs:327-345 (only `status == "done"` emits `Some(false)`)
     decl!(
         ToolOutcome,
         FieldFidelity::Partial(PartialFidelityReason::CompletedCodeActionOnly),
         "crates/dendro-connectors/src/exports.rs:327-345",
-        "only code_action steps with status == completed are recorded (with failed = Some(false))"
+        "only code_action steps with status == done are recorded (with failed = Some(false))"
     ),
     decl!(
         ToolFingerprint,
@@ -1678,19 +1685,19 @@ const GOOSE_FIELDS: &[FieldDeclaration] = &[
         "crates/dendro-connectors/src/exports.rs:359-379",
         "only legacy Goose v0.8 session header rows supply total_output_tokens; v1.x message rows omit token counts"
     ),
-    // crates/dendro-connectors/src/exports.rs:271,375 (`cache_read: None` -> `-1` sentinel)
+    // crates/dendro-connectors/src/exports.rs:271,375 (`ExportAcc::usage` writes `cache_read: 0`)
     decl!(
         CacheReadTokens,
         FieldFidelity::Absent,
         "crates/dendro-connectors/src/exports.rs:271,375",
-        "Goose exports do not report cache_read tokens (stored as -1 unknown sentinel)"
+        "Goose exports do not report cache_read tokens (ExportAcc::usage writes 0)"
     ),
-    // crates/dendro-connectors/src/exports.rs:272,375 (`cache_write: None` -> `-1` sentinel)
+    // crates/dendro-connectors/src/exports.rs:270,375 (`ExportAcc::usage` writes `cache_write: 0`)
     decl!(
         CacheWriteTokens,
         FieldFidelity::Absent,
-        "crates/dendro-connectors/src/exports.rs:272,375",
-        "Goose exports do not report cache_write tokens (stored as -1 unknown sentinel)"
+        "crates/dendro-connectors/src/exports.rs:270,375",
+        "Goose exports do not report cache_write tokens (ExportAcc::usage writes 0)"
     ),
     decl!(
         ReasoningTokens,
@@ -1858,19 +1865,19 @@ const DEVIN_FIELDS: &[FieldDeclaration] = &[
         "crates/dendro-connectors/src/exports.rs:458-475",
         "llm_cost completion_tokens parsed directly"
     ),
-    // crates/dendro-connectors/src/exports.rs:459-464,271 (refuses positive `cached_tokens`; stores `-1` sentinel)
+    // crates/dendro-connectors/src/exports.rs:459-464,271 (refuses positive `cached_tokens`; `ExportAcc::usage` writes `0`)
     decl!(
         CacheReadTokens,
         FieldFidelity::Absent,
         "crates/dendro-connectors/src/exports.rs:459-464",
-        "Devin parser rejects positive cached_tokens and stores -1 unknown sentinel for cache_read"
+        "Devin parser rejects positive cached_tokens and ExportAcc::usage writes 0 for cache_read"
     ),
-    // crates/dendro-connectors/src/exports.rs:272,475 (`cache_write: None` -> `-1` sentinel)
+    // crates/dendro-connectors/src/exports.rs:270,475 (`ExportAcc::usage` writes `cache_write: 0`)
     decl!(
         CacheWriteTokens,
         FieldFidelity::Absent,
-        "crates/dendro-connectors/src/exports.rs:272,475",
-        "Devin exports do not report cache_write tokens (stored as -1 unknown sentinel)"
+        "crates/dendro-connectors/src/exports.rs:270,475",
+        "Devin exports do not report cache_write tokens (ExportAcc::usage writes 0)"
     ),
     decl!(
         ReasoningTokens,
@@ -2730,19 +2737,12 @@ pub fn format_not_computable_reason(
     }
 }
 
-/// Format denominator inclusion/exclusion notes for `InsightResult.coverage` on mixed sources.
-pub fn format_denominator_disclosure(scope: &DenominatorScope) -> Option<String> {
-    if scope.excluded.is_empty() {
+/// Format excluded connectors as `"excluded: <conn> — missing <f1>, <f2>"`.
+pub fn format_exclusions_list(excluded: &[ConnectorExclusion]) -> Option<String> {
+    if excluded.is_empty() {
         return None;
     }
-    let inc = scope
-        .included
-        .iter()
-        .map(|item| item.connector)
-        .collect::<Vec<_>>()
-        .join(", ");
-    let exc = scope
-        .excluded
+    let parts = excluded
         .iter()
         .map(|item| {
             let miss = item
@@ -2750,14 +2750,502 @@ pub fn format_denominator_disclosure(scope: &DenominatorScope) -> Option<String>
                 .iter()
                 .map(|field| field.as_str())
                 .collect::<Vec<_>>()
-                .join("+");
-            format!("{} (missing {miss})", item.connector)
+                .join(", ");
+            format!("excluded: {} — missing {miss}", item.connector)
         })
-        .collect::<Vec<_>>()
-        .join(", ");
-    Some(format!(
-        "denominator_included: {inc} | denominator_excluded: {exc}"
-    ))
+        .collect::<Vec<_>>();
+    Some(parts.join("; "))
+}
+
+/// Format denominator inclusion/exclusion notes for `InsightResult.coverage` on mixed sources.
+pub fn format_denominator_disclosure(scope: &DenominatorScope) -> Option<String> {
+    format_exclusions_list(&scope.excluded)
+}
+
+fn distinct_canonical_harnesses_in_conn(conn: &duckdb::Connection, sql: &str) -> Vec<String> {
+    let Ok(mut stmt) = conn.prepare(sql) else {
+        return Vec::new();
+    };
+    let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) else {
+        return Vec::new();
+    };
+    let mut set = BTreeSet::new();
+    for raw in rows.flatten() {
+        if let Some(canonical) = canonical_connector_id(&raw) {
+            set.insert(canonical.to_string());
+        }
+    }
+    set.into_iter().collect()
+}
+
+fn exists_in_conn(conn: &duckdb::Connection, sql: &str) -> bool {
+    conn.query_row(sql, [], |_| Ok(())).is_ok()
+}
+
+fn exists_for_harness_in_conn(conn: &duckdb::Connection, sql: &str, harness: &str) -> bool {
+    use duckdb::params;
+    conn.query_row(sql, params![harness], |_| Ok(())).is_ok()
+}
+
+/// Per-evaluation cache of connector presence in `AnalyticsStore` so `evaluate` / `evaluate_catalog`
+/// never re-runs identical table scans across insights.
+pub struct StoreDenominatorCache<'a> {
+    store: &'a crate::AnalyticsStore,
+    usage_harnesses: std::cell::OnceCell<Vec<String>>,
+    source_harnesses: std::cell::OnceCell<Vec<String>>,
+    tool_harnesses: std::cell::OnceCell<Vec<String>>,
+    edge_harnesses: std::cell::OnceCell<Vec<String>>,
+    security_harnesses: std::cell::OnceCell<Vec<String>>,
+    context_harnesses: std::cell::OnceCell<Vec<String>>,
+    skill_connectors: std::cell::OnceCell<Vec<String>>,
+    has_activity: std::cell::OnceCell<bool>,
+    has_queue: std::cell::OnceCell<bool>,
+    has_skill_declarations: std::cell::OnceCell<bool>,
+}
+
+impl<'a> StoreDenominatorCache<'a> {
+    pub fn new(store: &'a crate::AnalyticsStore) -> Self {
+        Self {
+            store,
+            usage_harnesses: std::cell::OnceCell::new(),
+            source_harnesses: std::cell::OnceCell::new(),
+            tool_harnesses: std::cell::OnceCell::new(),
+            edge_harnesses: std::cell::OnceCell::new(),
+            security_harnesses: std::cell::OnceCell::new(),
+            context_harnesses: std::cell::OnceCell::new(),
+            skill_connectors: std::cell::OnceCell::new(),
+            has_activity: std::cell::OnceCell::new(),
+            has_queue: std::cell::OnceCell::new(),
+            has_skill_declarations: std::cell::OnceCell::new(),
+        }
+    }
+
+    fn usage(&self) -> &[String] {
+        self.usage_harnesses.get_or_init(|| {
+            distinct_canonical_harnesses_in_conn(
+                self.store.connection(),
+                "SELECT DISTINCT harness FROM usage_facts",
+            )
+        })
+    }
+
+    fn sources(&self) -> &[String] {
+        self.source_harnesses.get_or_init(|| {
+            distinct_canonical_harnesses_in_conn(
+                self.store.connection(),
+                "SELECT DISTINCT harness FROM source_files",
+            )
+        })
+    }
+
+    fn tools(&self) -> &[String] {
+        self.tool_harnesses.get_or_init(|| {
+            distinct_canonical_harnesses_in_conn(
+                self.store.connection(),
+                "SELECT DISTINCT harness FROM tool_facts WHERE NOT starts_with(source_key, '__dendro_reader__:')",
+            )
+        })
+    }
+
+    fn edges(&self) -> &[String] {
+        self.edge_harnesses.get_or_init(|| {
+            distinct_canonical_harnesses_in_conn(
+                self.store.connection(),
+                "SELECT DISTINCT harness FROM session_edges",
+            )
+        })
+    }
+
+    fn security(&self) -> &[String] {
+        self.security_harnesses.get_or_init(|| {
+            distinct_canonical_harnesses_in_conn(
+                self.store.connection(),
+                "SELECT DISTINCT harness FROM security_facts",
+            )
+        })
+    }
+
+    fn context(&self) -> &[String] {
+        self.context_harnesses.get_or_init(|| {
+            distinct_canonical_harnesses_in_conn(
+                self.store.connection(),
+                "SELECT DISTINCT harness FROM context_facts",
+            )
+        })
+    }
+
+    fn skills(&self) -> &[String] {
+        self.skill_connectors.get_or_init(|| {
+            let conn = self.store.connection();
+            let mut set = BTreeSet::new();
+            if let Ok(mut stmt) = conn.prepare("SELECT DISTINCT seat, source_key FROM skill_facts")
+            {
+                if let Ok(rows) = stmt.query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                }) {
+                    for (seat, key) in rows.flatten() {
+                        for cand in [
+                            seat.trim(),
+                            seat.split(':').next().unwrap_or(""),
+                            key.split(':').next().unwrap_or(""),
+                        ] {
+                            if let Some(canonical) = canonical_connector_id(cand) {
+                                set.insert(canonical.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+            set.into_iter().collect()
+        })
+    }
+
+    fn has_activity(&self) -> bool {
+        *self.has_activity.get_or_init(|| {
+            exists_in_conn(
+                self.store.connection(),
+                "SELECT 1 FROM activity_facts LIMIT 1",
+            )
+        })
+    }
+
+    fn has_queue(&self) -> bool {
+        *self.has_queue.get_or_init(|| {
+            exists_in_conn(self.store.connection(), "SELECT 1 FROM queue_facts LIMIT 1")
+        })
+    }
+
+    fn has_skill_declarations(&self) -> bool {
+        *self.has_skill_declarations.get_or_init(|| {
+            exists_in_conn(
+                self.store.connection(),
+                "SELECT 1 FROM skill_facts WHERE invoked = FALSE LIMIT 1",
+            )
+        })
+    }
+
+    pub fn present_connectors(&self, insight: &dyn Insight) -> Vec<String> {
+        let conn = self.store.connection();
+        let mut set = BTreeSet::new();
+        let extend = |set: &mut BTreeSet<String>, items: &[String]| {
+            for item in items {
+                set.insert(item.clone());
+            }
+        };
+
+        match insight.id() {
+            "I01" | "I02" | "I04" | "I05" | "I21" | "I25" => {
+                extend(&mut set, self.usage());
+                extend(&mut set, self.sources());
+            }
+            "I03" | "I11" => {
+                extend(&mut set, self.usage());
+                extend(&mut set, self.edges());
+                extend(&mut set, self.sources());
+            }
+            "I06" => {
+                extend(&mut set, self.tools());
+                extend(&mut set, self.sources());
+                extend(&mut set, self.skills());
+            }
+            "I07" => {
+                extend(&mut set, self.context());
+                extend(&mut set, self.sources());
+            }
+            "I08" => {
+                extend(&mut set, self.tools());
+                extend(&mut set, self.sources());
+            }
+            "I09" => {
+                extend(&mut set, self.edges());
+                extend(&mut set, self.sources());
+            }
+            "I10" => {
+                if self.has_activity() {
+                    set.insert("openrig".to_string());
+                }
+            }
+            "I12" | "I19" => {
+                if self.has_queue() {
+                    set.insert("openrig".to_string());
+                }
+            }
+            "I20" => {
+                if self.has_queue() {
+                    set.insert("openrig".to_string());
+                }
+                extend(&mut set, self.usage());
+            }
+            "I13" => {
+                if exists_in_conn(conn, "SELECT 1 FROM process_identities LIMIT 1") {
+                    set.insert("environment".to_string());
+                }
+            }
+            "I14" => {
+                if exists_in_conn(conn, "SELECT 1 FROM process_samples LIMIT 1") {
+                    set.insert("environment".to_string());
+                }
+            }
+            "I15" => {
+                if exists_in_conn(conn, "SELECT 1 FROM syscall_facts LIMIT 1") {
+                    extend(&mut set, self.sources());
+                    if set.is_empty() {
+                        extend(&mut set, self.usage());
+                    }
+                }
+            }
+            "I16" | "I17" => {
+                extend(&mut set, self.security());
+                extend(&mut set, self.sources());
+            }
+            "I18" => {
+                extend(&mut set, self.sources());
+            }
+            "I22" => {
+                for item in distinct_canonical_harnesses_in_conn(
+                    conn,
+                    "SELECT DISTINCT harness FROM harness_trajectory WHERE harness IS NOT NULL",
+                ) {
+                    set.insert(item);
+                }
+            }
+            "I23" => {
+                for item in distinct_canonical_harnesses_in_conn(
+                    conn,
+                    "SELECT DISTINCT harness FROM harness_envelope WHERE harness IS NOT NULL",
+                ) {
+                    set.insert(item);
+                }
+            }
+            "I24" => {
+                extend(&mut set, self.edges());
+                extend(&mut set, self.security());
+                extend(&mut set, self.sources());
+            }
+            _ => {
+                extend(&mut set, self.usage());
+                extend(&mut set, self.sources());
+            }
+        }
+        set.into_iter().collect()
+    }
+
+    pub fn evaluate_denominator<S: AsRef<str>>(
+        &self,
+        insight: &dyn Insight,
+        connectors: &[S],
+        scoped_single_harness: bool,
+    ) -> DenominatorEvaluation {
+        let required = insight.required_fields();
+        let optional = insight.optional_fields();
+        let mut included = Vec::new();
+        let mut excluded = Vec::new();
+
+        let mut seen = BTreeSet::new();
+        let mut resolved_decls = Vec::new();
+        let mut unknown_connectors = Vec::new();
+        for raw in connectors {
+            let name = raw.as_ref().trim();
+            if name.is_empty() {
+                continue;
+            }
+            let canonical = canonical_connector_id(name).unwrap_or(name);
+            if !seen.insert(canonical.to_string()) {
+                continue;
+            }
+            if let Some(decl) = connector_declaration(canonical) {
+                resolved_decls.push(decl);
+            } else {
+                unknown_connectors.push(canonical.to_string());
+            }
+        }
+
+        for unknown in unknown_connectors {
+            excluded.push(ConnectorExclusion {
+                connector: unknown,
+                missing: required.to_vec(),
+                reason: "unregistered connector".to_string(),
+            });
+        }
+
+        for decl in &resolved_decls {
+            let missing: Vec<Field> = required
+                .iter()
+                .copied()
+                .filter(|field| {
+                    !self.connector_supplies_field(
+                        decl,
+                        *field,
+                        insight,
+                        &resolved_decls,
+                        scoped_single_harness,
+                    )
+                })
+                .collect();
+            if missing.is_empty() {
+                let mut partial_fields = Vec::new();
+                for field in required.iter().chain(optional.iter()) {
+                    if let FieldFidelity::Partial(reason) = decl.fidelity(*field) {
+                        if !partial_fields.iter().any(|(f, _)| f == field) {
+                            partial_fields.push((*field, reason));
+                        }
+                    }
+                }
+                included.push(IncludedConnector {
+                    connector: decl.connector,
+                    partial_fields,
+                });
+            } else {
+                let field_list = missing
+                    .iter()
+                    .map(|field| field.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                excluded.push(ConnectorExclusion {
+                    connector: decl.connector.to_string(),
+                    missing,
+                    reason: format!("missing required field(s): {field_list}"),
+                });
+            }
+        }
+
+        if included.is_empty() {
+            let mut missing_union = BTreeSet::new();
+            for exc in &excluded {
+                for field in &exc.missing {
+                    missing_union.insert(*field);
+                }
+            }
+            let missing = if missing_union.is_empty() {
+                required.to_vec()
+            } else {
+                missing_union.into_iter().collect()
+            };
+            DenominatorEvaluation::NotComputable {
+                insight_id: insight.id(),
+                insight_name: insight.name(),
+                missing,
+                by_connector: excluded,
+            }
+        } else {
+            DenominatorEvaluation::Computable {
+                scope: DenominatorScope {
+                    insight_id: insight.id(),
+                    insight_name: insight.name(),
+                    included,
+                    excluded,
+                },
+            }
+        }
+    }
+
+    fn connector_supplies_field(
+        &self,
+        decl: &ConnectorDeclaration,
+        field: Field,
+        insight: &dyn Insight,
+        connectors: &[&ConnectorDeclaration],
+        scoped_single_harness: bool,
+    ) -> bool {
+        if decl.supplies(field) {
+            return true;
+        }
+        if scoped_single_harness {
+            return false;
+        }
+        let conn = self.store.connection();
+        let has_source_file = self
+            .sources()
+            .iter()
+            .any(|h| h.eq_ignore_ascii_case(decl.connector));
+
+        match field {
+            Field::ObservedCost => {
+                exists_for_harness_in_conn(
+                    conn,
+                    "SELECT 1 FROM usage_facts WHERE lower(harness) = lower(?) AND currency_total IS NOT NULL LIMIT 1",
+                    decl.connector,
+                ) || (!has_source_file
+                    && insight.id() == "I04"
+                    && connectors.len() == 1
+                    && decl.supplies(Field::InputTokens))
+                    || (insight.id() == "I20"
+                        && decl.connector == "openrig"
+                        && exists_in_conn(
+                            conn,
+                            "SELECT 1 FROM usage_facts WHERE currency_total IS NOT NULL LIMIT 1",
+                        ))
+            }
+            Field::QueueTransitions => {
+                insight.id() == "I20"
+                    && self.has_queue()
+                    && (decl.supplies(Field::ObservedCost)
+                        || exists_for_harness_in_conn(
+                            conn,
+                            "SELECT 1 FROM usage_facts WHERE lower(harness) = lower(?) AND currency_total IS NOT NULL LIMIT 1",
+                            decl.connector,
+                        ))
+            }
+            Field::SkillDeclarations => {
+                self.has_skill_declarations() && decl.supplies(Field::SkillInvocations)
+            }
+            Field::SkillInvocations | Field::ToolCallName if decl.connector == "openrig" => {
+                insight.id() == "I06"
+                    && connectors.iter().any(|other| {
+                        other.supplies(Field::SkillInvocations)
+                            && other.supplies(Field::ToolCallName)
+                    })
+            }
+            Field::ContextWindowUsage => exists_for_harness_in_conn(
+                conn,
+                "SELECT 1 FROM context_facts WHERE lower(harness) = lower(?) AND context_used IS NOT NULL AND context_limit IS NOT NULL LIMIT 1",
+                decl.connector,
+            ),
+            Field::SessionEdges => {
+                !has_source_file
+                    && connectors.len() == 1
+                    && !connectors.iter().any(|other| other.supplies(Field::SessionEdges))
+                    && self
+                        .edges()
+                        .iter()
+                        .any(|h| h.eq_ignore_ascii_case(decl.connector))
+            }
+            Field::PrivilegedEffectTrace => {
+                exists_in_conn(conn, "SELECT 1 FROM syscall_facts LIMIT 1")
+            }
+            Field::TrajectoryVector => {
+                exists_in_conn(conn, "SELECT 1 FROM harness_trajectory LIMIT 1")
+            }
+            Field::HarnessEnvelopeShape => exists_for_harness_in_conn(
+                conn,
+                "SELECT 1 FROM harness_envelope WHERE lower(harness) = lower(?) LIMIT 1",
+                decl.connector,
+            ),
+            _ => false,
+        }
+    }
+}
+
+/// Discover the canonical connectors present in `store` for `insight`.
+pub fn present_connectors_for_insight(
+    insight: &dyn Insight,
+    store: &crate::AnalyticsStore,
+) -> Vec<String> {
+    StoreDenominatorCache::new(store).present_connectors(insight)
+}
+
+/// Evaluate denominator scope for `insight` over `connectors` with awareness of `store`.
+pub fn evaluate_denominator_in_store<S: AsRef<str>>(
+    insight: &dyn Insight,
+    connectors: &[S],
+    store: &crate::AnalyticsStore,
+    scoped_single_harness: bool,
+) -> DenominatorEvaluation {
+    StoreDenominatorCache::new(store).evaluate_denominator(
+        insight,
+        connectors,
+        scoped_single_harness,
+    )
 }
 
 /// Canonical population table name for an insight when refusing with `not_computable`.
@@ -2888,6 +3376,49 @@ fn count_where_in_conn(conn: &duckdb::Connection, sql: &str) -> anyhow::Result<i
     Ok(conn.query_row(sql, [], |row| row.get::<_, i64>(0))?)
 }
 
+/// Query `store` for a token [`Field`], returning `Some(value)` when the parser wrote the field
+/// (including `Some(0)` when the parser wrote a real `0`) and `None` when the field was not written.
+pub fn token_field_in_store(
+    store: &crate::AnalyticsStore,
+    field: Field,
+) -> anyhow::Result<Option<i64>> {
+    use duckdb::OptionalExt;
+
+    let conn = store.connection();
+    let sql = match field {
+        Field::InputTokens => "SELECT input_uncached FROM usage_facts LIMIT 1",
+        Field::OutputTokens => "SELECT output_tokens FROM usage_facts LIMIT 1",
+        Field::CacheReadTokens => {
+            "SELECT u.cache_read
+             FROM usage_facts u
+             LEFT JOIN source_files s ON u.source_id = s.source_id
+             WHERE (s.source_id IS NOT NULL AND s.source_id <> s.display_path)
+                OR u.cache_read <> 0
+             LIMIT 1"
+        }
+        Field::CacheWriteTokens => {
+            "SELECT u.cache_write
+             FROM usage_facts u
+             LEFT JOIN source_files s ON u.source_id = s.source_id
+             WHERE (s.source_id IS NOT NULL AND s.source_id <> s.display_path)
+                OR u.cache_write <> 0
+             LIMIT 1"
+        }
+        Field::ReasoningTokens => {
+            "SELECT u.reasoning
+             FROM usage_facts u
+             LEFT JOIN source_files s ON u.source_id = s.source_id
+             WHERE (s.source_id IS NOT NULL AND s.source_id <> s.display_path AND s.native_session IS NULL)
+                OR u.reasoning <> 0
+             LIMIT 1"
+        }
+        _ => return Ok(None),
+    };
+    Ok(conn
+        .query_row(sql, [], |row| row.get::<_, i64>(0))
+        .optional()?)
+}
+
 /// Inspect `store` after ingesting a connector's fixture and return the set of [`Field`]s
 /// that have concrete populated evidence in `store`.
 pub fn populated_fields_in_store(store: &crate::AnalyticsStore) -> anyhow::Result<BTreeSet<Field>> {
@@ -2897,36 +3428,16 @@ pub fn populated_fields_in_store(store: &crate::AnalyticsStore) -> anyhow::Resul
     let conn = store.connection();
     let mut present = BTreeSet::new();
 
-    if count_where_in_conn(
-        conn,
-        "SELECT COUNT(*) FROM usage_facts WHERE input_uncached > 0",
-    )? > 0
-    {
-        present.insert(Field::InputTokens);
-    }
-    if count_where_in_conn(
-        conn,
-        "SELECT COUNT(*) FROM usage_facts WHERE output_tokens > 0",
-    )? > 0
-    {
-        present.insert(Field::OutputTokens);
-    }
-    if count_where_in_conn(
-        conn,
-        "SELECT COUNT(*) FROM usage_facts WHERE cache_read > 0",
-    )? > 0
-    {
-        present.insert(Field::CacheReadTokens);
-    }
-    if count_where_in_conn(
-        conn,
-        "SELECT COUNT(*) FROM usage_facts WHERE cache_write > 0",
-    )? > 0
-    {
-        present.insert(Field::CacheWriteTokens);
-    }
-    if count_where_in_conn(conn, "SELECT COUNT(*) FROM usage_facts WHERE reasoning > 0")? > 0 {
-        present.insert(Field::ReasoningTokens);
+    for token_field in [
+        Field::InputTokens,
+        Field::OutputTokens,
+        Field::CacheReadTokens,
+        Field::CacheWriteTokens,
+        Field::ReasoningTokens,
+    ] {
+        if token_field_in_store(store, token_field)?.is_some() {
+            present.insert(token_field);
+        }
     }
     if count_where_in_conn(
         conn,
@@ -3205,18 +3716,46 @@ mod tests {
 
     #[test]
     fn mixed_source_denominator_excludes_connector_missing_required_field() {
-        // I01 requires MessageId + NativeSession; claude supplies both, codex lacks MessageId.
+        // I01 requires NativeSession (MessageId is optional); claude, codex, grok, devin stay in,
+        // while agy is excluded for missing NativeSession.
         let i01 = CATALOG.iter().copied().find(|i| i.id() == "I01").unwrap();
-        let eval = evaluate_denominator(i01, &["claude", "codex"]);
-        match eval {
+        let eval_i01 = evaluate_denominator(i01, &["claude", "codex", "grok", "devin", "agy"]);
+        match eval_i01 {
+            DenominatorEvaluation::Computable { scope } => {
+                assert_eq!(
+                    scope
+                        .included
+                        .iter()
+                        .map(|c| c.connector)
+                        .collect::<Vec<_>>(),
+                    vec!["claude", "codex", "grok", "devin"]
+                );
+                assert_eq!(scope.excluded.len(), 1);
+                assert_eq!(scope.excluded[0].connector, "agy");
+                assert_eq!(scope.excluded[0].missing, vec![Field::NativeSession]);
+            }
+            other => panic!("expected Computable for I01, got {other:?}"),
+        }
+
+        // I02 over {claude, goose}: claude supplies all 4 token fields; goose lacks cache fields.
+        let i02 = CATALOG.iter().copied().find(|i| i.id() == "I02").unwrap();
+        let eval_i02 = evaluate_denominator(i02, &["claude", "goose"]);
+        match eval_i02 {
             DenominatorEvaluation::Computable { scope } => {
                 assert_eq!(scope.included.len(), 1);
                 assert_eq!(scope.included[0].connector, "claude");
                 assert_eq!(scope.excluded.len(), 1);
-                assert_eq!(scope.excluded[0].connector, "codex");
-                assert_eq!(scope.excluded[0].missing, vec![Field::MessageId]);
+                assert_eq!(scope.excluded[0].connector, "goose");
+                assert_eq!(
+                    scope.excluded[0].missing,
+                    vec![Field::CacheReadTokens, Field::CacheWriteTokens]
+                );
+                assert_eq!(
+                    format_denominator_disclosure(&scope).as_deref(),
+                    Some("excluded: goose — missing cache_read_tokens, cache_write_tokens")
+                );
             }
-            other => panic!("expected Computable with codex excluded, got {other:?}"),
+            other => panic!("expected Computable with goose excluded, got {other:?}"),
         }
 
         // Codex tool_outcome is Partial(ExplicitSignalOnly) -> I08 over {claude, codex} includes both,
@@ -3245,6 +3784,111 @@ mod tests {
                 assert_eq!(scope.excluded[0].missing, vec![Field::ToolOutcome]);
             }
             other => panic!("expected Computable for I08, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn excluded_connector_rows_in_every_table_family_do_not_affect_results() {
+        use crate::insight_v1::{evaluate_catalog, Scope};
+        use crate::AnalyticsStore;
+
+        let seed_included = |store: &AnalyticsStore| {
+            store
+                .connection()
+                .execute_batch(
+                    "CREATE TABLE IF NOT EXISTS context_facts (
+                        source_key VARCHAR PRIMARY KEY,
+                        harness VARCHAR NOT NULL,
+                        native_session VARCHAR,
+                        ts TIMESTAMP,
+                        context_used BIGINT NOT NULL,
+                        context_limit BIGINT
+                    );
+                    CREATE TABLE IF NOT EXISTS authority_rules (
+                        rule_id VARCHAR NOT NULL,
+                        kind VARCHAR NOT NULL,
+                        expected_value VARCHAR NOT NULL
+                    );
+                    INSERT INTO source_files (source_id, harness, display_path, generation, byte_offset, prefix_sha256, native_session)
+                        VALUES ('src-claude', 'claude', 'claude.jsonl', 1, 100, '00', 'claude-s1');
+                    INSERT INTO usage_facts (source_key, harness, native_session, message_id, ts, seq, input_uncached, output_tokens, cache_read, cache_write, reasoning, currency_total, generation, source_id, model, effort)
+                        VALUES ('claude:u1', 'claude', 'claude-s1', 'msg-1', TIMESTAMP '2026-10-10 10:00:01', 1, 120, 45, 30, 15, -1, NULL, 1, 'src-claude', 'claude-sonnet-4-5', 'high');
+                    INSERT INTO tool_facts (source_key, harness, native_session, ts, seq, tool_name, fingerprint, failed, structured_write, generation, source_id, category)
+                        VALUES ('claude:t1', 'claude', 'claude-s1', TIMESTAMP '2026-10-10 10:00:01', 1, 'Bash', 'fp-1', FALSE, FALSE, 1, 'src-claude', 'eng_build_test');
+                    INSERT INTO skill_facts (source_key, seat, skill, invoked)
+                        VALUES
+                            ('openrig:decl-1', 'openrig:dev', 'commit', FALSE),
+                            ('claude:sk-1', 'claude', 'commit', TRUE);
+                    INSERT INTO session_edges (source_key, source_id, harness, parent_session, child_session, relation, status, observed_at, evidence_kind, generation)
+                        VALUES ('claude:e1', 'src-claude', 'claude', 'claude-s1', 'claude-child-1', 'subagent', 'evidenced', TIMESTAMP '2026-10-10 10:00:01', 'explicit', 1);
+                    INSERT INTO context_facts (source_key, harness, native_session, ts, context_used, context_limit)
+                        VALUES ('claude:ctx-1', 'claude', 'claude-s1', TIMESTAMP '2026-10-10 10:00:01', 50000, 200000);
+                    INSERT INTO security_facts (source_key, source_id, harness, native_session, ts, kind, value, source_field, generation)
+                        VALUES
+                            ('claude:sec-1', 'src-claude', 'claude', 'claude-s1', TIMESTAMP '2026-10-10 10:00:01', 'permission_mode', 'default', 'permissionMode', 1),
+                            ('claude:sec-2', 'src-claude', 'claude', 'claude-s1', TIMESTAMP '2026-10-10 10:00:01', 'sandbox_policy', 'workspace-write', 'sandboxPolicy', 1);
+                    INSERT INTO authority_rules (rule_id, kind, expected_value)
+                        VALUES ('r1', 'permission_mode', 'default');",
+                )
+                .unwrap();
+        };
+
+        let store_clean = AnalyticsStore::open_in_memory("table-family-clean").unwrap();
+        seed_included(&store_clean);
+
+        let store_polluted = AnalyticsStore::open_in_memory("table-family-polluted").unwrap();
+        seed_included(&store_polluted);
+        // Insert excluded-connector (`goose`) rows into every table family:
+        // `usage_facts`, `tool_facts`, `skill_facts`, `session_edges`, `context_facts`, `security_facts`.
+        store_polluted
+            .connection()
+            .execute_batch(
+                "INSERT INTO source_files (source_id, harness, display_path, generation, byte_offset, prefix_sha256, native_session)
+                    VALUES ('src-goose', 'goose', 'goose.jsonl', 1, 100, '11', 'goose-s1');
+                INSERT INTO usage_facts (source_key, harness, native_session, message_id, ts, seq, input_uncached, output_tokens, cache_read, cache_write, reasoning, currency_total, generation, source_id, model, effort)
+                    VALUES ('goose:u1', 'goose', 'goose-s1', NULL, TIMESTAMP '2026-10-10 10:00:02', 1, 9000, 4000, 0, 0, 0, NULL, 1, 'src-goose', NULL, NULL);
+                INSERT INTO tool_facts (source_key, harness, native_session, ts, seq, tool_name, fingerprint, failed, structured_write, generation, source_id, category)
+                    VALUES ('goose:t1', 'goose', 'goose-s1', TIMESTAMP '2026-10-10 10:00:02', 1, 'shell', NULL, NULL, FALSE, 1, 'src-goose', 'eng_build_test');
+                INSERT INTO skill_facts (source_key, seat, skill, invoked)
+                    VALUES ('goose:sk-1', 'goose', 'goose-skill', TRUE);
+                INSERT INTO session_edges (source_key, source_id, harness, parent_session, child_session, relation, status, observed_at, evidence_kind, generation)
+                    VALUES ('goose:e1', 'src-goose', 'goose', 'claude-s1', 'goose-child-99', 'subagent', 'evidenced', TIMESTAMP '2026-10-10 10:00:02', 'explicit', 1);
+                INSERT INTO context_facts (source_key, harness, native_session, ts, context_used, context_limit)
+                    VALUES ('goose:ctx-1', 'goose', 'goose-s1', TIMESTAMP '2026-10-10 10:00:02', 195000, NULL);
+                INSERT INTO security_facts (source_key, source_id, harness, native_session, ts, kind, value, source_field, generation)
+                    VALUES
+                        ('goose:sec-1', 'src-goose', 'goose', 'goose-s1', TIMESTAMP '2026-10-10 10:00:02', 'permission_mode', 'bypassPermissions', 'permissionMode', 1),
+                        ('goose:sec-2', 'src-goose', 'goose', 'goose-s1', TIMESTAMP '2026-10-10 10:00:02', 'sandbox_policy', 'danger-full-access', 'sandboxPolicy', 1),
+                        ('goose:sec-3', 'src-goose', 'goose', 'goose-s1', TIMESTAMP '2026-10-10 10:00:02', 'dangerous_command', 'rm -rf /', 'command', 1);",
+            )
+            .unwrap();
+
+        let clean_results = evaluate_catalog(&store_clean, &Scope::default());
+        let polluted_results = evaluate_catalog(&store_polluted, &Scope::default());
+
+        for id in [
+            "I02", "I03", "I05", "I06", "I07", "I08", "I09", "I11", "I16", "I17", "I21", "I24",
+            "I25",
+        ] {
+            let clean = clean_results.iter().find(|r| r.id == id).unwrap();
+            let polluted = polluted_results.iter().find(|r| r.id == id).unwrap();
+            assert_eq!(
+                clean.status, polluted.status,
+                "excluded goose rows in table family must not affect {id} status"
+            );
+            assert_eq!(
+                clean.population.n, polluted.population.n,
+                "excluded goose rows in table family must not affect {id} population.n"
+            );
+            assert_eq!(
+                clean.measures, polluted.measures,
+                "excluded goose rows in table family must not affect {id} measures"
+            );
+            assert!(
+                polluted.coverage.contains("excluded: goose — missing"),
+                "{id} coverage must disclose goose exclusion: {}",
+                polluted.coverage
+            );
         }
     }
 }

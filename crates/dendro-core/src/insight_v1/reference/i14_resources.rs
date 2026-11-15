@@ -58,6 +58,9 @@ impl Insight for EnvironmentResources {
         use crate::insight_v1::Field;
         &[Field::NativeSession]
     }
+    fn coverage(&self) -> &'static str {
+        COVERAGE
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         let identities = match load_identities(input) {
             Ok(rows) => rows,
@@ -105,6 +108,13 @@ impl Insight for EnvironmentResources {
                 if raw_harness != Some(target_harness) {
                     continue;
                 }
+            }
+            let allows_tree = match raw_harness {
+                Some(h) => input.allows_harness(h) || input.allows_harness("environment"),
+                None => input.allows_harness("environment"),
+            };
+            if !allows_tree {
+                continue;
             }
             if let Some(target_session) = scope.session.as_deref() {
                 let matches_session = id_rows

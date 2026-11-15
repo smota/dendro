@@ -34,6 +34,9 @@ impl Insight for EnvironmentEffects {
         use crate::insight_v1::Field;
         &[Field::ProcessIdentity]
     }
+    fn coverage(&self) -> &'static str {
+        COVERAGE
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         if !table_exists(input.connection(), "syscall_facts") {
             return refused(self, "not_observable", "syscall_facts");
@@ -95,7 +98,25 @@ fn load(input: &InsightInput<'_>) -> anyhow::Result<Vec<(String, String, String,
          ORDER BY source_key",
     )?;
     let rows = stmt.query_map([], |row| {
-        Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+        ))
     })?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    let mut out = Vec::new();
+    for row in rows {
+        let row = row?;
+        let conn = row
+            .0
+            .split_once(':')
+            .map(|(prefix, _)| prefix)
+            .filter(|prefix| crate::insight_v1::fidelity::canonical_connector_id(prefix).is_some())
+            .unwrap_or("environment");
+        if input.allows_harness(conn) || input.allows_harness("environment") {
+            out.push(row);
+        }
+    }
+    Ok(out)
 }

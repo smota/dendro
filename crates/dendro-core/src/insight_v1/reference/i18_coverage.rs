@@ -10,6 +10,8 @@ pub struct CoverageSource;
 
 pub static INSIGHT: CoverageSource = CoverageSource;
 
+const COVERAGE: &str = "complete; reader markers and warning rows";
+
 impl Insight for CoverageSource {
     fn id(&self) -> &'static str {
         "I18"
@@ -27,6 +29,9 @@ impl Insight for CoverageSource {
         use crate::insight_v1::Field;
         &[Field::SourceCoverage]
     }
+    fn coverage(&self) -> &'static str {
+        COVERAGE
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         if input.scope().from.is_some() || input.scope().to.is_some() {
             return refused(self, "undefined input", "source_files");
@@ -39,7 +44,7 @@ impl Insight for CoverageSource {
             Ok(warnings) => warnings,
             Err(_) => return refused(self, "store read failed", "warnings"),
         };
-        let selected = select_sources(&sources, input.scope());
+        let selected = select_sources(&sources, input);
         let mut warnings_by_path: BTreeMap<&str, Vec<&WarningRow>> = BTreeMap::new();
         for warning in &warnings {
             warnings_by_path
@@ -51,7 +56,10 @@ impl Insight for CoverageSource {
             .iter()
             .map(|source| source.source_id.clone())
             .collect();
-        if input.scope().harness.is_none() && input.scope().session.is_none() {
+        if input.scope().harness.is_none()
+            && input.scope().session.is_none()
+            && sources.iter().all(|s| input.allows_harness(&s.harness))
+        {
             for warning in &warnings {
                 keys.insert(warning.path.clone());
             }
@@ -170,15 +178,17 @@ impl Insight for CoverageSource {
 
 fn select_sources<'a>(
     sources: &'a [SourceCoverage],
-    scope: &super::super::contract::Scope,
+    input: &InsightInput<'_>,
 ) -> Vec<&'a SourceCoverage> {
+    let scope = input.scope();
     sources
         .iter()
         .filter(|source| {
-            scope
-                .harness
-                .as_ref()
-                .is_none_or(|harness| source.harness == *harness)
+            input.allows_harness(&source.harness)
+                && scope
+                    .harness
+                    .as_ref()
+                    .is_none_or(|harness| source.harness == *harness)
                 && scope.session.as_ref().is_none_or(|session| {
                     source.native_session.as_deref() == Some(session.as_str())
                 })

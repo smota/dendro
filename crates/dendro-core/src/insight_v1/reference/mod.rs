@@ -58,6 +58,9 @@ impl Insight for RegisteredInsight {
     fn optional_fields(&self) -> &'static [Field] {
         self.optional
     }
+    fn coverage(&self) -> &'static str {
+        self.inner.coverage()
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         self.inner.compute(input)
     }
@@ -85,12 +88,12 @@ pub static REFERENCE: &[&dyn Insight] = &[
 
 /// A10 registry. A08 is `CATALOG[..21]` (I01–I21).
 pub static CATALOG: &[&dyn Insight] = &[
-    entry!(&i01_invocations::INSIGHT, req: [MessageId, NativeSession], opt: [TurnTimestamp]),
+    entry!(&i01_invocations::INSIGHT, req: [NativeSession], opt: [MessageId, TurnTimestamp]),
     entry!(&i02_tokens::INSIGHT, req: [InputTokens, OutputTokens, CacheReadTokens, CacheWriteTokens], opt: [ReasoningTokens, Model, NativeSession, TurnTimestamp]),
     entry!(&i03_tokens_inclusive::INSIGHT, req: [InputTokens, OutputTokens, CacheReadTokens, CacheWriteTokens, NativeSession, SessionEdges], opt: [MessageId, TurnTimestamp]),
     entry!(&i04_cost::INSIGHT, req: [ObservedCost], opt: [Model, InputTokens, OutputTokens, CacheReadTokens, CacheWriteTokens, NativeSession, TurnTimestamp]),
     entry!(&i05_configuration_divergence::INSIGHT, req: [NativeSession, Model, Effort], opt: [TurnTimestamp]),
-    entry!(&i06_capability_funnel::INSIGHT, req: [SkillInvocations, ToolCallName], opt: [SkillDeclarations, NativeSession, TurnTimestamp]),
+    entry!(&i06_capability_funnel::INSIGHT, req: [SkillDeclarations, SkillInvocations, ToolCallName], opt: [NativeSession, TurnTimestamp]),
     entry!(&i07_context_pressure::INSIGHT, req: [ContextWindowUsage], opt: [InputTokens, NativeSession, TurnTimestamp]),
     entry!(&i08_action_failure::INSIGHT, req: [ToolCallName, ToolOutcome], opt: [ToolFingerprint, NativeSession, TurnTimestamp]),
     entry!(&i09_lineage_shape::INSIGHT, req: [SessionEdges], opt: [NativeSession]),
@@ -101,7 +104,7 @@ pub static CATALOG: &[&dyn Insight] = &[
     entry!(&i14_resources::INSIGHT, req: [ProcessIdentity, ProcessResourceSamples], opt: [NativeSession]),
     entry!(&i15_effects::INSIGHT, req: [PrivilegedEffectTrace], opt: [ProcessIdentity]),
     entry!(&i16_isolation::INSIGHT, req: [SecurityPolicy], opt: [NativeSession]),
-    entry!(&i17_authority::INSIGHT, req: [SecurityPolicy, SecurityCommandCheck], opt: [NativeSession]),
+    entry!(&i17_authority::INSIGHT, req: [SecurityPolicy], opt: [NativeSession]),
     entry!(&i18_coverage::INSIGHT, req: [SourceCoverage], opt: []),
     entry!(&i19_acceptance::INSIGHT, req: [QueueTransitions, TurnTimestamp], opt: [NativeSession]),
     entry!(&i20_resource_efficiency::INSIGHT, req: [QueueTransitions, TurnTimestamp], opt: [ObservedCost, NativeSession]),

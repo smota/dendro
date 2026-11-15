@@ -41,6 +41,9 @@ impl Insight for WorkDuration {
         use crate::insight_v1::Field;
         &[Field::NativeSession]
     }
+    fn coverage(&self) -> &'static str {
+        COVERAGE
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         let events = match load(input) {
             Ok(rows) => rows,
@@ -235,5 +238,20 @@ fn load(input: &InsightInput<'_>) -> anyhow::Result<Vec<Event>> {
             state: row.get(3)?,
         })
     })?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    let mut out = Vec::new();
+    for item in rows {
+        let ev = item?;
+        let conn =
+            crate::insight_v1::canonical_connector_id(ev.seat.split(':').next().unwrap_or(""))
+                .or_else(|| {
+                    crate::insight_v1::canonical_connector_id(
+                        ev.key.split(':').next().unwrap_or(""),
+                    )
+                })
+                .unwrap_or("openrig");
+        if input.allows_harness(conn) {
+            out.push(ev);
+        }
+    }
+    Ok(out)
 }

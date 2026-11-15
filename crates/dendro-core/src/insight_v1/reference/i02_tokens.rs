@@ -42,6 +42,9 @@ impl Insight for TokensDirect {
             Field::TurnTimestamp,
         ]
     }
+    fn coverage(&self) -> &'static str {
+        COVERAGE
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         let rows = match input.usage_rows() {
             Ok(rows) => rows,

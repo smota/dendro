@@ -8,7 +8,7 @@ Dendro is a local-first AI Fleet Intelligence engine and investigation studio. I
 
 > When my agent fleet becomes slow, expensive, or difficult to understand, I want to see where time, tokens, and rework went so I can change the topology, handoffs, or budget with evidence.
 
-Dendro serves applied-AI engineers, fleet architects, token economists, and security and governance leads. Its core job is to make execution legible across Claude Code, Codex (with tool calls currently recorded coarsely under a constant name in `crates/dendro-connectors/src/stream.rs:451,621,1862`), Grok, Pi, and OpenRig; the Antigravity (`agy`) connector is registered as `pending` and not yet admitted (`crates/dendro-connectors/src/agy.rs:63` returns `source_not_admitted`).
+Dendro serves applied-AI engineers, fleet architects, token economists, and security and governance leads. Its core job is to make execution legible across Claude Code, Codex (with per-call tool names observed and tool outcomes recorded with `Partial(ExplicitSignalOnly)` fidelity in `crates/dendro-connectors/src/stream.rs:437-561,2294-2333`), Grok, Pi, and OpenRig; the Antigravity (`agy`) connector is registered as `pending` and not yet admitted (`crates/dendro-connectors/src/agy.rs:63` returns `source_not_admitted`).
 
 ## Product experience
 
@@ -225,7 +225,7 @@ Architecture is owned by `orch.arch`. This section does not choose files, crates
 | G1.8 As an operator, I see each seat's yield. | For the reference rig, shows what each seat consumed and what it passed on that did not come back. |
 | G1.9 As an operator, I see skill exposure. | Shows which skills each seat had loaded. Impact shows "insufficient data" until a valid comparison exists. |
 
-Harnesses in G1: **OpenRig, Claude Code, Codex and Pi required.** The Grok reader is implemented; the [v0.8.0 release notes](RELEASE_NOTES_v0.8.0.md) still mark the release as TBD (not tagged). The Antigravity `agy` reader remains pending. (Implementation details: the Antigravity `agy` connector is not admitted at `crates/dendro-connectors/src/agy.rs:63`, which returns `source_not_admitted`; Codex tool calls are recorded coarsely under a constant name at `crates/dendro-connectors/src/stream.rs:451,621,1862`.)
+Harnesses in G1: **OpenRig, Claude Code, Codex and Pi required.** The Grok reader is implemented; the [v0.8.0 release notes](RELEASE_NOTES_v0.8.0.md) still mark the release as TBD (not tagged). The Antigravity `agy` reader remains pending. (Implementation details: the Antigravity `agy` connector is not admitted at `crates/dendro-connectors/src/agy.rs:63`, which returns `source_not_admitted`; Codex tool calls record per-call tool names with `Partial(ExplicitSignalOnly)` outcome fidelity at `crates/dendro-connectors/src/stream.rs:437-561,2294-2333`.)
 
 ### G2 — The operator asks in natural language (NEXT, not R1)
 
@@ -268,7 +268,7 @@ The sponsor approved G4 and the G3 documentation in parallel, owned by Antigravi
 ### Constraints
 
 1. Local-first. Nothing leaves by default. When an org export is explicitly configured, only zero-content, pseudonymized `fact-export-v1` bundles are written to an operator-configured path. These fact-export bundles are only written locally; Dendro never uploads them.
-2. Read-only on sources (`~/.openrig`, `~/.claude`, `~/.codex`, `~/.gemini`, `~/.pi`, `~/.grok`; `~/.gemini` `agy` extraction is not admitted and returns `source_not_admitted` at `crates/dendro-connectors/src/agy.rs:63`, while Codex tool calls record per-call names with `Partial(ExplicitSignalOnly)` outcome fidelity at `crates/dendro-connectors/src/stream.rs:437-504,1861-1940`). Each connector declares field-level fidelity (`Observed`, `Derived`, `Partial`, `Absent`) in `crates/dendro-core/src/insight_v1/fidelity.rs`, and each insight (`I01`–`I25`) declares its required fields in the registry so missing inputs yield `NotComputable` (`not_computable` refusal) and mixed-source denominators never pool connectors lacking a required field (`dendro#134`).
+2. Read-only on sources (`~/.openrig`, `~/.claude`, `~/.codex`, `~/.gemini`, `~/.pi`, `~/.grok`; `~/.gemini` `agy` extraction is not admitted and returns `source_not_admitted` at `crates/dendro-connectors/src/agy.rs:63`, while Codex tool calls record per-call names with `Partial(ExplicitSignalOnly)` outcome fidelity at `crates/dendro-connectors/src/stream.rs:437-561,2294-2333`). Each connector declares field-level fidelity (`Observed`, `Derived`, `Partial`, `Absent`) in `crates/dendro-core/src/insight_v1/fidelity.rs`, and each insight (`I01`–`I25`) declares its required fields in the registry so missing inputs yield `NotComputable` (`not_computable` refusal) and mixed-source denominators never pool connectors lacking a required field (`dendro#134`).
 3. No raw prompt content and no secrets in the store.
 4. Stack decided by the sponsor: Rust, DuckDB, Nao. Not reopened.
 5. Sources change format. An unknown format produces a warning, never a failure or wrong data.

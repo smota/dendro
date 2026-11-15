@@ -54,6 +54,9 @@ impl Insight for Acceptance {
         use crate::insight_v1::Field;
         &[Field::NativeSession]
     }
+    fn coverage(&self) -> &'static str {
+        COVERAGE
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         match load_acceptance(input) {
             Ok(None) => refused(self, "not_observable", "queue_facts"),
@@ -226,5 +229,18 @@ fn load_queue(input: &InsightInput<'_>) -> anyhow::Result<Vec<Transition>> {
             closure_reason: row.get(4)?,
         })
     })?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    let mut out = Vec::new();
+    for row in rows {
+        let row = row?;
+        let conn = row
+            .key
+            .split_once(':')
+            .map(|(prefix, _)| prefix)
+            .filter(|prefix| crate::insight_v1::fidelity::canonical_connector_id(prefix).is_some())
+            .unwrap_or("openrig");
+        if input.allows_harness(conn) {
+            out.push(row);
+        }
+    }
+    Ok(out)
 }

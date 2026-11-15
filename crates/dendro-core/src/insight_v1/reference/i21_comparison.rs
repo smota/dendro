@@ -48,6 +48,9 @@ impl Insight for Comparison {
         use crate::insight_v1::Field;
         &[Field::NativeSession, Field::TurnTimestamp]
     }
+    fn coverage(&self) -> &'static str {
+        COVERAGE
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         let rows = match load(input) {
             Ok(rows) => rows,
@@ -130,5 +133,12 @@ fn load(input: &InsightInput<'_>) -> anyhow::Result<Vec<Row>> {
             })
         },
     )?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    let mut out = Vec::new();
+    for row in rows {
+        let row = row?;
+        if input.allows_harness(&row.harness) {
+            out.push(row);
+        }
+    }
+    Ok(out)
 }

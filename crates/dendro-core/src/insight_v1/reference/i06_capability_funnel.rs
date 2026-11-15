@@ -30,15 +30,18 @@ impl Insight for CapabilityFunnel {
     }
     fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
         use crate::insight_v1::Field;
-        &[Field::SkillInvocations, Field::ToolCallName]
+        &[
+            Field::SkillDeclarations,
+            Field::SkillInvocations,
+            Field::ToolCallName,
+        ]
     }
     fn optional_fields(&self) -> &'static [crate::insight_v1::Field] {
         use crate::insight_v1::Field;
-        &[
-            Field::SkillDeclarations,
-            Field::NativeSession,
-            Field::TurnTimestamp,
-        ]
+        &[Field::NativeSession, Field::TurnTimestamp]
+    }
+    fn coverage(&self) -> &'static str {
+        COVERAGE
     }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         let skills = match load_skills(input) {
@@ -132,25 +135,81 @@ impl Insight for CapabilityFunnel {
     }
 }
 
+fn infer_skill_row_connector(
+    seat_harnesses: &std::collections::BTreeMap<String, String>,
+    source_key: &str,
+    seat: &str,
+    skill: &str,
+) -> Option<String> {
+    use crate::insight_v1::canonical_connector_id;
+
+    for candidate in [
+        seat.trim(),
+        seat.split(':').next().unwrap_or(""),
+        source_key.split(':').next().unwrap_or(""),
+        source_key.split('-').next().unwrap_or(""),
+        skill.split(':').next().unwrap_or(""),
+    ] {
+        if let Some(canonical) = canonical_connector_id(candidate) {
+            return Some(canonical.to_string());
+        }
+    }
+    if let Some(harness) = seat_harnesses.get(seat) {
+        if !harness.trim().is_empty() {
+            return Some(harness.clone());
+        }
+    }
+    None
+}
+
 fn load_skills(input: &InsightInput<'_>) -> anyhow::Result<Vec<(String, bool)>> {
+    let check_allow = input.has_allowed_harnesses();
+    let mut seat_harnesses = std::collections::BTreeMap::new();
+    if check_allow {
+        if let Ok(mut id_stmt) = input
+            .connection()
+            .prepare("SELECT seat, harness FROM identity_facts")
+        {
+            if let Ok(id_rows) = id_stmt.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            }) {
+                for (seat, harness) in id_rows.flatten() {
+                    seat_harnesses.entry(seat).or_insert(harness);
+                }
+            }
+        }
+    }
+
     let mut stmt = input
         .connection()
-        .prepare("SELECT source_key, skill, invoked FROM skill_facts ORDER BY source_key")?;
+        .prepare("SELECT source_key, seat, skill, invoked FROM skill_facts ORDER BY source_key")?;
     let scope = input.scope();
     let rows = stmt.query_map([], |row| {
         Ok((
             row.get::<_, String>(0)?,
             row.get::<_, String>(1)?,
-            row.get::<_, bool>(2)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, bool>(3)?,
         ))
     })?;
     let mut out = Vec::new();
     for row in rows {
-        let (key, skill, invoked) = row?;
+        let (key, seat, skill, invoked) = row?;
         if scope.harness.as_ref().is_some_and(|harness| {
-            skill != *harness && !key.starts_with(harness) && !skill.starts_with(harness)
+            skill != *harness
+                && seat != *harness
+                && !seat.starts_with(&format!("{harness}:"))
+                && !key.starts_with(harness)
+                && !skill.starts_with(harness)
         }) {
             continue;
+        }
+        if check_allow {
+            if let Some(conn) = infer_skill_row_connector(&seat_harnesses, &key, &seat, &skill) {
+                if !input.allows_harness(&conn) {
+                    continue;
+                }
+            }
         }
         out.push((skill, invoked));
     }
@@ -159,7 +218,7 @@ fn load_skills(input: &InsightInput<'_>) -> anyhow::Result<Vec<(String, bool)>> 
 
 fn load_actions(input: &InsightInput<'_>) -> anyhow::Result<(Vec<String>, i64)> {
     let mut stmt = input.connection().prepare(
-        "SELECT source_key
+        "SELECT source_key, harness
          FROM tool_facts
          WHERE NOT starts_with(source_key, ?)
            AND (? IS NULL OR harness = ?)
@@ -185,11 +244,14 @@ fn load_actions(input: &InsightInput<'_>) -> anyhow::Result<(Vec<String>, i64)> 
             to,
             to
         ],
-        |row| row.get::<_, String>(0),
+        |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
     )?;
     let mut keys = Vec::new();
     for row in rows {
-        keys.push(row?);
+        let (key, row_harness) = row?;
+        if input.allows_harness(&row_harness) {
+            keys.push(key);
+        }
     }
     let count = keys.len() as i64;
     Ok((keys, count))

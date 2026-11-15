@@ -1592,7 +1592,7 @@ fn project_insight(row: &Value, aliases: &mut BTreeMap<String, String>) -> Optio
         .as_str()
         .filter(|coverage| {
             !coverage.is_empty()
-                && coverage.len() <= 240
+                && coverage.len() <= 1024
                 && !coverage.contains(['/', '\\', '<', '>', '&'])
                 && coverage.chars().all(|ch| !ch.is_control())
         })

@@ -56,6 +56,9 @@ impl Insight for TokensInclusive {
         use crate::insight_v1::Field;
         &[Field::MessageId, Field::TurnTimestamp]
     }
+    fn coverage(&self) -> &'static str {
+        COVERAGE
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         let usage = match load_usage(input) {
             Ok(rows) => rows,
@@ -253,7 +256,7 @@ fn token_measure(id: &str, name: &str, value: Option<MeasureValue>, basis: &str)
 
 fn load_usage(input: &InsightInput<'_>) -> anyhow::Result<Vec<Usage>> {
     let mut stmt = input.connection().prepare(
-        "SELECT source_key, native_session, message_id, input_uncached, cache_write, cache_read, output_tokens
+        "SELECT source_key, harness, native_session, message_id, input_uncached, cache_write, cache_read, output_tokens
          FROM usage_facts
          WHERE (? IS NULL OR harness = ?)
            AND (? IS NULL OR native_session = ?)
@@ -269,24 +272,35 @@ fn load_usage(input: &InsightInput<'_>) -> anyhow::Result<Vec<Usage>> {
     let rows = stmt.query_map(
         params![harness, harness, session, session, from, from, to, to],
         |row| {
-            let input_uncached: i64 = row.get(3)?;
-            let cache_write: i64 = row.get(4)?;
-            let cache_read: i64 = row.get(5)?;
-            let output: i64 = row.get(6)?;
-            Ok(Usage {
-                source_key: row.get(0)?,
-                session: row.get(1)?,
-                message_id: row.get(2)?,
-                tokens: disjoint_tokens(input_uncached, cache_write, cache_read, output),
-            })
+            let row_harness: String = row.get(1)?;
+            let input_uncached: i64 = row.get(4)?;
+            let cache_write: i64 = row.get(5)?;
+            let cache_read: i64 = row.get(6)?;
+            let output: i64 = row.get(7)?;
+            Ok((
+                row_harness,
+                Usage {
+                    source_key: row.get(0)?,
+                    session: row.get(2)?,
+                    message_id: row.get(3)?,
+                    tokens: disjoint_tokens(input_uncached, cache_write, cache_read, output),
+                },
+            ))
         },
     )?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    let mut out = Vec::new();
+    for item in rows {
+        let (row_harness, usage) = item?;
+        if input.allows_harness(&row_harness) {
+            out.push(usage);
+        }
+    }
+    Ok(out)
 }
 
 fn load_edges(input: &InsightInput<'_>) -> anyhow::Result<Vec<Edge>> {
     let mut stmt = input.connection().prepare(
-        "SELECT parent_session, child_session, relation, status
+        "SELECT harness, parent_session, child_session, relation, status
          FROM session_edges
          WHERE (? IS NULL OR harness = ?)
            AND (? IS NULL OR parent_session = ? OR child_session = ?)
@@ -298,13 +312,24 @@ fn load_edges(input: &InsightInput<'_>) -> anyhow::Result<Vec<Edge>> {
     let rows = stmt.query_map(
         params![harness, harness, session, session, session],
         |row| {
-            Ok(Edge {
-                parent: row.get(0)?,
-                child: row.get(1)?,
-                relation: row.get(2)?,
-                status: row.get(3)?,
-            })
+            let row_harness: String = row.get(0)?;
+            Ok((
+                row_harness,
+                Edge {
+                    parent: row.get(1)?,
+                    child: row.get(2)?,
+                    relation: row.get(3)?,
+                    status: row.get(4)?,
+                },
+            ))
         },
     )?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    let mut out = Vec::new();
+    for item in rows {
+        let (row_harness, edge) = item?;
+        if input.allows_harness(&row_harness) {
+            out.push(edge);
+        }
+    }
+    Ok(out)
 }

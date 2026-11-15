@@ -46,6 +46,9 @@ impl Insight for ActionFailure {
             Field::TurnTimestamp,
         ]
     }
+    fn coverage(&self) -> &'static str {
+        COVERAGE
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         let rows = match load_tool_outcomes(input) {
             Ok(rows) => rows,

@@ -6,23 +6,30 @@
 pub use dendro_core::insight_v1::{
     canonical_connector_id, canonical_population_what, connector_declaration, denominator_matrix,
     evaluate_catalog_for_connectors, evaluate_denominator, evaluate_denominator_by_id,
-    evaluate_for_connectors, evaluate_insight_for_connectors, format_denominator_disclosure,
-    format_not_computable_reason, populated_fields_in_store, render_provider_fidelity_markdown,
-    ConnectorDeclaration, ConnectorExclusion, DenominatorEvaluation, DenominatorMatrixRow,
-    DenominatorScope, Field, FieldDeclaration, FieldFidelity, IncludedConnector,
-    PartialFidelityReason, CONNECTOR_DECLARATIONS,
+    evaluate_denominator_in_store, evaluate_for_connectors, evaluate_insight_for_connectors,
+    format_denominator_disclosure, format_exclusions_list, format_not_computable_reason,
+    populated_fields_in_store, present_connectors_for_insight, render_provider_fidelity_markdown,
+    token_field_in_store, ConnectorDeclaration, ConnectorExclusion, DenominatorEvaluation,
+    DenominatorMatrixRow, DenominatorScope, Field, FieldDeclaration, FieldFidelity,
+    IncludedConnector, PartialFidelityReason, CONNECTOR_DECLARATIONS,
 };
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::capture_registry_v1::Registry;
+    use crate::environment_v1::{
+        detect_isolation, Collector, Config as EnvConfig, ProcessSource, RawMetrics, RawProcess,
+    };
     use crate::ingest::ingest_staged;
     use crate::SourceRoot;
     use chrono::{TimeZone, Utc};
-    use dendro_core::domain_v1::{CaptureMethod, EnvironmentKind, Unit};
-    use dendro_core::insight_v1::{InsightStatus, MeasureValue, Scope, CATALOG};
-    use dendro_core::{AnalyticsStore, ProcessIdentityFact, ProcessSampleFact};
+    use dendro_core::insight_v1::{
+        evaluate, evaluate_catalog, InsightStatus, MeasureValue, Scope, CATALOG,
+    };
+    use dendro_core::presentation::{attach_dashboard_surface, public_projection};
+    use dendro_core::AnalyticsStore;
+    use std::collections::BTreeMap;
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -86,6 +93,14 @@ mod tests {
         AnalyticsStore::open_path(&db_path, &dendro_core::key_id(key)).unwrap()
     }
 
+    const TOKEN_FIELDS: [Field; 5] = [
+        Field::InputTokens,
+        Field::OutputTokens,
+        Field::CacheReadTokens,
+        Field::CacheWriteTokens,
+        Field::ReasoningTokens,
+    ];
+
     fn assert_grounding(connector_name: &str, store: &AnalyticsStore) {
         let decl = connector_declaration(connector_name)
             .unwrap_or_else(|| panic!("missing declaration for {connector_name}"));
@@ -105,6 +120,13 @@ mod tests {
                 decl.declaration(field).unwrap().code_location
             );
         }
+        for (field, reason) in decl.partial_fields() {
+            assert!(
+                populated.contains(&field),
+                "connector `{connector_name}` declares `{field}` Partial({reason:?}) ({}) but positive fixture ingestion did not populate it; populated = {populated:?}",
+                decl.declaration(field).unwrap().code_location
+            );
+        }
         for field in decl.absent_fields() {
             assert!(
                 !populated.contains(&field),
@@ -112,13 +134,34 @@ mod tests {
                 decl.declaration(field).unwrap().code_location
             );
         }
+
+        // Explicitly verify token presence via `token_field_in_store` (`Some(val)` including 0 vs `None`)
+        for token_field in TOKEN_FIELDS {
+            let stored = token_field_in_store(store, token_field).unwrap();
+            match decl.fidelity(token_field) {
+                FieldFidelity::Observed | FieldFidelity::Derived | FieldFidelity::Partial(_) => {
+                    assert!(
+                        stored.is_some(),
+                        "connector `{connector_name}` declares `{token_field}` computable, expected Some(tokens) in store, got None"
+                    );
+                }
+                FieldFidelity::Absent => {
+                    assert_eq!(
+                        stored, None,
+                        "connector `{connector_name}` declares `{token_field}` Absent, expected None in store, got {stored:?}"
+                    );
+                }
+            }
+        }
     }
 
     fn write_claude_fixture(dir: &Path) {
         let file = dir.join("session-claude.jsonl");
+        // Includes `"reasoning_tokens":99,"cost_usd":0.05` in raw usage so `ReasoningTokens` and
+        // `ObservedCost` being `Absent` is proven against a fixture that contains the source fields.
         let lines = [
             r#"{"type":"user","sessionId":"claude-s1","permissionMode":"default","timestamp":"2026-10-10T10:00:00Z","message":{"role":"user","content":"run /commit"}}"#,
-            r#"{"type":"assistant","sessionId":"claude-s1","isSidechain":true,"agentId":"agent-child-1","timestamp":"2026-10-10T10:00:01Z","effort":"high","message":{"id":"msg_claude_1","model":"claude-sonnet-4-5","effort":"high","role":"assistant","usage":{"input_tokens":120,"output_tokens":45,"cache_read_input_tokens":30,"cache_creation_input_tokens":15},"content":[{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"rm -rf /tmp/test","dangerouslyDisableSandbox":true}},{"type":"tool_use","id":"toolu_2","name":"Skill","input":{"skill":"commit"}}]}}"#,
+            r#"{"type":"assistant","sessionId":"claude-s1","isSidechain":true,"agentId":"agent-child-1","timestamp":"2026-10-10T10:00:01Z","effort":"high","message":{"id":"msg_claude_1","model":"claude-sonnet-4-5","effort":"high","role":"assistant","usage":{"input_tokens":120,"output_tokens":45,"cache_read_input_tokens":30,"cache_creation_input_tokens":15,"reasoning_tokens":99,"cost_usd":0.05},"content":[{"type":"tool_use","id":"toolu_1","name":"Bash","input":{"command":"rm -rf /tmp/test","dangerouslyDisableSandbox":true}},{"type":"tool_use","id":"toolu_2","name":"Skill","input":{"skill":"commit"}}]}}"#,
             r#"{"type":"user","sessionId":"claude-s1","timestamp":"2026-10-10T10:00:02Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","is_error":false,"content":"ok"},{"type":"tool_result","tool_use_id":"toolu_2","is_error":false,"content":"ok"}]}}"#,
         ];
         std::fs::write(file, format!("{}\n", lines.join("\n"))).unwrap();
@@ -126,21 +169,26 @@ mod tests {
 
     fn write_codex_fixture(dir: &Path) {
         let file = dir.join("rollout-codex.jsonl");
+        // Includes `"cost_usd":0.12` and `"message_id":"codex-msg-1"` in raw payload so `ObservedCost`
+        // and `MessageId` being `Absent` are proven against a fixture that contains those source keys.
         let lines = [
             r#"{"timestamp":"2026-10-10T10:00:00Z","type":"session_meta","payload":{"id":"codex-s1","source":{"subagent":{"thread_spawn":{"parent_thread_id":"codex-parent-0","depth":1}}}}}"#,
             r#"{"timestamp":"2026-10-10T10:00:01Z","type":"turn_context","payload":{"model":"gpt-5-codex","approval_policy":"on-request","sandbox_policy":{"type":"workspace-write"},"collaboration_mode":{"mode":"default","settings":{"model":"gpt-5-codex","reasoning_effort":"high"}}}}"#,
             r#"{"timestamp":"2026-10-10T10:00:02Z","type":"event_msg","payload":{"type":"user_message","message":"Use $review-skill now"}}"#,
             r#"{"timestamp":"2026-10-10T10:00:03Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"call_codex_1","arguments":"{\"cmd\":\"rm -rf /tmp/test && cat /skills/review-skill/SKILL.md\",\"dangerouslyDisableSandbox\":true}"}}"#,
             r#"{"timestamp":"2026-10-10T10:00:04Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call_codex_1","output":"Process exited with code 0\nOutput:\nok"}}"#,
-            r#"{"timestamp":"2026-10-10T10:00:05Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":200,"cached_input_tokens":50,"cache_write_input_tokens":20,"output_tokens":80,"reasoning_output_tokens":25,"total_tokens":280},"last_token_usage":{"input_tokens":200,"cached_input_tokens":50,"cache_write_input_tokens":20,"output_tokens":80,"reasoning_output_tokens":25,"total_tokens":280}}}}"#,
+            r#"{"timestamp":"2026-10-10T10:00:05Z","type":"event_msg","payload":{"type":"token_count","message_id":"codex-msg-1","cost_usd":0.12,"info":{"total_token_usage":{"input_tokens":200,"cached_input_tokens":50,"cache_write_input_tokens":20,"output_tokens":80,"reasoning_output_tokens":25,"total_tokens":280,"cost_usd":0.12},"last_token_usage":{"input_tokens":200,"cached_input_tokens":50,"cache_write_input_tokens":20,"output_tokens":80,"reasoning_output_tokens":25,"total_tokens":280,"cost_usd":0.12}}}}"#,
         ];
         std::fs::write(file, format!("{}\n", lines.join("\n"))).unwrap();
     }
 
     fn write_pi_fixture(dir: &Path) {
         let file = dir.join("session-pi.jsonl");
+        // Includes `"reasoning":12`, `"parentSessionId":"pi-parent-0"`, `"permissionMode":"default"`,
+        // and `"dangerouslyDisableSandbox":true` so Absent fields (`ReasoningTokens`, `SessionEdges`,
+        // `SecurityPolicy`, `SecurityCommandCheck`) are proven against present source fields.
         let lines = [
-            r#"{"type":"session","id":"pi-s1","timestamp":"2026-10-10T10:00:00Z","cwd":"/tmp"}"#,
+            r#"{"type":"session","id":"pi-s1","parentSessionId":"pi-parent-0","permissionMode":"default","timestamp":"2026-10-10T10:00:00Z","cwd":"/tmp"}"#,
             r#"{"type":"thinking_level_change","id":"tl1","timestamp":"2026-10-10T10:00:01Z","thinkingLevel":"high"}"#,
             r#"{"type":"message","id":"pi-msg-1","timestamp":"2026-10-10T10:00:02Z","message":{"id":"pi-msg-1","role":"assistant","model":"claude-sonnet-4-5","thinkingLevel":"high","usage":{"input":100,"output":40,"cacheRead":25,"cacheWrite":10,"reasoning":12,"cost":{"total":0.015}},"content":[{"type":"toolCall","id":"pi_tc_1","name":"bash","arguments":{"command":"rm -rf /tmp/test","dangerouslyDisableSandbox":true}},{"type":"toolCall","id":"pi_tc_2","name":"read","arguments":{"path":"/skills/test-skill/SKILL.md"}}]}}"#,
             r#"{"type":"message","id":"pi-msg-2","timestamp":"2026-10-10T10:00:03Z","message":{"role":"toolResult","toolCallId":"pi_tc_1","toolName":"bash","isError":false,"content":[{"type":"text","text":"ok"}]}}"#,
@@ -164,7 +212,7 @@ mod tests {
             r#"{"method":"session/update","timestamp":1760090400,"params":{"sessionId":"grok-s1","update":{"sessionUpdate":"subagent_spawned","parent_session_id":"grok-s1","child_session_id":"grok-child-1","subagent_id":"sub-1","attempt_id":"att-1"}}}"#,
             r#"{"method":"session/update","timestamp":1760090401,"params":{"sessionId":"grok-s1","update":{"sessionUpdate":"tool_call","toolCallId":"tc-1","rawInput":{"command":"cargo check"},"_meta":{"x.ai/tool":{"name":"Bash","kind":"execute"}}}}}"#,
             r#"{"method":"session/update","timestamp":1760090402,"params":{"sessionId":"grok-s1","update":{"sessionUpdate":"tool_call_update","toolCallId":"tc-1","status":"completed"}}}"#,
-            r#"{"method":"session/update","timestamp":1760090403,"params":{"sessionId":"grok-s1","update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":180,"outputTokens":60,"cachedReadTokens":30,"cacheCreationTokens":10,"reasoningTokens":15,"costUsdTicks":42000000}}}}"#,
+            r#"{"method":"session/update","timestamp":1760090403,"params":{"sessionId":"grok-s1","update":{"sessionUpdate":"turn_completed","messageId":"grok-msg-ignored","usage":{"inputTokens":180,"outputTokens":60,"cachedReadTokens":30,"cacheCreationTokens":10,"reasoningTokens":15,"costUsdTicks":42000000}}}}"#,
         ];
         std::fs::write(dir.join("updates.jsonl"), format!("{}\n", lines.join("\n"))).unwrap();
     }
@@ -252,9 +300,6 @@ mod tests {
             };
             let store = ingest_roots_into_store(tmp.path(), &[root], key);
             assert_grounding("codex", &store);
-            // Also verify Partial(ExplicitSignalOnly) ToolOutcome was populated by explicit exit code
-            let populated = populated_fields_in_store(&store).unwrap();
-            assert!(populated.contains(&Field::ToolOutcome));
         }
 
         // 3. Pi
@@ -283,8 +328,122 @@ mod tests {
             };
             let store = ingest_roots_into_store(tmp.path(), &[root], key);
             assert_grounding("grok", &store);
+        }
+    }
+
+    #[test]
+    fn token_presence_distinguishes_written_zero_from_none() {
+        let key = b"0123456789abcdef0123456789abcdef";
+        let tmp = TempDir::new("claude-zero-tokens");
+        let data_dir = tmp.path().join("data");
+        std::fs::create_dir_all(&data_dir).unwrap();
+        // Claude writes real 0s for input, output, cache_read, and cache_write when the JSON has 0,
+        // while reasoning_tokens is Absent (stored as -1 sentinel -> None).
+        let line = r#"{"type":"assistant","sessionId":"claude-zero","timestamp":"2026-10-10T10:00:01Z","message":{"id":"msg_zero","model":"claude-sonnet-4-5","role":"assistant","usage":{"input_tokens":0,"output_tokens":0,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"reasoning_tokens":0},"content":[{"type":"text","text":"zero"}]}}"#;
+        std::fs::write(data_dir.join("session-zero.jsonl"), format!("{line}\n")).unwrap();
+        let root = SourceRoot {
+            name: "claude".into(),
+            path: data_dir,
+        };
+        let store = ingest_roots_into_store(tmp.path(), &[root], key);
+
+        assert_eq!(
+            token_field_in_store(&store, Field::InputTokens).unwrap(),
+            Some(0)
+        );
+        assert_eq!(
+            token_field_in_store(&store, Field::OutputTokens).unwrap(),
+            Some(0)
+        );
+        assert_eq!(
+            token_field_in_store(&store, Field::CacheReadTokens).unwrap(),
+            Some(0)
+        );
+        assert_eq!(
+            token_field_in_store(&store, Field::CacheWriteTokens).unwrap(),
+            Some(0)
+        );
+        assert_eq!(
+            token_field_in_store(&store, Field::ReasoningTokens).unwrap(),
+            None
+        );
+
+        let populated = populated_fields_in_store(&store).unwrap();
+        assert!(populated.contains(&Field::InputTokens));
+        assert!(populated.contains(&Field::OutputTokens));
+        assert!(populated.contains(&Field::CacheReadTokens));
+        assert!(populated.contains(&Field::CacheWriteTokens));
+        assert!(!populated.contains(&Field::ReasoningTokens));
+    }
+
+    #[test]
+    fn partial_fields_negative_when_condition_not_met() {
+        let key = b"0123456789abcdef0123456789abcdef";
+
+        // 1. Claude without effort field -> Effort (Partial) not populated
+        {
+            let tmp = TempDir::new("claude-no-effort");
+            let data_dir = tmp.path().join("data");
+            std::fs::create_dir_all(&data_dir).unwrap();
+            let line = r#"{"type":"assistant","sessionId":"claude-ne","timestamp":"2026-10-10T10:00:01Z","message":{"id":"msg_ne","model":"claude-sonnet-4-5","role":"assistant","usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"content":[{"type":"text","text":"hi"}]}}"#;
+            std::fs::write(data_dir.join("session-ne.jsonl"), format!("{line}\n")).unwrap();
+            let root = SourceRoot {
+                name: "claude".into(),
+                path: data_dir,
+            };
+            let store = ingest_roots_into_store(tmp.path(), &[root], key);
             let populated = populated_fields_in_store(&store).unwrap();
-            assert!(populated.contains(&Field::ObservedCost));
+            assert!(!populated.contains(&Field::Effort));
+        }
+
+        // 2. Codex without exit_code in function_call_output -> ToolOutcome (Partial) not populated
+        {
+            let tmp = TempDir::new("codex-no-exit");
+            let data_dir = tmp.path().join("data");
+            std::fs::create_dir_all(&data_dir).unwrap();
+            let lines = [
+                r#"{"timestamp":"2026-10-10T10:00:00Z","type":"session_meta","payload":{"id":"codex-ne"}}"#,
+                r#"{"timestamp":"2026-10-10T10:00:01Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"call_1","arguments":"{\"cmd\":\"echo ok\"}"}}"#,
+                r#"{"timestamp":"2026-10-10T10:00:02Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call_1","output":"plain text without exit marker"}}"#,
+            ];
+            std::fs::write(
+                data_dir.join("rollout-ne.jsonl"),
+                format!("{}\n", lines.join("\n")),
+            )
+            .unwrap();
+            let root = SourceRoot {
+                name: "codex".into(),
+                path: data_dir,
+            };
+            let store = ingest_roots_into_store(tmp.path(), &[root], key);
+            let populated = populated_fields_in_store(&store).unwrap();
+            assert!(!populated.contains(&Field::ToolOutcome));
+        }
+
+        // 3. Grok without costUsdTicks -> ObservedCost (Partial) not populated
+        {
+            let tmp = TempDir::new("grok-no-cost");
+            let data_dir = tmp.path().join("data");
+            std::fs::create_dir_all(&data_dir).unwrap();
+            let summary = serde_json::json!({
+                "current_model_id": "grok-4.7-build-fast",
+                "reasoning_effort": "high",
+                "chat_format_version": 1
+            });
+            std::fs::write(
+                data_dir.join("summary.json"),
+                serde_json::to_string_pretty(&summary).unwrap(),
+            )
+            .unwrap();
+            let line = r#"{"method":"session/update","timestamp":1760090403,"params":{"sessionId":"grok-nc","update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":180,"outputTokens":60,"cachedReadTokens":30,"cacheCreationTokens":10,"reasoningTokens":15}}}}"#;
+            std::fs::write(data_dir.join("updates.jsonl"), format!("{line}\n")).unwrap();
+            let root = SourceRoot {
+                name: "grok".into(),
+                path: data_dir,
+            };
+            let store = ingest_roots_into_store(tmp.path(), &[root], key);
+            let populated = populated_fields_in_store(&store).unwrap();
+            assert!(!populated.contains(&Field::ObservedCost));
         }
     }
 
@@ -309,19 +468,78 @@ mod tests {
             std::fs::create_dir_all(&data_dir).unwrap();
             let dest = data_dir.join(file_name);
             std::fs::copy(fixtures.join(file_name), &dest).unwrap();
-            if *name == "cursor" {
-                let mut content = std::fs::read_to_string(&dest).unwrap();
-                content.push_str(
-                    "{\"type\":\"tool_call\",\"subtype\":\"completed\",\"session_id\":\"synthetic-cursor\",\"call_id\":\"call-2\",\"timestamp_ms\":1767225601000,\"tool_call\":{\"readToolCall\":{\"args\":{\"path\":\"a.txt\"},\"result\":{\"success\":{}}}}}\n",
-                );
-                std::fs::write(&dest, content).unwrap();
+            let mut content = std::fs::read_to_string(&dest).unwrap();
+            match *name {
+                "cursor" => {
+                    // Add completed tool call for Partial(ExplicitSignalOnly) ToolOutcome AND extra
+                    // usage/cost/effort/message_id fields to prove Absent fields are not ingested.
+                    content.push_str(
+                        "{\"type\":\"tool_call\",\"subtype\":\"completed\",\"session_id\":\"synthetic-cursor\",\"call_id\":\"call-2\",\"timestamp_ms\":1767225601000,\"message_id\":\"cursor-m1\",\"effort\":\"high\",\"cost_usd\":0.02,\"usage\":{\"input_tokens\":100,\"output_tokens\":50,\"cache_read_tokens\":10,\"cache_write_tokens\":5,\"reasoning_tokens\":5},\"tool_call\":{\"readToolCall\":{\"args\":{\"path\":\"a.txt\"},\"result\":{\"success\":{}}}}}\n",
+                    );
+                }
+                "windsurf" => {
+                    // Include usage/cost/effort/message_id in raw Windsurf JSONL to prove Absent fields are ignored.
+                    content.push_str(
+                        "{\"type\":\"tool_call\",\"status\":\"done\",\"session_id\":\"synthetic-windsurf\",\"timestamp\":\"2026-01-01T00:00:05Z\",\"model\":\"claude-3-7-sonnet\",\"message_id\":\"ws-m1\",\"effort\":\"high\",\"cost_usd\":0.03,\"usage\":{\"input_tokens\":90,\"output_tokens\":40,\"cache_read_tokens\":10,\"cache_write_tokens\":5,\"reasoning_tokens\":5},\"tool\":{\"name\":\"read_file\",\"arguments\":{\"path\":\"b.txt\"}}}\n",
+                    );
+                }
+                "goose" => {
+                    // Include cache/reasoning/cost/model/effort/message_id in raw Goose JSONL so Absent is proven.
+                    content.push_str(
+                        "{\"session_id\":\"synthetic-goose\",\"ts\":\"2026-01-01T00:00:05Z\",\"message_id\":\"goose-m1\",\"model\":\"gpt-4o\",\"effort\":\"high\",\"cost_usd\":0.04,\"input_tokens\":50,\"output_tokens\":25,\"cache_read_tokens\":20,\"cache_write_tokens\":10,\"reasoning_tokens\":5,\"tool_calls\":[{\"name\":\"shell\",\"status\":\"success\",\"arguments\":{\"cmd\":\"ls\"}}]}\n",
+                    );
+                }
+                "devin" => {
+                    // Include cached_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens, effort, message_id
+                    // in raw Devin JSONL so Absent is proven against present source fields.
+                    content.push_str(
+                        "{\"session_id\":\"synthetic-devin\",\"timestamp\":\"2026-01-01T00:00:05Z\",\"message_id\":\"devin-m1\",\"model\":\"devin-default\",\"effort\":\"high\",\"input_tokens\":80,\"output_tokens\":30,\"cached_tokens\":40,\"cache_read_tokens\":40,\"cache_write_tokens\":15,\"reasoning_tokens\":10,\"cost_usd\":0.05,\"tool_calls\":[{\"name\":\"bash\",\"status\":\"completed\",\"args\":{\"cmd\":\"pwd\"}}]}\n",
+                    );
+                }
+                _ => {}
             }
+            std::fs::write(&dest, content).unwrap();
             let root = SourceRoot {
                 name: (*name).to_string(),
                 path: data_dir,
             };
             let store = ingest_roots_into_store(tmp.path(), &[root], key);
             assert_grounding(name, &store);
+        }
+    }
+
+    struct FixtureProcessSource;
+
+    impl ProcessSource for FixtureProcessSource {
+        fn scan(&mut self) -> Vec<RawProcess> {
+            vec![RawProcess {
+                pid: 1234,
+                parent: Some(1),
+                start_s: 1_760_000_000,
+                name: "claude.exe".into(),
+                own: true,
+            }]
+        }
+
+        fn metrics(&mut self, pids: &[u32]) -> BTreeMap<u32, RawMetrics> {
+            pids.iter()
+                .map(|&pid| {
+                    (
+                        pid,
+                        RawMetrics {
+                            cpu_time_us: Some(50_000),
+                            rss_bytes: Some(64 * 1024 * 1024),
+                            disk_read_bytes: Some(1024),
+                            disk_write_bytes: Some(512),
+                            limits: Default::default(),
+                        },
+                    )
+                })
+                .collect()
+        }
+
+        fn cwd(&mut self, _pid: u32) -> Option<PathBuf> {
+            Some(PathBuf::from("/tmp/work"))
         }
     }
 
@@ -394,56 +612,230 @@ mod tests {
             assert_grounding("agy", &store);
         }
 
-        // 3. Environment (`environment_v1`)
+        // 3. Environment (`environment_v1::Collector` + `Batch::seal` + `commit_process_samples`)
         {
             let store = AnalyticsStore::open_in_memory("ground-environment").unwrap();
             let now = Utc.with_ymd_and_hms(2026, 10, 10, 10, 0, 0).unwrap();
-            let identity = ProcessIdentityFact {
-                identity_key: "proc-1".into(),
-                root_key: "proc-1".into(),
-                pid: 1234,
-                parent_pid: Some(1),
-                platform: "windows".into(),
-                start_time_unix_s: 1_760_000_000,
-                exe_name: "claude.exe".into(),
-                harness: Some("claude".into()),
-                cwd_fingerprint: None,
-                session_link: None,
-                environment_kind: EnvironmentKind::Host,
-                isolation_hint: "none".into(),
-                first_seen: now,
-                last_seen: now,
-                ended_at: None,
-                visibility_limits: Default::default(),
-                attribution: Some("launched".into()),
-            };
-            let sample = ProcessSampleFact {
-                watch_id: "watch-1".into(),
-                identity_key: "proc-1".into(),
-                seq: 0,
-                ts: now,
-                cpu_time_us: Some(50_000),
-                rss_bytes: Some(64 * 1024 * 1024),
-                rss_unit: Unit::WindowsWorkingSetBytes,
-                disk_read_bytes: Some(1024),
-                disk_write_bytes: Some(512),
-                capture_method: CaptureMethod::WindowsProcessApi,
-                visibility_limits: Default::default(),
-            };
+            let mut collector = Collector::new(
+                FixtureProcessSource,
+                EnvConfig::default(),
+                detect_isolation(),
+            );
+            collector.tick(now);
+            let sealed = collector.drain().seal(key, &[]);
+            assert_eq!(sealed.identities.len(), 1);
+            assert_eq!(sealed.samples.len(), 1);
             store
-                .commit_process_samples(
-                    std::slice::from_ref(&identity),
-                    std::slice::from_ref(&sample),
-                )
+                .commit_process_samples(&sealed.identities, &sealed.samples)
                 .unwrap();
             assert_grounding("environment", &store);
         }
     }
 
     #[test]
-    fn mixed_source_denominator_test_excludes_connector_missing_required_field_and_reports_it() {
+    fn denominator_policy_user_facing_evaluate_scoped_and_unscoped_with_site_report_json() {
         let key = b"0123456789abcdef0123456789abcdef";
-        let tmp = TempDir::new("mixed");
+        let tmp = TempDir::new("policy-claude-goose");
+        let claude_dir = tmp.path().join("claude");
+        let goose_dir = tmp.path().join("goose");
+        std::fs::create_dir_all(&claude_dir).unwrap();
+        std::fs::create_dir_all(&goose_dir).unwrap();
+
+        write_claude_fixture(&claude_dir);
+        let goose_fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures")
+            .join("exports")
+            .join("goose.jsonl");
+        std::fs::copy(&goose_fixture, goose_dir.join("goose.jsonl")).unwrap();
+
+        let roots = vec![
+            SourceRoot {
+                name: "claude".into(),
+                path: claude_dir,
+            },
+            SourceRoot {
+                name: "goose".into(),
+                path: goose_dir,
+            },
+        ];
+        let store = ingest_roots_into_store(tmp.path(), &roots, key);
+
+        // 1. `--harness goose` on I02 -> NotComputable (cache fields Absent), preserving original coverage
+        // and appending the refusal and exclusion info.
+        let goose_scope = Scope {
+            harness: Some("goose".into()),
+            ..Scope::default()
+        };
+        let scoped_results = evaluate(&store, &goose_scope);
+        let i02_goose = scoped_results.iter().find(|r| r.id == "I02").unwrap();
+        assert!(
+            matches!(
+                &i02_goose.status,
+                InsightStatus::Refused { reason }
+                    if reason == "not_computable: missing cache_read_tokens, cache_write_tokens (goose:cache_read_tokens+cache_write_tokens)"
+            ),
+            "expected not_computable refusal for `--harness goose` on I02, got {:?}",
+            i02_goose.status
+        );
+        assert!(
+            i02_goose.measures.is_empty(),
+            "NotComputable result must never emit a number"
+        );
+        assert!(
+            i02_goose
+                .coverage
+                .starts_with("reasoning is included in output and is not part of the disjoint sum"),
+            "original coverage text must be preserved: {}",
+            i02_goose.coverage
+        );
+        assert!(
+            i02_goose
+                .coverage
+                .contains("excluded: goose — missing cache_read_tokens, cache_write_tokens"),
+            "coverage must append exclusion info: {}",
+            i02_goose.coverage
+        );
+
+        // 2. Unscoped claude+goose store -> I02 computed over claude only, with goose listed as excluded.
+        let unscoped_results = evaluate(&store, &Scope::default());
+        let i02_unscoped = unscoped_results.iter().find(|r| r.id == "I02").unwrap();
+        assert_eq!(i02_unscoped.status, InsightStatus::Computed);
+        assert_eq!(
+            i02_unscoped.population.n, 1,
+            "I02 must be computed over claude only; goose rows must be excluded"
+        );
+        assert!(
+            i02_unscoped
+                .coverage
+                .starts_with("reasoning is included in output and is not part of the disjoint sum"),
+            "original coverage text must be kept: {}",
+            i02_unscoped.coverage
+        );
+        assert!(
+            i02_unscoped
+                .coverage
+                .contains("excluded: goose — missing cache_read_tokens, cache_write_tokens"),
+            "unscoped coverage must list goose as excluded: {}",
+            i02_unscoped.coverage
+        );
+        let input_tokens = i02_unscoped
+            .measures
+            .iter()
+            .find(|m| m.id == "I02.claude-sonnet-4-5.input_uncached")
+            .unwrap();
+        assert_eq!(input_tokens.value, Some(MeasureValue::Int(120)));
+
+        // 3. Site/report JSON carries the exclusion (`attach_dashboard_surface` + `public_projection`).
+        let mut report = serde_json::json!({ "status": "ok", "payload": {} });
+        attach_dashboard_surface(&mut report, &store, "", "").unwrap();
+        let public = public_projection(&report);
+        let insights_json = public
+            .get("payload")
+            .and_then(|p| p.get("insights"))
+            .and_then(|v| v.as_array())
+            .expect("public report payload must contain insights array");
+        let i02_json = insights_json
+            .iter()
+            .find(|item| item.get("id").and_then(|v| v.as_str()) == Some("I02"))
+            .expect("I02 must be in public report insights");
+        let cov_str = i02_json
+            .get("coverage")
+            .and_then(|v| v.as_str())
+            .expect("public report I02 must carry coverage");
+        assert!(
+            cov_str.contains("excluded: goose — missing cache_read_tokens, cache_write_tokens"),
+            "public report I02 coverage must carry exclusion: {cov_str}"
+        );
+        let l3 = i02_unscoped.disclosure_l3();
+        let l3_exclusions = l3
+            .fields
+            .iter()
+            .find(|(k, _)| *k == "exclusions")
+            .map(|(_, v)| v.as_str())
+            .expect("I02 disclosure_l3.exclusions must be present");
+        assert!(
+            l3_exclusions
+                .contains("excluded: goose — missing cache_read_tokens, cache_write_tokens"),
+            "I02 disclosure_l3.exclusions must carry exclusion: {l3_exclusions}"
+        );
+    }
+
+    #[test]
+    fn regression_guard_byte_identical_when_every_present_connector_is_computable() {
+        let key = b"0123456789abcdef0123456789abcdef";
+        let tmp = TempDir::new("byte-identical");
+        let claude_dir = tmp.path().join("claude");
+        let codex_dir = tmp.path().join("codex");
+        std::fs::create_dir_all(&claude_dir).unwrap();
+        std::fs::create_dir_all(&codex_dir).unwrap();
+
+        write_claude_fixture(&claude_dir);
+        write_codex_fixture(&codex_dir);
+
+        let roots = vec![
+            SourceRoot {
+                name: "claude".into(),
+                path: claude_dir,
+            },
+            SourceRoot {
+                name: "codex".into(),
+                path: codex_dir,
+            },
+        ];
+        let store = ingest_roots_into_store(tmp.path(), &roots, key);
+        let scope = Scope::default();
+
+        // For every insight where both claude and codex are Computable (I01, I02, I03, I05, I08, I09, I11, I16, I17, I18, I21, I24, I25),
+        // the output of `evaluate_catalog` must be byte-identical to `evaluate_catalog_for_connectors(&store, &scope, &["claude", "codex"])`
+        // with zero exclusion annotations appended to coverage.
+        let catalog_results = evaluate_catalog(&store, &scope);
+        let explicit_results =
+            evaluate_catalog_for_connectors(&store, &scope, &["claude", "codex"]);
+        for insight_id in [
+            "I01", "I02", "I03", "I05", "I08", "I09", "I11", "I16", "I17", "I18", "I21", "I24",
+            "I25",
+        ] {
+            let insight = CATALOG
+                .iter()
+                .copied()
+                .find(|i| i.id() == insight_id)
+                .unwrap();
+            let actual = catalog_results.iter().find(|r| r.id == insight_id).unwrap();
+            let explicit = explicit_results
+                .iter()
+                .find(|r| r.id == insight_id)
+                .unwrap();
+            assert_eq!(
+                serde_json::to_string(actual).unwrap(),
+                serde_json::to_string(explicit).unwrap(),
+                "byte-identical regression guard failed for {insight_id}"
+            );
+            assert_eq!(
+                actual.coverage,
+                insight.coverage(),
+                "coverage for {insight_id} must be byte-identical to original coverage when all present connectors are computable"
+            );
+        }
+
+        // Also verify REFERENCE insights I02, I08, I09, I18 via `evaluate` are byte-identical to `evaluate_for_connectors`.
+        let ref_results = evaluate(&store, &scope);
+        let ref_explicit = evaluate_for_connectors(&store, &scope, &["claude", "codex"]);
+        for insight_id in ["I02", "I08", "I09", "I18"] {
+            let actual = ref_results.iter().find(|r| r.id == insight_id).unwrap();
+            let explicit = ref_explicit.iter().find(|r| r.id == insight_id).unwrap();
+            assert_eq!(
+                serde_json::to_string(actual).unwrap(),
+                serde_json::to_string(explicit).unwrap(),
+                "REFERENCE byte-identical regression guard failed for {insight_id}"
+            );
+        }
+    }
+
+    #[test]
+    fn allow_list_excludes_unlisted_connector_rows_from_computation_values() {
+        let key = b"0123456789abcdef0123456789abcdef";
+        let tmp = TempDir::new("allow-list-mixed");
         let claude_dir = tmp.path().join("claude");
         let codex_dir = tmp.path().join("codex");
         let devin_dir = tmp.path().join("devin");
@@ -476,27 +868,20 @@ mod tests {
         ];
         let store = ingest_roots_into_store(tmp.path(), &roots, key);
 
-        // 1. Evaluate I01 (model.invocations) over {claude, codex}.
-        // Codex lacks MessageId -> excluded from denominator; only claude's 1 call is in the denominator,
-        // and codex's usage-only row is NOT pooled into I01.usage_only!
+        // Store has claude + codex + devin, but we evaluate over `{claude, codex}` only.
+        // Because `allows_harness` is an allow-list built from the included connectors `{claude, codex}`,
+        // devin rows must NEVER enter the computation of I01 (even though devin is Computable for I01!)
+        // or I02.
         let results =
             evaluate_catalog_for_connectors(&store, &Scope::default(), &["claude", "codex"]);
+
+        // Check I01 values: claude (1 distinct call) + codex (1 usage_only row) = population 2,
+        // whereas devin's usage_only row is excluded by the `{claude, codex}` allow-list!
         let i01 = results.iter().find(|r| r.id == "I01").unwrap();
         assert_eq!(i01.status, InsightStatus::Computed);
         assert_eq!(
-            i01.population.n, 1,
-            "codex row must not be pooled into I01 denominator"
-        );
-        assert!(
-            i01.coverage.contains("denominator_included: claude"),
-            "coverage must report claude in denominator: {}",
-            i01.coverage
-        );
-        assert!(
-            i01.coverage
-                .contains("denominator_excluded: codex (missing message_id)"),
-            "coverage must report codex excluded with missing message_id: {}",
-            i01.coverage
+            i01.population.n, 2,
+            "devin row must not enter I01 when evaluated over {{claude, codex}}"
         );
         let distinct_calls = i01
             .measures
@@ -509,49 +894,131 @@ mod tests {
             .iter()
             .find(|m| m.id == "I01.usage_only")
             .unwrap();
-        assert_eq!(usage_only.value, Some(MeasureValue::Int(0)));
-
-        // 2. Evaluate I04 (model.cost) over {claude, codex}.
-        // Neither supplies ObservedCost -> NotComputable refusal!
-        let i04 = results.iter().find(|r| r.id == "I04").unwrap();
-        assert!(
-            matches!(
-                &i04.status,
-                InsightStatus::Refused { reason }
-                    if reason.starts_with("not_computable: missing observed_cost")
-                        && reason.contains("claude:observed_cost")
-                        && reason.contains("codex:observed_cost")
-            ),
-            "expected not_computable refusal for I04 over {{claude, codex}}, got {:?}",
-            i04.status
-        );
-
-        // 3. Evaluate I02 (model.tokens.direct) over {claude, codex, devin}.
-        // Devin lacks CacheReadTokens and CacheWriteTokens -> excluded from denominator so its -1
-        // sentinels are never pooled with claude and codex!
-        let results_3 = evaluate_catalog_for_connectors(
-            &store,
-            &Scope::default(),
-            &["claude", "codex", "devin"],
-        );
-        let i02 = results_3.iter().find(|r| r.id == "I02").unwrap();
-        assert_eq!(i02.status, InsightStatus::Computed);
         assert_eq!(
-            i02.population.n, 2,
-            "only claude and codex rows belong in I02 denominator; devin must be excluded"
+            usage_only.value,
+            Some(MeasureValue::Int(1)),
+            "only codex's 1 usage_only row may be counted; devin's row must be excluded"
         );
+
+        // Check I02 values: claude input_uncached (120) + codex input_uncached (130 = 200 - 50 - 20).
+        // Devin's `devin-default` model rows must not be pooled into I02!
+        let i02 = results.iter().find(|r| r.id == "I02").unwrap();
+        assert_eq!(i02.status, InsightStatus::Computed);
+        assert_eq!(i02.population.n, 2);
+        let claude_input = i02
+            .measures
+            .iter()
+            .find(|m| m.id == "I02.claude-sonnet-4-5.input_uncached")
+            .unwrap();
+        assert_eq!(claude_input.value, Some(MeasureValue::Int(120)));
+        let codex_input = i02
+            .measures
+            .iter()
+            .find(|m| m.id == "I02.gpt-5-codex.input_uncached")
+            .unwrap();
+        assert_eq!(codex_input.value, Some(MeasureValue::Int(130)));
         assert!(
-            i02.coverage.contains("denominator_included: claude, codex"),
-            "coverage must list claude, codex as included: {}",
-            i02.coverage
+            !i02.measures.iter().any(|m| m.id.contains("devin")),
+            "devin measures must not appear in I02 when excluded by allow-list"
         );
+
+        // Unscoped `evaluate_catalog(&store, &Scope::default())` on `{claude, codex, devin}`:
+        // - For I01: all three are Computable (MessageId is optional), so population.n == 3 and usage_only == 2.
+        // - For I02: devin is excluded (missing cache_read_tokens, cache_write_tokens), so population.n == 2 and input_tokens == 250.
+        let unscoped = evaluate_catalog(&store, &Scope::default());
+        let i01_all = unscoped.iter().find(|r| r.id == "I01").unwrap();
+        assert_eq!(i01_all.population.n, 3);
+        let usage_only_all = i01_all
+            .measures
+            .iter()
+            .find(|m| m.id == "I01.usage_only")
+            .unwrap();
+        assert_eq!(usage_only_all.value, Some(MeasureValue::Int(2)));
+
+        let i02_all = unscoped.iter().find(|r| r.id == "I02").unwrap();
+        assert_eq!(i02_all.population.n, 2);
         assert!(
-            i02.coverage.contains(
-                "denominator_excluded: devin (missing cache_read_tokens+cache_write_tokens)"
-            ),
-            "coverage must report devin exclusion reason: {}",
-            i02.coverage
+            i02_all
+                .coverage
+                .contains("excluded: devin — missing cache_read_tokens, cache_write_tokens"),
+            "I02 coverage must report devin excluded: {}",
+            i02_all.coverage
         );
+    }
+
+    #[test]
+    fn ingested_claude_vs_claude_plus_goose_excludes_goose_across_insights() {
+        let key = b"0123456789abcdef0123456789abcdef";
+        let tmp_only = TempDir::new("table-family-claude-only");
+        let claude_only_dir = tmp_only.path().join("claude");
+        std::fs::create_dir_all(&claude_only_dir).unwrap();
+        write_claude_fixture(&claude_only_dir);
+        let store_only = ingest_roots_into_store(
+            tmp_only.path(),
+            &[SourceRoot {
+                name: "claude".into(),
+                path: claude_only_dir,
+            }],
+            key,
+        );
+
+        let tmp_mixed = TempDir::new("table-family-claude-goose");
+        let claude_dir = tmp_mixed.path().join("claude");
+        let goose_dir = tmp_mixed.path().join("goose");
+        std::fs::create_dir_all(&claude_dir).unwrap();
+        std::fs::create_dir_all(&goose_dir).unwrap();
+        write_claude_fixture(&claude_dir);
+        let goose_fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures")
+            .join("exports")
+            .join("goose.jsonl");
+        std::fs::copy(&goose_fixture, goose_dir.join("goose.jsonl")).unwrap();
+        let store_mixed = ingest_roots_into_store(
+            tmp_mixed.path(),
+            &[
+                SourceRoot {
+                    name: "claude".into(),
+                    path: claude_dir,
+                },
+                SourceRoot {
+                    name: "goose".into(),
+                    path: goose_dir,
+                },
+            ],
+            key,
+        );
+
+        let only_results = evaluate_catalog(&store_only, &Scope::default());
+        let mixed_results = evaluate_catalog(&store_mixed, &Scope::default());
+
+        // For every insight where claude is Computable and goose is NotComputable
+        // (`I02`, `I03`, `I05`, `I08`, `I09`, `I11`, `I16`, `I17`, `I21`, `I24`, `I25`),
+        // unscoped `evaluate_catalog` on `claude + goose` must exclude `goose` and produce
+        // the exact same status, population, and measure values as `claude` alone.
+        for id in [
+            "I02", "I03", "I05", "I08", "I09", "I11", "I16", "I17", "I21", "I24", "I25",
+        ] {
+            let only = only_results.iter().find(|r| r.id == id).unwrap();
+            let mixed = mixed_results.iter().find(|r| r.id == id).unwrap();
+            assert_eq!(
+                only.status, mixed.status,
+                "goose rows must not affect {id} status"
+            );
+            assert_eq!(
+                only.population.n, mixed.population.n,
+                "goose rows must be excluded from {id} population"
+            );
+            assert_eq!(
+                only.measures, mixed.measures,
+                "goose rows must not affect {id} measures"
+            );
+            assert!(
+                mixed.coverage.contains("excluded: goose — missing"),
+                "{id} coverage must disclose goose exclusion: {}",
+                mixed.coverage
+            );
+        }
     }
 
     #[test]

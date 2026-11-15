@@ -58,11 +58,14 @@ impl Insight for Invocations {
     }
     fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
         use crate::insight_v1::Field;
-        &[Field::MessageId, Field::NativeSession]
+        &[Field::NativeSession]
     }
     fn optional_fields(&self) -> &'static [crate::insight_v1::Field] {
         use crate::insight_v1::Field;
-        &[Field::TurnTimestamp]
+        &[Field::MessageId, Field::TurnTimestamp]
+    }
+    fn coverage(&self) -> &'static str {
+        COVERAGE
     }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         let rows = match load(input) {

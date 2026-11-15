@@ -36,6 +36,9 @@ impl Insight for ResourceEfficiency {
         use crate::insight_v1::Field;
         &[Field::ObservedCost, Field::NativeSession]
     }
+    fn coverage(&self) -> &'static str {
+        COVERAGE
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         let acceptance = match load_acceptance(input) {
             Ok(Some(count)) => count,
@@ -159,7 +162,7 @@ impl Insight for ResourceEfficiency {
 
 fn load_costs(input: &InsightInput<'_>) -> anyhow::Result<BTreeMap<String, f64>> {
     let mut stmt = input.connection().prepare(
-        "SELECT native_session, currency_total
+        "SELECT harness, native_session, currency_total
          FROM usage_facts
          WHERE currency_total IS NOT NULL
            AND (? IS NULL OR harness = ?)
@@ -170,12 +173,18 @@ fn load_costs(input: &InsightInput<'_>) -> anyhow::Result<BTreeMap<String, f64>>
     let harness = scope.harness.as_deref();
     let session = scope.session.as_deref();
     let rows = stmt.query_map(params![harness, harness, session, session], |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, f64>(1)?))
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, f64>(2)?,
+        ))
     })?;
     let mut totals = BTreeMap::new();
     for row in rows {
-        let (session, amount) = row?;
-        *totals.entry(session).or_insert(0.0) += amount;
+        let (row_harness, session, amount) = row?;
+        if input.allows_harness(&row_harness) || input.allows_harness("openrig") {
+            *totals.entry(session).or_insert(0.0) += amount;
+        }
     }
     Ok(totals)
 }

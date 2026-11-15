@@ -42,7 +42,7 @@ impl Scope {
 pub struct InsightInput<'a> {
     store: &'a AnalyticsStore,
     scope: &'a Scope,
-    excluded_harnesses: Vec<String>,
+    allowed_harnesses: Option<Vec<String>>,
 }
 
 impl<'a> InsightInput<'a> {
@@ -50,31 +50,37 @@ impl<'a> InsightInput<'a> {
         Self {
             store,
             scope,
-            excluded_harnesses: Vec::new(),
+            allowed_harnesses: None,
         }
     }
 
-    pub(crate) fn with_excluded_harnesses(
+    pub(crate) fn with_allowed_harnesses(
         store: &'a AnalyticsStore,
         scope: &'a Scope,
-        excluded_harnesses: Vec<String>,
+        allowed_harnesses: Vec<String>,
     ) -> Self {
         Self {
             store,
             scope,
-            excluded_harnesses,
+            allowed_harnesses: Some(allowed_harnesses),
         }
     }
 
+    pub(crate) fn has_allowed_harnesses(&self) -> bool {
+        self.allowed_harnesses.is_some()
+    }
+
     pub(crate) fn allows_harness(&self, harness: &str) -> bool {
-        if self.excluded_harnesses.is_empty() {
+        let Some(allowed) = &self.allowed_harnesses else {
             return true;
-        }
-        let canonical = super::fidelity::canonical_connector_id(harness).unwrap_or(harness);
-        !self
-            .excluded_harnesses
-            .iter()
-            .any(|excluded| excluded.eq_ignore_ascii_case(canonical))
+        };
+        let trimmed = harness.trim();
+        let canonical = super::fidelity::canonical_connector_id(trimmed).unwrap_or(trimmed);
+        allowed.iter().any(|inc| {
+            let inc_canonical =
+                super::fidelity::canonical_connector_id(inc).unwrap_or(inc.as_str());
+            inc_canonical.eq_ignore_ascii_case(canonical) || inc.eq_ignore_ascii_case(trimmed)
+        })
     }
 
     pub(crate) fn store(&self) -> &'a AnalyticsStore {
@@ -173,6 +179,9 @@ pub trait Insight: Send + Sync {
     fn required_fields(&self) -> &'static [super::fidelity::Field];
     fn optional_fields(&self) -> &'static [super::fidelity::Field] {
         &[]
+    }
+    fn coverage(&self) -> &'static str {
+        ""
     }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult;
 }
@@ -340,6 +349,11 @@ impl InsightResult {
                 None => "unknown".to_string(),
             })
             .unwrap_or_else(|| "not separately counted".to_string());
+        let exclusions = match (&self.status, coverage_exclusions(&self.coverage)) {
+            (InsightStatus::Computed, Some(exc)) => exc,
+            (_, Some(exc)) => format!("{}; {exc}", missingness(&self.status)),
+            (_, None) => missingness(&self.status),
+        };
         Disclosure {
             level: "L3",
             fields: vec![
@@ -347,7 +361,7 @@ impl InsightResult {
                 ("population_what", self.population.what.clone()),
                 ("population_included", self.population.n.to_string()),
                 ("population_excluded", excluded),
-                ("exclusions", missingness(&self.status)),
+                ("exclusions", exclusions),
                 (
                     "cutoff",
                     "caller scope window is half-open [from, to); this answer does not invent a cutoff"
@@ -370,6 +384,20 @@ fn missingness(status: &InsightStatus) -> String {
     match status {
         InsightStatus::Computed => "none".to_string(),
         InsightStatus::Partial { reason } | InsightStatus::Refused { reason } => reason.clone(),
+    }
+}
+
+fn coverage_exclusions(coverage: &str) -> Option<String> {
+    let parts: Vec<&str> = coverage
+        .split(" | ")
+        .flat_map(|segment| segment.split("; "))
+        .map(str::trim)
+        .filter(|part| part.starts_with("excluded: "))
+        .collect();
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join("; "))
     }
 }
 
@@ -406,6 +434,37 @@ pub(crate) fn refused(insight: &dyn Insight, reason: &str, what: &str) -> Insigh
         },
         measures: Vec::new(),
         coverage: reason.to_string(),
+        evidence: Vec::new(),
+    }
+}
+
+pub(crate) fn not_computable(
+    insight: &dyn Insight,
+    reason: &str,
+    what: &str,
+    exclusion_disclosure: Option<&str>,
+) -> InsightResult {
+    let base = insight.coverage();
+    let coverage = match (base.is_empty(), exclusion_disclosure) {
+        (true, Some(exc)) => format!("{reason} | {exc}"),
+        (true, None) => reason.to_string(),
+        (false, Some(exc)) => format!("{base} | {reason} | {exc}"),
+        (false, None) => format!("{base} | {reason}"),
+    };
+    InsightResult {
+        id: insight.id(),
+        name: insight.name(),
+        version: insight.version(),
+        domain: insight.domain(),
+        status: InsightStatus::Refused {
+            reason: reason.to_string(),
+        },
+        population: InsightPopulation {
+            what: what.to_string(),
+            n: 0,
+        },
+        measures: Vec::new(),
+        coverage,
         evidence: Vec::new(),
     }
 }

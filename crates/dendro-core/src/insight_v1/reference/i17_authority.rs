@@ -28,11 +28,14 @@ impl Insight for Authority {
     }
     fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
         use crate::insight_v1::Field;
-        &[Field::SecurityPolicy, Field::SecurityCommandCheck]
+        &[Field::SecurityPolicy]
     }
     fn optional_fields(&self) -> &'static [crate::insight_v1::Field] {
         use crate::insight_v1::Field;
         &[Field::NativeSession]
+    }
+    fn coverage(&self) -> &'static str {
+        COVERAGE
     }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         let facts = match load_facts(input) {
@@ -180,7 +183,7 @@ fn insufficient(insight: &Authority, facts: &[(String, String, String)]) -> Insi
 
 fn load_facts(input: &InsightInput<'_>) -> anyhow::Result<Vec<(String, String, String)>> {
     let mut stmt = input.connection().prepare(
-        "SELECT source_key, kind, value
+        "SELECT source_key, harness, kind, value
          FROM security_facts
          WHERE (? IS NULL OR harness = ?)
            AND (? IS NULL OR native_session = ?)
@@ -190,9 +193,21 @@ fn load_facts(input: &InsightInput<'_>) -> anyhow::Result<Vec<(String, String, S
     let harness = scope.harness.as_deref();
     let session = scope.session.as_deref();
     let rows = stmt.query_map(params![harness, harness, session, session], |row| {
-        Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+        ))
     })?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    let mut out = Vec::new();
+    for row in rows {
+        let (key, row_harness, kind, value) = row?;
+        if input.allows_harness(&row_harness) {
+            out.push((key, kind, value));
+        }
+    }
+    Ok(out)
 }
 
 fn load_rules(input: &InsightInput<'_>) -> anyhow::Result<Vec<(String, String)>> {

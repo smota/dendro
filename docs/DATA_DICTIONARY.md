@@ -448,30 +448,6 @@ includes all scoped usage rows. With no qualified call the result refuses with
 counts are unchanged. The additive `unqualified` measure exposes missingness rather
 than guessing invocation identities.
 
-### 4.1. Field-Level Connector Fidelity & Insight Denominator Matrix (`dendro#134`)
-
-Every connector in `CONNECTOR_DECLARATIONS` (`crates/dendro-core/src/insight_v1/fidelity.rs`)
-declares what it supplies across the closed 28-field `Field` enum (`input_tokens`,
-`output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `reasoning_tokens`,
-`observed_cost`, `message_id`, `native_session`, `turn_timestamp`, `model`, `effort`,
-`context_window_usage`, `tool_call_name`, `tool_outcome`, `tool_fingerprint`,
-`session_edges`, `skill_declarations`, `skill_invocations`, `activity_intervals`,
-`queue_transitions`, `process_identity`, `process_resource_samples`,
-`privileged_effect_trace`, `security_policy`, `security_command_check`,
-`source_coverage`, `trajectory_vector`, `harness_envelope_shape`). Each declaration
-maps a `(connector, Field)` pair to a `FieldFidelity`:
-- `Observed`: parsed directly from native session or verified export records.
-- `Derived`: deterministically computed from observed fields during ingestion (e.g., Codex cumulative-delta token accounting or `input_uncached = max(0, input_tokens - cache_read)`).
-- `Partial(PartialFidelityReason)`: supplied only under an explicit typed condition (e.g., Codex `tool_outcome` is `Partial(ExplicitSignalOnly)` when an explicit exit code or error object is present).
-- `Absent`: not supplied by the connector's parser (the honest default).
-
-Every registered insight (`I01`–`I25`) declares its `required_fields` and `optional_fields`
-directly on its registry entry in `crates/dendro-core/src/insight_v1/reference/mod.rs`.
-Evaluating `(insight, connector_set)` via `evaluate_denominator` produces a closed two-state
-`DenominatorEvaluation`:
-- `Computable { scope: DenominatorScope }`: at least one connector supplies all required fields. Connectors lacking any required field are placed in `scope.excluded` with their missing fields and are never silently pooled into mixed-source denominators.
-- `NotComputable { missing, by_connector, .. }`: no connector in the evaluated set supplies all required fields. The insight refuses with `InsightStatus::Refused { reason: "not_computable: missing ..." }` (mapped to display badge `insufficient_evidence`), never a guessed or zero value. See `docs/providers/provider-matrix.md` for the full generated field-fidelity and denominator matrix.
-
 ---
 
 ## 5. Extensions & Subsystems
@@ -510,3 +486,29 @@ Operator-visible intelligence advisor and Model Context Protocol (MCP) server:
 - **Budget & Performance:** Evaluates responses within a warm $p95 \le 15\text{ ms}$ budget. Returns `advisory_budget_exceeded` if the threshold is exceeded.
 - **Uncertainty Taxonomy:** Structured uncertainty expressed through the `AdviseUncertainty` enum (`sample_below_minimum`, `missing_denominator`, `noncomparable_mix`, `counterfactual_only`, `stale`).
 - **Governance Seam:** Advisory is strictly informational for the operator. Advice is never injected into agent prompts and never executes autonomous lifecycle changes.
+
+---
+
+## 6. Field-Level Connector Fidelity & Insight Denominator Matrix (`dendro#134`)
+
+Every connector in `CONNECTOR_DECLARATIONS` (`crates/dendro-core/src/insight_v1/fidelity.rs`)
+declares what it supplies across the closed 28-field `Field` enum (`input_tokens`,
+`output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `reasoning_tokens`,
+`observed_cost`, `message_id`, `native_session`, `turn_timestamp`, `model`, `effort`,
+`context_window_usage`, `tool_call_name`, `tool_outcome`, `tool_fingerprint`,
+`session_edges`, `skill_declarations`, `skill_invocations`, `activity_intervals`,
+`queue_transitions`, `process_identity`, `process_resource_samples`,
+`privileged_effect_trace`, `security_policy`, `security_command_check`,
+`source_coverage`, `trajectory_vector`, `harness_envelope_shape`). Each declaration
+maps a `(connector, Field)` pair to a `FieldFidelity`:
+- `Observed`: parsed directly from native session or verified export records.
+- `Derived`: deterministically computed from observed fields during ingestion (e.g., Codex cumulative-delta token accounting and `input_tokens = input_raw - cache_read - cache_write`, rejecting negative values with a parse error at `crates/dendro-connectors/src/stream.rs:1469-1476`, or heuristic `$skill` / `skills/<name>/SKILL.md` path matching in Codex and Pi).
+- `Partial(PartialFidelityReason)`: supplied only under an explicit typed condition (e.g., Codex `tool_outcome` is `Partial(ExplicitSignalOnly)` when an explicit exit code or error object is present; Claude `effort` is `Partial(ParsedWhenPresentNotObservedInCaptures)`).
+- `Absent`: not supplied by the connector's parser (the honest default).
+
+Every registered insight (`I01`–`I25`) declares its `required_fields` and `optional_fields`
+directly on its registry entry in `crates/dendro-core/src/insight_v1/reference/mod.rs`.
+Evaluating `(insight, connector_set)` via `evaluate` / `evaluate_catalog` or `evaluate_denominator`
+produces a closed two-state `DenominatorEvaluation`:
+- `Computable { scope: DenominatorScope }`: at least one connector supplies all required fields. Connectors lacking any required field are placed in `scope.excluded` with their missing fields, filtered out via the included-connector allow-list (`allows_harness`), and disclosed in `coverage` (`excluded: <connector> — missing <fields>`).
+- `NotComputable { missing, by_connector, .. }`: no connector in the evaluated set supplies all required fields. The insight refuses with `InsightStatus::Refused { reason: "not_computable: missing ..." }` (mapped to display badge `insufficient_evidence`), preserving its original coverage text and appending the missing-field refusal and exclusion list, never emitting a guessed or zero value. See `docs/providers/provider-matrix.md` for the full generated field-fidelity and denominator matrix.
