@@ -2960,12 +2960,42 @@ mod tests {
 
     #[test]
     fn attach_dashboard_surface_renders_canonical_partial_empty_and_missing_table() {
+        let pi_store = crate::AnalyticsStore::open_in_memory("dash-surface-pi").unwrap();
+        pi_store
+            .connection()
+            .execute(
+                "INSERT INTO session_edges (source_key, source_id, harness, parent_session, child_session, relation, status, observed_at, evidence_kind, generation) VALUES (?, ?, ?, ?, ?, ?, ?, CAST(? AS TIMESTAMP), ?, ?)",
+                duckdb::params!["ghp_canary/private/path", "src", "pi", "", "child-1", "spawn", "observed", "2026-01-01 12:00:00", "explicit", 1i64],
+            )
+            .unwrap();
+        let mut pi_report = json!({"metric": "decisions", "payload": {}});
+        attach_dashboard_surface(
+            &mut pi_report,
+            &pi_store,
+            "2026-01-01T00:00:00Z",
+            "2026-01-02T00:00:00Z",
+        )
+        .unwrap();
+        let pi_projected = public_projection(&pi_report);
+        assert_eq!(
+            pi_projected["payload"]["lineage"]["status"]["state"],
+            "refused"
+        );
+        assert_eq!(
+            pi_projected["payload"]["lineage"]["status"]["reason"],
+            "not_computable: missing session_edges (pi:session_edges)"
+        );
+        assert!(pi_projected["payload"]["lineage"]["measures"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+
         let store = crate::AnalyticsStore::open_in_memory("dash-surface").unwrap();
         store
             .connection()
             .execute(
                 "INSERT INTO session_edges (source_key, source_id, harness, parent_session, child_session, relation, status, observed_at, evidence_kind, generation) VALUES (?, ?, ?, ?, ?, ?, ?, CAST(? AS TIMESTAMP), ?, ?)",
-                duckdb::params!["ghp_canary/private/path", "src", "pi", "", "child-1", "spawn", "observed", "2026-01-01 12:00:00", "explicit", 1i64],
+                duckdb::params!["ghp_canary/private/path", "src", "claude", "", "child-1", "spawn", "observed", "2026-01-01 12:00:00", "explicit", 1i64],
             )
             .unwrap();
         let mut report = json!({"metric": "decisions", "payload": {}});
@@ -2980,6 +3010,10 @@ mod tests {
         assert_eq!(
             projected["payload"]["lineage"]["status"]["state"],
             "partial"
+        );
+        assert_eq!(
+            projected["payload"]["lineage"]["status"]["reason"],
+            "unresolved parent session"
         );
         assert!(projected["payload"]["lineage"]["measures"]
             .as_array()

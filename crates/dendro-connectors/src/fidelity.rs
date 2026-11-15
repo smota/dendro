@@ -1123,7 +1123,7 @@ mod tests {
             ),
             (
                 "I04",
-                "claude and codex are present in usage_facts but lack observed_cost; excluded from I04 denominator (population 3 -> 1, pi only) and disclosed in coverage",
+                "claude and codex are present in usage_facts but lack observed_cost; excluded from I04 denominator (population 3 -> 1, pi only) and disclosed in coverage; on a codex-only scope or store (e.g. engine_v200 schema4 shadow), I04 refuses with not_computable: missing observed_cost (codex:observed_cost)",
             ),
             (
                 "I06",
@@ -1237,6 +1237,22 @@ mod tests {
                 assert!(actual
                     .coverage
                     .contains("excluded: claude — missing observed_cost; excluded: codex — missing observed_cost"));
+                let codex_only = evaluate(
+                    &store,
+                    &Scope {
+                        harness: Some("codex".into()),
+                        ..Scope::default()
+                    },
+                );
+                let codex_i04 = codex_only.iter().find(|r| r.id == "I04").unwrap();
+                assert_eq!(
+                    codex_i04.status,
+                    InsightStatus::Refused {
+                        reason: "not_computable: missing observed_cost (codex:observed_cost)"
+                            .to_string(),
+                    }
+                );
+                assert!(codex_i04.measures.is_empty());
             } else {
                 assert_eq!(
                     serde_json::to_string_pretty(&actual_val).unwrap(),
@@ -1294,7 +1310,7 @@ mod tests {
             ),
             (
                 "I04",
-                "claude and codex are present in usage_facts in window but lack observed_cost; excluded from I04 denominator and disclosed in coverage",
+                "claude and codex are present in usage_facts in window but lack observed_cost; excluded from I04 denominator and disclosed in coverage; on a codex-only scope or store (e.g. engine_v200 schema4 shadow), I04 refuses with not_computable: missing observed_cost (codex:observed_cost)",
             ),
             (
                 "I06",
@@ -1370,6 +1386,22 @@ mod tests {
                 assert!(actual
                     .coverage
                     .contains("excluded: claude — missing observed_cost; excluded: codex — missing observed_cost"));
+                let codex_only = evaluate(
+                    &store,
+                    &Scope {
+                        harness: Some("codex".into()),
+                        ..Scope::default()
+                    },
+                );
+                let codex_i04 = codex_only.iter().find(|r| r.id == "I04").unwrap();
+                assert_eq!(
+                    codex_i04.status,
+                    InsightStatus::Refused {
+                        reason: "not_computable: missing observed_cost (codex:observed_cost)"
+                            .to_string(),
+                    }
+                );
+                assert!(codex_i04.measures.is_empty());
             } else {
                 assert_eq!(
                     serde_json::to_string_pretty(&actual_val).unwrap(),
@@ -1409,7 +1441,7 @@ mod tests {
         let vec_one = format!(
             "[{}]::FLOAT[32]",
             std::iter::once("1.0")
-                .chain(std::iter::repeat("0.0").take(31))
+                .chain(std::iter::repeat_n("0.0", 31))
                 .collect::<Vec<_>>()
                 .join(", ")
         );
@@ -1417,7 +1449,7 @@ mod tests {
             "[{}]::FLOAT[32]",
             std::iter::once("0.0")
                 .chain(std::iter::once("1.0"))
-                .chain(std::iter::repeat("0.0").take(30))
+                .chain(std::iter::repeat_n("0.0", 30))
                 .collect::<Vec<_>>()
                 .join(", ")
         );
