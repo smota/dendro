@@ -319,7 +319,7 @@ fn ingest_jsonl_limited_with_link(
     link_config: &dendro_core::SessionLinkConfig,
 ) -> Result<FileStats> {
     let mut header = Some(after_header);
-    let read = ingest_jsonl_file(
+    ingest_jsonl_file(
         store,
         source_id,
         harness,
@@ -329,32 +329,7 @@ fn ingest_jsonl_limited_with_link(
         &mut header,
         limits,
         link_config,
-    )?;
-    let total = FileStats {
-        coverage: read.coverage,
-        records_read: read.records_read,
-        usage_records: read.usage_records,
-        tool_scan: read.tool_scan,
-    };
-    // Only partial coverage is a warning; a complete read is not a defect. An
-    // idle re-run that reads no new bytes adds no row for the same defect.
-    if total.coverage.partial && read.advanced {
-        store.record_warning(&WarningNote {
-            path: path.display().to_string(),
-            line: None,
-            reason: total.coverage.summary(),
-        })?;
-    }
-    Ok(total)
-}
-
-struct FileOutcome {
-    coverage: crate::sdk::Coverage,
-    records_read: u64,
-    usage_records: u64,
-    tool_scan: ToolScanCounts,
-    /// The watermark moved: this call consumed bytes beyond the stored one.
-    advanced: bool,
+    )
 }
 
 enum CappedLine {
@@ -444,7 +419,7 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
     after_header: &mut Option<F>,
     limits: &crate::sdk::ReadLimits,
     link_config: &dendro_core::SessionLinkConfig,
-) -> Result<FileOutcome> {
+) -> Result<FileStats> {
     let mismatch = |reason: &str| {
         anyhow::anyhow!(
             "mismatch: source {} {}",
@@ -551,20 +526,6 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
     let mut reader_complete = true;
     let mut header_conflict = store.source_has_header_conflict(source_id)?;
     let mut session_facts_by_key = std::collections::BTreeMap::new();
-    let mut source_session = file_session.as_ref().map(|session| {
-        let (sealed, fact) = link_and_seal_session(
-            link_config,
-            tool_key,
-            source_id,
-            generation,
-            harness,
-            &session.raw,
-            session.from_header && !header_conflict,
-            header_conflict,
-        );
-        record_session_fact(&mut session_facts_by_key, fact);
-        sealed
-    });
     let mut claude_sessions = HashSet::new();
 
     // Claude, Pi, Grok, and Codex tool calls are read through the shared
@@ -598,7 +559,7 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
     // One streaming pass: each full batch is committed and the same reader,
     // hasher and tool scan carry on from the committed position, so every
     // line is parsed once however many batches the file needs.
-    let advanced = loop {
+    loop {
         let mut batch_capped = false;
         let mut decoded_in_batch = 0usize;
         let mut attempts_in_batch = 0usize;
@@ -1012,58 +973,70 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
                 }
             }
         }
+        let is_final_batch = !(batch_capped && consumed != batch_start);
         let mut retired_fallback_keys = Vec::new();
-        if harness == "claude" {
-            // A file with several session identities has no unique source linkage.
-            source_session = if claude_sessions.len() == 1 {
-                claude_sessions.iter().next().cloned()
-            } else {
-                None
-            };
-            let (_, fallback_fact) = link_and_seal_session(
-                link_config,
-                tool_key,
-                source_id,
-                generation,
-                harness,
-                "claude-session",
-                false,
-                false,
-            );
-            if session_facts_by_key.is_empty() {
-                record_session_fact(&mut session_facts_by_key, fallback_fact);
-            } else if !claude_sessions.is_empty()
-                && !session_facts_by_key.contains_key(&fallback_fact.source_key)
-            {
-                retired_fallback_keys.push(fallback_fact.source_key);
-            }
-        } else if let Some(session) = &file_session {
-            let is_minted = session.from_header && !header_conflict;
-            let (_, fact) = link_and_seal_session(
-                link_config,
-                tool_key,
-                source_id,
-                generation,
-                harness,
-                &session.raw,
-                is_minted,
-                header_conflict,
-            );
-            session_facts_by_key.insert(fact.source_key.clone(), fact);
-            if session.from_header {
+        let mut source_session = None;
+        // Session-level final facts (D3 link_id, header_conflict, and unique
+        // source_session) are committed only with the final batch of the pass
+        // that determines them, so an earlier batch of a multi-batch pass never
+        // briefly commits a linked row that a later batch would override.
+        let session_facts: Vec<dendro_core::SessionFact> = if is_final_batch {
+            if harness == "claude" {
+                // A file with several session identities has no unique source linkage.
+                source_session = if claude_sessions.len() == 1 {
+                    claude_sessions.iter().next().cloned()
+                } else {
+                    None
+                };
                 let (_, fallback_fact) = link_and_seal_session(
                     link_config,
                     tool_key,
                     source_id,
                     generation,
                     harness,
-                    &format!("{harness}-file:{source_id}"),
+                    "claude-session",
                     false,
                     false,
                 );
-                retired_fallback_keys.push(fallback_fact.source_key);
+                if session_facts_by_key.is_empty() {
+                    record_session_fact(&mut session_facts_by_key, fallback_fact);
+                } else if !claude_sessions.is_empty()
+                    && !session_facts_by_key.contains_key(&fallback_fact.source_key)
+                {
+                    retired_fallback_keys.push(fallback_fact.source_key);
+                }
+            } else if let Some(session) = &file_session {
+                let is_minted = session.from_header && !header_conflict;
+                let (sealed, fact) = link_and_seal_session(
+                    link_config,
+                    tool_key,
+                    source_id,
+                    generation,
+                    harness,
+                    &session.raw,
+                    is_minted,
+                    header_conflict,
+                );
+                source_session = Some(sealed);
+                session_facts_by_key.insert(fact.source_key.clone(), fact);
+                if session.from_header {
+                    let (_, fallback_fact) = link_and_seal_session(
+                        link_config,
+                        tool_key,
+                        source_id,
+                        generation,
+                        harness,
+                        &format!("{harness}-file:{source_id}"),
+                        false,
+                        false,
+                    );
+                    retired_fallback_keys.push(fallback_fact.source_key);
+                }
             }
-        }
+            session_facts_by_key.values().cloned().collect()
+        } else {
+            Vec::new()
+        };
         coverage_defect |= coverage.unknown_kind
             + coverage.quarantined_oversize
             + coverage.quarantined_depth
@@ -1089,14 +1062,13 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
         }
         offset = consumed;
         let mut settled = Vec::new();
+        let mut skills = Vec::new();
         if let Some(scan) = tool_scan.as_mut() {
             let pass = scan.flush(line_no);
             tools = pass.new_calls;
             settled = pass.settled;
             tool_categories.extend(pass.categories);
-            for skill in pass.skills {
-                store.insert_skill(&skill)?;
-            }
+            skills = pass.skills;
         }
         let held_after = FileMetadata::from_file(reader.get_ref().get_ref());
         let named_after = observe_path(path);
@@ -1112,46 +1084,54 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
                 .unwrap_or_else(|| chrono::Utc::now().to_rfc3339()),
             metadata,
         };
-        store.commit_file_batch_observed_messages(
-            source_id,
-            harness,
-            &path.display().to_string(),
-            generation,
-            offset,
-            &prefix_sha,
-            if harness == "codex" {
-                Some(&counters)
-            } else {
-                None
-            },
-            &usages,
-            &tools,
-            &messages,
-            &settled,
-            &dendro_core::ReaderState {
-                complete: batch_complete,
-                native_session: source_session.clone(),
-            },
-            &baseline,
-        )?;
-        store.commit_session_edges(&session_edges)?;
-        store.commit_security_facts(&security_facts)?;
-        let session_facts: Vec<dendro_core::SessionFact> =
-            session_facts_by_key.values().cloned().collect();
-        store.commit_session_facts_retiring(&session_facts, &retired_fallback_keys)?;
-        store.record_tool_categories(&tool_categories)?;
-        store.record_usage_models(&usage_models)?;
-        for note in &warnings {
-            store.record_warning(note)?;
-        }
+        let display_path = path.display().to_string();
         // One row per defective generation, however many runs or batches see it.
-        if coverage_defect && !store.has_warning(&path.display().to_string(), &partial_reason)? {
-            store.record_warning(&WarningNote {
-                path: path.display().to_string(),
+        if coverage_defect && !store.has_warning(&display_path, &partial_reason)? {
+            warnings.push(WarningNote {
+                path: display_path.clone(),
                 line: None,
                 reason: partial_reason.clone(),
-            })?;
+            });
         }
+        // Only partial coverage is a warning; a complete read is not a defect. An
+        // idle re-run that reads no new bytes adds no row for the same defect.
+        if is_final_batch && coverage.partial && consumed != initial_offset {
+            warnings.push(WarningNote {
+                path: display_path.clone(),
+                line: None,
+                reason: coverage.summary(),
+            });
+        }
+        let reader_state = dendro_core::ReaderState {
+            complete: batch_complete,
+            native_session: source_session,
+        };
+        let ingest_batch = dendro_core::IngestBatch {
+            source_id,
+            harness,
+            display_path: &display_path,
+            generation,
+            byte_offset: offset,
+            prefix_sha256: &prefix_sha,
+            counters: (harness == "codex").then_some(&counters),
+            usages: &usages,
+            usage_models: &usage_models,
+            tools: &tools,
+            tool_categories: &tool_categories,
+            settled: &settled,
+            messages: &messages,
+            skills: &skills,
+            session_edges: &session_edges,
+            security_facts: &security_facts,
+            session_facts: &session_facts,
+            retired_fallback_keys: &retired_fallback_keys,
+            process_identities: &[],
+            process_samples: &[],
+            warnings: &warnings,
+            reader: Some(&reader_state),
+            baseline: Some(&baseline),
+        };
+        commit_ingest_batch_checked(store, &ingest_batch)?;
         usage_records += usages.len() as u64;
         usages.clear();
         tools.clear();
@@ -1161,19 +1141,18 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
         warnings.clear();
         tool_categories.clear();
         usage_models.clear();
-        if !(batch_capped && consumed != batch_start) {
-            break consumed != initial_offset;
+        if is_final_batch {
+            break;
         }
         // The next batch is judged against what this one left on the file.
         held_before = FileMetadata::from_file(reader.get_ref().get_ref());
         named_before = observe_path(path);
-    };
-    Ok(FileOutcome {
+    }
+    Ok(FileStats {
         coverage,
         records_read,
         usage_records,
         tool_scan: tool_scan.map(|scan| scan.counts).unwrap_or_default(),
-        advanced,
     })
 }
 
@@ -4504,14 +4483,14 @@ mod tests {
 
     /// Directory on a filesystem `platform_v1` admits. `/tmp` is often tmpfs, which
     /// is refused, and umask 0022 would otherwise leave the directory at 0755.
-    struct AdmittedTestDir {
+    pub(super) struct AdmittedTestDir {
         path: PathBuf,
         #[cfg(windows)]
         _root: Option<dendro_core::platform_v1::PrivateRoot>,
     }
 
     impl AdmittedTestDir {
-        fn new(label: &str) -> Self {
+        pub(super) fn new(label: &str) -> Self {
             #[cfg(windows)]
             {
                 let root = dendro_core::platform_v1::create_user_private_root_with_choice(
@@ -4548,7 +4527,7 @@ mod tests {
             }
         }
 
-        fn path(&self) -> &Path {
+        pub(super) fn path(&self) -> &Path {
             &self.path
         }
     }
@@ -4562,7 +4541,7 @@ mod tests {
     }
 
     /// Opens the staged database, then forces mode 0o600 when umask left it wider.
-    fn open_test_analytics(db_path: &Path) -> AnalyticsStore {
+    pub(super) fn open_test_analytics(db_path: &Path) -> AnalyticsStore {
         let store = AnalyticsStore::open_path(db_path, "key").unwrap();
         #[cfg(unix)]
         {
@@ -6461,9 +6440,59 @@ pub(crate) fn walk_jsonl_checked(root: &Path) -> Result<JsonlDiscovery> {
 }
 
 #[cfg(test)]
+type IngestFailpointHook = Box<dyn FnMut(usize, dendro_core::IngestBatchStage) -> Result<()>>;
+
+#[cfg(test)]
 thread_local! {
     static UNINSPECTABLE: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
     static PARSED_LINES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    static INGEST_FAILPOINT: std::cell::RefCell<Option<IngestFailpointHook>> = const { std::cell::RefCell::new(None) };
+    static INGEST_BATCH_INDEX: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+pub(crate) fn commit_ingest_batch_checked(
+    store: &AnalyticsStore,
+    batch: &dendro_core::IngestBatch<'_>,
+) -> Result<()> {
+    #[cfg(test)]
+    {
+        let has_hook = INGEST_FAILPOINT.with(|slot| slot.borrow().is_some());
+        if has_hook {
+            let batch_idx = INGEST_BATCH_INDEX.with(|idx| {
+                let current = idx.get();
+                idx.set(current + 1);
+                current
+            });
+            return store.commit_ingest_batch_with_hook(batch, |stage| {
+                INGEST_FAILPOINT.with(|slot| {
+                    if let Some(hook) = slot.borrow_mut().as_mut() {
+                        hook(batch_idx, stage)
+                    } else {
+                        Ok(())
+                    }
+                })
+            });
+        }
+    }
+    store.commit_ingest_batch(batch)
+}
+
+#[cfg(test)]
+pub(crate) fn with_ingest_failpoint<T>(
+    hook: impl FnMut(usize, dendro_core::IngestBatchStage) -> Result<()> + 'static,
+    f: impl FnOnce() -> T,
+) -> T {
+    struct Reset;
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            INGEST_FAILPOINT.with(|slot| *slot.borrow_mut() = None);
+            INGEST_BATCH_INDEX.with(|idx| idx.set(0));
+        }
+    }
+    INGEST_BATCH_INDEX.with(|idx| idx.set(0));
+    INGEST_FAILPOINT.with(|slot| *slot.borrow_mut() = Some(Box::new(hook)));
+    let _reset = Reset;
+    f()
 }
 
 /// Tests make one named entry fail at the real inspection boundary, as a file
@@ -7598,5 +7627,626 @@ mod hostile_input_tests {
         assert!(!partial_pass2[0].header_conflict);
 
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn crash_boundary_failpoints_claude_codex_and_export_roll_back_and_replay_identically() {
+        use super::tests::{open_test_analytics, AdmittedTestDir};
+        use dendro_core::IngestBatchStage;
+
+        let scratch = AdmittedTestDir::new("dendro-d4a-crash-boundary");
+        let dir = scratch.path();
+        let tool_key = b"d4a-crash-boundary-tool-key-0000";
+        let link_cfg = dendro_core::SessionLinkConfig::from_key_hex(
+            &"44".repeat(32),
+            Some("acme"),
+            Some("host-d4a"),
+            Some("core"),
+            Some("2026-11"),
+        );
+
+        let empty_db = dir.join("empty_seed.duckdb");
+        let empty_snap = {
+            let store = open_test_analytics(&empty_db);
+            store.checkpoint().unwrap();
+            store.canonical_table_snapshot().unwrap()
+        };
+
+        let table_rows = |snap: &[(String, Vec<String>)], name: &str| -> usize {
+            snap.iter()
+                .find(|(t, _)| t == name)
+                .map(|(_, rows)| rows.len())
+                .unwrap_or(0)
+        };
+
+        // 1. Claude crash-boundary failpoints across every batch write stage.
+        let claude_path = dir.join("claude.jsonl");
+        let claude_raw = concat!(
+            "{\"type\":\"assistant\",\"sessionId\":\"claude-s1\",\"agentId\":\"claude-child-1\",\"isSidechain\":true,\"permissionMode\":\"acceptEdits\",\"timestamp\":\"2026-10-15T12:00:00Z\",\"message\":{\"id\":\"msg-1\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5\",\"effort\":\"high\",\"usage\":{\"input_tokens\":100,\"output_tokens\":50,\"cache_read_input_tokens\":20,\"cache_creation_input_tokens\":10},\"content\":[{\"type\":\"text\",\"text\":\"hi\"},{\"type\":\"tool_use\",\"id\":\"tu-1\",\"name\":\"Skill\",\"input\":{\"skill\":\"commit\"}},{\"type\":\"tool_use\",\"id\":\"tu-2\",\"name\":\"Bash\",\"input\":{\"command\":\"cargo test\"}}]}}\n",
+            "{\"type\":\"user\",\"sessionId\":\"claude-s1\",\"timestamp\":\"2026-10-15T12:00:05Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"tu-1\",\"is_error\":false},{\"type\":\"tool_result\",\"tool_use_id\":\"tu-2\",\"is_error\":false}]}}\n",
+            "{\"type\":\"mystery_event\",\"sessionId\":\"claude-s1\"}\n"
+        );
+        fs::write(&claude_path, claude_raw).unwrap();
+
+        let claude_ref_db = dir.join("claude_ref.duckdb");
+        fs::copy(&empty_db, &claude_ref_db).unwrap();
+        let claude_expected = {
+            let store = AnalyticsStore::open_existing(&claude_ref_db, "key").unwrap();
+            ingest_jsonl_with_link_config(
+                &store,
+                "src-claude",
+                "claude",
+                &claude_path,
+                Some(tool_key),
+                &link_cfg,
+            )
+            .unwrap();
+            store.checkpoint().unwrap();
+            let snap = store.canonical_table_snapshot().unwrap();
+            for required in [
+                "source_files",
+                "file_source_baselines",
+                "usage_facts",
+                "tool_facts",
+                "message_facts",
+                "skill_facts",
+                "session_edges",
+                "security_facts",
+                "session_facts",
+                "warnings",
+            ] {
+                assert!(
+                    table_rows(&snap, required) > 0,
+                    "Claude fixture must populate {required}"
+                );
+            }
+            snap
+        };
+
+        let claude_stages = [
+            IngestBatchStage::AfterBaseline,
+            IngestBatchStage::AfterUsageFacts,
+            IngestBatchStage::AfterUsageModels,
+            IngestBatchStage::AfterToolFacts,
+            IngestBatchStage::AfterToolCategories,
+            IngestBatchStage::AfterToolSettlement,
+            IngestBatchStage::AfterMessageFacts,
+            IngestBatchStage::AfterSkillFacts,
+            IngestBatchStage::AfterSessionEdges,
+            IngestBatchStage::AfterSecurityFacts,
+            IngestBatchStage::AfterSessionFacts,
+            IngestBatchStage::AfterWarnings,
+            IngestBatchStage::AfterWatermark,
+            IngestBatchStage::BeforeReaderReplacement,
+            IngestBatchStage::AfterReaderReplacement,
+            IngestBatchStage::BeforeSourceSessionUpdate,
+            IngestBatchStage::BeforeCommit,
+        ];
+
+        for (idx, stage) in claude_stages.into_iter().enumerate() {
+            let db_path = dir.join(format!("claude_stage_{idx}.duckdb"));
+            fs::copy(&empty_db, &db_path).unwrap();
+            {
+                let store = AnalyticsStore::open_existing(&db_path, "key").unwrap();
+                let mut hit = false;
+                let err = with_ingest_failpoint(
+                    move |_, at| {
+                        if at == stage {
+                            anyhow::bail!("claude failpoint at {stage:?}");
+                        }
+                        Ok(())
+                    },
+                    || {
+                        hit = true;
+                        ingest_jsonl_with_link_config(
+                            &store,
+                            "src-claude",
+                            "claude",
+                            &claude_path,
+                            Some(tool_key),
+                            &link_cfg,
+                        )
+                    },
+                )
+                .unwrap_err();
+                assert!(hit);
+                assert!(
+                    err.to_string().contains("claude failpoint"),
+                    "unexpected error at {stage:?}: {err}"
+                );
+            }
+            let reopened = AnalyticsStore::open_existing(&db_path, "key").unwrap();
+            assert_eq!(
+                reopened.source_state("src-claude").unwrap(),
+                None,
+                "Claude watermark must remain None after failure at {stage:?}"
+            );
+            assert_eq!(
+                reopened.canonical_table_snapshot().unwrap(),
+                empty_snap,
+                "Reopened Claude DB must contain nothing after failure at {stage:?}"
+            );
+            ingest_jsonl_with_link_config(
+                &reopened,
+                "src-claude",
+                "claude",
+                &claude_path,
+                Some(tool_key),
+                &link_cfg,
+            )
+            .unwrap();
+            assert_eq!(
+                reopened.canonical_table_snapshot().unwrap(),
+                claude_expected,
+                "Claude replay after failure at {stage:?} must match uninterrupted run"
+            );
+        }
+
+        // 2. Codex crash-boundary failpoints (including D1 tool scan and D3 session facts).
+        let codex_path = dir.join("codex.jsonl");
+        let codex_raw = concat!(
+            "{\"type\":\"session_meta\",\"timestamp\":\"2026-10-15T12:00:00Z\",\"payload\":{\"id\":\"codex-s1\",\"source\":{\"subagent\":{\"thread_spawn\":{\"parent_thread_id\":\"codex-parent-1\"}}}}}\n",
+            "{\"type\":\"turn_context\",\"timestamp\":\"2026-10-15T12:00:01Z\",\"payload\":{\"model\":\"gpt-5-codex\",\"effort\":\"high\",\"approval_policy\":\"on-request\",\"sandbox_policy\":{\"type\":\"workspace-write\"}}}\n",
+            "{\"type\":\"event_msg\",\"timestamp\":\"2026-10-15T12:00:02Z\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":150,\"cached_input_tokens\":30,\"cache_write_input_tokens\":10,\"output_tokens\":60,\"reasoning_output_tokens\":15}}}}\n",
+            "{\"type\":\"response_item\",\"timestamp\":\"2026-10-15T12:00:03Z\",\"payload\":{\"type\":\"function_call\",\"call_id\":\"call-1\",\"name\":\"Skill\",\"arguments\":\"{\\\"skill\\\":\\\"review\\\"}\"}}\n",
+            "{\"type\":\"response_item\",\"timestamp\":\"2026-10-15T12:00:04Z\",\"payload\":{\"type\":\"function_call_output\",\"call_id\":\"call-1\",\"output\":\"{\\\"status\\\":\\\"completed\\\"}\"}}\n",
+            "{\"type\":\"event_msg\",\"timestamp\":\"2026-10-15T12:00:05Z\",\"payload\":{\"type\":\"item_completed\",\"item\":{\"type\":\"CommandExecution\",\"command\":[\"cargo\",\"test\"],\"exit_code\":0}}}\n",
+            "{\"type\":\"response_item\",\"timestamp\":\"2026-10-15T12:00:06Z\",\"payload\":{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"done\"}]}}\n",
+            "{\"type\":\"unknown_codex_event\",\"payload\":{}}\n"
+        );
+        fs::write(&codex_path, codex_raw).unwrap();
+
+        let codex_ref_db = dir.join("codex_ref.duckdb");
+        fs::copy(&empty_db, &codex_ref_db).unwrap();
+        let codex_expected = {
+            let store = AnalyticsStore::open_existing(&codex_ref_db, "key").unwrap();
+            let stats = ingest_jsonl_with_link_config(
+                &store,
+                "src-codex",
+                "codex",
+                &codex_path,
+                Some(tool_key),
+                &link_cfg,
+            )
+            .unwrap();
+            assert_eq!(stats.tool_scan.calls, 2);
+            assert_eq!(stats.tool_scan.new_calls, 2);
+            assert_eq!(stats.tool_scan.results, 1);
+            let sf = store.load_session_facts().unwrap();
+            assert_eq!(sf.len(), 1);
+            assert_eq!(sf[0].link_id.len(), 64);
+            assert_ne!(sf[0].link_id, "unlinked");
+            store.checkpoint().unwrap();
+            let snap = store.canonical_table_snapshot().unwrap();
+            for required in [
+                "source_files",
+                "file_source_baselines",
+                "codex_counters",
+                "usage_facts",
+                "tool_facts",
+                "message_facts",
+                "skill_facts",
+                "session_edges",
+                "security_facts",
+                "session_facts",
+                "warnings",
+            ] {
+                assert!(
+                    table_rows(&snap, required) > 0,
+                    "Codex fixture must populate {required}"
+                );
+            }
+            snap
+        };
+
+        let codex_stages = [
+            IngestBatchStage::AfterBaseline,
+            IngestBatchStage::AfterCounters,
+            IngestBatchStage::AfterUsageFacts,
+            IngestBatchStage::AfterUsageModels,
+            IngestBatchStage::AfterToolFacts,
+            IngestBatchStage::AfterToolCategories,
+            IngestBatchStage::AfterToolSettlement,
+            IngestBatchStage::AfterMessageFacts,
+            IngestBatchStage::AfterSkillFacts,
+            IngestBatchStage::AfterSessionEdges,
+            IngestBatchStage::AfterSecurityFacts,
+            IngestBatchStage::AfterSessionFacts,
+            IngestBatchStage::AfterWarnings,
+            IngestBatchStage::AfterWatermark,
+            IngestBatchStage::BeforeReaderReplacement,
+            IngestBatchStage::AfterReaderReplacement,
+            IngestBatchStage::BeforeSourceSessionUpdate,
+            IngestBatchStage::BeforeCommit,
+        ];
+
+        for (idx, stage) in codex_stages.into_iter().enumerate() {
+            let db_path = dir.join(format!("codex_stage_{idx}.duckdb"));
+            fs::copy(&empty_db, &db_path).unwrap();
+            {
+                let store = AnalyticsStore::open_existing(&db_path, "key").unwrap();
+                let err = with_ingest_failpoint(
+                    move |_, at| {
+                        if at == stage {
+                            anyhow::bail!("codex failpoint at {stage:?}");
+                        }
+                        Ok(())
+                    },
+                    || {
+                        ingest_jsonl_with_link_config(
+                            &store,
+                            "src-codex",
+                            "codex",
+                            &codex_path,
+                            Some(tool_key),
+                            &link_cfg,
+                        )
+                    },
+                )
+                .unwrap_err();
+                assert!(
+                    err.to_string().contains("codex failpoint"),
+                    "unexpected error at {stage:?}: {err}"
+                );
+            }
+            let reopened = AnalyticsStore::open_existing(&db_path, "key").unwrap();
+            assert_eq!(
+                reopened.source_state("src-codex").unwrap(),
+                None,
+                "Codex watermark must remain None after failure at {stage:?}"
+            );
+            assert_eq!(
+                reopened.canonical_table_snapshot().unwrap(),
+                empty_snap,
+                "Reopened Codex DB must contain nothing after failure at {stage:?}"
+            );
+            ingest_jsonl_with_link_config(
+                &reopened,
+                "src-codex",
+                "codex",
+                &codex_path,
+                Some(tool_key),
+                &link_cfg,
+            )
+            .unwrap();
+            assert_eq!(
+                reopened.canonical_table_snapshot().unwrap(),
+                codex_expected,
+                "Codex replay after failure at {stage:?} must match uninterrupted run"
+            );
+        }
+
+        // 3. Export connector (Devin ATIF-v1.7 with usage + tools + warnings + watermark).
+        let export_dir = dir.join("devin_exports");
+        fs::create_dir_all(&export_dir).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&export_dir, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let devin_file = export_dir.join("trajectory.jsonl");
+        let devin_raw = "{\"schema_version\":\"ATIF-v1.7\",\"session_id\":\"devin-sess-1\",\"steps\":[{\"step_id\":1,\"source\":\"agent\",\"timestamp\":\"2026-10-15T12:00:00Z\",\"metrics\":{\"prompt_tokens\":120,\"completion_tokens\":45,\"cached_tokens\":0,\"cost\":0.05},\"tool_calls\":[{\"tool_call_id\":\"tc-1\",\"function_name\":\"bash\"}]}]}\n";
+        fs::write(&devin_file, devin_raw).unwrap();
+        let connector = crate::DevinConnector::new(&export_dir, tool_key.to_vec());
+
+        let devin_ref_db = dir.join("devin_ref.duckdb");
+        fs::copy(&empty_db, &devin_ref_db).unwrap();
+        let devin_expected = {
+            let store = AnalyticsStore::open_existing(&devin_ref_db, "key").unwrap();
+            connector.ingest_file(&store, &devin_file).unwrap();
+            store.checkpoint().unwrap();
+            let snap = store.canonical_table_snapshot().unwrap();
+            for required in [
+                "source_files",
+                "file_source_baselines",
+                "usage_facts",
+                "tool_facts",
+                "warnings",
+            ] {
+                assert!(
+                    table_rows(&snap, required) > 0,
+                    "Devin export fixture must populate {required}"
+                );
+            }
+            snap
+        };
+
+        let export_stages = [
+            IngestBatchStage::AfterBaseline,
+            IngestBatchStage::AfterUsageFacts,
+            IngestBatchStage::AfterToolFacts,
+            IngestBatchStage::AfterWarnings,
+            IngestBatchStage::AfterWatermark,
+            IngestBatchStage::BeforeReaderReplacement,
+            IngestBatchStage::AfterReaderReplacement,
+            IngestBatchStage::BeforeSourceSessionUpdate,
+            IngestBatchStage::BeforeCommit,
+        ];
+
+        for (idx, stage) in export_stages.into_iter().enumerate() {
+            let db_path = dir.join(format!("devin_stage_{idx}.duckdb"));
+            fs::copy(&empty_db, &db_path).unwrap();
+            {
+                let store = AnalyticsStore::open_existing(&db_path, "key").unwrap();
+                let err = with_ingest_failpoint(
+                    move |_, at| {
+                        if at == stage {
+                            anyhow::bail!("export failpoint at {stage:?}");
+                        }
+                        Ok(())
+                    },
+                    || connector.ingest_file(&store, &devin_file),
+                )
+                .unwrap_err();
+                assert!(
+                    err.to_string().contains("export failpoint"),
+                    "unexpected error at {stage:?}: {err}"
+                );
+            }
+            let reopened = AnalyticsStore::open_existing(&db_path, "key").unwrap();
+            assert!(
+                reopened.load_sources().unwrap().is_empty(),
+                "Export watermark must remain absent after failure at {stage:?}"
+            );
+            assert_eq!(
+                reopened.canonical_table_snapshot().unwrap(),
+                empty_snap,
+                "Reopened Export DB must contain nothing after failure at {stage:?}"
+            );
+            connector.ingest_file(&reopened, &devin_file).unwrap();
+            assert_eq!(
+                reopened.canonical_table_snapshot().unwrap(),
+                devin_expected,
+                "Export replay after failure at {stage:?} must match uninterrupted run"
+            );
+        }
+    }
+
+    #[test]
+    fn two_consecutive_batches_mid_pass_failure_converges_and_never_commits_interim_linked_session()
+    {
+        use super::tests::{open_test_analytics, AdmittedTestDir};
+        use dendro_core::IngestBatchStage;
+
+        let scratch = AdmittedTestDir::new("dendro-d4a-multi-batch");
+        let dir = scratch.path();
+        let tool_key = b"d4a-multi-batch-tool-key-0000000";
+        let link_cfg = dendro_core::SessionLinkConfig::from_key_hex(
+            &"55".repeat(32),
+            Some("acme"),
+            Some("host-d4a"),
+            Some("core"),
+            Some("2026-11"),
+        );
+        let limits = crate::sdk::ReadLimits {
+            encoded_bytes: 1 << 20,
+            nesting_depth: 64,
+            decoded_records_per_batch: 2,
+            line_attempts: None,
+        };
+
+        let empty_db = dir.join("empty_seed.duckdb");
+        {
+            let store = open_test_analytics(&empty_db);
+            store.checkpoint().unwrap();
+        }
+
+        // Part A: 4-record Codex file spanning 2 batches (2 records per batch).
+        // Batch 0 emits an unsettled function_call (c1); Batch 1 settles c1, emits token_count usage,
+        // and finalizes the linked session_facts row.
+        let codex_multi = dir.join("codex_two_batches.jsonl");
+        let line1 = "{\"type\":\"session_meta\",\"timestamp\":\"2026-10-15T12:00:00Z\",\"payload\":{\"id\":\"codex-multi-1\"}}\n";
+        let line2 = "{\"type\":\"response_item\",\"timestamp\":\"2026-10-15T12:00:01Z\",\"payload\":{\"type\":\"function_call\",\"call_id\":\"c1\",\"name\":\"exec_command\",\"arguments\":\"{\\\"cmd\\\":\\\"cargo check\\\"}\"}}\n";
+        let line3 = "{\"type\":\"response_item\",\"timestamp\":\"2026-10-15T12:00:02Z\",\"payload\":{\"type\":\"function_call_output\",\"call_id\":\"c1\",\"output\":\"{\\\"exit_code\\\":0}\"}}\n";
+        let line4 = "{\"type\":\"event_msg\",\"timestamp\":\"2026-10-15T12:00:03Z\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":50,\"cached_input_tokens\":10,\"cache_write_input_tokens\":0,\"output_tokens\":20,\"reasoning_output_tokens\":5}}}}\n";
+        fs::write(&codex_multi, format!("{line1}{line2}{line3}{line4}")).unwrap();
+        let batch0_bytes = (line1.len() + line2.len()) as i64;
+
+        let multi_ref_db = dir.join("multi_ref.duckdb");
+        fs::copy(&empty_db, &multi_ref_db).unwrap();
+        let multi_expected = {
+            let store = AnalyticsStore::open_existing(&multi_ref_db, "key").unwrap();
+            ingest_jsonl_limited_with_link(
+                &store,
+                "src-multi",
+                "codex",
+                &codex_multi,
+                Some(tool_key),
+                None,
+                || Ok(()),
+                &limits,
+                &link_cfg,
+            )
+            .unwrap();
+            store.checkpoint().unwrap();
+            store.canonical_table_snapshot().unwrap()
+        };
+
+        let batch2_stages = [
+            IngestBatchStage::AfterBaseline,
+            IngestBatchStage::AfterCounters,
+            IngestBatchStage::AfterUsageFacts,
+            IngestBatchStage::AfterToolFacts,
+            IngestBatchStage::AfterToolSettlement,
+            IngestBatchStage::AfterSessionFacts,
+            IngestBatchStage::AfterWatermark,
+            IngestBatchStage::BeforeReaderReplacement,
+            IngestBatchStage::AfterReaderReplacement,
+            IngestBatchStage::BeforeSourceSessionUpdate,
+            IngestBatchStage::BeforeCommit,
+        ];
+
+        let mut batch0_reference_snap: Option<Vec<(String, Vec<String>)>> = None;
+        for (idx, stage) in batch2_stages.into_iter().enumerate() {
+            let db_path = dir.join(format!("multi_stage_{idx}.duckdb"));
+            fs::copy(&empty_db, &db_path).unwrap();
+            {
+                let store = AnalyticsStore::open_existing(&db_path, "key").unwrap();
+                let err = with_ingest_failpoint(
+                    move |batch_idx, at| {
+                        if batch_idx == 1 && at == stage {
+                            anyhow::bail!("batch-2 failpoint at {stage:?}");
+                        }
+                        Ok(())
+                    },
+                    || {
+                        ingest_jsonl_limited_with_link(
+                            &store,
+                            "src-multi",
+                            "codex",
+                            &codex_multi,
+                            Some(tool_key),
+                            None,
+                            || Ok(()),
+                            &limits,
+                            &link_cfg,
+                        )
+                    },
+                )
+                .unwrap_err();
+                assert!(
+                    err.to_string().contains("batch-2 failpoint"),
+                    "must fail in batch 2 at {stage:?}: {err}"
+                );
+            }
+
+            // Reopen after mid-pass failure: Batch 1 is committed, Batch 2 is completely rolled back.
+            let reopened = AnalyticsStore::open_existing(&db_path, "key").unwrap();
+            let state = reopened.source_state("src-multi").unwrap().unwrap();
+            assert_eq!(
+                state.1, batch0_bytes,
+                "watermark must stay at batch 1 boundary after batch 2 fails at {stage:?}"
+            );
+            assert!(
+                reopened.load_usage().unwrap().is_empty(),
+                "batch 2 usage must not persist after failure at {stage:?}"
+            );
+            assert!(
+                reopened.load_session_facts().unwrap().is_empty(),
+                "session_facts must not be committed before the final batch ({stage:?})"
+            );
+            let tools_after_b1 = reopened.load_tools().unwrap();
+            assert_eq!(tools_after_b1.len(), 1);
+            assert_eq!(
+                tools_after_b1[0].failed, None,
+                "batch 2 settlement must roll back when batch 2 fails at {stage:?}"
+            );
+            let snap_after_b1 = reopened.canonical_table_snapshot().unwrap();
+            if let Some(expected_b1) = &batch0_reference_snap {
+                assert_eq!(
+                    &snap_after_b1, expected_b1,
+                    "batch 1 prefix state must be identical regardless of where batch 2 failed ({stage:?})"
+                );
+            } else {
+                batch0_reference_snap = Some(snap_after_b1);
+            }
+
+            // Re-run from the Batch 1 watermark without failpoint -> converges to uninterrupted result.
+            ingest_jsonl_limited_with_link(
+                &reopened,
+                "src-multi",
+                "codex",
+                &codex_multi,
+                Some(tool_key),
+                None,
+                || Ok(()),
+                &limits,
+                &link_cfg,
+            )
+            .unwrap();
+            assert_eq!(
+                reopened.canonical_table_snapshot().unwrap(),
+                multi_expected,
+                "resuming after batch 2 failure at {stage:?} must converge to uninterrupted result"
+            );
+        }
+
+        // Part B: Conflicting session_meta header in Batch 2 never exposes an interim linked row after Batch 1.
+        let codex_conflict = dir.join("codex_conflict_batches.jsonl");
+        let c_line1 = "{\"type\":\"session_meta\",\"timestamp\":\"2026-10-15T12:00:00Z\",\"payload\":{\"id\":\"codex-conflict-a\"}}\n";
+        let c_line2 = "{\"type\":\"event_msg\",\"timestamp\":\"2026-10-15T12:00:01Z\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":10,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":5,\"reasoning_output_tokens\":0}}}}\n";
+        let c_line3 = "{\"type\":\"session_meta\",\"timestamp\":\"2026-10-15T12:00:02Z\",\"payload\":{\"id\":\"codex-conflict-b\"}}\n";
+        let c_line4 = "{\"type\":\"event_msg\",\"timestamp\":\"2026-10-15T12:00:03Z\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":20,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":10,\"reasoning_output_tokens\":0}}}}\n";
+        fs::write(
+            &codex_conflict,
+            format!("{c_line1}{c_line2}{c_line3}{c_line4}"),
+        )
+        .unwrap();
+
+        let conflict_ref_db = dir.join("conflict_ref.duckdb");
+        fs::copy(&empty_db, &conflict_ref_db).unwrap();
+        let conflict_expected = {
+            let store = AnalyticsStore::open_existing(&conflict_ref_db, "key").unwrap();
+            ingest_jsonl_limited_with_link(
+                &store,
+                "src-conflict",
+                "codex",
+                &codex_conflict,
+                Some(tool_key),
+                None,
+                || Ok(()),
+                &limits,
+                &link_cfg,
+            )
+            .unwrap();
+            let sf = store.load_session_facts().unwrap();
+            assert!(!sf.is_empty());
+            assert!(sf
+                .iter()
+                .all(|f| f.header_conflict && f.link_id == "unlinked"));
+            store.checkpoint().unwrap();
+            store.canonical_table_snapshot().unwrap()
+        };
+
+        let conflict_test_db = dir.join("conflict_test.duckdb");
+        fs::copy(&empty_db, &conflict_test_db).unwrap();
+        {
+            let store = AnalyticsStore::open_existing(&conflict_test_db, "key").unwrap();
+            let err = with_ingest_failpoint(
+                move |batch_idx, at| {
+                    if batch_idx == 1 && at == IngestBatchStage::BeforeCommit {
+                        anyhow::bail!("stop after batch 1 committed");
+                    }
+                    Ok(())
+                },
+                || {
+                    ingest_jsonl_limited_with_link(
+                        &store,
+                        "src-conflict",
+                        "codex",
+                        &codex_conflict,
+                        Some(tool_key),
+                        None,
+                        || Ok(()),
+                        &limits,
+                        &link_cfg,
+                    )
+                },
+            )
+            .unwrap_err();
+            assert!(err.to_string().contains("stop after batch 1 committed"));
+        }
+        let reopened_conflict = AnalyticsStore::open_existing(&conflict_test_db, "key").unwrap();
+        assert!(
+            reopened_conflict.load_session_facts().unwrap().is_empty(),
+            "Batch 1 must never commit an interim linked session_facts row before Batch 2 sees the conflicting header"
+        );
+        ingest_jsonl_limited_with_link(
+            &reopened_conflict,
+            "src-conflict",
+            "codex",
+            &codex_conflict,
+            Some(tool_key),
+            None,
+            || Ok(()),
+            &limits,
+            &link_cfg,
+        )
+        .unwrap();
+        assert_eq!(
+            reopened_conflict.canonical_table_snapshot().unwrap(),
+            conflict_expected,
+            "Conflicting multi-batch file must converge to uninterrupted header_conflict state after mid-pass failure"
+        );
     }
 }

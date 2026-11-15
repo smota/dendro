@@ -380,6 +380,12 @@ CREATE TABLE IF NOT EXISTS session_facts (
   - `invalid_field_characters`: Scope slug (`org`, `endpoint_scope`) violates `^[\x21-\x7E]{1,1024}$`, or `native_session` exceeds 1024 UTF-8 bytes, has leading/trailing Unicode `White_Space`, or contains NUL / control (`Cc`) characters.
 - **Pre-D3 Databases & Downstream Export (`D4b`):** `session_facts` is new in D3. Opening a pre-D3 database adds `session_facts` without touching existing tables. Pre-D3 sessions have no row in `session_facts` (`NULL` when joined = *"not computed; full rebuild computes it"*). Downstream export (`D4b`) **MUST** treat a missing `session_facts` row or `NULL` link as `'unlinked'`. See [`docs/link-id-config.md`](link-id-config.md) for endpoint configuration.
 
+### 3.14. Per-Batch Atomicity, Watermarks & Replay Guarantee (`MTN-20 / D4a`)
+- **Single-Transaction Batch Commit (`commit_ingest_batch`):** For every per-file ingestion batch across native harness streams (`stream.rs`) and export connectors (`exports.rs`), all emitted fact families (`file_source_baselines`, `codex_counters`, `usage_facts`, `tool_facts`, `message_facts`, `skill_facts`, `session_edges`, `security_facts`, `session_facts` + fallback retirements, `process_identities` / `process_samples`, `warnings`) and the covering `source_files` watermark + `dendro-internal:reader:<source_id>` checkpoint commit atomically in one DuckDB transaction.
+- **Stage-and-Insert Appenders:** Inside the transaction, `usage_facts` and `tool_facts` bulk-load into transaction-local temporary tables (`usage_stage`, `tool_stage`) via `tx.appender(...)` and merge via `INSERT INTO ... SELECT ... ON CONFLICT (source_key) DO NOTHING` before dropping the staging table. This retains typed appender throughput and the 1 GB connection memory ceiling while ensuring uncommitted rows vanish if the transaction aborts.
+- **Final-Batch Session Commitment:** In multi-batch passes over a single file, `session_facts` and `retired_fallback_keys` are emitted only on the final batch of the pass (`is_final_batch`), preventing intermediate batches from briefly committing a linked session row that a later batch in the same pass could invalidate via `header_conflict`.
+- **Deterministic Crash Replay:** If any write stage or `BeforeCommit` fails, the transaction rolls back completely, leaving `source_files` and all fact/warning tables unchanged for that batch. Re-running ingestion from the preserved watermark converges to the exact same row set and content as an uninterrupted run.
+
 ---
 
 ## 4. The 25 Reference Insights Catalog (`I01`–`I25`)
