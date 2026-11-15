@@ -1,0 +1,235 @@
+{
+  "contract": "link-id-v1",
+  "suite": "rotation",
+  "version": 1,
+  "description": "Epoch rotation, cross-team key isolation, cross-org master key isolation, and endpoint_scope isolation vectors.",
+  "assert_distinct_link_id_groups": [
+    [
+      "rotation_epoch_2026_q3",
+      "rotation_epoch_2026_q4",
+      "rotation_epoch_2027_q1",
+      "rotation_team_security",
+      "rotation_team_platform",
+      "rotation_different_org_master_key",
+      "rotation_different_endpoint_scope"
+    ]
+  ],
+  "assert_distinct_k_link_groups": [
+    [
+      "rotation_epoch_2026_q3",
+      "rotation_epoch_2026_q4",
+      "rotation_epoch_2027_q1",
+      "rotation_team_security",
+      "rotation_team_platform",
+      "rotation_different_org_master_key"
+    ]
+  ],
+  "overlap_window_example": {
+    "description": "Bounded dual-epoch join window [epoch_curr='2026-Q4', epoch_prev='2026-Q3'] for 'sess-rot-001' under 'team-finops'.",
+    "active_epochs": [
+      "2026-Q4",
+      "2026-Q3"
+    ],
+    "expected_candidates": [
+      {
+        "epoch": "2026-Q4",
+        "link_id": "56484b207831fc597902311fc27e180bb30b209930db6640abf45ee15faaa0ad"
+      },
+      {
+        "epoch": "2026-Q3",
+        "link_id": "be2a0e6d9881ed93b4cdb1464b5269be16361f157576e4c3dd7c54a188c69b2b"
+      }
+    ]
+  },
+  "vectors": [
+    {
+      "id": "rotation_epoch_2026_q3",
+      "description": "Identical session tuple under epoch '2026-Q3'",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "team-finops",
+        "epoch": "2026-Q3",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-finops-01",
+        "wire_client_id": null,
+        "raw_harness": "claude-code",
+        "native_session": "sess-rot-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000b7465616d2d66696e6f707300000007323032362d5133",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "872f5be34266fb7e7ee4478719ff4d866c64424beb912a20f89a3c59ac6d8d59",
+        "canonical_harness": "claude",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f76310000000961636d652d636f72700000000c77732d66696e6f70732d303100000006636c617564650000000c736573732d726f742d303031"
+      },
+      "expected": {
+        "link_id": "be2a0e6d9881ed93b4cdb1464b5269be16361f157576e4c3dd7c54a188c69b2b",
+        "unlinked_reason": null
+      }
+    },
+    {
+      "id": "rotation_epoch_2026_q4",
+      "description": "Identical session tuple under rotated epoch '2026-Q4' (new K_link and new link_id)",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "team-finops",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-finops-01",
+        "wire_client_id": null,
+        "raw_harness": "claude-code",
+        "native_session": "sess-rot-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000b7465616d2d66696e6f707300000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "2d21e94b0894d37281d4b29516e74496ec5efb21a5193e8763a2d225dc626382",
+        "canonical_harness": "claude",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f76310000000961636d652d636f72700000000c77732d66696e6f70732d303100000006636c617564650000000c736573732d726f742d303031"
+      },
+      "expected": {
+        "link_id": "56484b207831fc597902311fc27e180bb30b209930db6640abf45ee15faaa0ad",
+        "unlinked_reason": null
+      }
+    },
+    {
+      "id": "rotation_epoch_2027_q1",
+      "description": "Identical session tuple under rotated epoch '2027-Q1' (new K_link and new link_id)",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "team-finops",
+        "epoch": "2027-Q1",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-finops-01",
+        "wire_client_id": null,
+        "raw_harness": "claude-code",
+        "native_session": "sess-rot-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000b7465616d2d66696e6f707300000007323032372d5131",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "ab3cd71769b6983d3a137ec49276be4c49d2ec97027c1bd916550def8742a123",
+        "canonical_harness": "claude",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f76310000000961636d652d636f72700000000c77732d66696e6f70732d303100000006636c617564650000000c736573732d726f742d303031"
+      },
+      "expected": {
+        "link_id": "1dd7702e487dbc68862e51ae3569761c48c63e1f7a228c436bfb4917d4d3e68e",
+        "unlinked_reason": null
+      }
+    },
+    {
+      "id": "rotation_team_security",
+      "description": "Identical session tuple and epoch '2026-Q4' under different team 'team-security' (distinct K_link and link_id)",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "team-security",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-finops-01",
+        "wire_client_id": null,
+        "raw_harness": "claude-code",
+        "native_session": "sess-rot-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000d7465616d2d736563757269747900000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "e31a385c27b28431e58369b04259d610e9334a4f6e789806607b1ea37328d4b2",
+        "canonical_harness": "claude",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f76310000000961636d652d636f72700000000c77732d66696e6f70732d303100000006636c617564650000000c736573732d726f742d303031"
+      },
+      "expected": {
+        "link_id": "743dffd0a349ebbcb3ef44ac447bd4c072871835e7c7577a5e5b6685ef502dc6",
+        "unlinked_reason": null
+      }
+    },
+    {
+      "id": "rotation_team_platform",
+      "description": "Identical session tuple and epoch '2026-Q4' under different team 'team-platform' (distinct K_link and link_id)",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "team-platform",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-finops-01",
+        "wire_client_id": null,
+        "raw_harness": "claude-code",
+        "native_session": "sess-rot-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000d7465616d2d706c6174666f726d00000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "eeb86c5902412aa6132c6fa34ed5d1d4c0e83ac942d02ab42f55f1d1d3b23015",
+        "canonical_harness": "claude",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f76310000000961636d652d636f72700000000c77732d66696e6f70732d303100000006636c617564650000000c736573732d726f742d303031"
+      },
+      "expected": {
+        "link_id": "6a02f4a90ed42bd2808e883277f557d9c2d764be85d48a46845a8c97c18ba8f7",
+        "unlinked_reason": null
+      }
+    },
+    {
+      "id": "rotation_different_org_master_key",
+      "description": "Identical session tuple, team, and epoch under a different organization master key K_org",
+      "inputs": {
+        "k_org_hex": "9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "team-finops",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-finops-01",
+        "wire_client_id": null,
+        "raw_harness": "claude-code",
+        "native_session": "sess-rot-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000b7465616d2d66696e6f707300000007323032362d5134",
+        "prk_hex": "f9af65cce390793281832b4d5c0a5f0db0f2b84d4a442ef36264d626a0e204f6",
+        "k_link_hex": "386e9f661344baf7aa5ba6d4a814ee5f8f58228f6d914512fc5b955373e4f98a",
+        "canonical_harness": "claude",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f76310000000961636d652d636f72700000000c77732d66696e6f70732d303100000006636c617564650000000c736573732d726f742d303031"
+      },
+      "expected": {
+        "link_id": "97f6f3f629720025a7afaf55f0ed79f3966e40c3a0ae26bfe7fa106eff2028bf",
+        "unlinked_reason": null
+      }
+    },
+    {
+      "id": "rotation_different_endpoint_scope",
+      "description": "Identical session tuple, team, and epoch on a different persistent endpoint_scope 'ws-finops-02' (same K_link, different link_id)",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "team-finops",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-finops-02",
+        "wire_client_id": null,
+        "raw_harness": "claude-code",
+        "native_session": "sess-rot-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000b7465616d2d66696e6f707300000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "2d21e94b0894d37281d4b29516e74496ec5efb21a5193e8763a2d225dc626382",
+        "canonical_harness": "claude",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f76310000000961636d652d636f72700000000c77732d66696e6f70732d303200000006636c617564650000000c736573732d726f742d303031"
+      },
+      "expected": {
+        "link_id": "2c46ad515dd14a35d863ae1d46bf98e7605373814a9de9de3569acfedc49da81",
+        "unlinked_reason": null
+      }
+    }
+  ]
+}

@@ -179,6 +179,30 @@ pub fn ingest_jsonl_with_key(
     ingest_jsonl_with_key_checking(store, source_id, harness, path, tool_key, || Ok(()))
 }
 
+/// Ingest a JSONL session file using an explicit [`dendro_core::SessionLinkConfig`]
+/// to compute `agent.session.link_id` from the raw `native_session` BEFORE `seal_session`.
+pub fn ingest_jsonl_with_link_config(
+    store: &AnalyticsStore,
+    source_id: &str,
+    harness: &str,
+    path: &Path,
+    tool_key: Option<&[u8]>,
+    link_config: &dendro_core::SessionLinkConfig,
+) -> Result<FileStats> {
+    let limits = crate::capture_registry_v1::Registry::reader_limits(harness);
+    ingest_jsonl_limited_with_link(
+        store,
+        source_id,
+        harness,
+        path,
+        tool_key,
+        None,
+        || Ok(()),
+        &limits,
+        link_config,
+    )
+}
+
 /// Read a sealed prefix through the same read-only handle used by the parser.
 /// Verification happens both before parsing and against the bytes consumed.
 pub fn ingest_jsonl_with_cutoff(
@@ -190,6 +214,29 @@ pub fn ingest_jsonl_with_cutoff(
     cutoff: Option<&dendro_core::FileCutoff>,
 ) -> Result<FileStats> {
     ingest_jsonl_bounded(store, source_id, harness, path, tool_key, cutoff, || Ok(()))
+}
+
+pub fn ingest_jsonl_with_cutoff_and_link_config(
+    store: &AnalyticsStore,
+    source_id: &str,
+    harness: &str,
+    path: &Path,
+    tool_key: Option<&[u8]>,
+    cutoff: Option<&dendro_core::FileCutoff>,
+    link_config: &dendro_core::SessionLinkConfig,
+) -> Result<FileStats> {
+    let limits = crate::capture_registry_v1::Registry::reader_limits(harness);
+    ingest_jsonl_limited_with_link(
+        store,
+        source_id,
+        harness,
+        path,
+        tool_key,
+        cutoff,
+        || Ok(()),
+        &limits,
+        link_config,
+    )
 }
 
 // Tests substitute names at the real read boundary; production has no fault switch.
@@ -245,6 +292,32 @@ fn ingest_jsonl_limited(
     after_header: impl FnOnce() -> Result<()>,
     limits: &crate::sdk::ReadLimits,
 ) -> Result<FileStats> {
+    let link_config = dendro_core::SessionLinkConfig::unconfigured();
+    ingest_jsonl_limited_with_link(
+        store,
+        source_id,
+        harness,
+        path,
+        tool_key,
+        cutoff,
+        after_header,
+        limits,
+        &link_config,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn ingest_jsonl_limited_with_link(
+    store: &AnalyticsStore,
+    source_id: &str,
+    harness: &str,
+    path: &Path,
+    tool_key: Option<&[u8]>,
+    cutoff: Option<&dendro_core::FileCutoff>,
+    after_header: impl FnOnce() -> Result<()>,
+    limits: &crate::sdk::ReadLimits,
+    link_config: &dendro_core::SessionLinkConfig,
+) -> Result<FileStats> {
     let mut header = Some(after_header);
     let read = ingest_jsonl_file(
         store,
@@ -255,6 +328,7 @@ fn ingest_jsonl_limited(
         cutoff,
         &mut header,
         limits,
+        link_config,
     )?;
     let total = FileStats {
         coverage: read.coverage,
@@ -369,6 +443,7 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
     cutoff: Option<&dendro_core::FileCutoff>,
     after_header: &mut Option<F>,
     limits: &crate::sdk::ReadLimits,
+    link_config: &dendro_core::SessionLinkConfig,
 ) -> Result<FileOutcome> {
     let mismatch = |reason: &str| {
         anyhow::anyhow!(
@@ -474,9 +549,22 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
     let mut coverage = crate::sdk::Coverage::default();
     let mut coverage_defect = prior_partial;
     let mut reader_complete = true;
-    let mut source_session = file_session
-        .as_ref()
-        .map(|session| seal_session(tool_key, harness, &session.raw));
+    let mut header_conflict = store.source_has_header_conflict(source_id)?;
+    let mut session_facts_by_key = std::collections::BTreeMap::new();
+    let mut source_session = file_session.as_ref().map(|session| {
+        let (sealed, fact) = link_and_seal_session(
+            link_config,
+            tool_key,
+            source_id,
+            generation,
+            harness,
+            &session.raw,
+            session.from_header && !header_conflict,
+            header_conflict,
+        );
+        record_session_fact(&mut session_facts_by_key, fact);
+        sealed
+    });
     let mut claude_sessions = HashSet::new();
 
     // Claude, Pi, Grok, and Codex tool calls are read through the shared
@@ -637,7 +725,45 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
             usage_attribution.observe(harness, &value);
             if harness == "claude" {
                 if let Some(id) = value.get("sessionId").and_then(Value::as_str) {
-                    claude_sessions.insert(seal_session(tool_key, harness, id));
+                    let (sealed, fact) = link_and_seal_session(
+                        link_config,
+                        tool_key,
+                        source_id,
+                        generation,
+                        harness,
+                        id,
+                        true,
+                        false,
+                    );
+                    claude_sessions.insert(sealed);
+                    record_session_fact(&mut session_facts_by_key, fact);
+                } else if value.pointer("/message/usage").is_some() {
+                    let (_, fact) = link_and_seal_session(
+                        link_config,
+                        tool_key,
+                        source_id,
+                        generation,
+                        harness,
+                        "claude-session",
+                        false,
+                        false,
+                    );
+                    record_session_fact(&mut session_facts_by_key, fact);
+                }
+            }
+            if let Some(session) = &file_session {
+                if session.from_header
+                    && line_no > 1
+                    && conflicting_session(harness, text, &session.raw)
+                {
+                    header_conflict = true;
+                    if is_new {
+                        warnings.push(WarningNote {
+                            path: path.display().to_string(),
+                            line: Some(line_no),
+                            reason: "conflicting session header".into(),
+                        });
+                    }
                 }
             }
             if !is_new {
@@ -647,18 +773,6 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
                     }
                 }
                 continue;
-            }
-            if let Some(session) = &file_session {
-                if session.from_header
-                    && line_no > 1
-                    && conflicting_session(harness, text, &session.raw)
-                {
-                    warnings.push(WarningNote {
-                        path: path.display().to_string(),
-                        line: Some(line_no),
-                        reason: "conflicting session header".into(),
-                    });
-                }
             }
             if let Some(reason) = unknown_record_type(harness, &value) {
                 coverage_defect = true;
@@ -782,6 +896,20 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
                         if let Some(session) = &file_session {
                             // The file's line-1 session wins over any per-line id.
                             bucket.native_session = session.raw.clone();
+                        } else if harness == "claude" {
+                            let is_minted =
+                                value.get("sessionId").and_then(Value::as_str).is_some();
+                            let (_, fact) = link_and_seal_session(
+                                link_config,
+                                tool_key,
+                                source_id,
+                                generation,
+                                harness,
+                                &bucket.native_session,
+                                is_minted,
+                                false,
+                            );
+                            record_session_fact(&mut session_facts_by_key, fact);
                         }
                         if let Some(id) = &bucket.message_id {
                             let sealed_session =
@@ -884,6 +1012,7 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
                 }
             }
         }
+        let mut retired_fallback_keys = Vec::new();
         if harness == "claude" {
             // A file with several session identities has no unique source linkage.
             source_session = if claude_sessions.len() == 1 {
@@ -891,6 +1020,49 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
             } else {
                 None
             };
+            let (_, fallback_fact) = link_and_seal_session(
+                link_config,
+                tool_key,
+                source_id,
+                generation,
+                harness,
+                "claude-session",
+                false,
+                false,
+            );
+            if session_facts_by_key.is_empty() {
+                record_session_fact(&mut session_facts_by_key, fallback_fact);
+            } else if !claude_sessions.is_empty()
+                && !session_facts_by_key.contains_key(&fallback_fact.source_key)
+            {
+                retired_fallback_keys.push(fallback_fact.source_key);
+            }
+        } else if let Some(session) = &file_session {
+            let is_minted = session.from_header && !header_conflict;
+            let (_, fact) = link_and_seal_session(
+                link_config,
+                tool_key,
+                source_id,
+                generation,
+                harness,
+                &session.raw,
+                is_minted,
+                header_conflict,
+            );
+            session_facts_by_key.insert(fact.source_key.clone(), fact);
+            if session.from_header {
+                let (_, fallback_fact) = link_and_seal_session(
+                    link_config,
+                    tool_key,
+                    source_id,
+                    generation,
+                    harness,
+                    &format!("{harness}-file:{source_id}"),
+                    false,
+                    false,
+                );
+                retired_fallback_keys.push(fallback_fact.source_key);
+            }
         }
         coverage_defect |= coverage.unknown_kind
             + coverage.quarantined_oversize
@@ -964,6 +1136,9 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
         )?;
         store.commit_session_edges(&session_edges)?;
         store.commit_security_facts(&security_facts)?;
+        let session_facts: Vec<dendro_core::SessionFact> =
+            session_facts_by_key.values().cloned().collect();
+        store.commit_session_facts_retiring(&session_facts, &retired_fallback_keys)?;
         store.record_tool_categories(&tool_categories)?;
         store.record_usage_models(&usage_models)?;
         for note in &warnings {
@@ -1049,6 +1224,18 @@ fn file_session(harness: &str, file: &mut impl Read, source_id: &str) -> Result<
     })
 }
 
+fn record_session_fact(
+    map: &mut std::collections::BTreeMap<String, dendro_core::SessionFact>,
+    fact: dendro_core::SessionFact,
+) {
+    match map.get(&fact.source_key) {
+        Some(existing) if existing.header_conflict => {}
+        _ => {
+            map.insert(fact.source_key.clone(), fact);
+        }
+    }
+}
+
 /// The native id a header line declares: Pi `{"type":"session","id"}`, Codex
 /// `{"type":"session_meta","payload":{"id"}}`.
 fn header_id(harness: &str, value: &Value) -> Option<String> {
@@ -1110,6 +1297,46 @@ fn session_edge_fact(
         evidence_kind: edge.evidence_kind.to_string(),
         generation,
     }
+}
+
+/// Computes `agent.session.link_id` (`link-id-v1`) from the RAW `native_session` BEFORE
+/// calling `seal_session`. Synthetic, fallback, or header-less sessions (`!is_harness_minted`)
+/// resolve to `"unlinked"`. Native harness-log parsers assign `origin = "harness"`.
+#[allow(clippy::too_many_arguments)]
+fn link_and_seal_session(
+    link_config: &dendro_core::SessionLinkConfig,
+    tool_key: Option<&[u8]>,
+    source_id: &str,
+    generation: i64,
+    harness: &str,
+    raw_session: &str,
+    is_harness_minted: bool,
+    header_conflict: bool,
+) -> (String, dendro_core::SessionFact) {
+    let candidate_raw = (is_harness_minted && !header_conflict).then_some(raw_session);
+    let (link_id, unlinked_reason) =
+        link_config.resolve_session_link(Some(harness), candidate_raw, Some("harness"));
+
+    let sealed = seal_session(tool_key, harness, raw_session);
+    let fact_sealed = match tool_key {
+        Some(_) => sealed.clone(),
+        None => dendro_core::seal_identifier(
+            b"dendro-unkeyed-session-fact",
+            &format!("session:{harness}"),
+            raw_session,
+        ),
+    };
+    let fact = dendro_core::SessionFact {
+        source_key: format!("{source_id}:{harness}:{fact_sealed}"),
+        source_id: source_id.to_string(),
+        harness: harness.to_string(),
+        native_session: fact_sealed,
+        link_id,
+        unlinked_reason: unlinked_reason.map(|r| r.as_str().to_string()),
+        header_conflict,
+        generation,
+    };
+    (sealed, fact)
 }
 
 fn seal_session(key: Option<&[u8]>, harness: &str, raw: &str) -> String {
@@ -6612,5 +6839,764 @@ mod hostile_input_tests {
             assert!(limits.nesting_depth <= crate::sdk::GLOBAL_MAX_DEPTH);
             assert!(limits.decoded_records_per_batch <= crate::sdk::GLOBAL_MAX_BATCH_RECORDS);
         }
+    }
+
+    #[test]
+    fn d3_ingest_computes_link_id_before_sealing_and_matches_g0a_cross_product_vectors() {
+        let dir = std::env::temp_dir().join(format!(
+            "dendro-d3-ingest-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let store = AnalyticsStore::open_in_memory("d3-key").unwrap();
+        let tool_key = b"0123456789abcdef0123456789abcdef";
+
+        // Load expected values from vendored docs/contracts/link-id-v1/vectors/g0a.json:
+        let g0a_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../docs/contracts/link-id-v1/vectors/g0a.json");
+        let g0a_json: Value =
+            serde_json::from_str(&fs::read_to_string(&g0a_path).unwrap()).unwrap();
+        let vectors = g0a_json["vectors"].as_array().unwrap();
+        let find_vec = |id: &str| {
+            vectors
+                .iter()
+                .find(|v| v["id"].as_str() == Some(id))
+                .unwrap()
+        };
+        let claude_vec = find_vec("g0a_claude_s2_session_a_dendro_session");
+        let codex_vec = find_vec("g0a_codex_s2_session_1_rollout");
+
+        let g0a_k_link_hex = claude_vec["intermediates"]["k_link_hex"].as_str().unwrap();
+        let link_cfg = dendro_core::SessionLinkConfig::from_key_hex(
+            g0a_k_link_hex,
+            claude_vec["inputs"]["org"].as_str(),
+            claude_vec["inputs"]["endpoint_scope"].as_str(),
+            claude_vec["inputs"]["team"].as_str(),
+            claude_vec["inputs"]["epoch"].as_str(),
+        );
+
+        // 1. Claude session with g0a raw sessionId (g0a_claude_s2_session_a_dendro_session)
+        let claude_raw = claude_vec["inputs"]["native_session"].as_str().unwrap();
+        let claude_expected_link = claude_vec["expected"]["link_id"].as_str().unwrap();
+        let claude_path = dir.join("claude.jsonl");
+        fs::write(
+            &claude_path,
+            format!(
+                "{{\"type\":\"assistant\",\"sessionId\":\"{claude_raw}\",\"timestamp\":\"2026-10-09T00:00:01Z\",\"message\":{{\"id\":\"m1\",\"role\":\"assistant\",\"usage\":{{\"input_tokens\":10,\"output_tokens\":5,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}}}}\n"
+            ),
+        )
+        .unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-claude",
+            "claude",
+            &claude_path,
+            Some(tool_key),
+            &link_cfg,
+        )
+        .unwrap();
+
+        // 2. Codex session with header (g0a_codex_s2_session_1_rollout)
+        let codex_raw = codex_vec["inputs"]["native_session"].as_str().unwrap();
+        let codex_expected_link = codex_vec["expected"]["link_id"].as_str().unwrap();
+        let codex_path = dir.join("codex.jsonl");
+        fs::write(
+            &codex_path,
+            format!(
+                "{{\"type\":\"session_meta\",\"payload\":{{\"id\":\"{codex_raw}\"}}}}\n{{\"timestamp\":\"2026-10-09T00:00:02Z\",\"type\":\"event_msg\",\"payload\":{{\"type\":\"token_count\",\"info\":{{\"total_token_usage\":{{\"input_tokens\":12,\"cached_input_tokens\":2,\"cache_write_input_tokens\":0,\"output_tokens\":4,\"reasoning_output_tokens\":1}}}}}}}}\n"
+            ),
+        )
+        .unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-codex",
+            "codex",
+            &codex_path,
+            Some(tool_key),
+            &link_cfg,
+        )
+        .unwrap();
+
+        // 3. Pi session with header
+        let pi_raw = "0984094a-e1e0-442e-8da4-06bf7c61e265";
+        let (pi_expected_link, pi_expected_reason) =
+            link_cfg.resolve_session_link(Some("pi"), Some(pi_raw), None);
+        assert!(pi_expected_reason.is_none());
+        assert_ne!(pi_expected_link, "unlinked");
+        let pi_path = dir.join("pi.jsonl");
+        fs::write(
+            &pi_path,
+            format!(
+                "{{\"type\":\"session\",\"id\":\"{pi_raw}\"}}\n{{\"type\":\"message\",\"id\":\"p1\",\"timestamp\":\"2026-10-09T00:00:03Z\",\"message\":{{\"role\":\"assistant\",\"usage\":{{\"input\":8,\"output\":3,\"cacheRead\":0,\"cacheWrite\":0,\"reasoning\":0}}}}}}\n"
+            ),
+        )
+        .unwrap();
+        ingest_jsonl_with_link_config(&store, "src-pi", "pi", &pi_path, Some(tool_key), &link_cfg)
+            .unwrap();
+
+        // 4. Session ID transformed by seal_session (contains secret-shaped token):
+        //    proves link_id is computed from the RAW session BEFORE seal_session, while
+        //    only the sealed native_session (`<opaque>\t[redacted]`) is persisted.
+        let secret_session_raw = "sk-ant-session-raw-before-seal-987654";
+        let (expected_secret_link, expected_secret_reason) =
+            link_cfg.resolve_session_link(Some("claude"), Some(secret_session_raw), None);
+        assert!(expected_secret_reason.is_none());
+        assert_ne!(expected_secret_link, "unlinked");
+        let secret_claude_path = dir.join("claude_sealed.jsonl");
+        fs::write(
+            &secret_claude_path,
+            format!(
+                "{{\"type\":\"assistant\",\"sessionId\":\"{secret_session_raw}\",\"timestamp\":\"2026-10-09T00:00:04Z\",\"message\":{{\"id\":\"m-sec\",\"role\":\"assistant\",\"usage\":{{\"input_tokens\":5,\"output_tokens\":2,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}}}}\n"
+            ),
+        )
+        .unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-claude-sealed",
+            "claude",
+            &secret_claude_path,
+            Some(tool_key),
+            &link_cfg,
+        )
+        .unwrap();
+
+        let facts = store.load_session_facts().unwrap();
+        assert_eq!(facts.len(), 4);
+
+        let claude_sealed = seal_session(Some(tool_key), "claude", claude_raw);
+        let codex_sealed = seal_session(Some(tool_key), "codex", codex_raw);
+        let pi_sealed = seal_session(Some(tool_key), "pi", pi_raw);
+        let secret_sealed = seal_session(Some(tool_key), "claude", secret_session_raw);
+        assert_ne!(secret_sealed, secret_session_raw);
+        assert!(secret_sealed.ends_with("\t[redacted]"));
+
+        let claude_fact = facts.iter().find(|f| f.source_id == "src-claude").unwrap();
+        assert_eq!(claude_fact.native_session, claude_sealed);
+        assert_eq!(claude_fact.link_id, claude_expected_link);
+        assert_eq!(claude_fact.unlinked_reason, None);
+
+        let codex_fact = facts.iter().find(|f| f.source_id == "src-codex").unwrap();
+        assert_eq!(codex_fact.native_session, codex_sealed);
+        assert_eq!(codex_fact.link_id, codex_expected_link);
+        assert_eq!(codex_fact.unlinked_reason, None);
+
+        let pi_fact = facts.iter().find(|f| f.source_id == "src-pi").unwrap();
+        assert_eq!(pi_fact.native_session, pi_sealed);
+        assert_eq!(pi_fact.link_id, pi_expected_link);
+        assert_eq!(pi_fact.unlinked_reason, None);
+
+        let secret_fact = facts
+            .iter()
+            .find(|f| f.source_id == "src-claude-sealed")
+            .unwrap();
+        assert_eq!(secret_fact.native_session, secret_sealed);
+        assert_eq!(secret_fact.link_id, expected_secret_link);
+        assert_eq!(secret_fact.unlinked_reason, None);
+        // Verify that computing link_id AFTER seal_session would NOT have produced expected_secret_link:
+        let (wrong_after_seal, _) =
+            link_cfg.resolve_session_link(Some("claude"), Some(&secret_sealed), None);
+        assert_eq!(wrong_after_seal, "unlinked");
+        assert_ne!(secret_fact.link_id, wrong_after_seal);
+
+        // Verify usage_facts still carry the exact same sealed native_session as pre-D3:
+        let usages = store.load_usage().unwrap();
+        assert!(usages.iter().any(|u| u.native_session == claude_sealed));
+        assert!(usages.iter().any(|u| u.native_session == codex_sealed));
+        assert!(usages.iter().any(|u| u.native_session == pi_sealed));
+        assert!(usages.iter().any(|u| u.native_session == secret_sealed));
+
+        // Verify raw secret session ID and K_link are never persisted in session_facts or usage_facts:
+        let dumped = format!("{facts:?}\n{usages:?}");
+        assert!(!dumped.contains(secret_session_raw));
+        assert!(!dumped.contains(g0a_k_link_hex));
+
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn d3_ingest_unlinks_headerless_synthetic_non_harness_origin_unconfigured_and_short_key() {
+        let dir = std::env::temp_dir().join(format!(
+            "dendro-d3-unlinked-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let store = AnalyticsStore::open_in_memory("d3-unlinked-key").unwrap();
+        let tool_key = b"0123456789abcdef0123456789abcdef";
+
+        let valid_cfg = dendro_core::SessionLinkConfig::from_key_hex(
+            &"22".repeat(32),
+            Some("acme"),
+            Some("host-01"),
+            Some("core"),
+            Some("2026-11"),
+        );
+
+        // 1. Header-less Codex file -> synthetic `codex-file:src-codex-no-hdr` -> unlinked (missing_native_session)
+        let codex_no_hdr = dir.join("codex_no_hdr.jsonl");
+        fs::write(
+            &codex_no_hdr,
+            "{\"timestamp\":\"2026-10-09T00:00:02Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":10,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":2,\"reasoning_output_tokens\":0}}}}\n",
+        )
+        .unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-codex-no-hdr",
+            "codex",
+            &codex_no_hdr,
+            Some(tool_key),
+            &valid_cfg,
+        )
+        .unwrap();
+
+        // 2. Missing sessionId on Claude line -> parser fallback `claude-session` -> unlinked (missing_native_session)
+        let claude_syn = dir.join("claude_syn.jsonl");
+        fs::write(
+            &claude_syn,
+            "{\"type\":\"assistant\",\"timestamp\":\"2026-10-09T00:00:01Z\",\"message\":{\"id\":\"m-syn\",\"role\":\"assistant\",\"usage\":{\"input_tokens\":4,\"output_tokens\":2,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}\n",
+        )
+        .unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-claude-syn",
+            "claude",
+            &claude_syn,
+            Some(tool_key),
+            &valid_cfg,
+        )
+        .unwrap();
+
+        // 3. Transcript line containing `"origin": "x"` does NOT unlink a native session
+        //    (origin is assigned by dendro's parser, never read from transcript content).
+        let claude_content_origin = dir.join("claude_origin.jsonl");
+        fs::write(
+            &claude_content_origin,
+            "{\"type\":\"assistant\",\"origin\":\"x\",\"sessionId\":\"real-session-123\",\"timestamp\":\"2026-10-09T00:00:01Z\",\"message\":{\"id\":\"m-orig\",\"origin\":\"x\",\"role\":\"assistant\",\"usage\":{\"input_tokens\":4,\"output_tokens\":2,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}\n",
+        )
+        .unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-claude-origin",
+            "claude",
+            &claude_content_origin,
+            Some(tool_key),
+            &valid_cfg,
+        )
+        .unwrap();
+
+        // 4. No link config -> unlinked (invalid_key_material)
+        let unconfigured = dendro_core::SessionLinkConfig::unconfigured();
+        let claude_unconf = dir.join("claude_unconf.jsonl");
+        fs::write(
+            &claude_unconf,
+            "{\"type\":\"assistant\",\"sessionId\":\"real-session-456\",\"timestamp\":\"2026-10-09T00:00:01Z\",\"message\":{\"id\":\"m-unc\",\"role\":\"assistant\",\"usage\":{\"input_tokens\":4,\"output_tokens\":2,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}\n",
+        )
+        .unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-claude-unconf",
+            "claude",
+            &claude_unconf,
+            Some(tool_key),
+            &unconfigured,
+        )
+        .unwrap();
+
+        // 5. Short key (< 32 bytes) -> unlinked (invalid_key_material)
+        let short_cfg = dendro_core::SessionLinkConfig::from_key_slice(
+            &[0x99; 16],
+            Some("acme"),
+            Some("host-01"),
+            None,
+            None,
+        );
+        let claude_short = dir.join("claude_short.jsonl");
+        fs::write(
+            &claude_short,
+            "{\"type\":\"assistant\",\"sessionId\":\"real-session-789\",\"timestamp\":\"2026-10-09T00:00:01Z\",\"message\":{\"id\":\"m-short\",\"role\":\"assistant\",\"usage\":{\"input_tokens\":4,\"output_tokens\":2,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}\n",
+        )
+        .unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-claude-short",
+            "claude",
+            &claude_short,
+            Some(tool_key),
+            &short_cfg,
+        )
+        .unwrap();
+
+        let facts = store.load_session_facts().unwrap();
+        let find_fact = |src: &str| facts.iter().find(|f| f.source_id == src).unwrap();
+
+        let f_no_hdr = find_fact("src-codex-no-hdr");
+        assert_eq!(f_no_hdr.link_id, "unlinked");
+        assert_eq!(
+            f_no_hdr.unlinked_reason.as_deref(),
+            Some("missing_native_session")
+        );
+        assert_eq!(
+            f_no_hdr.native_session,
+            seal_session(Some(tool_key), "codex", "codex-file:src-codex-no-hdr")
+        );
+
+        let f_syn = find_fact("src-claude-syn");
+        assert_eq!(f_syn.link_id, "unlinked");
+        assert_eq!(
+            f_syn.unlinked_reason.as_deref(),
+            Some("missing_native_session")
+        );
+
+        let (expected_origin_link, _) = valid_cfg.resolve_session_link(
+            Some("claude"),
+            Some("real-session-123"),
+            Some("harness"),
+        );
+        let f_origin = find_fact("src-claude-origin");
+        assert_eq!(f_origin.link_id, expected_origin_link);
+        assert_ne!(f_origin.link_id, "unlinked");
+        assert_eq!(f_origin.unlinked_reason, None);
+
+        // Non-native caller path (export / imported origin) sets non-harness origin -> unlinked:
+        let (non_native_link, non_native_reason) = valid_cfg.resolve_session_link(
+            Some("claude"),
+            Some("real-session-123"),
+            Some("imported"),
+        );
+        assert_eq!(non_native_link, "unlinked");
+        assert_eq!(
+            non_native_reason.map(|r| r.as_str()),
+            Some("non_harness_origin")
+        );
+
+        let f_unconf = find_fact("src-claude-unconf");
+        assert_eq!(f_unconf.link_id, "unlinked");
+        assert_eq!(
+            f_unconf.unlinked_reason.as_deref(),
+            Some("invalid_key_material")
+        );
+
+        let f_short = find_fact("src-claude-short");
+        assert_eq!(f_short.link_id, "unlinked");
+        assert_eq!(
+            f_short.unlinked_reason.as_deref(),
+            Some("invalid_key_material")
+        );
+
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn d3_reingest_persists_header_conflict_and_upserts_one_row_per_session_identity() {
+        let dir = std::env::temp_dir().join(format!(
+            "dendro-d3-reingest-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let store = AnalyticsStore::open_in_memory("d3-reingest-key").unwrap();
+        let tool_key = b"0123456789abcdef0123456789abcdef";
+        let valid_cfg = dendro_core::SessionLinkConfig::from_key_hex(
+            &"33".repeat(32),
+            Some("acme"),
+            Some("host-01"),
+            Some("core"),
+            Some("2026-11"),
+        );
+
+        // 1. Plain append -> exactly one row across appends
+        let codex_plain = dir.join("codex_plain.jsonl");
+        let line1 = "{\"type\":\"session_meta\",\"payload\":{\"id\":\"sess-plain-1\"}}\n";
+        let usage1 = "{\"timestamp\":\"2026-10-09T00:00:01Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":10,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":2,\"reasoning_output_tokens\":0}}}}\n";
+        let usage2 = "{\"timestamp\":\"2026-10-09T00:00:02Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":20,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":4,\"reasoning_output_tokens\":0}}}}\n";
+        fs::write(&codex_plain, format!("{line1}{usage1}")).unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-codex-plain",
+            "codex",
+            &codex_plain,
+            Some(tool_key),
+            &valid_cfg,
+        )
+        .unwrap();
+        fs::write(&codex_plain, format!("{line1}{usage1}{usage2}")).unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-codex-plain",
+            "codex",
+            &codex_plain,
+            Some(tool_key),
+            &valid_cfg,
+        )
+        .unwrap();
+
+        let plain_rows: Vec<_> = store
+            .load_session_facts()
+            .unwrap()
+            .into_iter()
+            .filter(|f| f.source_id == "src-codex-plain")
+            .collect();
+        assert_eq!(plain_rows.len(), 1);
+        assert_ne!(plain_rows[0].link_id, "unlinked");
+        assert_eq!(plain_rows[0].unlinked_reason, None);
+
+        // 2. Conflicting header in gen 1 plus an appended batch -> still unlinked, with exactly one row
+        let codex_conflict = dir.join("codex_conflict.jsonl");
+        let hdr1 = "{\"type\":\"session_meta\",\"payload\":{\"id\":\"sess-conflict-a\"}}\n";
+        let hdr2 = "{\"type\":\"session_meta\",\"payload\":{\"id\":\"sess-conflict-b\"}}\n";
+        fs::write(&codex_conflict, format!("{hdr1}{hdr2}{usage1}")).unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-codex-conflict",
+            "codex",
+            &codex_conflict,
+            Some(tool_key),
+            &valid_cfg,
+        )
+        .unwrap();
+
+        // Append non-conflicting usage in second pass:
+        fs::write(&codex_conflict, format!("{hdr1}{hdr2}{usage1}{usage2}")).unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-codex-conflict",
+            "codex",
+            &codex_conflict,
+            Some(tool_key),
+            &valid_cfg,
+        )
+        .unwrap();
+
+        let conflict_rows_after_append: Vec<_> = store
+            .load_session_facts()
+            .unwrap()
+            .into_iter()
+            .filter(|f| f.source_id == "src-codex-conflict")
+            .collect();
+        assert_eq!(conflict_rows_after_append.len(), 1);
+        assert_eq!(conflict_rows_after_append[0].link_id, "unlinked");
+        assert_eq!(
+            conflict_rows_after_append[0].unlinked_reason.as_deref(),
+            Some("missing_native_session")
+        );
+
+        // Even if the file is rewritten in generation 2 without the conflicting second header,
+        // a session unlinked in generation 1 can never become linked in generation 2:
+        fs::write(&codex_conflict, format!("{hdr1}{usage1}")).unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-codex-conflict",
+            "codex",
+            &codex_conflict,
+            Some(tool_key),
+            &valid_cfg,
+        )
+        .unwrap();
+
+        let conflict_rows_gen2: Vec<_> = store
+            .load_session_facts()
+            .unwrap()
+            .into_iter()
+            .filter(|f| f.source_id == "src-codex-conflict")
+            .collect();
+        assert_eq!(conflict_rows_gen2.len(), 1);
+        assert_eq!(conflict_rows_gen2[0].link_id, "unlinked");
+        assert_eq!(
+            conflict_rows_gen2[0].unlinked_reason.as_deref(),
+            Some("missing_native_session")
+        );
+        assert!(conflict_rows_gen2[0].header_conflict);
+        assert_eq!(conflict_rows_gen2[0].generation, 2);
+
+        // Even if the path string changes for the same source_id in generation 3,
+        // the header_conflict lock (keyed by source_id, not path.display()) still holds:
+        let codex_conflict_relocated = dir.join("codex_conflict_relocated.jsonl");
+        fs::write(&codex_conflict_relocated, format!("{hdr1}")).unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-codex-conflict",
+            "codex",
+            &codex_conflict_relocated,
+            Some(tool_key),
+            &valid_cfg,
+        )
+        .unwrap();
+        let conflict_rows_gen3: Vec<_> = store
+            .load_session_facts()
+            .unwrap()
+            .into_iter()
+            .filter(|f| f.source_id == "src-codex-conflict")
+            .collect();
+        assert_eq!(conflict_rows_gen3.len(), 1);
+        assert_eq!(conflict_rows_gen3[0].link_id, "unlinked");
+        assert!(conflict_rows_gen3[0].header_conflict);
+        assert_eq!(conflict_rows_gen3[0].generation, 3);
+
+        // 3. Unconfigured run, then configured -> linked (claude, codex, pi, grok)
+        let unconfigured_cfg = dendro_core::SessionLinkConfig::unconfigured();
+        let claude_unconf_then_conf = dir.join("claude_unconf_then_conf.jsonl");
+        fs::write(
+            &claude_unconf_then_conf,
+            "{\"type\":\"assistant\",\"timestamp\":\"2026-10-09T00:00:00Z\",\"sessionId\":\"claude-relink-1\",\"message\":{\"id\":\"m-relink-1\",\"usage\":{\"input_tokens\":5,\"output_tokens\":1,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}\n",
+        )
+        .unwrap();
+        let codex_unconf_then_conf = dir.join("codex_unconf_then_conf.jsonl");
+        fs::write(
+            &codex_unconf_then_conf,
+            format!(
+                "{{\"type\":\"session_meta\",\"payload\":{{\"id\":\"codex-relink-1\"}}}}\n{usage1}"
+            ),
+        )
+        .unwrap();
+        let pi_unconf_then_conf = dir.join("pi_unconf_then_conf.jsonl");
+        fs::write(
+            &pi_unconf_then_conf,
+            "{\"type\":\"session\",\"id\":\"pi-relink-1\"}\n{\"type\":\"message\",\"timestamp\":\"2026-10-09T00:00:00Z\",\"message\":{\"role\":\"assistant\",\"usage\":{\"input\":4,\"output\":1,\"cacheRead\":0,\"cacheWrite\":0}}}\n",
+        )
+        .unwrap();
+        let grok_dir = dir.join("grok_relink");
+        fs::create_dir_all(&grok_dir).unwrap();
+        let grok_unconf_then_conf = grok_dir.join("updates.jsonl");
+        fs::write(
+            &grok_unconf_then_conf,
+            "{\"method\":\"session/update\",\"params\":{\"sessionId\":\"grok-relink-1\",\"update\":{\"sessionUpdate\":\"usage_update\",\"_meta\":{\"tokenUsage\":{\"inputTokens\":3,\"outputTokens\":1,\"cachedInputTokens\":0,\"reasoningOutputTokens\":0}}}}}\n",
+        )
+        .unwrap();
+
+        for (src_id, harness, file_path) in [
+            ("src-relink-claude", "claude", &claude_unconf_then_conf),
+            ("src-relink-codex", "codex", &codex_unconf_then_conf),
+            ("src-relink-pi", "pi", &pi_unconf_then_conf),
+            ("src-relink-grok", "grok", &grok_unconf_then_conf),
+        ] {
+            ingest_jsonl_with_link_config(
+                &store,
+                src_id,
+                harness,
+                file_path,
+                Some(tool_key),
+                &unconfigured_cfg,
+            )
+            .unwrap();
+            let before: Vec<_> = store
+                .load_session_facts()
+                .unwrap()
+                .into_iter()
+                .filter(|f| f.source_id == src_id)
+                .collect();
+            assert_eq!(before.len(), 1);
+            assert_eq!(before[0].link_id, "unlinked");
+            assert_eq!(
+                before[0].unlinked_reason.as_deref(),
+                Some("invalid_key_material")
+            );
+            assert!(!before[0].header_conflict);
+
+            // Second run with valid_cfg on the same unchanged file -> recomputed and linked!
+            ingest_jsonl_with_link_config(
+                &store,
+                src_id,
+                harness,
+                file_path,
+                Some(tool_key),
+                &valid_cfg,
+            )
+            .unwrap();
+            let after: Vec<_> = store
+                .load_session_facts()
+                .unwrap()
+                .into_iter()
+                .filter(|f| f.source_id == src_id)
+                .collect();
+            assert_eq!(after.len(), 1);
+            assert_ne!(after[0].link_id, "unlinked");
+            assert_eq!(after[0].link_id.len(), 64);
+            assert_eq!(after[0].unlinked_reason, None);
+            assert!(!after[0].header_conflict);
+        }
+
+        // 4. Missing org fixed later -> linked (and fallback {harness}-file: reason recomputed)
+        let missing_org_cfg = dendro_core::SessionLinkConfig::from_key_hex(
+            &"33".repeat(32),
+            None,
+            Some("host-01"),
+            Some("core"),
+            Some("2026-11"),
+        );
+        let codex_missing_org = dir.join("codex_missing_org.jsonl");
+        fs::write(
+            &codex_missing_org,
+            format!(
+                "{{\"type\":\"session_meta\",\"payload\":{{\"id\":\"codex-org-fix-1\"}}}}\n{usage1}"
+            ),
+        )
+        .unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-codex-org-fix",
+            "codex",
+            &codex_missing_org,
+            Some(tool_key),
+            &missing_org_cfg,
+        )
+        .unwrap();
+        let org_before: Vec<_> = store
+            .load_session_facts()
+            .unwrap()
+            .into_iter()
+            .filter(|f| f.source_id == "src-codex-org-fix")
+            .collect();
+        assert_eq!(org_before.len(), 1);
+        assert_eq!(org_before[0].link_id, "unlinked");
+        assert_eq!(
+            org_before[0].unlinked_reason.as_deref(),
+            Some("missing_org")
+        );
+
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-codex-org-fix",
+            "codex",
+            &codex_missing_org,
+            Some(tool_key),
+            &valid_cfg,
+        )
+        .unwrap();
+        let org_after: Vec<_> = store
+            .load_session_facts()
+            .unwrap()
+            .into_iter()
+            .filter(|f| f.source_id == "src-codex-org-fix")
+            .collect();
+        assert_eq!(org_after.len(), 1);
+        assert_ne!(org_after[0].link_id, "unlinked");
+        assert_eq!(org_after[0].unlinked_reason, None);
+
+        // Fallback {harness}-file: row also updates its unlinked_reason when config changes
+        let codex_fallback_only = dir.join("codex_fallback_only.jsonl");
+        fs::write(&codex_fallback_only, usage1).unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-codex-fallback-only",
+            "codex",
+            &codex_fallback_only,
+            Some(tool_key),
+            &missing_org_cfg,
+        )
+        .unwrap();
+        let fb_before: Vec<_> = store
+            .load_session_facts()
+            .unwrap()
+            .into_iter()
+            .filter(|f| f.source_id == "src-codex-fallback-only")
+            .collect();
+        assert_eq!(fb_before.len(), 1);
+        assert_eq!(fb_before[0].link_id, "unlinked");
+        assert_eq!(fb_before[0].unlinked_reason.as_deref(), Some("missing_org"));
+
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-codex-fallback-only",
+            "codex",
+            &codex_fallback_only,
+            Some(tool_key),
+            &valid_cfg,
+        )
+        .unwrap();
+        let fb_after: Vec<_> = store
+            .load_session_facts()
+            .unwrap()
+            .into_iter()
+            .filter(|f| f.source_id == "src-codex-fallback-only")
+            .collect();
+        assert_eq!(fb_after.len(), 1);
+        assert_eq!(fb_after[0].link_id, "unlinked");
+        assert_eq!(
+            fb_after[0].unlinked_reason.as_deref(),
+            Some("missing_native_session")
+        );
+
+        // 5. Partial line-1 first pass (and zero-byte first pass), then the full file ->
+        //    the header session is linked and the fallback row is retired!
+        let codex_partial = dir.join("codex_partial_line1.jsonl");
+        // First pass: unterminated partial line 1
+        fs::write(
+            &codex_partial,
+            "{\"type\":\"session_meta\",\"payload\":{\"id\":\"sess-after-partial\"",
+        )
+        .unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-codex-partial",
+            "codex",
+            &codex_partial,
+            Some(tool_key),
+            &valid_cfg,
+        )
+        .unwrap();
+        let partial_pass1: Vec<_> = store
+            .load_session_facts()
+            .unwrap()
+            .into_iter()
+            .filter(|f| f.source_id == "src-codex-partial")
+            .collect();
+        assert_eq!(partial_pass1.len(), 1);
+        assert_eq!(partial_pass1[0].link_id, "unlinked");
+        assert_eq!(
+            partial_pass1[0].unlinked_reason.as_deref(),
+            Some("missing_native_session")
+        );
+        assert_eq!(
+            partial_pass1[0].native_session,
+            seal_session(Some(tool_key), "codex", "codex-file:src-codex-partial")
+        );
+
+        // Second pass: full line 1 + usage -> fallback row retired, header session linked!
+        fs::write(
+            &codex_partial,
+            format!(
+                "{{\"type\":\"session_meta\",\"payload\":{{\"id\":\"sess-after-partial\"}}}}\n{usage1}"
+            ),
+        )
+        .unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-codex-partial",
+            "codex",
+            &codex_partial,
+            Some(tool_key),
+            &valid_cfg,
+        )
+        .unwrap();
+        let partial_pass2: Vec<_> = store
+            .load_session_facts()
+            .unwrap()
+            .into_iter()
+            .filter(|f| f.source_id == "src-codex-partial")
+            .collect();
+        assert_eq!(
+            partial_pass2.len(),
+            1,
+            "fallback row must be retired when real header session appears"
+        );
+        assert_eq!(
+            partial_pass2[0].native_session,
+            seal_session(Some(tool_key), "codex", "sess-after-partial")
+        );
+        assert_ne!(partial_pass2[0].link_id, "unlinked");
+        assert_eq!(partial_pass2[0].unlinked_reason, None);
+        assert!(!partial_pass2[0].header_conflict);
+
+        fs::remove_dir_all(dir).unwrap();
     }
 }

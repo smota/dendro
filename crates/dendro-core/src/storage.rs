@@ -257,6 +257,21 @@ impl AnalyticsStore {
         generation BIGINT NOT NULL
     )";
 
+    /// Session-level link facts (`MTN-19 / D3`, `link-id-v1`). Additive and idempotent;
+    /// no schema bump. `native_session` stores the sealed session token (`session:<hex>`),
+    /// while `link_id` is computed from the raw session ID BEFORE `seal_session`.
+    pub(super) const SESSION_FACTS_SCHEMA: &'static str =
+        "CREATE TABLE IF NOT EXISTS session_facts (
+        source_key VARCHAR PRIMARY KEY,
+        source_id VARCHAR NOT NULL,
+        harness VARCHAR NOT NULL,
+        native_session VARCHAR NOT NULL,
+        link_id VARCHAR NOT NULL DEFAULT 'unlinked',
+        unlinked_reason VARCHAR,
+        header_conflict BOOLEAN NOT NULL DEFAULT FALSE,
+        generation BIGINT NOT NULL
+    )";
+
     pub(super) const SEMANTIC_STATE_SCHEMA: &'static str = "CREATE TABLE IF NOT EXISTS dendro_semantic_state (id INTEGER PRIMARY KEY, dirty BOOLEAN NOT NULL); INSERT INTO dendro_semantic_state VALUES (1, TRUE) ON CONFLICT DO NOTHING";
 
     pub(super) fn invalidate_semantic(&self) -> Result<()> {
@@ -383,7 +398,8 @@ impl AnalyticsStore {
             return Err(anyhow!("analytics key id does not match the sidecar"));
         }
         conn.execute_batch(Self::SEMANTIC_STATE_SCHEMA)?;
-        Ok(Self {
+        conn.execute_batch(Self::SESSION_FACTS_SCHEMA)?;
+        let store = Self {
             conn,
             key_id: key_id.to_string(),
             openrig_rows: RefCell::new(None),
@@ -393,7 +409,8 @@ impl AnalyticsStore {
             _custody: None,
             #[cfg(any(windows, target_os = "linux"))]
             runtime,
-        })
+        };
+        Ok(store)
     }
 
     /// Opens a database this process just created in a private staging directory.
@@ -413,7 +430,8 @@ impl AnalyticsStore {
         validate_reader_schema(&conn, version, &key_id)?;
         conn.execute_batch(openrig_provenance::SCHEMA)?;
         conn.execute_batch(Self::SEMANTIC_STATE_SCHEMA)?;
-        Ok(Self {
+        conn.execute_batch(Self::SESSION_FACTS_SCHEMA)?;
+        let store = Self {
             conn,
             key_id,
             openrig_rows: RefCell::new(None),
@@ -423,7 +441,8 @@ impl AnalyticsStore {
             _custody: None,
             #[cfg(any(windows, target_os = "linux"))]
             runtime: Some(runtime),
-        })
+        };
+        Ok(store)
     }
 
     pub fn open_read_only(path: &Path) -> Result<Self> {
@@ -617,6 +636,7 @@ impl AnalyticsStore {
         self.conn.execute_batch(Self::PROCESS_SAMPLES_SCHEMA)?;
         self.conn.execute_batch(Self::SESSION_EDGES_SCHEMA)?;
         self.conn.execute_batch(Self::SECURITY_FACTS_SCHEMA)?;
+        self.conn.execute_batch(Self::SESSION_FACTS_SCHEMA)?;
         self.conn.execute_batch(openrig_provenance::SCHEMA)?;
         self.conn.execute(
             "INSERT INTO dendro_meta (schema_version, key_id) VALUES (?, ?)",
@@ -1339,6 +1359,139 @@ impl AnalyticsStore {
                 value: row.get(6)?,
                 source_field: row.get(7)?,
                 generation: row.get(8)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    /// Returns `true` if `source_id` has an existing `session_facts` row latched to a header conflict.
+    pub fn source_has_header_conflict(&self, source_id: &str) -> Result<bool> {
+        let exists: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'session_facts'",
+            [],
+            |row| row.get(0),
+        )?;
+        if exists == 0 {
+            return Ok(false);
+        }
+        let mut stmt = self.conn.prepare(
+            "SELECT 1 FROM session_facts WHERE source_id = ? AND header_conflict = TRUE LIMIT 1",
+        )?;
+        let mut rows = stmt.query(params![redact(source_id)])?;
+        Ok(rows.next()?.is_some())
+    }
+
+    /// Upsert session-level link facts (`MTN-19 / D3`).
+    pub fn commit_session_facts(&self, facts: &[SessionFact]) -> Result<()> {
+        self.commit_session_facts_retiring(facts, &[])
+    }
+
+    /// Upsert session-level link facts (`MTN-19 / D3`) and retire superseded fallback
+    /// `{harness}-file:` / `"claude-session"` rows when a real session header or per-line
+    /// session identity appears.
+    ///
+    /// Enforces that `native_session` is already sealed (`session:<hex>`), `link_id` is either
+    /// `"unlinked"` or a 64-character lowercase hex digest, and `unlinked_reason` is a valid
+    /// `link-id-v1` reason code only when `link_id == "unlinked"`.
+    /// Only an explicit `header_conflict` permanently locks a session row to `"unlinked"`;
+    /// rows unlinked for configuration or input reasons are recomputed and replaced on upsert.
+    pub fn commit_session_facts_retiring(
+        &self,
+        facts: &[SessionFact],
+        retired_fallback_keys: &[String],
+    ) -> Result<()> {
+        if facts.is_empty() && retired_fallback_keys.is_empty() {
+            return Ok(());
+        }
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute_batch(Self::SESSION_FACTS_SCHEMA)?;
+        if !retired_fallback_keys.is_empty() {
+            let mut retire_stmt = tx.prepare(
+                "DELETE FROM session_facts
+                 WHERE source_key = ? AND NOT header_conflict",
+            )?;
+            for retired_key in retired_fallback_keys {
+                retire_stmt.execute(params![redact(retired_key)])?;
+            }
+        }
+        let mut stmt = tx.prepare(
+            "INSERT INTO session_facts
+             (source_key, source_id, harness, native_session, link_id, unlinked_reason, header_conflict, generation)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT (source_key) DO UPDATE SET
+                 link_id = CASE
+                     WHEN session_facts.header_conflict OR excluded.header_conflict THEN 'unlinked'
+                     ELSE excluded.link_id
+                 END,
+                 unlinked_reason = CASE
+                     WHEN session_facts.header_conflict OR excluded.header_conflict THEN COALESCE(excluded.unlinked_reason, session_facts.unlinked_reason)
+                     ELSE excluded.unlinked_reason
+                 END,
+                 header_conflict = (session_facts.header_conflict OR excluded.header_conflict),
+                 generation = excluded.generation",
+        )?;
+        for fact in facts {
+            if crate::privacy::contains_secret(&fact.native_session) {
+                anyhow::bail!("session_facts.native_session must be sealed before persistence");
+            }
+            if !crate::link_id::is_valid_persisted_link_id(&fact.link_id) {
+                anyhow::bail!("session_facts.link_id must be 'unlinked' or 64 lowercase hex chars");
+            }
+            if fact.header_conflict && fact.link_id != crate::link_id::AGENT_SESSION_LINK_UNLINKED {
+                anyhow::bail!("header_conflict session_facts row must have link_id == 'unlinked'");
+            }
+            if fact.link_id == crate::link_id::AGENT_SESSION_LINK_UNLINKED {
+                if let Some(reason) = fact.unlinked_reason.as_deref() {
+                    if crate::link_id::UnlinkedReason::from_code(reason).is_none() {
+                        anyhow::bail!(
+                            "session_facts.unlinked_reason is not in link-id-v1 vocabulary"
+                        );
+                    }
+                }
+            } else if fact.unlinked_reason.is_some() {
+                anyhow::bail!("linked session_facts row must not carry unlinked_reason");
+            }
+            stmt.execute(params![
+                redact(&fact.source_key),
+                redact(&fact.source_id),
+                redact(&fact.harness),
+                redact(&fact.native_session),
+                fact.link_id.as_str(),
+                fact.unlinked_reason.as_deref(),
+                fact.header_conflict,
+                fact.generation,
+            ])?;
+        }
+        drop(stmt);
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn load_session_facts(&self) -> Result<Vec<SessionFact>> {
+        let exists: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'session_facts'",
+            [],
+            |row| row.get(0),
+        )?;
+        if exists == 0 {
+            return Ok(Vec::new());
+        }
+        let mut stmt = self.conn.prepare(
+            "SELECT source_key, source_id, harness, native_session,
+                    COALESCE(link_id, 'unlinked'), unlinked_reason,
+                    COALESCE(header_conflict, FALSE), generation
+             FROM session_facts ORDER BY source_key",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(SessionFact {
+                source_key: row.get(0)?,
+                source_id: row.get(1)?,
+                harness: row.get(2)?,
+                native_session: row.get(3)?,
+                link_id: row.get(4)?,
+                unlinked_reason: row.get(5)?,
+                header_conflict: row.get(6)?,
+                generation: row.get(7)?,
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
@@ -3876,6 +4029,93 @@ mod tests {
             .any(|l| l["code"] == "essential_evidence_unavailable"
                 && l["observation_id"] == "o1"
                 && l["report_index"].is_null()));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn opening_pre_d3_development_db_adds_session_facts_without_touching_existing_tables() {
+        let dir = std::env::temp_dir().join(format!("dendro-pre-d3-{}", rand::random::<u64>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("pre_d3.duckdb");
+
+        // 1. Construct a real pre-D3 development database: existing source_files and usage_facts,
+        //    and NO session_facts table at all.
+        {
+            let store = AnalyticsStore::open_path(&db, "pre-d3-key").unwrap();
+            store
+                .conn
+                .execute(
+                    "INSERT INTO source_files VALUES ('src-old', 'claude', 'sealed-path', 1, 100, 'prefix', 'session:aa11')",
+                    [],
+                )
+                .unwrap();
+            store
+                .conn
+                .execute(
+                    "INSERT INTO usage_facts VALUES (
+                        'src-old:1:1', 'claude', 'session:aa11', 'msg-1',
+                        TIMESTAMP '2026-10-15 12:00:00', 1, 10, 20, 0, 0, 0, NULL,
+                        1, 'src-old', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+                    )",
+                    [],
+                )
+                .unwrap();
+            store
+                .conn
+                .execute_batch("DROP TABLE session_facts")
+                .unwrap();
+            let exists_before: i64 = store
+                .conn
+                .query_row(
+                    "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'session_facts'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(exists_before, 0);
+            store.checkpoint().unwrap();
+        }
+
+        // 2. Reopen via AnalyticsStore::open_existing -> adds session_facts without touching existing tables
+        let reopened = AnalyticsStore::open_existing(&db, "pre-d3-key").unwrap();
+        let exists_after: i64 = reopened
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'session_facts'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(exists_after, 1);
+
+        let usage_count: i64 = reopened
+            .conn
+            .query_row("SELECT COUNT(*) FROM usage_facts", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(usage_count, 1);
+        let source_count: i64 = reopened
+            .conn
+            .query_row("SELECT COUNT(*) FROM source_files", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(source_count, 1);
+
+        // Pre-D3 sessions have no row in session_facts (LEFT JOIN yields NULL = "not computed; full rebuild computes it")
+        assert!(reopened.load_session_facts().unwrap().is_empty());
+        let joined_link: Option<String> = reopened
+            .conn
+            .query_row(
+                "SELECT sf.link_id
+                 FROM usage_facts uf
+                 LEFT JOIN session_facts sf
+                   ON sf.source_id = uf.source_id
+                  AND sf.harness = uf.harness
+                  AND sf.native_session = uf.native_session",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(joined_link, None);
+
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

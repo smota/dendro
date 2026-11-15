@@ -349,6 +349,37 @@ CREATE TABLE file_source_baselines (
 - `dendro_meta`: Metadata header (`schema_version INTEGER NOT NULL, key_id VARCHAR NOT NULL`).
 - `dendro_semantic_state`: Semantic cache invalidation tracking (`id INTEGER PRIMARY KEY, dirty BOOLEAN NOT NULL`).
 
+### 3.13. `session_facts` (`link-id-v1`, `MTN-19 / D3`)
+Cross-product privacy-preserving session link facts (`agent.session.link_id` and `agent.session.unlinked_reason`) conforming byte-exactly to [`docs/contracts/link-id-v1/SPEC.md`](contracts/link-id-v1/SPEC.md) (pinned digest `07dff9562958ec286c1b096f0eb15c91deddb284c26d99904afeba2b882d0ab5`).
+```sql
+CREATE TABLE IF NOT EXISTS session_facts (
+    source_key VARCHAR PRIMARY KEY,
+    source_id VARCHAR NOT NULL,
+    harness VARCHAR NOT NULL,
+    native_session VARCHAR NOT NULL,
+    link_id VARCHAR NOT NULL DEFAULT 'unlinked',
+    unlinked_reason VARCHAR,
+    header_conflict BOOLEAN NOT NULL DEFAULT FALSE,
+    generation BIGINT NOT NULL
+);
+```
+- **Grain:** One row per session identity `(source_id, harness, native_session)` observed during ingestion (`source_key = "{source_id}:{harness}:{native_session}"`), upserted across generations. Only an explicit header conflict (`header_conflict = TRUE`, keyed by `source_id`) permanently locks a session row to `'unlinked'` across subsequent generations and appends; sessions unlinked for configuration or input reasons (`invalid_key_material`, `missing_org`, `missing_endpoint_scope`, missing/invalid `team` or `epoch`) and fallback `{harness}-file:` / `claude-session` rows are recomputed and replaced on subsequent ingests, and a fallback row created during a zero-byte or partial line-1 first pass is retired once the real session header appears.
+- **Compute-Before-Seal Invariant:** `link_id` is computed from the **raw** harness-minted session identifier (`native_session`) **before** `seal_session` is applied. `session_facts.native_session` stores the sealed session token (`session:<hex>`, identical to `usage_facts.native_session` and `tool_facts.native_session`); the raw `native_session` is never persisted anywhere in the database.
+- **Closed Harness Vocabulary (`I01`):** `link-id-v1` canonicalizes harness aliases strictly (`antigravity`/`agy` $\to$ `antigravity`, `claude`/`claude-code` $\to$ `claude`, `codex` $\to$ `codex`, `grok` $\to$ `grok`, `pi` $\to$ `pi`).
+- **Origin Rule (Parser Provenance):** `origin` is assigned by Dendro's parser, never read from transcript content. Native harness-log parsers assign `origin = "harness"`; export or any non-native path sets a non-harness origin, which resolves to `link_id = 'unlinked'` with `unlinked_reason = 'non_harness_origin'`.
+- **Synthetic, Fallback & Header-less Sessions (Parser Provenance):** Sessions are marked unlinked when the parser assigns a fallback or synthetic identifier (per-file fallback `{harness}-file:{source_id}` on header-less Codex/Pi/Grok files, `claude-session` fallback when `sessionId` is absent on a Claude record, or files with conflicting session headers across the file or prior generations), resolving to `link_id = 'unlinked'` (`missing_native_session` when link key material is configured, or `invalid_key_material` when unconfigured).
+- **Closed `unlinked_reason` Vocabulary:** `NULL` when `link_id` is a 64-character lowercase hex digest (`^[0-9a-f]{64}$`); when `link_id = 'unlinked'`, one of:
+  - `invalid_key_material`: No `K_link` configured, `K_link` shorter than 32 bytes / invalid hex, or forbidden `K_org` variable present on the endpoint path.
+  - `non_harness_origin`: Caller/parser `origin` is anything other than `"harness"`.
+  - `missing_org`: Missing or whitespace-only `org` scope.
+  - `missing_endpoint_scope`: Missing or whitespace-only `endpoint_scope`.
+  - `missing_harness`: Missing or whitespace-only harness identifier.
+  - `unknown_harness`: Harness identifier outside the closed `I01` vocabulary.
+  - `conflicting_harness`: Disagreement between `agent.harness` and wire `client_id`.
+  - `missing_native_session`: Missing, whitespace-only, or parser-fallback/header-less `native_session`.
+  - `invalid_field_characters`: Scope slug (`org`, `endpoint_scope`) violates `^[\x21-\x7E]{1,1024}$`, or `native_session` exceeds 1024 UTF-8 bytes, has leading/trailing Unicode `White_Space`, or contains NUL / control (`Cc`) characters.
+- **Pre-D3 Databases & Downstream Export (`D4b`):** `session_facts` is new in D3. Opening a pre-D3 database adds `session_facts` without touching existing tables. Pre-D3 sessions have no row in `session_facts` (`NULL` when joined = *"not computed; full rebuild computes it"*). Downstream export (`D4b`) **MUST** treat a missing `session_facts` row or `NULL` link as `'unlinked'`. See [`docs/link-id-config.md`](link-id-config.md) for endpoint configuration.
+
 ---
 
 ## 4. The 25 Reference Insights Catalog (`I01`–`I25`)

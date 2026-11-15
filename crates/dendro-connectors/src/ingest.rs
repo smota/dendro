@@ -17,23 +17,59 @@ pub struct SourceRoot {
 
 /// `_frozen` is kept for compatibility with `dendro run --frozen`: every run
 /// now reads OpenRig through a coherent private copy, frozen or not (AC12).
+///
+/// Uses [`dendro_core::SessionLinkConfig::unconfigured`] so tests and non-CLI
+/// callers remain hermetic and never read the process environment, `consumer.env`,
+/// or `link.key`.
 pub fn ingest_staged(
     staged_db: &Path,
     roots: &[SourceRoot],
     frozen: bool,
     key: &[u8],
 ) -> Result<Vec<String>> {
-    ingest_staged_with_manifest(staged_db, roots, frozen, key, None).map(|(notes, _)| notes)
+    ingest_staged_with_link_config(
+        staged_db,
+        roots,
+        frozen,
+        key,
+        &dendro_core::SessionLinkConfig::unconfigured(),
+    )
+}
+
+pub fn ingest_staged_with_link_config(
+    staged_db: &Path,
+    roots: &[SourceRoot],
+    frozen: bool,
+    key: &[u8],
+    link_config: &dendro_core::SessionLinkConfig,
+) -> Result<Vec<String>> {
+    ingest_staged_with_manifest_and_link_config(staged_db, roots, frozen, key, None, link_config)
+        .map(|(notes, _)| notes)
 }
 
 /// A sealed run rebuilds its stage using only named prefixes. Existing output
 /// history may contain facts beyond the requested cutoff and cannot be reused.
+///
+/// This is the sole production entry point (`dendro-cli`) that calls
+/// [`dendro_core::SessionLinkConfig::from_env`].
 pub fn ingest_staged_with_manifest(
+    staged_db: &Path,
+    roots: &[SourceRoot],
+    frozen: bool,
+    key: &[u8],
+    sealed: Option<&dendro_core::CutoffManifest>,
+) -> Result<(Vec<String>, dendro_core::CutoffManifest)> {
+    let link_config = dendro_core::SessionLinkConfig::from_env();
+    ingest_staged_with_manifest_and_link_config(staged_db, roots, frozen, key, sealed, &link_config)
+}
+
+pub fn ingest_staged_with_manifest_and_link_config(
     staged_db: &Path,
     roots: &[SourceRoot],
     _frozen: bool,
     key: &[u8],
     sealed: Option<&dendro_core::CutoffManifest>,
+    link_config: &dendro_core::SessionLinkConfig,
 ) -> Result<(Vec<String>, dendro_core::CutoffManifest)> {
     if sealed.is_some() {
         std::fs::remove_file(staged_db)?;
@@ -144,13 +180,14 @@ pub fn ingest_staged_with_manifest(
                                 continue;
                             }
                             let source_id = stable_source_id(&root.name, &root.path, file, key);
-                            let stats = match stream::ingest_jsonl_with_cutoff(
+                            let stats = match stream::ingest_jsonl_with_cutoff_and_link_config(
                                 &store,
                                 &source_id,
                                 &root.name,
                                 file,
                                 Some(key),
                                 entry,
+                                link_config,
                             ) {
                                 Ok(stats) => stats,
                                 Err(error) if sealed.is_none() && error.is::<std::io::Error>() => {
@@ -1756,7 +1793,8 @@ mod tests {
             },
         ];
         let key = b"ac1-count-key";
-        let notes = ingest_staged(&db, &roots, false, key).unwrap();
+        let link_cfg = dendro_core::SessionLinkConfig::unconfigured();
+        let notes = ingest_staged_with_link_config(&db, &roots, false, key, &link_cfg).unwrap();
         assert!(
             note_has(
                 &notes,
@@ -1782,7 +1820,7 @@ mod tests {
         assert_eq!(store.load_usage().unwrap().len(), 1);
         drop(store);
         // Unchanged file: nothing is read again.
-        let notes = ingest_staged(&db, &roots, false, key).unwrap();
+        let notes = ingest_staged_with_link_config(&db, &roots, false, key, &link_cfg).unwrap();
         assert!(
             note_has(
                 &notes,
@@ -1800,7 +1838,7 @@ mod tests {
             b"\n",
         )
         .unwrap();
-        let notes = ingest_staged(&db, &roots, false, key).unwrap();
+        let notes = ingest_staged_with_link_config(&db, &roots, false, key, &link_cfg).unwrap();
         assert!(
             note_has(
                 &notes,
@@ -1838,7 +1876,8 @@ mod tests {
             name: "claude".into(),
             path: dir.join("claude"),
         }];
-        let result = ingest_staged(&db, &roots, false, b"skip-key");
+        let link_cfg = dendro_core::SessionLinkConfig::unconfigured();
+        let result = ingest_staged_with_link_config(&db, &roots, false, b"skip-key", &link_cfg);
         stream::make_uninspectable(None);
         let notes = result.expect("one bad entry must not refuse the root");
         assert!(
@@ -1868,7 +1907,8 @@ mod tests {
             name: "claude".into(),
             path: dir.join("no-such-claude-root"),
         }];
-        let notes = ingest_staged(&db, &missing, false, b"skip-key").unwrap();
+        let notes =
+            ingest_staged_with_link_config(&db, &missing, false, b"skip-key", &link_cfg).unwrap();
         assert!(
             note_has(
                 &notes,
@@ -1916,7 +1956,9 @@ mod tests {
             name: "absent".into(),
             path: dir.join("absent"),
         });
-        let notes = ingest_staged(&db, &roots, false, b"dispatch-key").unwrap();
+        let link_cfg = dendro_core::SessionLinkConfig::unconfigured();
+        let notes =
+            ingest_staged_with_link_config(&db, &roots, false, b"dispatch-key", &link_cfg).unwrap();
         assert_eq!(notes.len(), 11, "{notes:?}");
         for h in ["claude", "pi", "grok"] {
             assert!(
@@ -1987,7 +2029,8 @@ mod tests {
             openrig_root(&dir, "rig-b", "seat-b"),
         ];
         let key = b"roots-test-key";
-        ingest_staged(&db, &roots, false, key).unwrap();
+        let link_cfg = dendro_core::SessionLinkConfig::unconfigured();
+        ingest_staged_with_link_config(&db, &roots, false, key, &link_cfg).unwrap();
         assert!(
             std::fs::read_dir(&dir).unwrap().all(|entry| !entry
                 .unwrap()
@@ -1998,7 +2041,7 @@ mod tests {
         );
         assert_eq!(stored_seats(&db), vec!["seat-a", "seat-b"]);
         // A second run rebuilds the same lives, without duplicates.
-        ingest_staged(&db, &roots, false, key).unwrap();
+        ingest_staged_with_link_config(&db, &roots, false, key, &link_cfg).unwrap();
         assert_eq!(stored_seats(&db), vec!["seat-a", "seat-b"]);
         // A run with one root missing keeps every stored life.
         let partial = [
@@ -2008,7 +2051,7 @@ mod tests {
                 path: dir.join("absent.sqlite"),
             },
         ];
-        let notes = ingest_staged(&db, &partial, false, key).unwrap();
+        let notes = ingest_staged_with_link_config(&db, &partial, false, key, &link_cfg).unwrap();
         assert!(notes
             .iter()
             .any(|note| note == "openrig lifecycle unchanged: a root is missing"));
@@ -2119,7 +2162,8 @@ mod tests {
             name: "openrig".into(),
             path,
         }];
-        ingest_staged(&db, &roots, false, b"k5-test-key").unwrap();
+        let link_cfg = dendro_core::SessionLinkConfig::unconfigured();
+        ingest_staged_with_link_config(&db, &roots, false, b"k5-test-key", &link_cfg).unwrap();
         let store = AnalyticsStore::open_path(&db, "key").unwrap();
         let marked: std::collections::BTreeMap<String, bool> = store
             .load_destination_snapshots()
@@ -2424,7 +2468,10 @@ mod tests {
             },
         ];
         let key = b"dual-root-pi-test-key";
-        let (notes, manifest) = ingest_staged_with_manifest(&db, &roots, false, key, None).unwrap();
+        let link_cfg = dendro_core::SessionLinkConfig::unconfigured();
+        let (notes, manifest) =
+            ingest_staged_with_manifest_and_link_config(&db, &roots, false, key, None, &link_cfg)
+                .unwrap();
 
         assert_eq!(manifest.files.len(), 2);
         assert_ne!(manifest.files[0].source_id, manifest.files[1].source_id);
