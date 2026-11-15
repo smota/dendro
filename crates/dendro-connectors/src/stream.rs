@@ -486,10 +486,7 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
     let mut tool_scan = if matches!(harness, "claude" | "pi" | "grok" | "codex") {
         Some(ToolScan::new(
             harness,
-            file_session
-                .as_ref()
-                .filter(|session| harness != "codex" || session.from_header)
-                .map(|session| session.raw.as_str()),
+            file_session.as_ref().map(|session| session.raw.as_str()),
             0,
             tool_key,
             source_id,
@@ -1867,12 +1864,15 @@ fn apply_grok_summary(
 
 fn parse_unambiguous_exit_code(text: &str) -> Option<i64> {
     let mut found: Option<i64> = None;
+    let mut saw_output_header = false;
     for line in text.lines() {
         let trimmed = line.trim();
         if trimmed.eq_ignore_ascii_case("output:") {
+            saw_output_header = true;
             break;
         }
         let lower = trimmed.to_ascii_lowercase();
+        let mut matched_exit = false;
         for prefix in [
             "process exited with exit code:",
             "process exited with exit code ",
@@ -1891,11 +1891,28 @@ fn parse_unambiguous_exit_code(text: &str) -> Option<i64> {
                     }
                 }
                 found = Some(code);
+                matched_exit = true;
                 break;
             }
         }
+        if matched_exit {
+            continue;
+        }
+        let is_header_meta = [
+            "chunk id:",
+            "wall time:",
+            "original token count:",
+            "total output lines:",
+            "session id:",
+            "process running with session id",
+        ]
+        .iter()
+        .any(|prefix| lower.starts_with(prefix));
+        if !is_header_meta {
+            return None;
+        }
     }
-    found
+    saw_output_header.then_some(found).flatten()
 }
 
 fn codex_output_outcome(payload: &Value) -> Option<bool> {
@@ -2250,7 +2267,14 @@ impl<'a> ToolScan<'a> {
 
     fn observe_codex(&mut self, line_no: i64, text: &str, value: &Value) -> Result<bool> {
         let from_prefix = line_no <= self.new_from;
-        let raw_session = self.file_session.unwrap_or("");
+        let fallback;
+        let raw_session = match self.file_session {
+            Some(session) => session,
+            None => {
+                fallback = format!("codex-file:{}", self.source_id);
+                &fallback
+            }
+        };
         let sealed_session = seal_session(self.key, "codex", raw_session);
         let envelope = value.get("type").and_then(Value::as_str);
         let kind = value.pointer("/payload/type").and_then(Value::as_str);
@@ -5885,18 +5909,36 @@ mod tests {
                 // 5. Ambiguous / unformatted output (like G0A_ERR_SENTINEL_S1) -> None
                 r#"{"payload":{"call_id":"CALL_sentinel","input":"run","name":"exec","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:19.000Z","type":"response_item"}"#,
                 r#"{"payload":{"call_id":"CALL_sentinel","output":[{"text":"G0A_ERR_SENTINEL_S1: exit code 1 trailing words","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:20.000Z","type":"response_item"}"#,
+                // 6. Output body containing "Exit code: 1" without an exec_command header (string) -> None
+                r#"{"payload":{"arguments":"{\"cmd\":\"echo\"}","call_id":"CALL_body_str","name":"exec_command","type":"function_call"},"timestamp":"2026-11-12T17:44:21.000Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_body_str","output":"Exit code: 1\nuser program printed its own exit code\n","type":"function_call_output"},"timestamp":"2026-11-12T17:44:22.000Z","type":"response_item"}"#,
+                // 7. Output body containing "Exit code: 1" without an exec_command header (array) -> None
+                r#"{"payload":{"call_id":"CALL_body_arr","input":"echo","name":"exec","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:23.000Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_body_arr","output":[{"text":"some log line\nExit code: 1\n","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:24.000Z","type":"response_item"}"#,
+                // 8. Array output with a proper exec_command header -> Some(true)
+                r#"{"payload":{"call_id":"CALL_hdr_arr","input":"false","name":"exec","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:25.000Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_hdr_arr","output":[{"text":"Exit code: 1\nWall time: 0.02 seconds\nOutput:\nfailed\n","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:26.000Z","type":"response_item"}"#,
             ];
             fs::write(&path, format!("{}\n", lines.join("\n"))).unwrap();
 
             let stats = ingest_jsonl_with_key(&db, "src-outcomes", "codex", &path, Some(b"d1-key"))
                 .unwrap();
-            assert_eq!(stats.tool_scan.calls, 5);
-            assert_eq!(stats.tool_scan.results, 5);
+            assert_eq!(stats.tool_scan.calls, 8);
+            assert_eq!(stats.tool_scan.results, 8);
             let tools = db.load_tools().unwrap();
             let outcomes: Vec<Option<bool>> = tools.iter().map(|t| t.failed).collect();
             assert_eq!(
                 outcomes,
-                vec![Some(true), Some(false), Some(true), Some(false), None]
+                vec![
+                    Some(true),
+                    Some(false),
+                    Some(true),
+                    Some(false),
+                    None,
+                    None,
+                    None,
+                    Some(true),
+                ]
             );
         }
 
@@ -5968,28 +6010,96 @@ mod tests {
         }
 
         #[test]
-        fn d1_h_codex_without_session_header_keeps_empty_unqualified_session() {
+        fn d1_h_codex_without_session_header_uses_distinct_per_file_fallback_matching_other_facts()
+        {
             let dir = AdmittedTestDir::new("d1-no-header");
-            let path = dir.path().join("no_header.jsonl");
-            let lines = [
-                r#"{"payload":{"call_id":"CALL_nh_1","input":"ls","name":"exec","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:11.000Z","type":"response_item"}"#,
-                r#"{"payload":{"call_id":"CALL_nh_1","exit_code":0,"output":[{"text":"ok","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:12.000Z","type":"response_item"}"#,
-                r#"{"payload":{"item":{"command":["cargo","check"],"exit_code":0,"type":"CommandExecution"},"type":"item_completed"},"timestamp":"2026-11-12T17:44:13.000Z","type":"event_msg"}"#,
+            let path_a = dir.path().join("no_header_a.jsonl");
+            let path_b = dir.path().join("no_header_b.jsonl");
+            // Two header-less Codex files, each with usage, message, and 2 failing tool calls.
+            let lines_a = [
+                r#"{"payload":{"content":[{"text":"prompt a","type":"input_text"}],"role":"user","type":"message"},"timestamp":"2026-11-12T17:44:10.000Z","type":"response_item"}"#,
+                r#"{"payload":{"info":{"total_token_usage":{"cache_write_input_tokens":0,"cached_input_tokens":0,"input_tokens":5,"output_tokens":3,"reasoning_output_tokens":0}},"type":"token_count"},"timestamp":"2026-11-12T17:44:10.500Z","type":"event_msg"}"#,
+                r#"{"payload":{"call_id":"CALL_nh_a1","input":"ls","name":"exec","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:11.000Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_nh_a1","exit_code":1,"output":[{"text":"err","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:12.000Z","type":"response_item"}"#,
+                r#"{"payload":{"item":{"command":["cargo","check"],"exit_code":1,"type":"CommandExecution"},"type":"item_completed"},"timestamp":"2026-11-12T17:44:13.000Z","type":"event_msg"}"#,
             ];
-            fs::write(&path, format!("{}\n", lines.join("\n"))).unwrap();
+            let lines_b = [
+                r#"{"payload":{"content":[{"text":"prompt b","type":"input_text"}],"role":"user","type":"message"},"timestamp":"2026-11-12T17:44:14.000Z","type":"response_item"}"#,
+                r#"{"payload":{"info":{"total_token_usage":{"cache_write_input_tokens":0,"cached_input_tokens":0,"input_tokens":7,"output_tokens":2,"reasoning_output_tokens":0}},"type":"token_count"},"timestamp":"2026-11-12T17:44:14.500Z","type":"event_msg"}"#,
+                r#"{"payload":{"call_id":"CALL_nh_b1","input":"ls","name":"exec","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:15.000Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_nh_b1","exit_code":1,"output":[{"text":"err","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:16.000Z","type":"response_item"}"#,
+                r#"{"payload":{"item":{"command":["cargo","check"],"exit_code":1,"type":"CommandExecution"},"type":"item_completed"},"timestamp":"2026-11-12T17:44:17.000Z","type":"event_msg"}"#,
+            ];
+            fs::write(&path_a, format!("{}\n", lines_a.join("\n"))).unwrap();
+            fs::write(&path_b, format!("{}\n", lines_b.join("\n"))).unwrap();
 
+            let key = b"d1-key";
             let db_keyed = store();
-            let stats = ingest_jsonl_with_key(&db_keyed, "src-nh", "codex", &path, Some(b"d1-key"))
-                .unwrap();
-            assert_eq!(stats.tool_scan.calls, 2);
-            assert_eq!(stats.tool_scan.results, 1);
-            let tools = db_keyed.load_tools().unwrap();
-            assert_eq!(tools.len(), 2);
-            assert!(
-                tools.iter().all(|t| t.native_session.is_empty()),
-                "Codex file without session_meta header must keep unqualified empty session: {tools:?}"
+            let stats_a =
+                ingest_jsonl_with_key(&db_keyed, "src-nh-a", "codex", &path_a, Some(key)).unwrap();
+            let stats_b =
+                ingest_jsonl_with_key(&db_keyed, "src-nh-b", "codex", &path_b, Some(key)).unwrap();
+            assert_eq!(stats_a.tool_scan.calls, 2);
+            assert_eq!(stats_b.tool_scan.calls, 2);
+
+            let expected_a = seal_session(Some(key), "codex", "codex-file:src-nh-a");
+            let expected_b = seal_session(Some(key), "codex", "codex-file:src-nh-b");
+            assert_ne!(
+                expected_a, expected_b,
+                "two header-less files must receive different per-file fallback sessions"
             );
-            assert_eq!(tools[0].failed, Some(false));
+
+            let tools = db_keyed.load_tools().unwrap();
+            assert_eq!(tools.len(), 4);
+            let tools_a: Vec<_> = tools
+                .iter()
+                .filter(|t| t.source_key.starts_with("src-nh-a:"))
+                .collect();
+            let tools_b: Vec<_> = tools
+                .iter()
+                .filter(|t| t.source_key.starts_with("src-nh-b:"))
+                .collect();
+            assert_eq!(tools_a.len(), 2);
+            assert_eq!(tools_b.len(), 2);
+            assert!(tools_a.iter().all(|t| t.native_session == expected_a));
+            assert!(tools_b.iter().all(|t| t.native_session == expected_b));
+
+            // Tool sessions match the session used by the same file's other facts.
+            let usages = db_keyed.load_usage().unwrap();
+            assert_eq!(usages.len(), 2);
+            let usage_a = usages
+                .iter()
+                .find(|u| u.source_key.starts_with("src-nh-a:"))
+                .unwrap();
+            let usage_b = usages
+                .iter()
+                .find(|u| u.source_key.starts_with("src-nh-b:"))
+                .unwrap();
+            assert_eq!(usage_a.native_session, expected_a);
+            assert_eq!(usage_b.native_session, expected_b);
+
+            let messages = db_keyed.load_messages().unwrap();
+            assert_eq!(messages.len(), 2);
+            let msg_a = messages
+                .iter()
+                .find(|m| m.source_key.starts_with("src-nh-a:"))
+                .unwrap();
+            let msg_b = messages
+                .iter()
+                .find(|m| m.source_key.starts_with("src-nh-b:"))
+                .unwrap();
+            assert_eq!(msg_a.native_session.as_deref(), Some(expected_a.as_str()));
+            assert_eq!(msg_b.native_session.as_deref(), Some(expected_b.as_str()));
+
+            // Loop evaluation (3 consecutive failures within 600s) does not span header-less files:
+            // 2 failures in file A + 2 failures in file B must not combine into a 4-failure loop.
+            let obs = db_keyed.load_codex_observations().unwrap();
+            assert_eq!(obs.len(), 4);
+            let loops = dendro_core::codex_command_loops(&obs);
+            assert!(
+                loops.is_empty(),
+                "failure runs must not carry over across header-less files: {loops:?}"
+            );
         }
 
         #[test]
