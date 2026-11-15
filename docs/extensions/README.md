@@ -19,7 +19,7 @@ Dendro ingests and correlates operational execution records across three distinc
 │   Native AI Clients     │  │   Export Adapters       │  │ Orchestration Runtimes  │
 ├─────────────────────────┤  ├─────────────────────────┤  ├─────────────────────────┤
 │ • Claude Code           │  │ • Cursor CLI            │  │ • OpenRig (~/.openrig)  │
-│ • OpenAI Codex (coarse) │  │ • Windsurf (Cascade)    │  │ • AgentFlow (adapter)   │
+│ • OpenAI Codex          │  │ • Windsurf (Cascade)    │  │ • AgentFlow (adapter)   │
 │ • Antigravity (pending) │  │ • Block Goose           │  │ • Meshloop (adapter)    │
 │ • Grok                  │  │ • Devin (ATIF-v1.7)     │  │                         │
 │ • Pi                    │  │ (See formats.md)        │  │ (Multi-seat topology)   │
@@ -27,7 +27,7 @@ Dendro ingests and correlates operational execution records across three distinc
 ```
 
 1. **Native AI Coding Clients:**
-   Direct zero-copy streaming ingestion from local session logs for **Claude Code** (`~/.claude`), **OpenAI Codex** (`~/.codex`; tool calls are currently recorded coarsely under constant names `CommandExecution` and `CodexSeatCall` in `crates/dendro-connectors/src/stream.rs:451,621,1862`), **xAI Grok** (`~/.grok`), and **Pi** (`~/.pi`). **Google Antigravity** (`~/.gemini`, `agy`) is registered as `pending` and not yet admitted (`crates/dendro-connectors/src/agy.rs:63` returns `source_not_admitted`).
+   Direct zero-copy streaming ingestion from local session logs for **Claude Code** (`~/.claude`), **OpenAI Codex** (`~/.codex`; tool calls routed through the shared watermark-gated `ToolScan` with real rollout tool names and late-result attachment in `crates/dendro-connectors/src/stream.rs`), **xAI Grok** (`~/.grok`), and **Pi** (`~/.pi`). **Google Antigravity** (`~/.gemini`, `agy`) is registered as `pending` and not yet admitted (`crates/dendro-connectors/src/agy.rs:63` returns `source_not_admitted`).
 2. **Verified Editor & Autonomous Agent Export Adapters:**
    Explicit export readers for **Cursor** (`stream-json`), **Windsurf / Cascade** (`post_cascade_response_with_transcript` NDJSON), **Block Goose** (legacy session JSONL), and **Devin** (`ATIF-v1.7`). For full format specifications and limitations, see [**`docs/extensions/formats.md`**](formats.md).
 3. **Fleet Orchestration Runtimes:**

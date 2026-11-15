@@ -123,6 +123,38 @@ pub fn ingest_jsonl(
     ingest_jsonl_with_key(store, source_id, harness, path, None).map(|_| ())
 }
 
+/// Observable tool-scan accounting across one or more ingest passes (D1 / F2).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ToolScanCounts {
+    /// Total unique tool calls observed in the scanned source (including Codex CommandExecution).
+    pub calls: u64,
+    /// Tool calls newly emitted after the ingestion watermark in this pass.
+    pub new_calls: u64,
+    /// Matched tool results attached to tool calls in the scanned source.
+    pub results: u64,
+    /// Matched tool results whose line is past the watermark while their call
+    /// was recorded in an earlier pass or batch.
+    pub late_results: u64,
+    /// Tool results with no matching call (never invents a call).
+    pub unmatched_results: u64,
+    /// Calls observed at or before the ingestion watermark (`line_no <= new_from`).
+    pub prefix_skipped: u64,
+    /// Repeated call blocks suppressed because their `(session, call_id)` was already seen.
+    pub duplicate_call_id: u64,
+}
+
+impl ToolScanCounts {
+    pub fn merge(&mut self, other: Self) {
+        self.calls += other.calls;
+        self.new_calls += other.new_calls;
+        self.results += other.results;
+        self.late_results += other.late_results;
+        self.unmatched_results += other.unmatched_results;
+        self.prefix_skipped += other.prefix_skipped;
+        self.duplicate_call_id += other.duplicate_call_id;
+    }
+}
+
 /// What one ingest call read from a session file (AC1).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct FileStats {
@@ -133,6 +165,8 @@ pub struct FileStats {
     pub records_read: u64,
     /// Usage records stored by this call, after dedupe.
     pub usage_records: u64,
+    /// Tool-scan call, result, late-result, unmatched-result, prefix-skipped, and duplicate-id counts.
+    pub tool_scan: ToolScanCounts,
 }
 
 pub fn ingest_jsonl_with_key(
@@ -226,6 +260,7 @@ fn ingest_jsonl_limited(
         coverage: read.coverage,
         records_read: read.records_read,
         usage_records: read.usage_records,
+        tool_scan: read.tool_scan,
     };
     // Only partial coverage is a warning; a complete read is not a defect. An
     // idle re-run that reads no new bytes adds no row for the same defect.
@@ -243,6 +278,7 @@ struct FileOutcome {
     coverage: crate::sdk::Coverage,
     records_read: u64,
     usage_records: u64,
+    tool_scan: ToolScanCounts,
     /// The watermark moved: this call consumed bytes beyond the stored one.
     advanced: bool,
 }
@@ -441,24 +477,13 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
     let mut source_session = file_session
         .as_ref()
         .map(|session| seal_session(tool_key, harness, &session.raw));
-    let mut codex_ordinal = 0i64;
     let mut claude_sessions = HashSet::new();
 
-    // Claude, Pi, and Grok tool calls are read in their own pass over every
-    // complete line of this generation, so usage dedupe never drops a call
-    // (#35, Q5). Codex tool calls are not read in this version (Q6, #40):
-    // each Codex file carries one warning saying so, kept once across reruns.
-    if harness == "codex" {
-        let shown = path.display().to_string();
-        if !store.has_warning(&shown, CODEX_TOOLS_NOT_READ)? {
-            warnings.push(WarningNote {
-                path: shown,
-                line: None,
-                reason: CODEX_TOOLS_NOT_READ.into(),
-            });
-        }
-    }
-    let mut tool_scan = if matches!(harness, "claude" | "pi" | "grok") {
+    // Claude, Pi, Grok, and Codex tool calls are read through the shared
+    // watermark-gated tool scan over every complete line of this generation
+    // (#35, Q5, D1/F2), so usage dedupe never drops a call and replay never
+    // double-counts prefix calls.
+    let mut tool_scan = if matches!(harness, "claude" | "pi" | "grok" | "codex") {
         Some(ToolScan::new(
             harness,
             file_session.as_ref().map(|session| session.raw.as_str()),
@@ -615,34 +640,10 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
                     claude_sessions.insert(seal_session(tool_key, harness, id));
                 }
             }
-            let mut codex_skills = Vec::new();
-            let mut codex_categories = Vec::new();
-            let tools_before = tools.len();
-            if harness == "codex" && unknown_record_type(harness, &value).is_none() {
-                reader_complete &= observe_codex(
-                    &value,
-                    text,
-                    source_session.as_deref().unwrap_or(""),
-                    source_id,
-                    generation,
-                    line_no,
-                    &mut codex_ordinal,
-                    tool_key,
-                    &mut tools,
-                    &mut codex_skills,
-                    &mut codex_categories,
-                )?;
-            }
-            if is_new {
-                for skill in codex_skills {
-                    store.insert_skill(&skill)?;
-                }
-                tool_categories.extend(codex_categories);
-            }
             if !is_new {
                 if let Some(scan) = tool_scan.as_mut() {
                     if unknown_record_type(harness, &value).is_none() {
-                        scan.observe(line_no, text, &value);
+                        reader_complete &= scan.observe(line_no, text, &value)?;
                     }
                 }
                 continue;
@@ -687,12 +688,11 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
                 &mut security_dedupe,
                 &mut security_facts,
             );
-            let mut projected_tool = tools.len() > tools_before;
+            let mut projected_tool = false;
             if let Some(scan) = tool_scan.as_mut() {
                 let before = scan.calls.len() + scan.results.len() + scan.skills.len();
-                scan.observe(line_no, text, &value);
-                projected_tool |=
-                    scan.calls.len() + scan.results.len() + scan.skills.len() > before;
+                reader_complete &= scan.observe(line_no, text, &value)?;
+                projected_tool = scan.calls.len() + scan.results.len() + scan.skills.len() > before;
             }
             // Safe message metadata only: role, direction, modality, source order.
             let projected_message = match crate::messages::observe(harness, &value) {
@@ -997,6 +997,7 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
         coverage,
         records_read,
         usage_records,
+        tool_scan: tool_scan.map(|scan| scan.counts).unwrap_or_default(),
         advanced,
     })
 }
@@ -1229,7 +1230,10 @@ fn extract_skills_from_codex_call(call: &Value) -> Vec<String> {
     if let Some(args) = arg_val {
         collect_skills_from_value(args, &mut skills);
     }
-    if let Some(cmd) = call.get("command") {
+    if let Some(cmd) = call
+        .pointer("/action/command")
+        .or_else(|| call.get("command"))
+    {
         collect_skills_from_value(cmd, &mut skills);
     }
     skills
@@ -1315,6 +1319,7 @@ pub(crate) const GROK_RECORD_TYPES: &[&str] = &[
 ];
 
 pub(crate) const UNKNOWN_RECORD_TYPE: &str = "unknown-record-type";
+#[cfg(test)]
 pub(crate) const CODEX_TOOLS_NOT_READ: &str = "tool calls not read for codex";
 
 /// The warning reason for a record of a type the parser does not know, or
@@ -1857,195 +1862,137 @@ fn apply_grok_summary(
     }
 }
 
-/// Reads only native execution outcomes and real call boundaries. No result joins.
-#[allow(clippy::too_many_arguments)]
-fn observe_codex(
-    value: &Value,
-    text: &str,
-    session: &str,
-    source_id: &str,
-    generation: i64,
-    line: i64,
-    ordinal: &mut i64,
-    key: Option<&[u8]>,
-    tools: &mut Vec<ToolFact>,
-    skills: &mut Vec<SkillFact>,
-    categories: &mut Vec<(String, ToolCategory)>,
-) -> Result<bool> {
-    let envelope = value.get("type").and_then(Value::as_str);
-    let kind = value.pointer("/payload/type").and_then(Value::as_str);
-    let (name, failed, fingerprint, category) = match (envelope, kind) {
-        (Some("event_msg"), Some("item_completed")) => {
-            let Some(item) = value.pointer("/payload/item") else {
-                return Ok(false);
-            };
-            match item.get("type").and_then(Value::as_str) {
-                Some("CommandExecution") => {
-                    let cmd_text =
-                        if let Some(parts) = item.get("command").and_then(Value::as_array) {
-                            parts
-                                .iter()
-                                .filter_map(Value::as_str)
-                                .collect::<Vec<_>>()
-                                .join(" ")
-                        } else if let Some(cmd) = item.get("command").and_then(Value::as_str) {
-                            cmd.to_string()
-                        } else {
-                            String::new()
-                        };
-                    let cmd_raw = item
-                        .get("command")
-                        .map(Value::to_string)
-                        .unwrap_or_else(|| cmd_text.clone());
-                    let category =
-                        classify_tool_invocation("codex", "CommandExecution", Some(&cmd_raw));
-                    for (idx, skill_name) in
-                        extract_skills_from_text(&cmd_text).into_iter().enumerate()
-                    {
-                        skills.push(SkillFact {
-                            source_key: format!("{source_id}:{generation}:{line}:skill:{idx}"),
-                            seat: format!("codex:{session}"),
-                            skill: seal_skill(key, &skill_name),
-                            invoked: true,
-                        });
+fn parse_unambiguous_exit_code(text: &str) -> Option<i64> {
+    let mut found: Option<i64> = None;
+    let mut saw_output_header = false;
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.eq_ignore_ascii_case("output:") {
+            saw_output_header = true;
+            break;
+        }
+        let lower = trimmed.to_ascii_lowercase();
+        let mut matched_exit = false;
+        for prefix in [
+            "process exited with exit code:",
+            "process exited with exit code ",
+            "process exited with code:",
+            "process exited with code ",
+            "exit code:",
+            "exit_code:",
+            "exit code ",
+        ] {
+            if lower.starts_with(prefix) {
+                let rest = trimmed[prefix.len()..].trim();
+                let code = rest.parse::<i64>().ok()?;
+                if let Some(prev) = found {
+                    if prev != code {
+                        return None;
                     }
-                    let failed = item
-                        .get("exit_code")
-                        .and_then(Value::as_i64)
-                        .map(|code| code != 0)
-                        .or_else(|| {
-                            item.get("exit_code")
-                                .and_then(Value::as_u64)
-                                .map(|code| code != 0)
-                        });
-                    let valid =
-                        item.get("command")
-                            .and_then(Value::as_array)
-                            .is_some_and(|parts| {
-                                !parts.is_empty() && parts.iter().all(Value::is_string)
-                            });
-                    let lexical = raw_codex_command(text);
-                    let fingerprint = if valid {
-                        key.zip(lexical).map(|(key, raw)| {
-                            dendro_core::codex_command_fingerprint(key, raw.get())
-                        })
-                    } else {
-                        None
-                    };
-                    (dendro_core::CODEX_COMMAND, failed, fingerprint, category)
                 }
-                // Known non-command native items are not extra calls.
-                Some(
-                    "AgentMessage" | "Reasoning" | "Plan" | "FileChange" | "McpToolCall"
-                    | "WebSearch" | "ImageView" | "UserMessage" | "Extension" | "ContextCompaction",
-                ) => return Ok(true),
-                Some("tool_call" | "custom_tool_call" | "function_call") => {
-                    for (idx, skill_name) in
-                        extract_skills_from_codex_call(item).into_iter().enumerate()
-                    {
-                        skills.push(SkillFact {
-                            source_key: format!("{source_id}:{generation}:{line}:skill:{idx}"),
-                            seat: format!("codex:{session}"),
-                            skill: seal_skill(key, &skill_name),
-                            invoked: true,
-                        });
-                    }
-                    return Ok(true);
-                }
-                _ => return Ok(false),
+                found = Some(code);
+                matched_exit = true;
+                break;
             }
         }
-        (Some("response_item"), Some("custom_tool_call" | "function_call" | "tool_call")) => {
-            let category = if let Some(payload) = value.pointer("/payload") {
-                for (idx, skill_name) in extract_skills_from_codex_call(payload)
-                    .into_iter()
-                    .enumerate()
-                {
-                    skills.push(SkillFact {
-                        source_key: format!("{source_id}:{generation}:{line}:skill:{idx}"),
-                        seat: format!("codex:{session}"),
-                        skill: seal_skill(key, &skill_name),
-                        invoked: true,
-                    });
-                }
-                let tool_name = payload
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .unwrap_or("custom_tool_call");
-                let arg_str = if let Some(args) = payload.get("arguments") {
-                    if let Some(s) = args.as_str() {
-                        Some(s.to_string())
-                    } else {
-                        Some(args.to_string())
-                    }
-                } else if let Some(input) = payload.get("input") {
-                    if let Some(s) = input.as_str() {
-                        Some(s.to_string())
-                    } else {
-                        Some(input.to_string())
-                    }
-                } else if let Some(cmd) = payload.get("command") {
-                    if let Some(s) = cmd.as_str() {
-                        Some(s.to_string())
-                    } else {
-                        Some(cmd.to_string())
-                    }
-                } else {
-                    None
-                };
-                classify_tool_invocation("codex", tool_name, arg_str.as_deref())
-            } else {
-                ToolCategory::Other
-            };
-            (dendro_core::CODEX_CALL, None, None, category)
+        if matched_exit {
+            continue;
         }
-        (
-            Some("response_item"),
-            Some("custom_tool_call_output" | "function_call_output" | "message" | "reasoning"),
-        ) => return Ok(true),
-        (Some("response_item"), _) => return Ok(false),
-        (
-            Some("event_msg"),
-            Some(
-                "token_count"
-                | "user_message"
-                | "agent_message"
-                | "agent_reasoning"
-                | "task_started"
-                | "task_complete"
-                | "task_completed"
-                | "turn_started"
-                | "turn_complete"
-                | "turn_aborted"
-                | "item_started"
-                | "item_updated"
-                | "context_compacted"
-                | "thread_settings_applied"
-                | "warning",
-            ),
-        ) => return Ok(true),
-        (Some("event_msg"), _) => return Ok(false),
-        // Non-observation envelopes recognized by the existing harness reader.
-        _ => return Ok(true),
-    };
-    *ordinal = ordinal
-        .checked_add(1)
-        .ok_or_else(|| anyhow::anyhow!("Codex observation order overflow"))?;
-    let source_key = format!("{source_id}:{generation}:{line}:codex:0");
-    categories.push((source_key.clone(), category));
-    tools.push(ToolFact {
-        source_key,
-        harness: "codex".into(),
-        native_session: session.into(),
-        ts: timestamp_of(value),
-        seq: *ordinal,
-        name: name.into(),
-        fingerprint,
-        failed,
-        structured_write: false,
-        generation,
-    });
-    Ok(true)
+        let is_header_meta = [
+            "chunk id:",
+            "wall time:",
+            "original token count:",
+            "total output lines:",
+            "session id:",
+            "process running with session id",
+        ]
+        .iter()
+        .any(|prefix| lower.starts_with(prefix));
+        if !is_header_meta {
+            return None;
+        }
+    }
+    saw_output_header.then_some(found).flatten()
+}
+
+fn codex_output_outcome(payload: &Value) -> Option<bool> {
+    if let Some(err) = payload
+        .get("is_error")
+        .or_else(|| payload.get("isError"))
+        .and_then(Value::as_bool)
+    {
+        return Some(err);
+    }
+    if let Some(status) = payload.get("status").and_then(Value::as_str) {
+        match status {
+            "failed" | "error" | "errored" => return Some(true),
+            "completed" | "success" | "succeeded" | "ok" => return Some(false),
+            _ => {}
+        }
+    }
+    if let Some(code) = payload
+        .get("exit_code")
+        .or_else(|| payload.pointer("/metadata/exit_code"))
+        .or_else(|| payload.pointer("/output/exit_code"))
+        .or_else(|| payload.pointer("/output/metadata/exit_code"))
+        .and_then(Value::as_i64)
+    {
+        return Some(code != 0);
+    }
+    if payload
+        .get("error")
+        .is_some_and(|v| !v.is_null() && v.as_str() != Some(""))
+    {
+        return Some(true);
+    }
+    if let Some(output_str) = payload.get("output").and_then(Value::as_str) {
+        if let Ok(Value::Object(obj)) = serde_json::from_str::<Value>(output_str) {
+            if let Some(err) = obj
+                .get("is_error")
+                .or_else(|| obj.get("isError"))
+                .and_then(Value::as_bool)
+            {
+                return Some(err);
+            }
+            if let Some(status) = obj.get("status").and_then(Value::as_str) {
+                match status {
+                    "failed" | "error" | "errored" => return Some(true),
+                    "completed" | "success" | "succeeded" | "ok" => return Some(false),
+                    _ => {}
+                }
+            }
+            if let Some(code) = obj
+                .get("exit_code")
+                .or_else(|| obj.get("metadata").and_then(|m| m.get("exit_code")))
+                .and_then(Value::as_i64)
+            {
+                return Some(code != 0);
+            }
+            if obj
+                .get("error")
+                .is_some_and(|v| !v.is_null() && v.as_str() != Some(""))
+            {
+                return Some(true);
+            }
+            if let Some(inner_out) = obj.get("output").and_then(Value::as_str) {
+                if let Some(code) = parse_unambiguous_exit_code(inner_out) {
+                    return Some(code != 0);
+                }
+            }
+        } else if let Some(code) = parse_unambiguous_exit_code(output_str) {
+            return Some(code != 0);
+        }
+    }
+    if let Some(arr) = payload.get("output").and_then(Value::as_array) {
+        if arr.len() == 1 {
+            if let Some(text) = arr[0].get("text").and_then(Value::as_str) {
+                if let Some(code) = parse_unambiguous_exit_code(text) {
+                    return Some(code != 0);
+                }
+            }
+        }
+    }
+    None
 }
 
 fn raw_codex_command(text: &str) -> Option<&serde_json::value::RawValue> {
@@ -2058,19 +2005,23 @@ fn raw_codex_command(text: &str) -> Option<&serde_json::value::RawValue> {
     item.get("command").copied()
 }
 
-/// The tool calls of one Claude or Pi file generation (#35, #36, #37, Q5,
-/// Phase 1 0002). A call is the first call block of its (session, call id), at
-/// that position and time; a repeat of the id is the same call. Claude: a
-/// `tool_use` block, settled by `tool_result` blocks (`tool_use_id`,
-/// `is_error`). Pi: a `toolCall` block, settled by `toolResult` messages
-/// (`toolCallId`, `isError`), in the file's K10 session. Its outcome comes only
-/// from the matching results in the same file and session: all true is a
-/// failure, all false a success, anything else (none, absent, not a boolean,
-/// disagreeing) unknown. A result with no
-/// call creates nothing. Rejected records (unknown type, malformed) give
-/// nothing. Lines up to `new_from` were stored by an earlier run: their calls
-/// are not inserted again, and their outcome is re-settled only when a result
-/// for them arrives in the new lines.
+/// The tool calls of one Claude, Pi, Grok, or Codex file generation (#35, #36,
+/// #37, Q5, Phase 1 0002, D1/F2). A call is the first call block of its
+/// (session, call id), at that position and time; a repeat of the id is the
+/// same call. Claude: a `tool_use` block, settled by `tool_result` blocks
+/// (`tool_use_id`, `is_error`). Pi: a `toolCall` block, settled by
+/// `toolResult` messages (`toolCallId`, `isError`), in the file's K10 session.
+/// Codex: `response_item` (`function_call` / `custom_tool_call` / `tool_call` /
+/// `local_shell_call`) with its real `name` (or `"local_shell"`), settled by
+/// `function_call_output` / `custom_tool_call_output` / `tool_call_output` /
+/// `local_shell_call_output` (`call_id`), plus native `CommandExecution` items.
+/// Its outcome comes only from explicit signals on the matching results
+/// in the same file and session: all true is a failure, all false a success,
+/// anything else (none, absent, not a boolean, disagreeing) unknown. A result
+/// with no call creates nothing. Rejected records (unknown type, malformed)
+/// give nothing. Lines up to `new_from` were stored by an earlier run: their
+/// calls are not inserted again, and their outcome is re-settled only when a
+/// result for them arrives in the new lines.
 struct ToolPass {
     new_calls: Vec<ToolFact>,
     settled: Vec<(String, Option<bool>)>,
@@ -2086,6 +2037,12 @@ struct ToolCall {
     category: ToolCategory,
 }
 
+struct PendingToolResult {
+    id: Option<(String, String)>,
+    outcome: Option<bool>,
+    line_no: i64,
+}
+
 struct ToolScan<'a> {
     harness: &'a str,
     file_session: Option<&'a str>,
@@ -2094,10 +2051,12 @@ struct ToolScan<'a> {
     key: Option<&'a [u8]>,
     source_id: &'a str,
     generation: i64,
+    codex_ordinal: i64,
     calls: Vec<ToolCall>,
     by_id: std::collections::HashMap<(String, String), usize>,
-    results: Vec<((String, String), Option<bool>, i64)>,
+    results: Vec<PendingToolResult>,
     skills: Vec<(i64, SkillFact)>,
+    counts: ToolScanCounts,
 }
 
 impl<'a> ToolScan<'a> {
@@ -2116,23 +2075,29 @@ impl<'a> ToolScan<'a> {
             key,
             source_id,
             generation,
+            codex_ordinal: 0,
             calls: Vec::new(),
             by_id: std::collections::HashMap::new(),
             results: Vec::new(),
             skills: Vec::new(),
+            counts: ToolScanCounts::default(),
         }
     }
 
-    fn observe(&mut self, line_no: i64, text: &str, value: &Value) {
+    fn observe(&mut self, line_no: i64, text: &str, value: &Value) -> Result<bool> {
         if self.harness == "grok" {
             self.observe_grok(line_no, value);
-            return;
+            return Ok(true);
+        }
+        if self.harness == "codex" {
+            return self.observe_codex(line_no, text, value);
         }
         let harness = self.harness;
         let file_session = self.file_session;
         let key = self.key;
         let source_id = self.source_id;
         let generation = self.generation;
+        let from_prefix = line_no <= self.new_from;
         let session = match file_session {
             Some(session) => session.to_string(),
             None => value
@@ -2147,23 +2112,26 @@ impl<'a> ToolScan<'a> {
                 .and_then(|item| item.as_str())
                 == Some("toolResult")
         {
-            if let Some(id) = value
+            let id = value
                 .pointer("/message/toolCallId")
                 .and_then(|item| item.as_str())
-            {
-                let outcome = value
-                    .pointer("/message/isError")
-                    .and_then(|item| item.as_bool());
-                self.results
-                    .push(((session.clone(), id.to_string()), outcome, line_no));
-            }
-            return;
+                .filter(|s| !s.is_empty())
+                .map(|id| (session.clone(), id.to_string()));
+            let outcome = value
+                .pointer("/message/isError")
+                .and_then(|item| item.as_bool());
+            self.results.push(PendingToolResult {
+                id,
+                outcome,
+                line_no,
+            });
+            return Ok(true);
         }
         let Some(content) = value
             .pointer("/message/content")
             .and_then(|item| item.as_array())
         else {
-            return;
+            return Ok(true);
         };
         let (call_type, input_field) = if harness == "pi" {
             ("toolCall", "arguments")
@@ -2179,13 +2147,20 @@ impl<'a> ToolScan<'a> {
                     let Some(name) = block.get("name").and_then(|item| item.as_str()) else {
                         continue;
                     };
-                    let id = block.get("id").and_then(|item| item.as_str());
+                    let id = block
+                        .get("id")
+                        .and_then(|item| item.as_str())
+                        .filter(|s| !s.is_empty());
                     if let Some(id) = id {
                         if self.by_id.contains_key(&(session.clone(), id.to_string())) {
+                            self.counts.duplicate_call_id += 1;
                             continue;
                         }
                         self.by_id
                             .insert((session.clone(), id.to_string()), self.calls.len());
+                    }
+                    if from_prefix {
+                        self.counts.prefix_skipped += 1;
                     }
                     let lexical = tool_input_lexical(block, raw_blocks.get(index), input_field);
                     let fingerprint =
@@ -2269,16 +2244,332 @@ impl<'a> ToolScan<'a> {
                         result_in_new_lines: false,
                         category,
                     });
+                    self.counts.calls += 1;
                 }
                 Some("tool_result") if harness == "claude" => {
-                    if let Some(id) = block.get("tool_use_id").and_then(|item| item.as_str()) {
-                        let outcome = block.get("is_error").and_then(|item| item.as_bool());
-                        self.results
-                            .push(((session.clone(), id.to_string()), outcome, line_no));
-                    }
+                    let id = block
+                        .get("tool_use_id")
+                        .and_then(|item| item.as_str())
+                        .filter(|s| !s.is_empty())
+                        .map(|id| (session.clone(), id.to_string()));
+                    let outcome = block.get("is_error").and_then(|item| item.as_bool());
+                    self.results.push(PendingToolResult {
+                        id,
+                        outcome,
+                        line_no,
+                    });
                 }
                 _ => {}
             }
+        }
+        Ok(true)
+    }
+
+    fn observe_codex(&mut self, line_no: i64, text: &str, value: &Value) -> Result<bool> {
+        let from_prefix = line_no <= self.new_from;
+        let fallback;
+        let raw_session = match self.file_session {
+            Some(session) => session,
+            None => {
+                fallback = format!("codex-file:{}", self.source_id);
+                &fallback
+            }
+        };
+        let sealed_session = seal_session(self.key, "codex", raw_session);
+        let envelope = value.get("type").and_then(Value::as_str);
+        let kind = value.pointer("/payload/type").and_then(Value::as_str);
+        match (envelope, kind) {
+            (Some("event_msg"), Some("item_completed")) => {
+                let Some(item) = value.pointer("/payload/item") else {
+                    return Ok(true);
+                };
+                match item.get("type").and_then(Value::as_str) {
+                    Some("CommandExecution") => {
+                        if from_prefix {
+                            self.counts.prefix_skipped += 1;
+                        }
+                        let cmd_text =
+                            if let Some(parts) = item.get("command").and_then(Value::as_array) {
+                                parts
+                                    .iter()
+                                    .filter_map(Value::as_str)
+                                    .collect::<Vec<_>>()
+                                    .join(" ")
+                            } else if let Some(cmd) = item.get("command").and_then(Value::as_str) {
+                                cmd.to_string()
+                            } else {
+                                String::new()
+                            };
+                        let cmd_raw = item
+                            .get("command")
+                            .map(Value::to_string)
+                            .unwrap_or_else(|| cmd_text.clone());
+                        let category =
+                            classify_tool_invocation("codex", "CommandExecution", Some(&cmd_raw));
+                        for (idx, skill_name) in
+                            extract_skills_from_text(&cmd_text).into_iter().enumerate()
+                        {
+                            self.skills.push((
+                                line_no,
+                                SkillFact {
+                                    source_key: format!(
+                                        "{}:{}:{line_no}:skill:{idx}",
+                                        self.source_id, self.generation
+                                    ),
+                                    seat: format!("codex:{sealed_session}"),
+                                    skill: seal_skill(self.key, &skill_name),
+                                    invoked: true,
+                                },
+                            ));
+                        }
+                        let failed = item
+                            .get("exit_code")
+                            .and_then(Value::as_i64)
+                            .map(|code| code != 0)
+                            .or_else(|| {
+                                item.get("exit_code")
+                                    .and_then(Value::as_u64)
+                                    .map(|code| code != 0)
+                            });
+                        let valid =
+                            item.get("command")
+                                .and_then(Value::as_array)
+                                .is_some_and(|parts| {
+                                    !parts.is_empty() && parts.iter().all(Value::is_string)
+                                });
+                        let lexical = raw_codex_command(text);
+                        let fingerprint = if valid {
+                            self.key.zip(lexical).map(|(key, raw)| {
+                                dendro_core::codex_command_fingerprint(key, raw.get())
+                            })
+                        } else {
+                            None
+                        };
+                        self.codex_ordinal = self
+                            .codex_ordinal
+                            .checked_add(1)
+                            .ok_or_else(|| anyhow::anyhow!("Codex observation order overflow"))?;
+                        let source_key =
+                            format!("{}:{}:{line_no}:codex:0", self.source_id, self.generation);
+                        self.calls.push(ToolCall {
+                            fact: ToolFact {
+                                source_key,
+                                harness: "codex".into(),
+                                native_session: sealed_session,
+                                ts: timestamp_of(value),
+                                seq: self.codex_ordinal,
+                                name: dendro_core::CODEX_COMMAND.into(),
+                                fingerprint,
+                                failed,
+                                structured_write: false,
+                                generation: self.generation,
+                            },
+                            line: line_no,
+                            results: vec![failed],
+                            result_in_new_lines: false,
+                            category,
+                        });
+                        self.counts.calls += 1;
+                        Ok(true)
+                    }
+                    Some(
+                        "AgentMessage" | "Reasoning" | "Plan" | "FileChange" | "McpToolCall"
+                        | "WebSearch" | "ImageView" | "UserMessage" | "Extension"
+                        | "ContextCompaction",
+                    ) => Ok(true),
+                    Some(
+                        "tool_call" | "custom_tool_call" | "function_call" | "local_shell_call",
+                    ) => {
+                        for (idx, skill_name) in
+                            extract_skills_from_codex_call(item).into_iter().enumerate()
+                        {
+                            self.skills.push((
+                                line_no,
+                                SkillFact {
+                                    source_key: format!(
+                                        "{}:{}:{line_no}:skill:{idx}",
+                                        self.source_id, self.generation
+                                    ),
+                                    seat: format!("codex:{sealed_session}"),
+                                    skill: seal_skill(self.key, &skill_name),
+                                    invoked: true,
+                                },
+                            ));
+                        }
+                        Ok(true)
+                    }
+                    _ => Ok(false),
+                }
+            }
+            (
+                Some("response_item"),
+                kind
+                @ Some("custom_tool_call" | "function_call" | "tool_call" | "local_shell_call"),
+            ) => {
+                let Some(payload) = value.pointer("/payload") else {
+                    return Ok(false);
+                };
+                for (idx, skill_name) in extract_skills_from_codex_call(payload)
+                    .into_iter()
+                    .enumerate()
+                {
+                    self.skills.push((
+                        line_no,
+                        SkillFact {
+                            source_key: format!(
+                                "{}:{}:{line_no}:skill:{idx}",
+                                self.source_id, self.generation
+                            ),
+                            seat: format!("codex:{sealed_session}"),
+                            skill: seal_skill(self.key, &skill_name),
+                            invoked: true,
+                        },
+                    ));
+                }
+                let tool_name = if kind == Some("local_shell_call") {
+                    "local_shell"
+                } else {
+                    let Some(name) = payload
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .map(str::trim)
+                        .filter(|name| !name.is_empty() && name.len() <= 64)
+                    else {
+                        return Ok(false);
+                    };
+                    name
+                };
+                let id = payload
+                    .get("call_id")
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.is_empty());
+                if let Some(id) = id {
+                    if self
+                        .by_id
+                        .contains_key(&(raw_session.to_string(), id.to_string()))
+                    {
+                        self.counts.duplicate_call_id += 1;
+                        return Ok(true);
+                    }
+                    self.by_id
+                        .insert((raw_session.to_string(), id.to_string()), self.calls.len());
+                }
+                if from_prefix {
+                    self.counts.prefix_skipped += 1;
+                }
+                let arg_str = if let Some(args) = payload.get("arguments") {
+                    if let Some(s) = args.as_str() {
+                        Some(s.to_string())
+                    } else {
+                        Some(args.to_string())
+                    }
+                } else if let Some(input) = payload.get("input") {
+                    if let Some(s) = input.as_str() {
+                        Some(s.to_string())
+                    } else {
+                        Some(input.to_string())
+                    }
+                } else if let Some(cmd) = payload
+                    .pointer("/action/command")
+                    .or_else(|| payload.get("command"))
+                {
+                    if let Some(s) = cmd.as_str() {
+                        Some(s.to_string())
+                    } else {
+                        Some(cmd.to_string())
+                    }
+                } else {
+                    None
+                };
+                let fingerprint = self
+                    .key
+                    .and_then(|key| tool_fingerprint(key, tool_name, arg_str.as_deref()));
+                let category = classify_tool_invocation("codex", tool_name, arg_str.as_deref());
+                self.codex_ordinal = self
+                    .codex_ordinal
+                    .checked_add(1)
+                    .ok_or_else(|| anyhow::anyhow!("Codex observation order overflow"))?;
+                let source_key =
+                    format!("{}:{}:{line_no}:codex:0", self.source_id, self.generation);
+                self.calls.push(ToolCall {
+                    fact: ToolFact {
+                        source_key,
+                        harness: "codex".into(),
+                        native_session: sealed_session,
+                        ts: timestamp_of(value),
+                        seq: self.codex_ordinal,
+                        name: tool_name.to_string(),
+                        fingerprint,
+                        failed: None,
+                        structured_write: matches!(
+                            tool_name,
+                            "apply_patch" | "write_file" | "edit_file" | "create_file"
+                        ),
+                        generation: self.generation,
+                    },
+                    line: line_no,
+                    results: Vec::new(),
+                    result_in_new_lines: false,
+                    category,
+                });
+                self.counts.calls += 1;
+                Ok(true)
+            }
+            (
+                Some("response_item"),
+                Some(
+                    "custom_tool_call_output"
+                    | "function_call_output"
+                    | "tool_call_output"
+                    | "local_shell_call_output",
+                ),
+            ) => {
+                let Some(payload) = value.pointer("/payload") else {
+                    return Ok(false);
+                };
+                let id = payload
+                    .get("call_id")
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.is_empty())
+                    .map(|id| (raw_session.to_string(), id.to_string()));
+                let outcome = codex_output_outcome(payload);
+                self.results.push(PendingToolResult {
+                    id,
+                    outcome,
+                    line_no,
+                });
+                Ok(true)
+            }
+            (
+                Some("response_item"),
+                Some(
+                    "message" | "reasoning" | "additional_tools" | "agent_message"
+                    | "web_search_call",
+                ),
+            ) => Ok(true),
+            (Some("response_item"), _) => Ok(false),
+            (
+                Some("event_msg"),
+                Some(
+                    "token_count"
+                    | "user_message"
+                    | "agent_message"
+                    | "agent_reasoning"
+                    | "task_started"
+                    | "task_complete"
+                    | "task_completed"
+                    | "turn_started"
+                    | "turn_complete"
+                    | "turn_aborted"
+                    | "item_started"
+                    | "item_updated"
+                    | "context_compacted"
+                    | "thread_settings_applied"
+                    | "warning",
+                ),
+            ) => Ok(true),
+            (Some("event_msg"), _) => Ok(false),
+            _ => Ok(true),
         }
     }
 
@@ -2288,6 +2579,7 @@ impl<'a> ToolScan<'a> {
     /// `failed` is failure, matching the Claude `is_error` boolean.
     fn observe_grok(&mut self, line_no: i64, value: &Value) {
         let kind = grok_session_update(value);
+        let from_prefix = line_no <= self.new_from;
         let session = match self.file_session {
             Some(session) => session.to_string(),
             None => value
@@ -2301,7 +2593,11 @@ impl<'a> ToolScan<'a> {
         };
         match kind {
             Some("tool_call_update") => {
-                let Some(id) = update.get("toolCallId").and_then(Value::as_str) else {
+                let Some(id) = update
+                    .get("toolCallId")
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.is_empty())
+                else {
                     return;
                 };
                 let outcome = match update.get("status").and_then(Value::as_str) {
@@ -2310,14 +2606,18 @@ impl<'a> ToolScan<'a> {
                     Some(_) => None,
                     None => return,
                 };
-                self.results
-                    .push(((session, id.to_string()), outcome, line_no));
+                self.results.push(PendingToolResult {
+                    id: Some((session, id.to_string())),
+                    outcome,
+                    line_no,
+                });
             }
             Some("tool_call") => {
                 let Some(id) = update.get("toolCallId").and_then(Value::as_str) else {
                     return;
                 };
                 if self.by_id.contains_key(&(session.clone(), id.to_string())) {
+                    self.counts.duplicate_call_id += 1;
                     return;
                 }
                 let Some(name) = update
@@ -2329,6 +2629,9 @@ impl<'a> ToolScan<'a> {
                 else {
                     return;
                 };
+                if from_prefix {
+                    self.counts.prefix_skipped += 1;
+                }
                 let kind_name = update
                     .get("_meta")
                     .and_then(|meta| meta.get("x.ai/tool"))
@@ -2360,22 +2663,33 @@ impl<'a> ToolScan<'a> {
                     result_in_new_lines: false,
                     category,
                 });
+                self.counts.calls += 1;
             }
             _ => {}
         }
     }
 
     /// Settle what the lines read so far say, then treat them all as stored:
-    /// the scan keeps its calls so a later batch can still settle them.
+    /// the scan keeps its calls and any not-yet-matched results so a later
+    /// batch can still match and settle them.
     fn flush(&mut self, upto: i64) -> ToolPass {
         let new_from = self.new_from;
         let results = std::mem::take(&mut self.results);
-        for (id, outcome, line_no) in results {
-            if let Some(&at) = self.by_id.get(&id) {
-                self.calls[at].results.push(outcome);
-                self.calls[at].result_in_new_lines |= line_no > new_from;
+        let mut still_unmatched = Vec::new();
+        for res in results {
+            if let Some(&at) = res.id.as_ref().and_then(|id| self.by_id.get(id)) {
+                self.calls[at].results.push(res.outcome);
+                self.calls[at].result_in_new_lines |= res.line_no > new_from;
+                self.counts.results += 1;
+                if self.calls[at].line <= new_from && res.line_no > new_from {
+                    self.counts.late_results += 1;
+                }
+            } else {
+                still_unmatched.push(res);
             }
         }
+        self.counts.unmatched_results = still_unmatched.len() as u64;
+        self.results = still_unmatched;
         let mut pass = ToolPass {
             new_calls: Vec::new(),
             settled: Vec::new(),
@@ -2399,6 +2713,7 @@ impl<'a> ToolScan<'a> {
                 pass.categories
                     .push((call.fact.source_key.clone(), call.category));
                 pass.new_calls.push(call.fact.clone());
+                self.counts.new_calls += 1;
             } else if call.result_in_new_lines {
                 pass.settled
                     .push((call.fact.source_key.clone(), call.fact.failed));
@@ -3909,7 +4224,10 @@ mod tests {
                 .into_iter()
                 .filter(|w| w == CODEX_TOOLS_NOT_READ)
                 .count();
-            assert_eq!(notes, 2, "one per Codex file, kept once across reruns");
+            assert_eq!(
+                notes, 0,
+                "Codex files now route through ToolScan and emit no tools-not-read warning"
+            );
             assert!(f.db.load_tools().unwrap().is_empty(), "no Codex tool facts");
         }
 
@@ -5137,6 +5455,762 @@ mod tests {
         ); // npm test
 
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    mod d1_codex_tool_scan_tests {
+        use super::*;
+
+        fn g0a_s1_lines() -> Vec<&'static str> {
+            vec![
+                r#"{"payload":{"id":"SESSION_cbee0a64728e9ee3","model_provider":"openai","timestamp":"2026-11-12T17:44:10.303Z"},"timestamp":"2026-11-12T17:44:10.340Z","type":"session_meta"}"#,
+                r#"{"payload":{"model":"gpt-5.4","turn_id":"TURN_3bd6e64974fc5975"},"timestamp":"2026-11-12T17:44:10.343Z","type":"turn_context"}"#,
+                r#"{"payload":{"content":[{"text":"<str:len=98>","type":"input_text"}],"role":"user","type":"message"},"timestamp":"2026-11-12T17:44:10.342Z","type":"response_item"}"#,
+                r#"{"payload":{"content":null,"summary":[{"text":"<str:len=72>","type":"summary_text"}],"type":"reasoning"},"timestamp":"2026-11-12T17:44:12.617Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_7d46d9f09a10ac91","id":"MSG_6b90c66c8eb165a3","input":"<str:len=40>","name":"exec","status":"completed","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:12.646Z","type":"response_item"}"#,
+                r#"{"payload":{"KEY_5a5dc2dc8fd6ac6e":"MSG_2a7e5c5f9df8bc51","type":"item_completed"},"timestamp":"2026-11-12T17:44:12.669Z","type":"event_msg"}"#,
+                r#"{"metadata":{"KEY_5853e2f4b78f0f69":false,"KEY_68443f689d1b35aa":12000},"payload":{"call_id":"CALL_7d46d9f09a10ac91","id":"MSG_065b78764233f85e","output":[{"text":"<str:len=47>","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:12.669Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_52d2f18215b71e53","id":"MSG_9fbcf47f14b26f13","input":"<str:len=39>","name":"exec","status":"completed","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:13.997Z","type":"response_item"}"#,
+                r#"{"metadata":{"KEY_5853e2f4b78f0f69":false,"KEY_68443f689d1b35aa":12000},"payload":{"call_id":"CALL_52d2f18215b71e53","id":"MSG_f579215faeb7ff25","output":[{"text":"<str:len=47>","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:14.017Z","type":"response_item"}"#,
+                r#"{"payload":{"tools":[],"type":"additional_tools"},"timestamp":"2026-11-12T17:44:15.174Z","type":"response_item"}"#,
+                r#"{"payload":{"id":"MSG_4345ec49f359ae2a","type":"agent_message"},"timestamp":"2026-11-12T17:44:15.174Z","type":"response_item"}"#,
+                r#"{"payload":{"turn_id":"TURN_3bd6e64974fc5975","type":"task_complete"},"timestamp":"2026-11-12T17:44:15.199Z","type":"event_msg"}"#,
+            ]
+        }
+
+        fn g0a_s2_lines() -> Vec<&'static str> {
+            vec![
+                r#"{"payload":{"id":"SESSION_f525343f6fc4cd4c","model_provider":"openai","timestamp":"2026-11-12T17:44:16.718Z"},"timestamp":"2026-11-12T17:44:16.753Z","type":"session_meta"}"#,
+                r#"{"payload":{"model":"gpt-5.4","turn_id":"TURN_f17ca5b32e2ef52b"},"timestamp":"2026-11-12T17:44:16.756Z","type":"turn_context"}"#,
+                r#"{"payload":{"call_id":"CALL_b2e246ea99be94c2","id":"MSG_c07323efab141b74","input":"<str:len=40>","name":"exec","status":"completed","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:18.921Z","type":"response_item"}"#,
+                r#"{"metadata":{"KEY_5853e2f4b78f0f69":false,"KEY_68443f689d1b35aa":12000},"payload":{"call_id":"CALL_b2e246ea99be94c2","id":"MSG_1a084152267d3965","output":[{"text":"<str:len=47>","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:18.943Z","type":"response_item"}"#,
+                r#"{"payload":{"model":"gpt-5.4","turn_id":"TURN_fc2981cdcd14fa7d"},"timestamp":"2026-11-12T17:44:21.961Z","type":"turn_context"}"#,
+                r#"{"payload":{"call_id":"CALL_897495c64783cd67","id":"MSG_c00201aa36426fe9","input":"<str:len=39>","name":"exec","status":"completed","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:23.916Z","type":"response_item"}"#,
+                r#"{"metadata":{"KEY_5853e2f4b78f0f69":false,"KEY_68443f689d1b35aa":12000},"payload":{"call_id":"CALL_897495c64783cd67","id":"MSG_3772133fc3a84587","output":[{"text":"<str:len=47>","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:23.937Z","type":"response_item"}"#,
+            ]
+        }
+
+        fn g0a_s3_lines() -> Vec<&'static str> {
+            vec![
+                r#"{"payload":{"id":"SESSION_2e0872793de1abdd","model_provider":"openai","timestamp":"2026-11-12T17:44:26.153Z"},"timestamp":"2026-11-12T17:44:26.191Z","type":"session_meta"}"#,
+                r#"{"payload":{"model":"gpt-5.4","turn_id":"TURN_b4c57ebaa76ff23c"},"timestamp":"2026-11-12T17:44:26.193Z","type":"turn_context"}"#,
+                r#"{"payload":{"arguments":"<str:len=610>","call_id":"CALL_8d3399e6a4530cb2","id":"CALL_1393f3481a9ac34d","name":"spawn_agent","status":"completed","type":"function_call"},"timestamp":"2026-11-12T17:44:28.594Z","type":"response_item"}"#,
+                r#"{"metadata":{"KEY_5853e2f4b78f0f69":false,"KEY_68443f689d1b35aa":12000},"payload":{"call_id":"CALL_8d3399e6a4530cb2","id":"CALL_f04dbd8d0de60994","output":"<str:len=36>","type":"function_call_output"},"timestamp":"2026-11-12T17:44:28.622Z","type":"response_item"}"#,
+                r#"{"payload":{"arguments":"<str:len=20>","call_id":"CALL_70ae1b2a6f4740b8","id":"CALL_0c1ba2d5e8c28d93","name":"wait_agent","status":"completed","type":"function_call"},"timestamp":"2026-11-12T17:44:29.419Z","type":"response_item"}"#,
+                r#"{"metadata":{"KEY_5853e2f4b78f0f69":false,"KEY_68443f689d1b35aa":12000},"payload":{"call_id":"CALL_70ae1b2a6f4740b8","id":"CALL_e39d8fd927f32d48","output":"<str:len=47>","type":"function_call_output"},"timestamp":"2026-11-12T17:44:34.230Z","type":"response_item"}"#,
+                r#"{"payload":{"arguments":"<str:len=610>","call_id":"CALL_8d3399e6a4530cb2","id":"CALL_1393f3481a9ac34d","name":"spawn_agent","status":"completed","type":"function_call"},"timestamp":"2026-11-12T17:44:28.609Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_403270ba7403f1bd","id":"MSG_bbdc9de341016437","input":"<str:len=40>","name":"exec","status":"completed","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:31.594Z","type":"response_item"}"#,
+                r#"{"metadata":{"KEY_5853e2f4b78f0f69":false,"KEY_68443f689d1b35aa":12000},"payload":{"call_id":"CALL_403270ba7403f1bd","id":"MSG_9853b278a88d4271","output":[{"text":"<str:len=47>","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:31.616Z","type":"response_item"}"#,
+            ]
+        }
+
+        fn g0a_s4_lines() -> Vec<&'static str> {
+            vec![
+                r#"{"payload":{"id":"SESSION_7bc870d163c0fd76","model_provider":"openai","timestamp":"2026-11-12T17:44:37.314Z"},"timestamp":"2026-11-12T17:44:37.351Z","type":"session_meta"}"#,
+                r#"{"payload":{"model":"gpt-5.4","turn_id":"TURN_2199b098ca515c37"},"timestamp":"2026-11-12T17:44:37.353Z","type":"turn_context"}"#,
+                r#"{"payload":{"call_id":"CALL_2066413585fca71f","id":"MSG_4e55fb1a48a9432d","input":"<str:len=40>","name":"exec","status":"completed","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:39.423Z","type":"response_item"}"#,
+                r#"{"metadata":{"KEY_5853e2f4b78f0f69":false,"KEY_68443f689d1b35aa":12000},"payload":{"call_id":"CALL_2066413585fca71f","id":"MSG_04b035940c704008","output":[{"text":"<str:len=47>","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:39.444Z","type":"response_item"}"#,
+                r#"{"payload":{"type":"context_compacted"},"timestamp":"2026-11-12T17:44:41.519Z","type":"event_msg"}"#,
+                r#"{"payload":{"call_id":"CALL_a804c921c9ae7649","id":"MSG_f12977ab7f6c8a65","input":"<str:len=39>","name":"exec","status":"completed","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:43.829Z","type":"response_item"}"#,
+                r#"{"metadata":{"KEY_5853e2f4b78f0f69":false,"KEY_68443f689d1b35aa":12000},"payload":{"call_id":"CALL_a804c921c9ae7649","id":"MSG_79b73b569ca75ca7","output":[{"text":"<str:len=47>","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:43.851Z","type":"response_item"}"#,
+            ]
+        }
+
+        fn g0a_s5_lines() -> Vec<&'static str> {
+            vec![
+                r#"{"payload":{"id":"SESSION_a6b48238361087c0","model_provider":"openai","timestamp":"2026-11-12T17:44:46.224Z"},"timestamp":"2026-11-12T17:44:46.261Z","type":"session_meta"}"#,
+                r#"{"payload":{"model":"gpt-5.4","turn_id":"TURN_049334d39959ce90"},"timestamp":"2026-11-12T17:44:46.263Z","type":"turn_context"}"#,
+                r#"{"payload":{"call_id":"CALL_4160cb42b893f746","id":"MSG_f146fd8265a155fd","input":"<str:len=40>","name":"exec","status":"completed","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:48.463Z","type":"response_item"}"#,
+                r#"{"metadata":{"KEY_5853e2f4b78f0f69":false,"KEY_68443f689d1b35aa":12000},"payload":{"call_id":"CALL_4160cb42b893f746","id":"MSG_04b3ab6830bfcb05","output":[{"text":"<str:len=47>","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:48.485Z","type":"response_item"}"#,
+            ]
+        }
+
+        #[test]
+        fn d1_a_g0a_codex_s1_through_s5_shapes_record_real_tool_names_and_counts() {
+            let dir = AdmittedTestDir::new("d1-g0a-shapes");
+            let cases: [(&str, Vec<&str>, Vec<&str>, ToolScanCounts); 5] = [
+                (
+                    "s1",
+                    g0a_s1_lines(),
+                    vec!["exec", "exec"],
+                    ToolScanCounts {
+                        calls: 2,
+                        new_calls: 2,
+                        results: 2,
+                        late_results: 0,
+                        unmatched_results: 0,
+                        prefix_skipped: 0,
+                        duplicate_call_id: 0,
+                    },
+                ),
+                (
+                    "s2",
+                    g0a_s2_lines(),
+                    vec!["exec", "exec"],
+                    ToolScanCounts {
+                        calls: 2,
+                        new_calls: 2,
+                        results: 2,
+                        late_results: 0,
+                        unmatched_results: 0,
+                        prefix_skipped: 0,
+                        duplicate_call_id: 0,
+                    },
+                ),
+                (
+                    "s3",
+                    g0a_s3_lines(),
+                    vec!["spawn_agent", "wait_agent", "exec"],
+                    ToolScanCounts {
+                        calls: 3,
+                        new_calls: 3,
+                        results: 3,
+                        late_results: 0,
+                        unmatched_results: 0,
+                        prefix_skipped: 0,
+                        duplicate_call_id: 1,
+                    },
+                ),
+                (
+                    "s4",
+                    g0a_s4_lines(),
+                    vec!["exec", "exec"],
+                    ToolScanCounts {
+                        calls: 2,
+                        new_calls: 2,
+                        results: 2,
+                        late_results: 0,
+                        unmatched_results: 0,
+                        prefix_skipped: 0,
+                        duplicate_call_id: 0,
+                    },
+                ),
+                (
+                    "s5",
+                    g0a_s5_lines(),
+                    vec!["exec"],
+                    ToolScanCounts {
+                        calls: 1,
+                        new_calls: 1,
+                        results: 1,
+                        late_results: 0,
+                        unmatched_results: 0,
+                        prefix_skipped: 0,
+                        duplicate_call_id: 0,
+                    },
+                ),
+            ];
+
+            for (label, lines, expected_names, expected_counts) in cases {
+                let db = store();
+                let path = dir.path().join(format!("{label}.jsonl"));
+                let body = format!("{}\n", lines.join("\n"));
+                fs::write(&path, body).unwrap();
+                let stats =
+                    ingest_jsonl_with_key(&db, label, "codex", &path, Some(b"d1-key")).unwrap();
+                assert_eq!(stats.tool_scan, expected_counts, "case {label}");
+                let tools = db.load_tools().unwrap();
+                let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
+                assert_eq!(names, expected_names, "case {label}: real tool names");
+                let codex_obs = db.load_codex_observations().unwrap();
+                let obs_names: Vec<&str> = codex_obs.iter().map(|o| o.fact.name.as_str()).collect();
+                assert_eq!(
+                    obs_names, expected_names,
+                    "case {label}: load_codex_observations includes real-named Codex tool calls"
+                );
+                assert!(
+                    tools.iter().all(|t| t.name != dendro_core::CODEX_CALL),
+                    "case {label}: never emits constant CodexSeatCall"
+                );
+                assert!(
+                    tools.iter().all(|t| t.failed.is_none()),
+                    "case {label}: outputs without explicit error/status/exit_code stay None (unknown)"
+                );
+                assert!(
+                    tools.iter().all(|t| t.fingerprint.is_some()),
+                    "case {label}: inputs are fingerprinted"
+                );
+            }
+        }
+
+        #[test]
+        fn d1_b_replay_of_same_codex_log_twice_yields_identical_counts_and_no_duplicates() {
+            let dir = AdmittedTestDir::new("d1-replay");
+            let db = store();
+            let path = dir.path().join("s1.jsonl");
+            let body = format!("{}\n", g0a_s1_lines().join("\n"));
+            fs::write(&path, body).unwrap();
+
+            let first =
+                ingest_jsonl_with_key(&db, "src-s1", "codex", &path, Some(b"d1-key")).unwrap();
+            let tools_first = db.load_tools().unwrap();
+            assert_eq!(first.tool_scan.calls, 2);
+            assert_eq!(first.tool_scan.new_calls, 2);
+            assert_eq!(first.tool_scan.results, 2);
+            assert_eq!(first.tool_scan.late_results, 0);
+            assert_eq!(first.tool_scan.prefix_skipped, 0);
+            assert_eq!(first.tool_scan.duplicate_call_id, 0);
+            assert_eq!(tools_first.len(), 2);
+
+            let second =
+                ingest_jsonl_with_key(&db, "src-s1", "codex", &path, Some(b"d1-key")).unwrap();
+            let tools_second = db.load_tools().unwrap();
+            assert_eq!(second.tool_scan.calls, first.tool_scan.calls);
+            assert_eq!(second.tool_scan.results, first.tool_scan.results);
+            assert_eq!(second.tool_scan.late_results, 0);
+            assert_eq!(second.tool_scan.new_calls, 0);
+            assert_eq!(
+                second.tool_scan.prefix_skipped, 2,
+                "both prefix calls skipped by watermark on replay"
+            );
+            assert_eq!(second.tool_scan.duplicate_call_id, 0);
+            assert_eq!(
+                serde_json::to_value(&tools_second).unwrap(),
+                serde_json::to_value(&tools_first).unwrap(),
+                "no duplicate tool facts on replay"
+            );
+        }
+
+        #[test]
+        fn d1_c_extended_log_appended_late_result_attaches_and_is_counted_as_late() {
+            let dir = AdmittedTestDir::new("d1-late-result");
+            let db = store();
+            let path = dir.path().join("extended.jsonl");
+            // CALL_1 and CALL_2 are issued in pass 1 alongside CALL_1's output (same pass/batch,
+            // so late_results == 0). CALL_2's output arrives in pass 2 past the watermark.
+            let initial_lines = [
+                r#"{"payload":{"id":"SESSION_late","model_provider":"openai","timestamp":"2026-11-12T17:44:10.000Z"},"timestamp":"2026-11-12T17:44:10.000Z","type":"session_meta"}"#,
+                r#"{"payload":{"call_id":"CALL_1","id":"MSG_1","input":"cargo check","name":"exec","status":"completed","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:11.000Z","type":"response_item"}"#,
+                r#"{"payload":{"arguments":"{\"cmd\":\"cargo test\"}","call_id":"CALL_2","id":"CALL_2_id","name":"exec_command","status":"in_progress","type":"function_call"},"timestamp":"2026-11-12T17:44:12.000Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_1","id":"MSG_2","output":[{"text":"ok","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:13.000Z","type":"response_item"}"#,
+            ];
+            fs::write(&path, format!("{}\n", initial_lines.join("\n"))).unwrap();
+
+            let first =
+                ingest_jsonl_with_key(&db, "src-late", "codex", &path, Some(b"d1-key")).unwrap();
+            assert_eq!(
+                first.tool_scan,
+                ToolScanCounts {
+                    calls: 2,
+                    new_calls: 2,
+                    results: 1,
+                    late_results: 0,
+                    unmatched_results: 0,
+                    prefix_skipped: 0,
+                    duplicate_call_id: 0,
+                }
+            );
+            let tools_before = db.load_tools().unwrap();
+            assert_eq!(tools_before.len(), 2);
+            assert_eq!(tools_before[0].name, "exec");
+            assert_eq!(tools_before[0].failed, None);
+            assert_eq!(tools_before[1].name, "exec_command");
+            assert_eq!(tools_before[1].failed, None, "unsettled before late output");
+
+            // Append the late function_call_output for CALL_2 in a second pass.
+            let mut f = fs::OpenOptions::new().append(true).open(&path).unwrap();
+            writeln!(
+                f,
+                r#"{{"payload":{{"call_id":"CALL_2","id":"CALL_2_out","is_error":true,"output":"test failed","type":"function_call_output"}},"timestamp":"2026-11-12T17:44:19.000Z","type":"response_item"}}"#
+            )
+            .unwrap();
+            drop(f);
+
+            let second =
+                ingest_jsonl_with_key(&db, "src-late", "codex", &path, Some(b"d1-key")).unwrap();
+            assert_eq!(
+                second.tool_scan,
+                ToolScanCounts {
+                    calls: 2,
+                    new_calls: 0,
+                    results: 2,
+                    late_results: 1,
+                    unmatched_results: 0,
+                    prefix_skipped: 2,
+                    duplicate_call_id: 0,
+                }
+            );
+            let tools_after = db.load_tools().unwrap();
+            assert_eq!(tools_after.len(), 2, "no call invented or duplicated");
+            assert_eq!(tools_after[1].name, "exec_command");
+            assert_eq!(
+                tools_after[1].failed,
+                Some(true),
+                "late result attached and settled original call"
+            );
+
+            // Pure replay of the unchanged extended log reports late_results == 0.
+            let replay =
+                ingest_jsonl_with_key(&db, "src-late", "codex", &path, Some(b"d1-key")).unwrap();
+            assert_eq!(
+                replay.tool_scan,
+                ToolScanCounts {
+                    calls: 2,
+                    new_calls: 0,
+                    results: 2,
+                    late_results: 0,
+                    unmatched_results: 0,
+                    prefix_skipped: 2,
+                    duplicate_call_id: 0,
+                }
+            );
+        }
+
+        #[test]
+        fn d1_d_output_with_no_matching_call_is_counted_unmatched_and_invents_no_call() {
+            let dir = AdmittedTestDir::new("d1-unmatched");
+            let db = store();
+            let path = dir.path().join("unmatched.jsonl");
+            let lines = [
+                r#"{"payload":{"id":"SESSION_unmatched","model_provider":"openai","timestamp":"2026-11-12T17:44:10.000Z"},"timestamp":"2026-11-12T17:44:10.000Z","type":"session_meta"}"#,
+                r#"{"payload":{"call_id":"CALL_orphan_1","id":"OUT_1","output":"orphan output","type":"function_call_output"},"timestamp":"2026-11-12T17:44:11.000Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_real","id":"MSG_real","input":"ls","name":"exec","status":"completed","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:12.000Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_real","id":"OUT_real","output":[{"text":"ok","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:13.000Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_orphan_2","id":"OUT_2","output":[{"text":"orphan 2","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:14.000Z","type":"response_item"}"#,
+            ];
+            fs::write(&path, format!("{}\n", lines.join("\n"))).unwrap();
+
+            let stats =
+                ingest_jsonl_with_key(&db, "src-unmatched", "codex", &path, Some(b"d1-key"))
+                    .unwrap();
+            assert_eq!(
+                stats.tool_scan,
+                ToolScanCounts {
+                    calls: 1,
+                    new_calls: 1,
+                    results: 1,
+                    late_results: 0,
+                    unmatched_results: 2,
+                    prefix_skipped: 0,
+                    duplicate_call_id: 0,
+                }
+            );
+            let tools = db.load_tools().unwrap();
+            assert_eq!(tools.len(), 1, "unmatched outputs never invent calls");
+            assert_eq!(tools[0].name, "exec");
+            assert_eq!(tools[0].failed, None);
+        }
+
+        #[test]
+        fn d1_e_mixed_claude_and_codex_workspace_scans_both_through_shared_path() {
+            let dir = AdmittedTestDir::new("d1-mixed-workspace");
+            let claude_root = dir.path().join("claude");
+            let codex_root = dir.path().join("codex");
+            fs::create_dir_all(&claude_root).unwrap();
+            fs::create_dir_all(&codex_root).unwrap();
+
+            let claude_file = claude_root.join("claude-session.jsonl");
+            let claude_lines = [
+                r#"{"sessionId":"claude-s1","type":"assistant","timestamp":"2026-11-12T17:44:10Z","message":{"id":"m1","role":"assistant","content":[{"type":"tool_use","id":"tu_1","name":"Read","input":{"file_path":"src/lib.rs"}},{"type":"tool_use","id":"tu_2","name":"Edit","input":{"file_path":"src/lib.rs"}}],"usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}"#,
+                r#"{"sessionId":"claude-s1","type":"user","timestamp":"2026-11-12T17:44:11Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_1","is_error":false,"content":"ok"},{"type":"tool_result","tool_use_id":"tu_2","is_error":false,"content":"ok"}]}}"#,
+            ];
+            fs::write(&claude_file, format!("{}\n", claude_lines.join("\n"))).unwrap();
+
+            let codex_file = codex_root.join("rollout.jsonl");
+            fs::write(&codex_file, format!("{}\n", g0a_s3_lines().join("\n"))).unwrap();
+
+            // Direct per-file ingest assertions for Claude parallel calls (late_results == 0)
+            // and Codex S3 calls, plus pure replay stability.
+            let mem_db = store();
+            let claude_pass1 = ingest_jsonl_with_key(
+                &mem_db,
+                "claude-direct",
+                "claude",
+                &claude_file,
+                Some(b"d1-mixed-key"),
+            )
+            .unwrap();
+            assert_eq!(
+                claude_pass1.tool_scan,
+                ToolScanCounts {
+                    calls: 2,
+                    new_calls: 2,
+                    results: 2,
+                    late_results: 0,
+                    unmatched_results: 0,
+                    prefix_skipped: 0,
+                    duplicate_call_id: 0,
+                },
+                "parallel Claude calls in the same batch must have late_results == 0"
+            );
+            let claude_pass2 = ingest_jsonl_with_key(
+                &mem_db,
+                "claude-direct",
+                "claude",
+                &claude_file,
+                Some(b"d1-mixed-key"),
+            )
+            .unwrap();
+            assert_eq!(
+                claude_pass2.tool_scan,
+                ToolScanCounts {
+                    calls: 2,
+                    new_calls: 0,
+                    results: 2,
+                    late_results: 0,
+                    unmatched_results: 0,
+                    prefix_skipped: 2,
+                    duplicate_call_id: 0,
+                }
+            );
+
+            let db_path = dir.path().join("analytics.duckdb");
+            drop(open_test_analytics(&db_path));
+            let roots = vec![
+                crate::SourceRoot {
+                    name: "claude".into(),
+                    path: claude_root,
+                },
+                crate::SourceRoot {
+                    name: "codex".into(),
+                    path: codex_root,
+                },
+            ];
+            crate::ingest_staged(&db_path, &roots, false, b"d1-mixed-key").unwrap();
+            // Re-ingest the mixed workspace to verify watermark replay safety across both harnesses.
+            crate::ingest_staged(&db_path, &roots, false, b"d1-mixed-key").unwrap();
+
+            let store = AnalyticsStore::open_staged(&db_path).unwrap();
+            let tools = store.load_tools().unwrap();
+            let claude_tools: Vec<_> = tools.iter().filter(|t| t.harness == "claude").collect();
+            let codex_tools: Vec<_> = tools.iter().filter(|t| t.harness == "codex").collect();
+            let claude_names: Vec<&str> = claude_tools.iter().map(|t| t.name.as_str()).collect();
+            let codex_names: Vec<&str> = codex_tools.iter().map(|t| t.name.as_str()).collect();
+            assert_eq!(claude_names, vec!["Read", "Edit"]);
+            assert_eq!(codex_names, vec!["spawn_agent", "wait_agent", "exec"]);
+            assert!(
+                claude_tools.iter().all(|t| t.failed == Some(false)),
+                "Claude calls with explicit is_error:false settle to Some(false)"
+            );
+            assert!(
+                codex_tools.iter().all(|t| t.failed.is_none()),
+                "Codex S3 outputs without explicit outcome signal remain None"
+            );
+        }
+
+        #[test]
+        fn d1_f_explicit_exit_codes_and_error_flags_settle_while_ambiguous_stays_unknown() {
+            let dir = AdmittedTestDir::new("d1-outcomes");
+            let db = store();
+            let path = dir.path().join("outcomes.jsonl");
+            let lines = [
+                r#"{"payload":{"id":"SESSION_outcomes","model_provider":"openai","timestamp":"2026-11-12T17:44:10.000Z"},"timestamp":"2026-11-12T17:44:10.000Z","type":"session_meta"}"#,
+                // 1. Explicit failing exit_code in JSON object output -> Some(true)
+                r#"{"payload":{"arguments":"{\"cmd\":\"false\"}","call_id":"CALL_fail_json","name":"exec_command","type":"function_call"},"timestamp":"2026-11-12T17:44:11.000Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_fail_json","output":"{\"output\":\"boom\",\"metadata\":{\"exit_code\":2}}","type":"function_call_output"},"timestamp":"2026-11-12T17:44:12.000Z","type":"response_item"}"#,
+                // 2. Explicit succeeding exit_code in JSON object output -> Some(false)
+                r#"{"payload":{"arguments":"{\"cmd\":\"true\"}","call_id":"CALL_ok_json","name":"exec_command","type":"function_call"},"timestamp":"2026-11-12T17:44:13.000Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_ok_json","output":"{\"output\":\"done\",\"metadata\":{\"exit_code\":0}}","type":"function_call_output"},"timestamp":"2026-11-12T17:44:14.000Z","type":"response_item"}"#,
+                // 3. Explicit failing "Process exited with code N" in exec_command text -> Some(true)
+                r#"{"payload":{"arguments":"{\"cmd\":\"cargo test\"}","call_id":"CALL_fail_text","name":"exec_command","type":"function_call"},"timestamp":"2026-11-12T17:44:15.000Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_fail_text","output":"Chunk ID: 1a2b\nWall time: 0.12 seconds\nProcess exited with code 101\nOutput:\ntest result: FAILED\n","type":"function_call_output"},"timestamp":"2026-11-12T17:44:16.000Z","type":"response_item"}"#,
+                // 4. Explicit succeeding "Exit code: 0" in text (with misleading stdout after Output:) -> Some(false)
+                r#"{"payload":{"arguments":"{\"cmd\":\"echo\"}","call_id":"CALL_ok_text","name":"exec_command","type":"function_call"},"timestamp":"2026-11-12T17:44:17.000Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_ok_text","output":"Exit code: 0\nWall time: 0.01 seconds\nOutput:\nExit code: 99 in user stdout\n","type":"function_call_output"},"timestamp":"2026-11-12T17:44:18.000Z","type":"response_item"}"#,
+                // 5. Ambiguous / unformatted output (like G0A_ERR_SENTINEL_S1) -> None
+                r#"{"payload":{"call_id":"CALL_sentinel","input":"run","name":"exec","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:19.000Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_sentinel","output":[{"text":"G0A_ERR_SENTINEL_S1: exit code 1 trailing words","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:20.000Z","type":"response_item"}"#,
+                // 6. Output body containing "Exit code: 1" without an exec_command header (string) -> None
+                r#"{"payload":{"arguments":"{\"cmd\":\"echo\"}","call_id":"CALL_body_str","name":"exec_command","type":"function_call"},"timestamp":"2026-11-12T17:44:21.000Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_body_str","output":"Exit code: 1\nuser program printed its own exit code\n","type":"function_call_output"},"timestamp":"2026-11-12T17:44:22.000Z","type":"response_item"}"#,
+                // 7. Output body containing "Exit code: 1" without an exec_command header (array) -> None
+                r#"{"payload":{"call_id":"CALL_body_arr","input":"echo","name":"exec","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:23.000Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_body_arr","output":[{"text":"some log line\nExit code: 1\n","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:24.000Z","type":"response_item"}"#,
+                // 8. Array output with a proper exec_command header -> Some(true)
+                r#"{"payload":{"call_id":"CALL_hdr_arr","input":"false","name":"exec","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:25.000Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_hdr_arr","output":[{"text":"Exit code: 1\nWall time: 0.02 seconds\nOutput:\nfailed\n","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:26.000Z","type":"response_item"}"#,
+            ];
+            fs::write(&path, format!("{}\n", lines.join("\n"))).unwrap();
+
+            let stats = ingest_jsonl_with_key(&db, "src-outcomes", "codex", &path, Some(b"d1-key"))
+                .unwrap();
+            assert_eq!(stats.tool_scan.calls, 8);
+            assert_eq!(stats.tool_scan.results, 8);
+            let tools = db.load_tools().unwrap();
+            let outcomes: Vec<Option<bool>> = tools.iter().map(|t| t.failed).collect();
+            assert_eq!(
+                outcomes,
+                vec![
+                    Some(true),
+                    Some(false),
+                    Some(true),
+                    Some(false),
+                    None,
+                    None,
+                    None,
+                    Some(true),
+                ]
+            );
+        }
+
+        #[test]
+        fn d1_g_output_before_call_in_one_batch_and_split_across_batches() {
+            let dir = AdmittedTestDir::new("d1-out-before-call");
+            let lines = [
+                r#"{"payload":{"id":"SESSION_order","model_provider":"openai","timestamp":"2026-11-12T17:44:10.000Z"},"timestamp":"2026-11-12T17:44:10.000Z","type":"session_meta"}"#,
+                r#"{"payload":{"call_id":"CALL_early_out","is_error":true,"output":"failed","type":"function_call_output"},"timestamp":"2026-11-12T17:44:11.000Z","type":"response_item"}"#,
+                r#"{"payload":{"arguments":"{\"cmd\":\"false\"}","call_id":"CALL_early_out","name":"exec_command","type":"function_call"},"timestamp":"2026-11-12T17:44:12.000Z","type":"response_item"}"#,
+            ];
+            let path = dir.path().join("early.jsonl");
+            fs::write(&path, format!("{}\n", lines.join("\n"))).unwrap();
+
+            // 1. Within a single batch:
+            let db_one = store();
+            let stats_one =
+                ingest_jsonl_with_key(&db_one, "src-one", "codex", &path, Some(b"d1-key")).unwrap();
+            assert_eq!(
+                stats_one.tool_scan,
+                ToolScanCounts {
+                    calls: 1,
+                    new_calls: 1,
+                    results: 1,
+                    late_results: 0,
+                    unmatched_results: 0,
+                    prefix_skipped: 0,
+                    duplicate_call_id: 0,
+                }
+            );
+            let tools_one = db_one.load_tools().unwrap();
+            assert_eq!(tools_one.len(), 1);
+            assert_eq!(tools_one[0].failed, Some(true));
+
+            // 2. Split across batches (batch size 2 puts session_meta + output in batch 1, call in batch 2):
+            let db_split = store();
+            let small_limits = crate::sdk::ReadLimits {
+                encoded_bytes: 8 * 1024 * 1024,
+                nesting_depth: 64,
+                decoded_records_per_batch: 2,
+                line_attempts: None,
+            };
+            let stats_split = ingest_jsonl_limited(
+                &db_split,
+                "src-split",
+                "codex",
+                &path,
+                Some(b"d1-key"),
+                None,
+                || Ok(()),
+                &small_limits,
+            )
+            .unwrap();
+            assert_eq!(
+                stats_split.tool_scan,
+                ToolScanCounts {
+                    calls: 1,
+                    new_calls: 1,
+                    results: 1,
+                    late_results: 0,
+                    unmatched_results: 0,
+                    prefix_skipped: 0,
+                    duplicate_call_id: 0,
+                }
+            );
+            let tools_split = db_split.load_tools().unwrap();
+            assert_eq!(tools_split.len(), 1);
+            assert_eq!(tools_split[0].failed, Some(true));
+        }
+
+        #[test]
+        fn d1_h_codex_without_session_header_uses_distinct_per_file_fallback_matching_other_facts()
+        {
+            let dir = AdmittedTestDir::new("d1-no-header");
+            let path_a = dir.path().join("no_header_a.jsonl");
+            let path_b = dir.path().join("no_header_b.jsonl");
+            // Two header-less Codex files, each with usage, message, and 2 failing tool calls.
+            let lines_a = [
+                r#"{"payload":{"content":[{"text":"prompt a","type":"input_text"}],"role":"user","type":"message"},"timestamp":"2026-11-12T17:44:10.000Z","type":"response_item"}"#,
+                r#"{"payload":{"info":{"total_token_usage":{"cache_write_input_tokens":0,"cached_input_tokens":0,"input_tokens":5,"output_tokens":3,"reasoning_output_tokens":0}},"type":"token_count"},"timestamp":"2026-11-12T17:44:10.500Z","type":"event_msg"}"#,
+                r#"{"payload":{"call_id":"CALL_nh_a1","input":"ls","name":"exec","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:11.000Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_nh_a1","exit_code":1,"output":[{"text":"err","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:12.000Z","type":"response_item"}"#,
+                r#"{"payload":{"item":{"command":["cargo","check"],"exit_code":1,"type":"CommandExecution"},"type":"item_completed"},"timestamp":"2026-11-12T17:44:13.000Z","type":"event_msg"}"#,
+            ];
+            let lines_b = [
+                r#"{"payload":{"content":[{"text":"prompt b","type":"input_text"}],"role":"user","type":"message"},"timestamp":"2026-11-12T17:44:14.000Z","type":"response_item"}"#,
+                r#"{"payload":{"info":{"total_token_usage":{"cache_write_input_tokens":0,"cached_input_tokens":0,"input_tokens":7,"output_tokens":2,"reasoning_output_tokens":0}},"type":"token_count"},"timestamp":"2026-11-12T17:44:14.500Z","type":"event_msg"}"#,
+                r#"{"payload":{"call_id":"CALL_nh_b1","input":"ls","name":"exec","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:15.000Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_nh_b1","exit_code":1,"output":[{"text":"err","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:16.000Z","type":"response_item"}"#,
+                r#"{"payload":{"item":{"command":["cargo","check"],"exit_code":1,"type":"CommandExecution"},"type":"item_completed"},"timestamp":"2026-11-12T17:44:17.000Z","type":"event_msg"}"#,
+            ];
+            fs::write(&path_a, format!("{}\n", lines_a.join("\n"))).unwrap();
+            fs::write(&path_b, format!("{}\n", lines_b.join("\n"))).unwrap();
+
+            let key = b"d1-key";
+            let db_keyed = store();
+            let stats_a =
+                ingest_jsonl_with_key(&db_keyed, "src-nh-a", "codex", &path_a, Some(key)).unwrap();
+            let stats_b =
+                ingest_jsonl_with_key(&db_keyed, "src-nh-b", "codex", &path_b, Some(key)).unwrap();
+            assert_eq!(stats_a.tool_scan.calls, 2);
+            assert_eq!(stats_b.tool_scan.calls, 2);
+
+            let expected_a = seal_session(Some(key), "codex", "codex-file:src-nh-a");
+            let expected_b = seal_session(Some(key), "codex", "codex-file:src-nh-b");
+            assert_ne!(
+                expected_a, expected_b,
+                "two header-less files must receive different per-file fallback sessions"
+            );
+
+            let tools = db_keyed.load_tools().unwrap();
+            assert_eq!(tools.len(), 4);
+            let tools_a: Vec<_> = tools
+                .iter()
+                .filter(|t| t.source_key.starts_with("src-nh-a:"))
+                .collect();
+            let tools_b: Vec<_> = tools
+                .iter()
+                .filter(|t| t.source_key.starts_with("src-nh-b:"))
+                .collect();
+            assert_eq!(tools_a.len(), 2);
+            assert_eq!(tools_b.len(), 2);
+            assert!(tools_a.iter().all(|t| t.native_session == expected_a));
+            assert!(tools_b.iter().all(|t| t.native_session == expected_b));
+
+            // Tool sessions match the session used by the same file's other facts.
+            let usages = db_keyed.load_usage().unwrap();
+            assert_eq!(usages.len(), 2);
+            let usage_a = usages
+                .iter()
+                .find(|u| u.source_key.starts_with("src-nh-a:"))
+                .unwrap();
+            let usage_b = usages
+                .iter()
+                .find(|u| u.source_key.starts_with("src-nh-b:"))
+                .unwrap();
+            assert_eq!(usage_a.native_session, expected_a);
+            assert_eq!(usage_b.native_session, expected_b);
+
+            let messages = db_keyed.load_messages().unwrap();
+            assert_eq!(messages.len(), 2);
+            let msg_a = messages
+                .iter()
+                .find(|m| m.source_key.starts_with("src-nh-a:"))
+                .unwrap();
+            let msg_b = messages
+                .iter()
+                .find(|m| m.source_key.starts_with("src-nh-b:"))
+                .unwrap();
+            assert_eq!(msg_a.native_session.as_deref(), Some(expected_a.as_str()));
+            assert_eq!(msg_b.native_session.as_deref(), Some(expected_b.as_str()));
+
+            // Loop evaluation (3 consecutive failures within 600s) does not span header-less files:
+            // 2 failures in file A + 2 failures in file B must not combine into a 4-failure loop.
+            let obs = db_keyed.load_codex_observations().unwrap();
+            assert_eq!(obs.len(), 4);
+            let loops = dendro_core::codex_command_loops(&obs);
+            assert!(
+                loops.is_empty(),
+                "failure runs must not carry over across header-less files: {loops:?}"
+            );
+        }
+
+        #[test]
+        fn d1_i_local_shell_call_recorded_and_command_content_never_persisted() {
+            let dir = AdmittedTestDir::new("d1-local-shell");
+            let path = dir.path().join("local_shell.jsonl");
+            let lines = [
+                r#"{"payload":{"id":"SESSION_shell","model_provider":"openai","timestamp":"2026-11-12T17:44:10.000Z"},"timestamp":"2026-11-12T17:44:10.000Z","type":"session_meta"}"#,
+                r#"{"payload":{"action":{"command":["bash","-lc","cat skills/shell-audit/SKILL.md && echoD1_LOCAL_SHELL_CMD_CANARY"],"type":"exec"},"call_id":"CALL_sh_1","status":"completed","type":"local_shell_call"},"timestamp":"2026-11-12T17:44:11.000Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_sh_1","output":"{\"output\":\"D1_LOCAL_SHELL_OUT_CANARY\",\"metadata\":{\"exit_code\":0}}","type":"local_shell_call_output"},"timestamp":"2026-11-12T17:44:12.000Z","type":"response_item"}"#,
+            ];
+            fs::write(&path, format!("{}\n", lines.join("\n"))).unwrap();
+
+            let db_path = dir.path().join("analytics.duckdb");
+            let db = open_test_analytics(&db_path);
+            let stats =
+                ingest_jsonl_with_key(&db, "src-sh", "codex", &path, Some(b"d1-key")).unwrap();
+            assert!(!stats.coverage.partial, "coverage must be complete");
+            assert_eq!(
+                stats.tool_scan,
+                ToolScanCounts {
+                    calls: 1,
+                    new_calls: 1,
+                    results: 1,
+                    late_results: 0,
+                    unmatched_results: 0,
+                    prefix_skipped: 0,
+                    duplicate_call_id: 0,
+                }
+            );
+            let tools = db.load_tools().unwrap();
+            assert_eq!(tools.len(), 1);
+            assert_eq!(tools[0].name, "local_shell");
+            assert_eq!(tools[0].failed, Some(false));
+            assert!(tools[0].fingerprint.is_some());
+
+            let skills = db.load_skills().unwrap();
+            assert_eq!(skills.len(), 1);
+            assert_eq!(skills[0].skill, "shell-audit");
+
+            for canary in ["D1_LOCAL_SHELL_CMD_CANARY", "D1_LOCAL_SHELL_OUT_CANARY"] {
+                assert!(
+                    !db.contains_text(canary).unwrap(),
+                    "command/output canary leaked into store: {canary}"
+                );
+            }
+            drop(db);
+            let raw_bytes = fs::read(&db_path).unwrap();
+            let lossy = String::from_utf8_lossy(&raw_bytes);
+            for canary in ["D1_LOCAL_SHELL_CMD_CANARY", "D1_LOCAL_SHELL_OUT_CANARY"] {
+                assert!(!lossy.contains(canary), "canary in db file: {canary}");
+            }
+        }
+
+        #[test]
+        fn d1_j_command_execution_and_call_id_only_matching_semantics() {
+            let dir = AdmittedTestDir::new("d1-cmd-and-callid");
+            let db = store();
+            let path = dir.path().join("cmd_callid.jsonl");
+            let lines = [
+                r#"{"payload":{"id":"SESSION_cc","model_provider":"openai","timestamp":"2026-11-12T17:44:10.000Z"},"timestamp":"2026-11-12T17:44:10.000Z","type":"session_meta"}"#,
+                // CommandExecution item: counted in calls, new_calls, and prefix_skipped on replay
+                r#"{"payload":{"item":{"command":["cargo","test"],"exit_code":0,"type":"CommandExecution"},"type":"item_completed"},"timestamp":"2026-11-12T17:44:11.000Z","type":"event_msg"}"#,
+                // Call without call_id (only message id): counted as call-only, never matched by id
+                r#"{"payload":{"id":"MSG_only_1","input":"ls","name":"exec","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:12.000Z","type":"response_item"}"#,
+                // Output with id=="MSG_only_1" and no call_id: must NOT match the call above
+                r#"{"payload":{"id":"MSG_only_1","is_error":true,"output":"err","type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:13.000Z","type":"response_item"}"#,
+                // Output with call_id=="MSG_only_1": also must NOT match because the call had no call_id
+                r#"{"payload":{"call_id":"MSG_only_1","is_error":true,"output":"err","type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:14.000Z","type":"response_item"}"#,
+            ];
+            fs::write(&path, format!("{}\n", lines.join("\n"))).unwrap();
+
+            let first =
+                ingest_jsonl_with_key(&db, "src-cc", "codex", &path, Some(b"d1-key")).unwrap();
+            assert_eq!(
+                first.tool_scan,
+                ToolScanCounts {
+                    calls: 2,
+                    new_calls: 2,
+                    results: 0,
+                    late_results: 0,
+                    unmatched_results: 2,
+                    prefix_skipped: 0,
+                    duplicate_call_id: 0,
+                }
+            );
+            let tools = db.load_tools().unwrap();
+            assert_eq!(tools.len(), 2);
+            assert_eq!(tools[0].name, "CommandExecution");
+            assert_eq!(tools[0].failed, Some(false));
+            assert_eq!(tools[1].name, "exec");
+            assert_eq!(
+                tools[1].failed, None,
+                "call without call_id is never matched"
+            );
+
+            let replay =
+                ingest_jsonl_with_key(&db, "src-cc", "codex", &path, Some(b"d1-key")).unwrap();
+            assert_eq!(
+                replay.tool_scan,
+                ToolScanCounts {
+                    calls: 2,
+                    new_calls: 0,
+                    results: 0,
+                    late_results: 0,
+                    unmatched_results: 2,
+                    prefix_skipped: 2,
+                    duplicate_call_id: 0,
+                }
+            );
+        }
     }
 }
 

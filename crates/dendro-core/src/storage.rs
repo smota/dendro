@@ -2044,7 +2044,7 @@ impl AnalyticsStore {
         let mut stmt = self.conn.prepare(
             r#"SELECT source_key, harness, native_session, CAST(ts AS VARCHAR), seq, tool_name, fingerprint,
                       failed, structured_write, generation
-               FROM tool_facts WHERE NOT starts_with(source_key, 'dendro-internal:reader:') AND (harness <> 'codex' OR tool_name NOT IN ('CommandExecution', 'CodexSeatCall') OR EXISTS (SELECT 1 FROM source_files s WHERE s.source_id = tool_facts.source_id AND s.generation = tool_facts.generation)) ORDER BY native_session, ts NULLS LAST, seq"#,
+               FROM tool_facts WHERE NOT starts_with(source_key, 'dendro-internal:reader:') AND (harness <> 'codex' OR (tool_name NOT IN ('CommandExecution', 'CodexSeatCall') AND NOT contains(source_key, ':codex:')) OR EXISTS (SELECT 1 FROM source_files s WHERE s.source_id = tool_facts.source_id AND s.generation = tool_facts.generation)) ORDER BY native_session, ts NULLS LAST, seq"#,
         )?;
         let rows = stmt.query_map([], |row| {
             let ts: Option<String> = row.get(3)?;
@@ -2158,13 +2158,13 @@ impl AnalyticsStore {
     pub fn load_codex_observations(&self) -> Result<Vec<CodexObservation>> {
         let mut stmt = self.conn.prepare(
             "SELECT t.source_id, t.source_key, t.native_session, CAST(t.ts AS VARCHAR), t.seq,
-                    t.tool_name, t.fingerprint, t.failed, t.generation
+                    t.tool_name, t.fingerprint, t.failed, t.structured_write, t.generation
              FROM tool_facts t JOIN source_files s ON t.source_id = s.source_id AND t.generation = s.generation
              WHERE t.harness = 'codex' AND s.harness = 'codex'
-                AND NOT starts_with(t.source_key, ?) AND t.tool_name IN (?, ?) AND NOT t.structured_write
+                AND NOT starts_with(t.source_key, ?)
              ORDER BY t.source_id, t.generation, t.seq",
         )?;
-        let rows = stmt.query_map(params![READER_NAMESPACE, CODEX_COMMAND, CODEX_CALL], |r| {
+        let rows = stmt.query_map(params![READER_NAMESPACE], |r| {
             let ts: Option<String> = r.get(3)?;
             Ok(CodexObservation {
                 source_id: r.get(0)?,
@@ -2177,8 +2177,8 @@ impl AnalyticsStore {
                     name: r.get(5)?,
                     fingerprint: r.get(6)?,
                     failed: r.get(7)?,
-                    structured_write: false,
-                    generation: r.get(8)?,
+                    structured_write: r.get(8)?,
+                    generation: r.get(9)?,
                 },
             })
         })?;
