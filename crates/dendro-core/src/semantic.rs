@@ -39,7 +39,7 @@ SELECT 'skill_facts' kind, hash(t) h FROM skill_facts t UNION ALL
 SELECT 'destination_snapshots' kind, hash(t) h FROM destination_snapshots t UNION ALL
 SELECT 'source_files' kind, hash(t) h FROM source_files t) GROUP BY kind";
 
-const OPTIONAL_SIGNATURES: [(&str, &str); 8] = [
+const OPTIONAL_SIGNATURES: [(&str, &str); 9] = [
     (
         "file_source_baselines",
         "SELECT count(*) n, CAST(bit_xor(hash(t)) AS VARCHAR) digest FROM file_source_baselines t HAVING count(*) > 0",
@@ -71,6 +71,10 @@ const OPTIONAL_SIGNATURES: [(&str, &str); 8] = [
     (
         "security_facts",
         "SELECT count(*) n, CAST(bit_xor(hash(t)) AS VARCHAR) digest FROM security_facts t HAVING count(*) > 0",
+    ),
+    (
+        "session_facts",
+        "SELECT count(*) n, CAST(bit_xor(hash(t)) AS VARCHAR) digest FROM session_facts t HAVING count(*) > 0",
     ),
 ];
 

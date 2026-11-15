@@ -257,6 +257,22 @@ impl AnalyticsStore {
         generation BIGINT NOT NULL
     )";
 
+    /// Session-level link facts (`MTN-19 / D3`, `link-id-v1`). Additive and idempotent;
+    /// no schema bump. `native_session` stores the sealed session token (`session:<hex>`),
+    /// while `link_id` is computed from the raw session ID BEFORE `seal_session`.
+    pub(super) const SESSION_FACTS_SCHEMA: &'static str =
+        "CREATE TABLE IF NOT EXISTS session_facts (
+        source_key VARCHAR PRIMARY KEY,
+        source_id VARCHAR NOT NULL,
+        harness VARCHAR NOT NULL,
+        native_session VARCHAR NOT NULL,
+        link_id VARCHAR NOT NULL DEFAULT 'unlinked',
+        unlinked_reason VARCHAR,
+        generation BIGINT NOT NULL
+    );
+    ALTER TABLE session_facts ADD COLUMN IF NOT EXISTS link_id VARCHAR DEFAULT 'unlinked';
+    ALTER TABLE session_facts ADD COLUMN IF NOT EXISTS unlinked_reason VARCHAR";
+
     pub(super) const SEMANTIC_STATE_SCHEMA: &'static str = "CREATE TABLE IF NOT EXISTS dendro_semantic_state (id INTEGER PRIMARY KEY, dirty BOOLEAN NOT NULL); INSERT INTO dendro_semantic_state VALUES (1, TRUE) ON CONFLICT DO NOTHING";
 
     pub(super) fn invalidate_semantic(&self) -> Result<()> {
@@ -383,7 +399,7 @@ impl AnalyticsStore {
             return Err(anyhow!("analytics key id does not match the sidecar"));
         }
         conn.execute_batch(Self::SEMANTIC_STATE_SCHEMA)?;
-        Ok(Self {
+        let store = Self {
             conn,
             key_id: key_id.to_string(),
             openrig_rows: RefCell::new(None),
@@ -393,7 +409,9 @@ impl AnalyticsStore {
             _custody: None,
             #[cfg(any(windows, target_os = "linux"))]
             runtime,
-        })
+        };
+        store.ensure_session_facts_columns()?;
+        Ok(store)
     }
 
     /// Opens a database this process just created in a private staging directory.
@@ -413,7 +431,7 @@ impl AnalyticsStore {
         validate_reader_schema(&conn, version, &key_id)?;
         conn.execute_batch(openrig_provenance::SCHEMA)?;
         conn.execute_batch(Self::SEMANTIC_STATE_SCHEMA)?;
-        Ok(Self {
+        let store = Self {
             conn,
             key_id,
             openrig_rows: RefCell::new(None),
@@ -423,7 +441,9 @@ impl AnalyticsStore {
             _custody: None,
             #[cfg(any(windows, target_os = "linux"))]
             runtime: Some(runtime),
-        })
+        };
+        store.ensure_session_facts_columns()?;
+        Ok(store)
     }
 
     pub fn open_read_only(path: &Path) -> Result<Self> {
@@ -617,6 +637,7 @@ impl AnalyticsStore {
         self.conn.execute_batch(Self::PROCESS_SAMPLES_SCHEMA)?;
         self.conn.execute_batch(Self::SESSION_EDGES_SCHEMA)?;
         self.conn.execute_batch(Self::SECURITY_FACTS_SCHEMA)?;
+        self.conn.execute_batch(Self::SESSION_FACTS_SCHEMA)?;
         self.conn.execute_batch(openrig_provenance::SCHEMA)?;
         self.conn.execute(
             "INSERT INTO dendro_meta (schema_version, key_id) VALUES (?, ?)",
@@ -1339,6 +1360,106 @@ impl AnalyticsStore {
                 value: row.get(6)?,
                 source_field: row.get(7)?,
                 generation: row.get(8)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    /// Ensures backward-compatible `link_id` and `unlinked_reason` columns on an existing
+    /// `session_facts` table without guessing values for pre-D3 rows.
+    pub(crate) fn ensure_session_facts_columns(&self) -> Result<()> {
+        let exists: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = ?",
+            ["session_facts"],
+            |row| row.get(0),
+        )?;
+        if exists == 0 {
+            return Ok(());
+        }
+        self.conn.execute_batch(
+            "ALTER TABLE session_facts ADD COLUMN IF NOT EXISTS link_id VARCHAR DEFAULT 'unlinked';
+             ALTER TABLE session_facts ADD COLUMN IF NOT EXISTS unlinked_reason VARCHAR;
+             UPDATE session_facts SET link_id = 'unlinked' WHERE link_id IS NULL",
+        )?;
+        Ok(())
+    }
+
+    /// Upsert session-level link facts (`MTN-19 / D3`).
+    ///
+    /// Enforces that `native_session` is already sealed (`session:<hex>`), `link_id` is either
+    /// `"unlinked"` or a 64-character lowercase hex digest, and `unlinked_reason` is a valid
+    /// `link-id-v1` reason code only when `link_id == "unlinked"`.
+    pub fn commit_session_facts(&self, facts: &[SessionFact]) -> Result<()> {
+        if facts.is_empty() {
+            return Ok(());
+        }
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute_batch(Self::SESSION_FACTS_SCHEMA)?;
+        let mut stmt = tx.prepare(
+            "INSERT INTO session_facts
+             (source_key, source_id, harness, native_session, link_id, unlinked_reason, generation)
+             VALUES (?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT (source_key) DO UPDATE SET
+                 link_id = excluded.link_id,
+                 unlinked_reason = excluded.unlinked_reason,
+                 generation = excluded.generation",
+        )?;
+        for fact in facts {
+            if crate::privacy::contains_secret(&fact.native_session) {
+                anyhow::bail!("session_facts.native_session must be sealed before persistence");
+            }
+            if !crate::link_id::is_valid_persisted_link_id(&fact.link_id) {
+                anyhow::bail!("session_facts.link_id must be 'unlinked' or 64 lowercase hex chars");
+            }
+            if fact.link_id == crate::link_id::AGENT_SESSION_LINK_UNLINKED {
+                if let Some(reason) = fact.unlinked_reason.as_deref() {
+                    if crate::link_id::UnlinkedReason::from_code(reason).is_none() {
+                        anyhow::bail!(
+                            "session_facts.unlinked_reason is not in link-id-v1 vocabulary"
+                        );
+                    }
+                }
+            } else if fact.unlinked_reason.is_some() {
+                anyhow::bail!("linked session_facts row must not carry unlinked_reason");
+            }
+            stmt.execute(params![
+                redact(&fact.source_key),
+                redact(&fact.source_id),
+                redact(&fact.harness),
+                redact(&fact.native_session),
+                fact.link_id.as_str(),
+                fact.unlinked_reason.as_deref(),
+                fact.generation,
+            ])?;
+        }
+        drop(stmt);
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn load_session_facts(&self) -> Result<Vec<SessionFact>> {
+        let exists: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'session_facts'",
+            [],
+            |row| row.get(0),
+        )?;
+        if exists == 0 {
+            return Ok(Vec::new());
+        }
+        let mut stmt = self.conn.prepare(
+            "SELECT source_key, source_id, harness, native_session,
+                    COALESCE(link_id, 'unlinked'), unlinked_reason, generation
+             FROM session_facts ORDER BY source_key",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(SessionFact {
+                source_key: row.get(0)?,
+                source_id: row.get(1)?,
+                harness: row.get(2)?,
+                native_session: row.get(3)?,
+                link_id: row.get(4)?,
+                unlinked_reason: row.get(5)?,
+                generation: row.get(6)?,
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
@@ -3876,6 +3997,82 @@ mod tests {
             .any(|l| l["code"] == "essential_evidence_unavailable"
                 && l["observation_id"] == "o1"
                 && l["report_index"].is_null()));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn pre_d3_database_migrates_without_data_loss_or_guessed_links() {
+        let dir = std::env::temp_dir().join(format!("dendro-pre-d3-{}", rand::random::<u64>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("pre_d3.duckdb");
+
+        // 1. Construct a pre-D3 database fixture that has existing source_files and usage_facts
+        //    and a pre-D3 session_facts table lacking link_id / unlinked_reason.
+        {
+            let store = AnalyticsStore::open_path(&db, "pre-d3-key").unwrap();
+            store
+                .conn
+                .execute(
+                    "INSERT INTO source_files VALUES ('src-old', 'claude', 'sealed-path', 1, 100, 'prefix', 'session:aa11')",
+                    [],
+                )
+                .unwrap();
+            store
+                .conn
+                .execute(
+                    "INSERT INTO usage_facts VALUES (
+                        'src-old:1:1', 'claude', 'session:aa11', 'msg-1',
+                        TIMESTAMP '2026-10-15 12:00:00', 1, 10, 20, 0, 0, 0, NULL,
+                        1, 'src-old', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+                    )",
+                    [],
+                )
+                .unwrap();
+            // Simulate a pre-D3 database where session_facts lacked link_id and unlinked_reason:
+            store
+                .conn
+                .execute_batch(
+                    "DROP TABLE IF EXISTS session_facts;
+                     CREATE TABLE session_facts (
+                         source_key VARCHAR PRIMARY KEY,
+                         source_id VARCHAR NOT NULL,
+                         harness VARCHAR NOT NULL,
+                         native_session VARCHAR NOT NULL,
+                         generation BIGINT NOT NULL
+                     );
+                     INSERT INTO session_facts VALUES ('src-old:1:session:aa11', 'src-old', 'claude', 'session:aa11', 1);",
+                )
+                .unwrap();
+            store.checkpoint().unwrap();
+        }
+
+        // 2. Reopen via AnalyticsStore::open_existing -> migrates columns without data loss
+        let reopened = AnalyticsStore::open_existing(&db, "pre-d3-key").unwrap();
+        let usage_count: i64 = reopened
+            .conn
+            .query_row("SELECT COUNT(*) FROM usage_facts", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(usage_count, 1);
+
+        // Existing pre-D3 row gets link_id = 'unlinked' and unlinked_reason = NULL (never guessed)
+        let facts = reopened.load_session_facts().unwrap();
+        assert_eq!(facts.len(), 1);
+        assert_eq!(facts[0].source_key, "src-old:1:session:aa11");
+        assert_eq!(facts[0].native_session, "session:aa11");
+        assert_eq!(facts[0].link_id, "unlinked");
+        assert_eq!(facts[0].unlinked_reason, None);
+
+        // 3. Also verify a pre-D3 database with NO session_facts table at all opens cleanly
+        reopened
+            .conn
+            .execute_batch("DROP TABLE session_facts")
+            .unwrap();
+        reopened.checkpoint().unwrap();
+        drop(reopened);
+
+        let reopened2 = AnalyticsStore::open_existing(&db, "pre-d3-key").unwrap();
+        assert!(reopened2.load_session_facts().unwrap().is_empty());
+
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

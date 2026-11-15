@@ -1710,6 +1710,7 @@ where
                     output::refuse_existing_output_wal(&staged)?;
                     let store = AnalyticsStore::open_staged(&staged)?;
                     store.ensure_process_attribution_column()?;
+                    store.ensure_session_facts_columns()?;
                     store.checkpoint()?;
                     drop(store);
                     super::pipeline::sync_staged_output(&stage)?;
@@ -1775,6 +1776,7 @@ where
                 mutate(&staged, &key.bytes)?;
                 let store = AnalyticsStore::open_staged(&staged)?;
                 store.ensure_process_attribution_column()?;
+                store.ensure_session_facts_columns()?;
                 store.checkpoint()?;
                 drop(store);
                 super::pipeline::sync_staged_output(&stage)?;

@@ -179,6 +179,30 @@ pub fn ingest_jsonl_with_key(
     ingest_jsonl_with_key_checking(store, source_id, harness, path, tool_key, || Ok(()))
 }
 
+/// Ingest a JSONL session file using an explicit [`dendro_core::SessionLinkConfig`]
+/// to compute `agent.session.link_id` from the raw `native_session` BEFORE `seal_session`.
+pub fn ingest_jsonl_with_link_config(
+    store: &AnalyticsStore,
+    source_id: &str,
+    harness: &str,
+    path: &Path,
+    tool_key: Option<&[u8]>,
+    link_config: &dendro_core::SessionLinkConfig,
+) -> Result<FileStats> {
+    let limits = crate::capture_registry_v1::Registry::reader_limits(harness);
+    ingest_jsonl_limited_with_link(
+        store,
+        source_id,
+        harness,
+        path,
+        tool_key,
+        None,
+        || Ok(()),
+        &limits,
+        link_config,
+    )
+}
+
 /// Read a sealed prefix through the same read-only handle used by the parser.
 /// Verification happens both before parsing and against the bytes consumed.
 pub fn ingest_jsonl_with_cutoff(
@@ -190,6 +214,29 @@ pub fn ingest_jsonl_with_cutoff(
     cutoff: Option<&dendro_core::FileCutoff>,
 ) -> Result<FileStats> {
     ingest_jsonl_bounded(store, source_id, harness, path, tool_key, cutoff, || Ok(()))
+}
+
+pub fn ingest_jsonl_with_cutoff_and_link_config(
+    store: &AnalyticsStore,
+    source_id: &str,
+    harness: &str,
+    path: &Path,
+    tool_key: Option<&[u8]>,
+    cutoff: Option<&dendro_core::FileCutoff>,
+    link_config: &dendro_core::SessionLinkConfig,
+) -> Result<FileStats> {
+    let limits = crate::capture_registry_v1::Registry::reader_limits(harness);
+    ingest_jsonl_limited_with_link(
+        store,
+        source_id,
+        harness,
+        path,
+        tool_key,
+        cutoff,
+        || Ok(()),
+        &limits,
+        link_config,
+    )
 }
 
 // Tests substitute names at the real read boundary; production has no fault switch.
@@ -245,6 +292,32 @@ fn ingest_jsonl_limited(
     after_header: impl FnOnce() -> Result<()>,
     limits: &crate::sdk::ReadLimits,
 ) -> Result<FileStats> {
+    let link_config = dendro_core::SessionLinkConfig::from_env();
+    ingest_jsonl_limited_with_link(
+        store,
+        source_id,
+        harness,
+        path,
+        tool_key,
+        cutoff,
+        after_header,
+        limits,
+        &link_config,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn ingest_jsonl_limited_with_link(
+    store: &AnalyticsStore,
+    source_id: &str,
+    harness: &str,
+    path: &Path,
+    tool_key: Option<&[u8]>,
+    cutoff: Option<&dendro_core::FileCutoff>,
+    after_header: impl FnOnce() -> Result<()>,
+    limits: &crate::sdk::ReadLimits,
+    link_config: &dendro_core::SessionLinkConfig,
+) -> Result<FileStats> {
     let mut header = Some(after_header);
     let read = ingest_jsonl_file(
         store,
@@ -255,6 +328,7 @@ fn ingest_jsonl_limited(
         cutoff,
         &mut header,
         limits,
+        link_config,
     )?;
     let total = FileStats {
         coverage: read.coverage,
@@ -369,6 +443,7 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
     cutoff: Option<&dendro_core::FileCutoff>,
     after_header: &mut Option<F>,
     limits: &crate::sdk::ReadLimits,
+    link_config: &dendro_core::SessionLinkConfig,
 ) -> Result<FileOutcome> {
     let mismatch = |reason: &str| {
         anyhow::anyhow!(
@@ -474,9 +549,26 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
     let mut coverage = crate::sdk::Coverage::default();
     let mut coverage_defect = prior_partial;
     let mut reader_complete = true;
-    let mut source_session = file_session
+    let mut header_conflict = false;
+    let mut observed_non_harness_origin = file_session
         .as_ref()
-        .map(|session| seal_session(tool_key, harness, &session.raw));
+        .and_then(|s| s.origin.clone())
+        .filter(|o| o != "harness");
+    let mut session_facts_by_key = std::collections::BTreeMap::new();
+    let mut source_session = file_session.as_ref().map(|session| {
+        let (sealed, fact) = link_and_seal_session(
+            link_config,
+            tool_key,
+            source_id,
+            generation,
+            harness,
+            &session.raw,
+            session.from_header,
+            session.origin.as_deref(),
+        );
+        record_session_fact(&mut session_facts_by_key, fact);
+        sealed
+    });
     let mut claude_sessions = HashSet::new();
 
     // Claude, Pi, Grok, and Codex tool calls are read through the shared
@@ -635,9 +727,28 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
                 reader_complete = false;
             }
             usage_attribution.observe(harness, &value);
+            let line_origin = record_origin(&value);
+            if let Some(orig) = line_origin.as_ref() {
+                if orig != "harness" && observed_non_harness_origin.is_none() {
+                    observed_non_harness_origin = Some(orig.clone());
+                }
+            }
             if harness == "claude" {
                 if let Some(id) = value.get("sessionId").and_then(Value::as_str) {
-                    claude_sessions.insert(seal_session(tool_key, harness, id));
+                    let is_minted = !id.trim().is_empty()
+                        && !dendro_core::is_synthetic_session_id(Some(harness), id);
+                    let (sealed, fact) = link_and_seal_session(
+                        link_config,
+                        tool_key,
+                        source_id,
+                        generation,
+                        harness,
+                        id,
+                        is_minted,
+                        line_origin.as_deref(),
+                    );
+                    claude_sessions.insert(sealed);
+                    record_session_fact(&mut session_facts_by_key, fact);
                 }
             }
             if !is_new {
@@ -653,6 +764,7 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
                     && line_no > 1
                     && conflicting_session(harness, text, &session.raw)
                 {
+                    header_conflict = true;
                     warnings.push(WarningNote {
                         path: path.display().to_string(),
                         line: Some(line_no),
@@ -782,6 +894,23 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
                         if let Some(session) = &file_session {
                             // The file's line-1 session wins over any per-line id.
                             bucket.native_session = session.raw.clone();
+                        } else if harness == "claude" {
+                            let is_minted = !bucket.native_session.trim().is_empty()
+                                && !dendro_core::is_synthetic_session_id(
+                                    Some(harness),
+                                    &bucket.native_session,
+                                );
+                            let (_, fact) = link_and_seal_session(
+                                link_config,
+                                tool_key,
+                                source_id,
+                                generation,
+                                harness,
+                                &bucket.native_session,
+                                is_minted,
+                                line_origin.as_deref(),
+                            );
+                            record_session_fact(&mut session_facts_by_key, fact);
                         }
                         if let Some(id) = &bucket.message_id {
                             let sealed_session =
@@ -891,6 +1020,61 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
             } else {
                 None
             };
+            if session_facts_by_key.is_empty() {
+                let (_, fact) = link_and_seal_session(
+                    link_config,
+                    tool_key,
+                    source_id,
+                    generation,
+                    harness,
+                    "claude-session",
+                    false,
+                    observed_non_harness_origin.as_deref(),
+                );
+                record_session_fact(&mut session_facts_by_key, fact);
+            } else if let Some(non_harness) = observed_non_harness_origin.as_deref() {
+                if claude_sessions.len() <= 1 {
+                    let existing_keys: Vec<(String, String)> = session_facts_by_key
+                        .values()
+                        .map(|f| (f.source_key.clone(), f.native_session.clone()))
+                        .collect();
+                    for (source_key, native_session) in existing_keys {
+                        let (link_id, reason) = link_config.resolve_session_link(
+                            Some(harness),
+                            Some("placeholder"),
+                            Some(non_harness),
+                        );
+                        session_facts_by_key.insert(
+                            source_key.clone(),
+                            dendro_core::SessionFact {
+                                source_key,
+                                source_id: source_id.to_string(),
+                                harness: harness.to_string(),
+                                native_session,
+                                link_id,
+                                unlinked_reason: reason.map(|r| r.as_str().to_string()),
+                                generation,
+                            },
+                        );
+                    }
+                }
+            }
+        } else if let Some(session) = &file_session {
+            let effective_origin = observed_non_harness_origin
+                .as_deref()
+                .or(session.origin.as_deref());
+            let is_minted = session.from_header && !header_conflict;
+            let (_, fact) = link_and_seal_session(
+                link_config,
+                tool_key,
+                source_id,
+                generation,
+                harness,
+                &session.raw,
+                is_minted,
+                effective_origin,
+            );
+            session_facts_by_key.insert(fact.source_key.clone(), fact);
         }
         coverage_defect |= coverage.unknown_kind
             + coverage.quarantined_oversize
@@ -964,6 +1148,9 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
         )?;
         store.commit_session_edges(&session_edges)?;
         store.commit_security_facts(&security_facts)?;
+        let session_facts: Vec<dendro_core::SessionFact> =
+            session_facts_by_key.values().cloned().collect();
+        store.commit_session_facts(&session_facts)?;
         store.record_tool_categories(&tool_categories)?;
         store.record_usage_models(&usage_models)?;
         for note in &warnings {
@@ -1022,6 +1209,7 @@ fn stable_ingest_metadata(
 struct FileSession {
     raw: String,
     from_header: bool,
+    origin: Option<String>,
 }
 
 /// Longest line 1 read for the header; a longer first line is malformed.
@@ -1033,20 +1221,67 @@ fn file_session(harness: &str, file: &mut impl Read, source_id: &str) -> Result<
     BufReader::new(file.take(HEADER_LIMIT)).read_until(b'\n', &mut line)?;
     // Header identity is evidence only after its line is complete, just like
     // usage/tool records. Otherwise a zero-byte manifest could not replay it.
-    let id = line
+    let parsed = line
         .strip_suffix(b"\n")
-        .and_then(|line| serde_json::from_slice::<Value>(line).ok())
-        .and_then(|value| header_id(harness, &value));
+        .and_then(|line| serde_json::from_slice::<Value>(line).ok());
+    let origin = parsed.as_ref().and_then(record_origin);
+    let id = parsed.as_ref().and_then(|value| header_id(harness, value));
     Ok(match id {
         Some(raw) => FileSession {
             raw,
             from_header: true,
+            origin,
         },
         None => FileSession {
             raw: format!("{harness}-file:{source_id}"),
             from_header: false,
+            origin,
         },
     })
+}
+
+fn extract_origin_field(v: &Value) -> Option<String> {
+    match v {
+        Value::Null => None,
+        Value::String(s) => Some(s.clone()),
+        _ => Some("__non_string_origin__".to_string()),
+    }
+}
+
+/// Extracts an optional `origin` field from a JSON record.
+/// Absent (`None`) means `"harness"`; any value other than `"harness"` (including `"Harness"`)
+/// resolves to `"unlinked"` (`non_harness_origin`).
+fn record_origin(value: &Value) -> Option<String> {
+    value
+        .get("origin")
+        .and_then(extract_origin_field)
+        .or_else(|| {
+            value
+                .pointer("/payload/origin")
+                .and_then(extract_origin_field)
+        })
+        .or_else(|| {
+            value
+                .pointer("/params/origin")
+                .and_then(extract_origin_field)
+        })
+        .or_else(|| {
+            value
+                .pointer("/message/origin")
+                .and_then(extract_origin_field)
+        })
+}
+
+fn record_session_fact(
+    map: &mut std::collections::BTreeMap<String, dendro_core::SessionFact>,
+    fact: dendro_core::SessionFact,
+) {
+    match map.get(&fact.source_key) {
+        Some(existing) if existing.link_id == dendro_core::AGENT_SESSION_LINK_UNLINKED => {}
+        _ => {
+            map.insert(fact.source_key.clone(), fact);
+        }
+    }
 }
 
 /// The native id a header line declares: Pi `{"type":"session","id"}`, Codex
@@ -1110,6 +1345,50 @@ fn session_edge_fact(
         evidence_kind: edge.evidence_kind.to_string(),
         generation,
     }
+}
+
+/// Computes `agent.session.link_id` (`link-id-v1`) from the RAW `native_session` BEFORE
+/// calling `seal_session`. Synthetic, fallback, or header-less sessions (`!is_harness_minted`)
+/// resolve to `"unlinked"`.
+#[allow(clippy::too_many_arguments)]
+fn link_and_seal_session(
+    link_config: &dendro_core::SessionLinkConfig,
+    tool_key: Option<&[u8]>,
+    source_id: &str,
+    generation: i64,
+    harness: &str,
+    raw_session: &str,
+    is_harness_minted: bool,
+    origin: Option<&str>,
+) -> (String, dendro_core::SessionFact) {
+    let candidate_raw =
+        if is_harness_minted && !dendro_core::is_synthetic_session_id(Some(harness), raw_session) {
+            Some(raw_session)
+        } else {
+            None
+        };
+    let (link_id, unlinked_reason) =
+        link_config.resolve_session_link(Some(harness), candidate_raw, origin);
+
+    let sealed = seal_session(tool_key, harness, raw_session);
+    let fact_sealed = match tool_key {
+        Some(_) => sealed.clone(),
+        None => dendro_core::seal_identifier(
+            b"dendro-unkeyed-session-fact",
+            &format!("session:{harness}"),
+            raw_session,
+        ),
+    };
+    let fact = dendro_core::SessionFact {
+        source_key: format!("{source_id}:{generation}:{fact_sealed}"),
+        source_id: source_id.to_string(),
+        harness: harness.to_string(),
+        native_session: fact_sealed,
+        link_id,
+        unlinked_reason: unlinked_reason.map(|r| r.as_str().to_string()),
+        generation,
+    };
+    (sealed, fact)
 }
 
 fn seal_session(key: Option<&[u8]>, harness: &str, raw: &str) -> String {
@@ -6612,5 +6891,329 @@ mod hostile_input_tests {
             assert!(limits.nesting_depth <= crate::sdk::GLOBAL_MAX_DEPTH);
             assert!(limits.decoded_records_per_batch <= crate::sdk::GLOBAL_MAX_BATCH_RECORDS);
         }
+    }
+
+    #[test]
+    fn d3_ingest_computes_link_id_before_sealing_and_matches_g0a_cross_product_vectors() {
+        let dir = std::env::temp_dir().join(format!(
+            "dendro-d3-ingest-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let store = AnalyticsStore::open_in_memory("d3-key").unwrap();
+        let tool_key = b"0123456789abcdef0123456789abcdef";
+
+        // Pre-derived K_link from docs/contracts/link-id-v1/vectors/g0a.json:
+        let g0a_k_link_hex = "86b94715f57c1401d2581781d01037aae105dd5b57b9160941db65e41b73bae6";
+        let link_cfg = dendro_core::SessionLinkConfig::from_key_hex(
+            g0a_k_link_hex,
+            Some("smota-org"),
+            Some("g0a-wsl-runner-01"),
+            Some("mtn-pilot"),
+            Some("2026-11"),
+        );
+
+        // 1. Claude session with g0a raw sessionId (g0a_claude_s2_session_a_dendro_session)
+        let claude_raw = "SESSION_fa2814579786c60e";
+        let claude_expected_link =
+            "d564e425c6c86a1933d14e84d3fef8af1aa4610677fb0ca31ca550368722ed68";
+        let claude_path = dir.join("claude.jsonl");
+        fs::write(
+            &claude_path,
+            format!(
+                "{{\"type\":\"assistant\",\"sessionId\":\"{claude_raw}\",\"timestamp\":\"2026-10-09T00:00:01Z\",\"message\":{{\"id\":\"m1\",\"role\":\"assistant\",\"usage\":{{\"input_tokens\":10,\"output_tokens\":5,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}}}}\n"
+            ),
+        )
+        .unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-claude",
+            "claude",
+            &claude_path,
+            Some(tool_key),
+            &link_cfg,
+        )
+        .unwrap();
+
+        // 2. Codex session with header (g0a_codex_s2_session_1_rollout)
+        let codex_raw = "SESSION_844c4f549f5485b2";
+        let codex_expected_link =
+            "fb3e1515dc914a554e2896c62878d63edd5f7aa87e18b3f8fce995131f1bff97";
+        let codex_path = dir.join("codex.jsonl");
+        fs::write(
+            &codex_path,
+            format!(
+                "{{\"type\":\"session_meta\",\"payload\":{{\"id\":\"{codex_raw}\"}}}}\n{{\"timestamp\":\"2026-10-09T00:00:02Z\",\"type\":\"event_msg\",\"payload\":{{\"type\":\"token_count\",\"info\":{{\"total_token_usage\":{{\"input_tokens\":12,\"cached_input_tokens\":2,\"cache_write_input_tokens\":0,\"output_tokens\":4,\"reasoning_output_tokens\":1}}}}}}}}\n"
+            ),
+        )
+        .unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-codex",
+            "codex",
+            &codex_path,
+            Some(tool_key),
+            &link_cfg,
+        )
+        .unwrap();
+
+        // 3. Pi session with header
+        let pi_raw = "0984094a-e1e0-442e-8da4-06bf7c61e265";
+        let (pi_expected_link, pi_expected_reason) =
+            link_cfg.resolve_session_link(Some("pi"), Some(pi_raw), None);
+        assert!(pi_expected_reason.is_none());
+        assert_ne!(pi_expected_link, "unlinked");
+        let pi_path = dir.join("pi.jsonl");
+        fs::write(
+            &pi_path,
+            format!(
+                "{{\"type\":\"session\",\"id\":\"{pi_raw}\"}}\n{{\"type\":\"message\",\"id\":\"p1\",\"timestamp\":\"2026-10-09T00:00:03Z\",\"message\":{{\"role\":\"assistant\",\"usage\":{{\"input\":8,\"output\":3,\"cacheRead\":0,\"cacheWrite\":0,\"reasoning\":0}}}}}}\n"
+            ),
+        )
+        .unwrap();
+        ingest_jsonl_with_link_config(&store, "src-pi", "pi", &pi_path, Some(tool_key), &link_cfg)
+            .unwrap();
+
+        // 4. Session ID transformed by seal_session (contains secret-shaped token):
+        //    proves link_id is computed from the RAW session BEFORE seal_session, while
+        //    only the sealed native_session (`<opaque>\t[redacted]`) is persisted.
+        let secret_session_raw = "sk-ant-session-raw-before-seal-987654";
+        let (expected_secret_link, expected_secret_reason) =
+            link_cfg.resolve_session_link(Some("claude"), Some(secret_session_raw), None);
+        assert!(expected_secret_reason.is_none());
+        assert_ne!(expected_secret_link, "unlinked");
+        let secret_claude_path = dir.join("claude_sealed.jsonl");
+        fs::write(
+            &secret_claude_path,
+            format!(
+                "{{\"type\":\"assistant\",\"sessionId\":\"{secret_session_raw}\",\"timestamp\":\"2026-10-09T00:00:04Z\",\"message\":{{\"id\":\"m-sec\",\"role\":\"assistant\",\"usage\":{{\"input_tokens\":5,\"output_tokens\":2,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}}}}\n"
+            ),
+        )
+        .unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-claude-sealed",
+            "claude",
+            &secret_claude_path,
+            Some(tool_key),
+            &link_cfg,
+        )
+        .unwrap();
+
+        let facts = store.load_session_facts().unwrap();
+        assert_eq!(facts.len(), 4);
+
+        let claude_sealed = seal_session(Some(tool_key), "claude", claude_raw);
+        let codex_sealed = seal_session(Some(tool_key), "codex", codex_raw);
+        let pi_sealed = seal_session(Some(tool_key), "pi", pi_raw);
+        let secret_sealed = seal_session(Some(tool_key), "claude", secret_session_raw);
+        assert_ne!(secret_sealed, secret_session_raw);
+        assert!(secret_sealed.ends_with("\t[redacted]"));
+
+        let claude_fact = facts.iter().find(|f| f.source_id == "src-claude").unwrap();
+        assert_eq!(claude_fact.native_session, claude_sealed);
+        assert_eq!(claude_fact.link_id, claude_expected_link);
+        assert_eq!(claude_fact.unlinked_reason, None);
+
+        let codex_fact = facts.iter().find(|f| f.source_id == "src-codex").unwrap();
+        assert_eq!(codex_fact.native_session, codex_sealed);
+        assert_eq!(codex_fact.link_id, codex_expected_link);
+        assert_eq!(codex_fact.unlinked_reason, None);
+
+        let pi_fact = facts.iter().find(|f| f.source_id == "src-pi").unwrap();
+        assert_eq!(pi_fact.native_session, pi_sealed);
+        assert_eq!(pi_fact.link_id, pi_expected_link);
+        assert_eq!(pi_fact.unlinked_reason, None);
+
+        let secret_fact = facts
+            .iter()
+            .find(|f| f.source_id == "src-claude-sealed")
+            .unwrap();
+        assert_eq!(secret_fact.native_session, secret_sealed);
+        assert_eq!(secret_fact.link_id, expected_secret_link);
+        assert_eq!(secret_fact.unlinked_reason, None);
+        // Verify that computing link_id AFTER seal_session would NOT have produced expected_secret_link:
+        let (wrong_after_seal, _) =
+            link_cfg.resolve_session_link(Some("claude"), Some(&secret_sealed), None);
+        assert_eq!(wrong_after_seal, "unlinked");
+        assert_ne!(secret_fact.link_id, wrong_after_seal);
+
+        // Verify usage_facts still carry the exact same sealed native_session as pre-D3:
+        let usages = store.load_usage().unwrap();
+        assert!(usages.iter().any(|u| u.native_session == claude_sealed));
+        assert!(usages.iter().any(|u| u.native_session == codex_sealed));
+        assert!(usages.iter().any(|u| u.native_session == pi_sealed));
+        assert!(usages.iter().any(|u| u.native_session == secret_sealed));
+
+        // Verify raw secret session ID and K_link are never persisted in session_facts or usage_facts:
+        let dumped = format!("{facts:?}\n{usages:?}");
+        assert!(!dumped.contains(secret_session_raw));
+        assert!(!dumped.contains(g0a_k_link_hex));
+
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn d3_ingest_unlinks_headerless_synthetic_non_harness_origin_unconfigured_and_short_key() {
+        let dir = std::env::temp_dir().join(format!(
+            "dendro-d3-unlinked-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let store = AnalyticsStore::open_in_memory("d3-unlinked-key").unwrap();
+        let tool_key = b"0123456789abcdef0123456789abcdef";
+
+        let valid_cfg = dendro_core::SessionLinkConfig::from_key_hex(
+            &"22".repeat(32),
+            Some("acme"),
+            Some("host-01"),
+            Some("core"),
+            Some("2026-11"),
+        );
+
+        // 1. Header-less Codex file -> synthetic `codex-file:src-codex-no-hdr` -> unlinked (missing_native_session)
+        let codex_no_hdr = dir.join("codex_no_hdr.jsonl");
+        fs::write(
+            &codex_no_hdr,
+            "{\"timestamp\":\"2026-10-09T00:00:02Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":10,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":2,\"reasoning_output_tokens\":0}}}}\n",
+        )
+        .unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-codex-no-hdr",
+            "codex",
+            &codex_no_hdr,
+            Some(tool_key),
+            &valid_cfg,
+        )
+        .unwrap();
+
+        // 2. Synthetic Claude session (`claude-file:abc` or missing sessionId) -> unlinked (missing_native_session)
+        let claude_syn = dir.join("claude_syn.jsonl");
+        fs::write(
+            &claude_syn,
+            "{\"type\":\"assistant\",\"sessionId\":\"claude-file:synthetic\",\"timestamp\":\"2026-10-09T00:00:01Z\",\"message\":{\"id\":\"m-syn\",\"role\":\"assistant\",\"usage\":{\"input_tokens\":4,\"output_tokens\":2,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}\n",
+        )
+        .unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-claude-syn",
+            "claude",
+            &claude_syn,
+            Some(tool_key),
+            &valid_cfg,
+        )
+        .unwrap();
+
+        // 3. Origin "Harness" (non-harness origin) -> unlinked (non_harness_origin)
+        let claude_bad_origin = dir.join("claude_origin.jsonl");
+        fs::write(
+            &claude_bad_origin,
+            "{\"type\":\"assistant\",\"origin\":\"Harness\",\"sessionId\":\"real-session-123\",\"timestamp\":\"2026-10-09T00:00:01Z\",\"message\":{\"id\":\"m-orig\",\"role\":\"assistant\",\"usage\":{\"input_tokens\":4,\"output_tokens\":2,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}\n",
+        )
+        .unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-claude-origin",
+            "claude",
+            &claude_bad_origin,
+            Some(tool_key),
+            &valid_cfg,
+        )
+        .unwrap();
+
+        // 4. No link config -> unlinked (invalid_key_material)
+        let unconfigured = dendro_core::SessionLinkConfig::unconfigured();
+        let claude_unconf = dir.join("claude_unconf.jsonl");
+        fs::write(
+            &claude_unconf,
+            "{\"type\":\"assistant\",\"sessionId\":\"real-session-456\",\"timestamp\":\"2026-10-09T00:00:01Z\",\"message\":{\"id\":\"m-unc\",\"role\":\"assistant\",\"usage\":{\"input_tokens\":4,\"output_tokens\":2,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}\n",
+        )
+        .unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-claude-unconf",
+            "claude",
+            &claude_unconf,
+            Some(tool_key),
+            &unconfigured,
+        )
+        .unwrap();
+
+        // 5. Short key (< 32 bytes) -> unlinked (invalid_key_material)
+        let short_cfg = dendro_core::SessionLinkConfig::from_key_slice(
+            &[0x99; 16],
+            Some("acme"),
+            Some("host-01"),
+            None,
+            None,
+        );
+        let claude_short = dir.join("claude_short.jsonl");
+        fs::write(
+            &claude_short,
+            "{\"type\":\"assistant\",\"sessionId\":\"real-session-789\",\"timestamp\":\"2026-10-09T00:00:01Z\",\"message\":{\"id\":\"m-short\",\"role\":\"assistant\",\"usage\":{\"input_tokens\":4,\"output_tokens\":2,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}\n",
+        )
+        .unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-claude-short",
+            "claude",
+            &claude_short,
+            Some(tool_key),
+            &short_cfg,
+        )
+        .unwrap();
+
+        let facts = store.load_session_facts().unwrap();
+        let find_fact = |src: &str| facts.iter().find(|f| f.source_id == src).unwrap();
+
+        let f_no_hdr = find_fact("src-codex-no-hdr");
+        assert_eq!(f_no_hdr.link_id, "unlinked");
+        assert_eq!(
+            f_no_hdr.unlinked_reason.as_deref(),
+            Some("missing_native_session")
+        );
+        assert_eq!(
+            f_no_hdr.native_session,
+            seal_session(Some(tool_key), "codex", "codex-file:src-codex-no-hdr")
+        );
+
+        let f_syn = find_fact("src-claude-syn");
+        assert_eq!(f_syn.link_id, "unlinked");
+        assert_eq!(
+            f_syn.unlinked_reason.as_deref(),
+            Some("missing_native_session")
+        );
+
+        let f_origin = find_fact("src-claude-origin");
+        assert_eq!(f_origin.link_id, "unlinked");
+        assert_eq!(
+            f_origin.unlinked_reason.as_deref(),
+            Some("non_harness_origin")
+        );
+
+        let f_unconf = find_fact("src-claude-unconf");
+        assert_eq!(f_unconf.link_id, "unlinked");
+        assert_eq!(
+            f_unconf.unlinked_reason.as_deref(),
+            Some("invalid_key_material")
+        );
+
+        let f_short = find_fact("src-claude-short");
+        assert_eq!(f_short.link_id, "unlinked");
+        assert_eq!(
+            f_short.unlinked_reason.as_deref(),
+            Some("invalid_key_material")
+        );
+
+        fs::remove_dir_all(dir).unwrap();
     }
 }

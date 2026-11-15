@@ -122,6 +122,21 @@ pub struct SeatBound {
     pub stopped_at: Option<DateTime<Utc>>,
 }
 
+/// Session-level link fact (`MTN-19 / D3`, `link-id-v1`).
+///
+/// `native_session` stores the sealed session token (`session:<hex>`), while `link_id` is
+/// computed from the raw harness-minted session identifier BEFORE `seal_session`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionFact {
+    pub source_key: String,
+    pub source_id: String,
+    pub harness: String,
+    pub native_session: String,
+    pub link_id: String,
+    pub unlinked_reason: Option<String>,
+    pub generation: i64,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CodexCounters {
     pub input_tokens: i64,

@@ -31,9 +31,23 @@ pub fn ingest_staged(
 pub fn ingest_staged_with_manifest(
     staged_db: &Path,
     roots: &[SourceRoot],
+    frozen: bool,
+    key: &[u8],
+    sealed: Option<&dendro_core::CutoffManifest>,
+) -> Result<(Vec<String>, dendro_core::CutoffManifest)> {
+    let stage_dir = staged_db.parent().unwrap_or_else(|| Path::new("."));
+    let private_root = stage_dir.parent().unwrap_or(stage_dir);
+    let link_config = dendro_core::SessionLinkConfig::from_env_with_root(Some(private_root));
+    ingest_staged_with_manifest_and_link_config(staged_db, roots, frozen, key, sealed, &link_config)
+}
+
+pub fn ingest_staged_with_manifest_and_link_config(
+    staged_db: &Path,
+    roots: &[SourceRoot],
     _frozen: bool,
     key: &[u8],
     sealed: Option<&dendro_core::CutoffManifest>,
+    link_config: &dendro_core::SessionLinkConfig,
 ) -> Result<(Vec<String>, dendro_core::CutoffManifest)> {
     if sealed.is_some() {
         std::fs::remove_file(staged_db)?;
@@ -144,13 +158,14 @@ pub fn ingest_staged_with_manifest(
                                 continue;
                             }
                             let source_id = stable_source_id(&root.name, &root.path, file, key);
-                            let stats = match stream::ingest_jsonl_with_cutoff(
+                            let stats = match stream::ingest_jsonl_with_cutoff_and_link_config(
                                 &store,
                                 &source_id,
                                 &root.name,
                                 file,
                                 Some(key),
                                 entry,
+                                link_config,
                             ) {
                                 Ok(stats) => stats,
                                 Err(error) if sealed.is_none() && error.is::<std::io::Error>() => {
