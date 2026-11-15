@@ -42,11 +42,46 @@ impl Scope {
 pub struct InsightInput<'a> {
     store: &'a AnalyticsStore,
     scope: &'a Scope,
+    allowed_harnesses: Option<Vec<String>>,
 }
 
 impl<'a> InsightInput<'a> {
+    #[cfg(test)]
     pub(crate) fn new(store: &'a AnalyticsStore, scope: &'a Scope) -> Self {
-        Self { store, scope }
+        Self {
+            store,
+            scope,
+            allowed_harnesses: None,
+        }
+    }
+
+    pub(crate) fn with_allowed_harnesses(
+        store: &'a AnalyticsStore,
+        scope: &'a Scope,
+        allowed_harnesses: Vec<String>,
+    ) -> Self {
+        Self {
+            store,
+            scope,
+            allowed_harnesses: Some(allowed_harnesses),
+        }
+    }
+
+    pub(crate) fn has_allowed_harnesses(&self) -> bool {
+        self.allowed_harnesses.is_some()
+    }
+
+    pub(crate) fn allows_harness(&self, harness: &str) -> bool {
+        let Some(allowed) = &self.allowed_harnesses else {
+            return true;
+        };
+        let Some(canonical) = super::fidelity::canonical_connector_id(harness.trim()) else {
+            return false;
+        };
+        allowed.iter().any(|inc| {
+            super::fidelity::canonical_connector_id(inc)
+                .is_some_and(|inc_canonical| inc_canonical.eq_ignore_ascii_case(canonical))
+        })
     }
 
     pub(crate) fn store(&self) -> &'a AnalyticsStore {
@@ -64,7 +99,7 @@ impl<'a> InsightInput<'a> {
 
     pub(crate) fn usage_rows(&self) -> anyhow::Result<Vec<UsageRow>> {
         let mut stmt = self.connection().prepare(
-            "SELECT source_key, model, input_uncached, output_tokens, cache_read, cache_write, reasoning, currency_total
+            "SELECT source_key, harness, model, input_uncached, output_tokens, cache_read, cache_write, reasoning, currency_total
              FROM usage_facts
              WHERE (? IS NULL OR harness = ?)
                AND (? IS NULL OR native_session = ?)
@@ -79,19 +114,30 @@ impl<'a> InsightInput<'a> {
         let rows = stmt.query_map(
             params![harness, harness, session, session, from, from, to, to],
             |row| {
-                Ok(UsageRow {
-                    source_key: row.get(0)?,
-                    model: row.get(1)?,
-                    input_uncached: row.get(2)?,
-                    output: row.get(3)?,
-                    cache_read: row.get(4)?,
-                    cache_write: row.get(5)?,
-                    reasoning: row.get(6)?,
-                    currency_total: row.get(7)?,
-                })
+                let row_harness: String = row.get(1)?;
+                Ok((
+                    row_harness,
+                    UsageRow {
+                        source_key: row.get(0)?,
+                        model: row.get(2)?,
+                        input_uncached: row.get(3)?,
+                        output: row.get(4)?,
+                        cache_read: row.get(5)?,
+                        cache_write: row.get(6)?,
+                        reasoning: row.get(7)?,
+                        currency_total: row.get(8)?,
+                    },
+                ))
             },
         )?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+        let mut out = Vec::new();
+        for item in rows {
+            let (row_harness, usage) = item?;
+            if self.allows_harness(&row_harness) {
+                out.push(usage);
+            }
+        }
+        Ok(out)
     }
 
     pub(crate) fn warning_rows(&self) -> anyhow::Result<Vec<WarningRow>> {
@@ -131,6 +177,13 @@ pub trait Insight: Send + Sync {
     fn name(&self) -> &'static str;
     fn version(&self) -> &'static str;
     fn domain(&self) -> InsightDomain;
+    fn required_fields(&self) -> &'static [super::fidelity::Field];
+    fn optional_fields(&self) -> &'static [super::fidelity::Field] {
+        &[]
+    }
+    fn coverage(&self) -> &'static str {
+        ""
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult;
 }
 
@@ -205,7 +258,10 @@ pub fn display_status(status: &InsightStatus) -> &'static str {
         }
     };
     match reason {
-        Some("not_observable" | "insufficient_sample") => "insufficient_evidence",
+        Some("not_observable" | "insufficient_sample" | "not_computable") => {
+            "insufficient_evidence"
+        }
+        Some(value) if value.starts_with("not_computable:") => "insufficient_evidence",
         Some("not_applicable" | "NOT_ASSESSED") => "not_applicable",
         Some("threshold_exceeded") => "partial",
         Some("noncomparable") => "insufficient_evidence",
@@ -294,6 +350,11 @@ impl InsightResult {
                 None => "unknown".to_string(),
             })
             .unwrap_or_else(|| "not separately counted".to_string());
+        let exclusions = match (&self.status, coverage_exclusions(&self.coverage)) {
+            (InsightStatus::Computed, Some(exc)) => exc,
+            (_, Some(exc)) => format!("{}; {exc}", missingness(&self.status)),
+            (_, None) => missingness(&self.status),
+        };
         Disclosure {
             level: "L3",
             fields: vec![
@@ -301,7 +362,7 @@ impl InsightResult {
                 ("population_what", self.population.what.clone()),
                 ("population_included", self.population.n.to_string()),
                 ("population_excluded", excluded),
-                ("exclusions", missingness(&self.status)),
+                ("exclusions", exclusions),
                 (
                     "cutoff",
                     "caller scope window is half-open [from, to); this answer does not invent a cutoff"
@@ -324,6 +385,20 @@ fn missingness(status: &InsightStatus) -> String {
     match status {
         InsightStatus::Computed => "none".to_string(),
         InsightStatus::Partial { reason } | InsightStatus::Refused { reason } => reason.clone(),
+    }
+}
+
+fn coverage_exclusions(coverage: &str) -> Option<String> {
+    let parts: Vec<&str> = coverage
+        .split(" | ")
+        .flat_map(|segment| segment.split("; "))
+        .map(str::trim)
+        .filter(|part| part.starts_with("excluded: "))
+        .collect();
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join("; "))
     }
 }
 
@@ -360,6 +435,37 @@ pub(crate) fn refused(insight: &dyn Insight, reason: &str, what: &str) -> Insigh
         },
         measures: Vec::new(),
         coverage: reason.to_string(),
+        evidence: Vec::new(),
+    }
+}
+
+pub(crate) fn not_computable(
+    insight: &dyn Insight,
+    reason: &str,
+    what: &str,
+    exclusion_disclosure: Option<&str>,
+) -> InsightResult {
+    let base = insight.coverage();
+    let coverage = match (base.is_empty(), exclusion_disclosure) {
+        (true, Some(exc)) => format!("{reason} | {exc}"),
+        (true, None) => reason.to_string(),
+        (false, Some(exc)) => format!("{base} | {reason} | {exc}"),
+        (false, None) => format!("{base} | {reason}"),
+    };
+    InsightResult {
+        id: insight.id(),
+        name: insight.name(),
+        version: insight.version(),
+        domain: insight.domain(),
+        status: InsightStatus::Refused {
+            reason: reason.to_string(),
+        },
+        population: InsightPopulation {
+            what: what.to_string(),
+            n: 0,
+        },
+        measures: Vec::new(),
+        coverage,
         evidence: Vec::new(),
     }
 }

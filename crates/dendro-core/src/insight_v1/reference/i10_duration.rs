@@ -33,11 +33,34 @@ impl Insight for WorkDuration {
     fn domain(&self) -> InsightDomain {
         InsightDomain::Coordination
     }
+    fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::ActivityIntervals, Field::TurnTimestamp]
+    }
+    fn optional_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::NativeSession]
+    }
+    fn coverage(&self) -> &'static str {
+        COVERAGE
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
-        let events = match load(input) {
+        let (events, excluded_connectors) = match load(input) {
             Ok(rows) => rows,
             Err(_) => return refused(self, "store read failed", "activity_facts"),
         };
+        let mut coverage = COVERAGE.to_string();
+        if !excluded_connectors.is_empty() {
+            let mut all: Vec<&str> = vec!["openrig"];
+            all.extend(excluded_connectors.iter().copied());
+            if let crate::insight_v1::DenominatorEvaluation::Computable { scope } =
+                crate::insight_v1::evaluate_denominator(self, &all)
+            {
+                if let Some(disc) = crate::insight_v1::format_denominator_disclosure(&scope) {
+                    coverage = format!("{coverage}; {disc}");
+                }
+            }
+        }
         if events.is_empty() {
             return refused(self, "empty population", "activity_facts");
         }
@@ -142,7 +165,7 @@ impl Insight for WorkDuration {
                     "end < start intervals excluded as conflict",
                 ),
             ],
-            coverage: COVERAGE.to_string(),
+            coverage,
             evidence: events.into_iter().map(|event| event.key).collect(),
         })
     }
@@ -206,7 +229,9 @@ fn epoch(input: &InsightInput<'_>, text: Option<&str>) -> anyhow::Result<Option<
     Ok(Some(value))
 }
 
-fn load(input: &InsightInput<'_>) -> anyhow::Result<Vec<Event>> {
+fn load(
+    input: &InsightInput<'_>,
+) -> anyhow::Result<(Vec<Event>, std::collections::BTreeSet<&'static str>)> {
     let mut stmt = input.connection().prepare(
         "SELECT source_key, seat, epoch(ts), state
          FROM activity_facts
@@ -227,5 +252,16 @@ fn load(input: &InsightInput<'_>) -> anyhow::Result<Vec<Event>> {
             state: row.get(3)?,
         })
     })?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    let mut out = Vec::new();
+    let mut excluded = std::collections::BTreeSet::new();
+    for item in rows {
+        let ev = item?;
+        let conn = crate::insight_v1::fidelity::infer_seat_or_key_connector(&ev.key, &[&ev.seat]);
+        if input.allows_harness(conn) {
+            out.push(ev);
+        } else {
+            excluded.insert(conn);
+        }
+    }
+    Ok((out, excluded))
 }

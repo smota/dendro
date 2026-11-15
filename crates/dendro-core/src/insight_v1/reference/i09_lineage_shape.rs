@@ -36,6 +36,17 @@ impl Insight for LineageShape {
     fn domain(&self) -> InsightDomain {
         InsightDomain::Coordination
     }
+    fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::SessionEdges]
+    }
+    fn optional_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::NativeSession]
+    }
+    fn coverage(&self) -> &'static str {
+        COVERAGE
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         let rows = match load_edges(input) {
             Ok(rows) => rows,
@@ -218,7 +229,7 @@ fn walk_depth<'a>(links: &'a [SessionLink], node: &'a str, stack: &mut BTreeSet<
 
 fn load_edges(input: &InsightInput<'_>) -> anyhow::Result<Vec<EdgeRow>> {
     let mut stmt = input.connection().prepare(
-        "SELECT source_key, parent_session, child_session, relation, status
+        "SELECT source_key, harness, parent_session, child_session, relation, status
          FROM session_edges
          WHERE (? IS NULL OR harness = ?)
            AND (? IS NULL OR parent_session = ? OR child_session = ?)
@@ -234,16 +245,27 @@ fn load_edges(input: &InsightInput<'_>) -> anyhow::Result<Vec<EdgeRow>> {
     let rows = stmt.query_map(
         params![harness, harness, session, session, session, from, from, to, to],
         |row| {
-            Ok(EdgeRow {
-                source_key: row.get(0)?,
-                parent_session: row.get(1)?,
-                child_session: row.get(2)?,
-                relation: row.get(3)?,
-                status: row.get(4)?,
-            })
+            let row_harness: String = row.get(1)?;
+            Ok((
+                row_harness,
+                EdgeRow {
+                    source_key: row.get(0)?,
+                    parent_session: row.get(2)?,
+                    child_session: row.get(3)?,
+                    relation: row.get(4)?,
+                    status: row.get(5)?,
+                },
+            ))
         },
     )?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    let mut out = Vec::new();
+    for item in rows {
+        let (row_harness, edge) = item?;
+        if input.allows_harness(&row_harness) {
+            out.push(edge);
+        }
+    }
+    Ok(out)
 }
 
 #[cfg(test)]

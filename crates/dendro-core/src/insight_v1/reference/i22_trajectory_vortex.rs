@@ -30,6 +30,7 @@ struct Turn {
     subject: String,
     turn: i64,
     vector: Vec<f64>,
+    connector: String,
 }
 
 impl Insight for TrajectoryVortex {
@@ -45,8 +46,23 @@ impl Insight for TrajectoryVortex {
     fn domain(&self) -> InsightDomain {
         InsightDomain::Harness
     }
+    fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::TrajectoryVector]
+    }
+    fn optional_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::NativeSession]
+    }
+    fn coverage(&self) -> &'static str {
+        COVERAGE
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
-        evaluate_connection(input.connection(), input.scope().session.as_deref())
+        evaluate_connection_with_input(
+            input.connection(),
+            input.scope().session.as_deref(),
+            Some(input),
+        )
     }
 }
 
@@ -59,10 +75,14 @@ pub(super) fn evaluate_scoped(conn: &Connection, subject_key: &str) -> InsightRe
     } else {
         Some(subject_key)
     };
-    evaluate_connection(conn, session)
+    evaluate_connection_with_input(conn, session, None)
 }
 
-fn evaluate_connection(conn: &Connection, session: Option<&str>) -> InsightResult {
+fn evaluate_connection_with_input(
+    conn: &Connection,
+    session: Option<&str>,
+    input: Option<&InsightInput<'_>>,
+) -> InsightResult {
     let session = match session {
         Some("unscoped") => None,
         other => other,
@@ -75,6 +95,13 @@ fn evaluate_connection(conn: &Connection, session: Option<&str>) -> InsightResul
         Ok(rows) => rows,
         Err(_) => return refused(insight, "store read failed", "harness_trajectory"),
     };
+    let turns: Vec<Turn> = turns
+        .into_iter()
+        .filter(|turn| match input {
+            Some(input) => input.allows_harness(&turn.connector),
+            None => true,
+        })
+        .collect();
     if turns.is_empty() {
         return refused(insight, "insufficient_sample", "harness_trajectory");
     }
@@ -175,7 +202,8 @@ fn load(conn: &Connection) -> anyhow::Result<Vec<Turn>> {
         "SELECT COALESCE(observation_id, session_key, 'obs'),
                 COALESCE(subject_key, session_key, 'unscoped'),
                 COALESCE(turn_k, 0),
-                COALESCE(CAST(embedding AS VARCHAR), CAST(vec AS VARCHAR))
+                COALESCE(CAST(embedding AS VARCHAR), CAST(vec AS VARCHAR)),
+                harness
          FROM harness_trajectory
          ORDER BY 2, 3, 1",
     )?;
@@ -185,16 +213,23 @@ fn load(conn: &Connection) -> anyhow::Result<Vec<Turn>> {
             row.get::<_, String>(1)?,
             row.get::<_, i64>(2)?,
             row.get::<_, String>(3)?,
+            row.get::<_, Option<String>>(4)?,
         ))
     })?;
     let mut out = Vec::new();
     for row in rows {
-        let (id, subject, turn, text) = row?;
+        let (id, subject, turn, text, harness) = row?;
+        let connector = crate::insight_v1::fidelity::infer_trajectory_row_connector(
+            harness.as_deref(),
+            &subject,
+            &id,
+        );
         out.push(Turn {
             id,
             subject,
             turn,
             vector: parse_vector(&text)?,
+            connector,
         });
     }
     Ok(out)

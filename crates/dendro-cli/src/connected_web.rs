@@ -917,9 +917,9 @@ fn query_live_payload(
             payload["scopes"] = json!(payload["rigs"].as_array().into_iter().flatten().map(|r| {
                 json!({"scope":r["rig"],"scope_id":r["rig"],"actors":r["seats"],"queue_items":r["queue_items"]})
             }).collect::<Vec<_>>());
-            let totals = usage_totals(conn)?;
+            let totals = kpi_usage_totals(conn)?;
             let actors: i64 = conn.query_row("SELECT COUNT(DISTINCT seat) FROM (SELECT seat FROM activity_facts UNION ALL SELECT harness seat FROM usage_facts UNION ALL SELECT harness seat FROM message_facts)", [], |r| r.get(0))?;
-            payload["kpis"] = json!({"total_tokens":totals["total_tokens"],"active_seats":actors,"active_actors":actors,
+            payload["kpis"] = json!({"total_tokens":totals["total_tokens"],"total_tokens_excluded":totals["excluded_connectors"],"total_tokens_coverage":totals["coverage"],"active_seats":actors,"active_actors":actors,
                 "m1_yield":null,"handoff_friction_rate":null,"effective_concurrency":null,"rework_returns":null});
         }
         "v_seat_idle_ranking" => seat_payload(conn, &mut payload, &rows)?,
@@ -1440,7 +1440,114 @@ fn xray_lanes(conn: &duckdb::Connection) -> Result<serde_json::Value> {
 }
 
 fn usage_totals(conn: &duckdb::Connection) -> Result<serde_json::Value> {
-    Ok(json_rows(conn,"SELECT COALESCE(SUM(input_uncached+cache_read+cache_write+output_tokens),0)::BIGINT total_tokens,COALESCE(SUM(input_uncached),0)::BIGINT fresh_input_tokens,COALESCE(SUM(cache_read),0)::BIGINT cache_read_tokens,COALESCE(SUM(cache_write),0)::BIGINT cache_write_tokens,COALESCE(SUM(output_tokens),0)::BIGINT output_tokens,COUNT(*)::BIGINT turns FROM usage_facts",[])?.remove(0))
+    Ok(json_rows(
+        conn,
+        "SELECT COALESCE(SUM(input_uncached+cache_read+cache_write+output_tokens),0)::BIGINT total_tokens,
+                COALESCE(SUM(input_uncached),0)::BIGINT fresh_input_tokens,
+                COALESCE(SUM(cache_read),0)::BIGINT cache_read_tokens,
+                COALESCE(SUM(cache_write),0)::BIGINT cache_write_tokens,
+                COALESCE(SUM(output_tokens),0)::BIGINT output_tokens,
+                COUNT(*)::BIGINT turns
+         FROM usage_facts",
+        [],
+    )?
+    .into_iter()
+    .next()
+    .unwrap_or_else(|| serde_json::json!({})))
+}
+
+fn kpi_usage_totals(conn: &duckdb::Connection) -> Result<serde_json::Value> {
+    use dendro_core::insight_v1::{
+        canonical_connector_id, connector_declaration, format_exclusions_list_with_unregistered,
+        ConnectorExclusion, Field,
+    };
+
+    const REQUIRED_TOKEN_FIELDS: [Field; 4] = [
+        Field::InputTokens,
+        Field::OutputTokens,
+        Field::CacheReadTokens,
+        Field::CacheWriteTokens,
+    ];
+
+    let rows = json_rows(
+        conn,
+        "SELECT harness,
+                COALESCE(SUM(input_uncached+cache_read+cache_write+output_tokens),0)::BIGINT total_tokens,
+                COALESCE(SUM(input_uncached),0)::BIGINT fresh_input_tokens,
+                COALESCE(SUM(cache_read),0)::BIGINT cache_read_tokens,
+                COALESCE(SUM(cache_write),0)::BIGINT cache_write_tokens,
+                COALESCE(SUM(output_tokens),0)::BIGINT output_tokens,
+                COUNT(*)::BIGINT turns
+         FROM usage_facts
+         GROUP BY harness
+         ORDER BY harness",
+        [],
+    )?;
+
+    let mut total_tokens = 0i64;
+    let mut fresh_input_tokens = 0i64;
+    let mut cache_read_tokens = 0i64;
+    let mut cache_write_tokens = 0i64;
+    let mut output_tokens = 0i64;
+    let mut turns = 0i64;
+    let mut exclusions = Vec::new();
+    let mut seen_excluded = std::collections::BTreeSet::new();
+    let mut unreg_vals = 0usize;
+    let mut unreg_rows = 0usize;
+
+    for row in rows {
+        let raw_harness = row["harness"].as_str().unwrap_or("").trim();
+        let canonical = canonical_connector_id(raw_harness);
+        let decl = canonical.and_then(connector_declaration);
+        let missing: Vec<Field> = match decl {
+            Some(d) => REQUIRED_TOKEN_FIELDS
+                .iter()
+                .copied()
+                .filter(|f| !d.supplies(*f))
+                .collect(),
+            None => REQUIRED_TOKEN_FIELDS.to_vec(),
+        };
+        if missing.is_empty() {
+            total_tokens += row["total_tokens"].as_i64().unwrap_or(0);
+            fresh_input_tokens += row["fresh_input_tokens"].as_i64().unwrap_or(0);
+            cache_read_tokens += row["cache_read_tokens"].as_i64().unwrap_or(0);
+            cache_write_tokens += row["cache_write_tokens"].as_i64().unwrap_or(0);
+            output_tokens += row["output_tokens"].as_i64().unwrap_or(0);
+            turns += row["turns"].as_i64().unwrap_or(0);
+        } else {
+            if decl.is_none() {
+                unreg_vals += 1;
+                unreg_rows += row["turns"].as_i64().unwrap_or(0).max(0) as usize;
+            }
+            let conn_name = canonical.unwrap_or(if raw_harness.is_empty() {
+                "<empty>"
+            } else {
+                raw_harness
+            });
+            if seen_excluded.insert(conn_name.to_string()) {
+                exclusions.push(ConnectorExclusion {
+                    connector: conn_name.to_string(),
+                    missing,
+                    reason: "missing required token field(s)".to_string(),
+                });
+            }
+        }
+    }
+
+    let excluded_names: Vec<String> = exclusions.iter().map(|e| e.connector.clone()).collect();
+    let unreg_opt = (unreg_vals > 0).then_some((unreg_vals, unreg_rows));
+    let coverage =
+        format_exclusions_list_with_unregistered(&exclusions, unreg_opt).unwrap_or_default();
+    Ok(serde_json::json!({
+        "total_tokens": total_tokens,
+        "fresh_input_tokens": fresh_input_tokens,
+        "cache_read_tokens": cache_read_tokens,
+        "cache_write_tokens": cache_write_tokens,
+        "output_tokens": output_tokens,
+        "turns": turns,
+        "excluded_connectors": excluded_names,
+        "coverage": coverage,
+    }))
 }
 
 fn number(row: &serde_json::Value, names: &[&str]) -> f64 {
@@ -4102,5 +4209,103 @@ mod live_payload_tests {
         assert!(w.to >= before && w.to <= after);
         assert!(w.include_end);
         assert_ne!(iso(w.from), "2024-03-15T00:00:00Z");
+    }
+
+    #[test]
+    fn hub_kpi_total_tokens_excludes_connectors_missing_cache_fields_and_lists_exclusions() {
+        let c = fixture();
+        c.execute_batch(
+            "INSERT INTO usage_facts VALUES
+                ('g1', 'goose', 'goose-s1', '2024-02-15 11:30:00', 5000, 1000, 0, 0, 0.0),
+                ('d1', 'devin', 'devin-s1', '2024-02-15 11:30:00', 3000, 500, 0, 0, 0.05);",
+        )
+        .unwrap();
+        let baseline = kpi_usage_totals(&fixture()).unwrap();
+        let mixed = kpi_usage_totals(&c).unwrap();
+        assert_eq!(
+            mixed["total_tokens"], baseline["total_tokens"],
+            "goose and devin lack cache token fields and must be excluded from KPI total_tokens"
+        );
+        assert_eq!(
+            mixed["excluded_connectors"],
+            serde_json::json!(["devin", "goose"])
+        );
+        let cov = mixed["coverage"].as_str().unwrap();
+        assert!(cov.contains("excluded: devin — missing cache_read_tokens, cache_write_tokens"));
+        assert!(cov.contains("excluded: goose — missing cache_read_tokens, cache_write_tokens"));
+
+        let hub = query_live_payload(&c, "hub", None, None).unwrap();
+        assert_eq!(hub["kpis"]["total_tokens"], baseline["total_tokens"]);
+        assert_eq!(
+            hub["kpis"]["total_tokens_excluded"],
+            serde_json::json!(["devin", "goose"])
+        );
+        assert!(hub["kpis"]["total_tokens_coverage"]
+            .as_str()
+            .unwrap()
+            .contains("excluded: goose — missing cache_read_tokens, cache_write_tokens"));
+
+        // Mission view invariant: summary must equal the sum of the mission rows (unfiltered).
+        let mission_view = query_live_payload(&c, "v_mission_token_burn", None, None).unwrap();
+        let mission_rows = mission_view["missions"].as_array().unwrap();
+        let sum_total: i64 = mission_rows
+            .iter()
+            .map(|r| r["total_tokens"].as_i64().unwrap_or(0))
+            .sum();
+        let sum_fresh: i64 = mission_rows
+            .iter()
+            .map(|r| r["fresh_input_tokens"].as_i64().unwrap_or(0))
+            .sum();
+        let sum_output: i64 = mission_rows
+            .iter()
+            .map(|r| r["output_tokens"].as_i64().unwrap_or(0))
+            .sum();
+        let sum_turns: i64 = mission_rows
+            .iter()
+            .map(|r| r["turns"].as_i64().unwrap_or(0))
+            .sum();
+        assert_eq!(
+            mission_view["summary"]["total_tokens"].as_i64().unwrap(),
+            sum_total,
+            "mission summary total_tokens must equal the sum of mission rows"
+        );
+        assert_eq!(
+            mission_view["summary"]["fresh_input_tokens"]
+                .as_i64()
+                .unwrap(),
+            sum_fresh
+        );
+        assert_eq!(
+            mission_view["summary"]["output_tokens"].as_i64().unwrap(),
+            sum_output
+        );
+        assert_eq!(
+            mission_view["summary"]["turns"].as_i64().unwrap(),
+            sum_turns
+        );
+
+        // Governance cross_slice_cache_bleed invariant: numerator and denominator use consistent
+        // unfiltered totals, so the ratio is not inflated by excluding goose/devin.
+        let unfiltered_total = usage_totals(&c).unwrap()["total_tokens"].as_f64().unwrap();
+        let mut gov_payload = serde_json::json!({});
+        let gov_rows = vec![serde_json::json!({
+            "cross_slice_cache_bleed": {
+                "total_cumulative_bleed_tokens": 950.0
+            }
+        })];
+        let win = LiveWindow::resolve(None, None, None).unwrap();
+        governance_payload(&c, &mut gov_payload, &gov_rows, &win).unwrap();
+        let bleed_ratio = gov_payload["records"][0]["cross_slice_cache_bleed"]
+            .as_f64()
+            .unwrap();
+        assert_eq!(
+            gov_payload["summary"]["cross_slice_cache_bleed"].as_f64(),
+            Some(bleed_ratio)
+        );
+        let expected_ratio = 950.0 / unfiltered_total;
+        assert!(
+            (bleed_ratio - expected_ratio).abs() < 1e-12,
+            "cross_slice_cache_bleed ratio must use unfiltered total_tokens ({expected_ratio}), got {bleed_ratio}"
+        );
     }
 }
