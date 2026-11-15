@@ -104,7 +104,7 @@ pub static CATALOG: &[&dyn Insight] = &[
     entry!(&i14_resources::INSIGHT, req: [ProcessIdentity, ProcessResourceSamples], opt: [NativeSession]),
     entry!(&i15_effects::INSIGHT, req: [PrivilegedEffectTrace], opt: [ProcessIdentity]),
     entry!(&i16_isolation::INSIGHT, req: [SecurityPolicy], opt: [NativeSession]),
-    entry!(&i17_authority::INSIGHT, req: [SecurityPolicy], opt: [NativeSession]),
+    entry!(&i17_authority::INSIGHT, req: [SecurityPolicy], opt: [NativeSession, SecurityCommandCheck]),
     entry!(&i18_coverage::INSIGHT, req: [SourceCoverage], opt: []),
     entry!(&i19_acceptance::INSIGHT, req: [QueueTransitions, TurnTimestamp], opt: [NativeSession]),
     entry!(&i20_resource_efficiency::INSIGHT, req: [QueueTransitions, TurnTimestamp], opt: [ObservedCost, NativeSession]),

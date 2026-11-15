@@ -171,7 +171,7 @@ fn load(input: &InsightInput<'_>) -> anyhow::Result<Vec<Identity>> {
     for row in rows {
         let (row_harness, identity) = row?;
         let allows = match row_harness.as_deref().filter(|h| !h.is_empty()) {
-            Some(h) => input.allows_harness(h) || input.allows_harness("environment"),
+            Some(h) => input.allows_harness(h),
             None => input.allows_harness("environment"),
         };
         if allows {

@@ -182,7 +182,7 @@ fn load_costs(input: &InsightInput<'_>) -> anyhow::Result<BTreeMap<String, f64>>
     let mut totals = BTreeMap::new();
     for row in rows {
         let (row_harness, session, amount) = row?;
-        if input.allows_harness(&row_harness) || input.allows_harness("openrig") {
+        if input.allows_harness(&row_harness) {
             *totals.entry(session).or_insert(0.0) += amount;
         }
     }

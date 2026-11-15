@@ -1592,11 +1592,11 @@ fn project_insight(row: &Value, aliases: &mut BTreeMap<String, String>) -> Optio
         .as_str()
         .filter(|coverage| {
             !coverage.is_empty()
-                && coverage.len() <= 1024
                 && !coverage.contains(['/', '\\', '<', '>', '&'])
                 && coverage.chars().all(|ch| !ch.is_control())
         })
-        .unwrap_or("");
+        .map(truncate_public_coverage)
+        .unwrap_or_default();
     Some(json!({
         "id": id,
         "name": name,
@@ -1608,6 +1608,57 @@ fn project_insight(row: &Value, aliases: &mut BTreeMap<String, String>) -> Optio
         "coverage": coverage,
         "evidence": [],
     }))
+}
+
+fn truncate_public_coverage(coverage: &str) -> String {
+    const MAX_LEN: usize = 1024;
+    if coverage.len() <= MAX_LEN {
+        return coverage.to_string();
+    }
+    let parts: Vec<&str> = coverage.split("; ").collect();
+    let total_exclusions = parts.iter().filter(|p| p.starts_with("excluded: ")).count();
+    let mut kept = Vec::new();
+    let mut kept_exclusions = 0usize;
+    for part in &parts {
+        let is_exc = part.starts_with("excluded: ");
+        let remaining_exc = total_exclusions.saturating_sub(kept_exclusions + usize::from(is_exc));
+        let suffix = if remaining_exc > 0 {
+            format!("; …(+{remaining_exc} more exclusions)")
+        } else {
+            String::new()
+        };
+        let candidate_len = if kept.is_empty() {
+            part.len() + suffix.len()
+        } else {
+            kept.iter().map(|s: &&str| s.len()).sum::<usize>()
+                + (kept.len() * 2)
+                + part.len()
+                + suffix.len()
+        };
+        if candidate_len <= MAX_LEN {
+            kept.push(*part);
+            if is_exc {
+                kept_exclusions += 1;
+            }
+        } else {
+            break;
+        }
+    }
+    let dropped_exc = total_exclusions.saturating_sub(kept_exclusions).max(1);
+    let suffix = format!("…(+{dropped_exc} more exclusions)");
+    if !kept.is_empty() {
+        let prefix = kept.join("; ");
+        let joined = format!("{prefix}; {suffix}");
+        if joined.len() <= MAX_LEN {
+            return joined;
+        }
+    }
+    let budget = MAX_LEN.saturating_sub(suffix.len());
+    let mut end = budget.min(coverage.len());
+    while end > 0 && !coverage.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}{suffix}", &coverage[..end])
 }
 
 fn project_insights(raw: &Value) -> Value {
@@ -3143,5 +3194,48 @@ mod tests {
         let other = json!({"payload": {"message_dump": dump}});
         assert!(check_export_array_limit(&other["payload"]).is_err());
         assert!(offline_html(&other).is_ok());
+    }
+
+    #[test]
+    fn public_projection_truncates_long_coverage_with_more_exclusions_suffix() {
+        let mut long_cov = String::from("base coverage note");
+        for i in 0..30 {
+            long_cov.push_str(&format!(
+                "; excluded: connector_{i} — missing input_tokens, output_tokens, cache_read_tokens, cache_write_tokens"
+            ));
+        }
+        assert!(long_cov.len() > 1024);
+        let raw = json!({
+            "payload": {
+                "insights": [{
+                    "id": "I02",
+                    "name": "model.tokens.direct",
+                    "version": "1.0.0",
+                    "domain": "model",
+                    "status": {"state": "computed"},
+                    "population": {"what": "usage_facts", "n": 1},
+                    "measures": [],
+                    "coverage": long_cov,
+                    "evidence": []
+                }]
+            }
+        });
+        let projected = public_projection(&raw);
+        let cov = projected["payload"]["insights"][0]["coverage"]
+            .as_str()
+            .unwrap();
+        assert!(
+            !cov.is_empty(),
+            "coverage over 1024 chars must not be dropped to empty"
+        );
+        assert!(
+            cov.len() <= 1024,
+            "truncated coverage must be <= 1024 bytes: {}",
+            cov.len()
+        );
+        assert!(
+            cov.ends_with("more exclusions)") && cov.contains("…(+"),
+            "truncated coverage must end with `…(+N more exclusions)`: {cov}"
+        );
     }
 }

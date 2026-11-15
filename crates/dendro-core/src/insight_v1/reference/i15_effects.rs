@@ -114,7 +114,7 @@ fn load(input: &InsightInput<'_>) -> anyhow::Result<Vec<(String, String, String,
             .map(|(prefix, _)| prefix)
             .filter(|prefix| crate::insight_v1::fidelity::canonical_connector_id(prefix).is_some())
             .unwrap_or("environment");
-        if input.allows_harness(conn) || input.allows_harness("environment") {
+        if input.allows_harness(conn) {
             out.push(row);
         }
     }

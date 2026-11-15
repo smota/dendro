@@ -74,12 +74,12 @@ impl<'a> InsightInput<'a> {
         let Some(allowed) = &self.allowed_harnesses else {
             return true;
         };
-        let trimmed = harness.trim();
-        let canonical = super::fidelity::canonical_connector_id(trimmed).unwrap_or(trimmed);
+        let Some(canonical) = super::fidelity::canonical_connector_id(harness.trim()) else {
+            return false;
+        };
         allowed.iter().any(|inc| {
-            let inc_canonical =
-                super::fidelity::canonical_connector_id(inc).unwrap_or(inc.as_str());
-            inc_canonical.eq_ignore_ascii_case(canonical) || inc.eq_ignore_ascii_case(trimmed)
+            super::fidelity::canonical_connector_id(inc)
+                .is_some_and(|inc_canonical| inc_canonical.eq_ignore_ascii_case(canonical))
         })
     }
 

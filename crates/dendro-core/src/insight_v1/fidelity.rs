@@ -2737,23 +2737,30 @@ pub fn format_not_computable_reason(
     }
 }
 
-/// Format excluded connectors as `"excluded: <conn> — missing <f1>, <f2>"`.
+/// Format excluded connectors as `"excluded: <conn> — missing <f1>, <f2>"`,
+/// or `"excluded: unregistered harness"` for unregistered harness values.
 pub fn format_exclusions_list(excluded: &[ConnectorExclusion]) -> Option<String> {
     if excluded.is_empty() {
         return None;
     }
-    let parts = excluded
-        .iter()
-        .map(|item| {
+    let mut parts = Vec::new();
+    let mut emitted_unregistered = false;
+    for item in excluded {
+        if connector_declaration(&item.connector).is_none() {
+            if !emitted_unregistered {
+                parts.push("excluded: unregistered harness".to_string());
+                emitted_unregistered = true;
+            }
+        } else {
             let miss = item
                 .missing
                 .iter()
                 .map(|field| field.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
-            format!("excluded: {} — missing {miss}", item.connector)
-        })
-        .collect::<Vec<_>>();
+            parts.push(format!("excluded: {} — missing {miss}", item.connector));
+        }
+    }
     Some(parts.join("; "))
 }
 
@@ -2762,114 +2769,282 @@ pub fn format_denominator_disclosure(scope: &DenominatorScope) -> Option<String>
     format_exclusions_list(&scope.excluded)
 }
 
-fn distinct_canonical_harnesses_in_conn(conn: &duckdb::Connection, sql: &str) -> Vec<String> {
+fn normalize_harness_id(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(
+        canonical_connector_id(trimmed)
+            .map(str::to_string)
+            .unwrap_or_else(|| trimmed.to_string()),
+    )
+}
+
+fn distinct_harnesses_with_params<P>(conn: &duckdb::Connection, sql: &str, params: P) -> Vec<String>
+where
+    P: duckdb::Params,
+{
     let Ok(mut stmt) = conn.prepare(sql) else {
         return Vec::new();
     };
-    let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) else {
+    let Ok(rows) = stmt.query_map(params, |row| row.get::<_, String>(0)) else {
         return Vec::new();
     };
     let mut set = BTreeSet::new();
     for raw in rows.flatten() {
-        if let Some(canonical) = canonical_connector_id(&raw) {
-            set.insert(canonical.to_string());
+        if let Some(norm) = normalize_harness_id(&raw) {
+            set.insert(norm);
         }
     }
     set.into_iter().collect()
 }
 
-fn exists_in_conn(conn: &duckdb::Connection, sql: &str) -> bool {
-    conn.query_row(sql, [], |_| Ok(())).is_ok()
+fn exists_with_params<P>(conn: &duckdb::Connection, sql: &str, params: P) -> bool
+where
+    P: duckdb::Params,
+{
+    conn.query_row(sql, params, |_| Ok(())).is_ok()
 }
 
-fn exists_for_harness_in_conn(conn: &duckdb::Connection, sql: &str, harness: &str) -> bool {
-    use duckdb::params;
-    conn.query_row(sql, params![harness], |_| Ok(())).is_ok()
+pub(crate) fn load_seat_harnesses(
+    conn: &duckdb::Connection,
+) -> std::collections::BTreeMap<String, String> {
+    let mut seat_harnesses = std::collections::BTreeMap::new();
+    if let Ok(mut id_stmt) = conn.prepare("SELECT seat, harness FROM identity_facts") {
+        if let Ok(id_rows) = id_stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        }) {
+            for (seat, harness) in id_rows.flatten() {
+                seat_harnesses.entry(seat).or_insert(harness);
+            }
+        }
+    }
+    seat_harnesses
 }
 
-/// Per-evaluation cache of connector presence in `AnalyticsStore` so `evaluate` / `evaluate_catalog`
-/// never re-runs identical table scans across insights.
+pub(crate) fn infer_skill_row_connector(
+    seat_harnesses: &std::collections::BTreeMap<String, String>,
+    source_key: &str,
+    seat: &str,
+    skill: &str,
+) -> Option<String> {
+    for candidate in [
+        seat.trim(),
+        seat.split(':').next().unwrap_or(""),
+        source_key.split(':').next().unwrap_or(""),
+        source_key.split('-').next().unwrap_or(""),
+        skill.split(':').next().unwrap_or(""),
+    ] {
+        if let Some(canonical) = canonical_connector_id(candidate) {
+            return Some(canonical.to_string());
+        }
+    }
+    if let Some(harness) = seat_harnesses.get(seat) {
+        if let Some(norm) = normalize_harness_id(harness) {
+            return Some(norm);
+        }
+    }
+    None
+}
+
+/// Per-evaluation cache of scope-aware connector presence in `AnalyticsStore` so `evaluate` /
+/// `evaluate_catalog` never re-runs identical table scans across insights.
 pub struct StoreDenominatorCache<'a> {
     store: &'a crate::AnalyticsStore,
+    scope: &'a super::Scope,
     usage_harnesses: std::cell::OnceCell<Vec<String>>,
+    usage_session_only_harnesses: std::cell::OnceCell<Vec<String>>,
     source_harnesses: std::cell::OnceCell<Vec<String>>,
     tool_harnesses: std::cell::OnceCell<Vec<String>>,
     edge_harnesses: std::cell::OnceCell<Vec<String>>,
+    edge_unscoped_harnesses: std::cell::OnceCell<Vec<String>>,
     security_harnesses: std::cell::OnceCell<Vec<String>>,
+    security_session_only_harnesses: std::cell::OnceCell<Vec<String>>,
     context_harnesses: std::cell::OnceCell<Vec<String>>,
     skill_connectors: std::cell::OnceCell<Vec<String>>,
     has_activity: std::cell::OnceCell<bool>,
     has_queue: std::cell::OnceCell<bool>,
-    has_skill_declarations: std::cell::OnceCell<bool>,
+    has_queue_unscoped: std::cell::OnceCell<bool>,
 }
 
 impl<'a> StoreDenominatorCache<'a> {
-    pub fn new(store: &'a crate::AnalyticsStore) -> Self {
+    pub fn new(store: &'a crate::AnalyticsStore, scope: &'a super::Scope) -> Self {
         Self {
             store,
+            scope,
             usage_harnesses: std::cell::OnceCell::new(),
+            usage_session_only_harnesses: std::cell::OnceCell::new(),
             source_harnesses: std::cell::OnceCell::new(),
             tool_harnesses: std::cell::OnceCell::new(),
             edge_harnesses: std::cell::OnceCell::new(),
+            edge_unscoped_harnesses: std::cell::OnceCell::new(),
             security_harnesses: std::cell::OnceCell::new(),
+            security_session_only_harnesses: std::cell::OnceCell::new(),
             context_harnesses: std::cell::OnceCell::new(),
             skill_connectors: std::cell::OnceCell::new(),
             has_activity: std::cell::OnceCell::new(),
             has_queue: std::cell::OnceCell::new(),
-            has_skill_declarations: std::cell::OnceCell::new(),
+            has_queue_unscoped: std::cell::OnceCell::new(),
         }
     }
 
     fn usage(&self) -> &[String] {
         self.usage_harnesses.get_or_init(|| {
-            distinct_canonical_harnesses_in_conn(
+            let harness = self.scope.harness.as_deref();
+            let session = self.scope.session.as_deref();
+            let from = self.scope.from.as_deref();
+            let to = self.scope.to.as_deref();
+            distinct_harnesses_with_params(
                 self.store.connection(),
-                "SELECT DISTINCT harness FROM usage_facts",
+                "SELECT DISTINCT harness FROM usage_facts
+                 WHERE (? IS NULL OR harness = ?)
+                   AND (? IS NULL OR native_session = ?)
+                   AND (? IS NULL OR ts >= CAST(? AS TIMESTAMP))
+                   AND (? IS NULL OR ts < CAST(? AS TIMESTAMP))",
+                duckdb::params![harness, harness, session, session, from, from, to, to],
+            )
+        })
+    }
+
+    fn usage_session_only(&self) -> &[String] {
+        self.usage_session_only_harnesses.get_or_init(|| {
+            let harness = self.scope.harness.as_deref();
+            let session = self.scope.session.as_deref();
+            distinct_harnesses_with_params(
+                self.store.connection(),
+                "SELECT DISTINCT harness FROM usage_facts
+                 WHERE currency_total IS NOT NULL
+                   AND (? IS NULL OR harness = ?)
+                   AND (? IS NULL OR native_session = ?)",
+                duckdb::params![harness, harness, session, session],
             )
         })
     }
 
     fn sources(&self) -> &[String] {
         self.source_harnesses.get_or_init(|| {
-            distinct_canonical_harnesses_in_conn(
+            if self.scope.from.is_some() || self.scope.to.is_some() {
+                return Vec::new();
+            }
+            let harness = self.scope.harness.as_deref();
+            let session = self.scope.session.as_deref();
+            distinct_harnesses_with_params(
                 self.store.connection(),
-                "SELECT DISTINCT harness FROM source_files",
+                "SELECT DISTINCT harness FROM source_files
+                 WHERE (? IS NULL OR harness = ?)
+                   AND (? IS NULL OR native_session = ?)",
+                duckdb::params![harness, harness, session, session],
             )
         })
     }
 
     fn tools(&self) -> &[String] {
         self.tool_harnesses.get_or_init(|| {
-            distinct_canonical_harnesses_in_conn(
+            use crate::facts::READER_NAMESPACE;
+            let harness = self.scope.harness.as_deref();
+            let session = self.scope.session.as_deref();
+            let from = self.scope.from.as_deref();
+            let to = self.scope.to.as_deref();
+            distinct_harnesses_with_params(
                 self.store.connection(),
-                "SELECT DISTINCT harness FROM tool_facts WHERE NOT starts_with(source_key, '__dendro_reader__:')",
+                "SELECT DISTINCT harness FROM tool_facts
+                 WHERE NOT starts_with(source_key, ?)
+                   AND (? IS NULL OR harness = ?)
+                   AND (? IS NULL OR native_session = ?)
+                   AND (? IS NULL OR ts >= CAST(? AS TIMESTAMP))
+                   AND (? IS NULL OR ts < CAST(? AS TIMESTAMP))",
+                duckdb::params![
+                    READER_NAMESPACE,
+                    harness,
+                    harness,
+                    session,
+                    session,
+                    from,
+                    from,
+                    to,
+                    to
+                ],
             )
         })
     }
 
     fn edges(&self) -> &[String] {
         self.edge_harnesses.get_or_init(|| {
-            distinct_canonical_harnesses_in_conn(
+            let harness = self.scope.harness.as_deref();
+            let session = self.scope.session.as_deref();
+            let from = self.scope.from.as_deref();
+            let to = self.scope.to.as_deref();
+            distinct_harnesses_with_params(
                 self.store.connection(),
-                "SELECT DISTINCT harness FROM session_edges",
+                "SELECT DISTINCT harness FROM session_edges
+                 WHERE (? IS NULL OR harness = ?)
+                   AND (? IS NULL OR parent_session = ? OR child_session = ?)
+                   AND (? IS NULL OR observed_at >= CAST(? AS TIMESTAMP))
+                   AND (? IS NULL OR observed_at < CAST(? AS TIMESTAMP))",
+                duckdb::params![harness, harness, session, session, session, from, from, to, to],
+            )
+        })
+    }
+
+    fn edges_unscoped(&self) -> &[String] {
+        self.edge_unscoped_harnesses.get_or_init(|| {
+            let harness = self.scope.harness.as_deref();
+            distinct_harnesses_with_params(
+                self.store.connection(),
+                "SELECT DISTINCT harness FROM session_edges
+                 WHERE (? IS NULL OR harness = ?)",
+                duckdb::params![harness, harness],
             )
         })
     }
 
     fn security(&self) -> &[String] {
         self.security_harnesses.get_or_init(|| {
-            distinct_canonical_harnesses_in_conn(
+            let harness = self.scope.harness.as_deref();
+            let session = self.scope.session.as_deref();
+            let from = self.scope.from.as_deref();
+            let to = self.scope.to.as_deref();
+            distinct_harnesses_with_params(
                 self.store.connection(),
-                "SELECT DISTINCT harness FROM security_facts",
+                "SELECT DISTINCT harness FROM security_facts
+                 WHERE (? IS NULL OR harness = ?)
+                   AND (? IS NULL OR native_session = ?)
+                   AND (? IS NULL OR ts >= CAST(? AS TIMESTAMP))
+                   AND (? IS NULL OR ts < CAST(? AS TIMESTAMP))",
+                duckdb::params![harness, harness, session, session, from, from, to, to],
+            )
+        })
+    }
+
+    fn security_session_only(&self) -> &[String] {
+        self.security_session_only_harnesses.get_or_init(|| {
+            let harness = self.scope.harness.as_deref();
+            let session = self.scope.session.as_deref();
+            distinct_harnesses_with_params(
+                self.store.connection(),
+                "SELECT DISTINCT harness FROM security_facts
+                 WHERE (? IS NULL OR harness = ?)
+                   AND (? IS NULL OR native_session = ?)",
+                duckdb::params![harness, harness, session, session],
             )
         })
     }
 
     fn context(&self) -> &[String] {
         self.context_harnesses.get_or_init(|| {
-            distinct_canonical_harnesses_in_conn(
+            let harness = self.scope.harness.as_deref();
+            let session = self.scope.session.as_deref();
+            let from = self.scope.from.as_deref();
+            let to = self.scope.to.as_deref();
+            distinct_harnesses_with_params(
                 self.store.connection(),
-                "SELECT DISTINCT harness FROM context_facts",
+                "SELECT DISTINCT harness FROM context_facts
+                 WHERE (? IS NULL OR harness = ?)
+                   AND (? IS NULL OR native_session = ?)
+                   AND (? IS NULL OR ts >= CAST(? AS TIMESTAMP))
+                   AND (? IS NULL OR ts < CAST(? AS TIMESTAMP))",
+                duckdb::params![harness, harness, session, session, from, from, to, to],
             )
         })
     }
@@ -2877,21 +3052,32 @@ impl<'a> StoreDenominatorCache<'a> {
     fn skills(&self) -> &[String] {
         self.skill_connectors.get_or_init(|| {
             let conn = self.store.connection();
+            let seat_harnesses = load_seat_harnesses(conn);
             let mut set = BTreeSet::new();
-            if let Ok(mut stmt) = conn.prepare("SELECT DISTINCT seat, source_key FROM skill_facts")
+            if let Ok(mut stmt) =
+                conn.prepare("SELECT source_key, seat, skill FROM skill_facts ORDER BY source_key")
             {
                 if let Ok(rows) = stmt.query_map([], |row| {
-                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
                 }) {
-                    for (seat, key) in rows.flatten() {
-                        for cand in [
-                            seat.trim(),
-                            seat.split(':').next().unwrap_or(""),
-                            key.split(':').next().unwrap_or(""),
-                        ] {
-                            if let Some(canonical) = canonical_connector_id(cand) {
-                                set.insert(canonical.to_string());
-                            }
+                    for (key, seat, skill) in rows.flatten() {
+                        if self.scope.harness.as_ref().is_some_and(|harness| {
+                            skill != *harness
+                                && seat != *harness
+                                && !seat.starts_with(&format!("{harness}:"))
+                                && !key.starts_with(harness)
+                                && !skill.starts_with(harness)
+                        }) {
+                            continue;
+                        }
+                        if let Some(inferred) =
+                            infer_skill_row_connector(&seat_harnesses, &key, &seat, &skill)
+                        {
+                            set.insert(inferred);
                         }
                     }
                 }
@@ -2902,24 +3088,54 @@ impl<'a> StoreDenominatorCache<'a> {
 
     fn has_activity(&self) -> bool {
         *self.has_activity.get_or_init(|| {
-            exists_in_conn(
+            let harness = self.scope.harness.as_deref();
+            let session = self.scope.session.as_deref();
+            exists_with_params(
                 self.store.connection(),
-                "SELECT 1 FROM activity_facts LIMIT 1",
+                "SELECT 1 FROM activity_facts
+                 WHERE (? IS NULL OR seat = ?)
+                   AND (? IS NULL OR seat = ?)
+                 LIMIT 1",
+                duckdb::params![harness, harness, session, session],
             )
         })
     }
 
     fn has_queue(&self) -> bool {
         *self.has_queue.get_or_init(|| {
-            exists_in_conn(self.store.connection(), "SELECT 1 FROM queue_facts LIMIT 1")
+            let harness = self.scope.harness.as_deref();
+            let session = self.scope.session.as_deref();
+            let from = self.scope.from.as_deref();
+            let to = self.scope.to.as_deref();
+            exists_with_params(
+                self.store.connection(),
+                "SELECT 1 FROM queue_facts
+                 WHERE (? IS NULL OR qitem_id = ? OR source_seat = ? OR dest_seat = ?)
+                   AND (? IS NULL OR qitem_id = ? OR source_seat = ? OR dest_seat = ?)
+                   AND (? IS NULL OR ts >= CAST(? AS TIMESTAMP))
+                   AND (? IS NULL OR ts < CAST(? AS TIMESTAMP))
+                 LIMIT 1",
+                duckdb::params![
+                    harness, harness, harness, harness, session, session, session, session, from,
+                    from, to, to
+                ],
+            )
         })
     }
 
-    fn has_skill_declarations(&self) -> bool {
-        *self.has_skill_declarations.get_or_init(|| {
-            exists_in_conn(
+    fn has_queue_unscoped(&self) -> bool {
+        *self.has_queue_unscoped.get_or_init(|| {
+            let session = self.scope.session.as_deref();
+            let from = self.scope.from.as_deref();
+            let to = self.scope.to.as_deref();
+            exists_with_params(
                 self.store.connection(),
-                "SELECT 1 FROM skill_facts WHERE invoked = FALSE LIMIT 1",
+                "SELECT 1 FROM queue_facts
+                 WHERE (? IS NULL OR qitem_id = ?)
+                   AND (? IS NULL OR ts >= CAST(? AS TIMESTAMP))
+                   AND (? IS NULL OR ts < CAST(? AS TIMESTAMP))
+                 LIMIT 1",
+                duckdb::params![session, session, from, from, to, to],
             )
         })
     }
@@ -2936,95 +3152,161 @@ impl<'a> StoreDenominatorCache<'a> {
         match insight.id() {
             "I01" | "I02" | "I04" | "I05" | "I21" | "I25" => {
                 extend(&mut set, self.usage());
-                extend(&mut set, self.sources());
             }
             "I03" | "I11" => {
                 extend(&mut set, self.usage());
-                extend(&mut set, self.edges());
-                extend(&mut set, self.sources());
+                extend(&mut set, self.edges_unscoped());
             }
             "I06" => {
                 extend(&mut set, self.tools());
-                extend(&mut set, self.sources());
                 extend(&mut set, self.skills());
             }
             "I07" => {
                 extend(&mut set, self.context());
-                extend(&mut set, self.sources());
             }
             "I08" => {
                 extend(&mut set, self.tools());
-                extend(&mut set, self.sources());
             }
             "I09" => {
                 extend(&mut set, self.edges());
-                extend(&mut set, self.sources());
             }
             "I10" => {
                 if self.has_activity() {
                     set.insert("openrig".to_string());
                 }
             }
-            "I12" | "I19" => {
+            "I12" => {
                 if self.has_queue() {
+                    set.insert("openrig".to_string());
+                }
+            }
+            "I19" => {
+                if self.has_queue_unscoped() {
                     set.insert("openrig".to_string());
                 }
             }
             "I20" => {
-                if self.has_queue() {
+                if self.has_queue_unscoped() {
                     set.insert("openrig".to_string());
                 }
-                extend(&mut set, self.usage());
+                extend(&mut set, self.usage_session_only());
             }
             "I13" => {
-                if exists_in_conn(conn, "SELECT 1 FROM process_identities LIMIT 1") {
-                    set.insert("environment".to_string());
+                let harness = self.scope.harness.as_deref();
+                let session = self.scope.session.as_deref();
+                let from = self.scope.from.as_deref();
+                let to = self.scope.to.as_deref();
+                if let Ok(mut stmt) = conn.prepare(
+                    "SELECT DISTINCT COALESCE(NULLIF(trim(harness), ''), 'environment')
+                     FROM process_identities
+                     WHERE (? IS NULL OR harness = ?)
+                       AND (? IS NULL OR session_link = ?)
+                       AND (? IS NULL OR last_seen >= CAST(? AS TIMESTAMP))
+                       AND (? IS NULL OR first_seen < CAST(? AS TIMESTAMP))",
+                ) {
+                    if let Ok(rows) = stmt.query_map(
+                        duckdb::params![harness, harness, session, session, from, from, to, to],
+                        |row| row.get::<_, String>(0),
+                    ) {
+                        for raw in rows.flatten() {
+                            if let Some(norm) = normalize_harness_id(&raw) {
+                                set.insert(norm);
+                            }
+                        }
+                    }
                 }
             }
             "I14" => {
-                if exists_in_conn(conn, "SELECT 1 FROM process_samples LIMIT 1") {
-                    set.insert("environment".to_string());
+                let harness = self.scope.harness.as_deref();
+                let session = self.scope.session.as_deref();
+                let from = self.scope.from.as_deref();
+                let to = self.scope.to.as_deref();
+                if let Ok(mut stmt) = conn.prepare(
+                    "SELECT DISTINCT COALESCE(NULLIF(trim(p.harness), ''), 'environment')
+                     FROM process_identities p
+                     JOIN process_samples s ON s.identity_key = p.identity_key
+                     WHERE (? IS NULL OR p.harness = ?)
+                       AND (? IS NULL OR p.session_link = ?)
+                       AND (? IS NULL OR s.ts >= CAST(? AS TIMESTAMP))
+                       AND (? IS NULL OR s.ts < CAST(? AS TIMESTAMP))",
+                ) {
+                    if let Ok(rows) = stmt.query_map(
+                        duckdb::params![harness, harness, session, session, from, from, to, to],
+                        |row| row.get::<_, String>(0),
+                    ) {
+                        for raw in rows.flatten() {
+                            if let Some(norm) = normalize_harness_id(&raw) {
+                                set.insert(norm);
+                            }
+                        }
+                    }
                 }
             }
             "I15" => {
-                if exists_in_conn(conn, "SELECT 1 FROM syscall_facts LIMIT 1") {
-                    extend(&mut set, self.sources());
-                    if set.is_empty() {
-                        extend(&mut set, self.usage());
+                if let Ok(mut stmt) = conn.prepare(
+                    "SELECT DISTINCT source_key FROM syscall_facts WHERE grammar IN ('syscall_v1', 'windows_events_v1')",
+                ) {
+                    if let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) {
+                        for key in rows.flatten() {
+                            let conn_id = key
+                                .split_once(':')
+                                .map(|(prefix, _)| prefix)
+                                .and_then(canonical_connector_id)
+                                .unwrap_or("environment");
+                            set.insert(conn_id.to_string());
+                        }
                     }
                 }
             }
             "I16" | "I17" => {
                 extend(&mut set, self.security());
-                extend(&mut set, self.sources());
             }
             "I18" => {
                 extend(&mut set, self.sources());
             }
             "I22" => {
-                for item in distinct_canonical_harnesses_in_conn(
-                    conn,
-                    "SELECT DISTINCT harness FROM harness_trajectory WHERE harness IS NOT NULL",
+                let harness = self.scope.harness.as_deref();
+                let session = self.scope.session.as_deref();
+                if let Ok(mut stmt) = conn.prepare(
+                    "SELECT DISTINCT COALESCE(NULLIF(trim(harness), ''), 'environment')
+                     FROM harness_trajectory
+                     WHERE (? IS NULL OR harness = ?)
+                       AND (? IS NULL OR session_key = ? OR subject_key = ?)",
                 ) {
-                    set.insert(item);
+                    if let Ok(rows) = stmt.query_map(
+                        duckdb::params![harness, harness, session, session, session],
+                        |row| row.get::<_, String>(0),
+                    ) {
+                        for raw in rows.flatten() {
+                            if let Some(norm) = normalize_harness_id(&raw) {
+                                set.insert(norm);
+                            }
+                        }
+                    }
                 }
             }
             "I23" => {
-                for item in distinct_canonical_harnesses_in_conn(
+                let harness = self.scope.harness.as_deref();
+                let from = self.scope.from.as_deref();
+                let to = self.scope.to.as_deref();
+                for item in distinct_harnesses_with_params(
                     conn,
-                    "SELECT DISTINCT harness FROM harness_envelope WHERE harness IS NOT NULL",
+                    "SELECT DISTINCT harness FROM harness_envelope
+                     WHERE harness IS NOT NULL
+                       AND (? IS NULL OR harness = ?)
+                       AND (? IS NULL OR captured_at >= CAST(? AS TIMESTAMP))
+                       AND (? IS NULL OR captured_at < CAST(? AS TIMESTAMP))",
+                    duckdb::params![harness, harness, from, from, to, to],
                 ) {
                     set.insert(item);
                 }
             }
             "I24" => {
-                extend(&mut set, self.edges());
-                extend(&mut set, self.security());
-                extend(&mut set, self.sources());
+                extend(&mut set, self.edges_unscoped());
+                extend(&mut set, self.security_session_only());
             }
             _ => {
                 extend(&mut set, self.usage());
-                extend(&mut set, self.sources());
             }
         }
         set.into_iter().collect()
@@ -3034,195 +3316,9 @@ impl<'a> StoreDenominatorCache<'a> {
         &self,
         insight: &dyn Insight,
         connectors: &[S],
-        scoped_single_harness: bool,
+        _scoped_single_harness: bool,
     ) -> DenominatorEvaluation {
-        let required = insight.required_fields();
-        let optional = insight.optional_fields();
-        let mut included = Vec::new();
-        let mut excluded = Vec::new();
-
-        let mut seen = BTreeSet::new();
-        let mut resolved_decls = Vec::new();
-        let mut unknown_connectors = Vec::new();
-        for raw in connectors {
-            let name = raw.as_ref().trim();
-            if name.is_empty() {
-                continue;
-            }
-            let canonical = canonical_connector_id(name).unwrap_or(name);
-            if !seen.insert(canonical.to_string()) {
-                continue;
-            }
-            if let Some(decl) = connector_declaration(canonical) {
-                resolved_decls.push(decl);
-            } else {
-                unknown_connectors.push(canonical.to_string());
-            }
-        }
-
-        for unknown in unknown_connectors {
-            excluded.push(ConnectorExclusion {
-                connector: unknown,
-                missing: required.to_vec(),
-                reason: "unregistered connector".to_string(),
-            });
-        }
-
-        for decl in &resolved_decls {
-            let missing: Vec<Field> = required
-                .iter()
-                .copied()
-                .filter(|field| {
-                    !self.connector_supplies_field(
-                        decl,
-                        *field,
-                        insight,
-                        &resolved_decls,
-                        scoped_single_harness,
-                    )
-                })
-                .collect();
-            if missing.is_empty() {
-                let mut partial_fields = Vec::new();
-                for field in required.iter().chain(optional.iter()) {
-                    if let FieldFidelity::Partial(reason) = decl.fidelity(*field) {
-                        if !partial_fields.iter().any(|(f, _)| f == field) {
-                            partial_fields.push((*field, reason));
-                        }
-                    }
-                }
-                included.push(IncludedConnector {
-                    connector: decl.connector,
-                    partial_fields,
-                });
-            } else {
-                let field_list = missing
-                    .iter()
-                    .map(|field| field.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                excluded.push(ConnectorExclusion {
-                    connector: decl.connector.to_string(),
-                    missing,
-                    reason: format!("missing required field(s): {field_list}"),
-                });
-            }
-        }
-
-        if included.is_empty() {
-            let mut missing_union = BTreeSet::new();
-            for exc in &excluded {
-                for field in &exc.missing {
-                    missing_union.insert(*field);
-                }
-            }
-            let missing = if missing_union.is_empty() {
-                required.to_vec()
-            } else {
-                missing_union.into_iter().collect()
-            };
-            DenominatorEvaluation::NotComputable {
-                insight_id: insight.id(),
-                insight_name: insight.name(),
-                missing,
-                by_connector: excluded,
-            }
-        } else {
-            DenominatorEvaluation::Computable {
-                scope: DenominatorScope {
-                    insight_id: insight.id(),
-                    insight_name: insight.name(),
-                    included,
-                    excluded,
-                },
-            }
-        }
-    }
-
-    fn connector_supplies_field(
-        &self,
-        decl: &ConnectorDeclaration,
-        field: Field,
-        insight: &dyn Insight,
-        connectors: &[&ConnectorDeclaration],
-        scoped_single_harness: bool,
-    ) -> bool {
-        if decl.supplies(field) {
-            return true;
-        }
-        if scoped_single_harness {
-            return false;
-        }
-        let conn = self.store.connection();
-        let has_source_file = self
-            .sources()
-            .iter()
-            .any(|h| h.eq_ignore_ascii_case(decl.connector));
-
-        match field {
-            Field::ObservedCost => {
-                exists_for_harness_in_conn(
-                    conn,
-                    "SELECT 1 FROM usage_facts WHERE lower(harness) = lower(?) AND currency_total IS NOT NULL LIMIT 1",
-                    decl.connector,
-                ) || (!has_source_file
-                    && insight.id() == "I04"
-                    && connectors.len() == 1
-                    && decl.supplies(Field::InputTokens))
-                    || (insight.id() == "I20"
-                        && decl.connector == "openrig"
-                        && exists_in_conn(
-                            conn,
-                            "SELECT 1 FROM usage_facts WHERE currency_total IS NOT NULL LIMIT 1",
-                        ))
-            }
-            Field::QueueTransitions => {
-                insight.id() == "I20"
-                    && self.has_queue()
-                    && (decl.supplies(Field::ObservedCost)
-                        || exists_for_harness_in_conn(
-                            conn,
-                            "SELECT 1 FROM usage_facts WHERE lower(harness) = lower(?) AND currency_total IS NOT NULL LIMIT 1",
-                            decl.connector,
-                        ))
-            }
-            Field::SkillDeclarations => {
-                self.has_skill_declarations() && decl.supplies(Field::SkillInvocations)
-            }
-            Field::SkillInvocations | Field::ToolCallName if decl.connector == "openrig" => {
-                insight.id() == "I06"
-                    && connectors.iter().any(|other| {
-                        other.supplies(Field::SkillInvocations)
-                            && other.supplies(Field::ToolCallName)
-                    })
-            }
-            Field::ContextWindowUsage => exists_for_harness_in_conn(
-                conn,
-                "SELECT 1 FROM context_facts WHERE lower(harness) = lower(?) AND context_used IS NOT NULL AND context_limit IS NOT NULL LIMIT 1",
-                decl.connector,
-            ),
-            Field::SessionEdges => {
-                !has_source_file
-                    && connectors.len() == 1
-                    && !connectors.iter().any(|other| other.supplies(Field::SessionEdges))
-                    && self
-                        .edges()
-                        .iter()
-                        .any(|h| h.eq_ignore_ascii_case(decl.connector))
-            }
-            Field::PrivilegedEffectTrace => {
-                exists_in_conn(conn, "SELECT 1 FROM syscall_facts LIMIT 1")
-            }
-            Field::TrajectoryVector => {
-                exists_in_conn(conn, "SELECT 1 FROM harness_trajectory LIMIT 1")
-            }
-            Field::HarnessEnvelopeShape => exists_for_harness_in_conn(
-                conn,
-                "SELECT 1 FROM harness_envelope WHERE lower(harness) = lower(?) LIMIT 1",
-                decl.connector,
-            ),
-            _ => false,
-        }
+        evaluate_denominator(insight, connectors)
     }
 }
 
@@ -3231,7 +3327,8 @@ pub fn present_connectors_for_insight(
     insight: &dyn Insight,
     store: &crate::AnalyticsStore,
 ) -> Vec<String> {
-    StoreDenominatorCache::new(store).present_connectors(insight)
+    let scope = super::Scope::default();
+    StoreDenominatorCache::new(store, &scope).present_connectors(insight)
 }
 
 /// Evaluate denominator scope for `insight` over `connectors` with awareness of `store`.
@@ -3241,7 +3338,8 @@ pub fn evaluate_denominator_in_store<S: AsRef<str>>(
     store: &crate::AnalyticsStore,
     scoped_single_harness: bool,
 ) -> DenominatorEvaluation {
-    StoreDenominatorCache::new(store).evaluate_denominator(
+    let scope = super::Scope::default();
+    StoreDenominatorCache::new(store, &scope).evaluate_denominator(
         insight,
         connectors,
         scoped_single_harness,
@@ -3789,7 +3887,8 @@ mod tests {
 
     #[test]
     fn excluded_connector_rows_in_every_table_family_do_not_affect_results() {
-        use crate::insight_v1::{evaluate_catalog, Scope};
+        use crate::insight_v1::contract::InsightInput;
+        use crate::insight_v1::{evaluate_catalog, InsightStatus, Scope};
         use crate::AnalyticsStore;
 
         let seed_included = |store: &AnalyticsStore| {
@@ -3867,8 +3966,7 @@ mod tests {
         let polluted_results = evaluate_catalog(&store_polluted, &Scope::default());
 
         for id in [
-            "I02", "I03", "I05", "I06", "I07", "I08", "I09", "I11", "I16", "I17", "I21", "I24",
-            "I25",
+            "I02", "I03", "I05", "I08", "I09", "I11", "I16", "I17", "I21", "I24", "I25",
         ] {
             let clean = clean_results.iter().find(|r| r.id == id).unwrap();
             let polluted = polluted_results.iter().find(|r| r.id == id).unwrap();
@@ -3890,5 +3988,176 @@ mod tests {
                 polluted.coverage
             );
         }
+
+        // Under Decision A (declarations are the single source of truth; no runtime overrides),
+        // I06 and I07 are NotComputable in evaluate_catalog.
+        for id in ["I06", "I07"] {
+            let clean = clean_results.iter().find(|r| r.id == id).unwrap();
+            let polluted = polluted_results.iter().find(|r| r.id == id).unwrap();
+            assert!(
+                matches!(&clean.status, InsightStatus::Refused { reason } if reason.starts_with("not_computable: missing ")),
+                "{id} clean must be NotComputable: {:?}",
+                clean.status
+            );
+            assert!(
+                matches!(&polluted.status, InsightStatus::Refused { reason } if reason.starts_with("not_computable: missing ")),
+                "{id} polluted must be NotComputable: {:?}",
+                polluted.status
+            );
+            assert!(
+                polluted.coverage.contains("excluded: goose — missing"),
+                "{id} coverage must disclose goose exclusion: {}",
+                polluted.coverage
+            );
+        }
+
+        // Also verify I06 (`skill_facts`) and I07 (`context_facts`) row filtering directly via
+        // `InsightInput::with_allowed_harnesses`.
+        let scope = Scope::default();
+        let i06 = CATALOG.iter().copied().find(|i| i.id() == "I06").unwrap();
+        let i06_clean = i06.compute(&InsightInput::with_allowed_harnesses(
+            &store_clean,
+            &scope,
+            vec!["claude".to_string(), "openrig".to_string()],
+        ));
+        let i06_polluted = i06.compute(&InsightInput::with_allowed_harnesses(
+            &store_polluted,
+            &scope,
+            vec!["claude".to_string(), "openrig".to_string()],
+        ));
+        assert_eq!(i06_clean, i06_polluted);
+
+        let i07 = CATALOG.iter().copied().find(|i| i.id() == "I07").unwrap();
+        let i07_clean = i07.compute(&InsightInput::with_allowed_harnesses(
+            &store_clean,
+            &scope,
+            vec!["claude".to_string()],
+        ));
+        let i07_polluted = i07.compute(&InsightInput::with_allowed_harnesses(
+            &store_polluted,
+            &scope,
+            vec!["claude".to_string()],
+        ));
+        assert_eq!(i07_clean, i07_polluted);
+    }
+
+    #[test]
+    fn decision_c_d_e_unattributable_rows_unregistered_harnesses_and_scope_aware_presence() {
+        use crate::insight_v1::contract::InsightInput;
+        use crate::insight_v1::{evaluate, InsightStatus, MeasureValue, Scope};
+        use crate::AnalyticsStore;
+
+        // Decision C: unattributable rows in I06 are excluded whenever an allow-list is active,
+        // and counted in coverage as "excluded: N unattributed rows". Shared inference resolves
+        // `identity_facts` seat->harness for both presence and loading.
+        let store_c = AnalyticsStore::open_in_memory("decision-c").unwrap();
+        store_c
+            .connection()
+            .execute_batch(
+                "INSERT INTO identity_facts (source_key, harness, native_session, rig, seat, ts)
+                    VALUES ('id-1', 'claude', 's1', 'r1', 'seat-claude', TIMESTAMP '2026-10-10 10:00:00');
+                INSERT INTO skill_facts (source_key, seat, skill, invoked)
+                    VALUES
+                        ('openrig:decl-1', 'openrig:dev', 'commit', FALSE),
+                        ('sk-ident', 'seat-claude', 'commit', TRUE),
+                        ('sk-unattr-1', 'anon-seat-1', 'mystery-a', TRUE),
+                        ('sk-unattr-2', 'anon-seat-2', 'mystery-b', FALSE);",
+            )
+            .unwrap();
+        let i06 = CATALOG.iter().copied().find(|i| i.id() == "I06").unwrap();
+        let present_i06 = present_connectors_for_insight(i06, &store_c);
+        assert_eq!(
+            present_i06,
+            vec!["claude".to_string(), "openrig".to_string()],
+            "shared inference must resolve seat-claude via identity_facts and ignore unattributable rows"
+        );
+        let scope = Scope::default();
+        let i06_res = i06.compute(&InsightInput::with_allowed_harnesses(
+            &store_c,
+            &scope,
+            vec!["claude".to_string(), "openrig".to_string()],
+        ));
+        assert_eq!(i06_res.status, InsightStatus::Computed);
+        assert_eq!(i06_res.population.n, 2);
+        assert!(
+            i06_res.coverage.contains("excluded: 2 unattributed rows"),
+            "I06 coverage must report unattributed rows excluded: {}",
+            i06_res.coverage
+        );
+
+        // Decision D: unregistered harness values are ALWAYS excluded from computation and listed
+        // in coverage as "excluded: unregistered harness", independent of other exclusions.
+        let store_d = AnalyticsStore::open_in_memory("decision-d").unwrap();
+        store_d
+            .connection()
+            .execute_batch(
+                "INSERT INTO usage_facts (source_key, harness, native_session, ts, seq, input_uncached, output_tokens, cache_read, cache_write, reasoning, currency_total, generation, source_id, model)
+                    VALUES
+                        ('u-claude', 'claude', 's1', TIMESTAMP '2026-10-10 10:00:01', 1, 100, 20, 10, 5, 0, NULL, 1, 'src-1', 'm1'),
+                        ('u-mystery', 'mystery_unregistered', 's2', TIMESTAMP '2026-10-10 10:00:02', 1, 9000, 9000, 9000, 9000, 0, NULL, 1, 'src-2', 'm1');",
+            )
+            .unwrap();
+        let i02_d = evaluate(&store_d, &Scope::default())
+            .into_iter()
+            .find(|r| r.id == "I02")
+            .unwrap();
+        assert_eq!(i02_d.status, InsightStatus::Computed);
+        assert_eq!(
+            i02_d.population.n, 1,
+            "unregistered harness row must be excluded from computation"
+        );
+        let m1_input = i02_d
+            .measures
+            .iter()
+            .find(|m| m.id == "I02.m1.input_uncached")
+            .unwrap();
+        assert_eq!(m1_input.value, Some(MeasureValue::Int(100)));
+        assert!(
+            i02_d.coverage.contains("excluded: unregistered harness"),
+            "coverage must list `excluded: unregistered harness`: {}",
+            i02_d.coverage
+        );
+
+        // Decision E: `source_files` alone does not count for presence (except I18), and
+        // presence is scoped to the insight's session and time window filters.
+        let store_e = AnalyticsStore::open_in_memory("decision-e").unwrap();
+        store_e
+            .connection()
+            .execute_batch(
+                "INSERT INTO source_files (source_id, harness, display_path, generation, byte_offset, prefix_sha256, native_session)
+                    VALUES ('src-goose', 'goose', 'goose.jsonl', 1, 100, '11', 'goose-s1');
+                INSERT INTO usage_facts (source_key, harness, native_session, ts, seq, input_uncached, output_tokens, cache_read, cache_write, reasoning, currency_total, generation, source_id, model)
+                    VALUES
+                        ('u-claude', 'claude', 's-claude', TIMESTAMP '2026-10-10 10:00:01', 1, 50, 10, 5, 5, 0, NULL, 1, 'src-claude', 'm1'),
+                        ('u-devin', 'devin', 's-devin', TIMESTAMP '2026-10-12 10:00:01', 1, 500, 100, 0, 0, 0, 0.5, 1, 'src-devin', 'm2');",
+            )
+            .unwrap();
+        let i09_e = evaluate(&store_e, &Scope::default())
+            .into_iter()
+            .find(|r| r.id == "I09")
+            .unwrap();
+        assert_eq!(
+            i09_e.status,
+            InsightStatus::Refused {
+                reason: "empty population".to_string()
+            },
+            "source_files alone must not make goose present on I09"
+        );
+        // Scoped to `s-claude` (or window before 2026-10-11), `devin` has no fact rows in scope,
+        // so I02 has no `excluded: devin` disclosure.
+        let scoped_e = Scope {
+            session: Some("s-claude".into()),
+            ..Scope::default()
+        };
+        let i02_e = evaluate(&store_e, &scoped_e)
+            .into_iter()
+            .find(|r| r.id == "I02")
+            .unwrap();
+        assert_eq!(i02_e.status, InsightStatus::Computed);
+        assert!(
+            !i02_e.coverage.contains("excluded: devin"),
+            "out-of-scope devin rows must not be considered present in session scope: {}",
+            i02_e.coverage
+        );
     }
 }

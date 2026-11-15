@@ -992,13 +992,11 @@ mod tests {
         let only_results = evaluate_catalog(&store_only, &Scope::default());
         let mixed_results = evaluate_catalog(&store_mixed, &Scope::default());
 
-        // For every insight where claude is Computable and goose is NotComputable
-        // (`I02`, `I03`, `I05`, `I08`, `I09`, `I11`, `I16`, `I17`, `I21`, `I24`, `I25`),
-        // unscoped `evaluate_catalog` on `claude + goose` must exclude `goose` and produce
-        // the exact same status, population, and measure values as `claude` alone.
-        for id in [
-            "I02", "I03", "I05", "I08", "I09", "I11", "I16", "I17", "I21", "I24", "I25",
-        ] {
+        // For every insight where claude is Computable, goose is NotComputable, AND goose has
+        // fact rows in scope (`usage_facts` or `tool_facts`: `I02`, `I03`, `I05`, `I08`, `I11`, `I21`, `I25`),
+        // unscoped `evaluate_catalog` on `claude + goose` must exclude `goose`, disclose the exclusion,
+        // and produce the exact same status, population, and measure values as `claude` alone.
+        for id in ["I02", "I03", "I05", "I08", "I11", "I21", "I25"] {
             let only = only_results.iter().find(|r| r.id == id).unwrap();
             let mixed = mixed_results.iter().find(|r| r.id == id).unwrap();
             assert_eq!(
@@ -1018,6 +1016,234 @@ mod tests {
                 "{id} coverage must disclose goose exclusion: {}",
                 mixed.coverage
             );
+        }
+
+        // Decision E: for insights whose fact tables (`session_edges`, `security_facts`) have no
+        // goose rows (`I09`, `I16`, `I17`, `I24`), `source_files` alone does not count for presence,
+        // so `mixed` has the exact same status, population, measures, and coverage (no goose exclusion).
+        for id in ["I09", "I16", "I17", "I24"] {
+            let only = only_results.iter().find(|r| r.id == id).unwrap();
+            let mixed = mixed_results.iter().find(|r| r.id == id).unwrap();
+            assert_eq!(only.status, mixed.status, "{id} status");
+            assert_eq!(only.population, mixed.population, "{id} population");
+            assert_eq!(only.measures, mixed.measures, "{id} measures");
+            assert_eq!(
+                only.coverage, mixed.coverage,
+                "goose has no fact rows in {id}'s tables; source_files alone must not mark goose present in coverage"
+            );
+        }
+    }
+
+    #[test]
+    fn ingested_claude_only_i04_is_not_computable_with_reason() {
+        let key = b"0123456789abcdef0123456789abcdef";
+        let tmp = TempDir::new("claude-only-i04");
+        let claude_dir = tmp.path().join("claude");
+        std::fs::create_dir_all(&claude_dir).unwrap();
+        write_claude_fixture(&claude_dir);
+        let store = ingest_roots_into_store(
+            tmp.path(),
+            &[SourceRoot {
+                name: "claude".into(),
+                path: claude_dir,
+            }],
+            key,
+        );
+
+        let ref_i04 = evaluate(&store, &Scope::default())
+            .into_iter()
+            .find(|r| r.id == "I04")
+            .unwrap();
+        assert_eq!(
+            ref_i04.status,
+            InsightStatus::Refused {
+                reason: "not_computable: missing observed_cost (claude:observed_cost)".to_string(),
+            }
+        );
+        assert!(ref_i04.measures.is_empty());
+        assert!(
+            ref_i04
+                .coverage
+                .contains("not_computable: missing observed_cost (claude:observed_cost)")
+                && ref_i04
+                    .coverage
+                    .contains("excluded: claude — missing observed_cost"),
+            "I04 coverage on ingested claude-only store must show reason and exclusion: {}",
+            ref_i04.coverage
+        );
+
+        let cat_i04 = evaluate_catalog(&store, &Scope::default())
+            .into_iter()
+            .find(|r| r.id == "I04")
+            .unwrap();
+        assert_eq!(ref_i04, cat_i04);
+    }
+
+    #[test]
+    fn pre_d5_golden_regression_guard_ingested_claude_codex_pi() {
+        let key = b"0123456789abcdef0123456789abcdef";
+        let tmp = TempDir::new("pre-d5-golden");
+        let roots = vec![
+            SourceRoot {
+                name: "claude".into(),
+                path: PathBuf::from("tests/fixtures/d5_golden/sources/claude"),
+            },
+            SourceRoot {
+                name: "codex".into(),
+                path: PathBuf::from("tests/fixtures/d5_golden/sources/codex"),
+            },
+            SourceRoot {
+                name: "pi".into(),
+                path: PathBuf::from("tests/fixtures/d5_golden/sources/pi"),
+            },
+        ];
+        let store = ingest_roots_into_store(tmp.path(), &roots, key);
+        let scope = Scope::default();
+
+        let golden_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures")
+            .join("d5_golden");
+        let golden_eval_raw =
+            std::fs::read_to_string(golden_dir.join("pre_d5_evaluate.json")).unwrap();
+        let golden_cat_raw =
+            std::fs::read_to_string(golden_dir.join("pre_d5_evaluate_catalog.json")).unwrap();
+        let golden_eval: Vec<serde_json::Value> = serde_json::from_str(&golden_eval_raw).unwrap();
+        let golden_cat: Vec<serde_json::Value> = serde_json::from_str(&golden_cat_raw).unwrap();
+
+        let actual_eval = evaluate(&store, &scope);
+        let actual_cat = evaluate_catalog(&store, &scope);
+
+        // Explicitly declared allow-list of insight IDs whose output legitimately changes under D5
+        // on the `{claude, codex, pi}` ingested fixture store, with the exact policy reason:
+        let expected_policy_diffs: BTreeMap<&str, &str> = BTreeMap::from([
+            (
+                "I03",
+                "pi is present in usage_facts but lacks session_edges; excluded from I03 denominator (population 3 -> 2) and disclosed in coverage",
+            ),
+            (
+                "I04",
+                "claude and codex are present in usage_facts but lack observed_cost; excluded from I04 denominator (population 3 -> 1, pi only) and disclosed in coverage",
+            ),
+            (
+                "I06",
+                "claude, codex, and pi are present in tool_facts/skill_facts but none supplies skill_declarations; I06 refuses as NotComputable instead ofPartial",
+            ),
+            (
+                "I11",
+                "pi is present in usage_facts but lacks session_edges; excluded from I11 denominator (population 3 -> 2) and disclosed in coverage",
+            ),
+            (
+                "I16",
+                "pi is present in security_facts (via SecurityCommandCheck) but lacks SecurityPolicy; excluded from I16 denominator and disclosed in coverage",
+            ),
+            (
+                "I17",
+                "pi is present in security_facts (via SecurityCommandCheck) but lacks SecurityPolicy; excluded from I17 denominator and disclosed in coverage",
+            ),
+            (
+                "I20",
+                "pi is present in usage_facts with currency_total but lacks queue_transitions; I20 refuses as NotComputable instead of not_observable",
+            ),
+            (
+                "I24",
+                "pi is present in security_facts (via SecurityCommandCheck) but lacks SessionEdges and SecurityPolicy; excluded from I24 denominator and disclosed in coverage",
+            ),
+        ]);
+
+        // 1. Check `evaluate_catalog` (all 25 insights I01..I25) against `pre_d5_evaluate_catalog.json`
+        assert_eq!(actual_cat.len(), golden_cat.len());
+        for (actual, golden) in actual_cat.iter().zip(golden_cat.iter()) {
+            let id = actual.id;
+            assert_eq!(golden["id"].as_str(), Some(id));
+            let actual_val = serde_json::to_value(actual).unwrap();
+
+            let insight = CATALOG.iter().copied().find(|i| i.id() == id).unwrap();
+            let present = present_connectors_for_insight(insight, &store);
+            let all_present_computable = present.is_empty()
+                || matches!(
+                    evaluate_denominator(insight, &present),
+                    DenominatorEvaluation::Computable { ref scope } if scope.excluded.is_empty()
+                );
+
+            if all_present_computable {
+                assert!(
+                    !expected_policy_diffs.contains_key(id),
+                    "{id} has all present connectors computable ({present:?}), so it must not be in expected_policy_diffs"
+                );
+                assert_eq!(
+                    serde_json::to_string_pretty(&actual_val).unwrap(),
+                    serde_json::to_string_pretty(golden).unwrap(),
+                    "byte-identical PRE-D5 golden regression guard failed for {id} (present={present:?})"
+                );
+            } else {
+                let reason = expected_policy_diffs.get(id).unwrap_or_else(|| {
+                    panic!("{id} changed from pre-D5 golden output without an explicit entry in expected_policy_diffs")
+                });
+                assert!(
+                    !reason.is_empty(),
+                    "expected_policy_diffs reason for {id} must not be empty"
+                );
+                assert_ne!(
+                    serde_json::to_string_pretty(&actual_val).unwrap(),
+                    serde_json::to_string_pretty(golden).unwrap(),
+                    "{id} is listed in expected_policy_diffs ({reason}) but did not differ from pre-D5 golden output"
+                );
+                match id {
+                    "I03" | "I11" => {
+                        assert_eq!(actual.population.n, 2);
+                        assert!(actual
+                            .coverage
+                            .contains("excluded: pi — missing session_edges"));
+                    }
+                    "I04" => {
+                        assert_eq!(actual.population.n, 1);
+                        assert!(actual
+                            .coverage
+                            .contains("excluded: claude — missing observed_cost; excluded: codex — missing observed_cost"));
+                    }
+                    "I06" => {
+                        assert!(
+                            matches!(&actual.status, InsightStatus::Refused { reason } if reason.starts_with("not_computable: missing skill_declarations"))
+                        );
+                    }
+                    "I16" | "I17" => {
+                        assert!(actual
+                            .coverage
+                            .contains("excluded: pi — missing security_policy"));
+                    }
+                    "I20" => {
+                        assert!(
+                            matches!(&actual.status, InsightStatus::Refused { reason } if reason == "not_computable: missing queue_transitions (pi:queue_transitions)")
+                        );
+                    }
+                    "I24" => {
+                        assert!(actual
+                            .coverage
+                            .contains("excluded: pi — missing session_edges, security_policy"));
+                    }
+                    other => panic!("unexpected id in expected_policy_diffs: {other}"),
+                }
+            }
+        }
+
+        // 2. Check `evaluate` (REFERENCE: I02, I04, I08, I09, I14, I18) against `pre_d5_evaluate.json`
+        assert_eq!(actual_eval.len(), golden_eval.len());
+        for (actual, golden) in actual_eval.iter().zip(golden_eval.iter()) {
+            let id = actual.id;
+            let actual_val = serde_json::to_value(actual).unwrap();
+            if id == "I04" {
+                assert_eq!(actual.population.n, 1);
+                assert!(actual
+                    .coverage
+                    .contains("excluded: claude — missing observed_cost; excluded: codex — missing observed_cost"));
+            } else {
+                assert_eq!(
+                    serde_json::to_string_pretty(&actual_val).unwrap(),
+                    serde_json::to_string_pretty(golden).unwrap(),
+                    "REFERENCE byte-identical PRE-D5 golden regression guard failed for {id}"
+                );
+            }
         }
     }
 

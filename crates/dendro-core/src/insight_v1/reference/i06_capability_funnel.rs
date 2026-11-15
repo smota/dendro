@@ -44,7 +44,7 @@ impl Insight for CapabilityFunnel {
         COVERAGE
     }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
-        let skills = match load_skills(input) {
+        let (skills, unattributed_excluded) = match load_skills(input) {
             Ok(rows) => rows,
             Err(_) => return refused(self, "store read failed", "skill_facts"),
         };
@@ -52,8 +52,16 @@ impl Insight for CapabilityFunnel {
             Ok(count) => count,
             Err(_) => return refused(self, "store read failed", "tool_facts"),
         };
+        let mut coverage = COVERAGE.to_string();
+        if unattributed_excluded > 0 {
+            coverage.push_str(&format!(
+                "; excluded: {unattributed_excluded} unattributed rows"
+            ));
+        }
         if skills.is_empty() && actions.1 == 0 {
-            return refused(self, "empty population", "skill_facts");
+            let mut res = refused(self, "empty population", "skill_facts");
+            res.coverage = coverage;
+            return res;
         }
         let mut loaded = BTreeSet::new();
         let mut invoked = BTreeSet::new();
@@ -129,56 +137,21 @@ impl Insight for CapabilityFunnel {
                     "tool_facts rows in scope; counted even when the rate is refused",
                 ),
             ],
-            coverage: COVERAGE.to_string(),
+            coverage,
             evidence,
         })
     }
 }
 
-fn infer_skill_row_connector(
-    seat_harnesses: &std::collections::BTreeMap<String, String>,
-    source_key: &str,
-    seat: &str,
-    skill: &str,
-) -> Option<String> {
-    use crate::insight_v1::canonical_connector_id;
+fn load_skills(input: &InsightInput<'_>) -> anyhow::Result<(Vec<(String, bool)>, usize)> {
+    use crate::insight_v1::fidelity::{infer_skill_row_connector, load_seat_harnesses};
 
-    for candidate in [
-        seat.trim(),
-        seat.split(':').next().unwrap_or(""),
-        source_key.split(':').next().unwrap_or(""),
-        source_key.split('-').next().unwrap_or(""),
-        skill.split(':').next().unwrap_or(""),
-    ] {
-        if let Some(canonical) = canonical_connector_id(candidate) {
-            return Some(canonical.to_string());
-        }
-    }
-    if let Some(harness) = seat_harnesses.get(seat) {
-        if !harness.trim().is_empty() {
-            return Some(harness.clone());
-        }
-    }
-    None
-}
-
-fn load_skills(input: &InsightInput<'_>) -> anyhow::Result<Vec<(String, bool)>> {
     let check_allow = input.has_allowed_harnesses();
-    let mut seat_harnesses = std::collections::BTreeMap::new();
-    if check_allow {
-        if let Ok(mut id_stmt) = input
-            .connection()
-            .prepare("SELECT seat, harness FROM identity_facts")
-        {
-            if let Ok(id_rows) = id_stmt.query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-            }) {
-                for (seat, harness) in id_rows.flatten() {
-                    seat_harnesses.entry(seat).or_insert(harness);
-                }
-            }
-        }
-    }
+    let seat_harnesses = if check_allow {
+        load_seat_harnesses(input.connection())
+    } else {
+        std::collections::BTreeMap::new()
+    };
 
     let mut stmt = input
         .connection()
@@ -193,6 +166,7 @@ fn load_skills(input: &InsightInput<'_>) -> anyhow::Result<Vec<(String, bool)>> 
         ))
     })?;
     let mut out = Vec::new();
+    let mut unattributed_excluded = 0usize;
     for row in rows {
         let (key, seat, skill, invoked) = row?;
         if scope.harness.as_ref().is_some_and(|harness| {
@@ -205,15 +179,21 @@ fn load_skills(input: &InsightInput<'_>) -> anyhow::Result<Vec<(String, bool)>> 
             continue;
         }
         if check_allow {
-            if let Some(conn) = infer_skill_row_connector(&seat_harnesses, &key, &seat, &skill) {
-                if !input.allows_harness(&conn) {
+            match infer_skill_row_connector(&seat_harnesses, &key, &seat, &skill) {
+                Some(conn) => {
+                    if !input.allows_harness(&conn) {
+                        continue;
+                    }
+                }
+                None => {
+                    unattributed_excluded += 1;
                     continue;
                 }
             }
         }
         out.push((skill, invoked));
     }
-    Ok(out)
+    Ok((out, unattributed_excluded))
 }
 
 fn load_actions(input: &InsightInput<'_>) -> anyhow::Result<(Vec<String>, i64)> {

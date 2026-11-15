@@ -32,7 +32,7 @@ impl Insight for Authority {
     }
     fn optional_fields(&self) -> &'static [crate::insight_v1::Field] {
         use crate::insight_v1::Field;
-        &[Field::NativeSession]
+        &[Field::NativeSession, Field::SecurityCommandCheck]
     }
     fn coverage(&self) -> &'static str {
         COVERAGE

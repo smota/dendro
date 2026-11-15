@@ -131,76 +131,20 @@ fn run(
     scope: &Scope,
 ) -> Vec<InsightResult> {
     let unfiltered_input = Input::new(store, scope);
-    let denom_cache = fidelity::StoreDenominatorCache::new(store);
+    let denom_cache = fidelity::StoreDenominatorCache::new(store, scope);
     let mut results: Vec<_> = insights
         .iter()
         .map(|insight| {
             if let Some(reason) = scope.refusal() {
                 refused(*insight, reason, "undefined")
             } else if let Some(harness) = scope.harness.as_deref() {
-                if connector_declaration(harness).is_some() {
-                    match denom_cache.evaluate_denominator(*insight, &[harness], true) {
-                        DenominatorEvaluation::NotComputable {
-                            missing,
-                            by_connector,
-                            ..
-                        } => {
-                            let reason = format_not_computable_reason(&missing, &by_connector);
-                            let exc = format_exclusions_list(&by_connector);
-                            not_computable(
-                                *insight,
-                                &reason,
-                                canonical_population_what(insight.id()),
-                                exc.as_deref(),
-                            )
-                        }
-                        DenominatorEvaluation::Computable { .. } => {
-                            insight.compute(&unfiltered_input)
-                        }
-                    }
-                } else {
-                    insight.compute(&unfiltered_input)
-                }
+                evaluate_insight_for_connectors(*insight, store, scope, &[harness])
             } else {
                 let present = denom_cache.present_connectors(*insight);
                 if present.is_empty() {
                     insight.compute(&unfiltered_input)
                 } else {
-                    match denom_cache.evaluate_denominator(*insight, &present, false) {
-                        DenominatorEvaluation::NotComputable {
-                            missing,
-                            by_connector,
-                            ..
-                        } => {
-                            let reason = format_not_computable_reason(&missing, &by_connector);
-                            let exc = format_exclusions_list(&by_connector);
-                            not_computable(
-                                *insight,
-                                &reason,
-                                canonical_population_what(insight.id()),
-                                exc.as_deref(),
-                            )
-                        }
-                        DenominatorEvaluation::Computable { scope: denom_scope } => {
-                            if denom_scope.excluded.is_empty() {
-                                insight.compute(&unfiltered_input)
-                            } else {
-                                let allowed: Vec<String> = denom_scope
-                                    .included
-                                    .iter()
-                                    .map(|inc| inc.connector.to_string())
-                                    .collect();
-                                let input = Input::with_allowed_harnesses(store, scope, allowed);
-                                let mut result = insight.compute(&input);
-                                if let Some(disclosure) =
-                                    format_denominator_disclosure(&denom_scope)
-                                {
-                                    result.coverage = format!("{}; {disclosure}", result.coverage);
-                                }
-                                result
-                            }
-                        }
-                    }
+                    evaluate_insight_for_connectors(*insight, store, scope, &present)
                 }
             }
         })
