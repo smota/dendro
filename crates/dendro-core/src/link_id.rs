@@ -540,22 +540,35 @@ const FORBIDDEN_K_ORG_VARS: &[&str] = &[
     "AGENT_OTEL_K_ORG_FILE",
     "AGENT_OTEL_LINK_K_ORG",
     "AGENT_OTEL_K_ORG",
+    "DENDRO_FACT_EXPORT_K_ORG_HEX",
+    "DENDRO_FACT_EXPORT_K_ORG_FILE",
+    "DENDRO_FACT_EXPORT_K_ORG",
+    "AGENT_OTEL_FACT_EXPORT_K_ORG_HEX",
+    "AGENT_OTEL_FACT_EXPORT_K_ORG_FILE",
+    "AGENT_OTEL_FACT_EXPORT_K_ORG",
+    "DENDRO_ORG_KEY",
+    "DENDRO_ORG_KEY_HEX",
+    "DENDRO_ORG_KEY_FILE",
+    "AGENT_OTEL_ORG_KEY",
+    "AGENT_OTEL_ORG_KEY_HEX",
+    "AGENT_OTEL_ORG_KEY_FILE",
     "K_ORG",
     "K_ORG_HEX",
     "K_ORG_FILE",
 ];
 
-fn strip_export_prefix(name: &str) -> &str {
+pub(crate) fn strip_export_prefix(name: &str) -> &str {
     let trimmed = name.trim();
-    if let Some(rest) = trimmed.strip_prefix("export") {
-        if rest.starts_with(char::is_whitespace) {
-            return rest.trim();
-        }
+    if trimmed.len() > 6
+        && trimmed[..6].eq_ignore_ascii_case("export")
+        && trimmed[6..].starts_with(char::is_whitespace)
+    {
+        return trimmed[6..].trim();
     }
     trimmed
 }
 
-fn is_k_org_var_name(name: &str) -> bool {
+pub(crate) fn is_k_org_var_name(name: &str) -> bool {
     let cleaned = strip_export_prefix(name);
     FORBIDDEN_K_ORG_VARS
         .iter()
@@ -563,7 +576,7 @@ fn is_k_org_var_name(name: &str) -> bool {
 }
 
 #[must_use]
-fn consumer_env_path_from_vars(
+pub(crate) fn consumer_env_path_from_vars(
     xdg_config_home: Option<&std::ffi::OsStr>,
     home: Option<&std::ffi::OsStr>,
 ) -> Option<PathBuf> {
@@ -810,16 +823,9 @@ impl SessionLinkConfig {
         private_data_root: Option<&Path>,
         consumer_env_file: Option<&Path>,
     ) -> Self {
-        let mut process_env = BTreeMap::new();
-        for (k, v) in std::env::vars() {
-            if k.starts_with("DENDRO_") || k.starts_with("AGENT_OTEL_") || is_k_org_var_name(&k) {
-                process_env.insert(k, v);
-            }
-        }
+        let process_env = collect_process_env_vars();
         let result = Self::from_sources(&process_env, private_data_root, consumer_env_file);
-        for (_, mut val) in process_env {
-            zeroize_string(&mut val);
-        }
+        zeroize_env_map(process_env);
         result
     }
 
@@ -849,14 +855,7 @@ impl SessionLinkConfig {
         private_data_root: Option<&Path>,
         consumer_env_file: Option<&Path>,
     ) -> Self {
-        let consumer_vars = consumer_env_file
-            .and_then(read_consumer_env_from)
-            .map(|mut content| {
-                let parsed = parse_consumer_env_vars(&content);
-                zeroize_string(&mut content);
-                parsed
-            })
-            .unwrap_or_default();
+        let consumer_vars = load_consumer_env_vars(consumer_env_file);
 
         let org = pick_var_with_fallback(
             process_env,
@@ -882,65 +881,29 @@ impl SessionLinkConfig {
             &["DENDRO_LINK_EPOCH", "AGENT_OTEL_LINK_EPOCH"],
         );
 
-        let mut k_org_rejected = process_env.keys().any(|k| is_k_org_var_name(k))
-            || consumer_vars.keys().any(|k| is_k_org_var_name(k));
-
-        let key = if k_org_rejected {
-            None
-        } else if let Some(mut raw_hex) = pick_var(
+        let outcome = load_secret_key_from_sources(
+            &LINK_KEY_LOADER_SPEC,
             process_env,
-            &["DENDRO_LINK_KEY_HEX", "AGENT_OTEL_LINK_KEY_HEX"],
-        ) {
-            let parsed = LinkKey::from_hex(&raw_hex).ok();
-            zeroize_string(&mut raw_hex);
-            parsed
-        } else if let Some(raw_file) = pick_var_raw(
-            process_env,
-            &["DENDRO_LINK_KEY_FILE", "AGENT_OTEL_LINK_KEY_FILE"],
-        ) {
-            let path = Path::new(raw_file.trim());
-            if raw_file.trim().is_empty() || !path.is_absolute() {
-                None
-            } else {
-                match load_link_key_file(path) {
-                    Ok(k) => Some(k),
-                    Err(KeyFileLoadError::KOrgPresent) => {
-                        k_org_rejected = true;
-                        None
-                    }
-                    Err(KeyFileLoadError::Invalid) => None,
-                }
-            }
-        } else if let Some(root_path) = private_data_root
-            .filter(|root| root.is_absolute())
-            .filter(|root| std::fs::symlink_metadata(root.join("link.key")).is_ok())
-        {
-            match load_link_key_from_private_root(root_path) {
-                Ok(k) => Some(k),
-                Err(KeyFileLoadError::KOrgPresent) => {
-                    k_org_rejected = true;
-                    None
-                }
-                Err(KeyFileLoadError::Invalid) => None,
-            }
-        } else if let Some(mut raw_hex) = pick_var(
             &consumer_vars,
-            &["DENDRO_LINK_KEY_HEX", "AGENT_OTEL_LINK_KEY_HEX"],
-        ) {
-            let parsed = LinkKey::from_hex(&raw_hex).ok();
-            zeroize_string(&mut raw_hex);
-            parsed
-        } else {
-            None
+            private_data_root,
+        );
+        zeroize_env_map(consumer_vars);
+
+        let (key, k_org_rejected) = match outcome {
+            SecretKeyLoadOutcome::Loaded(mut bytes) => {
+                let k = LinkKey::from_bytes(bytes);
+                bytes.fill(0);
+                std::hint::black_box(&mut bytes);
+                (Some(k), false)
+            }
+            SecretKeyLoadOutcome::KOrgRejected => {
+                emit_k_org_warning_once();
+                (None, true)
+            }
+            SecretKeyLoadOutcome::Unconfigured | SecretKeyLoadOutcome::InvalidKeyMaterial => {
+                (None, false)
+            }
         };
-
-        for (_, mut val) in consumer_vars {
-            zeroize_string(&mut val);
-        }
-
-        if k_org_rejected {
-            emit_k_org_warning_once();
-        }
 
         Self {
             org,
@@ -1021,7 +984,135 @@ impl SessionLinkConfig {
     }
 }
 
-fn pick_var(vars: &BTreeMap<String, String>, names: &[&str]) -> Option<String> {
+/// Parameterized specification for loading a 32-byte endpoint secret key from process environment,
+/// Dendro's verified private data root (`platform_v1`), or `$XDG_CONFIG_HOME/observability/consumer.env`.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct SecretKeyLoaderSpec<'a> {
+    pub domain: &'a str,
+    pub hex_env_vars: &'a [&'a str],
+    pub file_env_vars: &'a [&'a str],
+    pub key_file_name: &'a str,
+}
+
+const LINK_KEY_LOADER_SPEC: SecretKeyLoaderSpec<'static> = SecretKeyLoaderSpec {
+    domain: LINK_ID_DOMAIN,
+    hex_env_vars: &["DENDRO_LINK_KEY_HEX", "AGENT_OTEL_LINK_KEY_HEX"],
+    file_env_vars: &["DENDRO_LINK_KEY_FILE", "AGENT_OTEL_LINK_KEY_FILE"],
+    key_file_name: "link.key",
+};
+
+pub(crate) enum SecretKeyLoadOutcome {
+    Loaded([u8; LINK_KEY_BYTES]),
+    Unconfigured,
+    InvalidKeyMaterial,
+    KOrgRejected,
+}
+
+pub(crate) fn collect_process_env_vars() -> BTreeMap<String, String> {
+    let mut process_env = BTreeMap::new();
+    for (k, v) in std::env::vars() {
+        if k.starts_with("DENDRO_") || k.starts_with("AGENT_OTEL_") || is_k_org_var_name(&k) {
+            process_env.insert(k, v);
+        }
+    }
+    process_env
+}
+
+pub(crate) fn load_consumer_env_vars(consumer_env_file: Option<&Path>) -> BTreeMap<String, String> {
+    consumer_env_file
+        .and_then(read_consumer_env_from)
+        .map(|mut content| {
+            let parsed = parse_consumer_env_vars(&content);
+            zeroize_string(&mut content);
+            parsed
+        })
+        .unwrap_or_default()
+}
+
+pub(crate) fn zeroize_env_map(vars: BTreeMap<String, String>) {
+    for (_, mut val) in vars {
+        zeroize_string(&mut val);
+    }
+}
+
+pub(crate) fn load_secret_key_from_sources(
+    spec: &SecretKeyLoaderSpec<'_>,
+    process_env: &BTreeMap<String, String>,
+    consumer_vars: &BTreeMap<String, String>,
+    private_data_root: Option<&Path>,
+) -> SecretKeyLoadOutcome {
+    let _ = spec.domain;
+    if process_env.keys().any(|k| is_k_org_var_name(k))
+        || consumer_vars.keys().any(|k| is_k_org_var_name(k))
+    {
+        return SecretKeyLoadOutcome::KOrgRejected;
+    }
+
+    if let Some(mut raw_hex) = pick_var_raw(process_env, spec.hex_env_vars) {
+        let outcome = match LinkKey::from_hex(&raw_hex) {
+            Ok(mut k) => {
+                let bytes = k.0;
+                k.0.fill(0);
+                std::hint::black_box(&mut k.0);
+                SecretKeyLoadOutcome::Loaded(bytes)
+            }
+            Err(_) => SecretKeyLoadOutcome::InvalidKeyMaterial,
+        };
+        zeroize_string(&mut raw_hex);
+        return outcome;
+    }
+
+    if let Some(raw_file) = pick_var_raw(process_env, spec.file_env_vars) {
+        let path = Path::new(raw_file.trim());
+        if raw_file.trim().is_empty() || !path.is_absolute() {
+            return SecretKeyLoadOutcome::InvalidKeyMaterial;
+        }
+        return match load_secret_key_file(path) {
+            Ok(mut k) => {
+                let bytes = k.0;
+                k.0.fill(0);
+                std::hint::black_box(&mut k.0);
+                SecretKeyLoadOutcome::Loaded(bytes)
+            }
+            Err(KeyFileLoadError::KOrgPresent) => SecretKeyLoadOutcome::KOrgRejected,
+            Err(KeyFileLoadError::Invalid) => SecretKeyLoadOutcome::InvalidKeyMaterial,
+        };
+    }
+
+    if let Some(root_path) = private_data_root
+        .filter(|root| root.is_absolute())
+        .filter(|root| std::fs::symlink_metadata(root.join(spec.key_file_name)).is_ok())
+    {
+        return match load_secret_key_from_private_root(root_path, spec.key_file_name) {
+            Ok(mut k) => {
+                let bytes = k.0;
+                k.0.fill(0);
+                std::hint::black_box(&mut k.0);
+                SecretKeyLoadOutcome::Loaded(bytes)
+            }
+            Err(KeyFileLoadError::KOrgPresent) => SecretKeyLoadOutcome::KOrgRejected,
+            Err(KeyFileLoadError::Invalid) => SecretKeyLoadOutcome::InvalidKeyMaterial,
+        };
+    }
+
+    if let Some(mut raw_hex) = pick_var_raw(consumer_vars, spec.hex_env_vars) {
+        let outcome = match LinkKey::from_hex(&raw_hex) {
+            Ok(mut k) => {
+                let bytes = k.0;
+                k.0.fill(0);
+                std::hint::black_box(&mut k.0);
+                SecretKeyLoadOutcome::Loaded(bytes)
+            }
+            Err(_) => SecretKeyLoadOutcome::InvalidKeyMaterial,
+        };
+        zeroize_string(&mut raw_hex);
+        return outcome;
+    }
+
+    SecretKeyLoadOutcome::Unconfigured
+}
+
+pub(crate) fn pick_var(vars: &BTreeMap<String, String>, names: &[&str]) -> Option<String> {
     for name in names {
         if let Some(val) = vars.get(*name) {
             if !val.is_empty() {
@@ -1032,7 +1123,7 @@ fn pick_var(vars: &BTreeMap<String, String>, names: &[&str]) -> Option<String> {
     None
 }
 
-fn pick_var_raw(vars: &BTreeMap<String, String>, names: &[&str]) -> Option<String> {
+pub(crate) fn pick_var_raw(vars: &BTreeMap<String, String>, names: &[&str]) -> Option<String> {
     for name in names {
         if let Some(val) = vars.get(*name) {
             return Some(val.clone());
@@ -1041,7 +1132,7 @@ fn pick_var_raw(vars: &BTreeMap<String, String>, names: &[&str]) -> Option<Strin
     None
 }
 
-fn pick_var_with_fallback(
+pub(crate) fn pick_var_with_fallback(
     primary: &BTreeMap<String, String>,
     fallback: &BTreeMap<String, String>,
     names: &[&str],
@@ -1054,13 +1145,16 @@ enum KeyFileLoadError {
     KOrgPresent,
 }
 
-fn load_link_key_from_private_root(root_path: &Path) -> Result<LinkKey, KeyFileLoadError> {
+fn load_secret_key_from_private_root(
+    root_path: &Path,
+    key_file_name: &str,
+) -> Result<LinkKey, KeyFileLoadError> {
     #[cfg(any(windows, target_os = "linux"))]
     {
         let root = crate::platform_v1::open_existing_private_root(root_path)
             .map_err(|_| KeyFileLoadError::Invalid)?;
         let name = crate::platform_v1::parse_child_name(
-            "link.key",
+            key_file_name,
             crate::platform_v1::current_native_platform(),
         )
         .map_err(|_| KeyFileLoadError::Invalid)?;
@@ -1075,11 +1169,11 @@ fn load_link_key_from_private_root(root_path: &Path) -> Result<LinkKey, KeyFileL
     }
     #[cfg(not(any(windows, target_os = "linux")))]
     {
-        load_link_key_file(&root_path.join("link.key"))
+        load_secret_key_file(&root_path.join(key_file_name))
     }
 }
 
-fn load_link_key_file(path: &Path) -> Result<LinkKey, KeyFileLoadError> {
+fn load_secret_key_file(path: &Path) -> Result<LinkKey, KeyFileLoadError> {
     if !path.is_absolute() {
         return Err(KeyFileLoadError::Invalid);
     }
@@ -1105,7 +1199,7 @@ fn load_link_key_file(path: &Path) -> Result<LinkKey, KeyFileLoadError> {
             drop(root);
             return res;
         }
-        // When an explicit DENDRO_LINK_KEY_FILE resides in a directory whose DACL is not
+        // When an explicit *_KEY_FILE resides in a directory whose DACL is not
         // `SE_DACL_PROTECTED` (so `open_existing_private_root` refuses the parent), `platform_v1`
         // still enforces no-follow reparse rejection, regular-file kind, `links == 1` hard-link
         // rejection, size cap, and 128-bit `FILE_ID_INFO` handle identity matching. Full DACL/owner
@@ -1193,7 +1287,7 @@ fn read_and_parse_link_key_handle(file: std::fs::File) -> Result<LinkKey, KeyFil
     parsed
 }
 
-fn zeroize_string(value: &mut String) {
+pub(crate) fn zeroize_string(value: &mut String) {
     // Overwrite the UTF-8 buffer with ASCII '0' bytes in safe Rust before clearing.
     let len = value.len();
     if len > 0 {
@@ -1213,7 +1307,13 @@ fn parse_consumer_env_vars(content: &str) -> BTreeMap<String, String> {
         if let Some((raw_key, value)) = trimmed.split_once('=') {
             let key = strip_export_prefix(raw_key);
             let value = value.trim().trim_matches('"').trim_matches('\'');
-            if key == "DENDRO_LINK_KEY_FILE" || key == "AGENT_OTEL_LINK_KEY_FILE" {
+            if matches!(
+                key,
+                "DENDRO_LINK_KEY_FILE"
+                    | "AGENT_OTEL_LINK_KEY_FILE"
+                    | "DENDRO_FACT_EXPORT_KEY_FILE"
+                    | "AGENT_OTEL_FACT_EXPORT_KEY_FILE"
+            ) {
                 // Key-file paths are accepted ONLY from the process environment, never consumer.env.
                 continue;
             }

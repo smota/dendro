@@ -80,7 +80,7 @@ pub fn ingest_staged_with_manifest(
     sealed: Option<&dendro_core::CutoffManifest>,
 ) -> Result<(Vec<String>, dendro_core::CutoffManifest)> {
     let link_config = dendro_core::SessionLinkConfig::from_env();
-    let fact_export_config = dendro_core::FactExportConfig::load(staged_db.parent());
+    let fact_export_config = dendro_core::FactExportConfig::from_env();
     ingest_staged_with_manifest_and_configs(
         staged_db,
         roots,
