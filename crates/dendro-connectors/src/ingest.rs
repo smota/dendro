@@ -180,6 +180,7 @@ pub fn ingest_staged_with_manifest(
                             read.records_read += stats.records_read;
                             read.usage_records += stats.usage_records;
                             read.coverage.merge(stats.coverage);
+                            read.tool_scan.merge(stats.tool_scan);
                             notes.push(format!("{shown} file={id} {}", stats.coverage.summary()));
                         }
                         read.coverage.partial |= refused != 0;

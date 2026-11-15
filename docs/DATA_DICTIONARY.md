@@ -158,6 +158,12 @@ CREATE TABLE tool_facts (
 );
 ```
 - **Grain:** One row per tool invocation. Command arguments and raw outputs are omitted; only deterministic hashed fingerprints are retained.
+- **Shared Watermark-Gated Tool Scan (`ToolScan`, D1 / F2):**
+  - Claude, Codex, Pi, and Grok tool calls are observed through the shared per-generation `ToolScan` path in [`crates/dendro-connectors/src/stream.rs`](../crates/dendro-connectors/src/stream.rs), guarded by the per-file ingestion watermark (`new_from`).
+  - **Real Codex Tool Names:** Codex rollout records (`response_item` with `payload.type` in `function_call`, `custom_tool_call`, or `tool_call`) record the real tool name from `payload.name` (e.g. `exec`, `exec_command`, `spawn_agent`, `wait_agent`, `apply_patch`), never the legacy constant `CodexSeatCall`. Native `event_msg` `item_completed` `CommandExecution` items continue to record `CommandExecution` under the same watermark guard.
+  - **Replay Safety & Deduplication:** Within a file generation, calls are keyed by `(native_session, call_id)`. Repeated call blocks with the same `(native_session, call_id)` or calls inside the already-committed watermark prefix (`line_no <= new_from`) do not emit new `tool_facts` rows on replay or re-ingest, and increment `duplicates_suppressed`.
+  - **Late & Unmatched Results:** A `function_call_output`, `custom_tool_call_output`, or `tool_call_output` that arrives after its call—either later in the log (after intervening calls) or in a subsequent ingest pass after watermark advancement—attaches to the original call by `(native_session, call_id)` and settles `tool_facts.failed`. Outputs with no matching call in `(native_session, call_id)` are counted as `unmatched_results` and never invent a call.
+  - **Observable Tool-Scan Measures (`FileStats.tool_scan: ToolScanCounts`):** Each ingest pass exposes `calls` (unique calls across the generation), `new_calls` (calls emitted past the watermark cutoff), `results` (matched result records), `late_results` (matched results arriving after a subsequent call in-log or in a later pass against a committed prefix call), `unmatched_results` (results with no matching call), and `duplicates_suppressed` (prefix calls suppressed by the watermark or duplicate `call_id` records).
 
 ### 3.3. `message_facts`
 Message metadata tracking turn direction and order without storing text.
