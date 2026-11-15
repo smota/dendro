@@ -100,12 +100,100 @@ impl DuckDbStorage {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum FileBatchStage {
+/// Stage checkpoints inside [`AnalyticsStore::commit_ingest_batch`] (`MTN-20 / D4a`).
+///
+/// Used by crash-boundary tests to inject a fault after each fact-family write
+/// inside the transaction or immediately before `tx.commit()`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum IngestBatchStage {
+    AfterBaseline,
+    AfterCounters,
+    AfterUsageFacts,
+    AfterUsageModels,
+    AfterToolFacts,
+    AfterToolCategories,
+    AfterToolSettlement,
+    AfterMessageFacts,
+    AfterSkillFacts,
+    AfterSessionEdges,
+    AfterSecurityFacts,
+    AfterSessionFacts,
+    AfterWarnings,
+    AfterWatermark,
     BeforeReaderReplacement,
     AfterReaderReplacement,
     BeforeSourceSessionUpdate,
     BeforeCommit,
+}
+
+type FileBatchStage = IngestBatchStage;
+
+/// Single-transaction commit unit for one file-ingest batch (`MTN-20 / D4a`).
+///
+/// Persists all fact families produced by a file batch together with the
+/// source baseline, warnings, reader state, and `source_files` watermark in ONE
+/// DuckDB transaction. The `source_files` watermark and reader marker are
+/// written last in the transaction, after every fact family, so a crash or
+/// error before `tx.commit()` rolls back the entire batch and leaves the
+/// watermark unchanged.
+#[derive(Clone, Debug)]
+pub struct IngestBatch<'a> {
+    pub source_id: &'a str,
+    pub harness: &'a str,
+    pub display_path: &'a str,
+    pub generation: i64,
+    pub byte_offset: i64,
+    pub prefix_sha256: &'a str,
+    pub counters: Option<&'a CodexCounters>,
+    pub usages: &'a [UsageFact],
+    pub usage_models: &'a [(String, Option<String>, Option<String>)],
+    pub tools: &'a [ToolFact],
+    pub tool_categories: &'a [(String, ToolCategory)],
+    pub settled: &'a [(String, Option<bool>)],
+    pub messages: &'a [MessageFact],
+    pub skills: &'a [SkillFact],
+    pub session_edges: &'a [SessionEdgeFact],
+    pub security_facts: &'a [SecurityFact],
+    pub session_facts: &'a [SessionFact],
+    pub retired_fallback_keys: &'a [String],
+    pub warnings: &'a [WarningNote],
+    pub reader: Option<&'a ReaderState>,
+    pub baseline: Option<&'a FileBaselineAttempt>,
+}
+
+impl<'a> IngestBatch<'a> {
+    pub fn new(
+        source_id: &'a str,
+        harness: &'a str,
+        display_path: &'a str,
+        generation: i64,
+        byte_offset: i64,
+        prefix_sha256: &'a str,
+    ) -> Self {
+        Self {
+            source_id,
+            harness,
+            display_path,
+            generation,
+            byte_offset,
+            prefix_sha256,
+            counters: None,
+            usages: &[],
+            usage_models: &[],
+            tools: &[],
+            tool_categories: &[],
+            settled: &[],
+            messages: &[],
+            skills: &[],
+            session_edges: &[],
+            security_facts: &[],
+            session_facts: &[],
+            retired_fallback_keys: &[],
+            warnings: &[],
+            reader: None,
+            baseline: None,
+        }
+    }
 }
 
 /// Metadata association captured around an ordinary accepted ingest read.
@@ -664,6 +752,18 @@ impl AnalyticsStore {
         })
     }
 
+    fn record_warnings_in_tx(tx: &Connection, warnings: &[WarningNote]) -> Result<()> {
+        if warnings.is_empty() {
+            return Ok(());
+        }
+        let mut stmt =
+            tx.prepare("INSERT INTO warnings (path, line_no, reason) VALUES (?, ?, ?)")?;
+        for note in warnings {
+            stmt.execute(params![redact(&note.path), note.line, redact(&note.reason)])?;
+        }
+        Ok(())
+    }
+
     /// Whether this warning was already stored for this path, compared as stored.
     pub fn has_warning(&self, path: &str, reason: &str) -> Result<bool> {
         let mut stmt = self
@@ -715,6 +815,463 @@ impl AnalyticsStore {
         } else {
             Ok(CodexCounters::default())
         }
+    }
+
+    /// Commits a complete per-file or per-snapshot ingest batch (`MTN-20 / D4a`) in ONE DuckDB transaction.
+    ///
+    /// Writes all fact families (`file_source_baselines`, `codex_counters`, `usage_facts`,
+    /// `usage_models`, `tool_facts`, `tool_categories`, `settled`, `message_facts`,
+    /// `skill_facts`, `session_edges`, `security_facts`, `session_facts` + `retired_fallback_keys`,
+    /// and `warnings`) first, and advances the `source_files` watermark and
+    /// `dendro-internal:reader:` marker last before `tx.commit()`.
+    ///
+    /// Large-batch memory stays bounded under the 1 GB refresh cap (`docs/BACKLOG.md`)
+    /// by staging `usage_facts` and `tool_facts` through connection-scoped `TEMP` tables
+    /// (`usage_stage`, `tool_stage`) whose creation (`CREATE TEMP TABLE`) and drop (`DROP TABLE`)
+    /// are transactional inside `tx`, populated via `tx.appender(...)`, followed by a single
+    /// `INSERT INTO ... SELECT ... ON CONFLICT DO NOTHING; DROP TABLE ...` inside `tx`.
+    /// Any error before `tx.commit()` drops `tx` and rolls back the entire transaction,
+    /// including temp staging tables, optional DDL, all fact rows, and the watermark.
+    pub fn commit_ingest_batch(&self, batch: &IngestBatch<'_>) -> Result<()> {
+        self.commit_ingest_batch_internal(batch, |_| Ok(()))
+    }
+
+    /// As [`Self::commit_ingest_batch`], invoking `checkpoint` at each [`IngestBatchStage`]
+    /// inside the transaction so crash-boundary tests can inject faults after any family
+    /// write or right before commit.
+    pub fn commit_ingest_batch_with_hook(
+        &self,
+        batch: &IngestBatch<'_>,
+        checkpoint: impl FnMut(IngestBatchStage) -> Result<()>,
+    ) -> Result<()> {
+        self.commit_ingest_batch_internal(batch, checkpoint)
+    }
+
+    fn commit_ingest_batch_internal(
+        &self,
+        batch: &IngestBatch<'_>,
+        mut checkpoint: impl FnMut(IngestBatchStage) -> Result<()>,
+    ) -> Result<()> {
+        if self.canonical_write_active.get() {
+            self.invalidate_semantic()?;
+            Self::commit_ingest_batch_on_conn(&self.conn, batch, &mut checkpoint)?;
+            checkpoint(IngestBatchStage::BeforeCommit)?;
+            return Ok(());
+        }
+        let tx = self.conn.unchecked_transaction()?;
+        self.invalidate_semantic()?;
+        Self::commit_ingest_batch_on_conn(&tx, batch, &mut checkpoint)?;
+        checkpoint(IngestBatchStage::BeforeCommit)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    fn commit_ingest_batch_on_conn(
+        tx: &Connection,
+        batch: &IngestBatch<'_>,
+        checkpoint: &mut impl FnMut(IngestBatchStage) -> Result<()>,
+    ) -> Result<()> {
+        if let Some(attempt) = batch.baseline {
+            Self::commit_baseline_in_tx(tx, batch.source_id, batch.generation, attempt)?;
+        }
+        checkpoint(IngestBatchStage::AfterBaseline)?;
+        if let Some(c) = batch.counters {
+            Self::commit_codex_counters_in_tx(tx, batch.source_id, batch.generation, c)?;
+        }
+        checkpoint(IngestBatchStage::AfterCounters)?;
+        if !batch.usages.is_empty() {
+            Self::commit_usage_facts_in_tx(tx, batch.source_id, batch.usages)?;
+        }
+        checkpoint(IngestBatchStage::AfterUsageFacts)?;
+        if !batch.usage_models.is_empty() {
+            Self::record_usage_models_in_tx(tx, batch.usage_models)?;
+        }
+        checkpoint(IngestBatchStage::AfterUsageModels)?;
+        if !batch.tools.is_empty() {
+            Self::commit_tool_facts_in_tx(tx, batch.source_id, batch.tools)?;
+        }
+        checkpoint(IngestBatchStage::AfterToolFacts)?;
+        if !batch.tool_categories.is_empty() {
+            Self::record_tool_categories_in_tx(tx, batch.tool_categories)?;
+        }
+        checkpoint(IngestBatchStage::AfterToolCategories)?;
+        if !batch.settled.is_empty() {
+            Self::settle_tool_facts_in_tx(tx, batch.settled)?;
+        }
+        checkpoint(IngestBatchStage::AfterToolSettlement)?;
+        if !batch.messages.is_empty() {
+            Self::commit_message_facts_in_tx(tx, batch.source_id, batch.messages)?;
+        }
+        checkpoint(IngestBatchStage::AfterMessageFacts)?;
+        if !batch.skills.is_empty() {
+            Self::commit_skill_facts_in_tx(tx, batch.skills)?;
+        }
+        checkpoint(IngestBatchStage::AfterSkillFacts)?;
+        if !batch.session_edges.is_empty() {
+            Self::commit_session_edges_in_tx(tx, batch.session_edges)?;
+        }
+        checkpoint(IngestBatchStage::AfterSessionEdges)?;
+        if !batch.security_facts.is_empty() {
+            Self::commit_security_facts_in_tx(tx, batch.security_facts)?;
+        }
+        checkpoint(IngestBatchStage::AfterSecurityFacts)?;
+        if !batch.session_facts.is_empty() || !batch.retired_fallback_keys.is_empty() {
+            Self::commit_session_facts_retiring_in_tx(
+                tx,
+                batch.session_facts,
+                batch.retired_fallback_keys,
+            )?;
+        }
+        checkpoint(IngestBatchStage::AfterSessionFacts)?;
+        if !batch.warnings.is_empty() {
+            Self::record_warnings_in_tx(tx, batch.warnings)?;
+        }
+        checkpoint(IngestBatchStage::AfterWarnings)?;
+        Self::commit_watermark_in_tx(
+            tx,
+            batch.source_id,
+            batch.harness,
+            batch.display_path,
+            batch.generation,
+            batch.byte_offset,
+            batch.prefix_sha256,
+        )?;
+        checkpoint(IngestBatchStage::AfterWatermark)?;
+        if let Some(reader) = batch.reader {
+            Self::commit_reader_state_in_tx(
+                tx,
+                batch.source_id,
+                batch.harness,
+                batch.generation,
+                batch.byte_offset,
+                batch.prefix_sha256,
+                reader,
+                checkpoint,
+            )?;
+        }
+        Ok(())
+    }
+
+    fn commit_baseline_in_tx(
+        tx: &Connection,
+        source_id: &str,
+        generation: i64,
+        attempt: &FileBaselineAttempt,
+    ) -> Result<()> {
+        tx.execute_batch(FILE_BASELINES_SCHEMA)?;
+        let metadata = attempt.metadata.as_ref();
+        let verified = metadata.is_some();
+        tx.execute(
+            "INSERT INTO file_source_baselines VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT (source_id, generation) DO UPDATE SET
+               metadata_version = 1,
+               latest_association = excluded.latest_association,
+               latest_attempt_at = excluded.latest_attempt_at,
+               last_stable_observed_at = CASE WHEN excluded.latest_association = 'verified' THEN excluded.last_stable_observed_at ELSE file_source_baselines.last_stable_observed_at END,
+               last_stable_type = CASE WHEN excluded.latest_association = 'verified' THEN excluded.last_stable_type ELSE file_source_baselines.last_stable_type END,
+               last_stable_device = CASE WHEN excluded.latest_association = 'verified' THEN excluded.last_stable_device ELSE file_source_baselines.last_stable_device END,
+               last_stable_inode = CASE WHEN excluded.latest_association = 'verified' THEN excluded.last_stable_inode ELSE file_source_baselines.last_stable_inode END,
+               last_stable_size = CASE WHEN excluded.latest_association = 'verified' THEN excluded.last_stable_size ELSE file_source_baselines.last_stable_size END,
+               last_stable_mtime_ns = CASE WHEN excluded.latest_association = 'verified' THEN excluded.last_stable_mtime_ns ELSE file_source_baselines.last_stable_mtime_ns END,
+               association_reason = excluded.association_reason",
+            params![
+                redact(source_id),
+                generation,
+                if verified { "verified" } else { "unavailable" },
+                redact(&attempt.attempted_at),
+                verified.then(|| redact(&attempt.attempted_at)),
+                metadata.map(|m| redact(&m.r#type)),
+                metadata.map(|m| redact(&m.device)),
+                metadata.map(|m| redact(&m.inode)),
+                metadata.map(|m| redact(&m.size)),
+                metadata.map(|m| redact(&m.mtime_ns)),
+                if verified {
+                    "verified"
+                } else {
+                    "association_unverified"
+                },
+            ],
+        )?;
+        Ok(())
+    }
+
+    fn commit_watermark_in_tx(
+        tx: &Connection,
+        source_id: &str,
+        harness: &str,
+        display_path: &str,
+        generation: i64,
+        byte_offset: i64,
+        prefix_sha256: &str,
+    ) -> Result<()> {
+        tx.execute(
+            r#"INSERT INTO source_files (source_id, harness, display_path, generation, byte_offset, prefix_sha256)
+               VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT (source_id) DO UPDATE SET
+                 generation = excluded.generation,
+                 byte_offset = excluded.byte_offset,
+                 prefix_sha256 = excluded.prefix_sha256"#,
+            params![
+                redact(source_id),
+                redact(harness),
+                redact(display_path),
+                generation,
+                byte_offset,
+                redact(prefix_sha256)
+            ],
+        )?;
+        Ok(())
+    }
+
+    fn commit_codex_counters_in_tx(
+        tx: &Connection,
+        source_id: &str,
+        generation: i64,
+        c: &CodexCounters,
+    ) -> Result<()> {
+        tx.execute(
+            r#"INSERT INTO codex_counters (
+                   source_id, generation, input_tokens, cached_input_tokens,
+                   cache_write_input_tokens, output_tokens, reasoning_output_tokens
+               ) VALUES (?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT (source_id, generation) DO UPDATE SET
+                 input_tokens = excluded.input_tokens,
+                 cached_input_tokens = excluded.cached_input_tokens,
+                 cache_write_input_tokens = excluded.cache_write_input_tokens,
+                 output_tokens = excluded.output_tokens,
+                 reasoning_output_tokens = excluded.reasoning_output_tokens"#,
+            params![
+                redact(source_id),
+                generation,
+                c.input_tokens,
+                c.cached_input_tokens,
+                c.cache_write_input_tokens,
+                c.output_tokens,
+                c.reasoning_output_tokens
+            ],
+        )?;
+        Ok(())
+    }
+
+    // Bulk-append into a temp table, then one conflict-tolerant insert.
+    // A prepared INSERT per row keeps DuckDB result memory growing with the file.
+    fn commit_usage_facts_in_tx(
+        tx: &Connection,
+        source_id: &str,
+        usages: &[UsageFact],
+    ) -> Result<()> {
+        tx.execute_batch(
+            "CREATE TEMP TABLE usage_stage (
+                source_key VARCHAR, harness VARCHAR, native_session VARCHAR,
+                message_id VARCHAR, ts VARCHAR, seq BIGINT,
+                input_uncached BIGINT, output_tokens BIGINT, cache_read BIGINT,
+                cache_write BIGINT, reasoning BIGINT, currency_total DOUBLE,
+                generation BIGINT, source_id VARCHAR, predecessor_source_key VARCHAR,
+                predecessor_reason VARCHAR, prior_input_tokens BIGINT,
+                prior_cached_input_tokens BIGINT, prior_cache_write_input_tokens BIGINT,
+                prior_output_tokens BIGINT, prior_reasoning_output_tokens BIGINT,
+                model VARCHAR, effort VARCHAR
+            )",
+        )?;
+        {
+            let mut appender = tx.appender("usage_stage")?;
+            for u in usages {
+                appender.append_row(params![
+                    redact(&u.source_key),
+                    redact(&u.harness),
+                    redact(&u.native_session),
+                    u.message_id.as_deref().map(redact),
+                    u.ts.map(|t| t.to_rfc3339()),
+                    u.seq,
+                    u.input_uncached,
+                    u.output,
+                    u.cache_read,
+                    u.cache_write,
+                    u.reasoning,
+                    u.currency_total,
+                    u.generation,
+                    redact(source_id),
+                    u.predecessor_source_key.as_deref().map(redact),
+                    u.predecessor_reason.as_deref(),
+                    u.prior_input_tokens,
+                    u.prior_cached_input_tokens,
+                    u.prior_cache_write_input_tokens,
+                    u.prior_output_tokens,
+                    u.prior_reasoning_output_tokens,
+                    Option::<String>::None,
+                    Option::<String>::None
+                ])?;
+            }
+            appender.flush()?;
+        }
+        tx.execute_batch(
+            "INSERT INTO usage_facts
+             SELECT source_key, harness, native_session, message_id,
+                    CAST(ts AS TIMESTAMP), seq, input_uncached, output_tokens,
+                    cache_read, cache_write, reasoning, currency_total, generation,
+                    source_id, predecessor_source_key, predecessor_reason,
+                    prior_input_tokens, prior_cached_input_tokens,
+                    prior_cache_write_input_tokens, prior_output_tokens,
+                    prior_reasoning_output_tokens, model, effort
+             FROM usage_stage
+             ON CONFLICT (source_key) DO NOTHING;
+             DROP TABLE usage_stage",
+        )?;
+        Ok(())
+    }
+
+    fn commit_tool_facts_in_tx(tx: &Connection, source_id: &str, tools: &[ToolFact]) -> Result<()> {
+        tx.execute_batch(
+            "CREATE TEMP TABLE tool_stage (
+                source_key VARCHAR, harness VARCHAR, native_session VARCHAR,
+                ts VARCHAR, seq BIGINT, tool_name VARCHAR, fingerprint VARCHAR,
+                failed BOOLEAN, structured_write BOOLEAN, generation BIGINT,
+                source_id VARCHAR, category VARCHAR
+            )",
+        )?;
+        {
+            let mut appender = tx.appender("tool_stage")?;
+            for t in tools {
+                appender.append_row(params![
+                    redact(&t.source_key),
+                    redact(&t.harness),
+                    redact(&t.native_session),
+                    t.ts.map(|v| v.to_rfc3339()),
+                    t.seq,
+                    redact(&t.name),
+                    t.fingerprint.as_deref().map(redact),
+                    t.failed,
+                    t.structured_write,
+                    t.generation,
+                    redact(source_id),
+                    ToolCategory::classify_tool_name(&t.name).as_str()
+                ])?;
+            }
+            appender.flush()?;
+        }
+        tx.execute_batch(
+            "INSERT INTO tool_facts
+             SELECT source_key, harness, native_session, CAST(ts AS TIMESTAMP), seq,
+                    tool_name, fingerprint, failed, structured_write, generation, source_id, category
+             FROM tool_stage
+             ON CONFLICT (source_key) DO NOTHING;
+             DROP TABLE tool_stage",
+        )?;
+        Ok(())
+    }
+
+    fn commit_message_facts_in_tx(
+        tx: &Connection,
+        source_id: &str,
+        messages: &[MessageFact],
+    ) -> Result<()> {
+        tx.execute_batch(Self::MESSAGE_FACTS_SCHEMA)?;
+        let mut stmt = tx.prepare(
+            "INSERT INTO message_facts
+             VALUES (?, ?, ?, CAST(? AS TIMESTAMP), ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT (source_key) DO NOTHING",
+        )?;
+        for m in messages {
+            stmt.execute(params![
+                redact(&m.source_key),
+                redact(&m.harness),
+                m.native_session.as_deref().map(redact),
+                m.ts.map(|t| t.to_rfc3339()),
+                m.seq,
+                wire_name(&m.role)?,
+                wire_name(&m.direction)?,
+                m.modalities
+                    .iter()
+                    .map(wire_name)
+                    .collect::<Result<Vec<_>>>()?
+                    .join(","),
+                wire_name(&m.grain)?,
+                m.generation,
+                redact(source_id),
+            ])?;
+        }
+        Ok(())
+    }
+
+    // A tool result appended after its call was stored settles the call's
+    // outcome again from every result seen so far (#37).
+    fn settle_tool_facts_in_tx(tx: &Connection, settled: &[(String, Option<bool>)]) -> Result<()> {
+        let mut settle_stmt =
+            tx.prepare("UPDATE tool_facts SET failed = ? WHERE source_key = ?")?;
+        for (source_key, failed) in settled {
+            settle_stmt.execute(params![failed, redact(source_key)])?;
+        }
+        Ok(())
+    }
+
+    fn commit_skill_facts_in_tx(tx: &Connection, skills: &[SkillFact]) -> Result<()> {
+        let mut stmt = tx.prepare(
+            r#"INSERT INTO skill_facts (source_key, seat, skill, invoked) VALUES (?, ?, ?, ?)
+               ON CONFLICT (source_key) DO NOTHING"#,
+        )?;
+        for fact in skills {
+            stmt.execute(params![
+                redact(&fact.source_key),
+                redact(&fact.seat),
+                redact(&fact.skill),
+                fact.invoked
+            ])?;
+        }
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn commit_reader_state_in_tx(
+        tx: &Connection,
+        source_id: &str,
+        harness: &str,
+        generation: i64,
+        byte_offset: i64,
+        prefix_sha256: &str,
+        reader: &ReaderState,
+        checkpoint: &mut impl FnMut(IngestBatchStage) -> Result<()>,
+    ) -> Result<()> {
+        checkpoint(IngestBatchStage::BeforeReaderReplacement)?;
+        let marker = format!(
+            "{READER_NAMESPACE}{READER_VERSION}:{}:{generation}",
+            redact(source_id)
+        );
+        tx.execute(
+            "DELETE FROM tool_facts WHERE source_key = ?",
+            params![marker],
+        )?;
+        tx.execute(
+            "INSERT INTO tool_facts (source_key, harness, native_session, ts, seq, tool_name, fingerprint, failed, structured_write, generation, source_id, category)
+             VALUES (?, ?, ?, NULL, ?, ?, ?, NULL, FALSE, ?, ?, 'other')",
+            params![
+                marker,
+                redact(harness),
+                reader
+                    .native_session
+                    .as_deref()
+                    .map(redact)
+                    .unwrap_or_default(),
+                byte_offset,
+                if reader.complete {
+                    READER_COMPLETE
+                } else {
+                    READER_UNSUPPORTED
+                },
+                redact(prefix_sha256),
+                generation,
+                redact(source_id)
+            ],
+        )?;
+        checkpoint(IngestBatchStage::AfterReaderReplacement)?;
+        checkpoint(IngestBatchStage::BeforeSourceSessionUpdate)?;
+        tx.execute(
+            "UPDATE source_files SET native_session = ? WHERE source_id = ?",
+            params![
+                reader.native_session.as_deref().map(redact),
+                redact(source_id)
+            ],
+        )?;
+        Ok(())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -900,245 +1457,24 @@ impl AnalyticsStore {
         settled: &[(String, Option<bool>)],
         reader: Option<&ReaderState>,
         baseline: Option<&FileBaselineAttempt>,
-        mut checkpoint: impl FnMut(FileBatchStage) -> Result<()>,
+        checkpoint: impl FnMut(FileBatchStage) -> Result<()>,
     ) -> Result<()> {
-        let tx = self.conn.unchecked_transaction()?;
-        self.invalidate_semantic()?;
-        if let Some(attempt) = baseline {
-            tx.execute_batch(FILE_BASELINES_SCHEMA)?;
-            let metadata = attempt.metadata.as_ref();
-            let verified = metadata.is_some();
-            tx.execute(
-                "INSERT INTO file_source_baselines VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                 ON CONFLICT (source_id, generation) DO UPDATE SET
-                   metadata_version = 1,
-                   latest_association = excluded.latest_association,
-                   latest_attempt_at = excluded.latest_attempt_at,
-                   last_stable_observed_at = CASE WHEN excluded.latest_association = 'verified' THEN excluded.last_stable_observed_at ELSE file_source_baselines.last_stable_observed_at END,
-                   last_stable_type = CASE WHEN excluded.latest_association = 'verified' THEN excluded.last_stable_type ELSE file_source_baselines.last_stable_type END,
-                   last_stable_device = CASE WHEN excluded.latest_association = 'verified' THEN excluded.last_stable_device ELSE file_source_baselines.last_stable_device END,
-                   last_stable_inode = CASE WHEN excluded.latest_association = 'verified' THEN excluded.last_stable_inode ELSE file_source_baselines.last_stable_inode END,
-                   last_stable_size = CASE WHEN excluded.latest_association = 'verified' THEN excluded.last_stable_size ELSE file_source_baselines.last_stable_size END,
-                   last_stable_mtime_ns = CASE WHEN excluded.latest_association = 'verified' THEN excluded.last_stable_mtime_ns ELSE file_source_baselines.last_stable_mtime_ns END,
-                   association_reason = excluded.association_reason",
-                params![
-                    redact(source_id), generation,
-                    if verified { "verified" } else { "unavailable" },
-                    redact(&attempt.attempted_at),
-                    verified.then(|| redact(&attempt.attempted_at)),
-                    metadata.map(|m| redact(&m.r#type)),
-                    metadata.map(|m| redact(&m.device)),
-                    metadata.map(|m| redact(&m.inode)),
-                    metadata.map(|m| redact(&m.size)),
-                    metadata.map(|m| redact(&m.mtime_ns)),
-                    if verified { "verified" } else { "association_unverified" },
-                ],
-            )?;
-        }
-        tx.execute(
-            r#"INSERT INTO source_files (source_id, harness, display_path, generation, byte_offset, prefix_sha256)
-               VALUES (?, ?, ?, ?, ?, ?)
-               ON CONFLICT (source_id) DO UPDATE SET
-                 generation = excluded.generation,
-                 byte_offset = excluded.byte_offset,
-                 prefix_sha256 = excluded.prefix_sha256"#,
-            params![
-                redact(source_id),
-                redact(harness),
-                redact(display_path),
-                generation,
-                byte_offset,
-                redact(prefix_sha256)
-            ],
-        )?;
-        if let Some(c) = counters {
-            tx.execute(
-                r#"INSERT INTO codex_counters (
-                       source_id, generation, input_tokens, cached_input_tokens,
-                       cache_write_input_tokens, output_tokens, reasoning_output_tokens
-                   ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                   ON CONFLICT (source_id, generation) DO UPDATE SET
-                     input_tokens = excluded.input_tokens,
-                     cached_input_tokens = excluded.cached_input_tokens,
-                     cache_write_input_tokens = excluded.cache_write_input_tokens,
-                     output_tokens = excluded.output_tokens,
-                     reasoning_output_tokens = excluded.reasoning_output_tokens"#,
-                params![
-                    redact(source_id),
-                    generation,
-                    c.input_tokens,
-                    c.cached_input_tokens,
-                    c.cache_write_input_tokens,
-                    c.output_tokens,
-                    c.reasoning_output_tokens
-                ],
-            )?;
-        }
-        // Bulk-append into a temp table, then one conflict-tolerant insert.
-        // A prepared INSERT per row keeps DuckDB result memory growing with the file.
-        if !usages.is_empty() {
-            tx.execute_batch(
-                "CREATE TEMP TABLE usage_stage (
-                    source_key VARCHAR, harness VARCHAR, native_session VARCHAR,
-                    message_id VARCHAR, ts VARCHAR, seq BIGINT,
-                    input_uncached BIGINT, output_tokens BIGINT, cache_read BIGINT,
-                    cache_write BIGINT, reasoning BIGINT, currency_total DOUBLE,
-                    generation BIGINT, source_id VARCHAR, predecessor_source_key VARCHAR,
-                    predecessor_reason VARCHAR, prior_input_tokens BIGINT,
-                    prior_cached_input_tokens BIGINT, prior_cache_write_input_tokens BIGINT,
-                    prior_output_tokens BIGINT, prior_reasoning_output_tokens BIGINT,
-                    model VARCHAR, effort VARCHAR
-                )",
-            )?;
-            {
-                let mut appender = tx.appender("usage_stage")?;
-                for u in usages {
-                    appender.append_row(params![
-                        redact(&u.source_key),
-                        redact(&u.harness),
-                        redact(&u.native_session),
-                        u.message_id.as_deref().map(redact),
-                        u.ts.map(|t| t.to_rfc3339()),
-                        u.seq,
-                        u.input_uncached,
-                        u.output,
-                        u.cache_read,
-                        u.cache_write,
-                        u.reasoning,
-                        u.currency_total,
-                        u.generation,
-                        redact(source_id),
-                        u.predecessor_source_key.as_deref().map(redact),
-                        u.predecessor_reason.as_deref(),
-                        u.prior_input_tokens,
-                        u.prior_cached_input_tokens,
-                        u.prior_cache_write_input_tokens,
-                        u.prior_output_tokens,
-                        u.prior_reasoning_output_tokens,
-                        Option::<String>::None,
-                        Option::<String>::None
-                    ])?;
-                }
-                appender.flush()?;
-            }
-            tx.execute_batch(
-                "INSERT INTO usage_facts
-                 SELECT source_key, harness, native_session, message_id,
-                        CAST(ts AS TIMESTAMP), seq, input_uncached, output_tokens,
-                        cache_read, cache_write, reasoning, currency_total, generation,
-                        source_id, predecessor_source_key, predecessor_reason,
-                        prior_input_tokens, prior_cached_input_tokens,
-                        prior_cache_write_input_tokens, prior_output_tokens,
-                        prior_reasoning_output_tokens, model, effort
-                 FROM usage_stage
-                 ON CONFLICT (source_key) DO NOTHING;
-                 DROP TABLE usage_stage",
-            )?;
-        }
-        if !tools.is_empty() {
-            tx.execute_batch(
-                "CREATE TEMP TABLE tool_stage (
-                    source_key VARCHAR, harness VARCHAR, native_session VARCHAR,
-                    ts VARCHAR, seq BIGINT, tool_name VARCHAR, fingerprint VARCHAR,
-                    failed BOOLEAN, structured_write BOOLEAN, generation BIGINT,
-                    source_id VARCHAR, category VARCHAR
-                )",
-            )?;
-            {
-                let mut appender = tx.appender("tool_stage")?;
-                for t in tools {
-                    appender.append_row(params![
-                        redact(&t.source_key),
-                        redact(&t.harness),
-                        redact(&t.native_session),
-                        t.ts.map(|v| v.to_rfc3339()),
-                        t.seq,
-                        redact(&t.name),
-                        t.fingerprint.as_deref().map(redact),
-                        t.failed,
-                        t.structured_write,
-                        t.generation,
-                        redact(source_id),
-                        ToolCategory::classify_tool_name(&t.name).as_str()
-                    ])?;
-                }
-                appender.flush()?;
-            }
-            tx.execute_batch(
-                "INSERT INTO tool_facts
-                 SELECT source_key, harness, native_session, CAST(ts AS TIMESTAMP), seq,
-                        tool_name, fingerprint, failed, structured_write, generation, source_id, category
-                 FROM tool_stage
-                 ON CONFLICT (source_key) DO NOTHING;
-                 DROP TABLE tool_stage",
-            )?;
-        }
-        if !messages.is_empty() {
-            tx.execute_batch(Self::MESSAGE_FACTS_SCHEMA)?;
-            let mut stmt = tx.prepare(
-                "INSERT INTO message_facts
-                 VALUES (?, ?, ?, CAST(? AS TIMESTAMP), ?, ?, ?, ?, ?, ?, ?)
-                 ON CONFLICT (source_key) DO NOTHING",
-            )?;
-            for m in messages {
-                stmt.execute(params![
-                    redact(&m.source_key),
-                    redact(&m.harness),
-                    m.native_session.as_deref().map(redact),
-                    m.ts.map(|t| t.to_rfc3339()),
-                    m.seq,
-                    wire_name(&m.role)?,
-                    wire_name(&m.direction)?,
-                    m.modalities
-                        .iter()
-                        .map(wire_name)
-                        .collect::<Result<Vec<_>>>()?
-                        .join(","),
-                    wire_name(&m.grain)?,
-                    m.generation,
-                    redact(source_id),
-                ])?;
-            }
-        }
-        // A tool result appended after its call was stored settles the call's
-        // outcome again from every result seen so far (#37).
-        if !settled.is_empty() {
-            let mut settle_stmt =
-                tx.prepare("UPDATE tool_facts SET failed = ? WHERE source_key = ?")?;
-            for (source_key, failed) in settled {
-                settle_stmt.execute(params![failed, redact(source_key)])?;
-            }
-        }
-        if let Some(reader) = reader {
-            checkpoint(FileBatchStage::BeforeReaderReplacement)?;
-            let marker = format!(
-                "{READER_NAMESPACE}{READER_VERSION}:{}:{generation}",
-                redact(source_id)
-            );
-            tx.execute(
-                "DELETE FROM tool_facts WHERE source_key = ?",
-                params![marker],
-            )?;
-            tx.execute(
-                "INSERT INTO tool_facts (source_key, harness, native_session, ts, seq, tool_name, fingerprint, failed, structured_write, generation, source_id, category)
-                 VALUES (?, ?, ?, NULL, ?, ?, ?, NULL, FALSE, ?, ?, 'other')",
-                params![marker, redact(harness), reader.native_session.as_deref().map(redact).unwrap_or_default(),
-                    byte_offset, if reader.complete { READER_COMPLETE } else { READER_UNSUPPORTED },
-                    redact(prefix_sha256), generation, redact(source_id)],
-            )?;
-            checkpoint(FileBatchStage::AfterReaderReplacement)?;
-            checkpoint(FileBatchStage::BeforeSourceSessionUpdate)?;
-            tx.execute(
-                "UPDATE source_files SET native_session = ? WHERE source_id = ?",
-                params![
-                    reader.native_session.as_deref().map(redact),
-                    redact(source_id)
-                ],
-            )?;
-        }
-        checkpoint(FileBatchStage::BeforeCommit)?;
-        tx.commit()?;
-        Ok(())
+        let mut batch = IngestBatch::new(
+            source_id,
+            harness,
+            display_path,
+            generation,
+            byte_offset,
+            prefix_sha256,
+        );
+        batch.counters = counters;
+        batch.usages = usages;
+        batch.tools = tools;
+        batch.messages = messages;
+        batch.settled = settled;
+        batch.reader = reader;
+        batch.baseline = baseline;
+        self.commit_ingest_batch_internal(&batch, checkpoint)
     }
 
     /// `#82` shipped `process_identities` without `attribution`. Selected
@@ -1180,13 +1516,26 @@ impl AnalyticsStore {
         if identities.is_empty() && samples.is_empty() {
             return Ok(());
         }
+        let tx = self.conn.unchecked_transaction()?;
+        Self::commit_process_samples_in_tx(&tx, identities, samples)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    fn commit_process_samples_in_tx(
+        tx: &duckdb::Transaction<'_>,
+        identities: &[ProcessIdentityFact],
+        samples: &[ProcessSampleFact],
+    ) -> Result<()> {
+        if identities.is_empty() && samples.is_empty() {
+            return Ok(());
+        }
         let limits = |set: &std::collections::BTreeSet<crate::domain_v1::VisibilityLimit>| {
             set.iter()
                 .map(wire_name)
                 .collect::<Result<Vec<_>>>()
                 .map(|names| names.join(","))
         };
-        let tx = self.conn.unchecked_transaction()?;
         tx.execute_batch(Self::PROCESS_SAMPLES_SCHEMA)?;
         {
             let mut stmt = tx.prepare(
@@ -1243,7 +1592,6 @@ impl AnalyticsStore {
                 ])?;
             }
         }
-        tx.commit()?;
         Ok(())
     }
 
@@ -1253,6 +1601,15 @@ impl AnalyticsStore {
             return Ok(());
         }
         let tx = self.conn.unchecked_transaction()?;
+        Self::commit_session_edges_in_tx(&tx, edges)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    fn commit_session_edges_in_tx(tx: &Connection, edges: &[SessionEdgeFact]) -> Result<()> {
+        if edges.is_empty() {
+            return Ok(());
+        }
         tx.execute_batch(Self::SESSION_EDGES_SCHEMA)?;
         let mut stmt = tx.prepare(
             "INSERT INTO session_edges
@@ -1297,8 +1654,6 @@ impl AnalyticsStore {
                 edge.generation,
             ])?;
         }
-        drop(stmt);
-        tx.commit()?;
         Ok(())
     }
 
@@ -1308,6 +1663,15 @@ impl AnalyticsStore {
             return Ok(());
         }
         let tx = self.conn.unchecked_transaction()?;
+        Self::commit_security_facts_in_tx(&tx, facts)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    fn commit_security_facts_in_tx(tx: &Connection, facts: &[SecurityFact]) -> Result<()> {
+        if facts.is_empty() {
+            return Ok(());
+        }
         tx.execute_batch(Self::SECURITY_FACTS_SCHEMA)?;
         let mut stmt = tx.prepare(
             "INSERT INTO security_facts
@@ -1328,8 +1692,6 @@ impl AnalyticsStore {
                 fact.generation,
             ])?;
         }
-        drop(stmt);
-        tx.commit()?;
         Ok(())
     }
 
@@ -1364,6 +1726,56 @@ impl AnalyticsStore {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
+    /// Deterministic snapshot of all canonical ingest tables for crash-boundary
+    /// and replay verification (`MTN-20 / D4a`). Normalizes wall-clock attempt
+    /// timestamps on `file_source_baselines` while keeping all provenance,
+    /// inode/size/mtime, watermark, and fact columns exact.
+    #[doc(hidden)]
+    pub fn canonical_table_snapshot(&self) -> Result<Vec<(String, Vec<String>)>> {
+        let tables = [
+            "source_files",
+            "file_source_baselines",
+            "codex_counters",
+            "usage_facts",
+            "tool_facts",
+            "message_facts",
+            "skill_facts",
+            "session_edges",
+            "security_facts",
+            "session_facts",
+            "process_identities",
+            "process_samples",
+            "warnings",
+        ];
+        let mut out = Vec::with_capacity(tables.len());
+        for table in tables {
+            let sql = if table == "file_source_baselines" {
+                "SELECT CAST(to_json(struct_pack(
+                    source_id := source_id,
+                    generation := generation,
+                    metadata_version := metadata_version,
+                    latest_association := latest_association,
+                    has_observed_at := (last_stable_observed_at IS NOT NULL),
+                    last_stable_type := last_stable_type,
+                    last_stable_device := last_stable_device,
+                    last_stable_inode := last_stable_inode,
+                    last_stable_size := last_stable_size,
+                    last_stable_mtime_ns := last_stable_mtime_ns,
+                    association_reason := association_reason
+                 )) AS VARCHAR) FROM file_source_baselines ORDER BY 1"
+                    .to_string()
+            } else {
+                format!("SELECT CAST(to_json(t) AS VARCHAR) FROM {table} t ORDER BY 1")
+            };
+            let mut stmt = self.conn.prepare(&sql)?;
+            let rows = stmt
+                .query_map([], |row| row.get(0))?
+                .collect::<Result<Vec<String>, _>>()?;
+            out.push((table.to_string(), rows));
+        }
+        Ok(out)
+    }
+
     /// Returns `true` if `source_id` has an existing `session_facts` row latched to a header conflict.
     pub fn source_has_header_conflict(&self, source_id: &str) -> Result<bool> {
         let exists: i64 = self.conn.query_row(
@@ -1379,6 +1791,49 @@ impl AnalyticsStore {
         )?;
         let mut rows = stmt.query(params![redact(source_id)])?;
         Ok(rows.next()?.is_some())
+    }
+
+    /// Returns existing `session_facts` rows for `source_id`, ordered by `source_key`.
+    pub fn source_session_facts(&self, source_id: &str) -> Result<Vec<SessionFact>> {
+        let exists: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'session_facts'",
+            [],
+            |row| row.get(0),
+        )?;
+        if exists == 0 {
+            return Ok(Vec::new());
+        }
+        let mut stmt = self.conn.prepare(
+            "SELECT source_key, source_id, harness, native_session,
+                    COALESCE(link_id, 'unlinked'), unlinked_reason,
+                    COALESCE(header_conflict, FALSE), generation
+             FROM session_facts WHERE source_id = ? ORDER BY source_key",
+        )?;
+        let rows = stmt.query_map(params![redact(source_id)], |row| {
+            Ok(SessionFact {
+                source_key: row.get(0)?,
+                source_id: row.get(1)?,
+                harness: row.get(2)?,
+                native_session: row.get(3)?,
+                link_id: row.get(4)?,
+                unlinked_reason: row.get(5)?,
+                header_conflict: row.get(6)?,
+                generation: row.get(7)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    /// Returns the stored `source_files.native_session` for `source_id`, if any.
+    pub fn source_native_session(&self, source_id: &str) -> Result<Option<String>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT native_session FROM source_files WHERE source_id = ?")?;
+        let mut rows = stmt.query(params![redact(source_id)])?;
+        match rows.next()? {
+            Some(row) => Ok(row.get(0)?),
+            None => Ok(None),
+        }
     }
 
     /// Upsert session-level link facts (`MTN-19 / D3`).
@@ -1404,6 +1859,19 @@ impl AnalyticsStore {
             return Ok(());
         }
         let tx = self.conn.unchecked_transaction()?;
+        Self::commit_session_facts_retiring_in_tx(&tx, facts, retired_fallback_keys)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    fn commit_session_facts_retiring_in_tx(
+        tx: &Connection,
+        facts: &[SessionFact],
+        retired_fallback_keys: &[String],
+    ) -> Result<()> {
+        if facts.is_empty() && retired_fallback_keys.is_empty() {
+            return Ok(());
+        }
         tx.execute_batch(Self::SESSION_FACTS_SCHEMA)?;
         if !retired_fallback_keys.is_empty() {
             let mut retire_stmt = tx.prepare(
@@ -1462,8 +1930,6 @@ impl AnalyticsStore {
                 fact.generation,
             ])?;
         }
-        drop(stmt);
-        tx.commit()?;
         Ok(())
     }
 
@@ -1586,13 +2052,19 @@ impl AnalyticsStore {
         }
         let tx = self.conn.unchecked_transaction()?;
         self.invalidate_semantic()?;
-        {
-            let mut stmt = tx.prepare("UPDATE tool_facts SET category = ? WHERE source_key = ?")?;
-            for (source_key, category) in categories {
-                stmt.execute(params![category.as_str(), redact(source_key)])?;
-            }
-        }
+        Self::record_tool_categories_in_tx(&tx, categories)?;
         tx.commit()?;
+        Ok(())
+    }
+
+    fn record_tool_categories_in_tx(
+        tx: &Connection,
+        categories: &[(String, ToolCategory)],
+    ) -> Result<()> {
+        let mut stmt = tx.prepare("UPDATE tool_facts SET category = ? WHERE source_key = ?")?;
+        for (source_key, category) in categories {
+            stmt.execute(params![category.as_str(), redact(source_key)])?;
+        }
         Ok(())
     }
 
@@ -1617,18 +2089,24 @@ impl AnalyticsStore {
         }
         let tx = self.conn.unchecked_transaction()?;
         self.invalidate_semantic()?;
-        {
-            let mut stmt =
-                tx.prepare("UPDATE usage_facts SET model = ?, effort = ? WHERE source_key = ?")?;
-            for (source_key, model, effort) in models {
-                stmt.execute(params![
-                    model.as_deref().map(redact),
-                    effort.as_deref().map(redact),
-                    redact(source_key)
-                ])?;
-            }
-        }
+        Self::record_usage_models_in_tx(&tx, models)?;
         tx.commit()?;
+        Ok(())
+    }
+
+    fn record_usage_models_in_tx(
+        tx: &Connection,
+        models: &[(String, Option<String>, Option<String>)],
+    ) -> Result<()> {
+        let mut stmt =
+            tx.prepare("UPDATE usage_facts SET model = ?, effort = ? WHERE source_key = ?")?;
+        for (source_key, model, effort) in models {
+            stmt.execute(params![
+                model.as_deref().map(redact),
+                effort.as_deref().map(redact),
+                redact(source_key)
+            ])?;
+        }
         Ok(())
     }
 
@@ -4117,5 +4595,308 @@ mod tests {
         assert_eq!(joined_link, None);
 
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn ingest_batch_fault_at_every_stage_rolls_back_on_disk_and_reopen_replays_cleanly() {
+        fn full_snapshot(store: &AnalyticsStore) -> Vec<(String, Vec<String>)> {
+            [
+                "source_files",
+                "file_source_baselines",
+                "codex_counters",
+                "usage_facts",
+                "tool_facts",
+                "message_facts",
+                "skill_facts",
+                "session_edges",
+                "security_facts",
+                "session_facts",
+                "process_identities",
+                "process_samples",
+                "warnings",
+            ]
+            .iter()
+            .map(|table| {
+                let sql = format!("SELECT CAST(to_json(t) AS VARCHAR) FROM {table} t ORDER BY 1");
+                let mut stmt = store.conn.prepare(&sql).unwrap();
+                let rows = stmt
+                    .query_map([], |row| row.get(0))
+                    .unwrap()
+                    .collect::<Result<Vec<String>, _>>()
+                    .unwrap();
+                ((*table).to_string(), rows)
+            })
+            .collect()
+        }
+
+        let ts = parse_utc_time("2026-10-15T12:00:00Z").unwrap();
+        let seed_store = |store: &AnalyticsStore| {
+            // Seed generation 1 with a pending tool to settle and a fallback session_fact to retire.
+            let old_tool = ToolFact {
+                source_key: "src-1:1:1:codex:0".into(),
+                harness: "codex".into(),
+                native_session: "session:old".into(),
+                ts: Some(ts),
+                seq: 1,
+                name: CODEX_COMMAND.into(),
+                fingerprint: Some("fp-0".into()),
+                failed: None,
+                structured_write: false,
+                generation: 1,
+            };
+            let fallback_session = SessionFact {
+                source_key: "src-1:codex:session:fallback".into(),
+                source_id: "src-1".into(),
+                harness: "codex".into(),
+                native_session: "session:fallback".into(),
+                link_id: "unlinked".into(),
+                unlinked_reason: Some("missing_native_session".into()),
+                header_conflict: false,
+                generation: 1,
+            };
+            let retired: [String; 0] = [];
+            let prefix_a = "a".repeat(64);
+            let mut seed_batch =
+                IngestBatch::new("src-1", "codex", "sealed-path", 1, 10, &prefix_a);
+            seed_batch.tools = std::slice::from_ref(&old_tool);
+            seed_batch.session_facts = std::slice::from_ref(&fallback_session);
+            seed_batch.retired_fallback_keys = &retired;
+            let seed_reader = ReaderState {
+                complete: false,
+                native_session: Some("session:fallback".into()),
+            };
+            seed_batch.reader = Some(&seed_reader);
+            store.commit_ingest_batch(&seed_batch).unwrap();
+            store.checkpoint().unwrap();
+        };
+
+        let baseline = FileBaselineAttempt {
+            attempted_at: "2026-10-15T12:00:00Z".into(),
+            metadata: None,
+        };
+        let counters = CodexCounters {
+            input_tokens: 100,
+            cached_input_tokens: 20,
+            cache_write_input_tokens: 5,
+            output_tokens: 40,
+            reasoning_output_tokens: 10,
+        };
+        let usage = UsageFact {
+            source_key: "src-1:2:2".into(),
+            harness: "codex".into(),
+            native_session: "session:real".into(),
+            message_id: Some("msg-2".into()),
+            ts: Some(ts),
+            seq: 2,
+            input_uncached: 80,
+            output: 40,
+            cache_read: 20,
+            cache_write: 5,
+            reasoning: 10,
+            currency_total: None,
+            generation: 2,
+            predecessor_source_key: None,
+            predecessor_reason: None,
+            prior_input_tokens: None,
+            prior_cached_input_tokens: None,
+            prior_cache_write_input_tokens: None,
+            prior_output_tokens: None,
+            prior_reasoning_output_tokens: None,
+        };
+        let usage_models = [(
+            "src-1:2:2".to_string(),
+            Some("gpt-5".to_string()),
+            Some("high".to_string()),
+        )];
+        let tool = ToolFact {
+            source_key: "src-1:2:2:codex:0".into(),
+            harness: "codex".into(),
+            native_session: "session:real".into(),
+            ts: Some(ts),
+            seq: 2,
+            name: CODEX_COMMAND.into(),
+            fingerprint: Some("fp-2".into()),
+            failed: Some(false),
+            structured_write: true,
+            generation: 2,
+        };
+        let tool_categories = [("src-1:2:2:codex:0".to_string(), ToolCategory::EngBuildTest)];
+        let settled = [("src-1:1:1:codex:0".to_string(), Some(false))];
+        let message = MessageFact {
+            source_key: "src-1:2:2:msg:0".into(),
+            harness: "codex".into(),
+            native_session: Some("session:real".into()),
+            ts: Some(ts),
+            seq: 2,
+            role: crate::domain_v1::MessageRole::Assistant,
+            direction: crate::domain_v1::Direction::Outbound,
+            modalities: std::collections::BTreeSet::from([crate::domain_v1::Modality::Text]),
+            grain: crate::domain_v1::Grain::Message,
+            generation: 2,
+        };
+        let skill = SkillFact {
+            source_key: "src-1:2:2:skill:0".into(),
+            seat: "session:real".into(),
+            skill: "commit".into(),
+            invoked: true,
+        };
+        let edge = SessionEdgeFact {
+            source_key: "src-1:2:2:edge:0".into(),
+            source_id: "src-1".into(),
+            harness: "codex".into(),
+            parent_session: "session:real".into(),
+            child_session: "session:child".into(),
+            relation: "spawn".into(),
+            status: "started".into(),
+            observed_at: Some(ts),
+            evidence_kind: "thread_spawn".into(),
+            generation: 2,
+        };
+        let sec = SecurityFact {
+            source_key: "src-1:2:2:sec:0".into(),
+            source_id: "src-1".into(),
+            harness: "codex".into(),
+            native_session: Some("session:real".into()),
+            ts: Some(ts),
+            kind: "sandbox_policy".into(),
+            value: "workspace-write".into(),
+            source_field: "payload.sandbox_policy.type".into(),
+            generation: 2,
+        };
+        let session_fact = SessionFact {
+            source_key: "src-1:codex:session:real".into(),
+            source_id: "src-1".into(),
+            harness: "codex".into(),
+            native_session: "session:real".into(),
+            link_id: "a".repeat(64),
+            unlinked_reason: None,
+            header_conflict: false,
+            generation: 2,
+        };
+        let retired_keys = ["src-1:codex:session:fallback".to_string()];
+        let warning = WarningNote {
+            path: "sealed-path".into(),
+            line: Some(2),
+            reason: "synthetic-warning".into(),
+        };
+        let reader = ReaderState {
+            complete: true,
+            native_session: Some("session:real".into()),
+        };
+
+        let prefix_b = "b".repeat(64);
+        let make_batch = || IngestBatch {
+            source_id: "src-1",
+            harness: "codex",
+            display_path: "sealed-path",
+            generation: 2,
+            byte_offset: 128,
+            prefix_sha256: &prefix_b,
+            counters: Some(&counters),
+            usages: std::slice::from_ref(&usage),
+            usage_models: &usage_models,
+            tools: std::slice::from_ref(&tool),
+            tool_categories: &tool_categories,
+            settled: &settled,
+            messages: std::slice::from_ref(&message),
+            skills: std::slice::from_ref(&skill),
+            session_edges: std::slice::from_ref(&edge),
+            security_facts: std::slice::from_ref(&sec),
+            session_facts: std::slice::from_ref(&session_fact),
+            retired_fallback_keys: &retired_keys,
+            warnings: std::slice::from_ref(&warning),
+            reader: Some(&reader),
+            baseline: Some(&baseline),
+        };
+
+        let dir = std::env::temp_dir().join(format!("dendro-d4a-stages-{}", rand::random::<u64>()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let seed_db = dir.join("seed.duckdb");
+        let before = {
+            let store = AnalyticsStore::open_path(&seed_db, "kid").unwrap();
+            seed_store(&store);
+            full_snapshot(&store)
+        };
+
+        let ref_db = dir.join("uninterrupted.duckdb");
+        std::fs::copy(&seed_db, &ref_db).unwrap();
+        let expected = {
+            let store = AnalyticsStore::open_existing(&ref_db, "kid").unwrap();
+            store.commit_ingest_batch(&make_batch()).unwrap();
+            store.checkpoint().unwrap();
+            full_snapshot(&store)
+        };
+
+        let all_stages = [
+            IngestBatchStage::AfterBaseline,
+            IngestBatchStage::AfterCounters,
+            IngestBatchStage::AfterUsageFacts,
+            IngestBatchStage::AfterUsageModels,
+            IngestBatchStage::AfterToolFacts,
+            IngestBatchStage::AfterToolCategories,
+            IngestBatchStage::AfterToolSettlement,
+            IngestBatchStage::AfterMessageFacts,
+            IngestBatchStage::AfterSkillFacts,
+            IngestBatchStage::AfterSessionEdges,
+            IngestBatchStage::AfterSecurityFacts,
+            IngestBatchStage::AfterSessionFacts,
+            IngestBatchStage::AfterWarnings,
+            IngestBatchStage::AfterWatermark,
+            IngestBatchStage::BeforeReaderReplacement,
+            IngestBatchStage::AfterReaderReplacement,
+            IngestBatchStage::BeforeSourceSessionUpdate,
+            IngestBatchStage::BeforeCommit,
+        ];
+
+        for (idx, stage) in all_stages.into_iter().enumerate() {
+            let db_path = dir.join(format!("stage_{idx}.duckdb"));
+            std::fs::copy(&seed_db, &db_path).unwrap();
+            {
+                let store = AnalyticsStore::open_existing(&db_path, "kid").unwrap();
+                let mut reached = false;
+                let res = store.commit_ingest_batch_with_hook(&make_batch(), |at| {
+                    if at == stage {
+                        reached = true;
+                        Err(anyhow!("injected failpoint at {stage:?}"))
+                    } else {
+                        Ok(())
+                    }
+                });
+                assert!(reached, "must reach stage {stage:?}");
+                assert!(
+                    res.unwrap_err().to_string().contains("injected failpoint"),
+                    "must fail at {stage:?}"
+                );
+                assert_eq!(
+                    full_snapshot(&store),
+                    before,
+                    "in-memory rollback at {stage:?}"
+                );
+            }
+
+            // Reopen from disk and verify NOTHING from the failed batch persisted.
+            let reopened = AnalyticsStore::open_existing(&db_path, "kid").unwrap();
+            assert_eq!(
+                full_snapshot(&reopened),
+                before,
+                "reopened DB after crash at {stage:?} must contain nothing from failed batch"
+            );
+            assert_eq!(
+                reopened.source_state("src-1").unwrap(),
+                Some((1, 10, "a".repeat(64))),
+                "watermark unchanged at {stage:?}"
+            );
+
+            // Re-run cleanly and verify exact convergence to uninterrupted run.
+            reopened.commit_ingest_batch(&make_batch()).unwrap();
+            assert_eq!(
+                full_snapshot(&reopened),
+                expected,
+                "replay after {stage:?} must match uninterrupted state"
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
