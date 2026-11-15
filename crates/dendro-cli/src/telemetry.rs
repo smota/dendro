@@ -6,6 +6,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const DEADLINE: Duration = Duration::from_millis(50);
 const QUEUE: usize = 32;
+const MAX_CONFIG: u64 = 16 * 1024;
 static EXPORTER: OnceLock<Option<Exporter>> = OnceLock::new();
 
 struct Config {
@@ -40,6 +41,22 @@ impl Config {
             .ok()?;
         (address.ip().is_loopback() && address.port() != 0).then_some(Self { address })
     }
+    fn load_file(path: &std::path::Path) -> Option<Self> {
+        if !std::fs::metadata(path).ok()?.is_file() {
+            return None;
+        }
+        let file = std::fs::File::open(path).ok()?;
+        let metadata = file.metadata().ok()?;
+        if !metadata.is_file() || metadata.len() > MAX_CONFIG {
+            return None;
+        }
+        let mut input = String::new();
+        file.take(MAX_CONFIG + 1).read_to_string(&mut input).ok()?;
+        if input.len() as u64 > MAX_CONFIG {
+            return None;
+        }
+        Self::parse(&input)
+    }
     fn load() -> Option<Self> {
         if [OFF_SWITCH, "OTEL_SDK_DISABLED"]
             .iter()
@@ -47,8 +64,13 @@ impl Config {
         {
             return None;
         }
-        let input = dendro_core::read_consumer_env()?;
-        Self::parse(&input)
+        let root = std::env::var_os("XDG_CONFIG_HOME")
+            .map(std::path::PathBuf::from)
+            .or_else(|| {
+                std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config"))
+            })?;
+        let path = root.join("observability/consumer.env");
+        Self::load_file(&path)
     }
 }
 
@@ -420,5 +442,36 @@ mod tests {
         let start = Instant::now();
         exporter.enqueue(vec![2]);
         assert!(start.elapsed() < Duration::from_millis(20));
+    }
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_consumer_env_still_loads_for_telemetry() {
+        let dir = std::env::temp_dir().join(format!(
+            "dendro-telemetry-symlink-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let obs_dir = dir.join("observability");
+        std::fs::create_dir_all(&obs_dir).unwrap();
+        let target = dir.join("dotfiles_consumer.env");
+        std::fs::write(
+            &target,
+            "OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:24318\n",
+        )
+        .unwrap();
+        let linked = obs_dir.join("consumer.env");
+        std::os::unix::fs::symlink(&target, &linked).unwrap();
+
+        let cfg =
+            Config::load_file(&linked).expect("telemetry must still load symlinked consumer.env");
+        assert_eq!(cfg.address.port(), 24318);
+        assert!(
+            dendro_core::read_consumer_env_from(&linked).is_none(),
+            "link-id strict loader refuses symlinked consumer.env"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

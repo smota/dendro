@@ -5,9 +5,8 @@ This product includes software developed by Samuel Mota (Move the Needle)
 and contributors (https://github.com/smota/dendro).
 
 Third-Party & Shared Contract Notices:
-- Agent OTel Bridge (`smota/agent-otel-bridge`) — `link-id-v1` Keyed Session-to-Trace Link Contract (`docs/contracts/link-id-v1/`):
-  Copyright 2026 Samuel Mota (Move the Needle).
-  This product includes software developed by Samuel Mota / Move the Needle (https://movetheneedle.ai).
+- agent-otel-bridge: High-Performance OpenTelemetry Bridge for AI CLI Agent Harnesses (`smota/agent-otel-bridge`) — `link-id-v1` Keyed Session-to-Trace Link Contract (`docs/contracts/link-id-v1/`):
+  Copyright 2026 Samuel Mota and agent-otel-bridge contributors.
   Licensed under the Apache License, Version 2.0 (`SPDX-License-Identifier: Apache-2.0`; see `docs/contracts/link-id-v1/LICENSE`).
 
 Trademarks & Brand Assets:

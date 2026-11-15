@@ -15,7 +15,10 @@ mod security_facts;
 pub mod snapshot;
 pub mod stream;
 
-pub use ingest::{ingest_staged, ingest_staged_with_manifest, SourceRoot};
+pub use ingest::{
+    ingest_staged, ingest_staged_with_link_config, ingest_staged_with_manifest,
+    ingest_staged_with_manifest_and_link_config, SourceRoot,
+};
 
 pub use claude::ClaudeConnector;
 pub use codex::CodexConnector;

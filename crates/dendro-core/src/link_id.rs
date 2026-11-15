@@ -545,29 +545,49 @@ const FORBIDDEN_K_ORG_VARS: &[&str] = &[
     "K_ORG_FILE",
 ];
 
-fn is_k_org_var_name(name: &str) -> bool {
-    let upper = name.trim().to_ascii_uppercase();
-    FORBIDDEN_K_ORG_VARS.contains(&upper.as_str())
-        || upper.contains("_K_ORG")
-        || upper.starts_with("K_ORG")
+fn strip_export_prefix(name: &str) -> &str {
+    let trimmed = name.trim();
+    if let Some(rest) = trimmed.strip_prefix("export") {
+        if rest.starts_with(char::is_whitespace) {
+            return rest.trim();
+        }
+    }
+    trimmed
 }
 
-/// Resolves the canonical `consumer.env` path (`$XDG_CONFIG_HOME/observability/consumer.env`
-/// or `$HOME/.config/observability/consumer.env`). Never resolves relative to the current directory.
+fn is_k_org_var_name(name: &str) -> bool {
+    let cleaned = strip_export_prefix(name);
+    FORBIDDEN_K_ORG_VARS
+        .iter()
+        .any(|candidate| candidate.eq_ignore_ascii_case(cleaned))
+}
+
 #[must_use]
-pub fn consumer_env_path() -> Option<PathBuf> {
-    let root = std::env::var_os("XDG_CONFIG_HOME")
+fn consumer_env_path_from_vars(
+    xdg_config_home: Option<&std::ffi::OsStr>,
+    home: Option<&std::ffi::OsStr>,
+) -> Option<PathBuf> {
+    let root = xdg_config_home
         .filter(|v| !v.is_empty())
         .map(PathBuf::from)
         .or_else(|| {
-            std::env::var_os("HOME")
-                .filter(|v| !v.is_empty())
+            home.filter(|v| !v.is_empty())
                 .map(|h| PathBuf::from(h).join(".config"))
         })?;
     if !root.is_absolute() {
         return None;
     }
     Some(root.join("observability/consumer.env"))
+}
+
+/// Resolves the canonical `consumer.env` path (`$XDG_CONFIG_HOME/observability/consumer.env`
+/// or `$HOME/.config/observability/consumer.env`). Never resolves relative to the current directory.
+#[must_use]
+pub fn consumer_env_path() -> Option<PathBuf> {
+    consumer_env_path_from_vars(
+        std::env::var_os("XDG_CONFIG_HOME").as_deref(),
+        std::env::var_os("HOME").as_deref(),
+    )
 }
 
 /// Reads `$XDG_CONFIG_HOME/observability/consumer.env` (or `$HOME/.config/observability/consumer.env`)
@@ -891,12 +911,11 @@ impl SessionLinkConfig {
                     Err(KeyFileLoadError::Invalid) => None,
                 }
             }
-        } else if let Some(default_file) = private_data_root
+        } else if let Some(root_path) = private_data_root
             .filter(|root| root.is_absolute())
-            .map(|root| root.join("link.key"))
-            .filter(|path| std::fs::symlink_metadata(path).is_ok())
+            .filter(|root| std::fs::symlink_metadata(root.join("link.key")).is_ok())
         {
-            match load_link_key_file(&default_file) {
+            match load_link_key_from_private_root(root_path) {
                 Ok(k) => Some(k),
                 Err(KeyFileLoadError::KOrgPresent) => {
                     k_org_rejected = true;
@@ -1035,38 +1054,120 @@ enum KeyFileLoadError {
     KOrgPresent,
 }
 
+fn load_link_key_from_private_root(root_path: &Path) -> Result<LinkKey, KeyFileLoadError> {
+    #[cfg(any(windows, target_os = "linux"))]
+    {
+        let root = crate::platform_v1::open_existing_private_root(root_path)
+            .map_err(|_| KeyFileLoadError::Invalid)?;
+        let name = crate::platform_v1::parse_child_name(
+            "link.key",
+            crate::platform_v1::current_native_platform(),
+        )
+        .map_err(|_| KeyFileLoadError::Invalid)?;
+        let verified = crate::platform_v1::open_existing_private_file(&root, &name)
+            .map_err(|_| KeyFileLoadError::Invalid)?;
+        if verified.metadata().size > MAX_CONSUMER_ENV_BYTES {
+            return Err(KeyFileLoadError::Invalid);
+        }
+        let res = read_and_parse_link_key_handle(verified.into_file());
+        drop(root);
+        res
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
+    {
+        load_link_key_file(&root_path.join("link.key"))
+    }
+}
+
 fn load_link_key_file(path: &Path) -> Result<LinkKey, KeyFileLoadError> {
-    use std::io::Read;
     if !path.is_absolute() {
         return Err(KeyFileLoadError::Invalid);
     }
-    let sym = std::fs::symlink_metadata(path).map_err(|_| KeyFileLoadError::Invalid)?;
-    if !sym.file_type().is_file() || sym.len() > MAX_CONSUMER_ENV_BYTES {
-        return Err(KeyFileLoadError::Invalid);
-    }
-    #[cfg(unix)]
+    #[cfg(windows)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        if sym.permissions().mode() & 0o077 != 0 {
-            return Err(KeyFileLoadError::Invalid);
+        let parent = path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .ok_or(KeyFileLoadError::Invalid)?;
+        let file_name = path.file_name().ok_or(KeyFileLoadError::Invalid)?;
+        let child = crate::platform_v1::parse_child_os(
+            file_name,
+            crate::platform_v1::NativePlatform::Windows,
+        )
+        .map_err(|_| KeyFileLoadError::Invalid)?;
+        if let Ok(root) = crate::platform_v1::open_existing_private_root(parent) {
+            let verified = crate::platform_v1::open_existing_private_file(&root, &child)
+                .map_err(|_| KeyFileLoadError::Invalid)?;
+            if verified.metadata().size > MAX_CONSUMER_ENV_BYTES {
+                return Err(KeyFileLoadError::Invalid);
+            }
+            let res = read_and_parse_link_key_handle(verified.into_file());
+            drop(root);
+            return res;
         }
-    }
-    let file = std::fs::File::open(path).map_err(|_| KeyFileLoadError::Invalid)?;
-    let held = file.metadata().map_err(|_| KeyFileLoadError::Invalid)?;
-    if !held.is_file() || held.len() > MAX_CONSUMER_ENV_BYTES {
-        return Err(KeyFileLoadError::Invalid);
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::{MetadataExt, PermissionsExt};
-        if held.permissions().mode() & 0o077 != 0
-            || held.nlink() != 1
-            || sym.dev() != held.dev()
-            || sym.ino() != held.ino()
+        // When an explicit DENDRO_LINK_KEY_FILE resides in a directory whose DACL is not
+        // `SE_DACL_PROTECTED` (so `open_existing_private_root` refuses the parent), `platform_v1`
+        // still enforces no-follow reparse rejection, regular-file kind, `links == 1` hard-link
+        // rejection, size cap, and 128-bit `FILE_ID_INFO` handle identity matching. Full DACL/owner
+        // evaluation and ancestor pinning require placing the key file in a `SE_DACL_PROTECTED` root.
+        let no_follow =
+            crate::platform_v1::reopen_metadata(path).map_err(|_| KeyFileLoadError::Invalid)?;
+        if no_follow.reparse
+            || no_follow.kind != crate::platform_v1::ObjectKind::RegularFile
+            || no_follow.size > MAX_CONSUMER_ENV_BYTES
+            || !crate::platform_v1::private_regular_links(no_follow.kind, no_follow.links)
+                .is_allow()
         {
             return Err(KeyFileLoadError::Invalid);
         }
+        let file = std::fs::File::open(path).map_err(|_| KeyFileLoadError::Invalid)?;
+        let held = crate::platform_v1::metadata_from_handle(&file)
+            .map_err(|_| KeyFileLoadError::Invalid)?;
+        if held.reparse
+            || held.kind != crate::platform_v1::ObjectKind::RegularFile
+            || held.size > MAX_CONSUMER_ENV_BYTES
+            || !crate::platform_v1::private_regular_links(held.kind, held.links).is_allow()
+            || held.identity != no_follow.identity
+        {
+            return Err(KeyFileLoadError::Invalid);
+        }
+        read_and_parse_link_key_handle(file)
     }
+    #[cfg(not(windows))]
+    {
+        let sym = std::fs::symlink_metadata(path).map_err(|_| KeyFileLoadError::Invalid)?;
+        if !sym.file_type().is_file() || sym.len() > MAX_CONSUMER_ENV_BYTES {
+            return Err(KeyFileLoadError::Invalid);
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if sym.permissions().mode() & 0o077 != 0 {
+                return Err(KeyFileLoadError::Invalid);
+            }
+        }
+        let file = std::fs::File::open(path).map_err(|_| KeyFileLoadError::Invalid)?;
+        let held = file.metadata().map_err(|_| KeyFileLoadError::Invalid)?;
+        if !held.is_file() || held.len() > MAX_CONSUMER_ENV_BYTES {
+            return Err(KeyFileLoadError::Invalid);
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::{MetadataExt, PermissionsExt};
+            if held.permissions().mode() & 0o077 != 0
+                || held.nlink() != 1
+                || sym.dev() != held.dev()
+                || sym.ino() != held.ino()
+            {
+                return Err(KeyFileLoadError::Invalid);
+            }
+        }
+        read_and_parse_link_key_handle(file)
+    }
+}
+
+fn read_and_parse_link_key_handle(file: std::fs::File) -> Result<LinkKey, KeyFileLoadError> {
+    use std::io::Read;
     let mut raw = String::new();
     file.take(MAX_CONSUMER_ENV_BYTES + 1)
         .read_to_string(&mut raw)
@@ -1109,8 +1210,8 @@ fn parse_consumer_env_vars(content: &str) -> BTreeMap<String, String> {
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
-        if let Some((key, value)) = trimmed.split_once('=') {
-            let key = key.trim();
+        if let Some((raw_key, value)) = trimmed.split_once('=') {
+            let key = strip_export_prefix(raw_key);
             let value = value.trim().trim_matches('"').trim_matches('\'');
             if key == "DENDRO_LINK_KEY_FILE" || key == "AGENT_OTEL_LINK_KEY_FILE" {
                 // Key-file paths are accepted ONLY from the process environment, never consumer.env.
@@ -1366,8 +1467,16 @@ mod tests {
         assert_eq!(digest_file, expected_digest_file);
 
         // Verify vendored LICENSE exists alongside the contract bundle without altering CONTRACT-DIGEST
-        let license_text =
-            std::fs::read_to_string(root.join("LICENSE")).expect("read vendored contract LICENSE");
+        // and matches AOB `origin/main:LICENSE` byte-for-byte.
+        let license_bytes =
+            std::fs::read(root.join("LICENSE")).expect("read vendored contract LICENSE");
+        assert!(!license_bytes.contains(&b'\r'), "CRLF in vendored LICENSE");
+        assert_eq!(
+            sha256_bytes_hex(&license_bytes),
+            "b67a6ec8a9785d251a91a571a9aa22ed030a4a7b5ad5ada20c9386a095849e88",
+            "vendored LICENSE must match AOB origin/main:LICENSE SHA-256"
+        );
+        let license_text = std::str::from_utf8(&license_bytes).expect("utf-8 LICENSE");
         assert!(license_text.contains("Apache License"));
         assert!(license_text.contains("Version 2.0, January 2004"));
 
@@ -1784,6 +1893,7 @@ mod tests {
         assert_ne!(k1, k3);
     }
 
+    #[cfg(not(any(windows, target_os = "linux")))]
     fn write_private_key_file(path: &Path, content: &str) {
         std::fs::write(path, content).unwrap();
         #[cfg(unix)]
@@ -1795,15 +1905,28 @@ mod tests {
 
     #[test]
     fn config_precedence_and_cwd_isolation_and_key_file_rules() {
-        let dir = std::env::temp_dir().join(format!(
-            "dendro-link-cfg-test-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
+        #[cfg(any(windows, target_os = "linux"))]
+        let dir = {
+            let root = crate::platform_v1::create_user_private_root_with_choice(
+                "dendro-link-cfg-",
+                &crate::platform_v1::StorageRootChoice::UserProfile,
+            )
+            .unwrap();
+            root.path().to_path_buf()
+        };
+        #[cfg(not(any(windows, target_os = "linux")))]
+        let dir = {
+            let d = std::env::temp_dir().join(format!(
+                "dendro-link-cfg-test-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            std::fs::create_dir_all(&d).unwrap();
+            d
+        };
 
         let key_env_hex = "11".repeat(32);
         let key_file_hex = "22".repeat(32);
@@ -1816,7 +1939,10 @@ mod tests {
                 .0
         };
 
-        // 1. A consumer.env in the CWD (or relative path) is NEVER read
+        // 1. CWD isolation holds by construction (`consumer_env_path`, `default_private_data_root`,
+        //    `read_consumer_env_from`, and `load_link_key_file` require `path.is_absolute()` and
+        //    never consult `std::env::current_dir()`). Verify that relative XDG_CONFIG_HOME / HOME
+        //    paths pointing at a populated `observability/consumer.env` resolve to `None` and are ignored.
         let cwd_obs_dir = dir.join("cwd_sim").join("observability");
         std::fs::create_dir_all(&cwd_obs_dir).unwrap();
         let cwd_consumer = cwd_obs_dir.join("consumer.env");
@@ -1831,6 +1957,27 @@ mod tests {
             read_consumer_env_from(Path::new("observability/consumer.env")).is_none(),
             "relative consumer.env path must always be refused"
         );
+        for (rel_xdg, rel_home) in [
+            (Some(std::ffi::OsStr::new("cwd_sim")), None),
+            (Some(std::ffi::OsStr::new(".")), None),
+            (None, Some(std::ffi::OsStr::new("cwd_sim"))),
+            (None, Some(std::ffi::OsStr::new("."))),
+        ] {
+            let resolved_consumer = consumer_env_path_from_vars(rel_xdg, rel_home);
+            assert!(
+                resolved_consumer.is_none(),
+                "relative XDG_CONFIG_HOME/HOME must resolve to None"
+            );
+            let rel_cfg = SessionLinkConfig::from_sources(
+                &BTreeMap::new(),
+                None,
+                resolved_consumer.as_deref(),
+            );
+            assert!(
+                !rel_cfg.has_valid_key(),
+                "relative XDG_CONFIG_HOME/HOME must never load consumer.env"
+            );
+        }
         let rel_consumer_cfg = SessionLinkConfig::from_sources(
             &BTreeMap::new(),
             None,
@@ -1840,20 +1987,61 @@ mod tests {
             !rel_consumer_cfg.has_valid_key(),
             "relative observability/consumer.env must be ignored"
         );
-        let cwd_cfg = SessionLinkConfig::from_sources(&BTreeMap::new(), None, None);
-        assert!(
-            !cwd_cfg.has_valid_key(),
-            "unconfigured sources must never read observability/consumer.env from CWD"
-        );
 
-        // Prepare private data root `<private_data_root>/link.key` and XDG `consumer.env`
-        let private_root = dir.join("private_data_root");
-        std::fs::create_dir_all(&private_root).unwrap();
-        let root_key_path = private_root.join("link.key");
-        write_private_key_file(&root_key_path, &format!("{key_root_hex}\n"));
+        // Prepare private data root `<private_data_root>/link.key` and explicit key file via `platform_v1`
+        #[cfg(any(windows, target_os = "linux"))]
+        let (private_root, explicit_key_path, empty_root) = {
+            use std::io::Write;
+            let parent_root = crate::platform_v1::open_existing_private_root(&dir).unwrap();
+            let priv_cap =
+                crate::platform_v1::create_unique_private_directory(&parent_root, "priv-root-")
+                    .unwrap();
+            let link_child = crate::platform_v1::parse_child_name(
+                "link.key",
+                crate::platform_v1::current_native_platform(),
+            )
+            .unwrap();
+            let mut vf = priv_cap.create_file(&link_child).unwrap();
+            vf.file_mut()
+                .write_all(format!("{key_root_hex}\n").as_bytes())
+                .unwrap();
+            drop(vf);
+            let priv_path = priv_cap.path().to_path_buf();
+            drop(priv_cap);
 
-        let explicit_key_path = dir.join("explicit_link.key");
-        write_private_key_file(&explicit_key_path, &format!("{key_file_hex}\n"));
+            let exp_child = crate::platform_v1::parse_child_name(
+                "explicit_link.key",
+                crate::platform_v1::current_native_platform(),
+            )
+            .unwrap();
+            let mut vf_exp = parent_root.create_file(&exp_child).unwrap();
+            vf_exp
+                .file_mut()
+                .write_all(format!("{key_file_hex}\n").as_bytes())
+                .unwrap();
+            let exp_path = vf_exp.path().to_path_buf();
+            drop(vf_exp);
+
+            let empty_cap =
+                crate::platform_v1::create_unique_private_directory(&parent_root, "empty-root-")
+                    .unwrap();
+            let empty_path = empty_cap.path().to_path_buf();
+            drop(empty_cap);
+            drop(parent_root);
+            (priv_path, exp_path, empty_path)
+        };
+        #[cfg(not(any(windows, target_os = "linux")))]
+        let (private_root, explicit_key_path, empty_root) = {
+            let priv_path = dir.join("private_data_root");
+            std::fs::create_dir_all(&priv_path).unwrap();
+            let root_key_path = priv_path.join("link.key");
+            write_private_key_file(&root_key_path, &format!("{key_root_hex}\n"));
+            let exp_path = dir.join("explicit_link.key");
+            write_private_key_file(&exp_path, &format!("{key_file_hex}\n"));
+            let empty_path = dir.join("empty_private_root");
+            std::fs::create_dir_all(&empty_path).unwrap();
+            (priv_path, exp_path, empty_path)
+        };
 
         let xdg_consumer = dir.join("xdg").join("observability").join("consumer.env");
         std::fs::create_dir_all(xdg_consumer.parent().unwrap()).unwrap();
@@ -1896,6 +2084,24 @@ mod tests {
             expected_for(&key_env_hex)
         );
 
+        //    Process env DENDRO_LINK_KEY_FILE beats private_root/link.key and consumer.env
+        let mut env_only_file = BTreeMap::new();
+        env_only_file.insert(
+            "DENDRO_LINK_KEY_FILE".to_string(),
+            explicit_key_path.display().to_string(),
+        );
+        let cfg_env_file = SessionLinkConfig::from_sources(
+            &env_only_file,
+            Some(&private_root),
+            Some(&xdg_consumer),
+        );
+        assert_eq!(
+            cfg_env_file
+                .resolve_session_link(Some("claude"), Some("sess-1"), None)
+                .0,
+            expected_for(&key_file_hex)
+        );
+
         //    (b) private key file in dendro's private data root beats consumer.env
         let cfg_b = SessionLinkConfig::from_sources(
             &BTreeMap::new(),
@@ -1910,8 +2116,6 @@ mod tests {
         );
 
         //    (c) consumer.env values are used when neither process env nor private_root/link.key is present
-        let empty_root = dir.join("empty_private_root");
-        std::fs::create_dir_all(&empty_root).unwrap();
         let cfg_c = SessionLinkConfig::from_sources(
             &BTreeMap::new(),
             Some(&empty_root),
@@ -1972,31 +2176,79 @@ mod tests {
             )
         );
 
-        // 5. K_org variable inside consumer.env refuses link configuration even when process env has valid key
-        let consumer_with_k_org = dir.join("consumer_with_k_org.env");
-        std::fs::write(
-            &consumer_with_k_org,
-            "DENDRO_LINK_ORG=acme\nDENDRO_LINK_ENDPOINT_SCOPE=ws-01\nK_ORG_HEX=deadbeef\n",
-        )
-        .unwrap();
-        let mut env_valid_key = BTreeMap::new();
-        env_valid_key.insert("DENDRO_LINK_KEY_HEX".to_string(), key_env_hex);
-        let cfg_k_org_in_consumer = SessionLinkConfig::from_sources(
-            &env_valid_key,
-            Some(&private_root),
-            Some(&consumer_with_k_org),
-        );
-        assert!(!cfg_k_org_in_consumer.has_valid_key());
-        assert!(cfg_k_org_in_consumer.k_org_rejected());
-        assert_eq!(
-            cfg_k_org_in_consumer.resolve_session_link(Some("claude"), Some("sess-1"), None),
-            (
-                AGENT_SESSION_LINK_UNLINKED.to_string(),
-                Some(UnlinkedReason::InvalidKeyMaterial)
+        // 5. K_org variable inside consumer.env (both `K_ORG_HEX=...` and `export DENDRO_LINK_K_ORG_HEX=...`)
+        //    refuses link configuration even when process env has a valid key; unrelated `K_ORGANIC` is ignored.
+        for k_org_line in [
+            "K_ORG_HEX=deadbeef",
+            "export K_ORG_HEX=deadbeef",
+            "export DENDRO_LINK_K_ORG_HEX=deadbeef",
+        ] {
+            let consumer_with_k_org = dir.join("consumer_with_k_org.env");
+            std::fs::write(
+                &consumer_with_k_org,
+                format!("DENDRO_LINK_ORG=acme\nDENDRO_LINK_ENDPOINT_SCOPE=ws-01\n{k_org_line}\n"),
             )
+            .unwrap();
+            let mut env_valid_key = BTreeMap::new();
+            env_valid_key.insert("DENDRO_LINK_KEY_HEX".to_string(), key_env_hex.clone());
+            let cfg_k_org_in_consumer = SessionLinkConfig::from_sources(
+                &env_valid_key,
+                Some(&private_root),
+                Some(&consumer_with_k_org),
+            );
+            assert!(
+                !cfg_k_org_in_consumer.has_valid_key(),
+                "failed to refuse {k_org_line}"
+            );
+            assert!(cfg_k_org_in_consumer.k_org_rejected());
+            assert_eq!(
+                cfg_k_org_in_consumer.resolve_session_link(Some("claude"), Some("sess-1"), None),
+                (
+                    AGENT_SESSION_LINK_UNLINKED.to_string(),
+                    Some(UnlinkedReason::InvalidKeyMaterial)
+                )
+            );
+        }
+        assert!(
+            !is_k_org_var_name("K_ORGANIC"),
+            "narrowed is_k_org_var_name must not match unrelated K_ORGANIC"
+        );
+        assert!(
+            !is_k_org_var_name("MY_K_ORG_LIKE_FLAG"),
+            "narrowed is_k_org_var_name must only match documented names"
         );
 
-        // 6. On Unix, group- or world-readable key files are refused
+        // 6. Hard-linked key files (`links > 1`) in `<private_data_root>/link.key` or `DENDRO_LINK_KEY_FILE`
+        //    are refused on Windows and Unix via `platform_v1::open_existing_private_file`.
+        let hardlink_alias = dir.join("hardlinked_alias.key");
+        std::fs::hard_link(&explicit_key_path, &hardlink_alias).unwrap();
+        let mut env_hardlinked = BTreeMap::new();
+        env_hardlinked.insert(
+            "DENDRO_LINK_KEY_FILE".to_string(),
+            explicit_key_path.display().to_string(),
+        );
+        let cfg_hardlinked =
+            SessionLinkConfig::from_sources(&env_hardlinked, None, Some(&xdg_consumer));
+        assert!(
+            !cfg_hardlinked.has_valid_key(),
+            "hard-linked DENDRO_LINK_KEY_FILE (links > 1) must be refused"
+        );
+        std::fs::remove_file(&hardlink_alias).unwrap();
+
+        let root_hardlink_alias = private_root.join("link_alias.key");
+        std::fs::hard_link(private_root.join("link.key"), &root_hardlink_alias).unwrap();
+        let cfg_root_hardlinked = SessionLinkConfig::from_sources(
+            &BTreeMap::new(),
+            Some(&private_root),
+            Some(&xdg_consumer),
+        );
+        assert!(
+            !cfg_root_hardlinked.has_valid_key(),
+            "hard-linked <private_data_root>/link.key (links > 1) must be refused"
+        );
+        std::fs::remove_file(&root_hardlink_alias).unwrap();
+
+        // 7. On Unix, group- or world-readable key files are refused
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;

@@ -135,6 +135,8 @@ pub struct SessionFact {
     pub link_id: String,
     pub unlinked_reason: Option<String>,
     pub generation: i64,
+    #[serde(default)]
+    pub header_conflict: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

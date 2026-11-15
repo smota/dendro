@@ -359,10 +359,11 @@ CREATE TABLE IF NOT EXISTS session_facts (
     native_session VARCHAR NOT NULL,
     link_id VARCHAR NOT NULL DEFAULT 'unlinked',
     unlinked_reason VARCHAR,
+    header_conflict BOOLEAN NOT NULL DEFAULT FALSE,
     generation BIGINT NOT NULL
 );
 ```
-- **Grain:** One row per session identity `(source_id, harness, native_session)` observed during ingestion (`source_key = "{source_id}:{harness}:{native_session}"`), upserted across generations. If a session is unlinked in generation 1 (e.g. due to conflicting session headers), that `'unlinked'` state is latched across subsequent generations and appends.
+- **Grain:** One row per session identity `(source_id, harness, native_session)` observed during ingestion (`source_key = "{source_id}:{harness}:{native_session}"`), upserted across generations. Only an explicit header conflict (`header_conflict = TRUE`, keyed by `source_id`) permanently locks a session row to `'unlinked'` across subsequent generations and appends; sessions unlinked for configuration or input reasons (`invalid_key_material`, `missing_org`, `missing_endpoint_scope`, missing/invalid `team` or `epoch`) and fallback `{harness}-file:` / `claude-session` rows are recomputed and replaced on subsequent ingests, and a fallback row created during a zero-byte or partial line-1 first pass is retired once the real session header appears.
 - **Compute-Before-Seal Invariant:** `link_id` is computed from the **raw** harness-minted session identifier (`native_session`) **before** `seal_session` is applied. `session_facts.native_session` stores the sealed session token (`session:<hex>`, identical to `usage_facts.native_session` and `tool_facts.native_session`); the raw `native_session` is never persisted anywhere in the database.
 - **Closed Harness Vocabulary (`I01`):** `link-id-v1` canonicalizes harness aliases strictly (`antigravity`/`agy` $\to$ `antigravity`, `claude`/`claude-code` $\to$ `claude`, `codex` $\to$ `codex`, `grok` $\to$ `grok`, `pi` $\to$ `pi`).
 - **Origin Rule (Parser Provenance):** `origin` is assigned by Dendro's parser, never read from transcript content. Native harness-log parsers assign `origin = "harness"`; export or any non-native path sets a non-harness origin, which resolves to `link_id = 'unlinked'` with `unlinked_reason = 'non_harness_origin'`.

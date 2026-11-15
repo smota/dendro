@@ -268,6 +268,7 @@ impl AnalyticsStore {
         native_session VARCHAR NOT NULL,
         link_id VARCHAR NOT NULL DEFAULT 'unlinked',
         unlinked_reason VARCHAR,
+        header_conflict BOOLEAN NOT NULL DEFAULT FALSE,
         generation BIGINT NOT NULL
     )";
 
@@ -1363,8 +1364,8 @@ impl AnalyticsStore {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
-    /// Returns `true` if `source_id` has an existing `session_facts` row latched to `"unlinked"`.
-    pub fn source_has_unlinked_session(&self, source_id: &str) -> Result<bool> {
+    /// Returns `true` if `source_id` has an existing `session_facts` row latched to a header conflict.
+    pub fn source_has_header_conflict(&self, source_id: &str) -> Result<bool> {
         let exists: i64 = self.conn.query_row(
             "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'session_facts'",
             [],
@@ -1374,38 +1375,59 @@ impl AnalyticsStore {
             return Ok(false);
         }
         let mut stmt = self.conn.prepare(
-            "SELECT 1 FROM session_facts WHERE source_id = ? AND link_id = 'unlinked' LIMIT 1",
+            "SELECT 1 FROM session_facts WHERE source_id = ? AND header_conflict = TRUE LIMIT 1",
         )?;
         let mut rows = stmt.query(params![redact(source_id)])?;
         Ok(rows.next()?.is_some())
     }
 
     /// Upsert session-level link facts (`MTN-19 / D3`).
+    pub fn commit_session_facts(&self, facts: &[SessionFact]) -> Result<()> {
+        self.commit_session_facts_retiring(facts, &[])
+    }
+
+    /// Upsert session-level link facts (`MTN-19 / D3`) and retire superseded fallback
+    /// `{harness}-file:` / `"claude-session"` rows when a real session header or per-line
+    /// session identity appears.
     ///
     /// Enforces that `native_session` is already sealed (`session:<hex>`), `link_id` is either
     /// `"unlinked"` or a 64-character lowercase hex digest, and `unlinked_reason` is a valid
     /// `link-id-v1` reason code only when `link_id == "unlinked"`.
-    /// Once a session identity (`source_key`) is recorded as `"unlinked"`, later generations
-    /// can never promote it to linked.
-    pub fn commit_session_facts(&self, facts: &[SessionFact]) -> Result<()> {
-        if facts.is_empty() {
+    /// Only an explicit `header_conflict` permanently locks a session row to `"unlinked"`;
+    /// rows unlinked for configuration or input reasons are recomputed and replaced on upsert.
+    pub fn commit_session_facts_retiring(
+        &self,
+        facts: &[SessionFact],
+        retired_fallback_keys: &[String],
+    ) -> Result<()> {
+        if facts.is_empty() && retired_fallback_keys.is_empty() {
             return Ok(());
         }
         let tx = self.conn.unchecked_transaction()?;
         tx.execute_batch(Self::SESSION_FACTS_SCHEMA)?;
+        if !retired_fallback_keys.is_empty() {
+            let mut retire_stmt = tx.prepare(
+                "DELETE FROM session_facts
+                 WHERE source_key = ? AND NOT header_conflict",
+            )?;
+            for retired_key in retired_fallback_keys {
+                retire_stmt.execute(params![redact(retired_key)])?;
+            }
+        }
         let mut stmt = tx.prepare(
             "INSERT INTO session_facts
-             (source_key, source_id, harness, native_session, link_id, unlinked_reason, generation)
-             VALUES (?, ?, ?, ?, ?, ?, ?)
+             (source_key, source_id, harness, native_session, link_id, unlinked_reason, header_conflict, generation)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT (source_key) DO UPDATE SET
                  link_id = CASE
-                     WHEN session_facts.link_id = 'unlinked' THEN 'unlinked'
+                     WHEN session_facts.header_conflict OR excluded.header_conflict THEN 'unlinked'
                      ELSE excluded.link_id
                  END,
                  unlinked_reason = CASE
-                     WHEN session_facts.link_id = 'unlinked' THEN COALESCE(session_facts.unlinked_reason, excluded.unlinked_reason)
+                     WHEN session_facts.header_conflict OR excluded.header_conflict THEN COALESCE(excluded.unlinked_reason, session_facts.unlinked_reason)
                      ELSE excluded.unlinked_reason
                  END,
+                 header_conflict = (session_facts.header_conflict OR excluded.header_conflict),
                  generation = excluded.generation",
         )?;
         for fact in facts {
@@ -1414,6 +1436,9 @@ impl AnalyticsStore {
             }
             if !crate::link_id::is_valid_persisted_link_id(&fact.link_id) {
                 anyhow::bail!("session_facts.link_id must be 'unlinked' or 64 lowercase hex chars");
+            }
+            if fact.header_conflict && fact.link_id != crate::link_id::AGENT_SESSION_LINK_UNLINKED {
+                anyhow::bail!("header_conflict session_facts row must have link_id == 'unlinked'");
             }
             if fact.link_id == crate::link_id::AGENT_SESSION_LINK_UNLINKED {
                 if let Some(reason) = fact.unlinked_reason.as_deref() {
@@ -1433,6 +1458,7 @@ impl AnalyticsStore {
                 redact(&fact.native_session),
                 fact.link_id.as_str(),
                 fact.unlinked_reason.as_deref(),
+                fact.header_conflict,
                 fact.generation,
             ])?;
         }
@@ -1452,7 +1478,8 @@ impl AnalyticsStore {
         }
         let mut stmt = self.conn.prepare(
             "SELECT source_key, source_id, harness, native_session,
-                    COALESCE(link_id, 'unlinked'), unlinked_reason, generation
+                    COALESCE(link_id, 'unlinked'), unlinked_reason,
+                    COALESCE(header_conflict, FALSE), generation
              FROM session_facts ORDER BY source_key",
         )?;
         let rows = stmt.query_map([], |row| {
@@ -1463,7 +1490,8 @@ impl AnalyticsStore {
                 native_session: row.get(3)?,
                 link_id: row.get(4)?,
                 unlinked_reason: row.get(5)?,
-                generation: row.get(6)?,
+                header_conflict: row.get(6)?,
+                generation: row.get(7)?,
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
