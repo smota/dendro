@@ -1629,7 +1629,15 @@ fn observe_claude_git_evidence(value: &Value, scanner: &mut dendro_core::GitEvid
     let ts = timestamp_of(value);
     let record_cwd = extract_record_cwd(value);
 
+    struct DeferredCatFileOutput<'a> {
+        id: Option<&'a str>,
+        cmd: Option<dendro_core::GitCommandInput>,
+        is_err: Option<bool>,
+        text: String,
+    }
+
     let mut saw_tool_result_block = false;
+    let mut deferred_cat_file_outputs: Vec<DeferredCatFileOutput<'_>> = Vec::new();
     if let Some(content) = value.pointer("/message/content").and_then(Value::as_array) {
         for block in content {
             match block.get("type").and_then(Value::as_str) {
@@ -1653,16 +1661,25 @@ fn observe_claude_git_evidence(value: &Value, scanner: &mut dendro_core::GitEvid
                         .and_then(extract_json_output_text)
                     {
                         let is_err = block.get("is_error").and_then(Value::as_bool);
-                        scanner.observe_tool_output_input_with_cwd(
-                            id,
-                            cmd.as_ref(),
-                            raw_session,
-                            false,
-                            ts,
-                            is_err,
-                            record_cwd,
-                            &inline_out,
-                        );
+                        if scanner.is_pending_cat_file(id, cmd.as_ref()) {
+                            deferred_cat_file_outputs.push(DeferredCatFileOutput {
+                                id,
+                                cmd,
+                                is_err,
+                                text: inline_out,
+                            });
+                        } else {
+                            scanner.observe_tool_output_input_with_cwd(
+                                id,
+                                cmd.as_ref(),
+                                raw_session,
+                                false,
+                                ts,
+                                is_err,
+                                record_cwd,
+                                &inline_out,
+                            );
+                        }
                     }
                 }
                 Some("tool_result") => {
@@ -1681,21 +1698,43 @@ fn observe_claude_git_evidence(value: &Value, scanner: &mut dendro_core::GitEvid
                                 .and_then(extract_json_output_text)
                         });
                     if let Some(text) = out_text {
-                        scanner.observe_tool_output_input_with_cwd(
-                            id,
-                            None,
-                            raw_session,
-                            false,
-                            ts,
-                            is_err,
-                            record_cwd,
-                            &text,
-                        );
+                        if scanner.is_pending_cat_file(id, None) {
+                            deferred_cat_file_outputs.push(DeferredCatFileOutput {
+                                id,
+                                cmd: None,
+                                is_err,
+                                text,
+                            });
+                        } else {
+                            scanner.observe_tool_output_input_with_cwd(
+                                id,
+                                None,
+                                raw_session,
+                                false,
+                                ts,
+                                is_err,
+                                record_cwd,
+                                &text,
+                            );
+                        }
                     }
                 }
                 _ => {}
             }
         }
+    }
+
+    for item in deferred_cat_file_outputs {
+        scanner.observe_tool_output_input_with_cwd(
+            item.id,
+            item.cmd.as_ref(),
+            raw_session,
+            false,
+            ts,
+            item.is_err,
+            record_cwd,
+            &item.text,
+        );
     }
 
     if !saw_tool_result_block {
@@ -9971,7 +10010,9 @@ mod d4c_git_bridge_tests {
                 "{{\"type\":\"tool_use\",\"id\":\"tu-branch-r\",\"name\":\"Bash\",\"input\":{{\"command\":\"git branch -r\"}}}},",
                 "{{\"type\":\"tool_use\",\"id\":\"tu-sym-other\",\"name\":\"Bash\",\"input\":{{\"command\":\"git symbolic-ref refs/remotes/origin/HEAD\",\"cwd\":\"/repo-b\"}}}},",
                 "{{\"type\":\"tool_use\",\"id\":\"tu-cat-head\",\"name\":\"Bash\",\"input\":{{\"command\":\"git cat-file -p HEAD\"}}}},",
+                "{{\"type\":\"tool_use\",\"id\":\"tu-cat-blob\",\"name\":\"Bash\",\"input\":{{\"command\":\"git cat-file -p {sha_noise}\"}}}},",
                 "{{\"type\":\"tool_use\",\"id\":\"tu-cat-sha\",\"name\":\"Bash\",\"input\":{{\"command\":\"git cat-file -p {sha_cat}\"}}}},",
+                "{{\"type\":\"tool_use\",\"id\":\"tu-rp-cat\",\"name\":\"Bash\",\"input\":{{\"command\":\"git rev-parse HEAD\"}}}},",
                 "{{\"type\":\"tool_use\",\"id\":\"tu-rp-blob\",\"name\":\"Bash\",\"input\":{{\"command\":\"git rev-parse HEAD:file.txt\"}}}},",
                 "{{\"type\":\"tool_use\",\"id\":\"tu-rp-tree\",\"name\":\"Bash\",\"input\":{{\"command\":\"git rev-parse HEAD^{{tree}}\"}}}},",
                 "{{\"type\":\"tool_use\",\"id\":\"tu-hash-obj\",\"name\":\"Bash\",\"input\":{{\"command\":\"git hash-object file.txt\"}}}},",
@@ -9981,7 +10022,8 @@ mod d4c_git_bridge_tests {
                 "{{\"type\":\"tool_use\",\"id\":\"tu-unver-256\",\"name\":\"Bash\",\"input\":{{\"command\":\"git rev-parse HEAD\"}}}}",
                 "]}}}}\n"
             ),
-            sha_cat = sha_cat
+            sha_cat = sha_cat,
+            sha_noise = sha_noise
         ));
         let cat_head_body = format!(
             "tree {sha_tree}\\nparent {sha_noise}\\nauthor Dev <d@e> 1700000000 +0000\\ncommitter Dev <d@e> 1700000000 +0000\\n\\nmsg\\n"
@@ -9999,7 +10041,9 @@ mod d4c_git_bridge_tests {
                 "{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-branch-r\",\"is_error\":false,\"content\":\"  origin/HEAD -> origin/main\\n  origin/main\\n\"}},",
                 "{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-sym-other\",\"is_error\":false,\"content\":\"refs/remotes/origin/main\\n\"}},",
                 "{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-cat-head\",\"is_error\":false,\"content\":\"{cat_head_body}\"}},",
+                "{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-cat-blob\",\"is_error\":false,\"content\":\"{cat_head_body}\"}},",
                 "{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-cat-sha\",\"is_error\":false,\"content\":\"{cat_sha_body}\"}},",
+                "{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-rp-cat\",\"is_error\":false,\"content\":\"{sha_cat}\\n\"}},",
                 "{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-rp-blob\",\"is_error\":false,\"content\":\"{sha_noise}\\n\"}},",
                 "{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-rp-tree\",\"is_error\":false,\"content\":\"{sha_tree}\\n\"}},",
                 "{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-hash-obj\",\"is_error\":false,\"content\":\"{sha_noise}\\n\"}},",
@@ -10011,6 +10055,7 @@ mod d4c_git_bridge_tests {
             ),
             sha_noise = sha_noise,
             sha_tree = sha_tree,
+            sha_cat = sha_cat,
             cat_head_body = cat_head_body,
             cat_sha_body = cat_sha_body,
             sha_unverified_256 = sha_unverified_256
@@ -10083,6 +10128,10 @@ mod d4c_git_bridge_tests {
         let cov = store.total_git_evidence_coverage().unwrap();
         assert_eq!(cov.observed, 2);
         assert_eq!(cov.unverified_object_format, 1);
+        assert_eq!(
+            cov.cat_file_unconfirmed, 1,
+            "crafted-blob cat-file without commit observation must increment cat_file_unconfirmed"
+        );
     }
 
     #[test]

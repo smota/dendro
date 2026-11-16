@@ -405,6 +405,7 @@ impl AnalyticsStore {
         unmatched BIGINT NOT NULL DEFAULT 0,
         default_branch_not_observed BIGINT NOT NULL DEFAULT 0,
         unparsed_compound_git_calls BIGINT NOT NULL DEFAULT 0,
+        cat_file_unconfirmed BIGINT NOT NULL DEFAULT 0,
         PRIMARY KEY (source_id, generation)
     )";
 
@@ -436,6 +437,36 @@ impl AnalyticsStore {
                 conn.execute_batch(
                     "UPDATE git_evidence_coverage SET unparsed_compound_git_calls = 0 WHERE unparsed_compound_git_calls IS NULL;
                      ALTER TABLE git_evidence_coverage ALTER COLUMN unparsed_compound_git_calls SET NOT NULL",
+                )?;
+            }
+            _ => {}
+        }
+        let cat_nullable_opt: Option<String> = conn
+            .query_row(
+                "SELECT is_nullable FROM information_schema.columns WHERE table_name = 'git_evidence_coverage' AND column_name = 'cat_file_unconfirmed'",
+                [],
+                |row| row.get(0),
+            )
+            .ok();
+        match cat_nullable_opt.as_deref() {
+            None => {
+                if conn
+                    .execute_batch(
+                        "ALTER TABLE git_evidence_coverage ADD COLUMN cat_file_unconfirmed BIGINT NOT NULL DEFAULT 0",
+                    )
+                    .is_err()
+                {
+                    conn.execute_batch(
+                        "ALTER TABLE git_evidence_coverage ADD COLUMN cat_file_unconfirmed BIGINT DEFAULT 0;
+                         UPDATE git_evidence_coverage SET cat_file_unconfirmed = 0 WHERE cat_file_unconfirmed IS NULL;
+                         ALTER TABLE git_evidence_coverage ALTER COLUMN cat_file_unconfirmed SET NOT NULL",
+                    )?;
+                }
+            }
+            Some("YES") => {
+                conn.execute_batch(
+                    "UPDATE git_evidence_coverage SET cat_file_unconfirmed = 0 WHERE cat_file_unconfirmed IS NULL;
+                     ALTER TABLE git_evidence_coverage ALTER COLUMN cat_file_unconfirmed SET NOT NULL",
                 )?;
             }
             _ => {}
@@ -2113,13 +2144,6 @@ impl AnalyticsStore {
                 _ => anyhow::bail!("invalid git_evidence_facts.merge_status"),
             }
             match fact.default_branch_status.as_str() {
-                DEFAULT_BRANCH_STATUS_OBSERVED => {
-                    if fact.on_default_branch.is_none() {
-                        anyhow::bail!(
-                            "observed default_branch_status requires non-null on_default_branch"
-                        );
-                    }
-                }
                 DEFAULT_BRANCH_STATUS_NOT_OBSERVED => {
                     if fact.on_default_branch.is_some() {
                         anyhow::bail!(
@@ -2127,7 +2151,7 @@ impl AnalyticsStore {
                         );
                     }
                 }
-                _ => anyhow::bail!("invalid git_evidence_facts.default_branch_status"),
+                _ => anyhow::bail!("invalid git_evidence_facts.default_branch_status (only not_observed is producible in the MVP)"),
             }
             match fact.session_match_status.as_str() {
                 SESSION_MATCH_MATCHED => {
@@ -2246,8 +2270,9 @@ impl AnalyticsStore {
                     "INSERT INTO git_evidence_coverage (
                         source_id, generation, harness, observed, unresolved_abbreviated,
                         unverified_object_format, missing_parents, ambiguous, unmatched,
-                        default_branch_not_observed, unparsed_compound_git_calls
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        default_branch_not_observed, unparsed_compound_git_calls,
+                        cat_file_unconfirmed
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT (source_id, generation) DO UPDATE SET
                         harness = excluded.harness,
                         observed = excluded.observed,
@@ -2257,7 +2282,8 @@ impl AnalyticsStore {
                         ambiguous = excluded.ambiguous,
                         unmatched = excluded.unmatched,
                         default_branch_not_observed = excluded.default_branch_not_observed,
-                        unparsed_compound_git_calls = excluded.unparsed_compound_git_calls",
+                        unparsed_compound_git_calls = excluded.unparsed_compound_git_calls,
+                        cat_file_unconfirmed = excluded.cat_file_unconfirmed",
                     params![
                         &redacted_source_id,
                         generation,
@@ -2270,6 +2296,7 @@ impl AnalyticsStore {
                         cov.unmatched,
                         cov.default_branch_not_observed,
                         cov.unparsed_compound_git_calls,
+                        cov.cat_file_unconfirmed,
                     ],
                 )?;
             }
@@ -2365,7 +2392,8 @@ impl AnalyticsStore {
         let mut stmt = self.conn.prepare(
             "SELECT source_id, generation, harness, observed, unresolved_abbreviated,
                     unverified_object_format, missing_parents, ambiguous, unmatched,
-                    default_branch_not_observed, COALESCE(unparsed_compound_git_calls, 0)
+                    default_branch_not_observed, COALESCE(unparsed_compound_git_calls, 0),
+                    COALESCE(cat_file_unconfirmed, 0)
              FROM git_evidence_coverage ORDER BY source_id, generation",
         )?;
         let rows = stmt.query_map([], |row| {
@@ -2381,6 +2409,7 @@ impl AnalyticsStore {
                 unmatched: row.get(8)?,
                 default_branch_not_observed: row.get(9)?,
                 unparsed_compound_git_calls: row.get(10)?,
+                cat_file_unconfirmed: row.get(11)?,
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
@@ -2399,6 +2428,7 @@ impl AnalyticsStore {
             total.unmatched += r.unmatched;
             total.default_branch_not_observed += r.default_branch_not_observed;
             total.unparsed_compound_git_calls += r.unparsed_compound_git_calls;
+            total.cat_file_unconfirmed += r.cat_file_unconfirmed;
         }
         Ok(total)
     }
@@ -5249,6 +5279,7 @@ mod tests {
             unmatched: 0,
             default_branch_not_observed: 1,
             unparsed_compound_git_calls: 0,
+            cat_file_unconfirmed: 0,
         };
         let warning = WarningNote {
             path: "sealed-path".into(),
@@ -5424,9 +5455,19 @@ mod tests {
             )
             .unwrap();
         assert_eq!(is_nullable_alter, "NO");
+        let is_nullable_cat_alter: String = store
+            .conn
+            .query_row(
+                "SELECT is_nullable FROM information_schema.columns WHERE table_name = 'git_evidence_coverage' AND column_name = 'cat_file_unconfirmed'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(is_nullable_cat_alter, "NO");
         let cov = store.load_git_evidence_coverage().unwrap();
         assert_eq!(cov.len(), 1);
         assert_eq!(cov[0].observed, 3);
         assert_eq!(cov[0].unparsed_compound_git_calls, 0);
+        assert_eq!(cov[0].cat_file_unconfirmed, 0);
     }
 }

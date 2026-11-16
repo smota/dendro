@@ -17,9 +17,20 @@
 //!   session and record `cwd` (otherwise counted in `unverified_object_format` and ignored).
 //! - Enforces parent length consistency (`mixed_parent_object_format`) and intra-source /
 //!   cross-source parent agreement (`conflicting_parents`).
-//! - In the MVP, `default_branch_status` is always `not_observed` (`on_default_branch = None`,
-//!   reason `default_branch_not_derivable_from_session_records`). Downstream `EN6b` (Enterprise
-//!   merged-PR proxy) must treat the default branch as unknown.
+//! - Accepts `git cat-file -p <FULL-SHA>` parents ONLY when `<FULL-SHA>` has already been observed
+//!   as a commit in the same source (via the `git rev-parse HEAD`, `git log`, or `git show`
+//!   templates) at an earlier or the same record position; otherwise the `cat-file` output
+//!   contributes nothing and increments `cat_file_unconfirmed` (preventing a crafted blob from
+//!   forging a commit or merge).
+//! - Shallow-clone behavior: at a shallow boundary (`.git/shallow` / `--depth`), `git cat-file -p`
+//!   reads the raw commit object and prints real `parent` lines while `git log`/`git show` `%P`
+//!   prints none; running both in one source yields `conflicting_parents` (safe), while `git log`
+//!   alone may record `is_merge = false` at a shallow boundary.
+//! - In the MVP, `default_branch_status` is always `not_observed` (`on_default_branch = None`),
+//!   using a status-only representation consistent with the `fact-export-v1` contract's fields
+//!   (which carry no default-branch reason column; default-branch membership is not derivable from
+//!   session records). Downstream `EN6b` (Enterprise merged-PR proxy) must treat the default
+//!   branch as unknown.
 //! - Seals local commit SHAs (`hmac_domain(tool_key, "git_commit", sha)`) and session identities
 //!   before persistence so raw SHAs, branch names, commit messages, author identities, file paths,
 //!   and remote URLs are never written to DuckDB.
@@ -53,15 +64,15 @@ pub const MERGE_STATUS_NOT_OBSERVED: &str = "not_observed";
 /// Canonical `merge_status` when merge state cannot be determined.
 pub const MERGE_STATUS_UNKNOWN: &str = "unknown";
 
-/// Canonical `default_branch_status` when default-branch membership is directly observed.
-pub const DEFAULT_BRANCH_STATUS_OBSERVED: &str = "observed";
 /// Canonical `default_branch_status` when default-branch membership is not observed.
+///
+/// In the MVP, default-branch membership cannot be derived from session records alone, so
+/// `default_branch_status` is always `not_observed` (`on_default_branch = None`), using a
+/// status-only representation consistent with the `fact-export-v1` contract (which has no
+/// default-branch reason field).
 pub const DEFAULT_BRANCH_STATUS_NOT_OBSERVED: &str = "not_observed";
-/// Canonical `default_branch_status` when default-branch membership is unknown.
+/// Canonical `default_branch_status` when default-branch membership is unknown (wire export).
 pub const DEFAULT_BRANCH_STATUS_UNKNOWN: &str = "unknown";
-/// MVP reason why `on_default_branch` is always `not_observed` from session records.
-pub const DEFAULT_BRANCH_MISSING_REASON_MVP: &str =
-    "default_branch_not_derivable_from_session_records";
 
 /// Canonical `observed_at_status` when the observation timestamp comes from the session record.
 pub const OBSERVED_AT_STATUS_OBSERVED: &str = "observed";
@@ -701,8 +712,8 @@ pub struct GitEvidenceFact {
 ///
 /// - `observed`, `missing_parents`, `ambiguous`, `unmatched`, and `default_branch_not_observed`
 ///   are counted per unique accepted canonical commit SHA in the source generation.
-/// - `unresolved_abbreviated`, `unverified_object_format`, and `unparsed_compound_git_calls`
-///   are counted per rejected occurrence.
+/// - `unresolved_abbreviated`, `unverified_object_format`, `unparsed_compound_git_calls`, and
+///   `cat_file_unconfirmed` are counted per rejected occurrence.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GitEvidenceCoverage {
     pub source_id: String,
@@ -716,6 +727,7 @@ pub struct GitEvidenceCoverage {
     pub unmatched: i64,
     pub default_branch_not_observed: i64,
     pub unparsed_compound_git_calls: i64,
+    pub cat_file_unconfirmed: i64,
 }
 
 impl GitEvidenceCoverage {
@@ -730,6 +742,7 @@ impl GitEvidenceCoverage {
             || self.unmatched > 0
             || self.default_branch_not_observed > 0
             || self.unparsed_compound_git_calls > 0
+            || self.cat_file_unconfirmed > 0
     }
 }
 
@@ -901,8 +914,8 @@ pub fn resolve_git_evidence_across_sources_with_key_id(
             )
         };
 
-        // S3: `on_default_branch` is ALWAYS `not_observed` in the MVP
-        // (reason `default_branch_not_derivable_from_session_records`).
+        // S3: `on_default_branch` is ALWAYS `not_observed` in the MVP (status-only representation,
+        // consistent with the `fact-export-v1` contract's fields).
         let default_branch_status = DEFAULT_BRANCH_STATUS_NOT_OBSERVED.to_string();
         let on_default_branch = None;
 
@@ -1179,12 +1192,7 @@ fn match_string_format_spec(fmt: &str) -> Option<GitCommandKind> {
 fn match_argv_format_spec(fmt: &str) -> Option<GitCommandKind> {
     match fmt {
         "--format=%H" | "--pretty=format:%H" => Some(GitCommandKind::LogCommitOnly),
-        "--format=%H %P"
-        | "--pretty=format:%H %P"
-        | "--format='%H %P'"
-        | "--format=\"%H %P\""
-        | "--pretty=format:'%H %P'"
-        | "--pretty=format:\"%H %P\"" => Some(GitCommandKind::LogCommitAndParents),
+        "--format=%H %P" | "--pretty=format:%H %P" => Some(GitCommandKind::LogCommitAndParents),
         _ => None,
     }
 }
@@ -1288,12 +1296,25 @@ fn command_mentions_git(cmd: &str) -> bool {
     false
 }
 
+/// Matches `"git"` / `"git.exe"` and `GIT_*=` environment prefixes case-insensitively for
+/// COUNTING rejected git-looking commands (`unparsed_compound_git_calls`) ONLY — never for
+/// command acceptance (`match_exact_git_string_template` and `match_exact_git_argv_tokens`
+/// require exact lowercase `"git"`).
 fn token_is_git_reference(token: &str) -> bool {
-    matches!(token, "git" | "git.exe")
-        || token.starts_with("GIT_DIR=")
-        || token.starts_with("GIT_WORK_TREE=")
-        || token.starts_with("GIT_INDEX_FILE=")
-        || token.starts_with("GIT_OBJECT_DIRECTORY=")
+    token.eq_ignore_ascii_case("git")
+        || token.eq_ignore_ascii_case("git.exe")
+        || token
+            .get(..8)
+            .is_some_and(|p| p.eq_ignore_ascii_case("GIT_DIR="))
+        || token
+            .get(..14)
+            .is_some_and(|p| p.eq_ignore_ascii_case("GIT_WORK_TREE="))
+        || token
+            .get(..15)
+            .is_some_and(|p| p.eq_ignore_ascii_case("GIT_INDEX_FILE="))
+        || token
+            .get(..21)
+            .is_some_and(|p| p.eq_ignore_ascii_case("GIT_OBJECT_DIRECTORY="))
 }
 
 /// Normalize a working directory string for deterministic `(session, cwd)` matching.
@@ -1542,9 +1563,17 @@ fn is_git_commit_abbreviated_first_line(line: &str) -> bool {
     is_abbreviated_commit_sha(sha_token)
 }
 
-/// S1: `git cat-file -p <FULL-SHA>` binds parents to `<FULL-SHA>` ONLY if the output's first line
-/// is `tree <hex>` of the exact same hex length, followed only by `parent <hex>` lines of the same
-/// length and then the `author ` and `committer ` header lines; anything else contributes nothing.
+/// S1: `git cat-file -p <FULL-SHA>` parses candidate parents for `<FULL-SHA>` ONLY if the output's
+/// first line is `tree <hex>` of the exact same hex length, followed only by `parent <hex>` lines
+/// of the same length and then the `author ` and `committer ` header lines; anything else
+/// contributes nothing.
+///
+/// Because `git cat-file -p <sha>` also prints raw blob contents (so a blob crafted to look like
+/// a commit header could otherwise forge a commit or merge), [`GitEvidenceScanner`] accepts
+/// `cat-file` parents ONLY when `<FULL-SHA>` has ALREADY been observed as a commit in the same
+/// source (via the `git rev-parse HEAD`, `git log`, or `git show` templates) at an earlier or the
+/// same record position; otherwise the `cat-file` output contributes nothing and increments
+/// `cat_file_unconfirmed`.
 fn parse_cat_file_commit(lines: &[&str], target_sha: &str) -> Option<ParsedGitOutput> {
     if !is_canonical_commit_sha(target_sha) {
         return None;
@@ -1632,6 +1661,7 @@ pub struct GitEvidenceScanner {
     unresolved_abbreviated: u64,
     unverified_object_format: u64,
     unparsed_compound_git_calls: u64,
+    cat_file_unconfirmed: u64,
     /// Object format (`sha1` vs `sha256`) observed via `git rev-parse --show-object-format`
     /// per `(session, record_cwd)` (`S1`, `S2`). Requires the record `cwd` to be present.
     object_format_by_session_cwd: BTreeMap<(String, String), GitObjectFormat>,
@@ -1640,6 +1670,45 @@ pub struct GitEvidenceScanner {
 impl GitEvidenceScanner {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Count of `git cat-file -p <sha>` commit-shaped outputs rejected because `<sha>` was not
+    /// already observed as a commit in the same source at an earlier or the same record position.
+    #[must_use]
+    pub const fn cat_file_unconfirmed(&self) -> u64 {
+        self.cat_file_unconfirmed
+    }
+
+    /// Returns `true` if `call_id` (in the pending LRU) or `atomic_command` classifies as
+    /// [`GitCommandKind::CatFileCommit`]. Used by multi-block record parsers so commit-producing
+    /// outputs (`rev-parse HEAD`, `log`, `show`) at the same record position are recorded before
+    /// `cat-file` parent bindings in that same record.
+    #[must_use]
+    pub fn is_pending_cat_file(
+        &self,
+        call_id: Option<&str>,
+        atomic_command: Option<&GitCommandInput>,
+    ) -> bool {
+        let Some(id) = call_id.map(str::trim).filter(|s| !s.is_empty()) else {
+            return false;
+        };
+        if let Some((_, pending)) = self
+            .pending_calls_lru
+            .iter()
+            .find(|(existing_id, _)| existing_id == id)
+        {
+            return matches!(
+                pending.command_call,
+                ClassifiedCommandCall::Allowed(GitCommandKind::CatFileCommit { .. })
+            );
+        }
+        if let Some(cmd_inp) = atomic_command {
+            return matches!(
+                classify_git_command_input(cmd_inp),
+                ClassifiedCommandCall::Allowed(GitCommandKind::CatFileCommit { .. })
+            );
+        }
+        false
     }
 
     /// Register a tool call (with a command string or `argv` array) by explicit `call_id` in the
@@ -1795,6 +1864,7 @@ impl GitEvidenceScanner {
             _ => None,
         };
 
+        let is_cat_file = matches!(kind, GitCommandKind::CatFileCommit { .. });
         let parsed = parse_git_output(&kind, raw_output);
         self.unresolved_abbreviated += parsed.unresolved_abbreviated;
 
@@ -1812,6 +1882,7 @@ impl GitEvidenceScanner {
                 header_conflict,
                 ts,
                 effective_cwd.as_deref(),
+                is_cat_file,
                 obs,
             );
         }
@@ -1873,9 +1944,19 @@ impl GitEvidenceScanner {
         header_conflict: bool,
         ts: Option<DateTime<Utc>>,
         effective_cwd: Option<&str>,
+        is_cat_file: bool,
         obs: ParsedCommitObservation,
     ) {
         if !is_canonical_commit_sha(&obs.commit_sha) {
+            return;
+        }
+        // `git cat-file -p <sha>` prints raw blob contents, so a blob crafted to look like a
+        // commit header could forge a merge commit. Accept `cat-file` parents ONLY for a SHA
+        // already observed as a COMMIT in the same source (via `rev-parse HEAD`, `log`, or `show`)
+        // at an earlier or the same record position; otherwise contribute nothing and count it in
+        // `cat_file_unconfirmed`.
+        if is_cat_file && !self.commits_by_sha.contains_key(&obs.commit_sha) {
+            self.cat_file_unconfirmed += 1;
             return;
         }
         let clean_session = if header_conflict {
@@ -2038,8 +2119,8 @@ impl GitEvidenceScanner {
                 }
             };
 
-            // S3: Default branch status is ALWAYS `not_observed` in the MVP
-            // (reason `default_branch_not_derivable_from_session_records`).
+            // S3: Default branch status is ALWAYS `not_observed` in the MVP (status-only
+            // representation, consistent with the `fact-export-v1` contract's fields).
             default_branch_not_observed += 1;
             let default_branch_status = DEFAULT_BRANCH_STATUS_NOT_OBSERVED.to_string();
             let on_default_branch = None;
@@ -2141,6 +2222,7 @@ impl GitEvidenceScanner {
             unmatched,
             default_branch_not_observed,
             unparsed_compound_git_calls: self.unparsed_compound_git_calls as i64,
+            cat_file_unconfirmed: self.cat_file_unconfirmed as i64,
         };
 
         (facts, coverage)
@@ -2501,6 +2583,11 @@ mod tests {
             "git log -n 1001 --format=%H",
             "git log -n 01 --format=%H",
             "git log -1 --format='%H %P\"",
+            // Uppercase / mixed-case `GIT ...` commands (counted in unparsed_compound_git_calls, never accepted)
+            "GIT rev-parse HEAD",
+            "Git log -1 --format=%H",
+            "GIT.EXE rev-parse HEAD",
+            "git_dir=/other/.git git rev-parse HEAD",
         ];
 
         for (i, cmd) in string_attacks.iter().enumerate() {
@@ -2547,6 +2634,17 @@ mod tests {
             &["git", "rev-list", "--parents", "HEAD", "--", "file.rs"],
             &["git", "checkout", "main", "--", "file.rs"],
             &["git", "log", "-1", "--format=%H", "stash"],
+            // Uppercase / mixed-case `GIT` in argv (counted in unparsed_compound_git_calls, never accepted)
+            &["GIT", "rev-parse", "HEAD"],
+            &["Git", "log", "-1", "--format=%H"],
+            &["GIT.EXE", "rev-parse", "HEAD"],
+            // Dead literal-quote format specs in argv (rejected, never accepted)
+            &["git", "log", "-1", "--format='%H %P'"],
+            &["git", "log", "-1", "--format=\"%H %P\""],
+            &["git", "log", "-1", "--pretty=format:'%H %P'"],
+            &["git", "log", "-1", "--pretty=format:\"%H %P\""],
+            &["git", "show", "-s", "--format='%H %P'", "HEAD"],
+            &["git", "show", "-s", "--format=\"%H %P\"", "HEAD"],
         ];
 
         for (i, argv) in argv_attacks.iter().enumerate() {
@@ -3233,5 +3331,238 @@ mod tests {
         assert!(!cfg_ignored_file.is_ready());
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn cat_file_requires_prior_or_same_record_commit_observation_and_shallow_boundary_conflicts() {
+        let sha_blob = "1".repeat(40);
+        let sha_later = "2".repeat(40);
+        let sha_confirmed = "3".repeat(40);
+        let sha_shallow = "4".repeat(40);
+        let sha_p1 = "5".repeat(40);
+        let sha_p2 = "6".repeat(40);
+        let tree_sha = "7".repeat(40);
+
+        let crafted_merge_body = format!(
+            "tree {tree_sha}\nparent {sha_p1}\nparent {sha_p2}\nauthor Dev <d@e> 1700000000 +0000\ncommitter Dev <d@e> 1700000000 +0000\n\ncrafted blob\n"
+        );
+        let shallow_cat_body = format!(
+            "tree {tree_sha}\nparent {sha_p1}\nauthor Dev <d@e> 1700000000 +0000\ncommitter Dev <d@e> 1700000000 +0000\n\nshallow boundary commit\n"
+        );
+
+        let mut scanner = GitEvidenceScanner::new();
+
+        // 1. Crafted-blob `git cat-file -p <sha_blob>` WITHOUT any prior commit observation ->
+        //    contributes nothing and increments `cat_file_unconfirmed`.
+        scanner.observe_tool_call_with_context(
+            Some("c-blob"),
+            Some("Bash"),
+            Some(&format!("git cat-file -p {sha_blob}")),
+            Some("/repo"),
+        );
+        scanner.observe_tool_output_with_cwd(
+            Some("c-blob"),
+            None,
+            Some("sess-1"),
+            false,
+            None,
+            Some(false),
+            Some("/repo"),
+            &crafted_merge_body,
+        );
+        assert_eq!(scanner.cat_file_unconfirmed(), 1);
+        let (facts_after_blob, cov_after_blob) = scanner.materialize(
+            "src-cat",
+            1,
+            "claude",
+            false,
+            Some(b"tool-key"),
+            &FactExportConfig::unconfigured(),
+            |s| format!("sealed:{s}"),
+        );
+        assert!(
+            facts_after_blob.is_empty(),
+            "crafted-blob cat-file without prior commit observation must produce 0 rows"
+        );
+        assert_eq!(cov_after_blob.observed, 0);
+        assert_eq!(cov_after_blob.cat_file_unconfirmed, 1);
+
+        // 2. `git cat-file -p <sha_later>` BEFORE a later `git rev-parse HEAD` observation of `<sha_later>` ->
+        //    the earlier `cat-file` is rejected (`cat_file_unconfirmed` = 2) and does NOT bind parents
+        //    when `<sha_later>` is subsequently observed by `rev-parse HEAD`.
+        scanner.observe_tool_call_with_context(
+            Some("c-early-cat"),
+            Some("Bash"),
+            Some(&format!("git cat-file -p {sha_later}")),
+            Some("/repo"),
+        );
+        scanner.observe_tool_output_with_cwd(
+            Some("c-early-cat"),
+            None,
+            Some("sess-1"),
+            false,
+            None,
+            Some(false),
+            Some("/repo"),
+            &crafted_merge_body,
+        );
+        assert_eq!(scanner.cat_file_unconfirmed(), 2);
+
+        scanner.observe_tool_call_with_context(
+            Some("c-later-rp"),
+            Some("Bash"),
+            Some("git rev-parse HEAD"),
+            Some("/repo"),
+        );
+        scanner.observe_tool_output_with_cwd(
+            Some("c-later-rp"),
+            None,
+            Some("sess-1"),
+            false,
+            None,
+            Some(false),
+            Some("/repo"),
+            &format!("{sha_later}\n"),
+        );
+
+        // 3. Prior `git rev-parse HEAD` (or `git log -1 --format=%H`) observation of `<sha_confirmed>`
+        //    followed by `git cat-file -p <sha_confirmed>` -> parents ARE bound (`is_merge = Some(true)`).
+        scanner.observe_tool_call_with_context(
+            Some("c-conf-rp"),
+            Some("Bash"),
+            Some("git rev-parse HEAD"),
+            Some("/repo"),
+        );
+        scanner.observe_tool_output_with_cwd(
+            Some("c-conf-rp"),
+            None,
+            Some("sess-1"),
+            false,
+            None,
+            Some(false),
+            Some("/repo"),
+            &format!("{sha_confirmed}\n"),
+        );
+        scanner.observe_tool_call_with_context(
+            Some("c-conf-cat"),
+            Some("Bash"),
+            Some(&format!("git cat-file -p {sha_confirmed}")),
+            Some("/repo"),
+        );
+        scanner.observe_tool_output_with_cwd(
+            Some("c-conf-cat"),
+            None,
+            Some("sess-1"),
+            false,
+            None,
+            Some(false),
+            Some("/repo"),
+            &crafted_merge_body,
+        );
+        assert_eq!(
+            scanner.cat_file_unconfirmed(),
+            2,
+            "confirmed cat-file must not increment cat_file_unconfirmed"
+        );
+
+        // 4. Shallow-clone boundary: `git log -1 --format='%H %P'` prints 0 parents (`<sha_shallow>`)
+        //    while `git cat-file -p <sha_shallow>` prints real `parent <sha_p1>` ->
+        //    running both in one source yields `conflicting_parents` (`merge_status = not_observed`).
+        scanner.observe_tool_call_with_context(
+            Some("c-shallow-log"),
+            Some("Bash"),
+            Some("git log -1 --format='%H %P'"),
+            Some("/repo"),
+        );
+        scanner.observe_tool_output_with_cwd(
+            Some("c-shallow-log"),
+            None,
+            Some("sess-1"),
+            false,
+            None,
+            Some(false),
+            Some("/repo"),
+            &format!("{sha_shallow}\n"),
+        );
+        scanner.observe_tool_call_with_context(
+            Some("c-shallow-cat"),
+            Some("Bash"),
+            Some(&format!("git cat-file -p {sha_shallow}")),
+            Some("/repo"),
+        );
+        scanner.observe_tool_output_with_cwd(
+            Some("c-shallow-cat"),
+            None,
+            Some("sess-1"),
+            false,
+            None,
+            Some(false),
+            Some("/repo"),
+            &shallow_cat_body,
+        );
+
+        let export_cfg =
+            FactExportConfig::from_raw_key(b"fact-export-v1-test-key-32-bytes", "kid_cat");
+        let (facts, cov) = scanner.materialize(
+            "src-cat",
+            1,
+            "claude",
+            false,
+            Some(b"tool-key"),
+            &export_cfg,
+            |s| format!("sealed:{s}"),
+        );
+        assert_eq!(facts.len(), 3, "sha_blob must never appear in facts");
+        assert_eq!(cov.observed, 3);
+        assert_eq!(cov.cat_file_unconfirmed, 2);
+
+        let sealed_later = seal_commit(Some(b"tool-key"), &sha_later);
+        let row_later = facts
+            .iter()
+            .find(|r| r.commit_sealed == sealed_later)
+            .unwrap();
+        assert_eq!(row_later.merge_status, MERGE_STATUS_NOT_OBSERVED);
+        assert_eq!(
+            row_later.merge_missing_reason.as_deref(),
+            Some(MERGE_REASON_PARENTS_NOT_RECORDED)
+        );
+        assert!(row_later.parent_sealed.is_empty());
+
+        let sealed_conf = seal_commit(Some(b"tool-key"), &sha_confirmed);
+        let row_conf = facts
+            .iter()
+            .find(|r| r.commit_sealed == sealed_confirmed_helper(&sha_confirmed))
+            .unwrap_or_else(|| {
+                facts
+                    .iter()
+                    .find(|r| r.commit_sealed == sealed_conf)
+                    .unwrap()
+            });
+        assert_eq!(row_conf.merge_status, MERGE_STATUS_OBSERVED);
+        assert_eq!(row_conf.is_merge, Some(true));
+        assert_eq!(
+            row_conf.parent_sealed,
+            vec![
+                seal_commit(Some(b"tool-key"), &sha_p1),
+                seal_commit(Some(b"tool-key"), &sha_p2)
+            ]
+        );
+
+        let sealed_shallow = seal_commit(Some(b"tool-key"), &sha_shallow);
+        let row_shallow = facts
+            .iter()
+            .find(|r| r.commit_sealed == sealed_shallow)
+            .unwrap();
+        assert_eq!(row_shallow.merge_status, MERGE_STATUS_NOT_OBSERVED);
+        assert_eq!(row_shallow.is_merge, None);
+        assert_eq!(
+            row_shallow.merge_missing_reason.as_deref(),
+            Some(MERGE_REASON_CONFLICTING_PARENTS)
+        );
+        assert!(row_shallow.parent_sealed.is_empty());
+    }
+
+    fn sealed_confirmed_helper(sha: &str) -> String {
+        seal_commit(Some(b"tool-key"), sha)
     }
 }
