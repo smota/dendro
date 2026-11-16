@@ -404,8 +404,10 @@ impl AnalyticsStore {
         ambiguous BIGINT NOT NULL DEFAULT 0,
         unmatched BIGINT NOT NULL DEFAULT 0,
         default_branch_not_observed BIGINT NOT NULL DEFAULT 0,
+        unparsed_compound_git_calls BIGINT NOT NULL DEFAULT 0,
         PRIMARY KEY (source_id, generation)
-    )";
+    );
+    ALTER TABLE git_evidence_coverage ADD COLUMN IF NOT EXISTS unparsed_compound_git_calls BIGINT DEFAULT 0";
 
     pub(super) const SEMANTIC_STATE_SCHEMA: &'static str = "CREATE TABLE IF NOT EXISTS dendro_semantic_state (id INTEGER PRIMARY KEY, dirty BOOLEAN NOT NULL); INSERT INTO dendro_semantic_state VALUES (1, TRUE) ON CONFLICT DO NOTHING";
 
@@ -2121,6 +2123,11 @@ impl AnalyticsStore {
                     if fact.pseudonym_key_id.is_none() || fact.commit_hmac.is_none() {
                         anyhow::bail!("exportable git_evidence_facts row requires HMAC columns");
                     }
+                    if fact.merge_status == MERGE_STATUS_OBSERVED
+                        && fact.parent_hmacs.len() != fact.parent_sealed.len()
+                    {
+                        anyhow::bail!("exportable git_evidence_facts row with observed parents requires matching parent_hmacs");
+                    }
                 }
                 EXPORT_STATUS_NON_EXPORTABLE => {
                     if fact.pseudonym_key_id.is_some()
@@ -2205,8 +2212,8 @@ impl AnalyticsStore {
                     "INSERT INTO git_evidence_coverage (
                         source_id, generation, harness, observed, unresolved_abbreviated,
                         unverified_object_format, missing_parents, ambiguous, unmatched,
-                        default_branch_not_observed
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        default_branch_not_observed, unparsed_compound_git_calls
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT (source_id, generation) DO UPDATE SET
                         harness = excluded.harness,
                         observed = excluded.observed,
@@ -2215,7 +2222,8 @@ impl AnalyticsStore {
                         missing_parents = excluded.missing_parents,
                         ambiguous = excluded.ambiguous,
                         unmatched = excluded.unmatched,
-                        default_branch_not_observed = excluded.default_branch_not_observed",
+                        default_branch_not_observed = excluded.default_branch_not_observed,
+                        unparsed_compound_git_calls = excluded.unparsed_compound_git_calls",
                     params![
                         &redacted_source_id,
                         generation,
@@ -2227,6 +2235,7 @@ impl AnalyticsStore {
                         cov.ambiguous,
                         cov.unmatched,
                         cov.default_branch_not_observed,
+                        cov.unparsed_compound_git_calls,
                     ],
                 )?;
             }
@@ -2307,7 +2316,7 @@ impl AnalyticsStore {
         let mut stmt = self.conn.prepare(
             "SELECT source_id, generation, harness, observed, unresolved_abbreviated,
                     unverified_object_format, missing_parents, ambiguous, unmatched,
-                    default_branch_not_observed
+                    default_branch_not_observed, COALESCE(unparsed_compound_git_calls, 0)
              FROM git_evidence_coverage ORDER BY source_id, generation",
         )?;
         let rows = stmt.query_map([], |row| {
@@ -2322,6 +2331,7 @@ impl AnalyticsStore {
                 ambiguous: row.get(7)?,
                 unmatched: row.get(8)?,
                 default_branch_not_observed: row.get(9)?,
+                unparsed_compound_git_calls: row.get(10)?,
             })
         })?;
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
@@ -2339,6 +2349,7 @@ impl AnalyticsStore {
             total.ambiguous += r.ambiguous;
             total.unmatched += r.unmatched;
             total.default_branch_not_observed += r.default_branch_not_observed;
+            total.unparsed_compound_git_calls += r.unparsed_compound_git_calls;
         }
         Ok(total)
     }
@@ -5188,6 +5199,7 @@ mod tests {
             ambiguous: 0,
             unmatched: 0,
             default_branch_not_observed: 1,
+            unparsed_compound_git_calls: 0,
         };
         let warning = WarningNote {
             path: "sealed-path".into(),

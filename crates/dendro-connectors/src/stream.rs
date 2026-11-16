@@ -1844,7 +1844,13 @@ fn observe_codex_git_evidence(
                     .or_else(|| payload.get("id"))
                     .and_then(Value::as_str)
                     .filter(|s| !s.is_empty());
-                let name = payload.get("name").and_then(Value::as_str);
+                let name = payload.get("name").and_then(Value::as_str).or(
+                    if kind == Some("local_shell_call") {
+                        Some("local_shell_call")
+                    } else {
+                        None
+                    },
+                );
                 let args_val = payload
                     .get("arguments")
                     .or_else(|| payload.get("input"))
@@ -9448,7 +9454,7 @@ mod d4c_git_bridge_tests {
         let db_path = dir.join("rev_parse.duckdb");
         let store = open_test_analytics(&db_path);
         let tool_key = b"d4c-rev-parse-tool-key-000000000";
-        let raw_export_key = b"fact-export-v1-public-test-key";
+        let raw_export_key = b"fact-export-v1-test-key-32-bytes";
         let export_cfg =
             dendro_core::FactExportConfig::from_raw_key(raw_export_key, "kh_customer_v1");
 
@@ -9525,13 +9531,9 @@ mod d4c_git_bridge_tests {
             Some("kh_customer_v1")
         );
 
-        // Contract vector + independent HMAC check
+        // Independent LP-HMAC check with 32-byte key
         let independent_commit_a =
             independent_lp_hmac(raw_export_key, "fact-export.v1/commit", &[&sha_a]);
-        assert_eq!(
-            independent_commit_a,
-            "bc07f227444a11a858de0f4321da9826c54d4c5def78f1110d799ee523e11137"
-        );
         assert_eq!(
             claude_row.commit_hmac.as_deref(),
             Some(independent_commit_a.as_str())
@@ -9545,10 +9547,6 @@ mod d4c_git_bridge_tests {
         let independent_commit_256 =
             independent_lp_hmac(raw_export_key, "fact-export.v1/commit", &[&sha_256]);
         assert_eq!(
-            independent_commit_256,
-            "64b5f1c4221dd313c441f42af4cf19f248f862f6898e51aaadb9df915d01c47b"
-        );
-        assert_eq!(
             codex_row.commit_hmac.as_deref(),
             Some(independent_commit_256.as_str())
         );
@@ -9561,7 +9559,7 @@ mod d4c_git_bridge_tests {
         let db_path = dir.join("log_parents.duckdb");
         let store = open_test_analytics(&db_path);
         let tool_key = b"d4c-log-parents-tool-key-0000000";
-        let raw_export_key = b"fact-export-v1-public-test-key";
+        let raw_export_key = b"fact-export-v1-test-key-32-bytes";
         let export_cfg =
             dendro_core::FactExportConfig::from_raw_key(raw_export_key, "kh_customer_v1");
 
@@ -9600,10 +9598,8 @@ mod d4c_git_bridge_tests {
         let sealed_single = dendro_core::seal_commit(Some(tool_key), &sha_single);
         let sealed_root = dendro_core::seal_commit(Some(tool_key), &sha_root);
 
-        let exp_p1_hmac =
-            "fc234836df3c3fdda2c9fba641de25da4385401bccb4b72c42ab186026fb1138".to_string();
-        let exp_p2_hmac =
-            "ea0c2c4cac64a682cd4e0536629f337406009c747f5c5d04d316fbdecb4e097b".to_string();
+        let exp_p1_hmac = independent_lp_hmac(raw_export_key, "fact-export.v1/commit", &[&sha_p1]);
+        let exp_p2_hmac = independent_lp_hmac(raw_export_key, "fact-export.v1/commit", &[&sha_p2]);
 
         // 1. Two parents -> is_merge = Some(true), ordered parent_hmacs
         let r_merge = rows
@@ -9680,7 +9676,7 @@ mod d4c_git_bridge_tests {
         let store = open_test_analytics(&db_path);
         let tool_key = b"d4c-ambiguous-tool-key-000000000";
         let export_cfg = dendro_core::FactExportConfig::from_raw_key(
-            b"fact-export-v1-public-test-key",
+            b"fact-export-v1-test-key-32-bytes",
             "kh_customer_v1",
         );
 
@@ -9896,10 +9892,9 @@ mod d4c_git_bridge_tests {
         );
 
         // Pass 2: Fact-export key material is now configured; re-ingest the unchanged file
-        let export_cfg = dendro_core::FactExportConfig::from_raw_key(
-            b"fact-export-v1-public-test-key",
-            "kh_customer_v1",
-        );
+        let raw_export_key = b"fact-export-v1-test-key-32-bytes";
+        let export_cfg =
+            dendro_core::FactExportConfig::from_raw_key(raw_export_key, "kh_customer_v1");
         ingest_jsonl_with_export_config(
             &store,
             "fixture-source-a",
@@ -9914,14 +9909,10 @@ mod d4c_git_bridge_tests {
         assert_eq!(pass2.len(), 1);
         assert_eq!(pass2[0].export_status, "exportable");
         assert_eq!(pass2[0].pseudonym_key_id.as_deref(), Some("kh_customer_v1"));
-        assert_eq!(
-            pass2[0].commit_hmac.as_deref(),
-            Some("bc07f227444a11a858de0f4321da9826c54d4c5def78f1110d799ee523e11137")
-        );
-        assert_eq!(
-            pass2[0].parent_hmacs,
-            vec!["fc234836df3c3fdda2c9fba641de25da4385401bccb4b72c42ab186026fb1138".to_string()]
-        );
+        let exp_c_hmac = independent_lp_hmac(raw_export_key, "fact-export.v1/commit", &[&sha_c]);
+        let exp_p_hmac = independent_lp_hmac(raw_export_key, "fact-export.v1/commit", &[&sha_p]);
+        assert_eq!(pass2[0].commit_hmac.as_deref(), Some(exp_c_hmac.as_str()));
+        assert_eq!(pass2[0].parent_hmacs, vec![exp_p_hmac]);
     }
 
     #[test]
@@ -10140,7 +10131,7 @@ mod d4c_git_bridge_tests {
         let store = open_test_analytics(&db_path);
         let tool_key = b"d4c-privacy-grep-tool-key-000000";
         let export_cfg = dendro_core::FactExportConfig::from_raw_key(
-            b"fact-export-v1-public-test-key",
+            b"fact-export-v1-test-key-32-bytes",
             "kh_customer_v1",
         );
 
@@ -10152,8 +10143,8 @@ mod d4c_git_bridge_tests {
         let claude_file = dir.join("claude_secret_git.jsonl");
         let lines = format!(
             concat!(
-                "{{\"type\":\"assistant\",\"sessionId\":\"sess-priv-1\",\"gitBranch\":\"{raw_branch}\",\"timestamp\":\"2026-11-12T17:00:00Z\",\"message\":{{\"id\":\"m1\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5\",\"content\":[{{\"type\":\"tool_use\",\"id\":\"tu-c\",\"name\":\"Bash\",\"input\":{{\"command\":\"git commit -m '{raw_commit_msg}' && git log -1 --format='%H %P'\"}}}}]}}}}\n",
-                "{{\"type\":\"user\",\"sessionId\":\"sess-priv-1\",\"gitBranch\":\"{raw_branch}\",\"timestamp\":\"2026-11-12T17:00:01Z\",\"message\":{{\"role\":\"user\",\"content\":[{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-c\",\"is_error\":false,\"content\":\"[{raw_branch} {raw_commit_sha}] {raw_commit_msg}\\n{raw_commit_sha} {raw_parent_sha}\\n\"}}]}}}}\n"
+                "{{\"type\":\"assistant\",\"sessionId\":\"sess-priv-1\",\"gitBranch\":\"{raw_branch}\",\"timestamp\":\"2026-11-12T17:00:00Z\",\"message\":{{\"id\":\"m1\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5\",\"content\":[{{\"type\":\"tool_use\",\"id\":\"tu-c\",\"name\":\"Bash\",\"input\":{{\"command\":\"git commit -m '{raw_commit_msg}'\"}}}},{{\"type\":\"tool_use\",\"id\":\"tu-log\",\"name\":\"Bash\",\"input\":{{\"command\":\"git log -1 --format='%H %P'\"}}}}]}}}}\n",
+                "{{\"type\":\"user\",\"sessionId\":\"sess-priv-1\",\"gitBranch\":\"{raw_branch}\",\"timestamp\":\"2026-11-12T17:00:01Z\",\"message\":{{\"role\":\"user\",\"content\":[{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-c\",\"is_error\":false,\"content\":\"[{raw_branch} {raw_commit_sha}] {raw_commit_msg}\\n\"}},{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-log\",\"is_error\":false,\"content\":\"{raw_commit_sha} {raw_parent_sha}\\n\"}}]}}}}\n"
             ),
             raw_branch = raw_branch,
             raw_commit_msg = raw_commit_msg,
@@ -10202,6 +10193,128 @@ mod d4c_git_bridge_tests {
     }
 
     #[test]
+    fn r1_to_r5_compound_commands_head_only_default_branch_and_conflicting_parents_e2e() {
+        let scratch = AdmittedTestDir::new("dendro-d4c-r1-r5-e2e");
+        let dir = scratch.path();
+        let db_path = dir.join("r1_r5.duckdb");
+        let store = open_test_analytics(&db_path);
+        let tool_key = b"d4c-r1-r5-e2e-tool-key-000000000";
+        let raw_export_key = b"fact-export-v1-test-key-32-bytes";
+        let export_cfg =
+            dendro_core::FactExportConfig::from_raw_key(raw_export_key, "kh_customer_v1");
+
+        let sha_head = "1".repeat(40);
+        let sha_non_head = "2".repeat(40);
+        let sha_p1 = "3".repeat(40);
+        let sha_p2 = "4".repeat(40);
+        let sha_blob = "5".repeat(40);
+
+        // Source A:
+        // - symbolic-ref sets default branch = main in /repo
+        // - compound `git log --format=%H && git hash-object -w README.md` -> skipped + counted in unparsed_compound_git_calls
+        // - `git log -2 --format='%H %P'` on main -> neither commit is established as HEAD, so default_branch_status = not_observed
+        // - `git rev-parse HEAD` -> establishes sha_head as HEAD on main -> default_branch_status = observed, on_default_branch = Some(true)
+        let file_a = dir.join("claude_r1_r5_a.jsonl");
+        let log_2_out = format!("{sha_head} {sha_p1}\\n{sha_non_head} {sha_p1}\\n");
+        let lines_a = format!(
+            concat!(
+                "{{\"type\":\"assistant\",\"sessionId\":\"s-r1\",\"cwd\":\"/repo\",\"gitBranch\":\"main\",\"timestamp\":\"2026-11-12T21:00:00Z\",\"message\":{{\"id\":\"m1\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5\",\"content\":[",
+                "{{\"type\":\"tool_use\",\"id\":\"tu-sym\",\"name\":\"Bash\",\"input\":{{\"command\":\"git symbolic-ref refs/remotes/origin/HEAD\"}}}},",
+                "{{\"type\":\"tool_use\",\"id\":\"tu-comp1\",\"name\":\"Bash\",\"input\":{{\"command\":\"git log --format=%H && git hash-object -w README.md\"}}}},",
+                "{{\"type\":\"tool_use\",\"id\":\"tu-comp2\",\"name\":\"Bash\",\"input\":{{\"command\":\"GIT_DIR=/other/.git git rev-parse HEAD\"}}}},",
+                "{{\"type\":\"tool_use\",\"id\":\"tu-log2\",\"name\":\"Bash\",\"input\":{{\"command\":\"git log -2 --format='%H %P'\"}}}},",
+                "{{\"type\":\"tool_use\",\"id\":\"tu-rp-head\",\"name\":\"Bash\",\"input\":{{\"command\":\"git rev-parse HEAD\"}}}}",
+                "]}}}}\n",
+                "{{\"type\":\"user\",\"sessionId\":\"s-r1\",\"cwd\":\"/repo\",\"gitBranch\":\"main\",\"timestamp\":\"2026-11-12T21:00:01Z\",\"message\":{{\"role\":\"user\",\"content\":[",
+                "{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-sym\",\"is_error\":false,\"content\":\"refs/remotes/origin/main\\n\"}},",
+                "{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-comp1\",\"is_error\":false,\"content\":\"{sha_blob}\\n\"}},",
+                "{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-comp2\",\"is_error\":false,\"content\":\"{sha_blob}\\n\"}},",
+                "{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-log2\",\"is_error\":false,\"content\":\"{log_2_out}\"}},",
+                "{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-rp-head\",\"is_error\":false,\"content\":\"{sha_head}\\n\"}}",
+                "]}}}}\n"
+            ),
+            sha_blob = sha_blob,
+            log_2_out = log_2_out,
+            sha_head = sha_head,
+        );
+        fs::write(&file_a, lines_a).unwrap();
+        ingest_jsonl_with_export_config(
+            &store,
+            "src-r1-a",
+            "claude",
+            &file_a,
+            Some(tool_key),
+            &export_cfg,
+        )
+        .unwrap();
+
+        // Source B: reports conflicting parents for sha_non_head (sha_p2 instead of sha_p1)
+        let file_b = dir.join("claude_r1_r5_b.jsonl");
+        let lines_b = format!(
+            concat!(
+                "{{\"type\":\"assistant\",\"sessionId\":\"s-r1\",\"cwd\":\"/repo\",\"timestamp\":\"2026-11-12T21:05:00Z\",\"message\":{{\"id\":\"m2\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5\",\"content\":[",
+                "{{\"type\":\"tool_use\",\"id\":\"tu-b-log\",\"name\":\"Bash\",\"input\":{{\"command\":\"git log -1 --format='%H %P'\"}}}}",
+                "]}}}}\n",
+                "{{\"type\":\"user\",\"sessionId\":\"s-r1\",\"cwd\":\"/repo\",\"timestamp\":\"2026-11-12T21:05:01Z\",\"message\":{{\"role\":\"user\",\"content\":[",
+                "{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-b-log\",\"is_error\":false,\"content\":\"{sha_non_head} {sha_p2}\\n\"}}",
+                "]}}}}\n"
+            ),
+            sha_non_head = sha_non_head,
+            sha_p2 = sha_p2,
+        );
+        fs::write(&file_b, lines_b).unwrap();
+        ingest_jsonl_with_export_config(
+            &store,
+            "src-r1-b",
+            "claude",
+            &file_b,
+            Some(tool_key),
+            &export_cfg,
+        )
+        .unwrap();
+
+        let cov = store.total_git_evidence_coverage().unwrap();
+        assert_eq!(cov.unparsed_compound_git_calls, 2);
+
+        let rows = store.load_git_evidence().unwrap();
+        assert_eq!(
+            rows.len(),
+            2,
+            "sha_blob from compound calls must never be ingested"
+        );
+
+        let sealed_head = dendro_core::seal_commit(Some(tool_key), &sha_head);
+        let row_head = rows
+            .iter()
+            .find(|r| r.commit_sealed == sealed_head)
+            .unwrap();
+        assert_eq!(row_head.default_branch_status, "observed");
+        assert_eq!(row_head.on_default_branch, Some(true));
+        assert_eq!(row_head.merge_status, "observed");
+
+        let sealed_non_head = dendro_core::seal_commit(Some(tool_key), &sha_non_head);
+        let row_non_head = rows
+            .iter()
+            .find(|r| r.commit_sealed == sealed_non_head)
+            .unwrap();
+        assert_eq!(
+            row_non_head.default_branch_status, "not_observed",
+            "commit from log -2 (not established as HEAD) must have default_branch_status = not_observed"
+        );
+        assert_eq!(row_non_head.on_default_branch, None);
+        assert_eq!(
+            row_non_head.merge_status, "not_observed",
+            "conflicting parents across sources must produce merge_status = not_observed"
+        );
+        assert_eq!(
+            row_non_head.merge_missing_reason.as_deref(),
+            Some("conflicting_parents")
+        );
+        assert!(row_non_head.parent_sealed.is_empty());
+        assert!(row_non_head.parent_hmacs.is_empty());
+    }
+
+    #[test]
     fn multi_batch_crash_failpoints_preserve_atomicity_and_converge_on_replay() {
         use dendro_core::IngestBatchStage;
 
@@ -10216,7 +10329,7 @@ mod d4c_git_bridge_tests {
             Some("2026-11"),
         );
         let export_cfg = dendro_core::FactExportConfig::from_raw_key(
-            b"fact-export-v1-public-test-key",
+            b"fact-export-v1-test-key-32-bytes",
             "kh_customer_v1",
         );
         let limits = crate::sdk::ReadLimits {

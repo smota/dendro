@@ -559,11 +559,13 @@ const FORBIDDEN_K_ORG_VARS: &[&str] = &[
 
 pub(crate) fn strip_export_prefix(name: &str) -> &str {
     let trimmed = name.trim();
-    if trimmed.len() > 6
-        && trimmed[..6].eq_ignore_ascii_case("export")
-        && trimmed[6..].starts_with(char::is_whitespace)
-    {
-        return trimmed[6..].trim();
+    if let Some(prefix) = trimmed.get(..6) {
+        if prefix.eq_ignore_ascii_case("export") {
+            let rest = &trimmed[6..];
+            if rest.starts_with(char::is_whitespace) {
+                return rest.trim();
+            }
+        }
     }
     trimmed
 }
@@ -1048,7 +1050,7 @@ pub(crate) fn load_secret_key_from_sources(
         return SecretKeyLoadOutcome::KOrgRejected;
     }
 
-    if let Some(mut raw_hex) = pick_var_raw(process_env, spec.hex_env_vars) {
+    if let Some(mut raw_hex) = pick_var(process_env, spec.hex_env_vars) {
         let outcome = match LinkKey::from_hex(&raw_hex) {
             Ok(mut k) => {
                 let bytes = k.0;
@@ -1062,7 +1064,7 @@ pub(crate) fn load_secret_key_from_sources(
         return outcome;
     }
 
-    if let Some(raw_file) = pick_var_raw(process_env, spec.file_env_vars) {
+    if let Some(raw_file) = pick_var(process_env, spec.file_env_vars) {
         let path = Path::new(raw_file.trim());
         if raw_file.trim().is_empty() || !path.is_absolute() {
             return SecretKeyLoadOutcome::InvalidKeyMaterial;
@@ -1095,7 +1097,7 @@ pub(crate) fn load_secret_key_from_sources(
         };
     }
 
-    if let Some(mut raw_hex) = pick_var_raw(consumer_vars, spec.hex_env_vars) {
+    if let Some(mut raw_hex) = pick_var(consumer_vars, spec.hex_env_vars) {
         let outcome = match LinkKey::from_hex(&raw_hex) {
             Ok(mut k) => {
                 let bytes = k.0;
@@ -1118,15 +1120,6 @@ pub(crate) fn pick_var(vars: &BTreeMap<String, String>, names: &[&str]) -> Optio
             if !val.is_empty() {
                 return Some(val.clone());
             }
-        }
-    }
-    None
-}
-
-pub(crate) fn pick_var_raw(vars: &BTreeMap<String, String>, names: &[&str]) -> Option<String> {
-    for name in names {
-        if let Some(val) = vars.get(*name) {
-            return Some(val.clone());
         }
     }
     None
@@ -2370,5 +2363,256 @@ mod tests {
         }
 
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn r6_d3_loader_regression_skip_empty_primary_fallback_and_non_ascii_export_prefix() {
+        #[cfg(any(windows, target_os = "linux"))]
+        let dir = {
+            let root = crate::platform_v1::create_user_private_root_with_choice(
+                "dendro-d3-r6-reg-",
+                &crate::platform_v1::StorageRootChoice::UserProfile,
+            )
+            .unwrap();
+            root.path().to_path_buf()
+        };
+        #[cfg(not(any(windows, target_os = "linux")))]
+        let dir = {
+            let d = std::env::temp_dir().join(format!(
+                "dendro-d3-r6-reg-{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            std::fs::create_dir_all(&d).unwrap();
+            d
+        };
+
+        let key_fallback_env = "12".repeat(32);
+        let key_fallback_file = "34".repeat(32);
+        let key_fallback_consumer = "56".repeat(32);
+
+        let expected_link =
+            |k_hex: &str, org: &str, ep: &str, team: Option<&str>, epc: Option<&str>| {
+                SessionLinkConfig::from_key_hex(k_hex, Some(org), Some(ep), team, epc)
+                    .resolve_session_link(Some("claude"), Some("sess-r6"), None)
+                    .0
+            };
+
+        // M2: strip_export_prefix char-boundary safety for non-ASCII variable names (`ABCDEÄ`, `AÄÄÄ`)
+        for non_ascii_name in [
+            "ABCDEÄ",
+            "AÄÄÄ",
+            "  ABCDEÄ  ",
+            "  AÄÄÄ  ",
+            "export ABCDEÄ",
+            "EXPORT\tAÄÄÄ",
+            "ÄBCDEFG",
+            "12345🦀",
+        ] {
+            let stripped = strip_export_prefix(non_ascii_name);
+            assert!(!stripped.is_empty());
+            assert!(!is_k_org_var_name(non_ascii_name));
+        }
+        assert_eq!(strip_export_prefix("ABCDEÄ"), "ABCDEÄ");
+        assert_eq!(strip_export_prefix("AÄÄÄ"), "AÄÄÄ");
+        assert_eq!(strip_export_prefix("export ABCDEÄ"), "ABCDEÄ");
+        assert_eq!(strip_export_prefix("EXPORT\tAÄÄÄ"), "AÄÄÄ");
+
+        // Prepare explicit key file and consumer.env
+        #[cfg(any(windows, target_os = "linux"))]
+        let explicit_key_path = {
+            use std::io::Write;
+            let parent_root = crate::platform_v1::open_existing_private_root(&dir).unwrap();
+            let exp_child = crate::platform_v1::parse_child_name(
+                "fallback_link.key",
+                crate::platform_v1::current_native_platform(),
+            )
+            .unwrap();
+            let mut vf = parent_root.create_file(&exp_child).unwrap();
+            vf.file_mut()
+                .write_all(format!("{key_fallback_file}\n").as_bytes())
+                .unwrap();
+            let p = vf.path().to_path_buf();
+            drop(vf);
+            drop(parent_root);
+            p
+        };
+        #[cfg(not(any(windows, target_os = "linux")))]
+        let explicit_key_path = {
+            let p = dir.join("fallback_link.key");
+            write_private_key_file(&p, &format!("{key_fallback_file}\n"));
+            p
+        };
+
+        let consumer_env_path = dir.join("consumer_r6.env");
+        std::fs::write(
+            &consumer_env_path,
+            format!(
+                concat!(
+                    "ABCDEÄ=non_ascii_1\n",
+                    "AÄÄÄ=non_ascii_2\n",
+                    "export ABCDEÄ=non_ascii_3\n",
+                    "DENDRO_LINK_ORG=\"\"\n",
+                    "AGENT_OTEL_LINK_ORG=acme-fallback\n",
+                    "DENDRO_LINK_ENDPOINT_SCOPE=\"\"\n",
+                    "AGENT_OTEL_LINK_ENDPOINT_SCOPE=ep-fallback\n",
+                    "DENDRO_LINK_TEAM=\"\"\n",
+                    "AGENT_OTEL_LINK_TEAM=team-fallback\n",
+                    "DENDRO_LINK_EPOCH=\"\"\n",
+                    "AGENT_OTEL_LINK_EPOCH=epoch-fallback\n",
+                    "DENDRO_LINK_KEY_HEX=\"\"\n",
+                    "AGENT_OTEL_LINK_KEY_HEX={key_fallback_consumer}\n",
+                    "DENDRO_FACT_EXPORT_KEY_ID=\"\"\n",
+                    "AGENT_OTEL_FACT_EXPORT_KEY_ID=kid_fallback_consumer\n",
+                    "DENDRO_FACT_EXPORT_KEY_HEX=\"\"\n",
+                    "AGENT_OTEL_FACT_EXPORT_KEY_HEX={key_fallback_consumer}\n"
+                ),
+                key_fallback_consumer = key_fallback_consumer
+            ),
+        )
+        .unwrap();
+
+        // M1 (a): Empty primary in process_env falls back to secondary `AGENT_OTEL_*` in process_env
+        let mut env_empty_primary = BTreeMap::new();
+        env_empty_primary.insert("ABCDEÄ".to_string(), "v1".to_string());
+        env_empty_primary.insert("AÄÄÄ".to_string(), "v2".to_string());
+        env_empty_primary.insert("DENDRO_LINK_ORG".to_string(), String::new());
+        env_empty_primary.insert("AGENT_OTEL_LINK_ORG".to_string(), "acme-env".to_string());
+        env_empty_primary.insert("DENDRO_LINK_ENDPOINT_SCOPE".to_string(), String::new());
+        env_empty_primary.insert(
+            "AGENT_OTEL_LINK_ENDPOINT_SCOPE".to_string(),
+            "ep-env".to_string(),
+        );
+        env_empty_primary.insert("DENDRO_LINK_TEAM".to_string(), String::new());
+        env_empty_primary.insert("AGENT_OTEL_LINK_TEAM".to_string(), "team-env".to_string());
+        env_empty_primary.insert("DENDRO_LINK_EPOCH".to_string(), String::new());
+        env_empty_primary.insert("AGENT_OTEL_LINK_EPOCH".to_string(), "epoch-env".to_string());
+        env_empty_primary.insert("DENDRO_LINK_KEY_HEX".to_string(), String::new());
+        env_empty_primary.insert(
+            "AGENT_OTEL_LINK_KEY_HEX".to_string(),
+            key_fallback_env.clone(),
+        );
+
+        let cfg_env_fb = SessionLinkConfig::from_sources(&env_empty_primary, None, None);
+        assert!(cfg_env_fb.has_valid_key());
+        assert_eq!(
+            cfg_env_fb
+                .resolve_session_link(Some("claude"), Some("sess-r6"), None)
+                .0,
+            expected_link(
+                &key_fallback_env,
+                "acme-env",
+                "ep-env",
+                Some("team-env"),
+                Some("epoch-env")
+            )
+        );
+
+        // M1 (b): Empty DENDRO_LINK_KEY_FILE falls back to AGENT_OTEL_LINK_KEY_FILE
+        let mut env_empty_file_primary = BTreeMap::new();
+        env_empty_file_primary.insert("DENDRO_LINK_ORG".to_string(), "acme-env".to_string());
+        env_empty_file_primary.insert(
+            "DENDRO_LINK_ENDPOINT_SCOPE".to_string(),
+            "ep-env".to_string(),
+        );
+        env_empty_file_primary.insert("DENDRO_LINK_KEY_HEX".to_string(), String::new());
+        env_empty_file_primary.insert("AGENT_OTEL_LINK_KEY_HEX".to_string(), String::new());
+        env_empty_file_primary.insert("DENDRO_LINK_KEY_FILE".to_string(), String::new());
+        env_empty_file_primary.insert(
+            "AGENT_OTEL_LINK_KEY_FILE".to_string(),
+            explicit_key_path.display().to_string(),
+        );
+        let cfg_file_fb = SessionLinkConfig::from_sources(&env_empty_file_primary, None, None);
+        assert!(cfg_file_fb.has_valid_key());
+        assert_eq!(
+            cfg_file_fb
+                .resolve_session_link(Some("claude"), Some("sess-r6"), None)
+                .0,
+            expected_link(&key_fallback_file, "acme-env", "ep-env", None, None)
+        );
+
+        // M1 (c): Empty primary & secondary in process_env AND empty primary in consumer.env
+        // falls back to secondary `AGENT_OTEL_*` in consumer.env!
+        let mut env_all_empty = BTreeMap::new();
+        env_all_empty.insert("DENDRO_LINK_ORG".to_string(), String::new());
+        env_all_empty.insert("AGENT_OTEL_LINK_ORG".to_string(), String::new());
+        env_all_empty.insert("DENDRO_LINK_ENDPOINT_SCOPE".to_string(), String::new());
+        env_all_empty.insert("AGENT_OTEL_LINK_ENDPOINT_SCOPE".to_string(), String::new());
+        env_all_empty.insert("DENDRO_LINK_TEAM".to_string(), String::new());
+        env_all_empty.insert("AGENT_OTEL_LINK_TEAM".to_string(), String::new());
+        env_all_empty.insert("DENDRO_LINK_EPOCH".to_string(), String::new());
+        env_all_empty.insert("AGENT_OTEL_LINK_EPOCH".to_string(), String::new());
+        env_all_empty.insert("DENDRO_LINK_KEY_HEX".to_string(), String::new());
+        env_all_empty.insert("AGENT_OTEL_LINK_KEY_HEX".to_string(), String::new());
+        env_all_empty.insert("DENDRO_LINK_KEY_FILE".to_string(), String::new());
+        env_all_empty.insert("AGENT_OTEL_LINK_KEY_FILE".to_string(), String::new());
+
+        let cfg_consumer_fb =
+            SessionLinkConfig::from_sources(&env_all_empty, None, Some(&consumer_env_path));
+        assert!(cfg_consumer_fb.has_valid_key());
+        assert_eq!(
+            cfg_consumer_fb
+                .resolve_session_link(Some("claude"), Some("sess-r6"), None)
+                .0,
+            expected_link(
+                &key_fallback_consumer,
+                "acme-fallback",
+                "ep-fallback",
+                Some("team-fallback"),
+                Some("epoch-fallback")
+            )
+        );
+
+        // M1 (d): FactExportConfig loader skip-empty parity (process_env and consumer.env)
+        let mut fe_env = BTreeMap::new();
+        fe_env.insert("ABCDEÄ".to_string(), "1".to_string());
+        fe_env.insert("AÄÄÄ".to_string(), "1".to_string());
+        fe_env.insert("DENDRO_FACT_EXPORT_KEY_ID".to_string(), String::new());
+        fe_env.insert(
+            "AGENT_OTEL_FACT_EXPORT_KEY_ID".to_string(),
+            "kid_env_fb".to_string(),
+        );
+        fe_env.insert("DENDRO_FACT_EXPORT_KEY_HEX".to_string(), String::new());
+        fe_env.insert(
+            "AGENT_OTEL_FACT_EXPORT_KEY_HEX".to_string(),
+            key_fallback_env.clone(),
+        );
+        let fe_cfg_env = crate::FactExportConfig::from_sources(&fe_env, None, None);
+        assert!(fe_cfg_env.is_ready());
+        assert_eq!(fe_cfg_env.pseudonym_key_id(), Some("kid_env_fb"));
+
+        let mut fe_env_empty = BTreeMap::new();
+        fe_env_empty.insert("DENDRO_FACT_EXPORT_KEY_ID".to_string(), String::new());
+        fe_env_empty.insert("AGENT_OTEL_FACT_EXPORT_KEY_ID".to_string(), String::new());
+        fe_env_empty.insert("DENDRO_FACT_EXPORT_KEY_HEX".to_string(), String::new());
+        fe_env_empty.insert("AGENT_OTEL_FACT_EXPORT_KEY_HEX".to_string(), String::new());
+        fe_env_empty.insert("DENDRO_FACT_EXPORT_KEY_FILE".to_string(), String::new());
+        fe_env_empty.insert("AGENT_OTEL_FACT_EXPORT_KEY_FILE".to_string(), String::new());
+        let fe_cfg_consumer =
+            crate::FactExportConfig::from_sources(&fe_env_empty, None, Some(&consumer_env_path));
+        assert!(fe_cfg_consumer.is_ready());
+        assert_eq!(
+            fe_cfg_consumer.pseudonym_key_id(),
+            Some("kid_fallback_consumer")
+        );
+
+        // M2: Both `from_env` paths (`SessionLinkConfig::from_env` / `from_env_and_paths` and
+        // `FactExportConfig::from_env` / `from_env_and_paths`) must not panic when `ABCDEÄ` and
+        // `AÄÄÄ` are set in the process environment.
+        std::env::set_var("ABCDEÄ", "test_val_1");
+        std::env::set_var("AÄÄÄ", "test_val_2");
+        let _ = SessionLinkConfig::from_env();
+        let _ = crate::FactExportConfig::from_env();
+        let link_from_env = SessionLinkConfig::from_env_and_paths(None, Some(&consumer_env_path));
+        let fact_from_env =
+            crate::FactExportConfig::from_env_and_paths(None, Some(&consumer_env_path));
+        std::env::remove_var("ABCDEÄ");
+        std::env::remove_var("AÄÄÄ");
+        assert!(link_from_env.has_valid_key());
+        assert!(fact_from_env.is_ready());
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
