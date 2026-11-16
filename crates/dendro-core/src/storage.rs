@@ -406,8 +406,42 @@ impl AnalyticsStore {
         default_branch_not_observed BIGINT NOT NULL DEFAULT 0,
         unparsed_compound_git_calls BIGINT NOT NULL DEFAULT 0,
         PRIMARY KEY (source_id, generation)
-    );
-    ALTER TABLE git_evidence_coverage ADD COLUMN IF NOT EXISTS unparsed_compound_git_calls BIGINT DEFAULT 0";
+    )";
+
+    fn ensure_git_evidence_schema(conn: &Connection) -> Result<()> {
+        conn.execute_batch(Self::GIT_EVIDENCE_SCHEMA)?;
+        let nullable_opt: Option<String> = conn
+            .query_row(
+                "SELECT is_nullable FROM information_schema.columns WHERE table_name = 'git_evidence_coverage' AND column_name = 'unparsed_compound_git_calls'",
+                [],
+                |row| row.get(0),
+            )
+            .ok();
+        match nullable_opt.as_deref() {
+            None => {
+                if conn
+                    .execute_batch(
+                        "ALTER TABLE git_evidence_coverage ADD COLUMN unparsed_compound_git_calls BIGINT NOT NULL DEFAULT 0",
+                    )
+                    .is_err()
+                {
+                    conn.execute_batch(
+                        "ALTER TABLE git_evidence_coverage ADD COLUMN unparsed_compound_git_calls BIGINT DEFAULT 0;
+                         UPDATE git_evidence_coverage SET unparsed_compound_git_calls = 0 WHERE unparsed_compound_git_calls IS NULL;
+                         ALTER TABLE git_evidence_coverage ALTER COLUMN unparsed_compound_git_calls SET NOT NULL",
+                    )?;
+                }
+            }
+            Some("YES") => {
+                conn.execute_batch(
+                    "UPDATE git_evidence_coverage SET unparsed_compound_git_calls = 0 WHERE unparsed_compound_git_calls IS NULL;
+                     ALTER TABLE git_evidence_coverage ALTER COLUMN unparsed_compound_git_calls SET NOT NULL",
+                )?;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
 
     pub(super) const SEMANTIC_STATE_SCHEMA: &'static str = "CREATE TABLE IF NOT EXISTS dendro_semantic_state (id INTEGER PRIMARY KEY, dirty BOOLEAN NOT NULL); INSERT INTO dendro_semantic_state VALUES (1, TRUE) ON CONFLICT DO NOTHING";
 
@@ -536,7 +570,7 @@ impl AnalyticsStore {
         }
         conn.execute_batch(Self::SEMANTIC_STATE_SCHEMA)?;
         conn.execute_batch(Self::SESSION_FACTS_SCHEMA)?;
-        conn.execute_batch(Self::GIT_EVIDENCE_SCHEMA)?;
+        Self::ensure_git_evidence_schema(&conn)?;
         let store = Self {
             conn,
             key_id: key_id.to_string(),
@@ -569,7 +603,7 @@ impl AnalyticsStore {
         conn.execute_batch(openrig_provenance::SCHEMA)?;
         conn.execute_batch(Self::SEMANTIC_STATE_SCHEMA)?;
         conn.execute_batch(Self::SESSION_FACTS_SCHEMA)?;
-        conn.execute_batch(Self::GIT_EVIDENCE_SCHEMA)?;
+        Self::ensure_git_evidence_schema(&conn)?;
         let store = Self {
             conn,
             key_id,
@@ -776,7 +810,7 @@ impl AnalyticsStore {
         self.conn.execute_batch(Self::SESSION_EDGES_SCHEMA)?;
         self.conn.execute_batch(Self::SECURITY_FACTS_SCHEMA)?;
         self.conn.execute_batch(Self::SESSION_FACTS_SCHEMA)?;
-        self.conn.execute_batch(Self::GIT_EVIDENCE_SCHEMA)?;
+        Self::ensure_git_evidence_schema(&self.conn)?;
         self.conn.execute_batch(openrig_provenance::SCHEMA)?;
         self.conn.execute(
             "INSERT INTO dendro_meta (schema_version, key_id) VALUES (?, ?)",
@@ -2035,7 +2069,7 @@ impl AnalyticsStore {
         coverage: Option<&crate::git_evidence::GitEvidenceCoverage>,
     ) -> Result<()> {
         use crate::git_evidence::*;
-        tx.execute_batch(Self::GIT_EVIDENCE_SCHEMA)?;
+        Self::ensure_git_evidence_schema(tx)?;
         let redacted_source_id = redact(source_id);
         let redacted_harness = redact(harness);
         tx.execute(
@@ -2299,6 +2333,21 @@ impl AnalyticsStore {
         Ok(crate::git_evidence::resolve_git_evidence_across_sources(
             &per_source,
         ))
+    }
+
+    /// Deterministically derive cross-source `git_evidence` records across all stored sources
+    /// using an explicit [`crate::git_evidence::FactExportConfig`].
+    pub fn load_git_evidence_with_config(
+        &self,
+        config: &crate::git_evidence::FactExportConfig,
+    ) -> Result<Vec<crate::git_evidence::GitEvidenceFact>> {
+        let per_source = self.load_git_evidence_by_source()?;
+        Ok(
+            crate::git_evidence::resolve_git_evidence_across_sources_with_config(
+                &per_source,
+                config,
+            ),
+        )
     }
 
     /// Load persisted `git_evidence_coverage` rows ordered by `(source_id, generation)`.
@@ -5328,5 +5377,56 @@ mod tests {
         }
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn git_evidence_coverage_migration_adds_not_null_unparsed_compound_git_calls() {
+        let store = AnalyticsStore::open_in_memory("kid").unwrap();
+        let is_nullable_create: String = store
+            .conn
+            .query_row(
+                "SELECT is_nullable FROM information_schema.columns WHERE table_name = 'git_evidence_coverage' AND column_name = 'unparsed_compound_git_calls'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(is_nullable_create, "NO");
+
+        // Simulate a pre-migration `git_evidence_coverage` table without `unparsed_compound_git_calls`:
+        store
+            .conn
+            .execute_batch(
+                "DROP TABLE git_evidence_coverage;
+                 CREATE TABLE git_evidence_coverage (
+                     source_id VARCHAR NOT NULL,
+                     generation BIGINT NOT NULL,
+                     harness VARCHAR NOT NULL,
+                     observed BIGINT NOT NULL DEFAULT 0,
+                     unresolved_abbreviated BIGINT NOT NULL DEFAULT 0,
+                     unverified_object_format BIGINT NOT NULL DEFAULT 0,
+                     missing_parents BIGINT NOT NULL DEFAULT 0,
+                     ambiguous BIGINT NOT NULL DEFAULT 0,
+                     unmatched BIGINT NOT NULL DEFAULT 0,
+                     default_branch_not_observed BIGINT NOT NULL DEFAULT 0,
+                     PRIMARY KEY (source_id, generation)
+                 );
+                 INSERT INTO git_evidence_coverage (source_id, generation, harness, observed) VALUES ('s1', 1, 'claude', 3);",
+            )
+            .unwrap();
+
+        AnalyticsStore::ensure_git_evidence_schema(&store.conn).unwrap();
+        let is_nullable_alter: String = store
+            .conn
+            .query_row(
+                "SELECT is_nullable FROM information_schema.columns WHERE table_name = 'git_evidence_coverage' AND column_name = 'unparsed_compound_git_calls'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(is_nullable_alter, "NO");
+        let cov = store.load_git_evidence_coverage().unwrap();
+        assert_eq!(cov.len(), 1);
+        assert_eq!(cov[0].observed, 3);
+        assert_eq!(cov[0].unparsed_compound_git_calls, 0);
     }
 }

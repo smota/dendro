@@ -1524,32 +1524,46 @@ fn observe_record_git_evidence(
     }
 }
 
-fn extract_json_command_string(val: &Value) -> Option<String> {
+fn extract_json_command_input_inner(
+    val: &Value,
+    allow_json_string_decode: bool,
+) -> Option<dendro_core::GitCommandInput> {
     if let Some(s) = val.as_str() {
-        if let Ok(parsed) = serde_json::from_str::<Value>(s) {
-            if let Some(cmd) = extract_json_command_string(&parsed) {
-                return Some(cmd);
+        let trimmed = s.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        if allow_json_string_decode && (trimmed.starts_with('{') || trimmed.starts_with('[')) {
+            if let Ok(parsed) = serde_json::from_str::<Value>(trimmed) {
+                if let Some(cmd) = extract_json_command_input_inner(&parsed, false) {
+                    return Some(cmd);
+                }
             }
         }
-        return (!s.trim().is_empty()).then(|| s.to_string());
+        return Some(dendro_core::GitCommandInput::CommandString(s.to_string()));
     }
     if let Some(arr) = val.as_array() {
-        let parts: Vec<&str> = arr.iter().filter_map(Value::as_str).collect();
-        if !parts.is_empty() {
-            return Some(parts.join(" "));
+        let mut argv = Vec::with_capacity(arr.len());
+        for item in arr {
+            let s = item.as_str()?;
+            argv.push(s.to_string());
         }
-        return None;
+        return (!argv.is_empty()).then_some(dendro_core::GitCommandInput::Argv(argv));
     }
     if let Some(obj) = val.as_object() {
         for key in ["command", "cmd", "raw_command"] {
             if let Some(v) = obj.get(key) {
-                if let Some(cmd) = extract_json_command_string(v) {
+                if let Some(cmd) = extract_json_command_input_inner(v, false) {
                     return Some(cmd);
                 }
             }
         }
     }
     None
+}
+
+fn extract_json_command_input(val: &Value) -> Option<dendro_core::GitCommandInput> {
+    extract_json_command_input_inner(val, true)
 }
 
 fn extract_json_output_text(val: &Value) -> Option<String> {
@@ -1592,42 +1606,10 @@ fn extract_json_output_text(val: &Value) -> Option<String> {
     }
 }
 
-fn extract_json_cwd(val: &Value) -> Option<String> {
-    if let Some(s) = val.as_str() {
-        if let Ok(parsed) = serde_json::from_str::<Value>(s) {
-            if let Some(cwd) = extract_json_cwd(&parsed) {
-                return Some(cwd);
-            }
-        }
-        return None;
-    }
-    if let Some(obj) = val.as_object() {
-        for key in ["cwd", "workdir", "working_directory", "workingDirectory"] {
-            if let Some(s) = obj
-                .get(key)
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-            {
-                return Some(s.to_string());
-            }
-        }
-    }
-    None
-}
-
-fn observe_record_git_context<'a>(
-    value: &'a Value,
-    raw_session: Option<&str>,
-    header_conflict: bool,
-    scanner: &mut dendro_core::GitEvidenceScanner,
-) -> Option<&'a str> {
-    let git_obj = value
-        .pointer("/payload/git")
-        .or_else(|| value.get("git"))
-        .or_else(|| value.pointer("/params/git"));
-
-    let cwd = value
+/// S1: ONLY the record's own `cwd` field is used (no `cd` handling, no tool-input `cwd` override,
+/// no session fallback).
+fn extract_record_cwd(value: &Value) -> Option<&str> {
+    value
         .get("cwd")
         .or_else(|| value.pointer("/payload/cwd"))
         .or_else(|| value.pointer("/params/cwd"))
@@ -1635,19 +1617,7 @@ fn observe_record_git_context<'a>(
         .or_else(|| value.pointer("/message/cwd"))
         .and_then(Value::as_str)
         .map(str::trim)
-        .filter(|s| !s.is_empty());
-
-    let branch = value
-        .get("gitBranch")
-        .or_else(|| git_obj.and_then(|g| g.get("branch").or_else(|| g.get("gitBranch"))))
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
-
-    if cwd.is_some() || branch.is_some() {
-        scanner.observe_record_context(raw_session, header_conflict, cwd, branch);
-    }
-    cwd
+        .filter(|s| !s.is_empty())
 }
 
 fn observe_claude_git_evidence(value: &Value, scanner: &mut dendro_core::GitEvidenceScanner) {
@@ -1657,8 +1627,7 @@ fn observe_claude_git_evidence(value: &Value, scanner: &mut dendro_core::GitEvid
         .map(str::trim)
         .filter(|s| !s.is_empty());
     let ts = timestamp_of(value);
-
-    let record_cwd = observe_record_git_context(value, raw_session, false, scanner);
+    let record_cwd = extract_record_cwd(value);
 
     let mut saw_tool_result_block = false;
     if let Some(content) = value.pointer("/message/content").and_then(Value::as_array) {
@@ -1671,24 +1640,27 @@ fn observe_claude_git_evidence(value: &Value, scanner: &mut dendro_core::GitEvid
                         .filter(|s| !s.is_empty());
                     let name = block.get("name").and_then(Value::as_str);
                     let input_val = block.get("input").or_else(|| block.get("arguments"));
-                    let cmd = input_val.and_then(extract_json_command_string);
-                    let call_cwd = input_val.and_then(extract_json_cwd);
-                    let effective_cwd = call_cwd.as_deref().or(record_cwd);
-                    scanner.observe_tool_call_with_context(id, name, cmd.as_deref(), effective_cwd);
+                    let cmd = input_val.and_then(extract_json_command_input);
+                    scanner.observe_tool_call_input_with_context(
+                        id,
+                        name,
+                        cmd.as_ref(),
+                        record_cwd,
+                    );
                     if let Some(inline_out) = block
                         .get("output")
                         .or_else(|| block.get("stdout"))
                         .and_then(extract_json_output_text)
                     {
                         let is_err = block.get("is_error").and_then(Value::as_bool);
-                        scanner.observe_tool_output_with_cwd(
+                        scanner.observe_tool_output_input_with_cwd(
                             id,
-                            cmd.as_deref(),
+                            cmd.as_ref(),
                             raw_session,
                             false,
                             ts,
                             is_err,
-                            effective_cwd,
+                            record_cwd,
                             &inline_out,
                         );
                     }
@@ -1709,7 +1681,7 @@ fn observe_claude_git_evidence(value: &Value, scanner: &mut dendro_core::GitEvid
                                 .and_then(extract_json_output_text)
                         });
                     if let Some(text) = out_text {
-                        scanner.observe_tool_output_with_cwd(
+                        scanner.observe_tool_output_input_with_cwd(
                             id,
                             None,
                             raw_session,
@@ -1738,7 +1710,7 @@ fn observe_claude_git_evidence(value: &Value, scanner: &mut dendro_core::GitEvid
                     .get("is_error")
                     .or_else(|| tool_res.get("interrupted"))
                     .and_then(Value::as_bool);
-                scanner.observe_tool_output_with_cwd(
+                scanner.observe_tool_output_input_with_cwd(
                     id,
                     None,
                     raw_session,
@@ -1790,8 +1762,7 @@ fn observe_codex_git_evidence(
 ) {
     let raw_session = resolve_file_or_record_session("codex", value, file_session, header_conflict);
     let ts = timestamp_of(value);
-
-    let record_cwd = observe_record_git_context(value, raw_session, header_conflict, scanner);
+    let record_cwd = extract_record_cwd(value);
 
     let envelope = value.get("type").and_then(Value::as_str);
     let kind = value.pointer("/payload/type").and_then(Value::as_str);
@@ -1804,10 +1775,8 @@ fn observe_codex_git_evidence(
                     .and_then(Value::as_str)
                     .filter(|s| !s.is_empty());
                 let item_type = item.get("type").and_then(Value::as_str);
-                let item_cwd = extract_json_cwd(item);
-                let effective_cwd = item_cwd.as_deref().or(record_cwd);
                 if item_type == Some("CommandExecution") {
-                    let cmd = item.get("command").and_then(extract_json_command_string);
+                    let cmd = item.get("command").and_then(extract_json_command_input);
                     let failed = item
                         .get("exit_code")
                         .and_then(Value::as_i64)
@@ -1818,19 +1787,19 @@ fn observe_codex_git_evidence(
                                 .map(|code| code != 0)
                         });
                     if let Some(out_text) = extract_json_output_text(item) {
-                        scanner.observe_tool_output_with_cwd(
+                        scanner.observe_tool_output_input_with_cwd(
                             id,
-                            cmd.as_deref(),
+                            cmd.as_ref(),
                             raw_session,
                             header_conflict,
                             ts,
                             failed,
-                            effective_cwd,
+                            record_cwd,
                             &out_text,
                         );
                     }
                 } else {
-                    scanner.observe_tool_call_with_context(id, item_type, None, effective_cwd);
+                    scanner.observe_tool_call_input_with_context(id, item_type, None, record_cwd);
                 }
             }
         }
@@ -1856,17 +1825,9 @@ fn observe_codex_git_evidence(
                     .or_else(|| payload.get("input"))
                     .or_else(|| payload.get("action"));
                 let cmd = args_val
-                    .and_then(extract_json_command_string)
-                    .or_else(|| payload.get("command").and_then(extract_json_command_string));
-                let call_cwd = args_val
-                    .and_then(extract_json_cwd)
-                    .or_else(|| extract_json_cwd(payload));
-                scanner.observe_tool_call_with_context(
-                    id,
-                    name,
-                    cmd.as_deref(),
-                    call_cwd.as_deref().or(record_cwd),
-                );
+                    .and_then(extract_json_command_input)
+                    .or_else(|| payload.get("command").and_then(extract_json_command_input));
+                scanner.observe_tool_call_input_with_context(id, name, cmd.as_ref(), record_cwd);
             }
         }
         (
@@ -1890,7 +1851,7 @@ fn observe_codex_git_evidence(
                     .and_then(extract_json_output_text)
                     .or_else(|| extract_json_output_text(payload))
                 {
-                    scanner.observe_tool_output_with_cwd(
+                    scanner.observe_tool_output_input_with_cwd(
                         id,
                         None,
                         raw_session,
@@ -1915,8 +1876,7 @@ fn observe_pi_git_evidence(
 ) {
     let raw_session = resolve_file_or_record_session("pi", value, file_session, header_conflict);
     let ts = timestamp_of(value);
-
-    let record_cwd = observe_record_git_context(value, raw_session, header_conflict, scanner);
+    let record_cwd = extract_record_cwd(value);
 
     if value.pointer("/message/role").and_then(Value::as_str) == Some("toolResult") {
         let id = value
@@ -1938,7 +1898,7 @@ fn observe_pi_git_evidence(
                     .and_then(extract_json_output_text)
             });
         if let Some(text) = out_text {
-            scanner.observe_tool_output_with_cwd(
+            scanner.observe_tool_output_input_with_cwd(
                 id,
                 None,
                 raw_session,
@@ -1961,14 +1921,8 @@ fn observe_pi_git_evidence(
                     .filter(|s| !s.is_empty());
                 let name = block.get("name").and_then(Value::as_str);
                 let args_val = block.get("arguments").or_else(|| block.get("input"));
-                let cmd = args_val.and_then(extract_json_command_string);
-                let call_cwd = args_val.and_then(extract_json_cwd);
-                scanner.observe_tool_call_with_context(
-                    id,
-                    name,
-                    cmd.as_deref(),
-                    call_cwd.as_deref().or(record_cwd),
-                );
+                let cmd = args_val.and_then(extract_json_command_input);
+                scanner.observe_tool_call_input_with_context(id, name, cmd.as_ref(), record_cwd);
             }
         }
     }
@@ -1982,8 +1936,7 @@ fn observe_grok_git_evidence(
 ) {
     let raw_session = resolve_file_or_record_session("grok", value, file_session, header_conflict);
     let ts = grok_timestamp(value);
-
-    let record_cwd = observe_record_git_context(value, raw_session, header_conflict, scanner);
+    let record_cwd = extract_record_cwd(value);
 
     let Some(update) = value.pointer("/params/update") else {
         return;
@@ -2000,10 +1953,8 @@ fn observe_grok_git_evidence(
                 .or_else(|| update.get("title"))
                 .and_then(Value::as_str);
             let input_val = update.get("rawInput").or_else(|| update.get("input"));
-            let cmd = input_val.and_then(extract_json_command_string);
-            let call_cwd = input_val.and_then(extract_json_cwd);
-            let effective_cwd = call_cwd.as_deref().or(record_cwd);
-            scanner.observe_tool_call_with_context(id, name, cmd.as_deref(), effective_cwd);
+            let cmd = input_val.and_then(extract_json_command_input);
+            scanner.observe_tool_call_input_with_context(id, name, cmd.as_ref(), record_cwd);
             if let Some(out_text) = update
                 .get("rawOutput")
                 .or_else(|| update.get("output"))
@@ -2014,14 +1965,14 @@ fn observe_grok_git_evidence(
                     Some("completed") => Some(false),
                     _ => None,
                 };
-                scanner.observe_tool_output_with_cwd(
+                scanner.observe_tool_output_input_with_cwd(
                     id,
-                    cmd.as_deref(),
+                    cmd.as_ref(),
                     raw_session,
                     header_conflict,
                     ts,
                     failed,
-                    effective_cwd,
+                    record_cwd,
                     &out_text,
                 );
             }
@@ -2042,7 +1993,7 @@ fn observe_grok_git_evidence(
                 .or_else(|| update.get("content"))
                 .and_then(extract_json_output_text)
             {
-                scanner.observe_tool_output_with_cwd(
+                scanner.observe_tool_output_input_with_cwd(
                     id,
                     None,
                     raw_session,
@@ -9483,12 +9434,13 @@ mod d4c_git_bridge_tests {
         .unwrap();
 
         // 2. Codex session with 64-hex SHA-256 commit in `git rev-parse HEAD` after `git rev-parse --show-object-format`
+        //    (both records carry their own `cwd` field per S1).
         let codex_file = dir.join("codex_rev_parse.jsonl");
         let codex_lines = format!(
             concat!(
                 "{{\"type\":\"session_meta\",\"timestamp\":\"2026-11-12T11:00:00Z\",\"payload\":{{\"id\":\"codex-a\",\"cwd\":\"/repo\"}}}}\n",
-                "{{\"type\":\"event_msg\",\"timestamp\":\"2026-11-12T11:00:02Z\",\"payload\":{{\"type\":\"item_completed\",\"item\":{{\"id\":\"cmd-0\",\"type\":\"CommandExecution\",\"command\":[\"git\",\"rev-parse\",\"--show-object-format\"],\"exit_code\":0,\"aggregated_output\":\"sha256\\n\"}}}}}}\n",
-                "{{\"type\":\"event_msg\",\"timestamp\":\"2026-11-12T11:00:05Z\",\"payload\":{{\"type\":\"item_completed\",\"item\":{{\"id\":\"cmd-1\",\"type\":\"CommandExecution\",\"command\":[\"git\",\"rev-parse\",\"HEAD\"],\"exit_code\":0,\"aggregated_output\":\"{sha_256}\\n\"}}}}}}\n"
+                "{{\"type\":\"event_msg\",\"cwd\":\"/repo\",\"timestamp\":\"2026-11-12T11:00:02Z\",\"payload\":{{\"type\":\"item_completed\",\"item\":{{\"id\":\"cmd-0\",\"type\":\"CommandExecution\",\"command\":[\"git\",\"rev-parse\",\"--show-object-format\"],\"exit_code\":0,\"aggregated_output\":\"sha256\\n\"}}}}}}\n",
+                "{{\"type\":\"event_msg\",\"cwd\":\"/repo\",\"timestamp\":\"2026-11-12T11:00:05Z\",\"payload\":{{\"type\":\"item_completed\",\"item\":{{\"id\":\"cmd-1\",\"type\":\"CommandExecution\",\"command\":[\"git\",\"rev-parse\",\"HEAD\"],\"exit_code\":0,\"aggregated_output\":\"{sha_256}\\n\"}}}}}}\n"
             ),
             sha_256 = sha_256
         );
@@ -9504,7 +9456,15 @@ mod d4c_git_bridge_tests {
         )
         .unwrap();
 
-        let rows = store.load_git_evidence().unwrap();
+        // S5: Without a Ready config in the environment, `load_git_evidence()` returns non_exportable:
+        let rows_no_env = store.load_git_evidence().unwrap();
+        assert_eq!(rows_no_env.len(), 2);
+        assert!(rows_no_env
+            .iter()
+            .all(|r| r.export_status == "non_exportable" && r.commit_hmac.is_none()));
+
+        // With the Ready `export_cfg`, rows with matching `pseudonym_key_id` are exportable:
+        let rows = store.load_git_evidence_with_config(&export_cfg).unwrap();
         assert_eq!(rows.len(), 2);
 
         let claude_row = rows
@@ -9574,7 +9534,7 @@ mod d4c_git_bridge_tests {
         let claude_file = dir.join("claude_log.jsonl");
         let claude_lines = format!(
             concat!(
-                "{{\"type\":\"assistant\",\"sessionId\":\"claude-log-s1\",\"timestamp\":\"2026-11-12T12:00:00Z\",\"message\":{{\"id\":\"m1\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5\",\"content\":[{{\"type\":\"tool_use\",\"id\":\"tu-log-1\",\"name\":\"Bash\",\"input\":{{\"command\":\"git log -3 --format='%H %P'\"}}}}]}}}}\n",
+                "{{\"type\":\"assistant\",\"sessionId\":\"claude-log-s1\",\"timestamp\":\"2026-11-12T12:00:00Z\",\"message\":{{\"id\":\"m1\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5\",\"content\":[{{\"type\":\"tool_use\",\"id\":\"tu-log-1\",\"name\":\"Bash\",\"input\":{{\"command\":\"git log -n 3 --format='%H %P'\"}}}}]}}}}\n",
                 "{{\"type\":\"user\",\"sessionId\":\"claude-log-s1\",\"timestamp\":\"2026-11-12T12:00:02Z\",\"message\":{{\"role\":\"user\",\"content\":[{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-log-1\",\"is_error\":false,\"content\":\"{log_out}\"}}]}}}}\n"
             ),
             log_out = log_out
@@ -9591,7 +9551,7 @@ mod d4c_git_bridge_tests {
         )
         .unwrap();
 
-        let rows = store.load_git_evidence().unwrap();
+        let rows = store.load_git_evidence_with_config(&export_cfg).unwrap();
         assert_eq!(rows.len(), 3);
 
         let sealed_merge = dendro_core::seal_commit(Some(tool_key), &sha_merge);
@@ -9646,8 +9606,8 @@ mod d4c_git_bridge_tests {
 
         let claude_file = dir.join("claude_abbrev.jsonl");
         let claude_lines = concat!(
-            "{\"type\":\"assistant\",\"sessionId\":\"claude-ab-1\",\"timestamp\":\"2026-11-12T13:00:00Z\",\"message\":{\"id\":\"m1\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5\",\"content\":[{\"type\":\"tool_use\",\"id\":\"tu-c-1\",\"name\":\"Bash\",\"input\":{\"command\":\"git commit -m 'feat: test'\"}},{\"type\":\"tool_use\",\"id\":\"tu-rp-s\",\"name\":\"Bash\",\"input\":{\"command\":\"git rev-parse --short HEAD\"}}]}}\n",
-            "{\"type\":\"user\",\"sessionId\":\"claude-ab-1\",\"timestamp\":\"2026-11-12T13:00:01Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"tu-c-1\",\"is_error\":false,\"content\":\"[main abc1234] feat: test\\n 1 file changed, 2 insertions(+)\\n\"},{\"type\":\"tool_result\",\"tool_use_id\":\"tu-rp-s\",\"is_error\":false,\"content\":\"abc1234\\n\"}]}}\n"
+            "{\"type\":\"assistant\",\"sessionId\":\"claude-ab-1\",\"timestamp\":\"2026-11-12T13:00:00Z\",\"message\":{\"id\":\"m1\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5\",\"content\":[{\"type\":\"tool_use\",\"id\":\"tu-c-1\",\"name\":\"Bash\",\"input\":{\"command\":\"git commit -m 'feat: test'\"}},{\"type\":\"tool_use\",\"id\":\"tu-log-s\",\"name\":\"Bash\",\"input\":{\"command\":\"git log -1 --format=%H\"}}]}}\n",
+            "{\"type\":\"user\",\"sessionId\":\"claude-ab-1\",\"timestamp\":\"2026-11-12T13:00:01Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"tu-c-1\",\"is_error\":false,\"content\":\"[main abc1234] feat: test\\n 1 file changed, 2 insertions(+)\\n\"},{\"type\":\"tool_result\",\"tool_use_id\":\"tu-log-s\",\"is_error\":false,\"content\":\"abc1234\\n\"}]}}\n"
         );
         fs::write(&claude_file, claude_lines).unwrap();
 
@@ -9755,7 +9715,7 @@ mod d4c_git_bridge_tests {
         assert_eq!(raw_rows.len(), 3);
 
         // Cross-source read derives session_match_status across all sources (2 distinct commits)
-        let rows = store.load_git_evidence().unwrap();
+        let rows = store.load_git_evidence_with_config(&export_cfg).unwrap();
         assert_eq!(rows.len(), 2);
         for row in &rows {
             assert_eq!(
@@ -9771,7 +9731,7 @@ mod d4c_git_bridge_tests {
     }
 
     #[test]
-    fn no_parents_recorded_and_branch_main_alone_produce_not_observed_statuses() {
+    fn no_parents_recorded_and_on_default_branch_always_not_observed_in_mvp() {
         let scratch = AdmittedTestDir::new("dendro-d4c-not-observed");
         let dir = scratch.path();
         let db_path = dir.join("not_observed.duckdb");
@@ -9779,7 +9739,7 @@ mod d4c_git_bridge_tests {
         let tool_key = b"d4c-not-observed-tool-key-000000";
 
         let sha_no_parents = "3".repeat(40);
-        let sha_with_default = "4".repeat(40);
+        let sha_with_symbolic = "4".repeat(40);
 
         // File 1: Branch name "main" alone + `git rev-parse HEAD` (no parents recorded)
         let claude_main_only = dir.join("claude_main_only.jsonl");
@@ -9808,27 +9768,25 @@ mod d4c_git_bridge_tests {
             Some("parents_not_recorded")
         );
         assert_eq!(rows_1[0].is_merge, None);
-        assert_eq!(
-            rows_1[0].default_branch_status, "not_observed",
-            "branch name 'main' alone must never infer default_branch_status = observed"
-        );
+        assert_eq!(rows_1[0].default_branch_status, "not_observed");
         assert_eq!(rows_1[0].on_default_branch, None);
 
-        // File 2: Explicit `git symbolic-ref refs/remotes/origin/HEAD` -> `refs/remotes/origin/main` in same session + cwd
-        let claude_explicit_def = dir.join("claude_explicit_default.jsonl");
+        // File 2: S3 — Even if `git symbolic-ref refs/remotes/origin/HEAD` is run on `main`,
+        // `on_default_branch` is ALWAYS `not_observed` in the MVP.
+        let claude_symbolic = dir.join("claude_symbolic.jsonl");
         let lines_2 = format!(
             concat!(
                 "{{\"type\":\"assistant\",\"sessionId\":\"sess-m2\",\"cwd\":\"/repo\",\"gitBranch\":\"main\",\"timestamp\":\"2026-11-12T15:10:00Z\",\"message\":{{\"id\":\"m2\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5\",\"content\":[{{\"type\":\"tool_use\",\"id\":\"tu-sym\",\"name\":\"Bash\",\"input\":{{\"command\":\"git symbolic-ref refs/remotes/origin/HEAD\"}}}},{{\"type\":\"tool_use\",\"id\":\"tu-rp\",\"name\":\"Bash\",\"input\":{{\"command\":\"git rev-parse HEAD\"}}}}]}}}}\n",
-                "{{\"type\":\"user\",\"sessionId\":\"sess-m2\",\"cwd\":\"/repo\",\"gitBranch\":\"main\",\"timestamp\":\"2026-11-12T15:10:01Z\",\"message\":{{\"role\":\"user\",\"content\":[{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-sym\",\"is_error\":false,\"content\":\"refs/remotes/origin/main\\n\"}},{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-rp\",\"is_error\":false,\"content\":\"{sha_with_default}\\n\"}}]}}}}\n"
+                "{{\"type\":\"user\",\"sessionId\":\"sess-m2\",\"cwd\":\"/repo\",\"gitBranch\":\"main\",\"timestamp\":\"2026-11-12T15:10:01Z\",\"message\":{{\"role\":\"user\",\"content\":[{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-sym\",\"is_error\":false,\"content\":\"refs/remotes/origin/main\\n\"}},{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-rp\",\"is_error\":false,\"content\":\"{sha_with_symbolic}\\n\"}}]}}}}\n"
             ),
-            sha_with_default = sha_with_default
+            sha_with_symbolic = sha_with_symbolic
         );
-        fs::write(&claude_explicit_def, lines_2).unwrap();
+        fs::write(&claude_symbolic, lines_2).unwrap();
         ingest_jsonl_with_key(
             &store,
             "src-explicit-def",
             "claude",
-            &claude_explicit_def,
+            &claude_symbolic,
             Some(tool_key),
         )
         .unwrap();
@@ -9838,8 +9796,11 @@ mod d4c_git_bridge_tests {
             .iter()
             .find(|r| r.source_id == "src-explicit-def")
             .unwrap();
-        assert_eq!(exp_row.default_branch_status, "observed");
-        assert_eq!(exp_row.on_default_branch, Some(true));
+        assert_eq!(
+            exp_row.default_branch_status, "not_observed",
+            "S3: default_branch_status must ALWAYS be not_observed in the MVP"
+        );
+        assert_eq!(exp_row.on_default_branch, None);
     }
 
     #[test]
@@ -9905,7 +9866,7 @@ mod d4c_git_bridge_tests {
         )
         .unwrap();
 
-        let pass2 = store.load_git_evidence().unwrap();
+        let pass2 = store.load_git_evidence_with_config(&export_cfg).unwrap();
         assert_eq!(pass2.len(), 1);
         assert_eq!(pass2[0].export_status, "exportable");
         assert_eq!(pass2[0].pseudonym_key_id.as_deref(), Some("kh_customer_v1"));
@@ -10022,8 +9983,12 @@ mod d4c_git_bridge_tests {
             ),
             sha_cat = sha_cat
         ));
-        let cat_head_body = format!("tree {sha_tree}\\nparent {sha_noise}\\n\\nmsg\\n");
-        let cat_sha_body = format!("tree {sha_tree}\\nparent {sha_parent}\\n\\nmsg\\n");
+        let cat_head_body = format!(
+            "tree {sha_tree}\\nparent {sha_noise}\\nauthor Dev <d@e> 1700000000 +0000\\ncommitter Dev <d@e> 1700000000 +0000\\n\\nmsg\\n"
+        );
+        let cat_sha_body = format!(
+            "tree {sha_tree}\\nparent {sha_parent}\\nauthor Dev <d@e> 1700000000 +0000\\ncommitter Dev <d@e> 1700000000 +0000\\n\\nmsg\\n"
+        );
         lines.push_str(&format!(
             concat!(
                 "{{\"type\":\"user\",\"sessionId\":\"s-e2e\",\"cwd\":\"/repo-a\",\"gitBranch\":\"main\",\"timestamp\":\"2026-11-12T20:00:01Z\",\"message\":{{\"role\":\"user\",\"content\":[",
@@ -10100,10 +10065,7 @@ mod d4c_git_bridge_tests {
             row_cat.parent_sealed,
             vec![dendro_core::seal_commit(Some(tool_key), &sha_parent)]
         );
-        assert_eq!(
-            row_cat.default_branch_status, "not_observed",
-            "symbolic-ref in /repo-b, @{{u}}, and branch -r must not set default branch in /repo-a"
-        );
+        assert_eq!(row_cat.default_branch_status, "not_observed");
         assert_eq!(row_cat.on_default_branch, None);
 
         let sealed_256 = dendro_core::seal_commit(Some(tool_key), &sha_verified_256);
@@ -10193,49 +10155,57 @@ mod d4c_git_bridge_tests {
     }
 
     #[test]
-    fn r1_to_r5_compound_commands_head_only_default_branch_and_conflicting_parents_e2e() {
-        let scratch = AdmittedTestDir::new("dendro-d4c-r1-r5-e2e");
+    fn s1_to_s5_compound_commands_mvp_default_branch_and_intra_and_cross_source_conflicting_parents_e2e(
+    ) {
+        let scratch = AdmittedTestDir::new("dendro-d4c-s1-s5-e2e");
         let dir = scratch.path();
-        let db_path = dir.join("r1_r5.duckdb");
+        let db_path = dir.join("s1_s5.duckdb");
         let store = open_test_analytics(&db_path);
-        let tool_key = b"d4c-r1-r5-e2e-tool-key-000000000";
+        let tool_key = b"d4c-s1-s5-e2e-tool-key-000000000";
         let raw_export_key = b"fact-export-v1-test-key-32-bytes";
         let export_cfg =
             dendro_core::FactExportConfig::from_raw_key(raw_export_key, "kh_customer_v1");
 
         let sha_head = "1".repeat(40);
         let sha_non_head = "2".repeat(40);
+        let sha_intra = "6".repeat(40);
         let sha_p1 = "3".repeat(40);
         let sha_p2 = "4".repeat(40);
         let sha_blob = "5".repeat(40);
 
         // Source A:
-        // - symbolic-ref sets default branch = main in /repo
         // - compound `git log --format=%H && git hash-object -w README.md` -> skipped + counted in unparsed_compound_git_calls
-        // - `git log -2 --format='%H %P'` on main -> neither commit is established as HEAD, so default_branch_status = not_observed
-        // - `git rev-parse HEAD` -> establishes sha_head as HEAD on main -> default_branch_status = observed, on_default_branch = Some(true)
-        let file_a = dir.join("claude_r1_r5_a.jsonl");
+        // - `GIT_DIR=/other/.git git rev-parse HEAD` -> skipped + counted in unparsed_compound_git_calls
+        // - `git log -n 2 --format='%H %P'` -> observes sha_head and sha_non_head with parent sha_p1
+        // - `git rev-parse HEAD` -> observes sha_head (on_default_branch is STILL not_observed per S3)
+        // - two conflicting `git log -1 --format='%H %P'` observations for `sha_intra` within Source A -> intra-source conflicting_parents (S4)
+        let file_a = dir.join("claude_s1_s5_a.jsonl");
         let log_2_out = format!("{sha_head} {sha_p1}\\n{sha_non_head} {sha_p1}\\n");
         let lines_a = format!(
             concat!(
                 "{{\"type\":\"assistant\",\"sessionId\":\"s-r1\",\"cwd\":\"/repo\",\"gitBranch\":\"main\",\"timestamp\":\"2026-11-12T21:00:00Z\",\"message\":{{\"id\":\"m1\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5\",\"content\":[",
-                "{{\"type\":\"tool_use\",\"id\":\"tu-sym\",\"name\":\"Bash\",\"input\":{{\"command\":\"git symbolic-ref refs/remotes/origin/HEAD\"}}}},",
                 "{{\"type\":\"tool_use\",\"id\":\"tu-comp1\",\"name\":\"Bash\",\"input\":{{\"command\":\"git log --format=%H && git hash-object -w README.md\"}}}},",
                 "{{\"type\":\"tool_use\",\"id\":\"tu-comp2\",\"name\":\"Bash\",\"input\":{{\"command\":\"GIT_DIR=/other/.git git rev-parse HEAD\"}}}},",
-                "{{\"type\":\"tool_use\",\"id\":\"tu-log2\",\"name\":\"Bash\",\"input\":{{\"command\":\"git log -2 --format='%H %P'\"}}}},",
-                "{{\"type\":\"tool_use\",\"id\":\"tu-rp-head\",\"name\":\"Bash\",\"input\":{{\"command\":\"git rev-parse HEAD\"}}}}",
+                "{{\"type\":\"tool_use\",\"id\":\"tu-log2\",\"name\":\"Bash\",\"input\":{{\"command\":\"git log -n 2 --format='%H %P'\"}}}},",
+                "{{\"type\":\"tool_use\",\"id\":\"tu-rp-head\",\"name\":\"Bash\",\"input\":{{\"command\":\"git rev-parse HEAD\"}}}},",
+                "{{\"type\":\"tool_use\",\"id\":\"tu-intra1\",\"name\":\"Bash\",\"input\":{{\"command\":\"git log -1 --format='%H %P'\"}}}},",
+                "{{\"type\":\"tool_use\",\"id\":\"tu-intra2\",\"name\":\"Bash\",\"input\":{{\"command\":\"git log -1 --format='%H %P'\"}}}}",
                 "]}}}}\n",
                 "{{\"type\":\"user\",\"sessionId\":\"s-r1\",\"cwd\":\"/repo\",\"gitBranch\":\"main\",\"timestamp\":\"2026-11-12T21:00:01Z\",\"message\":{{\"role\":\"user\",\"content\":[",
-                "{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-sym\",\"is_error\":false,\"content\":\"refs/remotes/origin/main\\n\"}},",
                 "{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-comp1\",\"is_error\":false,\"content\":\"{sha_blob}\\n\"}},",
                 "{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-comp2\",\"is_error\":false,\"content\":\"{sha_blob}\\n\"}},",
                 "{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-log2\",\"is_error\":false,\"content\":\"{log_2_out}\"}},",
-                "{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-rp-head\",\"is_error\":false,\"content\":\"{sha_head}\\n\"}}",
+                "{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-rp-head\",\"is_error\":false,\"content\":\"{sha_head}\\n\"}},",
+                "{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-intra1\",\"is_error\":false,\"content\":\"{sha_intra} {sha_p1}\\n\"}},",
+                "{{\"type\":\"tool_result\",\"tool_use_id\":\"tu-intra2\",\"is_error\":false,\"content\":\"{sha_intra} {sha_p2}\\n\"}}",
                 "]}}}}\n"
             ),
             sha_blob = sha_blob,
             log_2_out = log_2_out,
             sha_head = sha_head,
+            sha_intra = sha_intra,
+            sha_p1 = sha_p1,
+            sha_p2 = sha_p2,
         );
         fs::write(&file_a, lines_a).unwrap();
         ingest_jsonl_with_export_config(
@@ -10249,7 +10219,7 @@ mod d4c_git_bridge_tests {
         .unwrap();
 
         // Source B: reports conflicting parents for sha_non_head (sha_p2 instead of sha_p1)
-        let file_b = dir.join("claude_r1_r5_b.jsonl");
+        let file_b = dir.join("claude_s1_s5_b.jsonl");
         let lines_b = format!(
             concat!(
                 "{{\"type\":\"assistant\",\"sessionId\":\"s-r1\",\"cwd\":\"/repo\",\"timestamp\":\"2026-11-12T21:05:00Z\",\"message\":{{\"id\":\"m2\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5\",\"content\":[",
@@ -10276,10 +10246,10 @@ mod d4c_git_bridge_tests {
         let cov = store.total_git_evidence_coverage().unwrap();
         assert_eq!(cov.unparsed_compound_git_calls, 2);
 
-        let rows = store.load_git_evidence().unwrap();
+        let rows = store.load_git_evidence_with_config(&export_cfg).unwrap();
         assert_eq!(
             rows.len(),
-            2,
+            3,
             "sha_blob from compound calls must never be ingested"
         );
 
@@ -10288,8 +10258,8 @@ mod d4c_git_bridge_tests {
             .iter()
             .find(|r| r.commit_sealed == sealed_head)
             .unwrap();
-        assert_eq!(row_head.default_branch_status, "observed");
-        assert_eq!(row_head.on_default_branch, Some(true));
+        assert_eq!(row_head.default_branch_status, "not_observed");
+        assert_eq!(row_head.on_default_branch, None);
         assert_eq!(row_head.merge_status, "observed");
 
         let sealed_non_head = dendro_core::seal_commit(Some(tool_key), &sha_non_head);
@@ -10297,10 +10267,7 @@ mod d4c_git_bridge_tests {
             .iter()
             .find(|r| r.commit_sealed == sealed_non_head)
             .unwrap();
-        assert_eq!(
-            row_non_head.default_branch_status, "not_observed",
-            "commit from log -2 (not established as HEAD) must have default_branch_status = not_observed"
-        );
+        assert_eq!(row_non_head.default_branch_status, "not_observed");
         assert_eq!(row_non_head.on_default_branch, None);
         assert_eq!(
             row_non_head.merge_status, "not_observed",
@@ -10312,6 +10279,22 @@ mod d4c_git_bridge_tests {
         );
         assert!(row_non_head.parent_sealed.is_empty());
         assert!(row_non_head.parent_hmacs.is_empty());
+
+        let sealed_intra = dendro_core::seal_commit(Some(tool_key), &sha_intra);
+        let row_intra = rows
+            .iter()
+            .find(|r| r.commit_sealed == sealed_intra)
+            .unwrap();
+        assert_eq!(
+            row_intra.merge_status, "not_observed",
+            "S4: conflicting parents within a single source must produce merge_status = not_observed"
+        );
+        assert_eq!(
+            row_intra.merge_missing_reason.as_deref(),
+            Some("conflicting_parents")
+        );
+        assert!(row_intra.parent_sealed.is_empty());
+        assert!(row_intra.parent_hmacs.is_empty());
     }
 
     #[test]

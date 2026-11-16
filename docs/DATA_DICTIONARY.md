@@ -388,37 +388,37 @@ CREATE TABLE IF NOT EXISTS session_facts (
 - **Deterministic Crash Replay:** If any write stage or `BeforeCommit` fails, the transaction rolls back completely, leaving `source_files` and all fact/warning tables unchanged for that batch. Re-running ingestion from the preserved watermark converges to the exact same row set and content as an uninterrupted run.
 
 ### 3.15. `git_evidence_facts` & `git_evidence_coverage` (`fact-export-v1` Historical Git Bridge, `MTN-21 / D4c`)
-Historical git provenance and missingness facts derived strictly from ingested session records (`claude`, `codex`, `pi`, `grok`), without opening any `.git` repository, spawning `git` processes, or performing network lookups.
+Historical git provenance and missingness facts derived strictly from ingested session records (`claude`, `codex`, `pi`, `grok`), without opening any `.git` repository, spawning `git` processes, performing network lookups, or parsing shell syntax.
 
 ```sql
 CREATE TABLE IF NOT EXISTS git_evidence_facts (
     source_key VARCHAR PRIMARY KEY,
     source_id VARCHAR NOT NULL,
+    generation BIGINT NOT NULL,
     harness VARCHAR NOT NULL,
     canonical_harness VARCHAR NOT NULL,
+    native_session VARCHAR,
     commit_sealed VARCHAR NOT NULL,
     parent_sealed VARCHAR NOT NULL DEFAULT '[]',
-    merge_status VARCHAR NOT NULL,
     is_merge BOOLEAN,
+    merge_status VARCHAR NOT NULL,
     merge_missing_reason VARCHAR,
-    default_branch_status VARCHAR NOT NULL,
     on_default_branch BOOLEAN,
+    default_branch_status VARCHAR NOT NULL,
     observed_at TIMESTAMP,
     observed_at_status VARCHAR NOT NULL,
     session_match_status VARCHAR NOT NULL,
-    native_session VARCHAR,
-    export_status VARCHAR NOT NULL,
+    evidence_source VARCHAR NOT NULL DEFAULT 'local_git_history',
+    export_status VARCHAR NOT NULL DEFAULT 'non_exportable',
     pseudonym_key_id VARCHAR,
     commit_hmac VARCHAR,
-    parent_hmacs VARCHAR NOT NULL DEFAULT '[]',
-    evidence_source VARCHAR NOT NULL,
-    generation BIGINT NOT NULL
+    parent_hmacs VARCHAR NOT NULL DEFAULT '[]'
 );
 
 CREATE TABLE IF NOT EXISTS git_evidence_coverage (
-    source_id VARCHAR PRIMARY KEY,
-    harness VARCHAR NOT NULL,
+    source_id VARCHAR NOT NULL,
     generation BIGINT NOT NULL,
+    harness VARCHAR NOT NULL,
     observed BIGINT NOT NULL DEFAULT 0,
     unresolved_abbreviated BIGINT NOT NULL DEFAULT 0,
     unverified_object_format BIGINT NOT NULL DEFAULT 0,
@@ -426,64 +426,65 @@ CREATE TABLE IF NOT EXISTS git_evidence_coverage (
     ambiguous BIGINT NOT NULL DEFAULT 0,
     unmatched BIGINT NOT NULL DEFAULT 0,
     default_branch_not_observed BIGINT NOT NULL DEFAULT 0,
-    unparsed_compound_git_calls BIGINT NOT NULL DEFAULT 0
+    unparsed_compound_git_calls BIGINT NOT NULL DEFAULT 0,
+    PRIMARY KEY (source_id, generation)
 );
+ALTER TABLE git_evidence_coverage ADD COLUMN IF NOT EXISTS unparsed_compound_git_calls BIGINT NOT NULL DEFAULT 0;
 ```
 
-- **Grain & Per-Source Storage (`P3`, `P6`):**
+- **Grain & Per-Source Storage (`S7`):**
   - `git_evidence_facts`: One row per `(source_id, commit_sealed)` (`source_key = "{source_id}:git:{commit_sealed}"`), written exclusively inside `AnalyticsStore::commit_ingest_batch` (`IngestBatchStage::AfterGitEvidence`). Re-ingesting or rewriting one source deletes only prior generations of that `source_id` and never deletes or rewrites another source's evidence; rows are never merged across sources at write time.
-  - `git_evidence_coverage`: One row per `source_id`, recording per-source observation and missingness counters for the latest generation:
+  - `git_evidence_coverage`: One row per `(source_id, generation)`, recording per-source observation and missingness counters for the latest generation:
     - **Per-unique-SHA counters** (counted once per unique canonical commit SHA observed in the source generation): `observed`, `missing_parents`, `ambiguous`, `unmatched`, and `default_branch_not_observed`.
-    - **Per-occurrence counters** (counted on every rejected occurrence): `unresolved_abbreviated` (abbreviated commit SHAs of length `7..=39` lowercase hex), `unverified_object_format` (64-hex digests observed without `git rev-parse --show-object-format` $\to$ `sha256` recorded in the same session and working directory), and `unparsed_compound_git_calls` (tool calls that reference `git` in a compound, piped, redirected, env-prefixed, or global-option shape rejected under `R1`).
-- **Single-Command Allow-List & Output Shapes (`P1`, `R1`–`R4`, `R7`):**
-  - **Single-command-only rule (`R1`):** A tool call's output is parsed **only** if the entire command (after unwrapping at most `MAX_SHELL_WRAPPER_DEPTH = 4` levels of `sh`/`bash`/`zsh`/`dash` `-c`/`-lc`) is **exactly one** allow-listed `git` invocation, optionally preceded by a single `cd <path> &&` (which sets the effective `cwd` for that call only). Any other shape contributes nothing and (when it mentions `git`) increments `git_evidence_coverage.unparsed_compound_git_calls`: multiple `git` segments, `;`, `&&`/`||` chains beyond the leading `cd`, pipes (`|`), subshells (`$(...)`, backticks, `(...)`), redirections (`>`, `<`), environment assignments (including `GIT_DIR=...` / `GIT_WORK_TREE=...`), or `git` global options (`-C`, `--git-dir`, `--work-tree`, `-c`, `--namespace`, `--bare`, `--super-prefix`, `--exec-path`).
-  - **Log/show/rev-list/cat-file shapes (`R2`):**
-    - `git log` with `--format=%H` / `--pretty=%H` / `--pretty=format:%H` or **exactly** `%H %P` (single space): allowed only with optional `-n N` / `-N` / `--max-count=N` / `--max-count N` and optional revisions that are `HEAD` or simple branch names (no `rev:path`, no `--`, no file paths, and no `-p`/`--patch`/`--stat`/`--name-only`/`--name-status`/`--numstat`/`--shortstat`/`--dirstat`/`--raw`/`--graph`/`--all`/`--branches`/`--tags`/`--remotes`/`--glob`/`--walk-reflogs`/`-g`/`--oneline`).
-    - `git show`: allowed **only** when `-s` or `--no-patch` is present alongside format `%H` or `%H %P` and at most one revision that is `HEAD` or a simple branch/commit name (never `rev:path` or `--`).
-    - `git rev-list --parents`: requires a single revision that is `HEAD` or a simple branch name, with optional `-n N` / `-N` / `--max-count` (no `--objects`, `--all`, `--branches`, `--tags`, `--remotes`, `--glob`, `--header`, `--pretty`, `--format`, `--graph`, `--`, or `rev:path`).
-    - `git cat-file -p <FULL-SHA>`: allowed only when `<FULL-SHA>` is a canonical 40-hex or 64-hex commit SHA (`git cat-file -p HEAD` and non-SHA targets contribute nothing).
-    - **All-or-nothing strict line matching (`R2`):** Output lines must match the expected shape **exactly** with **no leading whitespace** (only trailing `\r`/`\n` is stripped). Any non-conforming line in the output of `git rev-parse HEAD`, `git log`, `git show`, or `git rev-list --parents` causes the **entire** tool output to contribute nothing.
-  - **`git rev-parse` shapes (`R3`):**
-    - Only the exact argument `HEAD` (commit identity), `--show-object-format` (`P2`), or `--abbrev-ref HEAD` (current branch). Raw hex strings (such as the empty tree hash), tags (`v1.0`), `HEAD~1`, `--short`, and all other refs or flags contribute nothing.
-  - **`HEAD`-only `on_default_branch` attribution (`R4`):**
-    - `default_branch_status = 'observed'` (`on_default_branch = TRUE | FALSE`) is recorded **only** for a commit established as `HEAD` by `git rev-parse HEAD`, or by `git log -1` / `-n 1` / `--max-count=1` with no revision argument (or revision `HEAD`), **and** only when, at that observation time and for the **same session and same normalized `cwd`**:
-      1. The current branch is known from a record or command (`git rev-parse --abbrev-ref HEAD`, `git branch --show-current`, `git status`, `git checkout`/`switch`) in that exact `(session, cwd)` (never another `cwd`'s value, and never a session-wide fallback).
-      2. The default branch is known from `git symbolic-ref refs/remotes/origin/HEAD` or `git remote show origin` in that exact `(session, cwd)`.
-      3. `HEAD` is not detached in that `(session, cwd)`: any `git checkout` / `git switch` with `--detach` or targeting a SHA / `HEAD~N` / `HEAD^` invalidates the current branch in that `(session, cwd)` until a branch is re-observed.
-    - Every other commit (`git log` without `-1`, `git log` on a non-`HEAD` revision, `git rev-list --parents`, `git cat-file -p <FULL-SHA>`, `git show`) receives `default_branch_status = 'not_observed'` (`on_default_branch = NULL`).
-  - **Per-Harness Shell Tool Allow-List & Bounded LRU (`R7`):**
-    - Shell tool detection (`dendro_core::is_shell_execution_tool_for_harness`) uses an explicit per-harness allow-list (`Claude`: `Bash`/`bash`; `Codex`: `CommandExecution`/`shell`/`local_shell`/`local_shell_call`/`exec_command`/`shell_command`/`container.exec`/`bash`/`Bash`; `Pi`: `bash`/`Bash`/`sh`; `Grok`: `bash`/`Bash`/`shell`/`sh`/`run_command`/`execute_command`; `Antigravity`: `run_command`/`bash`/`Bash`/`shell`/`sh`). Unknown or absent tool names or harnesses are never treated as shells.
-    - Tool results are matched to their call **only** by explicit `call_id` (unmatched results are ignored). All tool calls are registered in a per-source bounded LRU (`MAX_PENDING_CALLS_PER_SOURCE = 512`) so non-git tool calls evict stale entries and never alias unrelated outputs.
-  - **Hostile-Input Bounds:** Linear-time slice scans with zero regular expressions and strict caps (`MAX_PENDING_CALLS_PER_SOURCE = 512`, `MAX_OBSERVED_COMMITS_PER_SOURCE = 4096`, `MAX_PARENTS_PER_COMMIT = 16`, `MAX_SHELL_WRAPPER_DEPTH = 4`, `MAX_GIT_COMMAND_BYTES = 16384`, `MAX_GIT_OUTPUT_BYTES = 65536`, `MAX_GIT_LINES_PER_RECORD = 512`). Non-zero exit codes / `is_error = true` tool results are ignored.
-- **Object-Format Verification & Parent Length Matching (`P2`):**
-  - `40`-character lowercase hex is accepted as SHA-1 unless the same `(session, cwd)` recorded `git rev-parse --show-object-format` = `sha256`.
-  - `64`-character lowercase hex is accepted **only** when `git rev-parse --show-object-format` = `sha256` was recorded for that same `(session, cwd)`; otherwise it is counted in `git_evidence_coverage.unverified_object_format` and ignored.
+    - **Per-occurrence counters** (counted on every rejected occurrence): `unresolved_abbreviated` (abbreviated commit SHAs of length `7..=39` lowercase hex), `unverified_object_format` (64-hex digests observed without `git rev-parse --show-object-format` $\to$ `sha256` recorded in the same session and record `cwd`), and `unparsed_compound_git_calls` (any rejected git-looking command).
+- **Exact-Match Command Templates, Character Safety & Argv Rules (`S1`):**
+  - **Character Safety (`is_allowed_git_command_char`):** Before template matching, any command exceeding `MAX_GIT_COMMAND_BYTES = 16384` or containing any character outside `[A-Za-z0-9 =%_.:/'"-]` (no `$`, `\`, backtick, `;`, `|`, `&`, `<`, `>`, `(`, `)`, newline, or tab) is rejected. Any rejected git-looking command increments `git_evidence_coverage.unparsed_compound_git_calls`.
+  - **Accepted Command String Templates (`classify_single_git_command`):** After trimming outer ASCII whitespace, the **whole** command string must be an exact match for one of these templates (`N = 1..=1000` in decimal digits with no leading zero; `Q` = a single `'` or double `"` quote, the same on both sides; no shell tokenizer, no string wrapper unwrapping, and no `cd` handling):
+    - `git rev-parse HEAD` $\to$ the commit SHA (`HEAD`).
+    - `git rev-parse --show-object-format` $\to$ the object format (`sha1` or `sha256`) for that session and the record `cwd`.
+    - `git log -1 --format=%H` | `git log -n N --format=%H` | `git log --max-count=N --format=%H` (and `--pretty=format:%H` equivalents) $\to$ commits (`HEAD` history, no revision argument, no file path).
+    - `git log -1 --format=Q%H %PQ` | `git log -n N --format=Q%H %PQ` | `git log --max-count=N --format=Q%H %PQ` (and `--pretty=format:Q%H %PQ` equivalents) $\to$ commits plus parents (no revision argument, no file path, so no history simplification).
+    - `git show -s --format=%H HEAD` | `git show -s --format=Q%H %PQ HEAD` (and `--no-patch` instead of `-s`, plus `--pretty=format:` equivalents) $\to$ `HEAD` commit (and parents).
+    - `git cat-file -p <FULL-SHA>` $\to$ parents bound to `<FULL-SHA>` (canonical 40-hex or 64-hex) **only** if the output's first line is `tree <hex>` of the exact same hex length, followed only by `parent <hex>` lines of the same length (`0..=16`) and then the `author ` and `committer ` header lines; anything else contributes nothing.
+    - `git commit ...`: any character-safe command string starting with `git commit ` whose output's first line matches `[<branch> <abbrev>] ...` $\to$ counted in `unresolved_abbreviated` only (emits no evidence row).
+  - **Argv Arrays (`classify_git_argv`, Codex):**
+    - Accepts **only** an `argv` array whose elements are the exact tokens of one of the templates above (e.g. `["git", "log", "-1", "--format=%H %P"]`), compared element by element after character-safety validation (never joined with spaces).
+    - A 3-element shell wrapper `argv` `["bash"|"sh"|"zsh", "-c"|"-lc", CMD]` or `["pwsh"|"powershell", "-Command"|"-c", CMD]` is accepted **only** if `CMD` alone passes the exact command-string rules above. No other wrappers and no `cmd /c`.
+  - **Record `cwd` Only:** Only the record's own `cwd` field is used (no `cd` handling, no tool-input `cwd` override, and no session-wide `cwd` fallback). Evidence that requires a working directory (`git rev-parse --show-object-format` binding and `sha256` commit verification) requires the record's `cwd` field to be present.
+  - **Strict Output Line Matching & Hostile-Input Bounds:** Output lines must match the expected shape **exactly** with **no leading whitespace** (only trailing `\r`/`\n` is stripped). Any non-conforming line in the output of `git rev-parse HEAD`, `git log`, or `git show` causes the **entire** tool output to contribute nothing. Shell tool detection (`dendro_core::is_shell_execution_tool_name`) uses an explicit allow-list; unknown or absent tool names are ignored. Tool results are matched to calls strictly by `call_id` in a bounded LRU (`MAX_PENDING_CALLS_PER_SOURCE = 512`, `MAX_OBSERVED_COMMITS_PER_SOURCE = 4096`, `MAX_PARENTS_PER_COMMIT = 16`, `MAX_GIT_COMMAND_BYTES = 16384`, `MAX_GIT_OUTPUT_BYTES = 65536`, `MAX_GIT_LINES_PER_RECORD = 512`). Non-zero exit codes / `is_error = true` tool results are ignored.
+- **Object-Format Verification & Parent Length Consistency (`S2`):**
+  - `40`-character lowercase hex is accepted as SHA-1 unless `git rev-parse --show-object-format` = `sha256` was recorded for the same session and record `cwd`.
+  - `64`-character lowercase hex is accepted **only** when `git rev-parse --show-object-format` = `sha256` was recorded for that same session and record `cwd` (requiring the record `cwd` to be present); otherwise it is counted in `git_evidence_coverage.unverified_object_format` and ignored.
   - Within a single commit observation, every parent SHA length must equal the commit SHA length; otherwise all parents for that observation are dropped (`merge_status = 'not_observed'`, `is_merge = NULL`, `merge_missing_reason = 'mixed_parent_object_format'`).
-- **Merge Status & Parent Provenance (`merge_status`, `is_merge`, `merge_missing_reason`):**
-  - `merge_status = 'observed'` only when an allow-listed parent command (`git log`/`git show -s` with `%H %P`, `git rev-list --parents`, or `git cat-file -p <FULL-SHA>`) records the commit's parents in full canonical form of matching object-format length (at most `MAX_PARENTS_PER_COMMIT = 16`), preserving local recorded parent order in `parent_sealed` (JSON array of sealed commit tokens) and `parent_hmacs` (JSON array of 64-hex `fact-export.v1/commit` HMACs when exportable). When `merge_status = 'observed'`, `is_merge` is `TRUE` if `len(parents) > 1` and `FALSE` if `len(parents) <= 1` (both single-parent commits and root commits with `0` parents have `merge_status = 'observed'` and `is_merge = FALSE`).
-  - Otherwise, `merge_status = 'not_observed'`, `is_merge = NULL`, `parent_sealed = '[]'`, `parent_hmacs = '[]'`, `git_evidence_coverage.missing_parents` is incremented, and `merge_missing_reason` is set to one of:
-    - `'parents_not_recorded'` (`MERGE_REASON_PARENTS_NOT_RECORDED`): commit was observed only without parent hashes (e.g. `git rev-parse HEAD` or `git log --format=%H`).
-    - `'abbreviated_parents'` (`MERGE_REASON_ABBREVIATED_PARENTS`): parent token was an abbreviated hex SHA (`7..=39` chars) or exceeded `MAX_PARENTS_PER_COMMIT`.
+- **Default Branch Status in the MVP & `EN6b` Limitation (`S3`):**
+  - In the MVP, there is no branch or checkout state tracking from session records: `default_branch_status` is **always** `'not_observed'` (`on_default_branch = NULL`, reason `DEFAULT_BRANCH_MISSING_REASON_MVP = 'default_branch_not_derivable_from_session_records'`), and `git_evidence_coverage.default_branch_not_observed` is incremented for every observed commit.
+  - **Downstream `EN6b` Limitation:** Downstream `EN6b` (the Enterprise merged-PR proxy) must treat the default branch as unknown (`default_branch_status = 'not_observed'` $\to$ wire `'unknown'`, `on_default_branch = NULL`).
+- **Merge Status, Intra/Cross-Source Parent Conflicts & Shallow-Clone Note (`S4`, `R5`):**
+  - `merge_status = 'observed'` only when an allow-listed parent command (`git log` or `git show -s`/`--no-patch` with `%H %P`, or `git cat-file -p <FULL-SHA>`) records the commit's parents in full canonical form of matching object-format length (at most `MAX_PARENTS_PER_COMMIT = 16`), without conflict. When `merge_status = 'observed'`, `is_merge` is `TRUE` if `len(parents) > 1` and `FALSE` if `len(parents) <= 1`.
+  - **Shallow-Clone Limitation:** In shallow clones (`.git/shallow` / `--depth`), graft boundary commits have no parents in local git output and therefore appear as root commits (`0` parents, `merge_status = 'observed'`, `is_merge = FALSE`); shallow-boundary commits cannot be detected from session records alone.
+  - Otherwise, `merge_status = 'not_observed'`, `is_merge = NULL`, `parent_sealed = '[]'`, `parent_hmacs = '[]'`, `git_evidence_coverage.missing_parents` is incremented, and `merge_missing_reason` is one of:
+    - `'parents_not_recorded'` (`MERGE_REASON_PARENTS_NOT_RECORDED`): commit was observed only without parent hashes (`git rev-parse HEAD` or `git log`/`git show` with `%H`).
+    - `'abbreviated_parents'` (`MERGE_REASON_ABBREVIATED_PARENTS`): parent token was an abbreviated hex SHA (`7..=39` chars).
     - `'mixed_parent_object_format'` (`MERGE_REASON_MIXED_PARENT_OBJECT_FORMAT`): a parent SHA's hex length (`40` vs `64`) differed from the commit SHA's hex length.
-    - `'conflicting_parents'` (`MERGE_REASON_CONFLICTING_PARENTS`): multiple sources observed the same `commit_sealed` with different non-empty `parent_sealed` lists (`R5`).
+    - `'conflicting_parents'` (`MERGE_REASON_CONFLICTING_PARENTS`): conflicting parent lists were observed for the same commit **within a single source** (`S4`, never first-wins) or **across sources** (`R5`).
 - **Historical `observed_at` Timestamp (`observed_at`, `observed_at_status`):**
   - `observed_at` is the historical record timestamp when the commit was first observed (`observed_at_status = 'observed'`), or `NULL` with `observed_at_status = 'not_observable'` when the record lacks a valid timestamp. Current wall-clock time (`now()`) and current repository `HEAD` are never substituted.
-- **Cross-Source Read Derivation & Coherent Single-Row Selection (`R5`, `P3`):**
+- **Cross-Source Read Derivation, Coherent Single-Row Selection & Exportability (`S5`, `R5`):**
   - Each source stores its own local row (`AnalyticsStore::load_git_evidence_by_source()`).
-  - `AnalyticsStore::load_git_evidence()` (via `dendro_core::resolve_git_evidence_across_sources` / `resolve_git_evidence_across_sources_with_key_id`) deterministically derives one cross-source row per `commit_sealed` at read time:
+  - `AnalyticsStore::load_git_evidence()` / `AnalyticsStore::load_git_evidence_with_config()` (via `dendro_core::resolve_git_evidence_across_sources`, `resolve_git_evidence_across_sources_with_config`, and `resolve_git_evidence_across_sources_with_key_id`) deterministically derives one cross-source row per `commit_sealed` at read time:
     - **Session attribution (`session_match_status`, `native_session`):**
       - `'matched'`: Commit has **exactly one** distinct non-empty `native_session` across all ingested sources (and no source observed an intra-source session ambiguity). `"matched"` holds **if and only if** `native_session` is non-null; when multiple sessions exist, the reader never picks one.
       - `'ambiguous'`: Commit is observed in more than one distinct session across sources (or within a source / in a file with `header_conflict = TRUE`). `native_session` is `NULL`.
       - `'unmatched'` / `'unknown'`: Commit is observed only in records without a harness-minted session. `native_session` is `NULL`.
-    - **Parent consistency & single-row export coherence (`R5`):**
-      - If two or more sources report `merge_status = 'observed'` for the same `commit_sealed` with **different** `parent_sealed` lists, the resolved row sets `merge_status = 'not_observed'`, `is_merge = NULL`, `merge_missing_reason = 'conflicting_parents'`, `parent_sealed = []`, and `parent_hmacs = []`.
+    - **Parent consistency & single-row export coherence (`S4`, `R5`):**
+      - If any source recorded `merge_missing_reason = 'conflicting_parents'` or two or more sources report `merge_status = 'observed'` for the same `commit_sealed` with **different** `parent_sealed` lists, the resolved row sets `merge_status = 'not_observed'`, `is_merge = NULL`, `merge_missing_reason = 'conflicting_parents'`, `parent_sealed = []`, and `parent_hmacs = []`.
       - Exported fields (`export_status`, `pseudonym_key_id`, `commit_hmac`, `parent_hmacs`, `merge_status`, `is_merge`, `merge_missing_reason`, `parent_sealed`) are derived from **one coherent source row** — never by combining `parent_sealed` from one source row with `commit_hmac` or `parent_hmacs` from another.
-      - When HMAC rows carry different `pseudonym_key_id` values across sources, only rows matching the currently configured `FactExportConfig::key_id()` are eligible to be `'exportable'`; rows under any other key ID are treated as `'non_exportable'`.
-      - A row is `'exportable'` only if that single chosen row has a valid `commit_hmac`, a matching `pseudonym_key_id`, and (when `merge_status = 'observed'`) `parent_hmacs.len() == parent_sealed.len()` under that same `pseudonym_key_id`.
-- **Local-Only Persistence & Downstream `D4b` Handoff (`P4`, `P5`):**
+    - **Strict `Ready` Exportability Gate (`S5`):**
+      - A row is `'exportable'` **only** when the current `FactExportConfig` is `FactExportKeyState::Ready` **and** the row's `pseudonym_key_id` equals the configured `pseudonym_key_id` (with a valid 64-hex `commit_hmac` and matching `parent_hmacs` length).
+      - There is **no** fallback to a bare key-ID environment variable when `FactExportConfig` is not `Ready`; when no valid key is configured (`Unconfigured`, `InvalidKeyMaterial`, `InvalidKeyId`, or `ForbiddenOrgKeyPresent`), nothing is exportable (`export_status = 'non_exportable'`, `pseudonym_key_id = NULL`, `commit_hmac = NULL`, `parent_hmacs = []`).
+- **Local-Only Persistence & Downstream `D4b` Handoff:**
   - Raw commit SHAs, branch names, working directories, and commit messages are **never** persisted to DuckDB. `commit_sealed` and `parent_sealed` always seal canonical SHAs with `hmac_domain(tool_key, "git_commit", canonical_sha)` (`commit:<64-hex>`).
-  - `D4c` persists **only** local facts plus `pseudonym_key_id`, `commit_hmac` (`fact-export.v1/commit`), and `parent_hmacs` when `dendro_core::FactExportConfig::state()` is `FactExportKeyState::Ready` (`export_status = 'exportable'`). Without valid fact-export key material (`FactExportKeyState::Unconfigured`, `FactExportKeyState::InvalidKeyMaterial`, or `FactExportKeyState::InvalidKeyId`), rows are stored with `export_status = 'non_exportable'`, `pseudonym_key_id = NULL`, `commit_hmac = NULL`, and `parent_hmacs = '[]'`, and are upgraded in place on the next ingest once key material is configured.
-  - **Contract `source_id`, `session_key`, and `git_evidence_key` are not persisted by `D4c`:** Downstream `D4b` (`fact-export-v1` exporter) reads cross-source resolved rows via `AnalyticsStore::load_git_evidence()`, filters to `export_status = 'exportable'`, maps local `'not_observed'` values of `merge_status` and `default_branch_status` to `'unknown'`, and computes `source_id` (`derive_export_source_id`), `session_key` (`derive_export_session_key` when `session_match_status == 'matched'`), and `git_evidence_key` (`derive_export_git_evidence_key`) at export time from a provisioned logical source ID (see [`docs/link-id-config.md`](link-id-config.md#4-fact-export-v1-pseudonym-key-configuration-mtn-21--d4c--d4b)).
+  - **Contract `source_id`, `session_key`, and `git_evidence_key` are not persisted by `D4c`:** Downstream `D4b` (`fact-export-v1` exporter) reads cross-source resolved rows, filters to `export_status = 'exportable'`, maps local `'not_observed'` values of `merge_status` and `default_branch_status` to `'unknown'`, and computes `source_id` (`derive_export_source_id`), `session_key` (`derive_export_session_key` when `session_match_status == 'matched'`), and `git_evidence_key` (`derive_export_git_evidence_key`) at export time from a provisioned logical source ID (see [`docs/link-id-config.md`](link-id-config.md#4-fact-export-v1-pseudonym-key-configuration-mtn-21--d4c--d4b)).
 
 ---
 

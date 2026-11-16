@@ -825,9 +825,16 @@ impl SessionLinkConfig {
         private_data_root: Option<&Path>,
         consumer_env_file: Option<&Path>,
     ) -> Self {
-        let process_env = collect_process_env_vars();
+        let mut process_env = BTreeMap::new();
+        for (k, v) in std::env::vars() {
+            if k.starts_with("DENDRO_") || k.starts_with("AGENT_OTEL_") || is_k_org_var_name(&k) {
+                process_env.insert(k, v);
+            }
+        }
         let result = Self::from_sources(&process_env, private_data_root, consumer_env_file);
-        zeroize_env_map(process_env);
+        for (_, mut val) in process_env {
+            zeroize_string(&mut val);
+        }
         result
     }
 
@@ -857,7 +864,14 @@ impl SessionLinkConfig {
         private_data_root: Option<&Path>,
         consumer_env_file: Option<&Path>,
     ) -> Self {
-        let consumer_vars = load_consumer_env_vars(consumer_env_file);
+        let consumer_vars = consumer_env_file
+            .and_then(read_consumer_env_from)
+            .map(|mut content| {
+                let parsed = parse_consumer_env_vars(&content);
+                zeroize_string(&mut content);
+                parsed
+            })
+            .unwrap_or_default();
 
         let org = pick_var_with_fallback(
             process_env,
@@ -883,29 +897,65 @@ impl SessionLinkConfig {
             &["DENDRO_LINK_EPOCH", "AGENT_OTEL_LINK_EPOCH"],
         );
 
-        let outcome = load_secret_key_from_sources(
-            &LINK_KEY_LOADER_SPEC,
-            process_env,
-            &consumer_vars,
-            private_data_root,
-        );
-        zeroize_env_map(consumer_vars);
+        let mut k_org_rejected = process_env.keys().any(|k| is_k_org_var_name(k))
+            || consumer_vars.keys().any(|k| is_k_org_var_name(k));
 
-        let (key, k_org_rejected) = match outcome {
-            SecretKeyLoadOutcome::Loaded(mut bytes) => {
-                let k = LinkKey::from_bytes(bytes);
-                bytes.fill(0);
-                std::hint::black_box(&mut bytes);
-                (Some(k), false)
+        let key = if k_org_rejected {
+            None
+        } else if let Some(mut raw_hex) = pick_var(
+            process_env,
+            &["DENDRO_LINK_KEY_HEX", "AGENT_OTEL_LINK_KEY_HEX"],
+        ) {
+            let parsed = LinkKey::from_hex(&raw_hex).ok();
+            zeroize_string(&mut raw_hex);
+            parsed
+        } else if let Some(raw_file) = pick_var_raw(
+            process_env,
+            &["DENDRO_LINK_KEY_FILE", "AGENT_OTEL_LINK_KEY_FILE"],
+        ) {
+            let path = Path::new(raw_file.trim());
+            if raw_file.trim().is_empty() || !path.is_absolute() {
+                None
+            } else {
+                match load_link_key_file(path) {
+                    Ok(k) => Some(k),
+                    Err(KeyFileLoadError::KOrgPresent) => {
+                        k_org_rejected = true;
+                        None
+                    }
+                    Err(KeyFileLoadError::Invalid) => None,
+                }
             }
-            SecretKeyLoadOutcome::KOrgRejected => {
-                emit_k_org_warning_once();
-                (None, true)
+        } else if let Some(root_path) = private_data_root
+            .filter(|root| root.is_absolute())
+            .filter(|root| std::fs::symlink_metadata(root.join("link.key")).is_ok())
+        {
+            match load_link_key_from_private_root(root_path) {
+                Ok(k) => Some(k),
+                Err(KeyFileLoadError::KOrgPresent) => {
+                    k_org_rejected = true;
+                    None
+                }
+                Err(KeyFileLoadError::Invalid) => None,
             }
-            SecretKeyLoadOutcome::Unconfigured | SecretKeyLoadOutcome::InvalidKeyMaterial => {
-                (None, false)
-            }
+        } else if let Some(mut raw_hex) = pick_var(
+            &consumer_vars,
+            &["DENDRO_LINK_KEY_HEX", "AGENT_OTEL_LINK_KEY_HEX"],
+        ) {
+            let parsed = LinkKey::from_hex(&raw_hex).ok();
+            zeroize_string(&mut raw_hex);
+            parsed
+        } else {
+            None
         };
+
+        for (_, mut val) in consumer_vars {
+            zeroize_string(&mut val);
+        }
+
+        if k_org_rejected {
+            emit_k_org_warning_once();
+        }
 
         Self {
             org,
@@ -996,13 +1046,6 @@ pub(crate) struct SecretKeyLoaderSpec<'a> {
     pub key_file_name: &'a str,
 }
 
-const LINK_KEY_LOADER_SPEC: SecretKeyLoaderSpec<'static> = SecretKeyLoaderSpec {
-    domain: LINK_ID_DOMAIN,
-    hex_env_vars: &["DENDRO_LINK_KEY_HEX", "AGENT_OTEL_LINK_KEY_HEX"],
-    file_env_vars: &["DENDRO_LINK_KEY_FILE", "AGENT_OTEL_LINK_KEY_FILE"],
-    key_file_name: "link.key",
-};
-
 pub(crate) enum SecretKeyLoadOutcome {
     Loaded([u8; LINK_KEY_BYTES]),
     Unconfigured,
@@ -1064,12 +1107,12 @@ pub(crate) fn load_secret_key_from_sources(
         return outcome;
     }
 
-    if let Some(raw_file) = pick_var(process_env, spec.file_env_vars) {
+    if let Some(raw_file) = pick_var_raw(process_env, spec.file_env_vars) {
         let path = Path::new(raw_file.trim());
         if raw_file.trim().is_empty() || !path.is_absolute() {
             return SecretKeyLoadOutcome::InvalidKeyMaterial;
         }
-        return match load_secret_key_file(path) {
+        return match load_link_key_file(path) {
             Ok(mut k) => {
                 let bytes = k.0;
                 k.0.fill(0);
@@ -1125,6 +1168,15 @@ pub(crate) fn pick_var(vars: &BTreeMap<String, String>, names: &[&str]) -> Optio
     None
 }
 
+fn pick_var_raw(vars: &BTreeMap<String, String>, names: &[&str]) -> Option<String> {
+    for name in names {
+        if let Some(val) = vars.get(*name) {
+            return Some(val.clone());
+        }
+    }
+    None
+}
+
 pub(crate) fn pick_var_with_fallback(
     primary: &BTreeMap<String, String>,
     fallback: &BTreeMap<String, String>,
@@ -1136,6 +1188,10 @@ pub(crate) fn pick_var_with_fallback(
 enum KeyFileLoadError {
     Invalid,
     KOrgPresent,
+}
+
+fn load_link_key_from_private_root(root_path: &Path) -> Result<LinkKey, KeyFileLoadError> {
+    load_secret_key_from_private_root(root_path, "link.key")
 }
 
 fn load_secret_key_from_private_root(
@@ -1162,11 +1218,11 @@ fn load_secret_key_from_private_root(
     }
     #[cfg(not(any(windows, target_os = "linux")))]
     {
-        load_secret_key_file(&root_path.join(key_file_name))
+        load_link_key_file(&root_path.join(key_file_name))
     }
 }
 
-fn load_secret_key_file(path: &Path) -> Result<LinkKey, KeyFileLoadError> {
+fn load_link_key_file(path: &Path) -> Result<LinkKey, KeyFileLoadError> {
     if !path.is_absolute() {
         return Err(KeyFileLoadError::Invalid);
     }
@@ -1192,7 +1248,7 @@ fn load_secret_key_file(path: &Path) -> Result<LinkKey, KeyFileLoadError> {
             drop(root);
             return res;
         }
-        // When an explicit *_KEY_FILE resides in a directory whose DACL is not
+        // When an explicit DENDRO_LINK_KEY_FILE resides in a directory whose DACL is not
         // `SE_DACL_PROTECTED` (so `open_existing_private_root` refuses the parent), `platform_v1`
         // still enforces no-follow reparse rejection, regular-file kind, `links == 1` hard-link
         // rejection, size cap, and 128-bit `FILE_ID_INFO` handle identity matching. Full DACL/owner
@@ -2510,7 +2566,9 @@ mod tests {
             )
         );
 
-        // M1 (b): Empty DENDRO_LINK_KEY_FILE falls back to AGENT_OTEL_LINK_KEY_FILE
+        // M1 (b): Empty DENDRO_LINK_KEY_FILE stops key loading via pick_var_raw (exact origin/development parity),
+        // even when AGENT_OTEL_LINK_KEY_FILE or consumer.env has a valid key; when DENDRO_LINK_KEY_FILE is absent,
+        // AGENT_OTEL_LINK_KEY_FILE loads key_fallback_file.
         let mut env_empty_file_primary = BTreeMap::new();
         env_empty_file_primary.insert("DENDRO_LINK_ORG".to_string(), "acme-env".to_string());
         env_empty_file_primary.insert(
@@ -2524,6 +2582,24 @@ mod tests {
             "AGENT_OTEL_LINK_KEY_FILE".to_string(),
             explicit_key_path.display().to_string(),
         );
+        let cfg_file_stopped = SessionLinkConfig::from_sources(
+            &env_empty_file_primary,
+            None,
+            Some(&consumer_env_path),
+        );
+        assert!(
+            !cfg_file_stopped.has_valid_key(),
+            "empty DENDRO_LINK_KEY_FILE must stop key loading via pick_var_raw"
+        );
+        assert_eq!(
+            cfg_file_stopped.resolve_session_link(Some("claude"), Some("sess-r6"), None),
+            (
+                AGENT_SESSION_LINK_UNLINKED.to_string(),
+                Some(UnlinkedReason::InvalidKeyMaterial)
+            )
+        );
+
+        env_empty_file_primary.remove("DENDRO_LINK_KEY_FILE");
         let cfg_file_fb = SessionLinkConfig::from_sources(&env_empty_file_primary, None, None);
         assert!(cfg_file_fb.has_valid_key());
         assert_eq!(
@@ -2533,7 +2609,28 @@ mod tests {
             expected_link(&key_fallback_file, "acme-env", "ep-env", None, None)
         );
 
-        // M1 (c): Empty primary & secondary in process_env AND empty primary in consumer.env
+        let mut fe_empty_file = BTreeMap::new();
+        fe_empty_file.insert(
+            "DENDRO_FACT_EXPORT_KEY_ID".to_string(),
+            "kid_env_fb".to_string(),
+        );
+        fe_empty_file.insert("DENDRO_FACT_EXPORT_KEY_FILE".to_string(), String::new());
+        fe_empty_file.insert(
+            "AGENT_OTEL_FACT_EXPORT_KEY_FILE".to_string(),
+            explicit_key_path.display().to_string(),
+        );
+        let fe_cfg_file_stopped =
+            crate::FactExportConfig::from_sources(&fe_empty_file, None, Some(&consumer_env_path));
+        assert!(
+            !fe_cfg_file_stopped.is_ready(),
+            "empty DENDRO_FACT_EXPORT_KEY_FILE must stop key loading via pick_var_raw"
+        );
+        assert_eq!(
+            fe_cfg_file_stopped.state(),
+            crate::FactExportKeyState::InvalidKeyMaterial
+        );
+
+        // M1 (c): Empty primary & secondary HEX in process_env AND empty primary in consumer.env
         // falls back to secondary `AGENT_OTEL_*` in consumer.env!
         let mut env_all_empty = BTreeMap::new();
         env_all_empty.insert("DENDRO_LINK_ORG".to_string(), String::new());
@@ -2546,8 +2643,6 @@ mod tests {
         env_all_empty.insert("AGENT_OTEL_LINK_EPOCH".to_string(), String::new());
         env_all_empty.insert("DENDRO_LINK_KEY_HEX".to_string(), String::new());
         env_all_empty.insert("AGENT_OTEL_LINK_KEY_HEX".to_string(), String::new());
-        env_all_empty.insert("DENDRO_LINK_KEY_FILE".to_string(), String::new());
-        env_all_empty.insert("AGENT_OTEL_LINK_KEY_FILE".to_string(), String::new());
 
         let cfg_consumer_fb =
             SessionLinkConfig::from_sources(&env_all_empty, None, Some(&consumer_env_path));
@@ -2588,8 +2683,6 @@ mod tests {
         fe_env_empty.insert("AGENT_OTEL_FACT_EXPORT_KEY_ID".to_string(), String::new());
         fe_env_empty.insert("DENDRO_FACT_EXPORT_KEY_HEX".to_string(), String::new());
         fe_env_empty.insert("AGENT_OTEL_FACT_EXPORT_KEY_HEX".to_string(), String::new());
-        fe_env_empty.insert("DENDRO_FACT_EXPORT_KEY_FILE".to_string(), String::new());
-        fe_env_empty.insert("AGENT_OTEL_FACT_EXPORT_KEY_FILE".to_string(), String::new());
         let fe_cfg_consumer =
             crate::FactExportConfig::from_sources(&fe_env_empty, None, Some(&consumer_env_path));
         assert!(fe_cfg_consumer.is_ready());

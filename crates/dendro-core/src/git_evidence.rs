@@ -1,31 +1,31 @@
-//! Local git merge & branch evidence extraction and `fact-export-v1` commit pseudonymization (`D4c`).
+//! Local git merge evidence extraction and `fact-export-v1` commit pseudonymization (`D4c`).
 //!
 //! This module implements the local evidence extractor and storage model for `git_evidence` records:
-//! - Extracts commit observations, parent commit lists, and default-branch state strictly from
-//!   an explicit allow-list of recognized git command/output pairs in session transcripts
-//!   (no repository access, no `git` subprocess spawning, no network calls).
+//! - Extracts commit observations and parent commit lists strictly from an exact-match allow-list
+//!   of recognized git command templates and output shapes in session transcripts
+//!   (no repository access, no `git` subprocess spawning, no network calls, no shell parser).
+//! - Rejects any command containing a character outside `[A-Za-z0-9 =%_.:/'"-]` before template
+//!   matching; any rejected git-looking command increments `unparsed_compound_git_calls`.
 //! - Matches tool outputs to tool calls strictly by explicit call ID using a bounded LRU map;
 //!   unmatched tool outputs and non-shell tools (`Agent`, `MCP`, `Read`, etc.) are ignored.
-//! - Enforces hash algorithm verification per `(session, cwd)`: 40-hex SHA-1 is accepted unless
-//!   `git rev-parse --show-object-format` recorded `sha256` in that session and working directory;
-//!   64-hex SHA-256 is accepted only when `sha256` was recorded in that session and working
-//!   directory (otherwise counted in `unverified_object_format` and ignored).
-//! - Enforces parent length consistency within each commit observation: if any parent's hex length
-//!   differs from the commit's hex length, parents are dropped with reason
-//!   `mixed_parent_object_format`.
-//! - Applies default-branch observations (`git symbolic-ref refs/remotes/origin/HEAD` or
-//!   `git remote show origin`) only to commits observed in the same session and the same known
-//!   working directory at or after the default-branch observation time (never retroactively, and
-//!   `not_observed` when `cwd` is unknown).
+//! - Uses only the record's own `cwd` field (no `cd` handling, no session `cwd` fallback).
+//!   Evidence that requires a `cwd` (`git rev-parse --show-object-format` binding) requires the
+//!   record `cwd` to be present.
+//! - Enforces hash algorithm verification per `(session, record_cwd)`: 40-hex SHA-1 is accepted
+//!   unless `git rev-parse --show-object-format` recorded `sha256` for that same session and
+//!   record `cwd`; 64-hex SHA-256 is accepted only when `sha256` was recorded for that same
+//!   session and record `cwd` (otherwise counted in `unverified_object_format` and ignored).
+//! - Enforces parent length consistency (`mixed_parent_object_format`) and intra-source /
+//!   cross-source parent agreement (`conflicting_parents`).
+//! - In the MVP, `default_branch_status` is always `not_observed` (`on_default_branch = None`,
+//!   reason `default_branch_not_derivable_from_session_records`). Downstream `EN6b` (Enterprise
+//!   merged-PR proxy) must treat the default branch as unknown.
 //! - Seals local commit SHAs (`hmac_domain(tool_key, "git_commit", sha)`) and session identities
 //!   before persistence so raw SHAs, branch names, commit messages, author identities, file paths,
 //!   and remote URLs are never written to DuckDB.
 //! - Reuses `D3`'s secret-key loader in `crate::link_id` (`platform_v1` private data root
 //!   `fact_export.key`, lenient `consumer.env`, case-insensitive `K_org` refusal, no `USERPROFILE`
 //!   fallback, constant-time key equality, no `Clone`).
-//! - Persists per-source local facts and `commit_hmac`/`parent_hmacs` only; provides
-//!   [`resolve_git_evidence_across_sources`] to deterministically derive cross-source
-//!   `session_match_status` at read time.
 
 use crate::link_id::{
     collect_process_env_vars, consumer_env_path, default_private_data_root, hmac_sha256,
@@ -59,6 +59,9 @@ pub const DEFAULT_BRANCH_STATUS_OBSERVED: &str = "observed";
 pub const DEFAULT_BRANCH_STATUS_NOT_OBSERVED: &str = "not_observed";
 /// Canonical `default_branch_status` when default-branch membership is unknown.
 pub const DEFAULT_BRANCH_STATUS_UNKNOWN: &str = "unknown";
+/// MVP reason why `on_default_branch` is always `not_observed` from session records.
+pub const DEFAULT_BRANCH_MISSING_REASON_MVP: &str =
+    "default_branch_not_derivable_from_session_records";
 
 /// Canonical `observed_at_status` when the observation timestamp comes from the session record.
 pub const OBSERVED_AT_STATUS_OBSERVED: &str = "observed";
@@ -88,7 +91,7 @@ pub const MERGE_REASON_PARENTS_NOT_RECORDED: &str = "parents_not_recorded";
 pub const MERGE_REASON_ABBREVIATED_PARENTS: &str = "abbreviated_parents";
 /// Reason recorded when parent SHA hex lengths do not match the commit SHA hex length.
 pub const MERGE_REASON_MIXED_PARENT_OBJECT_FORMAT: &str = "mixed_parent_object_format";
-/// Reason recorded when multiple sources report different `parent_sealed` lists for the same commit.
+/// Reason recorded when observations within a source or across sources report different parent lists for the same commit.
 pub const MERGE_REASON_CONFLICTING_PARENTS: &str = "conflicting_parents";
 
 /// Minimum byte length of a `fact-export-v1` secret key loaded from hex or key file (32 bytes / 256 bits).
@@ -137,8 +140,6 @@ pub const MAX_PENDING_CALLS_PER_SOURCE: usize = 512;
 pub const MAX_OBSERVED_COMMITS_PER_SOURCE: usize = 4096;
 /// Upper bound on parents per commit (`fact-export-v1` schema `maxItems = 16`).
 pub const MAX_PARENTS_PER_COMMIT: usize = 16;
-/// Maximum shell-wrapper unwrapping depth (`bash -lc "..."`, `sh -c "..."`, etc.).
-pub const MAX_SHELL_WRAPPER_DEPTH: usize = 4;
 /// Upper bound on raw git command string length inspected per tool call (16 KiB).
 pub const MAX_GIT_COMMAND_BYTES: usize = 16 * 1024;
 /// Upper bound on raw git tool output length inspected per tool result (64 KiB).
@@ -700,7 +701,8 @@ pub struct GitEvidenceFact {
 ///
 /// - `observed`, `missing_parents`, `ambiguous`, `unmatched`, and `default_branch_not_observed`
 ///   are counted per unique accepted canonical commit SHA in the source generation.
-/// - `unresolved_abbreviated` and `unverified_object_format` are counted per rejected occurrence.
+/// - `unresolved_abbreviated`, `unverified_object_format`, and `unparsed_compound_git_calls`
+///   are counted per rejected occurrence.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GitEvidenceCoverage {
     pub source_id: String,
@@ -731,51 +733,40 @@ impl GitEvidenceCoverage {
     }
 }
 
-fn configured_export_key_id_from_env() -> Option<String> {
+/// Deterministically derives cross-source `GitEvidenceFact` records across all per-source rows
+/// stored in `git_evidence_facts` using the current process/root/consumer [`FactExportConfig`].
+///
+/// Per S5, a row is exportable ONLY when the current config is [`FactExportKeyState::Ready`] AND
+/// its `pseudonym_key_id` equals the configured `pseudonym_key_id`. No fallback to a bare key-ID
+/// variable when the config is not `Ready`; with no valid key configured, nothing is exportable.
+#[must_use]
+pub fn resolve_git_evidence_across_sources(rows: &[GitEvidenceFact]) -> Vec<GitEvidenceFact> {
     let cfg = FactExportConfig::from_env();
-    if let Some(kid) = cfg.pseudonym_key_id() {
-        return Some(kid.to_string());
-    }
-    let process_env = collect_process_env_vars();
-    let consumer_vars = load_consumer_env_vars(consumer_env_path().as_deref());
-    let raw_id = pick_var_with_fallback(
-        &process_env,
-        &consumer_vars,
-        &[ENV_FACT_EXPORT_KEY_ID, ENV_ALT_FACT_EXPORT_KEY_ID],
-    );
-    zeroize_env_map(process_env);
-    zeroize_env_map(consumer_vars);
-    raw_id.and_then(|s| {
-        let trimmed = s.trim();
-        is_valid_key_id(trimmed).then(|| trimmed.to_string())
-    })
+    resolve_git_evidence_across_sources_with_config(rows, &cfg)
 }
 
 /// Deterministically derives cross-source `GitEvidenceFact` records across all per-source rows
-/// stored in `git_evidence_facts` (for D4b and read queries).
+/// using an explicit [`FactExportConfig`].
 ///
-/// Cross-source session matching rules (P3) and read-function coherence rules (R5):
-/// - Exactly one distinct non-empty session across all sources (and no source marked `ambiguous`)
-///   -> `session_match_status = "matched"`, `native_session = Some(session)`.
-/// - More than one distinct session across sources (or any source marked `ambiguous`)
-///   -> `session_match_status = "ambiguous"`, `native_session = None`.
-/// - Zero sessions across sources
-///   -> `session_match_status = "unmatched"` (or `"unknown"` if all observations are `"unknown"`),
-///   `native_session = None`.
-/// - If sources disagree on parents (different `parent_sealed` lists), sets
-///   `merge_status = "not_observed"` with reason `conflicting_parents`.
-/// - Derives exported fields (`export_status`, `pseudonym_key_id`, `commit_hmac`, `parent_hmacs`)
-///   from ONE coherent observation row (never combining parents from one row with HMACs from
-///   another). If HMAC rows carry different key IDs, only rows matching the current configured
-///   key ID are exportable.
+/// A row is exportable ONLY when `config.is_ready()` is `true` and the row's `pseudonym_key_id`
+/// equals `config.pseudonym_key_id()`.
 #[must_use]
-pub fn resolve_git_evidence_across_sources(rows: &[GitEvidenceFact]) -> Vec<GitEvidenceFact> {
-    let env_key_id = configured_export_key_id_from_env();
-    resolve_git_evidence_across_sources_with_key_id(rows, env_key_id.as_deref())
+pub fn resolve_git_evidence_across_sources_with_config(
+    rows: &[GitEvidenceFact],
+    config: &FactExportConfig,
+) -> Vec<GitEvidenceFact> {
+    let key_id = if config.is_ready() {
+        config.pseudonym_key_id()
+    } else {
+        None
+    };
+    resolve_git_evidence_across_sources_with_key_id(rows, key_id)
 }
 
 /// Deterministically derives cross-source `GitEvidenceFact` records across all per-source rows,
-/// using `current_key_id` when rows carry different `pseudonym_key_id` values.
+/// using `current_key_id` (from a `Ready` [`FactExportConfig`]) to gate exportability.
+///
+/// When `current_key_id` is `None`, nothing is exportable (`export_status = "non_exportable"`).
 #[must_use]
 pub fn resolve_git_evidence_across_sources_with_key_id(
     rows: &[GitEvidenceFact],
@@ -793,21 +784,9 @@ pub fn resolve_git_evidence_across_sources_with_key_id(
         ))
     });
 
-    let distinct_key_ids: BTreeSet<&str> = sorted
-        .iter()
-        .filter(|r| r.export_status == EXPORT_STATUS_EXPORTABLE)
-        .filter_map(|r| r.pseudonym_key_id.as_deref())
-        .filter(|kid| is_valid_key_id(kid))
-        .collect();
-
-    let allowed_key_id: Option<&str> = if let Some(cfg_kid) = current_key_id {
-        let trimmed = cfg_kid.trim();
-        is_valid_key_id(trimmed).then_some(trimmed)
-    } else if distinct_key_ids.len() == 1 {
-        distinct_key_ids.into_iter().next()
-    } else {
-        None
-    };
+    let allowed_key_id: Option<&str> = current_key_id
+        .map(str::trim)
+        .filter(|kid| is_valid_key_id(kid));
 
     let mut groups: BTreeMap<String, Vec<&GitEvidenceFact>> = BTreeMap::new();
     for row in sorted {
@@ -880,16 +859,20 @@ pub fn resolve_git_evidence_across_sources_with_key_id(
             OBSERVED_AT_STATUS_NOT_OBSERVABLE.to_string()
         };
 
-        // R5: Merge status & parent disagreement check across sources.
+        // S4 & R5: Merge status & parent disagreement check within or across sources.
+        let any_intra_source_conflict = group
+            .iter()
+            .any(|r| r.merge_missing_reason.as_deref() == Some(MERGE_REASON_CONFLICTING_PARENTS));
         let observed_parent_rows: Vec<&GitEvidenceFact> = group
             .iter()
             .copied()
             .filter(|r| r.merge_status == MERGE_STATUS_OBSERVED)
             .collect();
-        let parents_conflict = observed_parent_rows.len() > 1
-            && !observed_parent_rows
-                .windows(2)
-                .all(|w| w[0].parent_sealed == w[1].parent_sealed);
+        let parents_conflict = any_intra_source_conflict
+            || (observed_parent_rows.len() > 1
+                && !observed_parent_rows
+                    .windows(2)
+                    .all(|w| w[0].parent_sealed == w[1].parent_sealed));
 
         let (merge_status, is_merge, merge_missing_reason, parent_sealed) = if parents_conflict {
             (
@@ -918,23 +901,12 @@ pub fn resolve_git_evidence_across_sources_with_key_id(
             )
         };
 
-        // Default branch status: observed if observing sources agree on `on_default_branch`.
-        let mut observed_def_vals: BTreeSet<bool> = BTreeSet::new();
-        for row in &group {
-            if row.default_branch_status == DEFAULT_BRANCH_STATUS_OBSERVED {
-                if let Some(val) = row.on_default_branch {
-                    observed_def_vals.insert(val);
-                }
-            }
-        }
-        let (default_branch_status, on_default_branch) = if observed_def_vals.len() == 1 {
-            let val = observed_def_vals.into_iter().next().unwrap();
-            (DEFAULT_BRANCH_STATUS_OBSERVED.to_string(), Some(val))
-        } else {
-            (DEFAULT_BRANCH_STATUS_NOT_OBSERVED.to_string(), None)
-        };
+        // S3: `on_default_branch` is ALWAYS `not_observed` in the MVP
+        // (reason `default_branch_not_derivable_from_session_records`).
+        let default_branch_status = DEFAULT_BRANCH_STATUS_NOT_OBSERVED.to_string();
+        let on_default_branch = None;
 
-        // R5: Derive exported fields from ONE coherent row under the eligible `allowed_key_id`.
+        // S5 & R5: Derive exported fields from ONE coherent row under the eligible `allowed_key_id`.
         // Never combine parents from one row with HMACs from another.
         let row_has_coherent_hmacs = |r: &GitEvidenceFact| -> bool {
             let Some(kid) = allowed_key_id else {
@@ -1022,380 +994,286 @@ pub fn resolve_git_evidence_across_sources_with_key_id(
 }
 
 // ---------------------------------------------------------------------------
-// Strict Allow-Listed Single Git Command Classifier & Output Parser (R1–R4)
+// Exact-Match Allow-Listed Git Command Classifier & Output Parser (S1–S3)
 // ---------------------------------------------------------------------------
 
-/// Strictly allow-listed git command shapes recognized by D4c.
-/// Any command outside this allow-list is classified as [`GitCommandKind::NonGit`] and
-/// contributes nothing.
+/// Strictly allow-listed git command shapes recognized by D4c (`S1`).
+/// Any command outside this exact-match allow-list is classified as [`GitCommandKind::NonGit`]
+/// and contributes nothing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GitCommandKind {
     /// Not an allow-listed git command shape. Contributes nothing.
     NonGit,
-    /// `git rev-parse HEAD` (or `git rev-parse --short HEAD`).
-    RevParseCommit { short: bool },
+    /// `git rev-parse HEAD`.
+    RevParseCommit,
     /// `git rev-parse --show-object-format`.
     ShowObjectFormat,
-    /// `git log` or `git show -s`/`--no-patch` with a format that is EXACTLY `%H`.
-    /// `is_head` is true only for `git log -1`/`-n 1` with no revision or `HEAD`.
-    LogCommitOnly { is_head: bool },
-    /// `git log` or `git show -s`/`--no-patch` with a format that is EXACTLY `%H %P`,
-    /// or `git rev-list --parents ...`.
-    /// `is_head` is true only for `git log -1`/`-n 1` with no revision or `HEAD`.
-    LogCommitAndParents { is_head: bool },
-    /// `git cat-file -p <FULL-SHA>` or `git cat-file commit <FULL-SHA>` where `<FULL-SHA>` is
-    /// a canonical 40-hex or 64-hex SHA (`cat-file -p HEAD` or non-full-SHA is `NonGit`).
+    /// `git log` or `git show -s`/`--no-patch` with `--format=%H` (or `--pretty=format:%H`).
+    LogCommitOnly,
+    /// `git log` or `git show -s`/`--no-patch` with `--format=Q%H %PQ` (or `--pretty=format:Q%H %PQ`).
+    LogCommitAndParents,
+    /// `git cat-file -p <FULL-SHA>` where `<FULL-SHA>` is a canonical 40-hex or 64-hex SHA.
     CatFileCommit { target_sha: String },
-    /// `git commit ...` (abbreviated SHA in `[branch <short-sha>]` -> counted unresolved only).
+    /// `git commit ...` (first output line matching `[<branch> <abbrev>] ...` -> counted unresolved only).
     Commit,
-    /// `git symbolic-ref refs/remotes/origin/HEAD`.
-    SymbolicDefaultBranch,
-    /// `git remote show origin`.
-    RemoteShowOrigin,
-    /// Branch inspection or switching command (`git rev-parse --abbrev-ref HEAD`,
-    /// `git branch --show-current`, `git symbolic-ref --short HEAD`, `git status`,
-    /// `git checkout`, `git switch`) used only to track the current branch / detached HEAD
-    /// in `(session, cwd)`.
-    CurrentBranch {
-        checkout_branch: Option<String>,
-        detaches_head: bool,
-    },
 }
 
-/// One classified git invocation along with an optional leading `cd <dir> &&` override.
+/// Raw command representation extracted from a session tool-call record (`S1`).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ClassifiedGitSubcommand {
-    pub kind: GitCommandKind,
-    pub cwd_override: Option<String>,
+pub enum GitCommandInput {
+    /// A single command string (e.g. Claude `Bash`, Pi `bash`, Grok `bash`, or Codex string command).
+    CommandString(String),
+    /// An `argv` array of strings (e.g. Codex `CommandExecution` / `exec_command`).
+    Argv(Vec<String>),
 }
 
-/// Result of classifying a shell tool call under R1's single-clean-call gate.
+/// Result of classifying a shell tool call under `S1`'s exact-match allow-list and character gate.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClassifiedCommandCall {
-    /// Not a git invocation or a single non-allow-listed git subcommand.
+    /// Not a git invocation.
     NonGit,
-    /// A compound, chained, piped, redirected, subshell, env-prefixed, or global-option-bearing
-    /// git call that was rejected by R1 and counted in `unparsed_compound_git_calls`.
+    /// A rejected git-looking command (counted in `unparsed_compound_git_calls`).
     SkippedCompoundGit,
-    /// A single clean allow-listed git command, optionally preceded by one `cd <path> &&`.
-    Allowed(ClassifiedGitSubcommand),
+    /// An exact-match allow-listed git command.
+    Allowed(GitCommandKind),
 }
 
-/// Classify a shell command into its [`GitCommandKind`] under R1–R3.
+/// Returns `true` if `b` is in the strict character allow-list `[A-Za-z0-9 =%_.:/'"-]` (`S1`).
+///
+/// Rejects `$`, `\`, backtick, `;`, `|`, `&`, `<`, `>`, `(`, `)`, newline, tab, and all other bytes.
+#[must_use]
+pub const fn is_allowed_git_command_char(b: u8) -> bool {
+    b.is_ascii_alphanumeric()
+        || matches!(
+            b,
+            b' ' | b'=' | b'%' | b'_' | b'.' | b':' | b'/' | b'\'' | b'"' | b'-'
+        )
+}
+
+/// Classify a command string into its [`GitCommandKind`] under `S1`.
 #[must_use]
 pub fn classify_shell_command(command: &str) -> GitCommandKind {
     match classify_single_git_command(command) {
-        ClassifiedCommandCall::Allowed(sub) => sub.kind,
+        ClassifiedCommandCall::Allowed(kind) => kind,
         ClassifiedCommandCall::NonGit | ClassifiedCommandCall::SkippedCompoundGit => {
             GitCommandKind::NonGit
         }
     }
 }
 
-/// Classify a shell command string into at most one allow-listed [`ClassifiedGitSubcommand`].
-#[must_use]
-pub fn classify_shell_subcommands(command: &str) -> Vec<ClassifiedGitSubcommand> {
-    match classify_single_git_command(command) {
-        ClassifiedCommandCall::Allowed(sub) => vec![sub],
-        ClassifiedCommandCall::NonGit | ClassifiedCommandCall::SkippedCompoundGit => Vec::new(),
-    }
-}
-
-/// Classify a shell command under R1: the entire command must be a single allow-listed git
-/// invocation, optionally preceded by a single `cd <path> &&` (and optionally inside a clean
-/// shell wrapper containing nothing else).
+/// Classify a command string under `S1`:
+/// 1. Rejects any command exceeding [`MAX_GIT_COMMAND_BYTES`] or containing any byte outside
+///    `[A-Za-z0-9 =%_.:/'"-]` (no `$`, `\`, backtick, `;`, `|`, `&`, `<`, `>`, `(`, `)`,
+///    newline, or tab).
+/// 2. After trimming outer ASCII whitespace, the whole command string must be an exact match
+///    for one of the `S1` templates.
+/// 3. Any rejected git-looking command returns [`ClassifiedCommandCall::SkippedCompoundGit`]
+///    and increments `unparsed_compound_git_calls`.
 #[must_use]
 pub fn classify_single_git_command(command: &str) -> ClassifiedCommandCall {
-    let trimmed = command.trim();
-    if trimmed.is_empty() {
+    if command.trim_ascii().is_empty() {
         return ClassifiedCommandCall::NonGit;
     }
-    if trimmed.len() > MAX_GIT_COMMAND_BYTES {
-        return if command_mentions_git(trimmed) {
+    if command.len() > MAX_GIT_COMMAND_BYTES || !command.bytes().all(is_allowed_git_command_char) {
+        return if command_mentions_git(command) {
             ClassifiedCommandCall::SkippedCompoundGit
         } else {
             ClassifiedCommandCall::NonGit
         };
     }
 
-    let mut cur = trimmed.to_string();
-    for depth in 0..=MAX_SHELL_WRAPPER_DEPTH {
-        let Some(and_segments) = split_clean_and_segments(&cur) else {
-            return if command_mentions_git(&cur) || command_mentions_git(trimmed) {
-                ClassifiedCommandCall::SkippedCompoundGit
-            } else {
-                ClassifiedCommandCall::NonGit
-            };
-        };
-
-        if and_segments.is_empty() {
-            return ClassifiedCommandCall::NonGit;
-        }
-
-        if and_segments.len() == 1 {
-            let Some(tokens) = tokenize_shell_words_strict(&and_segments[0]) else {
-                return if command_mentions_git(&cur) {
-                    ClassifiedCommandCall::SkippedCompoundGit
-                } else {
-                    ClassifiedCommandCall::NonGit
-                };
-            };
-            if tokens.is_empty() {
-                return ClassifiedCommandCall::NonGit;
-            }
-            if is_env_assignment(&tokens[0]) {
-                return if tokens.iter().any(|t| {
-                    matches!(executable_basename(t), "git" | "git.exe") || t.starts_with("GIT_")
-                }) {
-                    ClassifiedCommandCall::SkippedCompoundGit
-                } else {
-                    ClassifiedCommandCall::NonGit
-                };
-            }
-            let exe = executable_basename(&tokens[0]);
-            if let Some(inner) = extract_shell_wrapper_script_strict(exe, &tokens[1..]) {
-                if depth == MAX_SHELL_WRAPPER_DEPTH {
-                    return if command_mentions_git(&inner) {
-                        ClassifiedCommandCall::SkippedCompoundGit
-                    } else {
-                        ClassifiedCommandCall::NonGit
-                    };
-                }
-                cur = inner.trim().to_string();
-                continue;
-            }
-            return classify_single_git_tokens(&tokens, None);
-        }
-
-        if and_segments.len() == 2 {
-            let Some(cd_tokens) = tokenize_shell_words_strict(&and_segments[0]) else {
-                return if command_mentions_git(&cur) {
-                    ClassifiedCommandCall::SkippedCompoundGit
-                } else {
-                    ClassifiedCommandCall::NonGit
-                };
-            };
-            let Some(cd_dir) = parse_strict_cd_tokens(&cd_tokens) else {
-                return if command_mentions_git(&cur) {
-                    ClassifiedCommandCall::SkippedCompoundGit
-                } else {
-                    ClassifiedCommandCall::NonGit
-                };
-            };
-            let Some(git_tokens) = tokenize_shell_words_strict(&and_segments[1]) else {
-                return if command_mentions_git(&cur) {
-                    ClassifiedCommandCall::SkippedCompoundGit
-                } else {
-                    ClassifiedCommandCall::NonGit
-                };
-            };
-            return classify_single_git_tokens(&git_tokens, Some(cd_dir));
-        }
-
-        return if command_mentions_git(&cur) {
-            ClassifiedCommandCall::SkippedCompoundGit
-        } else {
-            ClassifiedCommandCall::NonGit
-        };
+    let trimmed = command.trim_ascii();
+    if let Some(kind) = match_exact_git_string_template(trimmed) {
+        return ClassifiedCommandCall::Allowed(kind);
     }
 
-    if command_mentions_git(&cur) {
+    if command_mentions_git(trimmed) {
         ClassifiedCommandCall::SkippedCompoundGit
     } else {
         ClassifiedCommandCall::NonGit
     }
 }
 
-fn split_clean_and_segments(cmd: &str) -> Option<Vec<String>> {
-    let mut segments = Vec::new();
-    let mut cur = String::new();
-    let mut chars = cmd.chars().peekable();
-    let mut in_single = false;
-    let mut in_double = false;
-
-    while let Some(c) = chars.next() {
-        if c == '\n' || c == '\r' {
-            return None;
-        }
-        if c == '\\' && !in_single {
-            let next_c = chars.next()?;
-            if next_c == '\n' || next_c == '\r' {
-                return None;
-            }
-            cur.push(c);
-            cur.push(next_c);
-            continue;
-        }
-        if c == '\'' && !in_double {
-            in_single = !in_single;
-            cur.push(c);
-            continue;
-        }
-        if c == '"' && !in_single {
-            in_double = !in_double;
-            cur.push(c);
-            continue;
-        }
-        if !in_single {
-            if c == '`' {
-                return None;
-            }
-            if c == '$' && matches!(chars.peek(), Some('(' | '{')) {
-                return None;
-            }
-        }
-        if !in_single && !in_double {
-            if matches!(c, ';' | '|' | '<' | '>' | '(' | ')') {
-                return None;
-            }
-            if c == '&' {
-                if chars.peek() == Some(&'&') {
-                    let _ = chars.next();
-                    if chars.peek() == Some(&'&') {
-                        return None;
-                    }
-                    let trimmed = cur.trim();
-                    if trimmed.is_empty() {
-                        return None;
-                    }
-                    segments.push(trimmed.to_string());
-                    cur.clear();
-                    continue;
-                }
-                return None;
-            }
-        }
-        cur.push(c);
+/// Classify an `argv` array (Codex) under `S1`:
+/// - A shell wrapper argv `["bash"|"sh"|"zsh", "-c"|"-lc", CMD]` or
+///   `["pwsh"|"powershell", "-Command"|"-c", CMD]` is accepted only if `CMD` alone passes
+///   [`classify_single_git_command`]. No other wrappers and no `cmd /c`.
+/// - Otherwise, accepts ONLY an `argv` whose elements are the exact tokens of an `S1` template,
+///   compared element by element after character-safety validation.
+#[must_use]
+pub fn classify_git_argv<S: AsRef<str>>(argv: &[S]) -> ClassifiedCommandCall {
+    if argv.is_empty() {
+        return ClassifiedCommandCall::NonGit;
+    }
+    let total_bytes: usize = argv.iter().map(|s| s.as_ref().len()).sum();
+    if total_bytes > MAX_GIT_COMMAND_BYTES {
+        return if argv_mentions_git(argv) {
+            ClassifiedCommandCall::SkippedCompoundGit
+        } else {
+            ClassifiedCommandCall::NonGit
+        };
     }
 
-    if in_single || in_double {
-        return None;
-    }
-    let trimmed = cur.trim();
-    if trimmed.is_empty() {
-        if !segments.is_empty() {
-            return None;
+    if argv.len() == 3 {
+        let a0 = argv[0].as_ref();
+        let a1 = argv[1].as_ref();
+        let a2 = argv[2].as_ref();
+        let is_posix_wrapper = matches!(a0, "bash" | "sh" | "zsh") && matches!(a1, "-c" | "-lc");
+        let is_pwsh_wrapper =
+            matches!(a0, "pwsh" | "powershell") && matches!(a1, "-Command" | "-c");
+        if is_posix_wrapper || is_pwsh_wrapper {
+            return classify_single_git_command(a2);
         }
+    }
+
+    if argv
+        .iter()
+        .any(|s| s.as_ref().is_empty() || !s.as_ref().bytes().all(is_allowed_git_command_char))
+    {
+        return if argv_mentions_git(argv) {
+            ClassifiedCommandCall::SkippedCompoundGit
+        } else {
+            ClassifiedCommandCall::NonGit
+        };
+    }
+
+    let tokens: Vec<&str> = argv.iter().map(AsRef::as_ref).collect();
+    if let Some(kind) = match_exact_git_argv_tokens(&tokens) {
+        return ClassifiedCommandCall::Allowed(kind);
+    }
+
+    if argv_mentions_git(argv) {
+        ClassifiedCommandCall::SkippedCompoundGit
     } else {
-        segments.push(trimmed.to_string());
+        ClassifiedCommandCall::NonGit
     }
-    Some(segments)
 }
 
-fn tokenize_shell_words_strict(segment: &str) -> Option<Vec<String>> {
-    let mut words = Vec::new();
-    let mut cur = String::new();
-    let mut chars = segment.chars().peekable();
-    let mut in_single = false;
-    let mut in_double = false;
-    let mut saw_quote = false;
-
-    while let Some(c) = chars.next() {
-        if c == '\\' && !in_single {
-            let next_c = chars.next()?;
-            cur.push(next_c);
-            continue;
-        }
-        if c == '\'' && !in_double {
-            in_single = !in_single;
-            saw_quote = true;
-            continue;
-        }
-        if c == '"' && !in_single {
-            in_double = !in_double;
-            saw_quote = true;
-            continue;
-        }
-        if c.is_ascii_whitespace() && !in_single && !in_double {
-            if !cur.is_empty() || saw_quote {
-                words.push(std::mem::take(&mut cur));
-                saw_quote = false;
-            }
-            continue;
-        }
-        cur.push(c);
+/// Classify a [`GitCommandInput`] (either a command string or an `argv` array).
+#[must_use]
+pub fn classify_git_command_input(input: &GitCommandInput) -> ClassifiedCommandCall {
+    match input {
+        GitCommandInput::CommandString(s) => classify_single_git_command(s),
+        GitCommandInput::Argv(argv) => classify_git_argv(argv),
     }
-    if in_single || in_double {
-        return None;
-    }
-    if !cur.is_empty() || saw_quote {
-        words.push(cur);
-    }
-    Some(words)
 }
 
-fn parse_strict_cd_tokens(tokens: &[String]) -> Option<String> {
-    if tokens.is_empty() || executable_basename(&tokens[0]) != "cd" {
-        return None;
-    }
-    let dir = match &tokens[1..] {
-        [single] if !single.starts_with('-') => single.trim(),
-        [dash_dash, single] if dash_dash == "--" => single.trim(),
-        _ => return None,
-    };
-    if dir.is_empty() {
-        return None;
-    }
-    Some(dir.to_string())
+fn is_valid_log_count(s: &str) -> bool {
+    !s.is_empty()
+        && !s.starts_with('0')
+        && s.bytes().all(|b| b.is_ascii_digit())
+        && s.parse::<u32>().is_ok_and(|n| (1..=1000).contains(&n))
 }
 
-fn extract_shell_wrapper_script_strict(exe: &str, args: &[String]) -> Option<String> {
-    if matches!(
-        exe,
-        "sh" | "bash" | "zsh" | "dash" | "ksh" | "fish" | "sh.exe" | "bash.exe"
-    ) {
-        match args {
-            [flag, script]
-                if flag == "-c"
-                    || flag == "-lc"
-                    || flag == "-cl"
-                    || (flag.starts_with('-')
-                        && !flag.starts_with("--")
-                        && flag[1..].bytes().all(|b| b.is_ascii_alphabetic())
-                        && flag.contains('c')) =>
-            {
-                return Some(script.clone());
-            }
-            _ => return None,
-        }
+fn match_string_format_spec(fmt: &str) -> Option<GitCommandKind> {
+    match fmt {
+        "--format=%H" | "--pretty=format:%H" => Some(GitCommandKind::LogCommitOnly),
+        "--format='%H %P'"
+        | "--format=\"%H %P\""
+        | "--pretty=format:'%H %P'"
+        | "--pretty=format:\"%H %P\"" => Some(GitCommandKind::LogCommitAndParents),
+        _ => None,
     }
+}
 
-    if matches!(exe, "pwsh" | "powershell" | "pwsh.exe" | "powershell.exe") {
-        let mut i = 0;
-        while i < args.len() {
-            let lower = args[i].to_ascii_lowercase();
-            if matches!(lower.as_str(), "-c" | "-command" | "/c") {
-                if i + 2 == args.len() {
-                    return Some(args[i + 1].clone());
-                }
-                return None;
+fn match_argv_format_spec(fmt: &str) -> Option<GitCommandKind> {
+    match fmt {
+        "--format=%H" | "--pretty=format:%H" => Some(GitCommandKind::LogCommitOnly),
+        "--format=%H %P"
+        | "--pretty=format:%H %P"
+        | "--format='%H %P'"
+        | "--format=\"%H %P\""
+        | "--pretty=format:'%H %P'"
+        | "--pretty=format:\"%H %P\"" => Some(GitCommandKind::LogCommitAndParents),
+        _ => None,
+    }
+}
+
+fn match_exact_git_string_template(trimmed: &str) -> Option<GitCommandKind> {
+    if trimmed == "git rev-parse HEAD" {
+        return Some(GitCommandKind::RevParseCommit);
+    }
+    if trimmed == "git rev-parse --show-object-format" {
+        return Some(GitCommandKind::ShowObjectFormat);
+    }
+    if let Some(rest) = trimmed.strip_prefix("git log ") {
+        if let Some(fmt) = rest.strip_prefix("-1 ") {
+            return match_string_format_spec(fmt);
+        }
+        if let Some(after_n) = rest.strip_prefix("-n ") {
+            let (n_str, fmt) = after_n.split_once(' ')?;
+            if is_valid_log_count(n_str) {
+                return match_string_format_spec(fmt);
             }
-            if matches!(
-                lower.as_str(),
-                "-noprofile" | "-nop" | "-noni" | "-noninteractive"
-            ) {
-                i += 1;
-                continue;
+            return None;
+        }
+        if let Some(after_mc) = rest.strip_prefix("--max-count=") {
+            let (n_str, fmt) = after_mc.split_once(' ')?;
+            if is_valid_log_count(n_str) {
+                return match_string_format_spec(fmt);
             }
             return None;
         }
         return None;
     }
-
-    if matches!(exe, "cmd" | "cmd.exe") {
-        if args.len() == 2 && args[0].eq_ignore_ascii_case("/c") {
-            return Some(args[1].clone());
+    if let Some(rest) = trimmed
+        .strip_prefix("git show -s ")
+        .or_else(|| trimmed.strip_prefix("git show --no-patch "))
+    {
+        let fmt = rest.strip_suffix(" HEAD")?;
+        return match_string_format_spec(fmt);
+    }
+    if let Some(sha) = trimmed.strip_prefix("git cat-file -p ") {
+        if is_canonical_commit_sha(sha) {
+            return Some(GitCommandKind::CatFileCommit {
+                target_sha: sha.to_string(),
+            });
         }
         return None;
     }
-
+    if let Some(rest) = trimmed.strip_prefix("git commit ") {
+        if !rest.trim_ascii().is_empty() {
+            return Some(GitCommandKind::Commit);
+        }
+        return None;
+    }
     None
+}
+
+fn match_exact_git_argv_tokens(tokens: &[&str]) -> Option<GitCommandKind> {
+    match tokens {
+        ["git", "rev-parse", "HEAD"] => Some(GitCommandKind::RevParseCommit),
+        ["git", "rev-parse", "--show-object-format"] => Some(GitCommandKind::ShowObjectFormat),
+        ["git", "log", "-1", fmt] => match_argv_format_spec(fmt),
+        ["git", "log", "-n", n_str, fmt] if is_valid_log_count(n_str) => {
+            match_argv_format_spec(fmt)
+        }
+        ["git", "log", mc, fmt]
+            if mc
+                .strip_prefix("--max-count=")
+                .is_some_and(is_valid_log_count) =>
+        {
+            match_argv_format_spec(fmt)
+        }
+        ["git", "show", "-s" | "--no-patch", fmt, "HEAD"] => match_argv_format_spec(fmt),
+        ["git", "cat-file", "-p", sha] if is_canonical_commit_sha(sha) => {
+            Some(GitCommandKind::CatFileCommit {
+                target_sha: (*sha).to_string(),
+            })
+        }
+        ["git", "commit", rest @ ..] if !rest.is_empty() => Some(GitCommandKind::Commit),
+        _ => None,
+    }
+}
+
+fn argv_mentions_git<S: AsRef<str>>(argv: &[S]) -> bool {
+    argv.iter().any(|s| command_mentions_git(s.as_ref()))
 }
 
 fn command_mentions_git(cmd: &str) -> bool {
     let mut word = String::new();
     for ch in cmd.chars() {
-        if ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | '/' | '\\' | '=') {
+        if ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | '=') {
             word.push(ch);
         } else if !word.is_empty() {
             if token_is_git_reference(&word) {
@@ -1411,557 +1289,11 @@ fn command_mentions_git(cmd: &str) -> bool {
 }
 
 fn token_is_git_reference(token: &str) -> bool {
-    let base = executable_basename(token);
-    matches!(base, "git" | "git.exe")
+    matches!(token, "git" | "git.exe")
         || token.starts_with("GIT_DIR=")
         || token.starts_with("GIT_WORK_TREE=")
         || token.starts_with("GIT_INDEX_FILE=")
         || token.starts_with("GIT_OBJECT_DIRECTORY=")
-}
-
-fn classify_single_git_tokens(
-    tokens: &[String],
-    cd_override: Option<String>,
-) -> ClassifiedCommandCall {
-    if tokens.is_empty() {
-        return ClassifiedCommandCall::NonGit;
-    }
-    let first = &tokens[0];
-    if is_env_assignment(first)
-        || matches!(
-            executable_basename(first),
-            "env" | "command" | "sudo" | "nice" | "nohup" | "time" | "stdbuf"
-        )
-    {
-        return if tokens.iter().any(|t| token_is_git_reference(t)) {
-            ClassifiedCommandCall::SkippedCompoundGit
-        } else {
-            ClassifiedCommandCall::NonGit
-        };
-    }
-
-    let exe = executable_basename(first);
-    if exe != "git" && exe != "git.exe" {
-        return ClassifiedCommandCall::NonGit;
-    }
-
-    let args = &tokens[1..];
-    if args.is_empty() {
-        return ClassifiedCommandCall::NonGit;
-    }
-
-    // R1: Any global git options before the subcommand (`-C`, `--git-dir`, `--work-tree`, `-c`, etc.)
-    // reject the call and count it in `unparsed_compound_git_calls`.
-    let subcmd = args[0].as_str();
-    if subcmd.starts_with('-') {
-        return ClassifiedCommandCall::SkippedCompoundGit;
-    }
-
-    let rest = &args[1..];
-    for arg in rest {
-        let a = arg.as_str();
-        if a == "--git-dir"
-            || a.starts_with("--git-dir=")
-            || a == "--work-tree"
-            || a.starts_with("--work-tree=")
-        {
-            return ClassifiedCommandCall::SkippedCompoundGit;
-        }
-    }
-
-    let kind = match subcmd {
-        "rev-parse" => classify_rev_parse(rest),
-        "log" => classify_log(rest),
-        "show" => classify_show(rest),
-        "rev-list" => classify_rev_list(rest),
-        "cat-file" => classify_cat_file(rest),
-        "commit" => Some(GitCommandKind::Commit),
-        "symbolic-ref" => classify_symbolic_ref(rest),
-        "remote" => classify_remote(rest),
-        "branch" => {
-            if rest.len() == 1 && rest[0] == "--show-current" {
-                Some(GitCommandKind::CurrentBranch {
-                    checkout_branch: None,
-                    detaches_head: false,
-                })
-            } else {
-                None
-            }
-        }
-        "status" => Some(GitCommandKind::CurrentBranch {
-            checkout_branch: None,
-            detaches_head: false,
-        }),
-        "checkout" | "switch" => classify_checkout_or_switch(rest),
-        _ => None,
-    };
-
-    match kind {
-        Some(k) => ClassifiedCommandCall::Allowed(ClassifiedGitSubcommand {
-            kind: k,
-            cwd_override: cd_override.and_then(|d| normalize_cwd(&d)),
-        }),
-        None => ClassifiedCommandCall::NonGit,
-    }
-}
-
-fn classify_rev_parse(rest: &[String]) -> Option<GitCommandKind> {
-    if rest.is_empty() {
-        return None;
-    }
-    let non_quiet: Vec<&str> = rest
-        .iter()
-        .map(String::as_str)
-        .filter(|&a| a != "-q" && a != "--quiet")
-        .collect();
-    // 1. P2: `git rev-parse --show-object-format`
-    if non_quiet == ["--show-object-format"] {
-        return Some(GitCommandKind::ShowObjectFormat);
-    }
-    // 2. Branch observation: `git rev-parse --abbrev-ref HEAD` (strictly HEAD)
-    if non_quiet == ["--abbrev-ref", "HEAD"] {
-        return Some(GitCommandKind::CurrentBranch {
-            checkout_branch: None,
-            detaches_head: false,
-        });
-    }
-    // 3. R3: Commit identity is ONLY the exact argument `HEAD` (with optional --short).
-    // Raw hex, tags, branches, and other refs contribute nothing.
-    let mut short = false;
-    let mut positional: Vec<&str> = Vec::new();
-    for arg in rest {
-        let s = arg.as_str();
-        if matches!(s, "-q" | "--quiet" | "--verify" | "--end-of-options") {
-            continue;
-        }
-        if s == "--short" {
-            short = true;
-            continue;
-        }
-        if let Some(n) = s.strip_prefix("--short=") {
-            if n.is_empty() || !n.bytes().all(|b| b.is_ascii_digit()) {
-                return None;
-            }
-            short = true;
-            continue;
-        }
-        if s.starts_with('-') {
-            return None;
-        }
-        positional.push(s);
-    }
-    if positional.as_slice() == ["HEAD"] {
-        Some(GitCommandKind::RevParseCommit { short })
-    } else {
-        None
-    }
-}
-
-fn parse_positive_count(s: &str) -> Option<usize> {
-    if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
-        return None;
-    }
-    let n = s.parse::<usize>().ok()?;
-    (n > 0).then_some(n)
-}
-
-fn is_valid_log_revision(rev: &str) -> bool {
-    if rev == "HEAD" {
-        return true;
-    }
-    if rev.contains(':')
-        || rev.contains("..")
-        || rev.contains("^{")
-        || rev.contains("@{")
-        || rev.contains('~')
-        || rev.contains('^')
-        || rev.contains('\\')
-    {
-        return false;
-    }
-    is_safe_branch_name(rev)
-}
-
-fn classify_log(rest: &[String]) -> Option<GitCommandKind> {
-    let mut format_spec: Option<String> = None;
-    let mut max_count: Option<usize> = None;
-    let mut revisions: Vec<&str> = Vec::new();
-    let mut i = 0;
-
-    while i < rest.len() {
-        let arg = rest[i].as_str();
-        if let Some(val) = arg
-            .strip_prefix("--format=")
-            .or_else(|| arg.strip_prefix("--pretty="))
-        {
-            format_spec = Some(val.to_string());
-            i += 1;
-            continue;
-        }
-        if arg == "--format" || arg == "--pretty" {
-            let val = rest.get(i + 1)?;
-            format_spec = Some(val.clone());
-            i += 2;
-            continue;
-        }
-        if arg == "-n" || arg == "--max-count" {
-            let n_str = rest.get(i + 1)?;
-            max_count = Some(parse_positive_count(n_str)?);
-            i += 2;
-            continue;
-        }
-        if let Some(n_str) = arg
-            .strip_prefix("--max-count=")
-            .or_else(|| arg.strip_prefix("-n"))
-        {
-            max_count = Some(parse_positive_count(n_str)?);
-            i += 1;
-            continue;
-        }
-        if let Some(n_str) = arg.strip_prefix('-') {
-            if let Some(n) = parse_positive_count(n_str) {
-                max_count = Some(n);
-                i += 1;
-                continue;
-            }
-            return None;
-        }
-        if !is_valid_log_revision(arg) {
-            return None;
-        }
-        revisions.push(arg);
-        i += 1;
-    }
-
-    if revisions.len() > 1 {
-        return None;
-    }
-    let is_head =
-        max_count == Some(1) && (revisions.is_empty() || revisions.as_slice() == ["HEAD"]);
-    let raw_fmt = format_spec?;
-    match normalize_git_format_spec(&raw_fmt) {
-        "%H" => Some(GitCommandKind::LogCommitOnly { is_head }),
-        "%H %P" => Some(GitCommandKind::LogCommitAndParents { is_head }),
-        _ => None,
-    }
-}
-
-fn classify_show(rest: &[String]) -> Option<GitCommandKind> {
-    let mut format_spec: Option<String> = None;
-    let mut saw_no_patch = false;
-    let mut revisions: Vec<&str> = Vec::new();
-    let mut i = 0;
-
-    while i < rest.len() {
-        let arg = rest[i].as_str();
-        if matches!(arg, "-s" | "--no-patch") {
-            saw_no_patch = true;
-            i += 1;
-            continue;
-        }
-        if let Some(val) = arg
-            .strip_prefix("--format=")
-            .or_else(|| arg.strip_prefix("--pretty="))
-        {
-            format_spec = Some(val.to_string());
-            i += 1;
-            continue;
-        }
-        if arg == "--format" || arg == "--pretty" {
-            let val = rest.get(i + 1)?;
-            format_spec = Some(val.clone());
-            i += 2;
-            continue;
-        }
-        if arg.starts_with('-') {
-            return None;
-        }
-        if !is_valid_log_revision(arg) {
-            return None;
-        }
-        revisions.push(arg);
-        i += 1;
-    }
-
-    if !saw_no_patch || revisions.len() > 1 {
-        return None;
-    }
-    let raw_fmt = format_spec?;
-    match normalize_git_format_spec(&raw_fmt) {
-        "%H" => Some(GitCommandKind::LogCommitOnly { is_head: false }),
-        "%H %P" => Some(GitCommandKind::LogCommitAndParents { is_head: false }),
-        _ => None,
-    }
-}
-
-fn normalize_git_format_spec(raw: &str) -> &str {
-    let mut s = raw.trim();
-    s = strip_matching_quotes(s);
-    if let Some(after) = s.strip_prefix("tformat:") {
-        s = strip_matching_quotes(after);
-    } else if let Some(after) = s.strip_prefix("format:") {
-        s = strip_matching_quotes(after);
-    }
-    s
-}
-
-fn strip_matching_quotes(s: &str) -> &str {
-    if s.len() >= 2
-        && ((s.starts_with('\'') && s.ends_with('\'')) || (s.starts_with('"') && s.ends_with('"')))
-    {
-        &s[1..s.len() - 1]
-    } else {
-        s
-    }
-}
-
-fn is_valid_rev_list_revision(rev: &str) -> bool {
-    if let Some((left, right)) = rev.split_once("...") {
-        let l_ok = left.is_empty() || is_valid_log_revision(left);
-        let r_ok = right.is_empty() || is_valid_log_revision(right);
-        return l_ok && r_ok && (!left.is_empty() || !right.is_empty());
-    }
-    if let Some((left, right)) = rev.split_once("..") {
-        let l_ok = left.is_empty() || is_valid_log_revision(left);
-        let r_ok = right.is_empty() || is_valid_log_revision(right);
-        return l_ok && r_ok && (!left.is_empty() || !right.is_empty());
-    }
-    is_valid_log_revision(rev)
-}
-
-fn classify_rev_list(rest: &[String]) -> Option<GitCommandKind> {
-    let mut has_parents = false;
-    let mut revisions: Vec<&str> = Vec::new();
-    let mut i = 0;
-
-    while i < rest.len() {
-        let arg = rest[i].as_str();
-        if arg == "--parents" {
-            has_parents = true;
-            i += 1;
-            continue;
-        }
-        if arg == "-n" || arg == "--max-count" {
-            let n_str = rest.get(i + 1)?;
-            let _ = parse_positive_count(n_str)?;
-            i += 2;
-            continue;
-        }
-        if let Some(n_str) = arg
-            .strip_prefix("--max-count=")
-            .or_else(|| arg.strip_prefix("-n"))
-        {
-            let _ = parse_positive_count(n_str)?;
-            i += 1;
-            continue;
-        }
-        if let Some(n_str) = arg.strip_prefix('-') {
-            if parse_positive_count(n_str).is_some() {
-                i += 1;
-                continue;
-            }
-            return None;
-        }
-        if !is_valid_rev_list_revision(arg) {
-            return None;
-        }
-        revisions.push(arg);
-        i += 1;
-    }
-
-    (has_parents && !revisions.is_empty())
-        .then_some(GitCommandKind::LogCommitAndParents { is_head: false })
-}
-
-fn classify_cat_file(rest: &[String]) -> Option<GitCommandKind> {
-    let mut saw_p_or_commit = false;
-    let mut positional: Vec<&str> = Vec::new();
-    for arg in rest {
-        let s = arg.as_str();
-        if s == "-p" {
-            saw_p_or_commit = true;
-            continue;
-        }
-        if s.starts_with('-') {
-            return None;
-        }
-        positional.push(s);
-    }
-    let target = match positional.as_slice() {
-        [single] if saw_p_or_commit => *single,
-        ["commit", sha] if !saw_p_or_commit => *sha,
-        _ => return None,
-    };
-    if !is_canonical_commit_sha(target) {
-        return None;
-    }
-    Some(GitCommandKind::CatFileCommit {
-        target_sha: target.to_string(),
-    })
-}
-
-fn classify_symbolic_ref(rest: &[String]) -> Option<GitCommandKind> {
-    let mut short = false;
-    let mut positional: Vec<&str> = Vec::new();
-    for arg in rest {
-        let s = arg.as_str();
-        if matches!(s, "-q" | "--quiet") {
-            continue;
-        }
-        if s == "--short" {
-            short = true;
-            continue;
-        }
-        if s.starts_with('-') {
-            return None;
-        }
-        positional.push(s);
-    }
-    if positional.len() != 1 {
-        return None;
-    }
-    if !short && positional[0] == "refs/remotes/origin/HEAD" {
-        Some(GitCommandKind::SymbolicDefaultBranch)
-    } else if short && positional[0] == "HEAD" {
-        Some(GitCommandKind::CurrentBranch {
-            checkout_branch: None,
-            detaches_head: false,
-        })
-    } else {
-        None
-    }
-}
-
-fn classify_remote(rest: &[String]) -> Option<GitCommandKind> {
-    let positional: Vec<&str> = rest
-        .iter()
-        .map(String::as_str)
-        .filter(|&a| a != "-n")
-        .collect();
-    if positional == ["show", "origin"] {
-        Some(GitCommandKind::RemoteShowOrigin)
-    } else {
-        None
-    }
-}
-
-fn looks_like_detached_checkout_target(target: &str) -> bool {
-    if target == "HEAD"
-        || target.contains('~')
-        || target.contains('^')
-        || target.contains("@{")
-        || target.starts_with("refs/tags/")
-        || target.starts_with("tags/")
-        || target.starts_with("remotes/")
-        || target.starts_with("origin/")
-    {
-        return true;
-    }
-    if (4..=64).contains(&target.len()) && target.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return true;
-    }
-    if target.starts_with('v')
-        && target.len() > 1
-        && target.as_bytes()[1].is_ascii_digit()
-        && target.contains('.')
-    {
-        return true;
-    }
-    false
-}
-
-fn classify_checkout_or_switch(rest: &[String]) -> Option<GitCommandKind> {
-    if rest.is_empty() || rest[0] == "--" {
-        return None;
-    }
-    let mut created_branch: Option<String> = None;
-    let mut positional: Vec<&str> = Vec::new();
-    let mut i = 0;
-
-    while i < rest.len() {
-        let a = rest[i].as_str();
-        if a == "--" {
-            break;
-        }
-        if matches!(a, "-d" | "--detach") {
-            return Some(GitCommandKind::CurrentBranch {
-                checkout_branch: None,
-                detaches_head: true,
-            });
-        }
-        if matches!(a, "-b" | "-B" | "-c" | "-C" | "--orphan") {
-            let b = rest.get(i + 1)?;
-            if is_safe_branch_name(b) && b != "HEAD" {
-                created_branch = Some(b.clone());
-            } else {
-                return Some(GitCommandKind::CurrentBranch {
-                    checkout_branch: None,
-                    detaches_head: true,
-                });
-            }
-            i += 2;
-            continue;
-        }
-        if matches!(
-            a,
-            "-f" | "--force"
-                | "-q"
-                | "--quiet"
-                | "-m"
-                | "--merge"
-                | "--guess"
-                | "--no-guess"
-                | "--track"
-                | "-t"
-                | "--no-track"
-        ) {
-            i += 1;
-            continue;
-        }
-        if a.starts_with('-') {
-            return Some(GitCommandKind::CurrentBranch {
-                checkout_branch: None,
-                detaches_head: true,
-            });
-        }
-        positional.push(a);
-        i += 1;
-    }
-
-    if let Some(b) = created_branch {
-        return Some(GitCommandKind::CurrentBranch {
-            checkout_branch: Some(b),
-            detaches_head: false,
-        });
-    }
-
-    if let [target] = positional.as_slice() {
-        if looks_like_detached_checkout_target(target) || !is_safe_branch_name(target) {
-            return Some(GitCommandKind::CurrentBranch {
-                checkout_branch: None,
-                detaches_head: true,
-            });
-        }
-        return Some(GitCommandKind::CurrentBranch {
-            checkout_branch: Some((*target).to_string()),
-            detaches_head: false,
-        });
-    }
-
-    None
-}
-
-fn is_env_assignment(token: &str) -> bool {
-    let Some((lhs, _)) = token.split_once('=') else {
-        return false;
-    };
-    !lhs.is_empty()
-        && !lhs.starts_with('-')
-        && lhs.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
-}
-
-fn executable_basename(token: &str) -> &str {
-    token.rsplit(['/', '\\']).next().unwrap_or(token).trim()
 }
 
 /// Normalize a working directory string for deterministic `(session, cwd)` matching.
@@ -1980,60 +1312,9 @@ pub fn normalize_cwd(raw: &str) -> Option<String> {
     (!stripped.is_empty()).then(|| stripped.to_string())
 }
 
-fn resolve_cwd_path(base: Option<&str>, dir_arg: &str) -> String {
-    let clean_arg = dir_arg.trim().replace('\\', "/");
-    let is_abs =
-        clean_arg.starts_with('/') || (clean_arg.len() >= 2 && clean_arg.as_bytes()[1] == b':');
-    if is_abs {
-        normalize_cwd(&clean_arg).unwrap_or(clean_arg)
-    } else if let Some(b) = base.and_then(normalize_cwd) {
-        let joined = format!("{b}/{clean_arg}");
-        normalize_cwd(&joined).unwrap_or(joined)
-    } else {
-        normalize_cwd(&clean_arg).unwrap_or(clean_arg)
-    }
-}
-
-/// Returns `true` if `tool_name` is in the strict allow-list of known shell execution tool
-/// Returns `true` if `tool_name` is in the strict allow-list of known shell execution tool
-/// names for `harness`. Unknown or absent harness or tool names always return `false` (R7).
-#[must_use]
-pub fn is_shell_execution_tool_for_harness(harness: Option<&str>, tool_name: Option<&str>) -> bool {
-    let Some(raw_tool) = tool_name.map(str::trim).filter(|s| !s.is_empty()) else {
-        return false;
-    };
-    let Some(raw_harness) = harness.map(str::trim).filter(|s| !s.is_empty()) else {
-        return false;
-    };
-    match CanonicalHarness::from_alias(raw_harness) {
-        Some(CanonicalHarness::Claude) => matches!(raw_tool, "Bash" | "bash"),
-        Some(CanonicalHarness::Codex) => matches!(
-            raw_tool,
-            "CommandExecution"
-                | "shell"
-                | "local_shell"
-                | "local_shell_call"
-                | "exec_command"
-                | "shell_command"
-                | "container.exec"
-                | "bash"
-                | "Bash"
-        ),
-        Some(CanonicalHarness::Antigravity) => {
-            matches!(raw_tool, "run_command" | "bash" | "Bash" | "shell" | "sh")
-        }
-        Some(CanonicalHarness::Pi) => matches!(raw_tool, "bash" | "Bash" | "sh"),
-        Some(CanonicalHarness::Grok) => matches!(
-            raw_tool,
-            "bash" | "Bash" | "shell" | "sh" | "run_command" | "execute_command"
-        ),
-        None => false,
-    }
-}
-
 /// Returns `true` if `tool_name` is in the strict allow-list of known shell execution tool names
 /// across supported harnesses (`Claude`, `Codex`, `Pi`, `Grok`).
-/// Unknown or empty tool names always return `false` (R7).
+/// Unknown or empty tool names always return `false`.
 #[must_use]
 pub fn is_shell_execution_tool_name(tool_name: &str) -> bool {
     let trimmed = tool_name.trim();
@@ -2062,9 +1343,6 @@ pub struct ParsedCommitObservation {
     /// or `None` when parents were not recorded or dropped.
     pub parents: Option<Vec<String>>,
     pub merge_missing_reason: Option<&'static str>,
-    /// `true` only when established as `HEAD` by `git rev-parse HEAD` or `git log -1`/`-n 1`
-    /// with no revision argument (or revision `HEAD`).
-    pub is_head_commit: bool,
 }
 
 /// Parsed evidence from a single allow-listed git command's output.
@@ -2072,9 +1350,6 @@ pub struct ParsedCommitObservation {
 pub struct ParsedGitOutput {
     pub commits: Vec<ParsedCommitObservation>,
     pub unresolved_abbreviated: u64,
-    pub observed_branch: Option<String>,
-    pub detached_head: bool,
-    pub observed_default_branch: Option<String>,
     pub observed_object_format: Option<GitObjectFormat>,
 }
 
@@ -2087,7 +1362,7 @@ pub enum GitObjectFormat {
 
 /// Parse the output of an allow-listed [`GitCommandKind`].
 ///
-/// Under R2, output lines must match the expected shape EXACTLY with NO leading whitespace
+/// Output lines must match the expected shape EXACTLY with NO leading whitespace
 /// (trailing CR/LF only). Any non-conforming line makes the WHOLE output contribute nothing.
 #[must_use]
 pub fn parse_git_output(kind: &GitCommandKind, raw_output: &str) -> ParsedGitOutput {
@@ -2096,8 +1371,7 @@ pub fn parse_git_output(kind: &GitCommandKind, raw_output: &str) -> ParsedGitOut
         return out;
     }
 
-    let cleaned = strip_output_envelope(raw_output);
-    let body = cleaned.trim_end_matches(['\r', '\n']);
+    let body = raw_output.trim_end_matches(['\r', '\n']);
     let raw_lines: Vec<&str> = if body.is_empty() {
         Vec::new()
     } else {
@@ -2121,90 +1395,14 @@ pub fn parse_git_output(kind: &GitCommandKind, raw_output: &str) -> ParsedGitOut
                 }
             }
         }
-        GitCommandKind::SymbolicDefaultBranch => {
-            if raw_lines.len() == 1 {
-                if let Some(def) = extract_default_branch_from_symbolic_ref(raw_lines[0]) {
-                    out.observed_default_branch = Some(def);
-                }
-            }
-        }
-        GitCommandKind::RemoteShowOrigin => {
-            for &line in &raw_lines {
-                let trimmed = line.trim();
-                if let Some(rest) = trimmed.strip_prefix("HEAD branch:") {
-                    let branch = rest.trim();
-                    if !branch.is_empty()
-                        && branch != "(unknown)"
-                        && branch != "unknown"
-                        && is_safe_branch_name(branch)
-                    {
-                        out.observed_default_branch = Some(branch.to_string());
-                    }
-                }
-            }
-        }
-        GitCommandKind::CurrentBranch {
-            checkout_branch,
-            detaches_head,
-        } => {
-            if *detaches_head {
-                out.detached_head = true;
-                return out;
-            }
-            if let Some(b) = checkout_branch {
-                out.observed_branch = Some(b.clone());
-            }
-            for &line in &raw_lines {
-                if line == "HEAD"
-                    || line.starts_with("HEAD detached ")
-                    || line.starts_with("HEAD is now at ")
-                    || line.starts_with("Note: switching to ")
-                {
-                    out.detached_head = true;
-                    out.observed_branch = None;
-                    return out;
-                }
-                if let Some(rest) = line.strip_prefix("On branch ") {
-                    if !rest.contains(char::is_whitespace) && is_safe_branch_name(rest) {
-                        out.observed_branch = Some(rest.to_string());
-                    }
-                } else if let Some(rest) = line
-                    .strip_prefix("Switched to a new branch '")
-                    .or_else(|| line.strip_prefix("Switched to branch '"))
-                {
-                    if let Some(branch) = rest.strip_suffix('\'') {
-                        if is_safe_branch_name(branch) {
-                            out.observed_branch = Some(branch.to_string());
-                        }
-                    }
-                } else if raw_lines.len() == 1
-                    && !line.is_empty()
-                    && !line.contains(char::is_whitespace)
-                    && !is_canonical_commit_sha(line)
-                    && !is_abbreviated_commit_sha(line)
-                    && is_safe_branch_name(line)
-                {
-                    out.observed_branch = Some(line.to_string());
-                }
-            }
-        }
         GitCommandKind::Commit => {
-            for &line in &raw_lines {
-                if let Some((branch_opt, is_detached, is_abbrev)) =
-                    parse_git_commit_bracket_line(line)
-                {
-                    if is_detached {
-                        out.detached_head = true;
-                    } else if let Some(b) = branch_opt {
-                        out.observed_branch = Some(b);
-                    }
-                    if is_abbrev {
-                        out.unresolved_abbreviated += 1;
-                    }
+            if let Some(&first_line) = raw_lines.first() {
+                if is_git_commit_abbreviated_first_line(first_line) {
+                    out.unresolved_abbreviated = 1;
                 }
             }
         }
-        GitCommandKind::RevParseCommit { short } => {
+        GitCommandKind::RevParseCommit => {
             if raw_lines.len() != 1 {
                 return ParsedGitOutput::default();
             }
@@ -2212,18 +1410,11 @@ pub fn parse_git_output(kind: &GitCommandKind, raw_output: &str) -> ParsedGitOut
             if token.is_empty() || token.contains(char::is_whitespace) {
                 return ParsedGitOutput::default();
             }
-            if *short {
-                if is_abbreviated_commit_sha(token) || is_canonical_commit_sha(token) {
-                    out.unresolved_abbreviated += 1;
-                } else {
-                    return ParsedGitOutput::default();
-                }
-            } else if is_canonical_commit_sha(token) {
+            if is_canonical_commit_sha(token) {
                 out.commits.push(ParsedCommitObservation {
                     commit_sha: token.to_string(),
                     parents: None,
                     merge_missing_reason: Some(MERGE_REASON_PARENTS_NOT_RECORDED),
-                    is_head_commit: true,
                 });
             } else if is_abbreviated_commit_sha(token) {
                 out.unresolved_abbreviated += 1;
@@ -2231,11 +1422,10 @@ pub fn parse_git_output(kind: &GitCommandKind, raw_output: &str) -> ParsedGitOut
                 return ParsedGitOutput::default();
             }
         }
-        GitCommandKind::LogCommitOnly { is_head } => {
+        GitCommandKind::LogCommitOnly => {
             if raw_lines.is_empty() {
                 return ParsedGitOutput::default();
             }
-            let single_head = *is_head && raw_lines.len() == 1;
             for &line in &raw_lines {
                 if line.is_empty() || line.contains(char::is_whitespace) {
                     return ParsedGitOutput::default();
@@ -2245,7 +1435,6 @@ pub fn parse_git_output(kind: &GitCommandKind, raw_output: &str) -> ParsedGitOut
                         commit_sha: line.to_string(),
                         parents: None,
                         merge_missing_reason: Some(MERGE_REASON_PARENTS_NOT_RECORDED),
-                        is_head_commit: single_head,
                     });
                 } else if is_abbreviated_commit_sha(line) {
                     out.unresolved_abbreviated += 1;
@@ -2254,11 +1443,10 @@ pub fn parse_git_output(kind: &GitCommandKind, raw_output: &str) -> ParsedGitOut
                 }
             }
         }
-        GitCommandKind::LogCommitAndParents { is_head } => {
+        GitCommandKind::LogCommitAndParents => {
             if raw_lines.is_empty() {
                 return ParsedGitOutput::default();
             }
-            let single_head = *is_head && raw_lines.len() == 1;
             for &line in &raw_lines {
                 if line.is_empty() || line.starts_with(char::is_whitespace) {
                     return ParsedGitOutput::default();
@@ -2278,8 +1466,6 @@ pub fn parse_git_output(kind: &GitCommandKind, raw_output: &str) -> ParsedGitOut
                 {
                     return ParsedGitOutput::default();
                 }
-                // R2: Every token on every line must be a valid canonical or abbreviated SHA;
-                // any non-conforming line makes the WHOLE output contribute nothing.
                 if !tokens
                     .iter()
                     .all(|t| is_canonical_commit_sha(t) || is_abbreviated_commit_sha(t))
@@ -2302,7 +1488,6 @@ pub fn parse_git_output(kind: &GitCommandKind, raw_output: &str) -> ParsedGitOut
                         commit_sha: first.to_string(),
                         parents: None,
                         merge_missing_reason: Some(MERGE_REASON_ABBREVIATED_PARENTS),
-                        is_head_commit: single_head,
                     });
                 } else {
                     let commit_len = first.len();
@@ -2311,14 +1496,12 @@ pub fn parse_git_output(kind: &GitCommandKind, raw_output: &str) -> ParsedGitOut
                             commit_sha: first.to_string(),
                             parents: Some(parent_tokens.iter().map(|s| (*s).to_string()).collect()),
                             merge_missing_reason: None,
-                            is_head_commit: single_head,
                         });
                     } else {
                         out.commits.push(ParsedCommitObservation {
                             commit_sha: first.to_string(),
                             parents: None,
                             merge_missing_reason: Some(MERGE_REASON_MIXED_PARENT_OBJECT_FORMAT),
-                            is_head_commit: single_head,
                         });
                     }
                 }
@@ -2326,7 +1509,6 @@ pub fn parse_git_output(kind: &GitCommandKind, raw_output: &str) -> ParsedGitOut
         }
         GitCommandKind::CatFileCommit { target_sha } => {
             if let Some(parsed_cat) = parse_cat_file_commit(&raw_lines, target_sha) {
-                out.unresolved_abbreviated += parsed_cat.unresolved_abbreviated;
                 out.commits.extend(parsed_cat.commits);
             }
         }
@@ -2335,139 +1517,80 @@ pub fn parse_git_output(kind: &GitCommandKind, raw_output: &str) -> ParsedGitOut
     out
 }
 
-fn strip_output_envelope(raw: &str) -> &str {
-    let mut rest = raw;
-    let mut saw_header = false;
-    while !rest.is_empty() {
-        let (line_raw, after) = match rest.split_once('\n') {
-            Some((l, a)) => (l, a),
-            None => (rest, ""),
-        };
-        let trimmed = line_raw.strip_suffix('\r').unwrap_or(line_raw).trim();
-        let lower = trimmed.to_ascii_lowercase();
-        let is_meta = [
-            "chunk id:",
-            "wall time:",
-            "original token count:",
-            "total output lines:",
-            "session id:",
-            "process running with session id",
-            "process exited with exit code",
-            "process exited with code",
-            "exit code:",
-            "exit_code:",
-        ]
-        .iter()
-        .any(|p| lower.starts_with(p));
-        if is_meta {
-            saw_header = true;
-            rest = after;
-            continue;
-        }
-        if trimmed.eq_ignore_ascii_case("output:") {
-            return after;
-        }
-        if saw_header && trimmed.is_empty() {
-            rest = after;
-            continue;
-        }
-        break;
+fn is_git_commit_abbreviated_first_line(line: &str) -> bool {
+    let Some(rest) = line.strip_prefix('[') else {
+        return false;
+    };
+    let Some((bracket_inner, after)) = rest.split_once(']') else {
+        return false;
+    };
+    if !after.is_empty() && !after.starts_with(' ') {
+        return false;
     }
-    if saw_header {
-        rest
-    } else {
-        raw
+    let tokens: Vec<&str> = bracket_inner.split_whitespace().collect();
+    let (branch_opt, sha_token) = match tokens.as_slice() {
+        [branch, "(root-commit)", sha] => (Some(*branch), *sha),
+        ["detached", "HEAD", sha] => (None, *sha),
+        [branch, sha] => (Some(*branch), *sha),
+        _ => return false,
+    };
+    if let Some(b) = branch_opt {
+        if !is_safe_branch_name(b) {
+            return false;
+        }
     }
+    is_abbreviated_commit_sha(sha_token)
 }
 
-fn parse_git_commit_bracket_line(line: &str) -> Option<(Option<String>, bool, bool)> {
-    let rest = line.strip_prefix('[')?;
-    let (bracket_inner, _after) = rest.split_once(']')?;
-    let tokens: Vec<&str> = bracket_inner.split_whitespace().collect();
-    if tokens.len() < 2 {
+/// S1: `git cat-file -p <FULL-SHA>` binds parents to `<FULL-SHA>` ONLY if the output's first line
+/// is `tree <hex>` of the exact same hex length, followed only by `parent <hex>` lines of the same
+/// length and then the `author ` and `committer ` header lines; anything else contributes nothing.
+fn parse_cat_file_commit(lines: &[&str], target_sha: &str) -> Option<ParsedGitOutput> {
+    if !is_canonical_commit_sha(target_sha) {
         return None;
     }
-    let (branch, is_detached, sha_token) = match tokens.as_slice() {
-        [branch, "(root-commit)", sha] => (Some(*branch), false, *sha),
-        ["detached", "HEAD", sha] => (None, true, *sha),
-        [branch, sha] => (Some(*branch), false, *sha),
-        _ => return None,
-    };
-    if let Some(b) = branch {
-        if !is_safe_branch_name(b) {
-            return None;
-        }
-    }
-    if is_abbreviated_commit_sha(sha_token) {
-        Some((branch.map(str::to_string), is_detached, true))
-    } else if is_canonical_commit_sha(sha_token) {
-        Some((branch.map(str::to_string), is_detached, false))
-    } else {
-        None
-    }
-}
-
-fn parse_cat_file_commit(lines: &[&str], target_sha: &str) -> Option<ParsedGitOutput> {
+    let commit_len = target_sha.len();
     let first = *lines.first()?;
     let tree_sha = first.strip_prefix("tree ")?;
-    if tree_sha.contains(char::is_whitespace)
-        || (!is_canonical_commit_sha(tree_sha) && !is_abbreviated_commit_sha(tree_sha))
-    {
+    if !is_canonical_commit_sha(tree_sha) || tree_sha.len() != commit_len {
         return None;
     }
-    let mut parents = Vec::new();
-    let mut saw_abbrev_parent = false;
-    let mut unresolved_abbreviated = 0u64;
 
-    for &line in &lines[1..] {
-        if line.is_empty() {
+    let mut parents = Vec::new();
+    let mut idx = 1;
+    while idx < lines.len() {
+        let Some(p_sha) = lines[idx].strip_prefix("parent ") else {
             break;
+        };
+        if !is_canonical_commit_sha(p_sha)
+            || p_sha.len() != commit_len
+            || parents.len() >= MAX_PARENTS_PER_COMMIT
+        {
+            return None;
         }
-        if let Some(p_sha) = line.strip_prefix("parent ") {
-            if p_sha.contains(char::is_whitespace) {
-                return None;
-            }
-            if is_canonical_commit_sha(p_sha) && parents.len() < MAX_PARENTS_PER_COMMIT {
-                parents.push(p_sha.to_string());
-            } else if is_abbreviated_commit_sha(p_sha) {
-                saw_abbrev_parent = true;
-                unresolved_abbreviated += 1;
-            } else {
-                return None;
-            }
-        }
+        parents.push(p_sha.to_string());
+        idx += 1;
     }
 
-    let commit_len = target_sha.len();
-    let (obs_parents, reason) = if saw_abbrev_parent {
-        (None, Some(MERGE_REASON_ABBREVIATED_PARENTS))
-    } else if !parents.iter().all(|p| p.len() == commit_len) {
-        (None, Some(MERGE_REASON_MIXED_PARENT_OBJECT_FORMAT))
-    } else {
-        (Some(parents), None)
-    };
+    let author_line = *lines.get(idx)?;
+    let author_rest = author_line.strip_prefix("author ")?;
+    if author_rest.trim().is_empty() {
+        return None;
+    }
+    let committer_line = *lines.get(idx + 1)?;
+    let committer_rest = committer_line.strip_prefix("committer ")?;
+    if committer_rest.trim().is_empty() {
+        return None;
+    }
 
     Some(ParsedGitOutput {
         commits: vec![ParsedCommitObservation {
             commit_sha: target_sha.to_string(),
-            parents: obs_parents,
-            merge_missing_reason: reason,
-            is_head_commit: false,
+            parents: Some(parents),
+            merge_missing_reason: None,
         }],
-        unresolved_abbreviated,
         ..Default::default()
     })
-}
-
-fn extract_default_branch_from_symbolic_ref(line: &str) -> Option<String> {
-    if line.contains(char::is_whitespace) {
-        return None;
-    }
-    let branch = line.strip_prefix("refs/remotes/origin/")?;
-    if branch.is_empty() || branch == "HEAD" || !is_safe_branch_name(branch) {
-        return None;
-    }
-    Some(branch.to_string())
 }
 
 fn is_safe_branch_name(s: &str) -> bool {
@@ -2492,12 +1615,12 @@ struct PendingToolCall {
 struct AccumulatedCommit {
     commit_sha: String,
     parents: Option<Vec<String>>,
+    parents_conflict: bool,
     merge_missing_reason: Option<&'static str>,
     observed_at: Option<DateTime<Utc>>,
     sessions: BTreeSet<String>,
     saw_unmatched_session: bool,
     saw_conflicted_session: bool,
-    on_default_branch_observations: BTreeSet<bool>,
 }
 
 /// Accumulates git evidence across records of a single source file pass (`0..consumed`).
@@ -2509,17 +1632,9 @@ pub struct GitEvidenceScanner {
     unresolved_abbreviated: u64,
     unverified_object_format: u64,
     unparsed_compound_git_calls: u64,
-    /// Most recent working directory observed per session from harness records.
-    session_cwd: BTreeMap<String, String>,
-    /// Current branch observed per `(session, cwd)` from a record in that `cwd`
-    /// (invalidated when `git checkout` / `git switch` detaches `HEAD`).
-    branch_by_session_cwd: BTreeMap<(String, String), String>,
-    /// Default branch observed via `git symbolic-ref refs/remotes/origin/HEAD` or
-    /// `git remote show origin` per `(session, cwd)`.
-    default_branch_by_session_cwd: BTreeMap<(String, String), String>,
     /// Object format (`sha1` vs `sha256`) observed via `git rev-parse --show-object-format`
-    /// per `(session, cwd_opt)`.
-    object_format_by_session_cwd: BTreeMap<(String, Option<String>), GitObjectFormat>,
+    /// per `(session, record_cwd)` (`S1`, `S2`). Requires the record `cwd` to be present.
+    object_format_by_session_cwd: BTreeMap<(String, String), GitObjectFormat>,
 }
 
 impl GitEvidenceScanner {
@@ -2527,46 +1642,16 @@ impl GitEvidenceScanner {
         Self::default()
     }
 
-    /// Record structured session context (`cwd` and current `gitBranch`) from a harness record.
+    /// Register a tool call (with a command string or `argv` array) by explicit `call_id` in the
+    /// bounded LRU.
     ///
-    /// Per R4(a), the current branch is recorded ONLY for the explicit `cwd` on that record
-    /// (never inherited from another `cwd`, and never stored in a session-wide fallback).
-    pub fn observe_record_context(
-        &mut self,
-        raw_session: Option<&str>,
-        header_conflict: bool,
-        cwd: Option<&str>,
-        branch: Option<&str>,
-    ) {
-        if header_conflict {
-            return;
-        }
-        let Some(sess) = raw_session.map(str::trim).filter(|s| !s.is_empty()) else {
-            return;
-        };
-        let Some(c) = cwd.and_then(normalize_cwd) else {
-            return;
-        };
-        self.session_cwd.insert(sess.to_string(), c.clone());
-        if let Some(raw_b) = branch.map(str::trim).filter(|s| !s.is_empty()) {
-            if raw_b == "HEAD" || raw_b.to_ascii_lowercase().contains("detached") {
-                self.branch_by_session_cwd.remove(&(sess.to_string(), c));
-            } else if is_safe_branch_name(raw_b) {
-                self.branch_by_session_cwd
-                    .insert((sess.to_string(), c), raw_b.to_string());
-            }
-        }
-    }
-
-    /// Register a tool call by explicit `call_id` in the bounded LRU.
-    ///
-    /// Under R7, only tool names in the strict shell allow-list (`is_shell_execution_tool_name`)
-    /// have their command inspected; unknown or absent tool names are treated as non-shell tools.
-    pub fn observe_tool_call_with_context(
+    /// Only tool names in the strict shell allow-list (`is_shell_execution_tool_name`) have their
+    /// command inspected; unknown or absent tool names are treated as non-shell tools.
+    pub fn observe_tool_call_input_with_context(
         &mut self,
         call_id: Option<&str>,
         tool_name: Option<&str>,
-        command: Option<&str>,
+        command_input: Option<&GitCommandInput>,
         cwd: Option<&str>,
     ) {
         let Some(id) = call_id.map(str::trim).filter(|s| !s.is_empty()) else {
@@ -2575,28 +1660,11 @@ impl GitEvidenceScanner {
         let is_shell = tool_name.is_some_and(is_shell_execution_tool_name);
         let norm_call_cwd = cwd.and_then(normalize_cwd);
         let command_call = if is_shell {
-            match command {
-                Some(cmd) => {
-                    let classified = classify_single_git_command(cmd);
+            match command_input {
+                Some(inp) => {
+                    let classified = classify_git_command_input(inp);
                     if matches!(classified, ClassifiedCommandCall::SkippedCompoundGit) {
                         self.unparsed_compound_git_calls += 1;
-                    } else if let ClassifiedCommandCall::Allowed(ref sub) = classified {
-                        if let GitCommandKind::CurrentBranch {
-                            detaches_head: true,
-                            ..
-                        } = sub.kind
-                        {
-                            let target_cwd = match (&norm_call_cwd, &sub.cwd_override) {
-                                (Some(b), Some(ov)) => Some(resolve_cwd_path(Some(b.as_str()), ov)),
-                                (None, Some(ov)) => normalize_cwd(ov),
-                                (Some(b), None) => Some(b.clone()),
-                                (None, None) => None,
-                            };
-                            if let Some(ref c) = target_cwd {
-                                self.branch_by_session_cwd
-                                    .retain(|(_, existing_cwd), _| existing_cwd != c);
-                            }
-                        }
                     }
                     classified
                 }
@@ -2613,7 +1681,31 @@ impl GitEvidenceScanner {
         self.insert_pending_lru(id.to_string(), pending);
     }
 
-    /// Convenience wrapper for registering a shell (`Bash`) tool call without explicit cwd.
+    /// Register a tool call with a command string by explicit `call_id` in the bounded LRU.
+    pub fn observe_tool_call_with_context(
+        &mut self,
+        call_id: Option<&str>,
+        tool_name: Option<&str>,
+        command: Option<&str>,
+        cwd: Option<&str>,
+    ) {
+        let input = command.map(|c| GitCommandInput::CommandString(c.to_string()));
+        self.observe_tool_call_input_with_context(call_id, tool_name, input.as_ref(), cwd);
+    }
+
+    /// Register a tool call with an `argv` array by explicit `call_id` in the bounded LRU.
+    pub fn observe_tool_call_argv_with_context<S: AsRef<str>>(
+        &mut self,
+        call_id: Option<&str>,
+        tool_name: Option<&str>,
+        argv: &[S],
+        cwd: Option<&str>,
+    ) {
+        let input = GitCommandInput::Argv(argv.iter().map(|s| s.as_ref().to_string()).collect());
+        self.observe_tool_call_input_with_context(call_id, tool_name, Some(&input), cwd);
+    }
+
+    /// Convenience wrapper for registering a shell (`Bash`) tool call without explicit `cwd`.
     pub fn observe_tool_call(&mut self, call_id: Option<&str>, command: &str) {
         self.observe_tool_call_with_context(call_id, Some("Bash"), Some(command), None);
     }
@@ -2645,12 +1737,13 @@ impl GitEvidenceScanner {
     /// Record a tool result matched strictly by explicit `call_id` (or atomic `CommandExecution`
     /// record where call and output are in the same event).
     ///
-    /// Unmatched tool results (`call_id` missing or not in the bounded LRU) are ignored.
+    /// Per `S1`, uses ONLY the record's own `cwd` field (no `cd` handling, no session fallback).
+    /// Evidence that needs a `cwd` (the object-format binding) requires the record `cwd` to be present.
     #[allow(clippy::too_many_arguments)]
-    pub fn observe_tool_output_with_cwd(
+    pub fn observe_tool_output_input_with_cwd(
         &mut self,
         call_id: Option<&str>,
-        atomic_command: Option<&str>,
+        atomic_command: Option<&GitCommandInput>,
         raw_session: Option<&str>,
         header_conflict: bool,
         ts: Option<DateTime<Utc>>,
@@ -2666,9 +1759,7 @@ impl GitEvidenceScanner {
         } else {
             raw_session.map(str::trim).filter(|s| !s.is_empty())
         };
-        if let (Some(sess), Some(c)) = (clean_session, cwd.and_then(normalize_cwd)) {
-            self.session_cwd.insert(sess.to_string(), c);
-        }
+        let norm_record_cwd = cwd.and_then(normalize_cwd);
 
         let Some(id) = call_id.map(str::trim).filter(|s| !s.is_empty()) else {
             return;
@@ -2676,66 +1767,42 @@ impl GitEvidenceScanner {
 
         let pending = if let Some(found) = self.lookup_pending_lru(id) {
             found
-        } else if let Some(cmd) = atomic_command {
-            // Atomic single-record execution (e.g. Codex `CommandExecution` item_completed)
-            // that carries its own explicit `id` and `command` on the same record.
-            let command_call = classify_single_git_command(cmd);
+        } else if let Some(cmd_inp) = atomic_command {
+            let command_call = classify_git_command_input(cmd_inp);
             if matches!(command_call, ClassifiedCommandCall::SkippedCompoundGit) {
                 self.unparsed_compound_git_calls += 1;
             }
             let call = PendingToolCall {
                 command_call,
-                cwd: cwd.and_then(normalize_cwd),
+                cwd: norm_record_cwd.clone(),
             };
             self.insert_pending_lru(id.to_string(), call.clone());
             call
         } else {
-            // Unmatched tool result or evicted from LRU -> ignore!
             return;
         };
 
-        let ClassifiedCommandCall::Allowed(sub) = pending.command_call else {
+        let ClassifiedCommandCall::Allowed(kind) = pending.command_call else {
             return;
         };
 
-        let base_cwd = pending
-            .cwd
-            .or_else(|| cwd.and_then(normalize_cwd))
-            .or_else(|| clean_session.and_then(|s| self.session_cwd.get(s).cloned()));
-
-        let effective_cwd = match (&base_cwd, &sub.cwd_override) {
-            (Some(b), Some(ov)) => Some(resolve_cwd_path(Some(b.as_str()), ov)),
-            (None, Some(ov)) => normalize_cwd(ov),
-            (Some(b), None) => Some(b.clone()),
-            (None, None) => None,
+        // S1: ONLY the record's own cwd field (no cd handling, no session fallback).
+        // If both the call record and output record carry a cwd, they must agree; if the output
+        // record has no cwd, effective_cwd is None.
+        let effective_cwd = match (&pending.cwd, norm_record_cwd) {
+            (Some(call_cwd), Some(out_cwd)) if *call_cwd == out_cwd => Some(out_cwd),
+            (None, Some(out_cwd)) => Some(out_cwd),
+            _ => None,
         };
 
-        let parsed = parse_git_output(&sub.kind, raw_output);
+        let parsed = parse_git_output(&kind, raw_output);
         self.unresolved_abbreviated += parsed.unresolved_abbreviated;
 
+        // S1 & S2: Object format binding requires both session and record cwd to be present.
         if let Some(fmt) = parsed.observed_object_format {
-            if let Some(sess) = clean_session {
+            if let (Some(sess), Some(ref c)) = (clean_session, &effective_cwd) {
                 self.object_format_by_session_cwd
-                    .insert((sess.to_string(), effective_cwd.clone()), fmt);
-            }
-        }
-
-        if parsed.detached_head {
-            if let (Some(sess), Some(c)) = (clean_session, effective_cwd.as_ref()) {
-                self.branch_by_session_cwd
-                    .remove(&(sess.to_string(), c.clone()));
-            }
-        } else if let Some(ref b) = parsed.observed_branch {
-            if let (Some(sess), Some(c)) = (clean_session, effective_cwd.as_ref()) {
-                self.branch_by_session_cwd
-                    .insert((sess.to_string(), c.clone()), b.clone());
-            }
-        }
-
-        if let Some(def) = parsed.observed_default_branch {
-            if let (Some(sess), Some(c)) = (clean_session, effective_cwd.as_ref()) {
-                self.default_branch_by_session_cwd
-                    .insert((sess.to_string(), c.clone()), def);
+                    .insert((sess.to_string(), c.clone()), fmt);
             }
         }
 
@@ -2748,6 +1815,32 @@ impl GitEvidenceScanner {
                 obs,
             );
         }
+    }
+
+    /// Record a tool result with an optional atomic command string matched strictly by `call_id`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn observe_tool_output_with_cwd(
+        &mut self,
+        call_id: Option<&str>,
+        atomic_command: Option<&str>,
+        raw_session: Option<&str>,
+        header_conflict: bool,
+        ts: Option<DateTime<Utc>>,
+        failed: Option<bool>,
+        cwd: Option<&str>,
+        raw_output: &str,
+    ) {
+        let inp = atomic_command.map(|c| GitCommandInput::CommandString(c.to_string()));
+        self.observe_tool_output_input_with_cwd(
+            call_id,
+            inp.as_ref(),
+            raw_session,
+            header_conflict,
+            ts,
+            failed,
+            cwd,
+            raw_output,
+        );
     }
 
     /// Convenience wrapper for [`Self::observe_tool_output_with_cwd`] without explicit record `cwd`.
@@ -2792,17 +1885,18 @@ impl GitEvidenceScanner {
         };
         let norm_cwd = effective_cwd.and_then(normalize_cwd);
 
-        // P2: Hash algorithm check per `(session, cwd)`:
-        // - 40-hex is accepted as SHA-1 unless the same session and cwd recorded `sha256`.
-        // - 64-hex is accepted ONLY when `sha256` was recorded for that session and cwd;
+        // S1 & S2: Object format check per `(session, record_cwd)`:
+        // - 40-hex is accepted as SHA-1 unless `sha256` was recorded for the same session and record cwd.
+        // - 64-hex is accepted ONLY when `sha256` was recorded for the same session and record cwd;
         //   otherwise it is counted as `unverified_object_format` and ignored.
-        let recorded_format = clean_session
-            .and_then(|sess| {
-                self.object_format_by_session_cwd
-                    .get(&(sess.to_string(), norm_cwd.clone()))
-                    .copied()
-            })
-            .unwrap_or(GitObjectFormat::Sha1);
+        let recorded_format = match (clean_session, norm_cwd.as_deref()) {
+            (Some(sess), Some(c)) => self
+                .object_format_by_session_cwd
+                .get(&(sess.to_string(), c.to_string()))
+                .copied(),
+            _ => None,
+        }
+        .unwrap_or(GitObjectFormat::Sha1);
 
         let sha_len = obs.commit_sha.len();
         let format_matches = matches!(
@@ -2814,46 +1908,32 @@ impl GitEvidenceScanner {
             return;
         }
 
-        // R4: `on_default_branch` is observed ONLY for a commit established as HEAD by
-        // `git rev-parse HEAD` or `git log -1`/`-n 1` with no revision (or `HEAD`), AND only when
-        // at that time and for the SAME session and SAME cwd both the current branch (not detached)
-        // and the default branch are known in that cwd.
-        let on_default_at_obs = if obs.is_head_commit {
-            match (clean_session, norm_cwd.as_ref()) {
-                (Some(sess), Some(cwd_str)) => {
-                    let key = (sess.to_string(), cwd_str.clone());
-                    match (
-                        self.default_branch_by_session_cwd.get(&key),
-                        self.branch_by_session_cwd.get(&key),
-                    ) {
-                        (Some(def_branch), Some(cur_branch)) => {
-                            Some(cur_branch.as_str() == def_branch.as_str())
-                        }
-                        _ => None,
-                    }
-                }
-                _ => None,
-            }
-        } else {
-            None
-        };
-
         if let Some(existing) = self.commits_by_sha.get_mut(&obs.commit_sha) {
             if existing.observed_at.is_none() && ts.is_some() {
                 existing.observed_at = ts;
             }
-            if existing.parents.is_none() && obs.parents.is_some() {
-                existing.parents = obs.parents;
-                existing.merge_missing_reason = None;
-            } else if existing.parents.is_none()
-                && (existing.merge_missing_reason.is_none()
-                    || (existing.merge_missing_reason == Some(MERGE_REASON_PARENTS_NOT_RECORDED)
-                        && obs.merge_missing_reason.is_some()))
-            {
-                existing.merge_missing_reason = obs.merge_missing_reason;
-            }
-            if let Some(on_def) = on_default_at_obs {
-                existing.on_default_branch_observations.insert(on_def);
+            // S4: Within ONE source, conflicting parent lists for the same commit ->
+            // merge_status = not_observed with reason conflicting_parents (not first-wins).
+            if !existing.parents_conflict {
+                if let Some(new_parents) = obs.parents {
+                    if let Some(ref cur_parents) = existing.parents {
+                        if *cur_parents != new_parents {
+                            existing.parents = None;
+                            existing.parents_conflict = true;
+                            existing.merge_missing_reason = Some(MERGE_REASON_CONFLICTING_PARENTS);
+                        }
+                    } else {
+                        existing.parents = Some(new_parents);
+                        existing.merge_missing_reason = None;
+                    }
+                } else if existing.parents.is_none()
+                    && (existing.merge_missing_reason.is_none()
+                        || (existing.merge_missing_reason
+                            == Some(MERGE_REASON_PARENTS_NOT_RECORDED)
+                            && obs.merge_missing_reason.is_some()))
+                {
+                    existing.merge_missing_reason = obs.merge_missing_reason;
+                }
             }
             if header_conflict {
                 existing.saw_conflicted_session = true;
@@ -2880,11 +1960,6 @@ impl GitEvidenceScanner {
             saw_unmatched_session = true;
         }
 
-        let mut on_default_branch_observations = BTreeSet::new();
-        if let Some(on_def) = on_default_at_obs {
-            on_default_branch_observations.insert(on_def);
-        }
-
         let sha = obs.commit_sha.clone();
         self.commit_order.push(sha.clone());
         self.commits_by_sha.insert(
@@ -2892,12 +1967,12 @@ impl GitEvidenceScanner {
             AccumulatedCommit {
                 commit_sha: obs.commit_sha,
                 parents: obs.parents,
+                parents_conflict: false,
                 merge_missing_reason: obs.merge_missing_reason,
                 observed_at: ts,
                 sessions,
                 saw_unmatched_session,
                 saw_conflicted_session,
-                on_default_branch_observations,
             },
         );
     }
@@ -2963,16 +2038,11 @@ impl GitEvidenceScanner {
                 }
             };
 
-            // Default branch status: observed ONLY if known at observation time in the same
-            // `(session, cwd)` without conflict.
-            let (default_branch_status, on_default_branch) =
-                if acc.on_default_branch_observations.len() == 1 {
-                    let val = *acc.on_default_branch_observations.iter().next().unwrap();
-                    (DEFAULT_BRANCH_STATUS_OBSERVED.to_string(), Some(val))
-                } else {
-                    default_branch_not_observed += 1;
-                    (DEFAULT_BRANCH_STATUS_NOT_OBSERVED.to_string(), None)
-                };
+            // S3: Default branch status is ALWAYS `not_observed` in the MVP
+            // (reason `default_branch_not_derivable_from_session_records`).
+            default_branch_not_observed += 1;
+            let default_branch_status = DEFAULT_BRANCH_STATUS_NOT_OBSERVED.to_string();
+            let on_default_branch = None;
 
             // Timestamp status
             let observed_at_status = if acc.observed_at.is_some() {
@@ -3180,98 +2250,508 @@ mod tests {
     }
 
     #[test]
-    fn strict_allow_list_rejects_non_allow_listed_git_and_non_git_shapes() {
+    fn s1_exact_templates_accepted_with_expected_rows_and_argv_variants() {
         let sha1 = "1".repeat(40);
         let sha2 = "2".repeat(40);
-        let tree_sha = "3".repeat(40);
+        let sha3 = "3".repeat(40);
+        let tree_sha = "4".repeat(40);
 
-        // 1. bare `--format=%P` -> nothing
-        let kind_bare_p = classify_shell_command("git log -1 --format=%P");
-        assert_eq!(kind_bare_p, GitCommandKind::NonGit);
-        let out_bare_p = parse_git_output(&kind_bare_p, &format!("{sha1}\n"));
-        assert!(out_bare_p.commits.is_empty());
+        // 1. `git rev-parse HEAD`
+        assert_eq!(
+            classify_shell_command("  git rev-parse HEAD  "),
+            GitCommandKind::RevParseCommit
+        );
+        let out_rp = parse_git_output(&GitCommandKind::RevParseCommit, &format!("{sha1}\n"));
+        assert_eq!(out_rp.commits.len(), 1);
+        assert_eq!(out_rp.commits[0].commit_sha, sha1);
+        assert_eq!(out_rp.commits[0].parents, None);
 
-        // 2. `--format='%H %T'` -> no parents (and rejected by strict format allow-list)
-        let kind_ht = classify_shell_command("git log -1 --format='%H %T'");
-        assert_eq!(kind_ht, GitCommandKind::NonGit);
-        let out_ht = parse_git_output(&kind_ht, &format!("{sha1} {tree_sha}\n"));
-        assert!(out_ht.commits.is_empty());
+        // 2. `git rev-parse --show-object-format`
+        assert_eq!(
+            classify_shell_command("git rev-parse --show-object-format"),
+            GitCommandKind::ShowObjectFormat
+        );
+        let out_fmt = parse_git_output(&GitCommandKind::ShowObjectFormat, "sha256\n");
+        assert_eq!(
+            out_fmt.observed_object_format,
+            Some(GitObjectFormat::Sha256)
+        );
 
-        // 3. any 2-hex line from a non-allow-listed command -> nothing
-        for non_allowed in [
-            "git status",
-            "git diff HEAD~1 HEAD",
-            "git fetch origin",
-            "echo 1111111111111111111111111111111111111111 2222222222222222222222222222222222222222",
-            "python3 script.py",
+        // 3. `git log` CommitOnly templates (N = 1..=1000)
+        for cmd in [
+            "git log -1 --format=%H",
+            "git log -n 1 --format=%H",
+            "git log -n 1000 --format=%H",
+            "git log --max-count=1 --format=%H",
+            "git log --max-count=1000 --format=%H",
+            "git log -1 --pretty=format:%H",
+            "git log -n 5 --pretty=format:%H",
+            "git log --max-count=5 --pretty=format:%H",
         ] {
-            let kind = classify_shell_command(non_allowed);
-            let out = parse_git_output(&kind, &format!("{sha1} {sha2}\n"));
-            assert!(
-                out.commits.is_empty(),
-                "non-allow-listed command `{non_allowed}` must produce no commits"
-            );
+            let kind = classify_shell_command(cmd);
+            assert_eq!(kind, GitCommandKind::LogCommitOnly, "must accept `{cmd}`");
+            let out = parse_git_output(&kind, &format!("{sha1}\n{sha2}\n"));
+            assert_eq!(out.commits.len(), 2);
+            assert_eq!(out.commits[0].commit_sha, sha1);
+            assert_eq!(out.commits[0].parents, None);
+            assert_eq!(out.commits[1].commit_sha, sha2);
         }
 
-        // 4. `git rev-parse --abbrev-ref @{u}` printing `origin/feat-x` -> no default branch
-        let kind_upstream = classify_shell_command("git rev-parse --abbrev-ref @{u}");
-        assert_eq!(kind_upstream, GitCommandKind::NonGit);
-        let out_upstream = parse_git_output(&kind_upstream, "origin/feat-x\n");
-        assert_eq!(out_upstream.observed_default_branch, None);
+        // 4. `git log` CommitAndParents templates (Q = ' or ", matching on both sides)
+        for cmd in [
+            "git log -1 --format='%H %P'",
+            "git log -1 --format=\"%H %P\"",
+            "git log -n 2 --format='%H %P'",
+            "git log -n 1000 --format=\"%H %P\"",
+            "git log --max-count=3 --format='%H %P'",
+            "git log --max-count=1000 --format=\"%H %P\"",
+            "git log -1 --pretty=format:'%H %P'",
+            "git log -n 2 --pretty=format:\"%H %P\"",
+            "git log --max-count=2 --pretty=format:'%H %P'",
+        ] {
+            let kind = classify_shell_command(cmd);
+            assert_eq!(
+                kind,
+                GitCommandKind::LogCommitAndParents,
+                "must accept `{cmd}`"
+            );
+            let out = parse_git_output(&kind, &format!("{sha1} {sha2} {sha3}\n{sha2}\n"));
+            assert_eq!(out.commits.len(), 2);
+            assert_eq!(
+                out.commits[0].parents,
+                Some(vec![sha2.clone(), sha3.clone()])
+            );
+            assert_eq!(out.commits[1].parents, Some(Vec::new()));
+        }
 
-        // 5. `git branch -r` -> none
-        let kind_branch_r = classify_shell_command("git branch -r");
-        assert_eq!(kind_branch_r, GitCommandKind::NonGit);
-        let out_branch_r = parse_git_output(
-            &kind_branch_r,
-            "  origin/HEAD -> origin/main\n  origin/main\n",
-        );
-        assert_eq!(out_branch_r.observed_default_branch, None);
-        assert_eq!(out_branch_r.observed_branch, None);
+        // 5. `git show` templates (`-s` and `--no-patch`)
+        for (cmd, expected_kind) in [
+            (
+                "git show -s --format=%H HEAD",
+                GitCommandKind::LogCommitOnly,
+            ),
+            (
+                "git show --no-patch --format=%H HEAD",
+                GitCommandKind::LogCommitOnly,
+            ),
+            (
+                "git show -s --pretty=format:%H HEAD",
+                GitCommandKind::LogCommitOnly,
+            ),
+            (
+                "git show -s --format='%H %P' HEAD",
+                GitCommandKind::LogCommitAndParents,
+            ),
+            (
+                "git show -s --format=\"%H %P\" HEAD",
+                GitCommandKind::LogCommitAndParents,
+            ),
+            (
+                "git show --no-patch --format='%H %P' HEAD",
+                GitCommandKind::LogCommitAndParents,
+            ),
+            (
+                "git show --no-patch --format=\"%H %P\" HEAD",
+                GitCommandKind::LogCommitAndParents,
+            ),
+        ] {
+            let kind = classify_shell_command(cmd);
+            assert_eq!(kind, expected_kind, "must accept `{cmd}`");
+        }
 
-        // 6. `cat-file -p HEAD` -> nothing; `cat-file -p <full>` -> parents bound to that SHA
-        let kind_cat_head = classify_shell_command("git cat-file -p HEAD");
-        assert_eq!(kind_cat_head, GitCommandKind::NonGit);
-        let cat_body = format!(
-            "tree {tree_sha}\nparent {sha2}\nauthor Dev <dev@example.com> 1700000000 +0000\ncommitter Dev <dev@example.com> 1700000000 +0000\n\nmsg\n"
-        );
-        let out_cat_head = parse_git_output(&kind_cat_head, &cat_body);
-        assert!(out_cat_head.commits.is_empty());
-
-        let kind_cat_full = classify_shell_command(&format!("git cat-file -p {sha1}"));
+        // 6. `git cat-file -p <FULL-SHA>` with required `tree <hex>`, `parent <hex>`, `author `, `committer `
+        let cat_cmd = format!("git cat-file -p {sha1}");
+        let cat_kind = classify_shell_command(&cat_cmd);
         assert_eq!(
-            kind_cat_full,
+            cat_kind,
             GitCommandKind::CatFileCommit {
                 target_sha: sha1.clone()
             }
         );
-        let out_cat_full = parse_git_output(&kind_cat_full, &cat_body);
-        assert_eq!(out_cat_full.commits.len(), 1);
-        assert_eq!(out_cat_full.commits[0].commit_sha, sha1);
-        assert_eq!(out_cat_full.commits[0].parents, Some(vec![sha2.clone()]));
+        let valid_cat_body = format!(
+            "tree {tree_sha}\nparent {sha2}\nauthor Dev <dev@example.com> 1700000000 +0000\ncommitter Dev <dev@example.com> 1700000000 +0000\n\ncommit msg\n"
+        );
+        let out_cat = parse_git_output(&cat_kind, &valid_cat_body);
+        assert_eq!(out_cat.commits.len(), 1);
+        assert_eq!(out_cat.commits[0].commit_sha, sha1);
+        assert_eq!(out_cat.commits[0].parents, Some(vec![sha2.clone()]));
 
-        // 7. `rev-parse HEAD:file`, `HEAD^{tree}`, `hash-object`, `write-tree` -> nothing
-        for non_commit_git in [
-            "git rev-parse HEAD:src/lib.rs",
-            "git rev-parse HEAD^{tree}",
-            "git rev-parse HEAD@{1}",
-            "git rev-parse origin/main",
-            "git hash-object -w README.md",
-            "git write-tree",
-        ] {
-            let kind = classify_shell_command(non_commit_git);
-            assert_eq!(
-                kind,
-                GitCommandKind::NonGit,
-                "`{non_commit_git}` must be classified as NonGit"
-            );
-            let out = parse_git_output(&kind, &format!("{sha1}\n"));
-            assert!(out.commits.is_empty());
-        }
+        // `cat-file -p` missing author/committer or with wrong-length tree SHA contributes nothing
+        let cat_no_author = format!("tree {tree_sha}\nparent {sha2}\n\nmsg\n");
+        assert!(parse_git_output(&cat_kind, &cat_no_author)
+            .commits
+            .is_empty());
+        let cat_extra_header = format!(
+            "tree {tree_sha}\nparent {sha2}\nencoding UTF-8\nauthor Dev <d@e> 1 +0000\ncommitter Dev <d@e> 1 +0000\n"
+        );
+        assert!(parse_git_output(&cat_kind, &cat_extra_header)
+            .commits
+            .is_empty());
+        let tree_64 = "4".repeat(64);
+        let cat_wrong_tree_len = format!(
+            "tree {tree_64}\nparent {sha2}\nauthor Dev <d@e> 1 +0000\ncommitter Dev <d@e> 1 +0000\n"
+        );
+        assert!(parse_git_output(&cat_kind, &cat_wrong_tree_len)
+            .commits
+            .is_empty());
+
+        // 7. `git commit ...` -> counted as unresolved_abbreviated only (no evidence row)
+        let commit_kind = classify_shell_command("git commit -m 'feat: simple'");
+        assert_eq!(commit_kind, GitCommandKind::Commit);
+        let out_commit = parse_git_output(
+            &commit_kind,
+            "[main abc1234] feat: simple\n 1 file changed\n",
+        );
+        assert!(out_commit.commits.is_empty());
+        assert_eq!(out_commit.unresolved_abbreviated, 1);
+
+        // 8. Argv arrays (Codex): exact token match + allowed 3-element wrappers
+        assert_eq!(
+            classify_git_argv(&["git", "rev-parse", "HEAD"]),
+            ClassifiedCommandCall::Allowed(GitCommandKind::RevParseCommit)
+        );
+        assert_eq!(
+            classify_git_argv(&["git", "rev-parse", "--show-object-format"]),
+            ClassifiedCommandCall::Allowed(GitCommandKind::ShowObjectFormat)
+        );
+        assert_eq!(
+            classify_git_argv(&["git", "log", "-1", "--format=%H %P"]),
+            ClassifiedCommandCall::Allowed(GitCommandKind::LogCommitAndParents)
+        );
+        assert_eq!(
+            classify_git_argv(&["git", "log", "-n", "10", "--format=%H"]),
+            ClassifiedCommandCall::Allowed(GitCommandKind::LogCommitOnly)
+        );
+        assert_eq!(
+            classify_git_argv(&["git", "show", "-s", "--format=%H %P", "HEAD"]),
+            ClassifiedCommandCall::Allowed(GitCommandKind::LogCommitAndParents)
+        );
+        assert_eq!(
+            classify_git_argv(&["bash", "-lc", "git rev-parse HEAD"]),
+            ClassifiedCommandCall::Allowed(GitCommandKind::RevParseCommit)
+        );
+        assert_eq!(
+            classify_git_argv(&["sh", "-c", "git log -1 --format='%H %P'"]),
+            ClassifiedCommandCall::Allowed(GitCommandKind::LogCommitAndParents)
+        );
+        assert_eq!(
+            classify_git_argv(&["zsh", "-lc", "git show --no-patch --format=%H HEAD"]),
+            ClassifiedCommandCall::Allowed(GitCommandKind::LogCommitOnly)
+        );
+        assert_eq!(
+            classify_git_argv(&["pwsh", "-Command", "git rev-parse HEAD"]),
+            ClassifiedCommandCall::Allowed(GitCommandKind::RevParseCommit)
+        );
+        assert_eq!(
+            classify_git_argv(&["powershell", "-c", "git log -n 5 --format=\"%H %P\""]),
+            ClassifiedCommandCall::Allowed(GitCommandKind::LogCommitAndParents)
+        );
     }
 
     #[test]
-    fn scanner_handles_600_tool_calls_openssl_rand_agent_mcp_and_object_format_and_cwd() {
+    fn s1_to_s5_reviewer_attacks_rejected_and_counted_unparsed_intra_source_conflict_and_exportability(
+    ) {
+        let sha1 = "a".repeat(40);
+        let sha2 = "b".repeat(40);
+        let sha3 = "c".repeat(40);
+
+        let mut scanner = GitEvidenceScanner::new();
+
+        // Reviewer's string attacks (all rejected, emit 0 rows, and increment unparsed_compound_git_calls):
+        let string_attacks = [
+            // `cd $'...'` forgery
+            "cd $'/repo' && git rev-parse HEAD",
+            "cd $'/repo\\n' && git rev-parse HEAD",
+            // PowerShell `\"` forgery
+            "powershell -Command \"git rev-parse \\\"HEAD\\\"\"",
+            "git log -1 --format=\"\\\"%H %P\\\"\"",
+            // `checkout main -- file`
+            "git checkout main -- file.txt",
+            "git checkout main",
+            // `rev-list` with paths (and without paths)
+            "git rev-list --parents HEAD -- src/lib.rs",
+            "git rev-list --parents HEAD src/lib.rs",
+            "git rev-list --parents HEAD",
+            // `log ... stash`
+            "git log -1 --format=%H stash",
+            "git log -1 --format='%H %P' refs/stash",
+            "git log -1 --format=%H HEAD",
+            // `show -s --format=%H <blob>`
+            "git show -s --format=%H deadbeefcafe0123456789abcdef0123456789ab",
+            "git show -s --format=%H HEAD:src/lib.rs",
+            "git show --format=%H HEAD",
+            // `cmd /c` and string shell wrappers
+            "cmd /c git rev-parse HEAD",
+            "cmd.exe /c git rev-parse HEAD",
+            "bash -lc 'git rev-parse HEAD'",
+            // Any `$`, `\`, `;`, `&&`, `|`, backtick, `<`, `>`, `(`, `)`, newline, tab
+            "git rev-parse $HEAD",
+            "git\\ rev-parse HEAD",
+            "git rev-parse HEAD; git status",
+            "git rev-parse HEAD && true",
+            "git rev-parse HEAD | cat",
+            "git rev-parse `echo HEAD`",
+            "git rev-parse HEAD > /tmp/out",
+            "git rev-parse HEAD < /dev/null",
+            "(git rev-parse HEAD)",
+            "git rev-parse HEAD\ngit status",
+            "git\trev-parse HEAD",
+            // Out-of-range N or mismatched quotes
+            "git log -n 0 --format=%H",
+            "git log -n 1001 --format=%H",
+            "git log -n 01 --format=%H",
+            "git log -1 --format='%H %P\"",
+        ];
+
+        for (i, cmd) in string_attacks.iter().enumerate() {
+            assert_eq!(
+                classify_single_git_command(cmd),
+                ClassifiedCommandCall::SkippedCompoundGit,
+                "string attack `{cmd}` must be rejected as SkippedCompoundGit"
+            );
+            let cid = format!("atk-str-{i}");
+            scanner.observe_tool_call_with_context(
+                Some(&cid),
+                Some("Bash"),
+                Some(cmd),
+                Some("/repo"),
+            );
+            scanner.observe_tool_output_with_cwd(
+                Some(&cid),
+                None,
+                Some("sess-atk"),
+                false,
+                None,
+                Some(false),
+                Some("/repo"),
+                &format!("{sha1} {sha2}\n"),
+            );
+        }
+
+        // Reviewer's argv attacks:
+        // - argv `bash -lc` with a joined compound string or extra args
+        // - argv with joined tokens `["git", "rev-parse HEAD"]`
+        // - argv `cmd /c`
+        // - argv PowerShell `\"` forgery
+        let argv_attacks: &[&[&str]] = &[
+            &["bash", "-lc", "cd /repo && git rev-parse HEAD"],
+            &["bash", "-lc", "git rev-parse HEAD; git log -1 --format=%H"],
+            &["bash", "-lc", "git", "rev-parse", "HEAD"],
+            &["git", "rev-parse HEAD"],
+            &["git", "log -1 --format=%H"],
+            &["cmd", "/c", "git rev-parse HEAD"],
+            &["cmd.exe", "/c", "git rev-parse HEAD"],
+            &["pwsh", "-Command", "git rev-parse \"HEAD\""],
+            &["powershell", "-NoProfile", "-Command", "git rev-parse HEAD"],
+            &["git", "show", "-s", "--format=%H", &sha1],
+            &["git", "rev-list", "--parents", "HEAD", "--", "file.rs"],
+            &["git", "checkout", "main", "--", "file.rs"],
+            &["git", "log", "-1", "--format=%H", "stash"],
+        ];
+
+        for (i, argv) in argv_attacks.iter().enumerate() {
+            assert_eq!(
+                classify_git_argv(argv),
+                ClassifiedCommandCall::SkippedCompoundGit,
+                "argv attack `{argv:?}` must be rejected as SkippedCompoundGit"
+            );
+            let cid = format!("atk-argv-{i}");
+            scanner.observe_tool_call_argv_with_context(
+                Some(&cid),
+                Some("CommandExecution"),
+                argv,
+                Some("/repo"),
+            );
+            scanner.observe_tool_output_with_cwd(
+                Some(&cid),
+                None,
+                Some("sess-atk"),
+                false,
+                None,
+                Some(false),
+                Some("/repo"),
+                &format!("{sha1}\n"),
+            );
+        }
+
+        let (atk_facts, atk_cov) = scanner.materialize(
+            "src-atk",
+            1,
+            "claude",
+            false,
+            Some(b"tool-key"),
+            &FactExportConfig::unconfigured(),
+            |s| format!("sealed:{s}"),
+        );
+        assert!(atk_facts.is_empty(), "all attacks must produce 0 rows");
+        assert_eq!(
+            atk_cov.unparsed_compound_git_calls,
+            (string_attacks.len() + argv_attacks.len()) as i64,
+            "every rejected git attack must increment unparsed_compound_git_calls"
+        );
+
+        // S3 & S4: Within ONE source, conflicting parent lists for the same commit ->
+        // merge_status = not_observed with reason conflicting_parents (not first-wins),
+        // and on_default_branch is ALWAYS not_observed.
+        let mut s4_scanner = GitEvidenceScanner::new();
+        s4_scanner.observe_tool_call_with_context(
+            Some("c1"),
+            Some("Bash"),
+            Some("git log -1 --format='%H %P'"),
+            Some("/repo"),
+        );
+        s4_scanner.observe_tool_output_with_cwd(
+            Some("c1"),
+            None,
+            Some("sess-s4"),
+            false,
+            None,
+            Some(false),
+            Some("/repo"),
+            &format!("{sha1} {sha2}\n"),
+        );
+        s4_scanner.observe_tool_call_with_context(
+            Some("c2"),
+            Some("Bash"),
+            Some("git log -1 --format='%H %P'"),
+            Some("/repo"),
+        );
+        s4_scanner.observe_tool_output_with_cwd(
+            Some("c2"),
+            None,
+            Some("sess-s4"),
+            false,
+            None,
+            Some(false),
+            Some("/repo"),
+            &format!("{sha1} {sha3}\n"),
+        );
+        // Even if a 3rd observation repeats sha2, conflict is sticky within the source:
+        s4_scanner.observe_tool_call_with_context(
+            Some("c3"),
+            Some("Bash"),
+            Some("git log -1 --format='%H %P'"),
+            Some("/repo"),
+        );
+        s4_scanner.observe_tool_output_with_cwd(
+            Some("c3"),
+            None,
+            Some("sess-s4"),
+            false,
+            None,
+            Some(false),
+            Some("/repo"),
+            &format!("{sha1} {sha2}\n"),
+        );
+
+        let export_ready =
+            FactExportConfig::from_raw_key(b"fact-export-v1-test-key-32-bytes", "kid_ready");
+        let (s4_facts, s4_cov) = s4_scanner.materialize(
+            "src-s4",
+            1,
+            "claude",
+            false,
+            Some(b"tool-key"),
+            &export_ready,
+            |s| format!("sealed:{s}"),
+        );
+        assert_eq!(s4_facts.len(), 1);
+        assert_eq!(s4_facts[0].merge_status, MERGE_STATUS_NOT_OBSERVED);
+        assert_eq!(s4_facts[0].is_merge, None);
+        assert_eq!(
+            s4_facts[0].merge_missing_reason.as_deref(),
+            Some(MERGE_REASON_CONFLICTING_PARENTS)
+        );
+        assert!(s4_facts[0].parent_sealed.is_empty());
+        assert!(s4_facts[0].parent_hmacs.is_empty());
+        assert_eq!(
+            s4_facts[0].default_branch_status,
+            DEFAULT_BRANCH_STATUS_NOT_OBSERVED
+        );
+        assert_eq!(s4_facts[0].on_default_branch, None);
+        assert_eq!(s4_cov.missing_parents, 1);
+        assert_eq!(s4_cov.default_branch_not_observed, 1);
+
+        // S5: Exportability with config Unconfigured / InvalidKeyMaterial / InvalidKeyId / ForbiddenOrgKeyPresent -> not exportable!
+        let valid_row = GitEvidenceFact {
+            source_key: "src-1:git:commit:c1".to_string(),
+            source_id: "src-1".to_string(),
+            generation: 1,
+            harness: "claude".to_string(),
+            canonical_harness: "claude".to_string(),
+            native_session: Some("session:s1".to_string()),
+            commit_sealed: "commit:c1".to_string(),
+            parent_sealed: vec!["commit:p1".to_string()],
+            is_merge: Some(false),
+            merge_status: MERGE_STATUS_OBSERVED.to_string(),
+            merge_missing_reason: None,
+            on_default_branch: None,
+            default_branch_status: DEFAULT_BRANCH_STATUS_NOT_OBSERVED.to_string(),
+            observed_at: None,
+            observed_at_status: OBSERVED_AT_STATUS_NOT_OBSERVABLE.to_string(),
+            session_match_status: SESSION_MATCH_MATCHED.to_string(),
+            evidence_source: EVIDENCE_SOURCE_LOCAL_GIT_HISTORY.to_string(),
+            export_status: EXPORT_STATUS_EXPORTABLE.to_string(),
+            pseudonym_key_id: Some("kid_ready".to_string()),
+            commit_hmac: Some("1".repeat(64)),
+            parent_hmacs: vec!["2".repeat(64)],
+        };
+
+        // (a) Unconfigured (even if bare KEY_ID was set in vars -> state is InvalidKeyMaterial)
+        let cfg_unconfigured = FactExportConfig::unconfigured();
+        let cfg_invalid_key = FactExportConfig::from_key_hex("not-hex", Some("kid_ready"));
+        let cfg_invalid_kid = FactExportConfig::from_key_hex(&"11".repeat(32), None);
+        let mut k_org_vars = BTreeMap::new();
+        k_org_vars.insert(ENV_FACT_EXPORT_KEY_HEX.to_string(), "11".repeat(32));
+        k_org_vars.insert(ENV_FACT_EXPORT_KEY_ID.to_string(), "kid_ready".to_string());
+        k_org_vars.insert("K_ORG_HEX".to_string(), "22".repeat(32));
+        let cfg_refused = FactExportConfig::from_vars(&k_org_vars, None);
+        assert_eq!(
+            cfg_refused.state(),
+            FactExportKeyState::ForbiddenOrgKeyPresent
+        );
+        let cfg_wrong_kid =
+            FactExportConfig::from_raw_key(b"fact-export-v1-test-key-32-bytes", "kid_other");
+
+        for non_matching_cfg in [
+            &cfg_unconfigured,
+            &cfg_invalid_key,
+            &cfg_invalid_kid,
+            &cfg_refused,
+            &cfg_wrong_kid,
+        ] {
+            let res = resolve_git_evidence_across_sources_with_config(
+                std::slice::from_ref(&valid_row),
+                non_matching_cfg,
+            );
+            assert_eq!(res.len(), 1);
+            assert_eq!(
+                res[0].export_status,
+                EXPORT_STATUS_NON_EXPORTABLE,
+                "config in state {:?} must not export rows",
+                non_matching_cfg.state()
+            );
+            assert_eq!(res[0].pseudonym_key_id, None);
+            assert_eq!(res[0].commit_hmac, None);
+            assert!(res[0].parent_hmacs.is_empty());
+        }
+
+        // Also verify `resolve_git_evidence_across_sources_with_key_id(rows, None)` returns non_exportable
+        let res_none =
+            resolve_git_evidence_across_sources_with_key_id(std::slice::from_ref(&valid_row), None);
+        assert_eq!(res_none[0].export_status, EXPORT_STATUS_NON_EXPORTABLE);
+
+        // Only when config is Ready AND key_id equals configured key_id is the row exportable:
+        let res_ready = resolve_git_evidence_across_sources_with_config(
+            std::slice::from_ref(&valid_row),
+            &export_ready,
+        );
+        assert_eq!(res_ready[0].export_status, EXPORT_STATUS_EXPORTABLE);
+        assert_eq!(res_ready[0].pseudonym_key_id.as_deref(), Some("kid_ready"));
+    }
+
+    #[test]
+    fn scanner_handles_600_tool_calls_openssl_rand_agent_mcp_and_object_format_and_record_cwd() {
         let mut scanner = GitEvidenceScanner::new();
         let sha1_commit = "a".repeat(40);
         let sha256_commit = "c".repeat(64);
@@ -3368,6 +2848,40 @@ mod tests {
             Some("/repo-a"),
             &format!("{sha256_commit}\n"),
         );
+        // S1: `show-object-format` WITHOUT record cwd is ignored (requires record cwd to be present!)
+        scanner.observe_tool_call_with_context(
+            Some("call-fmt-nocwd"),
+            Some("Bash"),
+            Some("git rev-parse --show-object-format"),
+            None,
+        );
+        scanner.observe_tool_output_with_cwd(
+            Some("call-fmt-nocwd"),
+            None,
+            Some("sess-1"),
+            false,
+            None,
+            Some(false),
+            None,
+            "sha256\n",
+        );
+        scanner.observe_tool_call_with_context(
+            Some("call-64-nocwd"),
+            Some("Bash"),
+            Some("git rev-parse HEAD"),
+            None,
+        );
+        scanner.observe_tool_output_with_cwd(
+            Some("call-64-nocwd"),
+            None,
+            Some("sess-1"),
+            false,
+            None,
+            Some(false),
+            None,
+            &format!("{sha256_commit}\n"),
+        );
+
         let (facts_after_unv, cov_after_unv) = scanner.materialize(
             "src-1",
             1,
@@ -3378,7 +2892,7 @@ mod tests {
             |s| format!("sealed:{s}"),
         );
         assert!(facts_after_unv.is_empty());
-        assert_eq!(cov_after_unv.unverified_object_format, 1);
+        assert_eq!(cov_after_unv.unverified_object_format, 2);
 
         // 4. Record `git rev-parse --show-object-format` = `sha256` in `/repo-256`, then 64-hex is accepted
         scanner.observe_tool_call_with_context(
@@ -3432,42 +2946,6 @@ mod tests {
             &format!("{sha1_commit} {sha256_parent}\n"),
         );
 
-        // 6. Default branch in `/repo-other` is NOT applied to commits in `/repo-a`
-        scanner.observe_record_context(Some("sess-1"), false, Some("/repo-a"), Some("main"));
-        scanner.observe_tool_call_with_context(
-            Some("call-sym-other"),
-            Some("Bash"),
-            Some("git symbolic-ref refs/remotes/origin/HEAD"),
-            Some("/repo-other"),
-        );
-        scanner.observe_tool_output_with_cwd(
-            Some("call-sym-other"),
-            None,
-            Some("sess-1"),
-            false,
-            None,
-            Some(false),
-            Some("/repo-other"),
-            "refs/remotes/origin/main\n",
-        );
-        let new_sha_in_repo_a = "e".repeat(40);
-        scanner.observe_tool_call_with_context(
-            Some("call-rp-a"),
-            Some("Bash"),
-            Some("git rev-parse HEAD"),
-            Some("/repo-a"),
-        );
-        scanner.observe_tool_output_with_cwd(
-            Some("call-rp-a"),
-            None,
-            Some("sess-1"),
-            false,
-            None,
-            Some(false),
-            Some("/repo-a"),
-            &format!("{new_sha_in_repo_a}\n"),
-        );
-
         let (facts, cov) = scanner.materialize(
             "src-1",
             1,
@@ -3477,9 +2955,9 @@ mod tests {
             &FactExportConfig::unconfigured(),
             |s| format!("sealed:{s}"),
         );
-        assert_eq!(facts.len(), 3);
-        assert_eq!(cov.observed, 3);
-        assert_eq!(cov.unverified_object_format, 1);
+        assert_eq!(facts.len(), 2);
+        assert_eq!(cov.observed, 2);
+        assert_eq!(cov.unverified_object_format, 2);
 
         let sealed_256 = seal_commit(Some(b"tool-key"), &sha256_commit);
         let row_256 = facts
@@ -3488,6 +2966,8 @@ mod tests {
             .unwrap();
         assert_eq!(row_256.merge_status, "observed");
         assert_eq!(row_256.is_merge, Some(false));
+        assert_eq!(row_256.default_branch_status, "not_observed");
+        assert_eq!(row_256.on_default_branch, None);
 
         let sealed_mixed = seal_commit(Some(b"tool-key"), &sha1_commit);
         let row_mixed = facts
@@ -3501,14 +2981,6 @@ mod tests {
             row_mixed.merge_missing_reason.as_deref(),
             Some(MERGE_REASON_MIXED_PARENT_OBJECT_FORMAT)
         );
-
-        let sealed_repo_a = seal_commit(Some(b"tool-key"), &new_sha_in_repo_a);
-        let row_repo_a = facts
-            .iter()
-            .find(|r| r.commit_sealed == sealed_repo_a)
-            .unwrap();
-        assert_eq!(row_repo_a.default_branch_status, "not_observed");
-        assert_eq!(row_repo_a.on_default_branch, None);
     }
 
     #[test]
@@ -3629,7 +3101,7 @@ mod tests {
         };
         #[cfg(not(any(windows, target_os = "linux")))]
         let (private_root, explicit_key_path, empty_root) = {
-            let priv_path: PathBuf = dir.join("private_data_root");
+            let priv_path = dir.join("private_data_root");
             std::fs::create_dir_all(&priv_path).unwrap();
             let root_key_path = priv_path.join(DEFAULT_FACT_EXPORT_KEY_FILENAME);
             std::fs::write(&root_key_path, format!("{key_root}\n")).unwrap();
@@ -3761,478 +3233,5 @@ mod tests {
         assert!(!cfg_ignored_file.is_ready());
 
         let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn reviewer_r1_to_r7_scenarios_compound_log_show_revparse_default_branch_coherence_and_lows() {
-        let sha1 = "a".repeat(40);
-        let sha2 = "b".repeat(40);
-        let sha3 = "c".repeat(40);
-        let empty_tree_hex = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
-
-        // R1: Compound git commands, pipes, subshells, redirections, env assignments, and global
-        // options (-C, --git-dir, --work-tree, -c) must contribute NOTHING and increment
-        // `unparsed_compound_git_calls`. Only a single clean allow-listed git command (optionally
-        // preceded by a single `cd <path> &&`) is parsed.
-        let mut r1_scanner = GitEvidenceScanner::new();
-        let compound_cmds = [
-            "git log --format=%H && git hash-object -w README.md",
-            "git rev-list --parents HEAD; git rev-list --objects HEAD",
-            "git rev-parse HEAD; git log -1 --format='%H %P'",
-            "GIT_DIR=/other/.git git rev-parse HEAD",
-            "GIT_WORK_TREE=/other git rev-parse HEAD",
-            "git -C /other rev-parse HEAD",
-            "git -C/other rev-parse HEAD",
-            "git --git-dir=/other/.git rev-parse HEAD",
-            "git --work-tree=/other rev-parse HEAD",
-            "git -c core.abbrev=40 rev-parse HEAD",
-            "git rev-parse HEAD | head -n 1",
-            "git rev-parse HEAD > /tmp/out",
-            "(git rev-parse HEAD)",
-            "bash -c 'git rev-parse HEAD; git log -1 --format=%H'",
-            "cd /a && cd /b && git rev-parse HEAD",
-            "git rev-parse HEAD || true",
-        ];
-        for (i, cmd) in compound_cmds.iter().enumerate() {
-            assert_eq!(
-                classify_shell_command(cmd),
-                GitCommandKind::NonGit,
-                "R1: `{cmd}` must be rejected as NonGit"
-            );
-            let cid = format!("r1-{i}");
-            r1_scanner.observe_tool_call_with_context(
-                Some(&cid),
-                Some("Bash"),
-                Some(cmd),
-                Some("/repo"),
-            );
-            r1_scanner.observe_tool_output_with_cwd(
-                Some(&cid),
-                None,
-                Some("sess-r1"),
-                false,
-                None,
-                Some(false),
-                Some("/repo"),
-                &format!("{sha1} {sha2}\n{sha3}\n"),
-            );
-        }
-        let (r1_facts, r1_cov) = r1_scanner.materialize(
-            "src-r1",
-            1,
-            "claude",
-            false,
-            Some(b"tool-key"),
-            &FactExportConfig::unconfigured(),
-            |s| format!("sealed:{s}"),
-        );
-        assert!(
-            r1_facts.is_empty(),
-            "R1: compound/env/global-flag git calls must contribute nothing"
-        );
-        assert_eq!(
-            r1_cov.unparsed_compound_git_calls,
-            compound_cmds.len() as i64,
-            "R1: every skipped compound/env/global-flag git call must be counted in unparsed_compound_git_calls"
-        );
-
-        // Single leading `cd <path> && <git ...>` IS allowed and sets cwd for that call only:
-        r1_scanner.observe_record_context(Some("sess-r1"), false, Some("/repo-cd"), Some("main"));
-        r1_scanner.observe_tool_call_with_context(
-            Some("r1-cd-sym"),
-            Some("Bash"),
-            Some("cd /repo-cd && git symbolic-ref refs/remotes/origin/HEAD"),
-            Some("/start-dir"),
-        );
-        r1_scanner.observe_tool_output_with_cwd(
-            Some("r1-cd-sym"),
-            None,
-            Some("sess-r1"),
-            false,
-            None,
-            Some(false),
-            Some("/start-dir"),
-            "refs/remotes/origin/main\n",
-        );
-        r1_scanner.observe_tool_call_with_context(
-            Some("r1-cd-rp"),
-            Some("Bash"),
-            Some("cd /repo-cd && git rev-parse HEAD"),
-            Some("/start-dir"),
-        );
-        r1_scanner.observe_tool_output_with_cwd(
-            Some("r1-cd-rp"),
-            None,
-            Some("sess-r1"),
-            false,
-            None,
-            Some(false),
-            Some("/start-dir"),
-            &format!("{sha1}\n"),
-        );
-        let (r1_cd_facts, _) = r1_scanner.materialize(
-            "src-r1",
-            1,
-            "claude",
-            false,
-            Some(b"tool-key"),
-            &FactExportConfig::unconfigured(),
-            |s| format!("sealed:{s}"),
-        );
-        assert_eq!(r1_cd_facts.len(), 1);
-        assert_eq!(r1_cd_facts[0].on_default_branch, Some(true));
-
-        // R2 & R3: Disallowed log, show, rev-list, and rev-parse shapes
-        for disallowed_single in [
-            "git show --format=%H HEAD:file",
-            "git show -s --format=%H HEAD:file",
-            "git show --format='%H %P' c",
-            "git show --format=%H HEAD",
-            "git log -p --format=%H",
-            "git log --patch --format=%H",
-            "git log --stat --format=%H",
-            "git log --name-only --format=%H",
-            "git log --name-status --format=%H",
-            "git log --numstat --format=%H",
-            "git log --raw --format=%H",
-            "git log --graph --format=%H",
-            "git log --all --format=%H",
-            "git log --format=%H HEAD:src/lib.rs",
-            "git log --format=%H -- src/lib.rs",
-            "git rev-parse 4b825dc642cb6eb9a060e54bf8d69288fbee4904",
-            "git rev-parse v1.0",
-            "git rev-parse main",
-            "git rev-parse HEAD~1",
-        ] {
-            assert_eq!(
-                classify_shell_command(disallowed_single),
-                GitCommandKind::NonGit,
-                "R2/R3: `{disallowed_single}` must be rejected as NonGit"
-            );
-        }
-        assert_eq!(
-            classify_shell_command(&format!("git rev-parse {empty_tree_hex}")),
-            GitCommandKind::NonGit
-        );
-
-        // R2: Output lines must match expected shape EXACTLY with NO leading whitespace;
-        // any non-conforming line makes the WHOLE output contribute nothing.
-        let kind_log_h = classify_shell_command("git log -1 --format=%H");
-        let kind_log_hp = classify_shell_command("git log -2 --format='%H %P'");
-        assert_ne!(kind_log_h, GitCommandKind::NonGit);
-        assert_ne!(kind_log_hp, GitCommandKind::NonGit);
-        for bad_output in [
-            format!("  {sha1}\n"),
-            format!("\t{sha1}\n"),
-            format!("{sha1}\ndiff --git a/f b/f\n"),
-            format!("{sha1}\n{empty_tree_hex} README.md\n"),
-            format!("{sha1}\n\n{sha2}\n"),
-        ] {
-            assert!(
-                parse_git_output(&kind_log_h, &bad_output)
-                    .commits
-                    .is_empty(),
-                "R2: non-conforming output `{bad_output:?}` for %H must contribute nothing"
-            );
-            assert!(
-                parse_git_output(&kind_log_hp, &bad_output)
-                    .commits
-                    .is_empty(),
-                "R2: non-conforming output `{bad_output:?}` for %H %P must contribute nothing"
-            );
-        }
-
-        // R4: `on_default_branch` ONLY for `git rev-parse HEAD` or `git log -1`/`-n 1` with no rev (or HEAD),
-        // AND same session + same cwd, AND current branch known from a record in that cwd (no cross-cwd
-        // or branch_by_session fallback), AND not detached.
-        let mut r4_scanner = GitEvidenceScanner::new();
-        r4_scanner.observe_record_context(Some("sess-r4"), false, Some("/repo-main"), Some("main"));
-        r4_scanner.observe_tool_call_with_context(
-            Some("sym-main"),
-            Some("Bash"),
-            Some("git symbolic-ref refs/remotes/origin/HEAD"),
-            Some("/repo-main"),
-        );
-        r4_scanner.observe_tool_output_with_cwd(
-            Some("sym-main"),
-            None,
-            Some("sess-r4"),
-            false,
-            None,
-            Some(false),
-            Some("/repo-main"),
-            "refs/remotes/origin/main\n",
-        );
-
-        // (a) `git rev-list --parents feature-x` on main -> default_branch not_observed
-        let sha_revlist = "1".repeat(40);
-        r4_scanner.observe_tool_call_with_context(
-            Some("rl-feat"),
-            Some("Bash"),
-            Some("git rev-list --parents feature-x"),
-            Some("/repo-main"),
-        );
-        r4_scanner.observe_tool_output_with_cwd(
-            Some("rl-feat"),
-            None,
-            Some("sess-r4"),
-            false,
-            None,
-            Some(false),
-            Some("/repo-main"),
-            &format!("{sha_revlist} {sha2}\n"),
-        );
-
-        // (b) `git cat-file -p <sha>` on main -> default_branch not_observed
-        let sha_cat = "2".repeat(40);
-        r4_scanner.observe_tool_call_with_context(
-            Some("cat-main"),
-            Some("Bash"),
-            Some(&format!("git cat-file -p {sha_cat}")),
-            Some("/repo-main"),
-        );
-        r4_scanner.observe_tool_output_with_cwd(
-            Some("cat-main"),
-            None,
-            Some("sess-r4"),
-            false,
-            None,
-            Some(false),
-            Some("/repo-main"),
-            &format!("tree {empty_tree_hex}\nparent {sha2}\n\nmsg\n"),
-        );
-
-        // (c) Cross-cwd branch: `/repo-other` has symbolic-ref `origin/main`, but NO branch record in `/repo-other`
-        // (must NOT inherit `/repo-main`'s branch via `branch_by_session`)
-        let sha_cross_cwd = "3".repeat(40);
-        r4_scanner.observe_tool_call_with_context(
-            Some("sym-other"),
-            Some("Bash"),
-            Some("git symbolic-ref refs/remotes/origin/HEAD"),
-            Some("/repo-other"),
-        );
-        r4_scanner.observe_tool_output_with_cwd(
-            Some("sym-other"),
-            None,
-            Some("sess-r4"),
-            false,
-            None,
-            Some(false),
-            Some("/repo-other"),
-            "refs/remotes/origin/main\n",
-        );
-        r4_scanner.observe_tool_call_with_context(
-            Some("rp-other"),
-            Some("Bash"),
-            Some("git rev-parse HEAD"),
-            Some("/repo-other"),
-        );
-        r4_scanner.observe_tool_output_with_cwd(
-            Some("rp-other"),
-            None,
-            Some("sess-r4"),
-            false,
-            None,
-            Some(false),
-            Some("/repo-other"),
-            &format!("{sha_cross_cwd}\n"),
-        );
-
-        // (d) Detached HEAD in `/repo-main`: `git checkout --detach` invalidates current branch until re-observed
-        let sha_detached = "4".repeat(40);
-        r4_scanner.observe_tool_call_with_context(
-            Some("co-detach"),
-            Some("Bash"),
-            Some("git checkout --detach"),
-            Some("/repo-main"),
-        );
-        r4_scanner.observe_tool_output_with_cwd(
-            Some("co-detach"),
-            None,
-            Some("sess-r4"),
-            false,
-            None,
-            Some(false),
-            Some("/repo-main"),
-            "HEAD is now at 4444444\n",
-        );
-        r4_scanner.observe_tool_call_with_context(
-            Some("rp-detached"),
-            Some("Bash"),
-            Some("git rev-parse HEAD"),
-            Some("/repo-main"),
-        );
-        r4_scanner.observe_tool_output_with_cwd(
-            Some("rp-detached"),
-            None,
-            Some("sess-r4"),
-            false,
-            None,
-            Some(false),
-            Some("/repo-main"),
-            &format!("{sha_detached}\n"),
-        );
-
-        let (r4_facts, _) = r4_scanner.materialize(
-            "src-r4",
-            1,
-            "claude",
-            false,
-            Some(b"tool-key"),
-            &FactExportConfig::unconfigured(),
-            |s| format!("sealed:{s}"),
-        );
-        assert_eq!(r4_facts.len(), 4);
-        for f in &r4_facts {
-            assert_eq!(
-                f.default_branch_status, "not_observed",
-                "R4: commit {} must have default_branch_status = not_observed",
-                f.commit_sealed
-            );
-            assert_eq!(f.on_default_branch, None);
-        }
-
-        // R5: Read-function coherence (`resolve_git_evidence_across_sources_with_key_id`)
-        // Case 1: Sources disagree on parents -> merge_status = not_observed, reason = conflicting_parents
-        let base_fact = GitEvidenceFact {
-            source_key: "src-1:git:commit:c1".to_string(),
-            source_id: "src-1".to_string(),
-            generation: 1,
-            harness: "claude".to_string(),
-            canonical_harness: "claude".to_string(),
-            native_session: Some("session:s1".to_string()),
-            commit_sealed: "commit:c1".to_string(),
-            parent_sealed: vec!["commit:p1".to_string()],
-            is_merge: Some(false),
-            merge_status: MERGE_STATUS_OBSERVED.to_string(),
-            merge_missing_reason: None,
-            on_default_branch: None,
-            default_branch_status: DEFAULT_BRANCH_STATUS_NOT_OBSERVED.to_string(),
-            observed_at: None,
-            observed_at_status: OBSERVED_AT_STATUS_NOT_OBSERVABLE.to_string(),
-            session_match_status: SESSION_MATCH_MATCHED.to_string(),
-            evidence_source: EVIDENCE_SOURCE_LOCAL_GIT_HISTORY.to_string(),
-            export_status: EXPORT_STATUS_EXPORTABLE.to_string(),
-            pseudonym_key_id: Some("kid_current".to_string()),
-            commit_hmac: Some("1".repeat(64)),
-            parent_hmacs: vec!["2".repeat(64)],
-        };
-        let mut conflicting_parent_fact = base_fact.clone();
-        conflicting_parent_fact.source_key = "src-2:git:commit:c1".to_string();
-        conflicting_parent_fact.source_id = "src-2".to_string();
-        conflicting_parent_fact.parent_sealed = vec!["commit:p2".to_string()];
-        conflicting_parent_fact.parent_hmacs = vec!["3".repeat(64)];
-        let resolved_conflict = resolve_git_evidence_across_sources_with_key_id(
-            &[base_fact.clone(), conflicting_parent_fact],
-            Some("kid_current"),
-        );
-        assert_eq!(resolved_conflict.len(), 1);
-        assert_eq!(resolved_conflict[0].merge_status, MERGE_STATUS_NOT_OBSERVED);
-        assert_eq!(resolved_conflict[0].is_merge, None);
-        assert_eq!(
-            resolved_conflict[0].merge_missing_reason.as_deref(),
-            Some(MERGE_REASON_CONFLICTING_PARENTS)
-        );
-        assert!(resolved_conflict[0].parent_sealed.is_empty());
-        assert!(resolved_conflict[0].parent_hmacs.is_empty());
-
-        // Case 2: Row 1 has parents (non_exportable), Row 2 has commit_hmac without parents (exportable)
-        // -> Never combine parents from Row 1 with HMACs from Row 2!
-        let mut row_parents_unexp = base_fact.clone();
-        row_parents_unexp.export_status = EXPORT_STATUS_NON_EXPORTABLE.to_string();
-        row_parents_unexp.pseudonym_key_id = None;
-        row_parents_unexp.commit_hmac = None;
-        row_parents_unexp.parent_hmacs = Vec::new();
-
-        let mut row_no_parents_exp = base_fact.clone();
-        row_no_parents_exp.source_key = "src-2:git:commit:c1".to_string();
-        row_no_parents_exp.source_id = "src-2".to_string();
-        row_no_parents_exp.merge_status = MERGE_STATUS_NOT_OBSERVED.to_string();
-        row_no_parents_exp.is_merge = None;
-        row_no_parents_exp.merge_missing_reason =
-            Some(MERGE_REASON_PARENTS_NOT_RECORDED.to_string());
-        row_no_parents_exp.parent_sealed = Vec::new();
-        row_no_parents_exp.parent_hmacs = Vec::new();
-
-        let resolved_split = resolve_git_evidence_across_sources_with_key_id(
-            &[row_parents_unexp, row_no_parents_exp],
-            Some("kid_current"),
-        );
-        assert_eq!(resolved_split.len(), 1);
-        assert_eq!(resolved_split[0].merge_status, MERGE_STATUS_OBSERVED);
-        assert_eq!(
-            resolved_split[0].export_status,
-            EXPORT_STATUS_NON_EXPORTABLE,
-            "R5: must never combine observed parents from a non-exportable row with commit_hmac from a parentless row"
-        );
-        assert_eq!(resolved_split[0].commit_hmac, None);
-        assert!(resolved_split[0].parent_hmacs.is_empty());
-
-        // Case 3: Different key IDs -> use only current configured key id; report others as non-exportable
-        let mut row_old_key = base_fact.clone();
-        row_old_key.commit_sealed = "commit:c2".to_string();
-        row_old_key.source_key = "src-1:git:commit:c2".to_string();
-        row_old_key.pseudonym_key_id = Some("kid_old".to_string());
-        let resolved_keys = resolve_git_evidence_across_sources_with_key_id(
-            &[base_fact.clone(), row_old_key],
-            Some("kid_current"),
-        );
-        assert_eq!(resolved_keys.len(), 2);
-        let r_cur = resolved_keys
-            .iter()
-            .find(|r| r.commit_sealed == "commit:c1")
-            .unwrap();
-        assert_eq!(r_cur.export_status, EXPORT_STATUS_EXPORTABLE);
-        assert_eq!(r_cur.pseudonym_key_id.as_deref(), Some("kid_current"));
-        let r_old = resolved_keys
-            .iter()
-            .find(|r| r.commit_sealed == "commit:c2")
-            .unwrap();
-        assert_eq!(r_old.export_status, EXPORT_STATUS_NON_EXPORTABLE);
-        assert_eq!(r_old.pseudonym_key_id, None);
-        assert_eq!(r_old.commit_hmac, None);
-        assert!(r_old.parent_hmacs.is_empty());
-
-        // R7: Shell detection is an allow-list (unknown or absent -> not a shell)
-        assert!(!is_shell_execution_tool_name("CustomUnknownTool"));
-        assert!(!is_shell_execution_tool_name(""));
-        let mut r7_scanner = GitEvidenceScanner::new();
-        r7_scanner.observe_tool_call_with_context(
-            Some("r7-none"),
-            None,
-            Some("git rev-parse HEAD"),
-            Some("/repo"),
-        );
-        r7_scanner.observe_tool_output_with_cwd(
-            Some("r7-none"),
-            None,
-            Some("sess-r7"),
-            false,
-            None,
-            Some(false),
-            Some("/repo"),
-            &format!("{sha1}\n"),
-        );
-        let (r7_facts, _) = r7_scanner.materialize(
-            "src-r7",
-            1,
-            "claude",
-            false,
-            Some(b"tool-key"),
-            &FactExportConfig::unconfigured(),
-            |s| format!("sealed:{s}"),
-        );
-        assert!(
-            r7_facts.is_empty(),
-            "R7: absent tool_name (None) must not be treated as a shell tool"
-        );
-
-        // R7: `from_raw_key` rejects keys shorter than 32 bytes
-        let short_cfg = FactExportConfig::from_raw_key(b"too-short-key-under-32-bytes", "kid_1");
-        assert!(
-            !short_cfg.is_ready(),
-            "R7: from_raw_key must reject keys shorter than 32 bytes"
-        );
-        assert_eq!(short_cfg.state(), FactExportKeyState::InvalidKeyMaterial);
     }
 }
