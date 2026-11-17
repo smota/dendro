@@ -123,6 +123,38 @@ pub fn ingest_jsonl(
     ingest_jsonl_with_key(store, source_id, harness, path, None).map(|_| ())
 }
 
+/// Observable tool-scan accounting across one or more ingest passes (D1 / F2).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ToolScanCounts {
+    /// Total unique tool calls observed in the scanned source (including Codex CommandExecution).
+    pub calls: u64,
+    /// Tool calls newly emitted after the ingestion watermark in this pass.
+    pub new_calls: u64,
+    /// Matched tool results attached to tool calls in the scanned source.
+    pub results: u64,
+    /// Matched tool results whose line is past the watermark while their call
+    /// was recorded in an earlier pass or batch.
+    pub late_results: u64,
+    /// Tool results with no matching call (never invents a call).
+    pub unmatched_results: u64,
+    /// Calls observed at or before the ingestion watermark (`line_no <= new_from`).
+    pub prefix_skipped: u64,
+    /// Repeated call blocks suppressed because their `(session, call_id)` was already seen.
+    pub duplicate_call_id: u64,
+}
+
+impl ToolScanCounts {
+    pub fn merge(&mut self, other: Self) {
+        self.calls += other.calls;
+        self.new_calls += other.new_calls;
+        self.results += other.results;
+        self.late_results += other.late_results;
+        self.unmatched_results += other.unmatched_results;
+        self.prefix_skipped += other.prefix_skipped;
+        self.duplicate_call_id += other.duplicate_call_id;
+    }
+}
+
 /// What one ingest call read from a session file (AC1).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct FileStats {
@@ -133,6 +165,8 @@ pub struct FileStats {
     pub records_read: u64,
     /// Usage records stored by this call, after dedupe.
     pub usage_records: u64,
+    /// Tool-scan call, result, late-result, unmatched-result, prefix-skipped, and duplicate-id counts.
+    pub tool_scan: ToolScanCounts,
 }
 
 pub fn ingest_jsonl_with_key(
@@ -143,6 +177,30 @@ pub fn ingest_jsonl_with_key(
     tool_key: Option<&[u8]>,
 ) -> Result<FileStats> {
     ingest_jsonl_with_key_checking(store, source_id, harness, path, tool_key, || Ok(()))
+}
+
+/// Ingest a JSONL session file using an explicit [`dendro_core::SessionLinkConfig`]
+/// to compute `agent.session.link_id` from the raw `native_session` BEFORE `seal_session`.
+pub fn ingest_jsonl_with_link_config(
+    store: &AnalyticsStore,
+    source_id: &str,
+    harness: &str,
+    path: &Path,
+    tool_key: Option<&[u8]>,
+    link_config: &dendro_core::SessionLinkConfig,
+) -> Result<FileStats> {
+    let limits = crate::capture_registry_v1::Registry::reader_limits(harness);
+    ingest_jsonl_limited_with_link(
+        store,
+        source_id,
+        harness,
+        path,
+        tool_key,
+        None,
+        || Ok(()),
+        &limits,
+        link_config,
+    )
 }
 
 /// Read a sealed prefix through the same read-only handle used by the parser.
@@ -156,6 +214,29 @@ pub fn ingest_jsonl_with_cutoff(
     cutoff: Option<&dendro_core::FileCutoff>,
 ) -> Result<FileStats> {
     ingest_jsonl_bounded(store, source_id, harness, path, tool_key, cutoff, || Ok(()))
+}
+
+pub fn ingest_jsonl_with_cutoff_and_link_config(
+    store: &AnalyticsStore,
+    source_id: &str,
+    harness: &str,
+    path: &Path,
+    tool_key: Option<&[u8]>,
+    cutoff: Option<&dendro_core::FileCutoff>,
+    link_config: &dendro_core::SessionLinkConfig,
+) -> Result<FileStats> {
+    let limits = crate::capture_registry_v1::Registry::reader_limits(harness);
+    ingest_jsonl_limited_with_link(
+        store,
+        source_id,
+        harness,
+        path,
+        tool_key,
+        cutoff,
+        || Ok(()),
+        &limits,
+        link_config,
+    )
 }
 
 // Tests substitute names at the real read boundary; production has no fault switch.
@@ -211,8 +292,34 @@ fn ingest_jsonl_limited(
     after_header: impl FnOnce() -> Result<()>,
     limits: &crate::sdk::ReadLimits,
 ) -> Result<FileStats> {
+    let link_config = dendro_core::SessionLinkConfig::unconfigured();
+    ingest_jsonl_limited_with_link(
+        store,
+        source_id,
+        harness,
+        path,
+        tool_key,
+        cutoff,
+        after_header,
+        limits,
+        &link_config,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn ingest_jsonl_limited_with_link(
+    store: &AnalyticsStore,
+    source_id: &str,
+    harness: &str,
+    path: &Path,
+    tool_key: Option<&[u8]>,
+    cutoff: Option<&dendro_core::FileCutoff>,
+    after_header: impl FnOnce() -> Result<()>,
+    limits: &crate::sdk::ReadLimits,
+    link_config: &dendro_core::SessionLinkConfig,
+) -> Result<FileStats> {
     let mut header = Some(after_header);
-    let read = ingest_jsonl_file(
+    ingest_jsonl_file(
         store,
         source_id,
         harness,
@@ -221,30 +328,8 @@ fn ingest_jsonl_limited(
         cutoff,
         &mut header,
         limits,
-    )?;
-    let total = FileStats {
-        coverage: read.coverage,
-        records_read: read.records_read,
-        usage_records: read.usage_records,
-    };
-    // Only partial coverage is a warning; a complete read is not a defect. An
-    // idle re-run that reads no new bytes adds no row for the same defect.
-    if total.coverage.partial && read.advanced {
-        store.record_warning(&WarningNote {
-            path: path.display().to_string(),
-            line: None,
-            reason: total.coverage.summary(),
-        })?;
-    }
-    Ok(total)
-}
-
-struct FileOutcome {
-    coverage: crate::sdk::Coverage,
-    records_read: u64,
-    usage_records: u64,
-    /// The watermark moved: this call consumed bytes beyond the stored one.
-    advanced: bool,
+        link_config,
+    )
 }
 
 enum CappedLine {
@@ -333,7 +418,8 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
     cutoff: Option<&dendro_core::FileCutoff>,
     after_header: &mut Option<F>,
     limits: &crate::sdk::ReadLimits,
-) -> Result<FileOutcome> {
+    link_config: &dendro_core::SessionLinkConfig,
+) -> Result<FileStats> {
     let mismatch = |reason: &str| {
         anyhow::anyhow!(
             "mismatch: source {} {}",
@@ -438,27 +524,58 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
     let mut coverage = crate::sdk::Coverage::default();
     let mut coverage_defect = prior_partial;
     let mut reader_complete = true;
+    let mut header_conflict = store.source_has_header_conflict(source_id)?;
+    let mut session_facts_by_key = std::collections::BTreeMap::new();
+    let mut claude_sessions = HashSet::new();
+    if !reset_generation && prefix_end > 0 {
+        let fallback_raw = if harness == "claude" {
+            Some("claude-session".to_string())
+        } else {
+            file_session
+                .as_ref()
+                .map(|_| format!("{harness}-file:{source_id}"))
+        };
+        let fallback_source_key = fallback_raw.as_deref().map(|raw| {
+            link_and_seal_session(
+                link_config,
+                tool_key,
+                source_id,
+                generation,
+                harness,
+                raw,
+                false,
+                false,
+            )
+            .1
+            .source_key
+        });
+        for existing in store.source_session_facts(source_id)? {
+            if existing.generation == generation
+                && fallback_source_key.as_deref() != Some(existing.source_key.as_str())
+            {
+                if harness == "claude" && tool_key.is_some() {
+                    claude_sessions.insert(existing.native_session.clone());
+                }
+                record_session_fact(&mut session_facts_by_key, existing);
+            }
+        }
+        if harness == "claude" && tool_key.is_none() {
+            if let Some(existing_session) = store.source_native_session(source_id)? {
+                if !existing_session.is_empty() {
+                    claude_sessions.insert(existing_session);
+                }
+            }
+        }
+    }
     let mut source_session = file_session
         .as_ref()
         .map(|session| seal_session(tool_key, harness, &session.raw));
-    let mut codex_ordinal = 0i64;
-    let mut claude_sessions = HashSet::new();
 
-    // Claude, Pi, and Grok tool calls are read in their own pass over every
-    // complete line of this generation, so usage dedupe never drops a call
-    // (#35, Q5). Codex tool calls are not read in this version (Q6, #40):
-    // each Codex file carries one warning saying so, kept once across reruns.
-    if harness == "codex" {
-        let shown = path.display().to_string();
-        if !store.has_warning(&shown, CODEX_TOOLS_NOT_READ)? {
-            warnings.push(WarningNote {
-                path: shown,
-                line: None,
-                reason: CODEX_TOOLS_NOT_READ.into(),
-            });
-        }
-    }
-    let mut tool_scan = if matches!(harness, "claude" | "pi" | "grok") {
+    // Claude, Pi, Grok, and Codex tool calls are read through the shared
+    // watermark-gated tool scan over every complete line of this generation
+    // (#35, Q5, D1/F2), so usage dedupe never drops a call and replay never
+    // double-counts prefix calls.
+    let mut tool_scan = if matches!(harness, "claude" | "pi" | "grok" | "codex") {
         Some(ToolScan::new(
             harness,
             file_session.as_ref().map(|session| session.raw.as_str()),
@@ -485,7 +602,7 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
     // One streaming pass: each full batch is committed and the same reader,
     // hasher and tool scan carry on from the committed position, so every
     // line is parsed once however many batches the file needs.
-    let advanced = loop {
+    loop {
         let mut batch_capped = false;
         let mut decoded_in_batch = 0usize;
         let mut attempts_in_batch = 0usize;
@@ -612,52 +729,54 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
             usage_attribution.observe(harness, &value);
             if harness == "claude" {
                 if let Some(id) = value.get("sessionId").and_then(Value::as_str) {
-                    claude_sessions.insert(seal_session(tool_key, harness, id));
+                    let (sealed, fact) = link_and_seal_session(
+                        link_config,
+                        tool_key,
+                        source_id,
+                        generation,
+                        harness,
+                        id,
+                        true,
+                        false,
+                    );
+                    claude_sessions.insert(sealed);
+                    record_session_fact(&mut session_facts_by_key, fact);
+                } else if value.pointer("/message/usage").is_some() {
+                    let (_, fact) = link_and_seal_session(
+                        link_config,
+                        tool_key,
+                        source_id,
+                        generation,
+                        harness,
+                        "claude-session",
+                        false,
+                        false,
+                    );
+                    record_session_fact(&mut session_facts_by_key, fact);
                 }
-            }
-            let mut codex_skills = Vec::new();
-            let mut codex_categories = Vec::new();
-            let tools_before = tools.len();
-            if harness == "codex" && unknown_record_type(harness, &value).is_none() {
-                reader_complete &= observe_codex(
-                    &value,
-                    text,
-                    source_session.as_deref().unwrap_or(""),
-                    source_id,
-                    generation,
-                    line_no,
-                    &mut codex_ordinal,
-                    tool_key,
-                    &mut tools,
-                    &mut codex_skills,
-                    &mut codex_categories,
-                )?;
-            }
-            if is_new {
-                for skill in codex_skills {
-                    store.insert_skill(&skill)?;
-                }
-                tool_categories.extend(codex_categories);
-            }
-            if !is_new {
-                if let Some(scan) = tool_scan.as_mut() {
-                    if unknown_record_type(harness, &value).is_none() {
-                        scan.observe(line_no, text, &value);
-                    }
-                }
-                continue;
             }
             if let Some(session) = &file_session {
                 if session.from_header
                     && line_no > 1
                     && conflicting_session(harness, text, &session.raw)
                 {
-                    warnings.push(WarningNote {
-                        path: path.display().to_string(),
-                        line: Some(line_no),
-                        reason: "conflicting session header".into(),
-                    });
+                    header_conflict = true;
+                    if is_new {
+                        warnings.push(WarningNote {
+                            path: path.display().to_string(),
+                            line: Some(line_no),
+                            reason: "conflicting session header".into(),
+                        });
+                    }
                 }
+            }
+            if !is_new {
+                if let Some(scan) = tool_scan.as_mut() {
+                    if unknown_record_type(harness, &value).is_none() {
+                        reader_complete &= scan.observe(line_no, text, &value)?;
+                    }
+                }
+                continue;
             }
             if let Some(reason) = unknown_record_type(harness, &value) {
                 coverage_defect = true;
@@ -687,12 +806,11 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
                 &mut security_dedupe,
                 &mut security_facts,
             );
-            let mut projected_tool = tools.len() > tools_before;
+            let mut projected_tool = false;
             if let Some(scan) = tool_scan.as_mut() {
                 let before = scan.calls.len() + scan.results.len() + scan.skills.len();
-                scan.observe(line_no, text, &value);
-                projected_tool |=
-                    scan.calls.len() + scan.results.len() + scan.skills.len() > before;
+                reader_complete &= scan.observe(line_no, text, &value)?;
+                projected_tool = scan.calls.len() + scan.results.len() + scan.skills.len() > before;
             }
             // Safe message metadata only: role, direction, modality, source order.
             let projected_message = match crate::messages::observe(harness, &value) {
@@ -782,6 +900,20 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
                         if let Some(session) = &file_session {
                             // The file's line-1 session wins over any per-line id.
                             bucket.native_session = session.raw.clone();
+                        } else if harness == "claude" {
+                            let is_minted =
+                                value.get("sessionId").and_then(Value::as_str).is_some();
+                            let (_, fact) = link_and_seal_session(
+                                link_config,
+                                tool_key,
+                                source_id,
+                                generation,
+                                harness,
+                                &bucket.native_session,
+                                is_minted,
+                                false,
+                            );
+                            record_session_fact(&mut session_facts_by_key, fact);
                         }
                         if let Some(id) = &bucket.message_id {
                             let sealed_session =
@@ -884,14 +1016,74 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
                 }
             }
         }
-        if harness == "claude" {
+        let is_final_batch = !(batch_capped && consumed != batch_start);
+        let mut retired_fallback_keys = Vec::new();
+        // Every batch's transaction persists all facts derived from the lines
+        // covered by its committed watermark, including session_facts observed
+        // in that batch, the sticky header_conflict latch, and source_session.
+        // The final batch recomputes the final link decision for the pass.
+        // Intermediate states are safe because each committed state reflects
+        // the exact lines covered by its watermark: a later header conflict can
+        // only flip linked -> unlinked (never unlinked -> linked), and the D3
+        // session_facts upsert enforces that sticky transition.
+        let session_facts: Vec<dendro_core::SessionFact> = if harness == "claude" {
             // A file with several session identities has no unique source linkage.
             source_session = if claude_sessions.len() == 1 {
                 claude_sessions.iter().next().cloned()
             } else {
                 None
             };
-        }
+            let (_, fallback_fact) = link_and_seal_session(
+                link_config,
+                tool_key,
+                source_id,
+                generation,
+                harness,
+                "claude-session",
+                false,
+                false,
+            );
+            if session_facts_by_key.is_empty() {
+                vec![fallback_fact]
+            } else {
+                if !claude_sessions.is_empty()
+                    && !session_facts_by_key.contains_key(&fallback_fact.source_key)
+                {
+                    retired_fallback_keys.push(fallback_fact.source_key);
+                }
+                session_facts_by_key.values().cloned().collect()
+            }
+        } else if let Some(session) = &file_session {
+            let is_minted = session.from_header && !header_conflict;
+            let (sealed, fact) = link_and_seal_session(
+                link_config,
+                tool_key,
+                source_id,
+                generation,
+                harness,
+                &session.raw,
+                is_minted,
+                header_conflict,
+            );
+            source_session = Some(sealed);
+            record_session_fact(&mut session_facts_by_key, fact);
+            if session.from_header {
+                let (_, fallback_fact) = link_and_seal_session(
+                    link_config,
+                    tool_key,
+                    source_id,
+                    generation,
+                    harness,
+                    &format!("{harness}-file:{source_id}"),
+                    false,
+                    false,
+                );
+                retired_fallback_keys.push(fallback_fact.source_key);
+            }
+            session_facts_by_key.values().cloned().collect()
+        } else {
+            session_facts_by_key.values().cloned().collect()
+        };
         coverage_defect |= coverage.unknown_kind
             + coverage.quarantined_oversize
             + coverage.quarantined_depth
@@ -917,14 +1109,13 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
         }
         offset = consumed;
         let mut settled = Vec::new();
+        let mut skills = Vec::new();
         if let Some(scan) = tool_scan.as_mut() {
             let pass = scan.flush(line_no);
             tools = pass.new_calls;
             settled = pass.settled;
             tool_categories.extend(pass.categories);
-            for skill in pass.skills {
-                store.insert_skill(&skill)?;
-            }
+            skills = pass.skills;
         }
         let held_after = FileMetadata::from_file(reader.get_ref().get_ref());
         let named_after = observe_path(path);
@@ -940,43 +1131,52 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
                 .unwrap_or_else(|| chrono::Utc::now().to_rfc3339()),
             metadata,
         };
-        store.commit_file_batch_observed_messages(
-            source_id,
-            harness,
-            &path.display().to_string(),
-            generation,
-            offset,
-            &prefix_sha,
-            if harness == "codex" {
-                Some(&counters)
-            } else {
-                None
-            },
-            &usages,
-            &tools,
-            &messages,
-            &settled,
-            &dendro_core::ReaderState {
-                complete: batch_complete,
-                native_session: source_session.clone(),
-            },
-            &baseline,
-        )?;
-        store.commit_session_edges(&session_edges)?;
-        store.commit_security_facts(&security_facts)?;
-        store.record_tool_categories(&tool_categories)?;
-        store.record_usage_models(&usage_models)?;
-        for note in &warnings {
-            store.record_warning(note)?;
-        }
+        let display_path = path.display().to_string();
         // One row per defective generation, however many runs or batches see it.
-        if coverage_defect && !store.has_warning(&path.display().to_string(), &partial_reason)? {
-            store.record_warning(&WarningNote {
-                path: path.display().to_string(),
+        if coverage_defect && !store.has_warning(&display_path, &partial_reason)? {
+            warnings.push(WarningNote {
+                path: display_path.clone(),
                 line: None,
                 reason: partial_reason.clone(),
-            })?;
+            });
         }
+        // Only partial coverage is a warning; a complete read is not a defect. An
+        // idle re-run that reads no new bytes adds no row for the same defect.
+        if is_final_batch && coverage.partial && consumed != initial_offset {
+            warnings.push(WarningNote {
+                path: display_path.clone(),
+                line: None,
+                reason: coverage.summary(),
+            });
+        }
+        let reader_state = dendro_core::ReaderState {
+            complete: batch_complete,
+            native_session: source_session.clone(),
+        };
+        let ingest_batch = dendro_core::IngestBatch {
+            source_id,
+            harness,
+            display_path: &display_path,
+            generation,
+            byte_offset: offset,
+            prefix_sha256: &prefix_sha,
+            counters: (harness == "codex").then_some(&counters),
+            usages: &usages,
+            usage_models: &usage_models,
+            tools: &tools,
+            tool_categories: &tool_categories,
+            settled: &settled,
+            messages: &messages,
+            skills: &skills,
+            session_edges: &session_edges,
+            security_facts: &security_facts,
+            session_facts: &session_facts,
+            retired_fallback_keys: &retired_fallback_keys,
+            warnings: &warnings,
+            reader: Some(&reader_state),
+            baseline: Some(&baseline),
+        };
+        commit_ingest_batch_checked(store, &ingest_batch)?;
         usage_records += usages.len() as u64;
         usages.clear();
         tools.clear();
@@ -986,18 +1186,18 @@ fn ingest_jsonl_file<F: FnOnce() -> Result<()>>(
         warnings.clear();
         tool_categories.clear();
         usage_models.clear();
-        if !(batch_capped && consumed != batch_start) {
-            break consumed != initial_offset;
+        if is_final_batch {
+            break;
         }
         // The next batch is judged against what this one left on the file.
         held_before = FileMetadata::from_file(reader.get_ref().get_ref());
         named_before = observe_path(path);
-    };
-    Ok(FileOutcome {
+    }
+    Ok(FileStats {
         coverage,
         records_read,
         usage_records,
-        advanced,
+        tool_scan: tool_scan.map(|scan| scan.counts).unwrap_or_default(),
     })
 }
 
@@ -1046,6 +1246,18 @@ fn file_session(harness: &str, file: &mut impl Read, source_id: &str) -> Result<
             from_header: false,
         },
     })
+}
+
+fn record_session_fact(
+    map: &mut std::collections::BTreeMap<String, dendro_core::SessionFact>,
+    fact: dendro_core::SessionFact,
+) {
+    match map.get(&fact.source_key) {
+        Some(existing) if existing.header_conflict => {}
+        _ => {
+            map.insert(fact.source_key.clone(), fact);
+        }
+    }
 }
 
 /// The native id a header line declares: Pi `{"type":"session","id"}`, Codex
@@ -1109,6 +1321,46 @@ fn session_edge_fact(
         evidence_kind: edge.evidence_kind.to_string(),
         generation,
     }
+}
+
+/// Computes `agent.session.link_id` (`link-id-v1`) from the RAW `native_session` BEFORE
+/// calling `seal_session`. Synthetic, fallback, or header-less sessions (`!is_harness_minted`)
+/// resolve to `"unlinked"`. Native harness-log parsers assign `origin = "harness"`.
+#[allow(clippy::too_many_arguments)]
+fn link_and_seal_session(
+    link_config: &dendro_core::SessionLinkConfig,
+    tool_key: Option<&[u8]>,
+    source_id: &str,
+    generation: i64,
+    harness: &str,
+    raw_session: &str,
+    is_harness_minted: bool,
+    header_conflict: bool,
+) -> (String, dendro_core::SessionFact) {
+    let candidate_raw = (is_harness_minted && !header_conflict).then_some(raw_session);
+    let (link_id, unlinked_reason) =
+        link_config.resolve_session_link(Some(harness), candidate_raw, Some("harness"));
+
+    let sealed = seal_session(tool_key, harness, raw_session);
+    let fact_sealed = match tool_key {
+        Some(_) => sealed.clone(),
+        None => dendro_core::seal_identifier(
+            b"dendro-unkeyed-session-fact",
+            &format!("session:{harness}"),
+            raw_session,
+        ),
+    };
+    let fact = dendro_core::SessionFact {
+        source_key: format!("{source_id}:{harness}:{fact_sealed}"),
+        source_id: source_id.to_string(),
+        harness: harness.to_string(),
+        native_session: fact_sealed,
+        link_id,
+        unlinked_reason: unlinked_reason.map(|r| r.as_str().to_string()),
+        header_conflict,
+        generation,
+    };
+    (sealed, fact)
 }
 
 fn seal_session(key: Option<&[u8]>, harness: &str, raw: &str) -> String {
@@ -1229,7 +1481,10 @@ fn extract_skills_from_codex_call(call: &Value) -> Vec<String> {
     if let Some(args) = arg_val {
         collect_skills_from_value(args, &mut skills);
     }
-    if let Some(cmd) = call.get("command") {
+    if let Some(cmd) = call
+        .pointer("/action/command")
+        .or_else(|| call.get("command"))
+    {
         collect_skills_from_value(cmd, &mut skills);
     }
     skills
@@ -1315,6 +1570,7 @@ pub(crate) const GROK_RECORD_TYPES: &[&str] = &[
 ];
 
 pub(crate) const UNKNOWN_RECORD_TYPE: &str = "unknown-record-type";
+#[cfg(test)]
 pub(crate) const CODEX_TOOLS_NOT_READ: &str = "tool calls not read for codex";
 
 /// The warning reason for a record of a type the parser does not know, or
@@ -1857,195 +2113,137 @@ fn apply_grok_summary(
     }
 }
 
-/// Reads only native execution outcomes and real call boundaries. No result joins.
-#[allow(clippy::too_many_arguments)]
-fn observe_codex(
-    value: &Value,
-    text: &str,
-    session: &str,
-    source_id: &str,
-    generation: i64,
-    line: i64,
-    ordinal: &mut i64,
-    key: Option<&[u8]>,
-    tools: &mut Vec<ToolFact>,
-    skills: &mut Vec<SkillFact>,
-    categories: &mut Vec<(String, ToolCategory)>,
-) -> Result<bool> {
-    let envelope = value.get("type").and_then(Value::as_str);
-    let kind = value.pointer("/payload/type").and_then(Value::as_str);
-    let (name, failed, fingerprint, category) = match (envelope, kind) {
-        (Some("event_msg"), Some("item_completed")) => {
-            let Some(item) = value.pointer("/payload/item") else {
-                return Ok(false);
-            };
-            match item.get("type").and_then(Value::as_str) {
-                Some("CommandExecution") => {
-                    let cmd_text =
-                        if let Some(parts) = item.get("command").and_then(Value::as_array) {
-                            parts
-                                .iter()
-                                .filter_map(Value::as_str)
-                                .collect::<Vec<_>>()
-                                .join(" ")
-                        } else if let Some(cmd) = item.get("command").and_then(Value::as_str) {
-                            cmd.to_string()
-                        } else {
-                            String::new()
-                        };
-                    let cmd_raw = item
-                        .get("command")
-                        .map(Value::to_string)
-                        .unwrap_or_else(|| cmd_text.clone());
-                    let category =
-                        classify_tool_invocation("codex", "CommandExecution", Some(&cmd_raw));
-                    for (idx, skill_name) in
-                        extract_skills_from_text(&cmd_text).into_iter().enumerate()
-                    {
-                        skills.push(SkillFact {
-                            source_key: format!("{source_id}:{generation}:{line}:skill:{idx}"),
-                            seat: format!("codex:{session}"),
-                            skill: seal_skill(key, &skill_name),
-                            invoked: true,
-                        });
+fn parse_unambiguous_exit_code(text: &str) -> Option<i64> {
+    let mut found: Option<i64> = None;
+    let mut saw_output_header = false;
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.eq_ignore_ascii_case("output:") {
+            saw_output_header = true;
+            break;
+        }
+        let lower = trimmed.to_ascii_lowercase();
+        let mut matched_exit = false;
+        for prefix in [
+            "process exited with exit code:",
+            "process exited with exit code ",
+            "process exited with code:",
+            "process exited with code ",
+            "exit code:",
+            "exit_code:",
+            "exit code ",
+        ] {
+            if lower.starts_with(prefix) {
+                let rest = trimmed[prefix.len()..].trim();
+                let code = rest.parse::<i64>().ok()?;
+                if let Some(prev) = found {
+                    if prev != code {
+                        return None;
                     }
-                    let failed = item
-                        .get("exit_code")
-                        .and_then(Value::as_i64)
-                        .map(|code| code != 0)
-                        .or_else(|| {
-                            item.get("exit_code")
-                                .and_then(Value::as_u64)
-                                .map(|code| code != 0)
-                        });
-                    let valid =
-                        item.get("command")
-                            .and_then(Value::as_array)
-                            .is_some_and(|parts| {
-                                !parts.is_empty() && parts.iter().all(Value::is_string)
-                            });
-                    let lexical = raw_codex_command(text);
-                    let fingerprint = if valid {
-                        key.zip(lexical).map(|(key, raw)| {
-                            dendro_core::codex_command_fingerprint(key, raw.get())
-                        })
-                    } else {
-                        None
-                    };
-                    (dendro_core::CODEX_COMMAND, failed, fingerprint, category)
                 }
-                // Known non-command native items are not extra calls.
-                Some(
-                    "AgentMessage" | "Reasoning" | "Plan" | "FileChange" | "McpToolCall"
-                    | "WebSearch" | "ImageView" | "UserMessage" | "Extension" | "ContextCompaction",
-                ) => return Ok(true),
-                Some("tool_call" | "custom_tool_call" | "function_call") => {
-                    for (idx, skill_name) in
-                        extract_skills_from_codex_call(item).into_iter().enumerate()
-                    {
-                        skills.push(SkillFact {
-                            source_key: format!("{source_id}:{generation}:{line}:skill:{idx}"),
-                            seat: format!("codex:{session}"),
-                            skill: seal_skill(key, &skill_name),
-                            invoked: true,
-                        });
-                    }
-                    return Ok(true);
-                }
-                _ => return Ok(false),
+                found = Some(code);
+                matched_exit = true;
+                break;
             }
         }
-        (Some("response_item"), Some("custom_tool_call" | "function_call" | "tool_call")) => {
-            let category = if let Some(payload) = value.pointer("/payload") {
-                for (idx, skill_name) in extract_skills_from_codex_call(payload)
-                    .into_iter()
-                    .enumerate()
-                {
-                    skills.push(SkillFact {
-                        source_key: format!("{source_id}:{generation}:{line}:skill:{idx}"),
-                        seat: format!("codex:{session}"),
-                        skill: seal_skill(key, &skill_name),
-                        invoked: true,
-                    });
-                }
-                let tool_name = payload
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .unwrap_or("custom_tool_call");
-                let arg_str = if let Some(args) = payload.get("arguments") {
-                    if let Some(s) = args.as_str() {
-                        Some(s.to_string())
-                    } else {
-                        Some(args.to_string())
-                    }
-                } else if let Some(input) = payload.get("input") {
-                    if let Some(s) = input.as_str() {
-                        Some(s.to_string())
-                    } else {
-                        Some(input.to_string())
-                    }
-                } else if let Some(cmd) = payload.get("command") {
-                    if let Some(s) = cmd.as_str() {
-                        Some(s.to_string())
-                    } else {
-                        Some(cmd.to_string())
-                    }
-                } else {
-                    None
-                };
-                classify_tool_invocation("codex", tool_name, arg_str.as_deref())
-            } else {
-                ToolCategory::Other
-            };
-            (dendro_core::CODEX_CALL, None, None, category)
+        if matched_exit {
+            continue;
         }
-        (
-            Some("response_item"),
-            Some("custom_tool_call_output" | "function_call_output" | "message" | "reasoning"),
-        ) => return Ok(true),
-        (Some("response_item"), _) => return Ok(false),
-        (
-            Some("event_msg"),
-            Some(
-                "token_count"
-                | "user_message"
-                | "agent_message"
-                | "agent_reasoning"
-                | "task_started"
-                | "task_complete"
-                | "task_completed"
-                | "turn_started"
-                | "turn_complete"
-                | "turn_aborted"
-                | "item_started"
-                | "item_updated"
-                | "context_compacted"
-                | "thread_settings_applied"
-                | "warning",
-            ),
-        ) => return Ok(true),
-        (Some("event_msg"), _) => return Ok(false),
-        // Non-observation envelopes recognized by the existing harness reader.
-        _ => return Ok(true),
-    };
-    *ordinal = ordinal
-        .checked_add(1)
-        .ok_or_else(|| anyhow::anyhow!("Codex observation order overflow"))?;
-    let source_key = format!("{source_id}:{generation}:{line}:codex:0");
-    categories.push((source_key.clone(), category));
-    tools.push(ToolFact {
-        source_key,
-        harness: "codex".into(),
-        native_session: session.into(),
-        ts: timestamp_of(value),
-        seq: *ordinal,
-        name: name.into(),
-        fingerprint,
-        failed,
-        structured_write: false,
-        generation,
-    });
-    Ok(true)
+        let is_header_meta = [
+            "chunk id:",
+            "wall time:",
+            "original token count:",
+            "total output lines:",
+            "session id:",
+            "process running with session id",
+        ]
+        .iter()
+        .any(|prefix| lower.starts_with(prefix));
+        if !is_header_meta {
+            return None;
+        }
+    }
+    saw_output_header.then_some(found).flatten()
+}
+
+fn codex_output_outcome(payload: &Value) -> Option<bool> {
+    if let Some(err) = payload
+        .get("is_error")
+        .or_else(|| payload.get("isError"))
+        .and_then(Value::as_bool)
+    {
+        return Some(err);
+    }
+    if let Some(status) = payload.get("status").and_then(Value::as_str) {
+        match status {
+            "failed" | "error" | "errored" => return Some(true),
+            "completed" | "success" | "succeeded" | "ok" => return Some(false),
+            _ => {}
+        }
+    }
+    if let Some(code) = payload
+        .get("exit_code")
+        .or_else(|| payload.pointer("/metadata/exit_code"))
+        .or_else(|| payload.pointer("/output/exit_code"))
+        .or_else(|| payload.pointer("/output/metadata/exit_code"))
+        .and_then(Value::as_i64)
+    {
+        return Some(code != 0);
+    }
+    if payload
+        .get("error")
+        .is_some_and(|v| !v.is_null() && v.as_str() != Some(""))
+    {
+        return Some(true);
+    }
+    if let Some(output_str) = payload.get("output").and_then(Value::as_str) {
+        if let Ok(Value::Object(obj)) = serde_json::from_str::<Value>(output_str) {
+            if let Some(err) = obj
+                .get("is_error")
+                .or_else(|| obj.get("isError"))
+                .and_then(Value::as_bool)
+            {
+                return Some(err);
+            }
+            if let Some(status) = obj.get("status").and_then(Value::as_str) {
+                match status {
+                    "failed" | "error" | "errored" => return Some(true),
+                    "completed" | "success" | "succeeded" | "ok" => return Some(false),
+                    _ => {}
+                }
+            }
+            if let Some(code) = obj
+                .get("exit_code")
+                .or_else(|| obj.get("metadata").and_then(|m| m.get("exit_code")))
+                .and_then(Value::as_i64)
+            {
+                return Some(code != 0);
+            }
+            if obj
+                .get("error")
+                .is_some_and(|v| !v.is_null() && v.as_str() != Some(""))
+            {
+                return Some(true);
+            }
+            if let Some(inner_out) = obj.get("output").and_then(Value::as_str) {
+                if let Some(code) = parse_unambiguous_exit_code(inner_out) {
+                    return Some(code != 0);
+                }
+            }
+        } else if let Some(code) = parse_unambiguous_exit_code(output_str) {
+            return Some(code != 0);
+        }
+    }
+    if let Some(arr) = payload.get("output").and_then(Value::as_array) {
+        if arr.len() == 1 {
+            if let Some(text) = arr[0].get("text").and_then(Value::as_str) {
+                if let Some(code) = parse_unambiguous_exit_code(text) {
+                    return Some(code != 0);
+                }
+            }
+        }
+    }
+    None
 }
 
 fn raw_codex_command(text: &str) -> Option<&serde_json::value::RawValue> {
@@ -2058,19 +2256,23 @@ fn raw_codex_command(text: &str) -> Option<&serde_json::value::RawValue> {
     item.get("command").copied()
 }
 
-/// The tool calls of one Claude or Pi file generation (#35, #36, #37, Q5,
-/// Phase 1 0002). A call is the first call block of its (session, call id), at
-/// that position and time; a repeat of the id is the same call. Claude: a
-/// `tool_use` block, settled by `tool_result` blocks (`tool_use_id`,
-/// `is_error`). Pi: a `toolCall` block, settled by `toolResult` messages
-/// (`toolCallId`, `isError`), in the file's K10 session. Its outcome comes only
-/// from the matching results in the same file and session: all true is a
-/// failure, all false a success, anything else (none, absent, not a boolean,
-/// disagreeing) unknown. A result with no
-/// call creates nothing. Rejected records (unknown type, malformed) give
-/// nothing. Lines up to `new_from` were stored by an earlier run: their calls
-/// are not inserted again, and their outcome is re-settled only when a result
-/// for them arrives in the new lines.
+/// The tool calls of one Claude, Pi, Grok, or Codex file generation (#35, #36,
+/// #37, Q5, Phase 1 0002, D1/F2). A call is the first call block of its
+/// (session, call id), at that position and time; a repeat of the id is the
+/// same call. Claude: a `tool_use` block, settled by `tool_result` blocks
+/// (`tool_use_id`, `is_error`). Pi: a `toolCall` block, settled by
+/// `toolResult` messages (`toolCallId`, `isError`), in the file's K10 session.
+/// Codex: `response_item` (`function_call` / `custom_tool_call` / `tool_call` /
+/// `local_shell_call`) with its real `name` (or `"local_shell"`), settled by
+/// `function_call_output` / `custom_tool_call_output` / `tool_call_output` /
+/// `local_shell_call_output` (`call_id`), plus native `CommandExecution` items.
+/// Its outcome comes only from explicit signals on the matching results
+/// in the same file and session: all true is a failure, all false a success,
+/// anything else (none, absent, not a boolean, disagreeing) unknown. A result
+/// with no call creates nothing. Rejected records (unknown type, malformed)
+/// give nothing. Lines up to `new_from` were stored by an earlier run: their
+/// calls are not inserted again, and their outcome is re-settled only when a
+/// result for them arrives in the new lines.
 struct ToolPass {
     new_calls: Vec<ToolFact>,
     settled: Vec<(String, Option<bool>)>,
@@ -2086,6 +2288,12 @@ struct ToolCall {
     category: ToolCategory,
 }
 
+struct PendingToolResult {
+    id: Option<(String, String)>,
+    outcome: Option<bool>,
+    line_no: i64,
+}
+
 struct ToolScan<'a> {
     harness: &'a str,
     file_session: Option<&'a str>,
@@ -2094,10 +2302,12 @@ struct ToolScan<'a> {
     key: Option<&'a [u8]>,
     source_id: &'a str,
     generation: i64,
+    codex_ordinal: i64,
     calls: Vec<ToolCall>,
     by_id: std::collections::HashMap<(String, String), usize>,
-    results: Vec<((String, String), Option<bool>, i64)>,
+    results: Vec<PendingToolResult>,
     skills: Vec<(i64, SkillFact)>,
+    counts: ToolScanCounts,
 }
 
 impl<'a> ToolScan<'a> {
@@ -2116,23 +2326,29 @@ impl<'a> ToolScan<'a> {
             key,
             source_id,
             generation,
+            codex_ordinal: 0,
             calls: Vec::new(),
             by_id: std::collections::HashMap::new(),
             results: Vec::new(),
             skills: Vec::new(),
+            counts: ToolScanCounts::default(),
         }
     }
 
-    fn observe(&mut self, line_no: i64, text: &str, value: &Value) {
+    fn observe(&mut self, line_no: i64, text: &str, value: &Value) -> Result<bool> {
         if self.harness == "grok" {
             self.observe_grok(line_no, value);
-            return;
+            return Ok(true);
+        }
+        if self.harness == "codex" {
+            return self.observe_codex(line_no, text, value);
         }
         let harness = self.harness;
         let file_session = self.file_session;
         let key = self.key;
         let source_id = self.source_id;
         let generation = self.generation;
+        let from_prefix = line_no <= self.new_from;
         let session = match file_session {
             Some(session) => session.to_string(),
             None => value
@@ -2147,23 +2363,26 @@ impl<'a> ToolScan<'a> {
                 .and_then(|item| item.as_str())
                 == Some("toolResult")
         {
-            if let Some(id) = value
+            let id = value
                 .pointer("/message/toolCallId")
                 .and_then(|item| item.as_str())
-            {
-                let outcome = value
-                    .pointer("/message/isError")
-                    .and_then(|item| item.as_bool());
-                self.results
-                    .push(((session.clone(), id.to_string()), outcome, line_no));
-            }
-            return;
+                .filter(|s| !s.is_empty())
+                .map(|id| (session.clone(), id.to_string()));
+            let outcome = value
+                .pointer("/message/isError")
+                .and_then(|item| item.as_bool());
+            self.results.push(PendingToolResult {
+                id,
+                outcome,
+                line_no,
+            });
+            return Ok(true);
         }
         let Some(content) = value
             .pointer("/message/content")
             .and_then(|item| item.as_array())
         else {
-            return;
+            return Ok(true);
         };
         let (call_type, input_field) = if harness == "pi" {
             ("toolCall", "arguments")
@@ -2179,13 +2398,20 @@ impl<'a> ToolScan<'a> {
                     let Some(name) = block.get("name").and_then(|item| item.as_str()) else {
                         continue;
                     };
-                    let id = block.get("id").and_then(|item| item.as_str());
+                    let id = block
+                        .get("id")
+                        .and_then(|item| item.as_str())
+                        .filter(|s| !s.is_empty());
                     if let Some(id) = id {
                         if self.by_id.contains_key(&(session.clone(), id.to_string())) {
+                            self.counts.duplicate_call_id += 1;
                             continue;
                         }
                         self.by_id
                             .insert((session.clone(), id.to_string()), self.calls.len());
+                    }
+                    if from_prefix {
+                        self.counts.prefix_skipped += 1;
                     }
                     let lexical = tool_input_lexical(block, raw_blocks.get(index), input_field);
                     let fingerprint =
@@ -2269,16 +2495,332 @@ impl<'a> ToolScan<'a> {
                         result_in_new_lines: false,
                         category,
                     });
+                    self.counts.calls += 1;
                 }
                 Some("tool_result") if harness == "claude" => {
-                    if let Some(id) = block.get("tool_use_id").and_then(|item| item.as_str()) {
-                        let outcome = block.get("is_error").and_then(|item| item.as_bool());
-                        self.results
-                            .push(((session.clone(), id.to_string()), outcome, line_no));
-                    }
+                    let id = block
+                        .get("tool_use_id")
+                        .and_then(|item| item.as_str())
+                        .filter(|s| !s.is_empty())
+                        .map(|id| (session.clone(), id.to_string()));
+                    let outcome = block.get("is_error").and_then(|item| item.as_bool());
+                    self.results.push(PendingToolResult {
+                        id,
+                        outcome,
+                        line_no,
+                    });
                 }
                 _ => {}
             }
+        }
+        Ok(true)
+    }
+
+    fn observe_codex(&mut self, line_no: i64, text: &str, value: &Value) -> Result<bool> {
+        let from_prefix = line_no <= self.new_from;
+        let fallback;
+        let raw_session = match self.file_session {
+            Some(session) => session,
+            None => {
+                fallback = format!("codex-file:{}", self.source_id);
+                &fallback
+            }
+        };
+        let sealed_session = seal_session(self.key, "codex", raw_session);
+        let envelope = value.get("type").and_then(Value::as_str);
+        let kind = value.pointer("/payload/type").and_then(Value::as_str);
+        match (envelope, kind) {
+            (Some("event_msg"), Some("item_completed")) => {
+                let Some(item) = value.pointer("/payload/item") else {
+                    return Ok(true);
+                };
+                match item.get("type").and_then(Value::as_str) {
+                    Some("CommandExecution") => {
+                        if from_prefix {
+                            self.counts.prefix_skipped += 1;
+                        }
+                        let cmd_text =
+                            if let Some(parts) = item.get("command").and_then(Value::as_array) {
+                                parts
+                                    .iter()
+                                    .filter_map(Value::as_str)
+                                    .collect::<Vec<_>>()
+                                    .join(" ")
+                            } else if let Some(cmd) = item.get("command").and_then(Value::as_str) {
+                                cmd.to_string()
+                            } else {
+                                String::new()
+                            };
+                        let cmd_raw = item
+                            .get("command")
+                            .map(Value::to_string)
+                            .unwrap_or_else(|| cmd_text.clone());
+                        let category =
+                            classify_tool_invocation("codex", "CommandExecution", Some(&cmd_raw));
+                        for (idx, skill_name) in
+                            extract_skills_from_text(&cmd_text).into_iter().enumerate()
+                        {
+                            self.skills.push((
+                                line_no,
+                                SkillFact {
+                                    source_key: format!(
+                                        "{}:{}:{line_no}:skill:{idx}",
+                                        self.source_id, self.generation
+                                    ),
+                                    seat: format!("codex:{sealed_session}"),
+                                    skill: seal_skill(self.key, &skill_name),
+                                    invoked: true,
+                                },
+                            ));
+                        }
+                        let failed = item
+                            .get("exit_code")
+                            .and_then(Value::as_i64)
+                            .map(|code| code != 0)
+                            .or_else(|| {
+                                item.get("exit_code")
+                                    .and_then(Value::as_u64)
+                                    .map(|code| code != 0)
+                            });
+                        let valid =
+                            item.get("command")
+                                .and_then(Value::as_array)
+                                .is_some_and(|parts| {
+                                    !parts.is_empty() && parts.iter().all(Value::is_string)
+                                });
+                        let lexical = raw_codex_command(text);
+                        let fingerprint = if valid {
+                            self.key.zip(lexical).map(|(key, raw)| {
+                                dendro_core::codex_command_fingerprint(key, raw.get())
+                            })
+                        } else {
+                            None
+                        };
+                        self.codex_ordinal = self
+                            .codex_ordinal
+                            .checked_add(1)
+                            .ok_or_else(|| anyhow::anyhow!("Codex observation order overflow"))?;
+                        let source_key =
+                            format!("{}:{}:{line_no}:codex:0", self.source_id, self.generation);
+                        self.calls.push(ToolCall {
+                            fact: ToolFact {
+                                source_key,
+                                harness: "codex".into(),
+                                native_session: sealed_session,
+                                ts: timestamp_of(value),
+                                seq: self.codex_ordinal,
+                                name: dendro_core::CODEX_COMMAND.into(),
+                                fingerprint,
+                                failed,
+                                structured_write: false,
+                                generation: self.generation,
+                            },
+                            line: line_no,
+                            results: vec![failed],
+                            result_in_new_lines: false,
+                            category,
+                        });
+                        self.counts.calls += 1;
+                        Ok(true)
+                    }
+                    Some(
+                        "AgentMessage" | "Reasoning" | "Plan" | "FileChange" | "McpToolCall"
+                        | "WebSearch" | "ImageView" | "UserMessage" | "Extension"
+                        | "ContextCompaction",
+                    ) => Ok(true),
+                    Some(
+                        "tool_call" | "custom_tool_call" | "function_call" | "local_shell_call",
+                    ) => {
+                        for (idx, skill_name) in
+                            extract_skills_from_codex_call(item).into_iter().enumerate()
+                        {
+                            self.skills.push((
+                                line_no,
+                                SkillFact {
+                                    source_key: format!(
+                                        "{}:{}:{line_no}:skill:{idx}",
+                                        self.source_id, self.generation
+                                    ),
+                                    seat: format!("codex:{sealed_session}"),
+                                    skill: seal_skill(self.key, &skill_name),
+                                    invoked: true,
+                                },
+                            ));
+                        }
+                        Ok(true)
+                    }
+                    _ => Ok(false),
+                }
+            }
+            (
+                Some("response_item"),
+                kind
+                @ Some("custom_tool_call" | "function_call" | "tool_call" | "local_shell_call"),
+            ) => {
+                let Some(payload) = value.pointer("/payload") else {
+                    return Ok(false);
+                };
+                for (idx, skill_name) in extract_skills_from_codex_call(payload)
+                    .into_iter()
+                    .enumerate()
+                {
+                    self.skills.push((
+                        line_no,
+                        SkillFact {
+                            source_key: format!(
+                                "{}:{}:{line_no}:skill:{idx}",
+                                self.source_id, self.generation
+                            ),
+                            seat: format!("codex:{sealed_session}"),
+                            skill: seal_skill(self.key, &skill_name),
+                            invoked: true,
+                        },
+                    ));
+                }
+                let tool_name = if kind == Some("local_shell_call") {
+                    "local_shell"
+                } else {
+                    let Some(name) = payload
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .map(str::trim)
+                        .filter(|name| !name.is_empty() && name.len() <= 64)
+                    else {
+                        return Ok(false);
+                    };
+                    name
+                };
+                let id = payload
+                    .get("call_id")
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.is_empty());
+                if let Some(id) = id {
+                    if self
+                        .by_id
+                        .contains_key(&(raw_session.to_string(), id.to_string()))
+                    {
+                        self.counts.duplicate_call_id += 1;
+                        return Ok(true);
+                    }
+                    self.by_id
+                        .insert((raw_session.to_string(), id.to_string()), self.calls.len());
+                }
+                if from_prefix {
+                    self.counts.prefix_skipped += 1;
+                }
+                let arg_str = if let Some(args) = payload.get("arguments") {
+                    if let Some(s) = args.as_str() {
+                        Some(s.to_string())
+                    } else {
+                        Some(args.to_string())
+                    }
+                } else if let Some(input) = payload.get("input") {
+                    if let Some(s) = input.as_str() {
+                        Some(s.to_string())
+                    } else {
+                        Some(input.to_string())
+                    }
+                } else if let Some(cmd) = payload
+                    .pointer("/action/command")
+                    .or_else(|| payload.get("command"))
+                {
+                    if let Some(s) = cmd.as_str() {
+                        Some(s.to_string())
+                    } else {
+                        Some(cmd.to_string())
+                    }
+                } else {
+                    None
+                };
+                let fingerprint = self
+                    .key
+                    .and_then(|key| tool_fingerprint(key, tool_name, arg_str.as_deref()));
+                let category = classify_tool_invocation("codex", tool_name, arg_str.as_deref());
+                self.codex_ordinal = self
+                    .codex_ordinal
+                    .checked_add(1)
+                    .ok_or_else(|| anyhow::anyhow!("Codex observation order overflow"))?;
+                let source_key =
+                    format!("{}:{}:{line_no}:codex:0", self.source_id, self.generation);
+                self.calls.push(ToolCall {
+                    fact: ToolFact {
+                        source_key,
+                        harness: "codex".into(),
+                        native_session: sealed_session,
+                        ts: timestamp_of(value),
+                        seq: self.codex_ordinal,
+                        name: tool_name.to_string(),
+                        fingerprint,
+                        failed: None,
+                        structured_write: matches!(
+                            tool_name,
+                            "apply_patch" | "write_file" | "edit_file" | "create_file"
+                        ),
+                        generation: self.generation,
+                    },
+                    line: line_no,
+                    results: Vec::new(),
+                    result_in_new_lines: false,
+                    category,
+                });
+                self.counts.calls += 1;
+                Ok(true)
+            }
+            (
+                Some("response_item"),
+                Some(
+                    "custom_tool_call_output"
+                    | "function_call_output"
+                    | "tool_call_output"
+                    | "local_shell_call_output",
+                ),
+            ) => {
+                let Some(payload) = value.pointer("/payload") else {
+                    return Ok(false);
+                };
+                let id = payload
+                    .get("call_id")
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.is_empty())
+                    .map(|id| (raw_session.to_string(), id.to_string()));
+                let outcome = codex_output_outcome(payload);
+                self.results.push(PendingToolResult {
+                    id,
+                    outcome,
+                    line_no,
+                });
+                Ok(true)
+            }
+            (
+                Some("response_item"),
+                Some(
+                    "message" | "reasoning" | "additional_tools" | "agent_message"
+                    | "web_search_call",
+                ),
+            ) => Ok(true),
+            (Some("response_item"), _) => Ok(false),
+            (
+                Some("event_msg"),
+                Some(
+                    "token_count"
+                    | "user_message"
+                    | "agent_message"
+                    | "agent_reasoning"
+                    | "task_started"
+                    | "task_complete"
+                    | "task_completed"
+                    | "turn_started"
+                    | "turn_complete"
+                    | "turn_aborted"
+                    | "item_started"
+                    | "item_updated"
+                    | "context_compacted"
+                    | "thread_settings_applied"
+                    | "warning",
+                ),
+            ) => Ok(true),
+            (Some("event_msg"), _) => Ok(false),
+            _ => Ok(true),
         }
     }
 
@@ -2288,6 +2830,7 @@ impl<'a> ToolScan<'a> {
     /// `failed` is failure, matching the Claude `is_error` boolean.
     fn observe_grok(&mut self, line_no: i64, value: &Value) {
         let kind = grok_session_update(value);
+        let from_prefix = line_no <= self.new_from;
         let session = match self.file_session {
             Some(session) => session.to_string(),
             None => value
@@ -2301,7 +2844,11 @@ impl<'a> ToolScan<'a> {
         };
         match kind {
             Some("tool_call_update") => {
-                let Some(id) = update.get("toolCallId").and_then(Value::as_str) else {
+                let Some(id) = update
+                    .get("toolCallId")
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.is_empty())
+                else {
                     return;
                 };
                 let outcome = match update.get("status").and_then(Value::as_str) {
@@ -2310,14 +2857,18 @@ impl<'a> ToolScan<'a> {
                     Some(_) => None,
                     None => return,
                 };
-                self.results
-                    .push(((session, id.to_string()), outcome, line_no));
+                self.results.push(PendingToolResult {
+                    id: Some((session, id.to_string())),
+                    outcome,
+                    line_no,
+                });
             }
             Some("tool_call") => {
                 let Some(id) = update.get("toolCallId").and_then(Value::as_str) else {
                     return;
                 };
                 if self.by_id.contains_key(&(session.clone(), id.to_string())) {
+                    self.counts.duplicate_call_id += 1;
                     return;
                 }
                 let Some(name) = update
@@ -2329,6 +2880,9 @@ impl<'a> ToolScan<'a> {
                 else {
                     return;
                 };
+                if from_prefix {
+                    self.counts.prefix_skipped += 1;
+                }
                 let kind_name = update
                     .get("_meta")
                     .and_then(|meta| meta.get("x.ai/tool"))
@@ -2360,22 +2914,33 @@ impl<'a> ToolScan<'a> {
                     result_in_new_lines: false,
                     category,
                 });
+                self.counts.calls += 1;
             }
             _ => {}
         }
     }
 
     /// Settle what the lines read so far say, then treat them all as stored:
-    /// the scan keeps its calls so a later batch can still settle them.
+    /// the scan keeps its calls and any not-yet-matched results so a later
+    /// batch can still match and settle them.
     fn flush(&mut self, upto: i64) -> ToolPass {
         let new_from = self.new_from;
         let results = std::mem::take(&mut self.results);
-        for (id, outcome, line_no) in results {
-            if let Some(&at) = self.by_id.get(&id) {
-                self.calls[at].results.push(outcome);
-                self.calls[at].result_in_new_lines |= line_no > new_from;
+        let mut still_unmatched = Vec::new();
+        for res in results {
+            if let Some(&at) = res.id.as_ref().and_then(|id| self.by_id.get(id)) {
+                self.calls[at].results.push(res.outcome);
+                self.calls[at].result_in_new_lines |= res.line_no > new_from;
+                self.counts.results += 1;
+                if self.calls[at].line <= new_from && res.line_no > new_from {
+                    self.counts.late_results += 1;
+                }
+            } else {
+                still_unmatched.push(res);
             }
         }
+        self.counts.unmatched_results = still_unmatched.len() as u64;
+        self.results = still_unmatched;
         let mut pass = ToolPass {
             new_calls: Vec::new(),
             settled: Vec::new(),
@@ -2399,6 +2964,7 @@ impl<'a> ToolScan<'a> {
                 pass.categories
                     .push((call.fact.source_key.clone(), call.category));
                 pass.new_calls.push(call.fact.clone());
+                self.counts.new_calls += 1;
             } else if call.result_in_new_lines {
                 pass.settled
                     .push((call.fact.source_key.clone(), call.fact.failed));
@@ -3909,7 +4475,10 @@ mod tests {
                 .into_iter()
                 .filter(|w| w == CODEX_TOOLS_NOT_READ)
                 .count();
-            assert_eq!(notes, 2, "one per Codex file, kept once across reruns");
+            assert_eq!(
+                notes, 0,
+                "Codex files now route through ToolScan and emit no tools-not-read warning"
+            );
             assert!(f.db.load_tools().unwrap().is_empty(), "no Codex tool facts");
         }
 
@@ -3959,14 +4528,14 @@ mod tests {
 
     /// Directory on a filesystem `platform_v1` admits. `/tmp` is often tmpfs, which
     /// is refused, and umask 0022 would otherwise leave the directory at 0755.
-    struct AdmittedTestDir {
+    pub(super) struct AdmittedTestDir {
         path: PathBuf,
         #[cfg(windows)]
         _root: Option<dendro_core::platform_v1::PrivateRoot>,
     }
 
     impl AdmittedTestDir {
-        fn new(label: &str) -> Self {
+        pub(super) fn new(label: &str) -> Self {
             #[cfg(windows)]
             {
                 let root = dendro_core::platform_v1::create_user_private_root_with_choice(
@@ -4003,7 +4572,7 @@ mod tests {
             }
         }
 
-        fn path(&self) -> &Path {
+        pub(super) fn path(&self) -> &Path {
             &self.path
         }
     }
@@ -4017,7 +4586,7 @@ mod tests {
     }
 
     /// Opens the staged database, then forces mode 0o600 when umask left it wider.
-    fn open_test_analytics(db_path: &Path) -> AnalyticsStore {
+    pub(super) fn open_test_analytics(db_path: &Path) -> AnalyticsStore {
         let store = AnalyticsStore::open_path(db_path, "key").unwrap();
         #[cfg(unix)]
         {
@@ -4181,6 +4750,14 @@ mod tests {
         let conn = rusqlite::Connection::open(&sqlite_path).unwrap();
         conn.execute(
             "CREATE TABLE events (seq INTEGER, type TEXT, payload TEXT, created_at TEXT)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "CREATE TABLE queue_transitions (
+                transition_id INTEGER, qitem_id TEXT, ts TEXT, state TEXT,
+                transition_note TEXT, actor_session TEXT, closure_reason TEXT, closure_target TEXT
+            )",
             [],
         )
         .unwrap();
@@ -4549,6 +5126,14 @@ mod tests {
         let conn = rusqlite::Connection::open(&sqlite_path).unwrap();
         conn.execute(
             "CREATE TABLE events (seq INTEGER, type TEXT, payload TEXT, created_at TEXT)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "CREATE TABLE queue_transitions (
+                transition_id INTEGER, qitem_id TEXT, ts TEXT, state TEXT,
+                transition_note TEXT, actor_session TEXT, closure_reason TEXT, closure_target TEXT
+            )",
             [],
         )
         .unwrap();
@@ -5122,6 +5707,762 @@ mod tests {
 
         let _ = fs::remove_dir_all(&dir);
     }
+
+    mod d1_codex_tool_scan_tests {
+        use super::*;
+
+        fn g0a_s1_lines() -> Vec<&'static str> {
+            vec![
+                r#"{"payload":{"id":"SESSION_cbee0a64728e9ee3","model_provider":"openai","timestamp":"2026-11-12T17:44:10.303Z"},"timestamp":"2026-11-12T17:44:10.340Z","type":"session_meta"}"#,
+                r#"{"payload":{"model":"gpt-5.4","turn_id":"TURN_3bd6e64974fc5975"},"timestamp":"2026-11-12T17:44:10.343Z","type":"turn_context"}"#,
+                r#"{"payload":{"content":[{"text":"<str:len=98>","type":"input_text"}],"role":"user","type":"message"},"timestamp":"2026-11-12T17:44:10.342Z","type":"response_item"}"#,
+                r#"{"payload":{"content":null,"summary":[{"text":"<str:len=72>","type":"summary_text"}],"type":"reasoning"},"timestamp":"2026-11-12T17:44:12.617Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_7d46d9f09a10ac91","id":"MSG_6b90c66c8eb165a3","input":"<str:len=40>","name":"exec","status":"completed","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:12.646Z","type":"response_item"}"#,
+                r#"{"payload":{"KEY_5a5dc2dc8fd6ac6e":"MSG_2a7e5c5f9df8bc51","type":"item_completed"},"timestamp":"2026-11-12T17:44:12.669Z","type":"event_msg"}"#,
+                r#"{"metadata":{"KEY_5853e2f4b78f0f69":false,"KEY_68443f689d1b35aa":12000},"payload":{"call_id":"CALL_7d46d9f09a10ac91","id":"MSG_065b78764233f85e","output":[{"text":"<str:len=47>","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:12.669Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_52d2f18215b71e53","id":"MSG_9fbcf47f14b26f13","input":"<str:len=39>","name":"exec","status":"completed","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:13.997Z","type":"response_item"}"#,
+                r#"{"metadata":{"KEY_5853e2f4b78f0f69":false,"KEY_68443f689d1b35aa":12000},"payload":{"call_id":"CALL_52d2f18215b71e53","id":"MSG_f579215faeb7ff25","output":[{"text":"<str:len=47>","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:14.017Z","type":"response_item"}"#,
+                r#"{"payload":{"tools":[],"type":"additional_tools"},"timestamp":"2026-11-12T17:44:15.174Z","type":"response_item"}"#,
+                r#"{"payload":{"id":"MSG_4345ec49f359ae2a","type":"agent_message"},"timestamp":"2026-11-12T17:44:15.174Z","type":"response_item"}"#,
+                r#"{"payload":{"turn_id":"TURN_3bd6e64974fc5975","type":"task_complete"},"timestamp":"2026-11-12T17:44:15.199Z","type":"event_msg"}"#,
+            ]
+        }
+
+        fn g0a_s2_lines() -> Vec<&'static str> {
+            vec![
+                r#"{"payload":{"id":"SESSION_f525343f6fc4cd4c","model_provider":"openai","timestamp":"2026-11-12T17:44:16.718Z"},"timestamp":"2026-11-12T17:44:16.753Z","type":"session_meta"}"#,
+                r#"{"payload":{"model":"gpt-5.4","turn_id":"TURN_f17ca5b32e2ef52b"},"timestamp":"2026-11-12T17:44:16.756Z","type":"turn_context"}"#,
+                r#"{"payload":{"call_id":"CALL_b2e246ea99be94c2","id":"MSG_c07323efab141b74","input":"<str:len=40>","name":"exec","status":"completed","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:18.921Z","type":"response_item"}"#,
+                r#"{"metadata":{"KEY_5853e2f4b78f0f69":false,"KEY_68443f689d1b35aa":12000},"payload":{"call_id":"CALL_b2e246ea99be94c2","id":"MSG_1a084152267d3965","output":[{"text":"<str:len=47>","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:18.943Z","type":"response_item"}"#,
+                r#"{"payload":{"model":"gpt-5.4","turn_id":"TURN_fc2981cdcd14fa7d"},"timestamp":"2026-11-12T17:44:21.961Z","type":"turn_context"}"#,
+                r#"{"payload":{"call_id":"CALL_897495c64783cd67","id":"MSG_c00201aa36426fe9","input":"<str:len=39>","name":"exec","status":"completed","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:23.916Z","type":"response_item"}"#,
+                r#"{"metadata":{"KEY_5853e2f4b78f0f69":false,"KEY_68443f689d1b35aa":12000},"payload":{"call_id":"CALL_897495c64783cd67","id":"MSG_3772133fc3a84587","output":[{"text":"<str:len=47>","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:23.937Z","type":"response_item"}"#,
+            ]
+        }
+
+        fn g0a_s3_lines() -> Vec<&'static str> {
+            vec![
+                r#"{"payload":{"id":"SESSION_2e0872793de1abdd","model_provider":"openai","timestamp":"2026-11-12T17:44:26.153Z"},"timestamp":"2026-11-12T17:44:26.191Z","type":"session_meta"}"#,
+                r#"{"payload":{"model":"gpt-5.4","turn_id":"TURN_b4c57ebaa76ff23c"},"timestamp":"2026-11-12T17:44:26.193Z","type":"turn_context"}"#,
+                r#"{"payload":{"arguments":"<str:len=610>","call_id":"CALL_8d3399e6a4530cb2","id":"CALL_1393f3481a9ac34d","name":"spawn_agent","status":"completed","type":"function_call"},"timestamp":"2026-11-12T17:44:28.594Z","type":"response_item"}"#,
+                r#"{"metadata":{"KEY_5853e2f4b78f0f69":false,"KEY_68443f689d1b35aa":12000},"payload":{"call_id":"CALL_8d3399e6a4530cb2","id":"CALL_f04dbd8d0de60994","output":"<str:len=36>","type":"function_call_output"},"timestamp":"2026-11-12T17:44:28.622Z","type":"response_item"}"#,
+                r#"{"payload":{"arguments":"<str:len=20>","call_id":"CALL_70ae1b2a6f4740b8","id":"CALL_0c1ba2d5e8c28d93","name":"wait_agent","status":"completed","type":"function_call"},"timestamp":"2026-11-12T17:44:29.419Z","type":"response_item"}"#,
+                r#"{"metadata":{"KEY_5853e2f4b78f0f69":false,"KEY_68443f689d1b35aa":12000},"payload":{"call_id":"CALL_70ae1b2a6f4740b8","id":"CALL_e39d8fd927f32d48","output":"<str:len=47>","type":"function_call_output"},"timestamp":"2026-11-12T17:44:34.230Z","type":"response_item"}"#,
+                r#"{"payload":{"arguments":"<str:len=610>","call_id":"CALL_8d3399e6a4530cb2","id":"CALL_1393f3481a9ac34d","name":"spawn_agent","status":"completed","type":"function_call"},"timestamp":"2026-11-12T17:44:28.609Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_403270ba7403f1bd","id":"MSG_bbdc9de341016437","input":"<str:len=40>","name":"exec","status":"completed","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:31.594Z","type":"response_item"}"#,
+                r#"{"metadata":{"KEY_5853e2f4b78f0f69":false,"KEY_68443f689d1b35aa":12000},"payload":{"call_id":"CALL_403270ba7403f1bd","id":"MSG_9853b278a88d4271","output":[{"text":"<str:len=47>","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:31.616Z","type":"response_item"}"#,
+            ]
+        }
+
+        fn g0a_s4_lines() -> Vec<&'static str> {
+            vec![
+                r#"{"payload":{"id":"SESSION_7bc870d163c0fd76","model_provider":"openai","timestamp":"2026-11-12T17:44:37.314Z"},"timestamp":"2026-11-12T17:44:37.351Z","type":"session_meta"}"#,
+                r#"{"payload":{"model":"gpt-5.4","turn_id":"TURN_2199b098ca515c37"},"timestamp":"2026-11-12T17:44:37.353Z","type":"turn_context"}"#,
+                r#"{"payload":{"call_id":"CALL_2066413585fca71f","id":"MSG_4e55fb1a48a9432d","input":"<str:len=40>","name":"exec","status":"completed","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:39.423Z","type":"response_item"}"#,
+                r#"{"metadata":{"KEY_5853e2f4b78f0f69":false,"KEY_68443f689d1b35aa":12000},"payload":{"call_id":"CALL_2066413585fca71f","id":"MSG_04b035940c704008","output":[{"text":"<str:len=47>","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:39.444Z","type":"response_item"}"#,
+                r#"{"payload":{"type":"context_compacted"},"timestamp":"2026-11-12T17:44:41.519Z","type":"event_msg"}"#,
+                r#"{"payload":{"call_id":"CALL_a804c921c9ae7649","id":"MSG_f12977ab7f6c8a65","input":"<str:len=39>","name":"exec","status":"completed","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:43.829Z","type":"response_item"}"#,
+                r#"{"metadata":{"KEY_5853e2f4b78f0f69":false,"KEY_68443f689d1b35aa":12000},"payload":{"call_id":"CALL_a804c921c9ae7649","id":"MSG_79b73b569ca75ca7","output":[{"text":"<str:len=47>","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:43.851Z","type":"response_item"}"#,
+            ]
+        }
+
+        fn g0a_s5_lines() -> Vec<&'static str> {
+            vec![
+                r#"{"payload":{"id":"SESSION_a6b48238361087c0","model_provider":"openai","timestamp":"2026-11-12T17:44:46.224Z"},"timestamp":"2026-11-12T17:44:46.261Z","type":"session_meta"}"#,
+                r#"{"payload":{"model":"gpt-5.4","turn_id":"TURN_049334d39959ce90"},"timestamp":"2026-11-12T17:44:46.263Z","type":"turn_context"}"#,
+                r#"{"payload":{"call_id":"CALL_4160cb42b893f746","id":"MSG_f146fd8265a155fd","input":"<str:len=40>","name":"exec","status":"completed","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:48.463Z","type":"response_item"}"#,
+                r#"{"metadata":{"KEY_5853e2f4b78f0f69":false,"KEY_68443f689d1b35aa":12000},"payload":{"call_id":"CALL_4160cb42b893f746","id":"MSG_04b3ab6830bfcb05","output":[{"text":"<str:len=47>","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:48.485Z","type":"response_item"}"#,
+            ]
+        }
+
+        #[test]
+        fn d1_a_g0a_codex_s1_through_s5_shapes_record_real_tool_names_and_counts() {
+            let dir = AdmittedTestDir::new("d1-g0a-shapes");
+            let cases: [(&str, Vec<&str>, Vec<&str>, ToolScanCounts); 5] = [
+                (
+                    "s1",
+                    g0a_s1_lines(),
+                    vec!["exec", "exec"],
+                    ToolScanCounts {
+                        calls: 2,
+                        new_calls: 2,
+                        results: 2,
+                        late_results: 0,
+                        unmatched_results: 0,
+                        prefix_skipped: 0,
+                        duplicate_call_id: 0,
+                    },
+                ),
+                (
+                    "s2",
+                    g0a_s2_lines(),
+                    vec!["exec", "exec"],
+                    ToolScanCounts {
+                        calls: 2,
+                        new_calls: 2,
+                        results: 2,
+                        late_results: 0,
+                        unmatched_results: 0,
+                        prefix_skipped: 0,
+                        duplicate_call_id: 0,
+                    },
+                ),
+                (
+                    "s3",
+                    g0a_s3_lines(),
+                    vec!["spawn_agent", "wait_agent", "exec"],
+                    ToolScanCounts {
+                        calls: 3,
+                        new_calls: 3,
+                        results: 3,
+                        late_results: 0,
+                        unmatched_results: 0,
+                        prefix_skipped: 0,
+                        duplicate_call_id: 1,
+                    },
+                ),
+                (
+                    "s4",
+                    g0a_s4_lines(),
+                    vec!["exec", "exec"],
+                    ToolScanCounts {
+                        calls: 2,
+                        new_calls: 2,
+                        results: 2,
+                        late_results: 0,
+                        unmatched_results: 0,
+                        prefix_skipped: 0,
+                        duplicate_call_id: 0,
+                    },
+                ),
+                (
+                    "s5",
+                    g0a_s5_lines(),
+                    vec!["exec"],
+                    ToolScanCounts {
+                        calls: 1,
+                        new_calls: 1,
+                        results: 1,
+                        late_results: 0,
+                        unmatched_results: 0,
+                        prefix_skipped: 0,
+                        duplicate_call_id: 0,
+                    },
+                ),
+            ];
+
+            for (label, lines, expected_names, expected_counts) in cases {
+                let db = store();
+                let path = dir.path().join(format!("{label}.jsonl"));
+                let body = format!("{}\n", lines.join("\n"));
+                fs::write(&path, body).unwrap();
+                let stats =
+                    ingest_jsonl_with_key(&db, label, "codex", &path, Some(b"d1-key")).unwrap();
+                assert_eq!(stats.tool_scan, expected_counts, "case {label}");
+                let tools = db.load_tools().unwrap();
+                let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
+                assert_eq!(names, expected_names, "case {label}: real tool names");
+                let codex_obs = db.load_codex_observations().unwrap();
+                let obs_names: Vec<&str> = codex_obs.iter().map(|o| o.fact.name.as_str()).collect();
+                assert_eq!(
+                    obs_names, expected_names,
+                    "case {label}: load_codex_observations includes real-named Codex tool calls"
+                );
+                assert!(
+                    tools.iter().all(|t| t.name != dendro_core::CODEX_CALL),
+                    "case {label}: never emits constant CodexSeatCall"
+                );
+                assert!(
+                    tools.iter().all(|t| t.failed.is_none()),
+                    "case {label}: outputs without explicit error/status/exit_code stay None (unknown)"
+                );
+                assert!(
+                    tools.iter().all(|t| t.fingerprint.is_some()),
+                    "case {label}: inputs are fingerprinted"
+                );
+            }
+        }
+
+        #[test]
+        fn d1_b_replay_of_same_codex_log_twice_yields_identical_counts_and_no_duplicates() {
+            let dir = AdmittedTestDir::new("d1-replay");
+            let db = store();
+            let path = dir.path().join("s1.jsonl");
+            let body = format!("{}\n", g0a_s1_lines().join("\n"));
+            fs::write(&path, body).unwrap();
+
+            let first =
+                ingest_jsonl_with_key(&db, "src-s1", "codex", &path, Some(b"d1-key")).unwrap();
+            let tools_first = db.load_tools().unwrap();
+            assert_eq!(first.tool_scan.calls, 2);
+            assert_eq!(first.tool_scan.new_calls, 2);
+            assert_eq!(first.tool_scan.results, 2);
+            assert_eq!(first.tool_scan.late_results, 0);
+            assert_eq!(first.tool_scan.prefix_skipped, 0);
+            assert_eq!(first.tool_scan.duplicate_call_id, 0);
+            assert_eq!(tools_first.len(), 2);
+
+            let second =
+                ingest_jsonl_with_key(&db, "src-s1", "codex", &path, Some(b"d1-key")).unwrap();
+            let tools_second = db.load_tools().unwrap();
+            assert_eq!(second.tool_scan.calls, first.tool_scan.calls);
+            assert_eq!(second.tool_scan.results, first.tool_scan.results);
+            assert_eq!(second.tool_scan.late_results, 0);
+            assert_eq!(second.tool_scan.new_calls, 0);
+            assert_eq!(
+                second.tool_scan.prefix_skipped, 2,
+                "both prefix calls skipped by watermark on replay"
+            );
+            assert_eq!(second.tool_scan.duplicate_call_id, 0);
+            assert_eq!(
+                serde_json::to_value(&tools_second).unwrap(),
+                serde_json::to_value(&tools_first).unwrap(),
+                "no duplicate tool facts on replay"
+            );
+        }
+
+        #[test]
+        fn d1_c_extended_log_appended_late_result_attaches_and_is_counted_as_late() {
+            let dir = AdmittedTestDir::new("d1-late-result");
+            let db = store();
+            let path = dir.path().join("extended.jsonl");
+            // CALL_1 and CALL_2 are issued in pass 1 alongside CALL_1's output (same pass/batch,
+            // so late_results == 0). CALL_2's output arrives in pass 2 past the watermark.
+            let initial_lines = [
+                r#"{"payload":{"id":"SESSION_late","model_provider":"openai","timestamp":"2026-11-12T17:44:10.000Z"},"timestamp":"2026-11-12T17:44:10.000Z","type":"session_meta"}"#,
+                r#"{"payload":{"call_id":"CALL_1","id":"MSG_1","input":"cargo check","name":"exec","status":"completed","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:11.000Z","type":"response_item"}"#,
+                r#"{"payload":{"arguments":"{\"cmd\":\"cargo test\"}","call_id":"CALL_2","id":"CALL_2_id","name":"exec_command","status":"in_progress","type":"function_call"},"timestamp":"2026-11-12T17:44:12.000Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_1","id":"MSG_2","output":[{"text":"ok","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:13.000Z","type":"response_item"}"#,
+            ];
+            fs::write(&path, format!("{}\n", initial_lines.join("\n"))).unwrap();
+
+            let first =
+                ingest_jsonl_with_key(&db, "src-late", "codex", &path, Some(b"d1-key")).unwrap();
+            assert_eq!(
+                first.tool_scan,
+                ToolScanCounts {
+                    calls: 2,
+                    new_calls: 2,
+                    results: 1,
+                    late_results: 0,
+                    unmatched_results: 0,
+                    prefix_skipped: 0,
+                    duplicate_call_id: 0,
+                }
+            );
+            let tools_before = db.load_tools().unwrap();
+            assert_eq!(tools_before.len(), 2);
+            assert_eq!(tools_before[0].name, "exec");
+            assert_eq!(tools_before[0].failed, None);
+            assert_eq!(tools_before[1].name, "exec_command");
+            assert_eq!(tools_before[1].failed, None, "unsettled before late output");
+
+            // Append the late function_call_output for CALL_2 in a second pass.
+            let mut f = fs::OpenOptions::new().append(true).open(&path).unwrap();
+            writeln!(
+                f,
+                r#"{{"payload":{{"call_id":"CALL_2","id":"CALL_2_out","is_error":true,"output":"test failed","type":"function_call_output"}},"timestamp":"2026-11-12T17:44:19.000Z","type":"response_item"}}"#
+            )
+            .unwrap();
+            drop(f);
+
+            let second =
+                ingest_jsonl_with_key(&db, "src-late", "codex", &path, Some(b"d1-key")).unwrap();
+            assert_eq!(
+                second.tool_scan,
+                ToolScanCounts {
+                    calls: 2,
+                    new_calls: 0,
+                    results: 2,
+                    late_results: 1,
+                    unmatched_results: 0,
+                    prefix_skipped: 2,
+                    duplicate_call_id: 0,
+                }
+            );
+            let tools_after = db.load_tools().unwrap();
+            assert_eq!(tools_after.len(), 2, "no call invented or duplicated");
+            assert_eq!(tools_after[1].name, "exec_command");
+            assert_eq!(
+                tools_after[1].failed,
+                Some(true),
+                "late result attached and settled original call"
+            );
+
+            // Pure replay of the unchanged extended log reports late_results == 0.
+            let replay =
+                ingest_jsonl_with_key(&db, "src-late", "codex", &path, Some(b"d1-key")).unwrap();
+            assert_eq!(
+                replay.tool_scan,
+                ToolScanCounts {
+                    calls: 2,
+                    new_calls: 0,
+                    results: 2,
+                    late_results: 0,
+                    unmatched_results: 0,
+                    prefix_skipped: 2,
+                    duplicate_call_id: 0,
+                }
+            );
+        }
+
+        #[test]
+        fn d1_d_output_with_no_matching_call_is_counted_unmatched_and_invents_no_call() {
+            let dir = AdmittedTestDir::new("d1-unmatched");
+            let db = store();
+            let path = dir.path().join("unmatched.jsonl");
+            let lines = [
+                r#"{"payload":{"id":"SESSION_unmatched","model_provider":"openai","timestamp":"2026-11-12T17:44:10.000Z"},"timestamp":"2026-11-12T17:44:10.000Z","type":"session_meta"}"#,
+                r#"{"payload":{"call_id":"CALL_orphan_1","id":"OUT_1","output":"orphan output","type":"function_call_output"},"timestamp":"2026-11-12T17:44:11.000Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_real","id":"MSG_real","input":"ls","name":"exec","status":"completed","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:12.000Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_real","id":"OUT_real","output":[{"text":"ok","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:13.000Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_orphan_2","id":"OUT_2","output":[{"text":"orphan 2","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:14.000Z","type":"response_item"}"#,
+            ];
+            fs::write(&path, format!("{}\n", lines.join("\n"))).unwrap();
+
+            let stats =
+                ingest_jsonl_with_key(&db, "src-unmatched", "codex", &path, Some(b"d1-key"))
+                    .unwrap();
+            assert_eq!(
+                stats.tool_scan,
+                ToolScanCounts {
+                    calls: 1,
+                    new_calls: 1,
+                    results: 1,
+                    late_results: 0,
+                    unmatched_results: 2,
+                    prefix_skipped: 0,
+                    duplicate_call_id: 0,
+                }
+            );
+            let tools = db.load_tools().unwrap();
+            assert_eq!(tools.len(), 1, "unmatched outputs never invent calls");
+            assert_eq!(tools[0].name, "exec");
+            assert_eq!(tools[0].failed, None);
+        }
+
+        #[test]
+        fn d1_e_mixed_claude_and_codex_workspace_scans_both_through_shared_path() {
+            let dir = AdmittedTestDir::new("d1-mixed-workspace");
+            let claude_root = dir.path().join("claude");
+            let codex_root = dir.path().join("codex");
+            fs::create_dir_all(&claude_root).unwrap();
+            fs::create_dir_all(&codex_root).unwrap();
+
+            let claude_file = claude_root.join("claude-session.jsonl");
+            let claude_lines = [
+                r#"{"sessionId":"claude-s1","type":"assistant","timestamp":"2026-11-12T17:44:10Z","message":{"id":"m1","role":"assistant","content":[{"type":"tool_use","id":"tu_1","name":"Read","input":{"file_path":"src/lib.rs"}},{"type":"tool_use","id":"tu_2","name":"Edit","input":{"file_path":"src/lib.rs"}}],"usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}"#,
+                r#"{"sessionId":"claude-s1","type":"user","timestamp":"2026-11-12T17:44:11Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_1","is_error":false,"content":"ok"},{"type":"tool_result","tool_use_id":"tu_2","is_error":false,"content":"ok"}]}}"#,
+            ];
+            fs::write(&claude_file, format!("{}\n", claude_lines.join("\n"))).unwrap();
+
+            let codex_file = codex_root.join("rollout.jsonl");
+            fs::write(&codex_file, format!("{}\n", g0a_s3_lines().join("\n"))).unwrap();
+
+            // Direct per-file ingest assertions for Claude parallel calls (late_results == 0)
+            // and Codex S3 calls, plus pure replay stability.
+            let mem_db = store();
+            let claude_pass1 = ingest_jsonl_with_key(
+                &mem_db,
+                "claude-direct",
+                "claude",
+                &claude_file,
+                Some(b"d1-mixed-key"),
+            )
+            .unwrap();
+            assert_eq!(
+                claude_pass1.tool_scan,
+                ToolScanCounts {
+                    calls: 2,
+                    new_calls: 2,
+                    results: 2,
+                    late_results: 0,
+                    unmatched_results: 0,
+                    prefix_skipped: 0,
+                    duplicate_call_id: 0,
+                },
+                "parallel Claude calls in the same batch must have late_results == 0"
+            );
+            let claude_pass2 = ingest_jsonl_with_key(
+                &mem_db,
+                "claude-direct",
+                "claude",
+                &claude_file,
+                Some(b"d1-mixed-key"),
+            )
+            .unwrap();
+            assert_eq!(
+                claude_pass2.tool_scan,
+                ToolScanCounts {
+                    calls: 2,
+                    new_calls: 0,
+                    results: 2,
+                    late_results: 0,
+                    unmatched_results: 0,
+                    prefix_skipped: 2,
+                    duplicate_call_id: 0,
+                }
+            );
+
+            let db_path = dir.path().join("analytics.duckdb");
+            drop(open_test_analytics(&db_path));
+            let roots = vec![
+                crate::SourceRoot {
+                    name: "claude".into(),
+                    path: claude_root,
+                },
+                crate::SourceRoot {
+                    name: "codex".into(),
+                    path: codex_root,
+                },
+            ];
+            crate::ingest_staged(&db_path, &roots, false, b"d1-mixed-key").unwrap();
+            // Re-ingest the mixed workspace to verify watermark replay safety across both harnesses.
+            crate::ingest_staged(&db_path, &roots, false, b"d1-mixed-key").unwrap();
+
+            let store = AnalyticsStore::open_staged(&db_path).unwrap();
+            let tools = store.load_tools().unwrap();
+            let claude_tools: Vec<_> = tools.iter().filter(|t| t.harness == "claude").collect();
+            let codex_tools: Vec<_> = tools.iter().filter(|t| t.harness == "codex").collect();
+            let claude_names: Vec<&str> = claude_tools.iter().map(|t| t.name.as_str()).collect();
+            let codex_names: Vec<&str> = codex_tools.iter().map(|t| t.name.as_str()).collect();
+            assert_eq!(claude_names, vec!["Read", "Edit"]);
+            assert_eq!(codex_names, vec!["spawn_agent", "wait_agent", "exec"]);
+            assert!(
+                claude_tools.iter().all(|t| t.failed == Some(false)),
+                "Claude calls with explicit is_error:false settle to Some(false)"
+            );
+            assert!(
+                codex_tools.iter().all(|t| t.failed.is_none()),
+                "Codex S3 outputs without explicit outcome signal remain None"
+            );
+        }
+
+        #[test]
+        fn d1_f_explicit_exit_codes_and_error_flags_settle_while_ambiguous_stays_unknown() {
+            let dir = AdmittedTestDir::new("d1-outcomes");
+            let db = store();
+            let path = dir.path().join("outcomes.jsonl");
+            let lines = [
+                r#"{"payload":{"id":"SESSION_outcomes","model_provider":"openai","timestamp":"2026-11-12T17:44:10.000Z"},"timestamp":"2026-11-12T17:44:10.000Z","type":"session_meta"}"#,
+                // 1. Explicit failing exit_code in JSON object output -> Some(true)
+                r#"{"payload":{"arguments":"{\"cmd\":\"false\"}","call_id":"CALL_fail_json","name":"exec_command","type":"function_call"},"timestamp":"2026-11-12T17:44:11.000Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_fail_json","output":"{\"output\":\"boom\",\"metadata\":{\"exit_code\":2}}","type":"function_call_output"},"timestamp":"2026-11-12T17:44:12.000Z","type":"response_item"}"#,
+                // 2. Explicit succeeding exit_code in JSON object output -> Some(false)
+                r#"{"payload":{"arguments":"{\"cmd\":\"true\"}","call_id":"CALL_ok_json","name":"exec_command","type":"function_call"},"timestamp":"2026-11-12T17:44:13.000Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_ok_json","output":"{\"output\":\"done\",\"metadata\":{\"exit_code\":0}}","type":"function_call_output"},"timestamp":"2026-11-12T17:44:14.000Z","type":"response_item"}"#,
+                // 3. Explicit failing "Process exited with code N" in exec_command text -> Some(true)
+                r#"{"payload":{"arguments":"{\"cmd\":\"cargo test\"}","call_id":"CALL_fail_text","name":"exec_command","type":"function_call"},"timestamp":"2026-11-12T17:44:15.000Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_fail_text","output":"Chunk ID: 1a2b\nWall time: 0.12 seconds\nProcess exited with code 101\nOutput:\ntest result: FAILED\n","type":"function_call_output"},"timestamp":"2026-11-12T17:44:16.000Z","type":"response_item"}"#,
+                // 4. Explicit succeeding "Exit code: 0" in text (with misleading stdout after Output:) -> Some(false)
+                r#"{"payload":{"arguments":"{\"cmd\":\"echo\"}","call_id":"CALL_ok_text","name":"exec_command","type":"function_call"},"timestamp":"2026-11-12T17:44:17.000Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_ok_text","output":"Exit code: 0\nWall time: 0.01 seconds\nOutput:\nExit code: 99 in user stdout\n","type":"function_call_output"},"timestamp":"2026-11-12T17:44:18.000Z","type":"response_item"}"#,
+                // 5. Ambiguous / unformatted output (like G0A_ERR_SENTINEL_S1) -> None
+                r#"{"payload":{"call_id":"CALL_sentinel","input":"run","name":"exec","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:19.000Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_sentinel","output":[{"text":"G0A_ERR_SENTINEL_S1: exit code 1 trailing words","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:20.000Z","type":"response_item"}"#,
+                // 6. Output body containing "Exit code: 1" without an exec_command header (string) -> None
+                r#"{"payload":{"arguments":"{\"cmd\":\"echo\"}","call_id":"CALL_body_str","name":"exec_command","type":"function_call"},"timestamp":"2026-11-12T17:44:21.000Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_body_str","output":"Exit code: 1\nuser program printed its own exit code\n","type":"function_call_output"},"timestamp":"2026-11-12T17:44:22.000Z","type":"response_item"}"#,
+                // 7. Output body containing "Exit code: 1" without an exec_command header (array) -> None
+                r#"{"payload":{"call_id":"CALL_body_arr","input":"echo","name":"exec","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:23.000Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_body_arr","output":[{"text":"some log line\nExit code: 1\n","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:24.000Z","type":"response_item"}"#,
+                // 8. Array output with a proper exec_command header -> Some(true)
+                r#"{"payload":{"call_id":"CALL_hdr_arr","input":"false","name":"exec","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:25.000Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_hdr_arr","output":[{"text":"Exit code: 1\nWall time: 0.02 seconds\nOutput:\nfailed\n","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:26.000Z","type":"response_item"}"#,
+            ];
+            fs::write(&path, format!("{}\n", lines.join("\n"))).unwrap();
+
+            let stats = ingest_jsonl_with_key(&db, "src-outcomes", "codex", &path, Some(b"d1-key"))
+                .unwrap();
+            assert_eq!(stats.tool_scan.calls, 8);
+            assert_eq!(stats.tool_scan.results, 8);
+            let tools = db.load_tools().unwrap();
+            let outcomes: Vec<Option<bool>> = tools.iter().map(|t| t.failed).collect();
+            assert_eq!(
+                outcomes,
+                vec![
+                    Some(true),
+                    Some(false),
+                    Some(true),
+                    Some(false),
+                    None,
+                    None,
+                    None,
+                    Some(true),
+                ]
+            );
+        }
+
+        #[test]
+        fn d1_g_output_before_call_in_one_batch_and_split_across_batches() {
+            let dir = AdmittedTestDir::new("d1-out-before-call");
+            let lines = [
+                r#"{"payload":{"id":"SESSION_order","model_provider":"openai","timestamp":"2026-11-12T17:44:10.000Z"},"timestamp":"2026-11-12T17:44:10.000Z","type":"session_meta"}"#,
+                r#"{"payload":{"call_id":"CALL_early_out","is_error":true,"output":"failed","type":"function_call_output"},"timestamp":"2026-11-12T17:44:11.000Z","type":"response_item"}"#,
+                r#"{"payload":{"arguments":"{\"cmd\":\"false\"}","call_id":"CALL_early_out","name":"exec_command","type":"function_call"},"timestamp":"2026-11-12T17:44:12.000Z","type":"response_item"}"#,
+            ];
+            let path = dir.path().join("early.jsonl");
+            fs::write(&path, format!("{}\n", lines.join("\n"))).unwrap();
+
+            // 1. Within a single batch:
+            let db_one = store();
+            let stats_one =
+                ingest_jsonl_with_key(&db_one, "src-one", "codex", &path, Some(b"d1-key")).unwrap();
+            assert_eq!(
+                stats_one.tool_scan,
+                ToolScanCounts {
+                    calls: 1,
+                    new_calls: 1,
+                    results: 1,
+                    late_results: 0,
+                    unmatched_results: 0,
+                    prefix_skipped: 0,
+                    duplicate_call_id: 0,
+                }
+            );
+            let tools_one = db_one.load_tools().unwrap();
+            assert_eq!(tools_one.len(), 1);
+            assert_eq!(tools_one[0].failed, Some(true));
+
+            // 2. Split across batches (batch size 2 puts session_meta + output in batch 1, call in batch 2):
+            let db_split = store();
+            let small_limits = crate::sdk::ReadLimits {
+                encoded_bytes: 8 * 1024 * 1024,
+                nesting_depth: 64,
+                decoded_records_per_batch: 2,
+                line_attempts: None,
+            };
+            let stats_split = ingest_jsonl_limited(
+                &db_split,
+                "src-split",
+                "codex",
+                &path,
+                Some(b"d1-key"),
+                None,
+                || Ok(()),
+                &small_limits,
+            )
+            .unwrap();
+            assert_eq!(
+                stats_split.tool_scan,
+                ToolScanCounts {
+                    calls: 1,
+                    new_calls: 1,
+                    results: 1,
+                    late_results: 0,
+                    unmatched_results: 0,
+                    prefix_skipped: 0,
+                    duplicate_call_id: 0,
+                }
+            );
+            let tools_split = db_split.load_tools().unwrap();
+            assert_eq!(tools_split.len(), 1);
+            assert_eq!(tools_split[0].failed, Some(true));
+        }
+
+        #[test]
+        fn d1_h_codex_without_session_header_uses_distinct_per_file_fallback_matching_other_facts()
+        {
+            let dir = AdmittedTestDir::new("d1-no-header");
+            let path_a = dir.path().join("no_header_a.jsonl");
+            let path_b = dir.path().join("no_header_b.jsonl");
+            // Two header-less Codex files, each with usage, message, and 2 failing tool calls.
+            let lines_a = [
+                r#"{"payload":{"content":[{"text":"prompt a","type":"input_text"}],"role":"user","type":"message"},"timestamp":"2026-11-12T17:44:10.000Z","type":"response_item"}"#,
+                r#"{"payload":{"info":{"total_token_usage":{"cache_write_input_tokens":0,"cached_input_tokens":0,"input_tokens":5,"output_tokens":3,"reasoning_output_tokens":0}},"type":"token_count"},"timestamp":"2026-11-12T17:44:10.500Z","type":"event_msg"}"#,
+                r#"{"payload":{"call_id":"CALL_nh_a1","input":"ls","name":"exec","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:11.000Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_nh_a1","exit_code":1,"output":[{"text":"err","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:12.000Z","type":"response_item"}"#,
+                r#"{"payload":{"item":{"command":["cargo","check"],"exit_code":1,"type":"CommandExecution"},"type":"item_completed"},"timestamp":"2026-11-12T17:44:13.000Z","type":"event_msg"}"#,
+            ];
+            let lines_b = [
+                r#"{"payload":{"content":[{"text":"prompt b","type":"input_text"}],"role":"user","type":"message"},"timestamp":"2026-11-12T17:44:14.000Z","type":"response_item"}"#,
+                r#"{"payload":{"info":{"total_token_usage":{"cache_write_input_tokens":0,"cached_input_tokens":0,"input_tokens":7,"output_tokens":2,"reasoning_output_tokens":0}},"type":"token_count"},"timestamp":"2026-11-12T17:44:14.500Z","type":"event_msg"}"#,
+                r#"{"payload":{"call_id":"CALL_nh_b1","input":"ls","name":"exec","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:15.000Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_nh_b1","exit_code":1,"output":[{"text":"err","type":"input_text"}],"type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:16.000Z","type":"response_item"}"#,
+                r#"{"payload":{"item":{"command":["cargo","check"],"exit_code":1,"type":"CommandExecution"},"type":"item_completed"},"timestamp":"2026-11-12T17:44:17.000Z","type":"event_msg"}"#,
+            ];
+            fs::write(&path_a, format!("{}\n", lines_a.join("\n"))).unwrap();
+            fs::write(&path_b, format!("{}\n", lines_b.join("\n"))).unwrap();
+
+            let key = b"d1-key";
+            let db_keyed = store();
+            let stats_a =
+                ingest_jsonl_with_key(&db_keyed, "src-nh-a", "codex", &path_a, Some(key)).unwrap();
+            let stats_b =
+                ingest_jsonl_with_key(&db_keyed, "src-nh-b", "codex", &path_b, Some(key)).unwrap();
+            assert_eq!(stats_a.tool_scan.calls, 2);
+            assert_eq!(stats_b.tool_scan.calls, 2);
+
+            let expected_a = seal_session(Some(key), "codex", "codex-file:src-nh-a");
+            let expected_b = seal_session(Some(key), "codex", "codex-file:src-nh-b");
+            assert_ne!(
+                expected_a, expected_b,
+                "two header-less files must receive different per-file fallback sessions"
+            );
+
+            let tools = db_keyed.load_tools().unwrap();
+            assert_eq!(tools.len(), 4);
+            let tools_a: Vec<_> = tools
+                .iter()
+                .filter(|t| t.source_key.starts_with("src-nh-a:"))
+                .collect();
+            let tools_b: Vec<_> = tools
+                .iter()
+                .filter(|t| t.source_key.starts_with("src-nh-b:"))
+                .collect();
+            assert_eq!(tools_a.len(), 2);
+            assert_eq!(tools_b.len(), 2);
+            assert!(tools_a.iter().all(|t| t.native_session == expected_a));
+            assert!(tools_b.iter().all(|t| t.native_session == expected_b));
+
+            // Tool sessions match the session used by the same file's other facts.
+            let usages = db_keyed.load_usage().unwrap();
+            assert_eq!(usages.len(), 2);
+            let usage_a = usages
+                .iter()
+                .find(|u| u.source_key.starts_with("src-nh-a:"))
+                .unwrap();
+            let usage_b = usages
+                .iter()
+                .find(|u| u.source_key.starts_with("src-nh-b:"))
+                .unwrap();
+            assert_eq!(usage_a.native_session, expected_a);
+            assert_eq!(usage_b.native_session, expected_b);
+
+            let messages = db_keyed.load_messages().unwrap();
+            assert_eq!(messages.len(), 2);
+            let msg_a = messages
+                .iter()
+                .find(|m| m.source_key.starts_with("src-nh-a:"))
+                .unwrap();
+            let msg_b = messages
+                .iter()
+                .find(|m| m.source_key.starts_with("src-nh-b:"))
+                .unwrap();
+            assert_eq!(msg_a.native_session.as_deref(), Some(expected_a.as_str()));
+            assert_eq!(msg_b.native_session.as_deref(), Some(expected_b.as_str()));
+
+            // Loop evaluation (3 consecutive failures within 600s) does not span header-less files:
+            // 2 failures in file A + 2 failures in file B must not combine into a 4-failure loop.
+            let obs = db_keyed.load_codex_observations().unwrap();
+            assert_eq!(obs.len(), 4);
+            let loops = dendro_core::codex_command_loops(&obs);
+            assert!(
+                loops.is_empty(),
+                "failure runs must not carry over across header-less files: {loops:?}"
+            );
+        }
+
+        #[test]
+        fn d1_i_local_shell_call_recorded_and_command_content_never_persisted() {
+            let dir = AdmittedTestDir::new("d1-local-shell");
+            let path = dir.path().join("local_shell.jsonl");
+            let lines = [
+                r#"{"payload":{"id":"SESSION_shell","model_provider":"openai","timestamp":"2026-11-12T17:44:10.000Z"},"timestamp":"2026-11-12T17:44:10.000Z","type":"session_meta"}"#,
+                r#"{"payload":{"action":{"command":["bash","-lc","cat skills/shell-audit/SKILL.md && echoD1_LOCAL_SHELL_CMD_CANARY"],"type":"exec"},"call_id":"CALL_sh_1","status":"completed","type":"local_shell_call"},"timestamp":"2026-11-12T17:44:11.000Z","type":"response_item"}"#,
+                r#"{"payload":{"call_id":"CALL_sh_1","output":"{\"output\":\"D1_LOCAL_SHELL_OUT_CANARY\",\"metadata\":{\"exit_code\":0}}","type":"local_shell_call_output"},"timestamp":"2026-11-12T17:44:12.000Z","type":"response_item"}"#,
+            ];
+            fs::write(&path, format!("{}\n", lines.join("\n"))).unwrap();
+
+            let db_path = dir.path().join("analytics.duckdb");
+            let db = open_test_analytics(&db_path);
+            let stats =
+                ingest_jsonl_with_key(&db, "src-sh", "codex", &path, Some(b"d1-key")).unwrap();
+            assert!(!stats.coverage.partial, "coverage must be complete");
+            assert_eq!(
+                stats.tool_scan,
+                ToolScanCounts {
+                    calls: 1,
+                    new_calls: 1,
+                    results: 1,
+                    late_results: 0,
+                    unmatched_results: 0,
+                    prefix_skipped: 0,
+                    duplicate_call_id: 0,
+                }
+            );
+            let tools = db.load_tools().unwrap();
+            assert_eq!(tools.len(), 1);
+            assert_eq!(tools[0].name, "local_shell");
+            assert_eq!(tools[0].failed, Some(false));
+            assert!(tools[0].fingerprint.is_some());
+
+            let skills = db.load_skills().unwrap();
+            assert_eq!(skills.len(), 1);
+            assert_eq!(skills[0].skill, "shell-audit");
+
+            for canary in ["D1_LOCAL_SHELL_CMD_CANARY", "D1_LOCAL_SHELL_OUT_CANARY"] {
+                assert!(
+                    !db.contains_text(canary).unwrap(),
+                    "command/output canary leaked into store: {canary}"
+                );
+            }
+            drop(db);
+            let raw_bytes = fs::read(&db_path).unwrap();
+            let lossy = String::from_utf8_lossy(&raw_bytes);
+            for canary in ["D1_LOCAL_SHELL_CMD_CANARY", "D1_LOCAL_SHELL_OUT_CANARY"] {
+                assert!(!lossy.contains(canary), "canary in db file: {canary}");
+            }
+        }
+
+        #[test]
+        fn d1_j_command_execution_and_call_id_only_matching_semantics() {
+            let dir = AdmittedTestDir::new("d1-cmd-and-callid");
+            let db = store();
+            let path = dir.path().join("cmd_callid.jsonl");
+            let lines = [
+                r#"{"payload":{"id":"SESSION_cc","model_provider":"openai","timestamp":"2026-11-12T17:44:10.000Z"},"timestamp":"2026-11-12T17:44:10.000Z","type":"session_meta"}"#,
+                // CommandExecution item: counted in calls, new_calls, and prefix_skipped on replay
+                r#"{"payload":{"item":{"command":["cargo","test"],"exit_code":0,"type":"CommandExecution"},"type":"item_completed"},"timestamp":"2026-11-12T17:44:11.000Z","type":"event_msg"}"#,
+                // Call without call_id (only message id): counted as call-only, never matched by id
+                r#"{"payload":{"id":"MSG_only_1","input":"ls","name":"exec","type":"custom_tool_call"},"timestamp":"2026-11-12T17:44:12.000Z","type":"response_item"}"#,
+                // Output with id=="MSG_only_1" and no call_id: must NOT match the call above
+                r#"{"payload":{"id":"MSG_only_1","is_error":true,"output":"err","type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:13.000Z","type":"response_item"}"#,
+                // Output with call_id=="MSG_only_1": also must NOT match because the call had no call_id
+                r#"{"payload":{"call_id":"MSG_only_1","is_error":true,"output":"err","type":"custom_tool_call_output"},"timestamp":"2026-11-12T17:44:14.000Z","type":"response_item"}"#,
+            ];
+            fs::write(&path, format!("{}\n", lines.join("\n"))).unwrap();
+
+            let first =
+                ingest_jsonl_with_key(&db, "src-cc", "codex", &path, Some(b"d1-key")).unwrap();
+            assert_eq!(
+                first.tool_scan,
+                ToolScanCounts {
+                    calls: 2,
+                    new_calls: 2,
+                    results: 0,
+                    late_results: 0,
+                    unmatched_results: 2,
+                    prefix_skipped: 0,
+                    duplicate_call_id: 0,
+                }
+            );
+            let tools = db.load_tools().unwrap();
+            assert_eq!(tools.len(), 2);
+            assert_eq!(tools[0].name, "CommandExecution");
+            assert_eq!(tools[0].failed, Some(false));
+            assert_eq!(tools[1].name, "exec");
+            assert_eq!(
+                tools[1].failed, None,
+                "call without call_id is never matched"
+            );
+
+            let replay =
+                ingest_jsonl_with_key(&db, "src-cc", "codex", &path, Some(b"d1-key")).unwrap();
+            assert_eq!(
+                replay.tool_scan,
+                ToolScanCounts {
+                    calls: 2,
+                    new_calls: 0,
+                    results: 0,
+                    late_results: 0,
+                    unmatched_results: 2,
+                    prefix_skipped: 2,
+                    duplicate_call_id: 0,
+                }
+            );
+        }
+    }
 }
 
 pub fn walk_jsonl(root: &Path) -> Vec<PathBuf> {
@@ -5144,9 +6485,59 @@ pub(crate) fn walk_jsonl_checked(root: &Path) -> Result<JsonlDiscovery> {
 }
 
 #[cfg(test)]
+type IngestFailpointHook = Box<dyn FnMut(usize, dendro_core::IngestBatchStage) -> Result<()>>;
+
+#[cfg(test)]
 thread_local! {
     static UNINSPECTABLE: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
     static PARSED_LINES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    static INGEST_FAILPOINT: std::cell::RefCell<Option<IngestFailpointHook>> = const { std::cell::RefCell::new(None) };
+    static INGEST_BATCH_INDEX: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+pub(crate) fn commit_ingest_batch_checked(
+    store: &AnalyticsStore,
+    batch: &dendro_core::IngestBatch<'_>,
+) -> Result<()> {
+    #[cfg(test)]
+    {
+        let has_hook = INGEST_FAILPOINT.with(|slot| slot.borrow().is_some());
+        if has_hook {
+            let batch_idx = INGEST_BATCH_INDEX.with(|idx| {
+                let current = idx.get();
+                idx.set(current + 1);
+                current
+            });
+            return store.commit_ingest_batch_with_hook(batch, |stage| {
+                INGEST_FAILPOINT.with(|slot| {
+                    if let Some(hook) = slot.borrow_mut().as_mut() {
+                        hook(batch_idx, stage)
+                    } else {
+                        Ok(())
+                    }
+                })
+            });
+        }
+    }
+    store.commit_ingest_batch(batch)
+}
+
+#[cfg(test)]
+pub(crate) fn with_ingest_failpoint<T>(
+    hook: impl FnMut(usize, dendro_core::IngestBatchStage) -> Result<()> + 'static,
+    f: impl FnOnce() -> T,
+) -> T {
+    struct Reset;
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            INGEST_FAILPOINT.with(|slot| *slot.borrow_mut() = None);
+            INGEST_BATCH_INDEX.with(|idx| idx.set(0));
+        }
+    }
+    INGEST_BATCH_INDEX.with(|idx| idx.set(0));
+    INGEST_FAILPOINT.with(|slot| *slot.borrow_mut() = Some(Box::new(hook)));
+    let _reset = Reset;
+    f()
 }
 
 /// Tests make one named entry fail at the real inspection boundary, as a file
@@ -5522,5 +6913,1821 @@ mod hostile_input_tests {
             assert!(limits.nesting_depth <= crate::sdk::GLOBAL_MAX_DEPTH);
             assert!(limits.decoded_records_per_batch <= crate::sdk::GLOBAL_MAX_BATCH_RECORDS);
         }
+    }
+
+    #[test]
+    fn d3_ingest_computes_link_id_before_sealing_and_matches_g0a_cross_product_vectors() {
+        let dir = std::env::temp_dir().join(format!(
+            "dendro-d3-ingest-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let store = AnalyticsStore::open_in_memory("d3-key").unwrap();
+        let tool_key = b"0123456789abcdef0123456789abcdef";
+
+        // Load expected values from vendored docs/contracts/link-id-v1/vectors/g0a.json:
+        let g0a_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../docs/contracts/link-id-v1/vectors/g0a.json");
+        let g0a_json: Value =
+            serde_json::from_str(&fs::read_to_string(&g0a_path).unwrap()).unwrap();
+        let vectors = g0a_json["vectors"].as_array().unwrap();
+        let find_vec = |id: &str| {
+            vectors
+                .iter()
+                .find(|v| v["id"].as_str() == Some(id))
+                .unwrap()
+        };
+        let claude_vec = find_vec("g0a_claude_s2_session_a_dendro_session");
+        let codex_vec = find_vec("g0a_codex_s2_session_1_rollout");
+
+        let g0a_k_link_hex = claude_vec["intermediates"]["k_link_hex"].as_str().unwrap();
+        let link_cfg = dendro_core::SessionLinkConfig::from_key_hex(
+            g0a_k_link_hex,
+            claude_vec["inputs"]["org"].as_str(),
+            claude_vec["inputs"]["endpoint_scope"].as_str(),
+            claude_vec["inputs"]["team"].as_str(),
+            claude_vec["inputs"]["epoch"].as_str(),
+        );
+
+        // 1. Claude session with g0a raw sessionId (g0a_claude_s2_session_a_dendro_session)
+        let claude_raw = claude_vec["inputs"]["native_session"].as_str().unwrap();
+        let claude_expected_link = claude_vec["expected"]["link_id"].as_str().unwrap();
+        let claude_path = dir.join("claude.jsonl");
+        fs::write(
+            &claude_path,
+            format!(
+                "{{\"type\":\"assistant\",\"sessionId\":\"{claude_raw}\",\"timestamp\":\"2026-10-09T00:00:01Z\",\"message\":{{\"id\":\"m1\",\"role\":\"assistant\",\"usage\":{{\"input_tokens\":10,\"output_tokens\":5,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}}}}\n"
+            ),
+        )
+        .unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-claude",
+            "claude",
+            &claude_path,
+            Some(tool_key),
+            &link_cfg,
+        )
+        .unwrap();
+
+        // 2. Codex session with header (g0a_codex_s2_session_1_rollout)
+        let codex_raw = codex_vec["inputs"]["native_session"].as_str().unwrap();
+        let codex_expected_link = codex_vec["expected"]["link_id"].as_str().unwrap();
+        let codex_path = dir.join("codex.jsonl");
+        fs::write(
+            &codex_path,
+            format!(
+                "{{\"type\":\"session_meta\",\"payload\":{{\"id\":\"{codex_raw}\"}}}}\n{{\"timestamp\":\"2026-10-09T00:00:02Z\",\"type\":\"event_msg\",\"payload\":{{\"type\":\"token_count\",\"info\":{{\"total_token_usage\":{{\"input_tokens\":12,\"cached_input_tokens\":2,\"cache_write_input_tokens\":0,\"output_tokens\":4,\"reasoning_output_tokens\":1}}}}}}}}\n"
+            ),
+        )
+        .unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-codex",
+            "codex",
+            &codex_path,
+            Some(tool_key),
+            &link_cfg,
+        )
+        .unwrap();
+
+        // 3. Pi session with header
+        let pi_raw = "0984094a-e1e0-442e-8da4-06bf7c61e265";
+        let (pi_expected_link, pi_expected_reason) =
+            link_cfg.resolve_session_link(Some("pi"), Some(pi_raw), None);
+        assert!(pi_expected_reason.is_none());
+        assert_ne!(pi_expected_link, "unlinked");
+        let pi_path = dir.join("pi.jsonl");
+        fs::write(
+            &pi_path,
+            format!(
+                "{{\"type\":\"session\",\"id\":\"{pi_raw}\"}}\n{{\"type\":\"message\",\"id\":\"p1\",\"timestamp\":\"2026-10-09T00:00:03Z\",\"message\":{{\"role\":\"assistant\",\"usage\":{{\"input\":8,\"output\":3,\"cacheRead\":0,\"cacheWrite\":0,\"reasoning\":0}}}}}}\n"
+            ),
+        )
+        .unwrap();
+        ingest_jsonl_with_link_config(&store, "src-pi", "pi", &pi_path, Some(tool_key), &link_cfg)
+            .unwrap();
+
+        // 4. Session ID transformed by seal_session (contains secret-shaped token):
+        //    proves link_id is computed from the RAW session BEFORE seal_session, while
+        //    only the sealed native_session (`<opaque>\t[redacted]`) is persisted.
+        let secret_session_raw = "sk-ant-session-raw-before-seal-987654";
+        let (expected_secret_link, expected_secret_reason) =
+            link_cfg.resolve_session_link(Some("claude"), Some(secret_session_raw), None);
+        assert!(expected_secret_reason.is_none());
+        assert_ne!(expected_secret_link, "unlinked");
+        let secret_claude_path = dir.join("claude_sealed.jsonl");
+        fs::write(
+            &secret_claude_path,
+            format!(
+                "{{\"type\":\"assistant\",\"sessionId\":\"{secret_session_raw}\",\"timestamp\":\"2026-10-09T00:00:04Z\",\"message\":{{\"id\":\"m-sec\",\"role\":\"assistant\",\"usage\":{{\"input_tokens\":5,\"output_tokens\":2,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}}}}\n"
+            ),
+        )
+        .unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-claude-sealed",
+            "claude",
+            &secret_claude_path,
+            Some(tool_key),
+            &link_cfg,
+        )
+        .unwrap();
+
+        let facts = store.load_session_facts().unwrap();
+        assert_eq!(facts.len(), 4);
+
+        let claude_sealed = seal_session(Some(tool_key), "claude", claude_raw);
+        let codex_sealed = seal_session(Some(tool_key), "codex", codex_raw);
+        let pi_sealed = seal_session(Some(tool_key), "pi", pi_raw);
+        let secret_sealed = seal_session(Some(tool_key), "claude", secret_session_raw);
+        assert_ne!(secret_sealed, secret_session_raw);
+        assert!(secret_sealed.ends_with("\t[redacted]"));
+
+        let claude_fact = facts.iter().find(|f| f.source_id == "src-claude").unwrap();
+        assert_eq!(claude_fact.native_session, claude_sealed);
+        assert_eq!(claude_fact.link_id, claude_expected_link);
+        assert_eq!(claude_fact.unlinked_reason, None);
+
+        let codex_fact = facts.iter().find(|f| f.source_id == "src-codex").unwrap();
+        assert_eq!(codex_fact.native_session, codex_sealed);
+        assert_eq!(codex_fact.link_id, codex_expected_link);
+        assert_eq!(codex_fact.unlinked_reason, None);
+
+        let pi_fact = facts.iter().find(|f| f.source_id == "src-pi").unwrap();
+        assert_eq!(pi_fact.native_session, pi_sealed);
+        assert_eq!(pi_fact.link_id, pi_expected_link);
+        assert_eq!(pi_fact.unlinked_reason, None);
+
+        let secret_fact = facts
+            .iter()
+            .find(|f| f.source_id == "src-claude-sealed")
+            .unwrap();
+        assert_eq!(secret_fact.native_session, secret_sealed);
+        assert_eq!(secret_fact.link_id, expected_secret_link);
+        assert_eq!(secret_fact.unlinked_reason, None);
+        // Verify that computing link_id AFTER seal_session would NOT have produced expected_secret_link:
+        let (wrong_after_seal, _) =
+            link_cfg.resolve_session_link(Some("claude"), Some(&secret_sealed), None);
+        assert_eq!(wrong_after_seal, "unlinked");
+        assert_ne!(secret_fact.link_id, wrong_after_seal);
+
+        // Verify usage_facts still carry the exact same sealed native_session as pre-D3:
+        let usages = store.load_usage().unwrap();
+        assert!(usages.iter().any(|u| u.native_session == claude_sealed));
+        assert!(usages.iter().any(|u| u.native_session == codex_sealed));
+        assert!(usages.iter().any(|u| u.native_session == pi_sealed));
+        assert!(usages.iter().any(|u| u.native_session == secret_sealed));
+
+        // Verify raw secret session ID and K_link are never persisted in session_facts or usage_facts:
+        let dumped = format!("{facts:?}\n{usages:?}");
+        assert!(!dumped.contains(secret_session_raw));
+        assert!(!dumped.contains(g0a_k_link_hex));
+
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn d3_ingest_unlinks_headerless_synthetic_non_harness_origin_unconfigured_and_short_key() {
+        let dir = std::env::temp_dir().join(format!(
+            "dendro-d3-unlinked-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let store = AnalyticsStore::open_in_memory("d3-unlinked-key").unwrap();
+        let tool_key = b"0123456789abcdef0123456789abcdef";
+
+        let valid_cfg = dendro_core::SessionLinkConfig::from_key_hex(
+            &"22".repeat(32),
+            Some("acme"),
+            Some("host-01"),
+            Some("core"),
+            Some("2026-11"),
+        );
+
+        // 1. Header-less Codex file -> synthetic `codex-file:src-codex-no-hdr` -> unlinked (missing_native_session)
+        let codex_no_hdr = dir.join("codex_no_hdr.jsonl");
+        fs::write(
+            &codex_no_hdr,
+            "{\"timestamp\":\"2026-10-09T00:00:02Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":10,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":2,\"reasoning_output_tokens\":0}}}}\n",
+        )
+        .unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-codex-no-hdr",
+            "codex",
+            &codex_no_hdr,
+            Some(tool_key),
+            &valid_cfg,
+        )
+        .unwrap();
+
+        // 2. Missing sessionId on Claude line -> parser fallback `claude-session` -> unlinked (missing_native_session)
+        let claude_syn = dir.join("claude_syn.jsonl");
+        fs::write(
+            &claude_syn,
+            "{\"type\":\"assistant\",\"timestamp\":\"2026-10-09T00:00:01Z\",\"message\":{\"id\":\"m-syn\",\"role\":\"assistant\",\"usage\":{\"input_tokens\":4,\"output_tokens\":2,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}\n",
+        )
+        .unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-claude-syn",
+            "claude",
+            &claude_syn,
+            Some(tool_key),
+            &valid_cfg,
+        )
+        .unwrap();
+
+        // 3. Transcript line containing `"origin": "x"` does NOT unlink a native session
+        //    (origin is assigned by dendro's parser, never read from transcript content).
+        let claude_content_origin = dir.join("claude_origin.jsonl");
+        fs::write(
+            &claude_content_origin,
+            "{\"type\":\"assistant\",\"origin\":\"x\",\"sessionId\":\"real-session-123\",\"timestamp\":\"2026-10-09T00:00:01Z\",\"message\":{\"id\":\"m-orig\",\"origin\":\"x\",\"role\":\"assistant\",\"usage\":{\"input_tokens\":4,\"output_tokens\":2,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}\n",
+        )
+        .unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-claude-origin",
+            "claude",
+            &claude_content_origin,
+            Some(tool_key),
+            &valid_cfg,
+        )
+        .unwrap();
+
+        // 4. No link config -> unlinked (invalid_key_material)
+        let unconfigured = dendro_core::SessionLinkConfig::unconfigured();
+        let claude_unconf = dir.join("claude_unconf.jsonl");
+        fs::write(
+            &claude_unconf,
+            "{\"type\":\"assistant\",\"sessionId\":\"real-session-456\",\"timestamp\":\"2026-10-09T00:00:01Z\",\"message\":{\"id\":\"m-unc\",\"role\":\"assistant\",\"usage\":{\"input_tokens\":4,\"output_tokens\":2,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}\n",
+        )
+        .unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-claude-unconf",
+            "claude",
+            &claude_unconf,
+            Some(tool_key),
+            &unconfigured,
+        )
+        .unwrap();
+
+        // 5. Short key (< 32 bytes) -> unlinked (invalid_key_material)
+        let short_cfg = dendro_core::SessionLinkConfig::from_key_slice(
+            &[0x99; 16],
+            Some("acme"),
+            Some("host-01"),
+            None,
+            None,
+        );
+        let claude_short = dir.join("claude_short.jsonl");
+        fs::write(
+            &claude_short,
+            "{\"type\":\"assistant\",\"sessionId\":\"real-session-789\",\"timestamp\":\"2026-10-09T00:00:01Z\",\"message\":{\"id\":\"m-short\",\"role\":\"assistant\",\"usage\":{\"input_tokens\":4,\"output_tokens\":2,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}\n",
+        )
+        .unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-claude-short",
+            "claude",
+            &claude_short,
+            Some(tool_key),
+            &short_cfg,
+        )
+        .unwrap();
+
+        let facts = store.load_session_facts().unwrap();
+        let find_fact = |src: &str| facts.iter().find(|f| f.source_id == src).unwrap();
+
+        let f_no_hdr = find_fact("src-codex-no-hdr");
+        assert_eq!(f_no_hdr.link_id, "unlinked");
+        assert_eq!(
+            f_no_hdr.unlinked_reason.as_deref(),
+            Some("missing_native_session")
+        );
+        assert_eq!(
+            f_no_hdr.native_session,
+            seal_session(Some(tool_key), "codex", "codex-file:src-codex-no-hdr")
+        );
+
+        let f_syn = find_fact("src-claude-syn");
+        assert_eq!(f_syn.link_id, "unlinked");
+        assert_eq!(
+            f_syn.unlinked_reason.as_deref(),
+            Some("missing_native_session")
+        );
+
+        let (expected_origin_link, _) = valid_cfg.resolve_session_link(
+            Some("claude"),
+            Some("real-session-123"),
+            Some("harness"),
+        );
+        let f_origin = find_fact("src-claude-origin");
+        assert_eq!(f_origin.link_id, expected_origin_link);
+        assert_ne!(f_origin.link_id, "unlinked");
+        assert_eq!(f_origin.unlinked_reason, None);
+
+        // Non-native caller path (export / imported origin) sets non-harness origin -> unlinked:
+        let (non_native_link, non_native_reason) = valid_cfg.resolve_session_link(
+            Some("claude"),
+            Some("real-session-123"),
+            Some("imported"),
+        );
+        assert_eq!(non_native_link, "unlinked");
+        assert_eq!(
+            non_native_reason.map(|r| r.as_str()),
+            Some("non_harness_origin")
+        );
+
+        let f_unconf = find_fact("src-claude-unconf");
+        assert_eq!(f_unconf.link_id, "unlinked");
+        assert_eq!(
+            f_unconf.unlinked_reason.as_deref(),
+            Some("invalid_key_material")
+        );
+
+        let f_short = find_fact("src-claude-short");
+        assert_eq!(f_short.link_id, "unlinked");
+        assert_eq!(
+            f_short.unlinked_reason.as_deref(),
+            Some("invalid_key_material")
+        );
+
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn d3_reingest_persists_header_conflict_and_upserts_one_row_per_session_identity() {
+        let dir = std::env::temp_dir().join(format!(
+            "dendro-d3-reingest-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let store = AnalyticsStore::open_in_memory("d3-reingest-key").unwrap();
+        let tool_key = b"0123456789abcdef0123456789abcdef";
+        let valid_cfg = dendro_core::SessionLinkConfig::from_key_hex(
+            &"33".repeat(32),
+            Some("acme"),
+            Some("host-01"),
+            Some("core"),
+            Some("2026-11"),
+        );
+
+        // 1. Plain append -> exactly one row across appends
+        let codex_plain = dir.join("codex_plain.jsonl");
+        let line1 = "{\"type\":\"session_meta\",\"payload\":{\"id\":\"sess-plain-1\"}}\n";
+        let usage1 = "{\"timestamp\":\"2026-10-09T00:00:01Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":10,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":2,\"reasoning_output_tokens\":0}}}}\n";
+        let usage2 = "{\"timestamp\":\"2026-10-09T00:00:02Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":20,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":4,\"reasoning_output_tokens\":0}}}}\n";
+        fs::write(&codex_plain, format!("{line1}{usage1}")).unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-codex-plain",
+            "codex",
+            &codex_plain,
+            Some(tool_key),
+            &valid_cfg,
+        )
+        .unwrap();
+        fs::write(&codex_plain, format!("{line1}{usage1}{usage2}")).unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-codex-plain",
+            "codex",
+            &codex_plain,
+            Some(tool_key),
+            &valid_cfg,
+        )
+        .unwrap();
+
+        let plain_rows: Vec<_> = store
+            .load_session_facts()
+            .unwrap()
+            .into_iter()
+            .filter(|f| f.source_id == "src-codex-plain")
+            .collect();
+        assert_eq!(plain_rows.len(), 1);
+        assert_ne!(plain_rows[0].link_id, "unlinked");
+        assert_eq!(plain_rows[0].unlinked_reason, None);
+
+        // 2. Conflicting header in gen 1 plus an appended batch -> still unlinked, with exactly one row
+        let codex_conflict = dir.join("codex_conflict.jsonl");
+        let hdr1 = "{\"type\":\"session_meta\",\"payload\":{\"id\":\"sess-conflict-a\"}}\n";
+        let hdr2 = "{\"type\":\"session_meta\",\"payload\":{\"id\":\"sess-conflict-b\"}}\n";
+        fs::write(&codex_conflict, format!("{hdr1}{hdr2}{usage1}")).unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-codex-conflict",
+            "codex",
+            &codex_conflict,
+            Some(tool_key),
+            &valid_cfg,
+        )
+        .unwrap();
+
+        // Append non-conflicting usage in second pass:
+        fs::write(&codex_conflict, format!("{hdr1}{hdr2}{usage1}{usage2}")).unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-codex-conflict",
+            "codex",
+            &codex_conflict,
+            Some(tool_key),
+            &valid_cfg,
+        )
+        .unwrap();
+
+        let conflict_rows_after_append: Vec<_> = store
+            .load_session_facts()
+            .unwrap()
+            .into_iter()
+            .filter(|f| f.source_id == "src-codex-conflict")
+            .collect();
+        assert_eq!(conflict_rows_after_append.len(), 1);
+        assert_eq!(conflict_rows_after_append[0].link_id, "unlinked");
+        assert_eq!(
+            conflict_rows_after_append[0].unlinked_reason.as_deref(),
+            Some("missing_native_session")
+        );
+
+        // Even if the file is rewritten in generation 2 without the conflicting second header,
+        // a session unlinked in generation 1 can never become linked in generation 2:
+        fs::write(&codex_conflict, format!("{hdr1}{usage1}")).unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-codex-conflict",
+            "codex",
+            &codex_conflict,
+            Some(tool_key),
+            &valid_cfg,
+        )
+        .unwrap();
+
+        let conflict_rows_gen2: Vec<_> = store
+            .load_session_facts()
+            .unwrap()
+            .into_iter()
+            .filter(|f| f.source_id == "src-codex-conflict")
+            .collect();
+        assert_eq!(conflict_rows_gen2.len(), 1);
+        assert_eq!(conflict_rows_gen2[0].link_id, "unlinked");
+        assert_eq!(
+            conflict_rows_gen2[0].unlinked_reason.as_deref(),
+            Some("missing_native_session")
+        );
+        assert!(conflict_rows_gen2[0].header_conflict);
+        assert_eq!(conflict_rows_gen2[0].generation, 2);
+
+        // Even if the path string changes for the same source_id in generation 3,
+        // the header_conflict lock (keyed by source_id, not path.display()) still holds:
+        let codex_conflict_relocated = dir.join("codex_conflict_relocated.jsonl");
+        fs::write(&codex_conflict_relocated, format!("{hdr1}")).unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-codex-conflict",
+            "codex",
+            &codex_conflict_relocated,
+            Some(tool_key),
+            &valid_cfg,
+        )
+        .unwrap();
+        let conflict_rows_gen3: Vec<_> = store
+            .load_session_facts()
+            .unwrap()
+            .into_iter()
+            .filter(|f| f.source_id == "src-codex-conflict")
+            .collect();
+        assert_eq!(conflict_rows_gen3.len(), 1);
+        assert_eq!(conflict_rows_gen3[0].link_id, "unlinked");
+        assert!(conflict_rows_gen3[0].header_conflict);
+        assert_eq!(conflict_rows_gen3[0].generation, 3);
+
+        // 3. Unconfigured run, then configured -> linked (claude, codex, pi, grok)
+        let unconfigured_cfg = dendro_core::SessionLinkConfig::unconfigured();
+        let claude_unconf_then_conf = dir.join("claude_unconf_then_conf.jsonl");
+        fs::write(
+            &claude_unconf_then_conf,
+            "{\"type\":\"assistant\",\"timestamp\":\"2026-10-09T00:00:00Z\",\"sessionId\":\"claude-relink-1\",\"message\":{\"id\":\"m-relink-1\",\"usage\":{\"input_tokens\":5,\"output_tokens\":1,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}\n",
+        )
+        .unwrap();
+        let codex_unconf_then_conf = dir.join("codex_unconf_then_conf.jsonl");
+        fs::write(
+            &codex_unconf_then_conf,
+            format!(
+                "{{\"type\":\"session_meta\",\"payload\":{{\"id\":\"codex-relink-1\"}}}}\n{usage1}"
+            ),
+        )
+        .unwrap();
+        let pi_unconf_then_conf = dir.join("pi_unconf_then_conf.jsonl");
+        fs::write(
+            &pi_unconf_then_conf,
+            "{\"type\":\"session\",\"id\":\"pi-relink-1\"}\n{\"type\":\"message\",\"timestamp\":\"2026-10-09T00:00:00Z\",\"message\":{\"role\":\"assistant\",\"usage\":{\"input\":4,\"output\":1,\"cacheRead\":0,\"cacheWrite\":0}}}\n",
+        )
+        .unwrap();
+        let grok_dir = dir.join("grok_relink");
+        fs::create_dir_all(&grok_dir).unwrap();
+        let grok_unconf_then_conf = grok_dir.join("updates.jsonl");
+        fs::write(
+            &grok_unconf_then_conf,
+            "{\"method\":\"session/update\",\"params\":{\"sessionId\":\"grok-relink-1\",\"update\":{\"sessionUpdate\":\"usage_update\",\"_meta\":{\"tokenUsage\":{\"inputTokens\":3,\"outputTokens\":1,\"cachedInputTokens\":0,\"reasoningOutputTokens\":0}}}}}\n",
+        )
+        .unwrap();
+
+        for (src_id, harness, file_path) in [
+            ("src-relink-claude", "claude", &claude_unconf_then_conf),
+            ("src-relink-codex", "codex", &codex_unconf_then_conf),
+            ("src-relink-pi", "pi", &pi_unconf_then_conf),
+            ("src-relink-grok", "grok", &grok_unconf_then_conf),
+        ] {
+            ingest_jsonl_with_link_config(
+                &store,
+                src_id,
+                harness,
+                file_path,
+                Some(tool_key),
+                &unconfigured_cfg,
+            )
+            .unwrap();
+            let before: Vec<_> = store
+                .load_session_facts()
+                .unwrap()
+                .into_iter()
+                .filter(|f| f.source_id == src_id)
+                .collect();
+            assert_eq!(before.len(), 1);
+            assert_eq!(before[0].link_id, "unlinked");
+            assert_eq!(
+                before[0].unlinked_reason.as_deref(),
+                Some("invalid_key_material")
+            );
+            assert!(!before[0].header_conflict);
+
+            // Second run with valid_cfg on the same unchanged file -> recomputed and linked!
+            ingest_jsonl_with_link_config(
+                &store,
+                src_id,
+                harness,
+                file_path,
+                Some(tool_key),
+                &valid_cfg,
+            )
+            .unwrap();
+            let after: Vec<_> = store
+                .load_session_facts()
+                .unwrap()
+                .into_iter()
+                .filter(|f| f.source_id == src_id)
+                .collect();
+            assert_eq!(after.len(), 1);
+            assert_ne!(after[0].link_id, "unlinked");
+            assert_eq!(after[0].link_id.len(), 64);
+            assert_eq!(after[0].unlinked_reason, None);
+            assert!(!after[0].header_conflict);
+        }
+
+        // 4. Missing org fixed later -> linked (and fallback {harness}-file: reason recomputed)
+        let missing_org_cfg = dendro_core::SessionLinkConfig::from_key_hex(
+            &"33".repeat(32),
+            None,
+            Some("host-01"),
+            Some("core"),
+            Some("2026-11"),
+        );
+        let codex_missing_org = dir.join("codex_missing_org.jsonl");
+        fs::write(
+            &codex_missing_org,
+            format!(
+                "{{\"type\":\"session_meta\",\"payload\":{{\"id\":\"codex-org-fix-1\"}}}}\n{usage1}"
+            ),
+        )
+        .unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-codex-org-fix",
+            "codex",
+            &codex_missing_org,
+            Some(tool_key),
+            &missing_org_cfg,
+        )
+        .unwrap();
+        let org_before: Vec<_> = store
+            .load_session_facts()
+            .unwrap()
+            .into_iter()
+            .filter(|f| f.source_id == "src-codex-org-fix")
+            .collect();
+        assert_eq!(org_before.len(), 1);
+        assert_eq!(org_before[0].link_id, "unlinked");
+        assert_eq!(
+            org_before[0].unlinked_reason.as_deref(),
+            Some("missing_org")
+        );
+
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-codex-org-fix",
+            "codex",
+            &codex_missing_org,
+            Some(tool_key),
+            &valid_cfg,
+        )
+        .unwrap();
+        let org_after: Vec<_> = store
+            .load_session_facts()
+            .unwrap()
+            .into_iter()
+            .filter(|f| f.source_id == "src-codex-org-fix")
+            .collect();
+        assert_eq!(org_after.len(), 1);
+        assert_ne!(org_after[0].link_id, "unlinked");
+        assert_eq!(org_after[0].unlinked_reason, None);
+
+        // Fallback {harness}-file: row also updates its unlinked_reason when config changes
+        let codex_fallback_only = dir.join("codex_fallback_only.jsonl");
+        fs::write(&codex_fallback_only, usage1).unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-codex-fallback-only",
+            "codex",
+            &codex_fallback_only,
+            Some(tool_key),
+            &missing_org_cfg,
+        )
+        .unwrap();
+        let fb_before: Vec<_> = store
+            .load_session_facts()
+            .unwrap()
+            .into_iter()
+            .filter(|f| f.source_id == "src-codex-fallback-only")
+            .collect();
+        assert_eq!(fb_before.len(), 1);
+        assert_eq!(fb_before[0].link_id, "unlinked");
+        assert_eq!(fb_before[0].unlinked_reason.as_deref(), Some("missing_org"));
+
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-codex-fallback-only",
+            "codex",
+            &codex_fallback_only,
+            Some(tool_key),
+            &valid_cfg,
+        )
+        .unwrap();
+        let fb_after: Vec<_> = store
+            .load_session_facts()
+            .unwrap()
+            .into_iter()
+            .filter(|f| f.source_id == "src-codex-fallback-only")
+            .collect();
+        assert_eq!(fb_after.len(), 1);
+        assert_eq!(fb_after[0].link_id, "unlinked");
+        assert_eq!(
+            fb_after[0].unlinked_reason.as_deref(),
+            Some("missing_native_session")
+        );
+
+        // 5. Partial line-1 first pass (and zero-byte first pass), then the full file ->
+        //    the header session is linked and the fallback row is retired!
+        let codex_partial = dir.join("codex_partial_line1.jsonl");
+        // First pass: unterminated partial line 1
+        fs::write(
+            &codex_partial,
+            "{\"type\":\"session_meta\",\"payload\":{\"id\":\"sess-after-partial\"",
+        )
+        .unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-codex-partial",
+            "codex",
+            &codex_partial,
+            Some(tool_key),
+            &valid_cfg,
+        )
+        .unwrap();
+        let partial_pass1: Vec<_> = store
+            .load_session_facts()
+            .unwrap()
+            .into_iter()
+            .filter(|f| f.source_id == "src-codex-partial")
+            .collect();
+        assert_eq!(partial_pass1.len(), 1);
+        assert_eq!(partial_pass1[0].link_id, "unlinked");
+        assert_eq!(
+            partial_pass1[0].unlinked_reason.as_deref(),
+            Some("missing_native_session")
+        );
+        assert_eq!(
+            partial_pass1[0].native_session,
+            seal_session(Some(tool_key), "codex", "codex-file:src-codex-partial")
+        );
+
+        // Second pass: full line 1 + usage -> fallback row retired, header session linked!
+        fs::write(
+            &codex_partial,
+            format!(
+                "{{\"type\":\"session_meta\",\"payload\":{{\"id\":\"sess-after-partial\"}}}}\n{usage1}"
+            ),
+        )
+        .unwrap();
+        ingest_jsonl_with_link_config(
+            &store,
+            "src-codex-partial",
+            "codex",
+            &codex_partial,
+            Some(tool_key),
+            &valid_cfg,
+        )
+        .unwrap();
+        let partial_pass2: Vec<_> = store
+            .load_session_facts()
+            .unwrap()
+            .into_iter()
+            .filter(|f| f.source_id == "src-codex-partial")
+            .collect();
+        assert_eq!(
+            partial_pass2.len(),
+            1,
+            "fallback row must be retired when real header session appears"
+        );
+        assert_eq!(
+            partial_pass2[0].native_session,
+            seal_session(Some(tool_key), "codex", "sess-after-partial")
+        );
+        assert_ne!(partial_pass2[0].link_id, "unlinked");
+        assert_eq!(partial_pass2[0].unlinked_reason, None);
+        assert!(!partial_pass2[0].header_conflict);
+
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn crash_boundary_failpoints_claude_codex_and_export_roll_back_and_replay_identically() {
+        use super::tests::{open_test_analytics, AdmittedTestDir};
+        use dendro_core::IngestBatchStage;
+
+        let scratch = AdmittedTestDir::new("dendro-d4a-crash-boundary");
+        let dir = scratch.path();
+        let tool_key = b"d4a-crash-boundary-tool-key-0000";
+        let link_cfg = dendro_core::SessionLinkConfig::from_key_hex(
+            &"44".repeat(32),
+            Some("acme"),
+            Some("host-d4a"),
+            Some("core"),
+            Some("2026-11"),
+        );
+
+        let empty_db = dir.join("empty_seed.duckdb");
+        let empty_snap = {
+            let store = open_test_analytics(&empty_db);
+            store.checkpoint().unwrap();
+            store.canonical_table_snapshot().unwrap()
+        };
+
+        let table_rows = |snap: &[(String, Vec<String>)], name: &str| -> usize {
+            snap.iter()
+                .find(|(t, _)| t == name)
+                .map(|(_, rows)| rows.len())
+                .unwrap_or(0)
+        };
+
+        // 1. Claude crash-boundary failpoints across every batch write stage.
+        let claude_path = dir.join("claude.jsonl");
+        let claude_raw = concat!(
+            "{\"type\":\"assistant\",\"sessionId\":\"claude-s1\",\"agentId\":\"claude-child-1\",\"isSidechain\":true,\"permissionMode\":\"acceptEdits\",\"timestamp\":\"2026-10-15T12:00:00Z\",\"message\":{\"id\":\"msg-1\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4-5\",\"effort\":\"high\",\"usage\":{\"input_tokens\":100,\"output_tokens\":50,\"cache_read_input_tokens\":20,\"cache_creation_input_tokens\":10},\"content\":[{\"type\":\"text\",\"text\":\"hi\"},{\"type\":\"tool_use\",\"id\":\"tu-1\",\"name\":\"Skill\",\"input\":{\"skill\":\"commit\"}},{\"type\":\"tool_use\",\"id\":\"tu-2\",\"name\":\"Bash\",\"input\":{\"command\":\"cargo test\"}}]}}\n",
+            "{\"type\":\"user\",\"sessionId\":\"claude-s1\",\"timestamp\":\"2026-10-15T12:00:05Z\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"tu-1\",\"is_error\":false},{\"type\":\"tool_result\",\"tool_use_id\":\"tu-2\",\"is_error\":false}]}}\n",
+            "{\"type\":\"mystery_event\",\"sessionId\":\"claude-s1\"}\n"
+        );
+        fs::write(&claude_path, claude_raw).unwrap();
+
+        let claude_ref_db = dir.join("claude_ref.duckdb");
+        fs::copy(&empty_db, &claude_ref_db).unwrap();
+        let claude_expected = {
+            let store = AnalyticsStore::open_existing(&claude_ref_db, "key").unwrap();
+            ingest_jsonl_with_link_config(
+                &store,
+                "src-claude",
+                "claude",
+                &claude_path,
+                Some(tool_key),
+                &link_cfg,
+            )
+            .unwrap();
+            store.checkpoint().unwrap();
+            let snap = store.canonical_table_snapshot().unwrap();
+            for required in [
+                "source_files",
+                "file_source_baselines",
+                "usage_facts",
+                "tool_facts",
+                "message_facts",
+                "skill_facts",
+                "session_edges",
+                "security_facts",
+                "session_facts",
+                "warnings",
+            ] {
+                assert!(
+                    table_rows(&snap, required) > 0,
+                    "Claude fixture must populate {required}"
+                );
+            }
+            snap
+        };
+
+        let claude_stages = [
+            IngestBatchStage::AfterBaseline,
+            IngestBatchStage::AfterUsageFacts,
+            IngestBatchStage::AfterUsageModels,
+            IngestBatchStage::AfterToolFacts,
+            IngestBatchStage::AfterToolCategories,
+            IngestBatchStage::AfterToolSettlement,
+            IngestBatchStage::AfterMessageFacts,
+            IngestBatchStage::AfterSkillFacts,
+            IngestBatchStage::AfterSessionEdges,
+            IngestBatchStage::AfterSecurityFacts,
+            IngestBatchStage::AfterSessionFacts,
+            IngestBatchStage::AfterWarnings,
+            IngestBatchStage::AfterWatermark,
+            IngestBatchStage::BeforeReaderReplacement,
+            IngestBatchStage::AfterReaderReplacement,
+            IngestBatchStage::BeforeSourceSessionUpdate,
+            IngestBatchStage::BeforeCommit,
+        ];
+
+        for (idx, stage) in claude_stages.into_iter().enumerate() {
+            let db_path = dir.join(format!("claude_stage_{idx}.duckdb"));
+            fs::copy(&empty_db, &db_path).unwrap();
+            {
+                let store = AnalyticsStore::open_existing(&db_path, "key").unwrap();
+                let mut hit = false;
+                let err = with_ingest_failpoint(
+                    move |_, at| {
+                        if at == stage {
+                            anyhow::bail!("claude failpoint at {stage:?}");
+                        }
+                        Ok(())
+                    },
+                    || {
+                        hit = true;
+                        ingest_jsonl_with_link_config(
+                            &store,
+                            "src-claude",
+                            "claude",
+                            &claude_path,
+                            Some(tool_key),
+                            &link_cfg,
+                        )
+                    },
+                )
+                .unwrap_err();
+                assert!(hit);
+                assert!(
+                    err.to_string().contains("claude failpoint"),
+                    "unexpected error at {stage:?}: {err}"
+                );
+            }
+            let reopened = AnalyticsStore::open_existing(&db_path, "key").unwrap();
+            assert_eq!(
+                reopened.source_state("src-claude").unwrap(),
+                None,
+                "Claude watermark must remain None after failure at {stage:?}"
+            );
+            assert_eq!(
+                reopened.canonical_table_snapshot().unwrap(),
+                empty_snap,
+                "Reopened Claude DB must contain nothing after failure at {stage:?}"
+            );
+            ingest_jsonl_with_link_config(
+                &reopened,
+                "src-claude",
+                "claude",
+                &claude_path,
+                Some(tool_key),
+                &link_cfg,
+            )
+            .unwrap();
+            assert_eq!(
+                reopened.canonical_table_snapshot().unwrap(),
+                claude_expected,
+                "Claude replay after failure at {stage:?} must match uninterrupted run"
+            );
+        }
+
+        // 2. Codex crash-boundary failpoints (including D1 tool scan and D3 session facts).
+        let codex_path = dir.join("codex.jsonl");
+        let codex_raw = concat!(
+            "{\"type\":\"session_meta\",\"timestamp\":\"2026-10-15T12:00:00Z\",\"payload\":{\"id\":\"codex-s1\",\"source\":{\"subagent\":{\"thread_spawn\":{\"parent_thread_id\":\"codex-parent-1\"}}}}}\n",
+            "{\"type\":\"turn_context\",\"timestamp\":\"2026-10-15T12:00:01Z\",\"payload\":{\"model\":\"gpt-5-codex\",\"effort\":\"high\",\"approval_policy\":\"on-request\",\"sandbox_policy\":{\"type\":\"workspace-write\"}}}\n",
+            "{\"type\":\"event_msg\",\"timestamp\":\"2026-10-15T12:00:02Z\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":150,\"cached_input_tokens\":30,\"cache_write_input_tokens\":10,\"output_tokens\":60,\"reasoning_output_tokens\":15}}}}\n",
+            "{\"type\":\"response_item\",\"timestamp\":\"2026-10-15T12:00:03Z\",\"payload\":{\"type\":\"function_call\",\"call_id\":\"call-1\",\"name\":\"Skill\",\"arguments\":\"{\\\"skill\\\":\\\"review\\\"}\"}}\n",
+            "{\"type\":\"response_item\",\"timestamp\":\"2026-10-15T12:00:04Z\",\"payload\":{\"type\":\"function_call_output\",\"call_id\":\"call-1\",\"output\":\"{\\\"status\\\":\\\"completed\\\"}\"}}\n",
+            "{\"type\":\"event_msg\",\"timestamp\":\"2026-10-15T12:00:05Z\",\"payload\":{\"type\":\"item_completed\",\"item\":{\"type\":\"CommandExecution\",\"command\":[\"cargo\",\"test\"],\"exit_code\":0}}}\n",
+            "{\"type\":\"response_item\",\"timestamp\":\"2026-10-15T12:00:06Z\",\"payload\":{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"done\"}]}}\n",
+            "{\"type\":\"unknown_codex_event\",\"payload\":{}}\n"
+        );
+        fs::write(&codex_path, codex_raw).unwrap();
+
+        let codex_ref_db = dir.join("codex_ref.duckdb");
+        fs::copy(&empty_db, &codex_ref_db).unwrap();
+        let codex_expected = {
+            let store = AnalyticsStore::open_existing(&codex_ref_db, "key").unwrap();
+            let stats = ingest_jsonl_with_link_config(
+                &store,
+                "src-codex",
+                "codex",
+                &codex_path,
+                Some(tool_key),
+                &link_cfg,
+            )
+            .unwrap();
+            assert_eq!(stats.tool_scan.calls, 2);
+            assert_eq!(stats.tool_scan.new_calls, 2);
+            assert_eq!(stats.tool_scan.results, 1);
+            let sf = store.load_session_facts().unwrap();
+            assert_eq!(sf.len(), 1);
+            assert_eq!(sf[0].link_id.len(), 64);
+            assert_ne!(sf[0].link_id, "unlinked");
+            store.checkpoint().unwrap();
+            let snap = store.canonical_table_snapshot().unwrap();
+            for required in [
+                "source_files",
+                "file_source_baselines",
+                "codex_counters",
+                "usage_facts",
+                "tool_facts",
+                "message_facts",
+                "skill_facts",
+                "session_edges",
+                "security_facts",
+                "session_facts",
+                "warnings",
+            ] {
+                assert!(
+                    table_rows(&snap, required) > 0,
+                    "Codex fixture must populate {required}"
+                );
+            }
+            snap
+        };
+
+        let codex_stages = [
+            IngestBatchStage::AfterBaseline,
+            IngestBatchStage::AfterCounters,
+            IngestBatchStage::AfterUsageFacts,
+            IngestBatchStage::AfterUsageModels,
+            IngestBatchStage::AfterToolFacts,
+            IngestBatchStage::AfterToolCategories,
+            IngestBatchStage::AfterToolSettlement,
+            IngestBatchStage::AfterMessageFacts,
+            IngestBatchStage::AfterSkillFacts,
+            IngestBatchStage::AfterSessionEdges,
+            IngestBatchStage::AfterSecurityFacts,
+            IngestBatchStage::AfterSessionFacts,
+            IngestBatchStage::AfterWarnings,
+            IngestBatchStage::AfterWatermark,
+            IngestBatchStage::BeforeReaderReplacement,
+            IngestBatchStage::AfterReaderReplacement,
+            IngestBatchStage::BeforeSourceSessionUpdate,
+            IngestBatchStage::BeforeCommit,
+        ];
+
+        for (idx, stage) in codex_stages.into_iter().enumerate() {
+            let db_path = dir.join(format!("codex_stage_{idx}.duckdb"));
+            fs::copy(&empty_db, &db_path).unwrap();
+            {
+                let store = AnalyticsStore::open_existing(&db_path, "key").unwrap();
+                let err = with_ingest_failpoint(
+                    move |_, at| {
+                        if at == stage {
+                            anyhow::bail!("codex failpoint at {stage:?}");
+                        }
+                        Ok(())
+                    },
+                    || {
+                        ingest_jsonl_with_link_config(
+                            &store,
+                            "src-codex",
+                            "codex",
+                            &codex_path,
+                            Some(tool_key),
+                            &link_cfg,
+                        )
+                    },
+                )
+                .unwrap_err();
+                assert!(
+                    err.to_string().contains("codex failpoint"),
+                    "unexpected error at {stage:?}: {err}"
+                );
+            }
+            let reopened = AnalyticsStore::open_existing(&db_path, "key").unwrap();
+            assert_eq!(
+                reopened.source_state("src-codex").unwrap(),
+                None,
+                "Codex watermark must remain None after failure at {stage:?}"
+            );
+            assert_eq!(
+                reopened.canonical_table_snapshot().unwrap(),
+                empty_snap,
+                "Reopened Codex DB must contain nothing after failure at {stage:?}"
+            );
+            ingest_jsonl_with_link_config(
+                &reopened,
+                "src-codex",
+                "codex",
+                &codex_path,
+                Some(tool_key),
+                &link_cfg,
+            )
+            .unwrap();
+            assert_eq!(
+                reopened.canonical_table_snapshot().unwrap(),
+                codex_expected,
+                "Codex replay after failure at {stage:?} must match uninterrupted run"
+            );
+        }
+
+        // 3. Export connector (Devin ATIF-v1.7 with usage + tools + warnings + watermark).
+        let export_dir = dir.join("devin_exports");
+        fs::create_dir_all(&export_dir).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&export_dir, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let devin_file = export_dir.join("trajectory.jsonl");
+        let devin_raw = "{\"schema_version\":\"ATIF-v1.7\",\"session_id\":\"devin-sess-1\",\"steps\":[{\"step_id\":1,\"source\":\"agent\",\"timestamp\":\"2026-10-15T12:00:00Z\",\"metrics\":{\"prompt_tokens\":120,\"completion_tokens\":45,\"cached_tokens\":0,\"cost\":0.05},\"tool_calls\":[{\"tool_call_id\":\"tc-1\",\"function_name\":\"bash\"}]}]}\n";
+        fs::write(&devin_file, devin_raw).unwrap();
+        let connector = crate::DevinConnector::new(&export_dir, tool_key.to_vec());
+
+        let devin_ref_db = dir.join("devin_ref.duckdb");
+        fs::copy(&empty_db, &devin_ref_db).unwrap();
+        let devin_expected = {
+            let store = AnalyticsStore::open_existing(&devin_ref_db, "key").unwrap();
+            connector.ingest_file(&store, &devin_file).unwrap();
+            store.checkpoint().unwrap();
+            let snap = store.canonical_table_snapshot().unwrap();
+            for required in [
+                "source_files",
+                "file_source_baselines",
+                "usage_facts",
+                "tool_facts",
+                "warnings",
+            ] {
+                assert!(
+                    table_rows(&snap, required) > 0,
+                    "Devin export fixture must populate {required}"
+                );
+            }
+            snap
+        };
+
+        let export_stages = [
+            IngestBatchStage::AfterBaseline,
+            IngestBatchStage::AfterUsageFacts,
+            IngestBatchStage::AfterToolFacts,
+            IngestBatchStage::AfterWarnings,
+            IngestBatchStage::AfterWatermark,
+            IngestBatchStage::BeforeReaderReplacement,
+            IngestBatchStage::AfterReaderReplacement,
+            IngestBatchStage::BeforeSourceSessionUpdate,
+            IngestBatchStage::BeforeCommit,
+        ];
+
+        for (idx, stage) in export_stages.into_iter().enumerate() {
+            let db_path = dir.join(format!("devin_stage_{idx}.duckdb"));
+            fs::copy(&empty_db, &db_path).unwrap();
+            {
+                let store = AnalyticsStore::open_existing(&db_path, "key").unwrap();
+                let err = with_ingest_failpoint(
+                    move |_, at| {
+                        if at == stage {
+                            anyhow::bail!("export failpoint at {stage:?}");
+                        }
+                        Ok(())
+                    },
+                    || connector.ingest_file(&store, &devin_file),
+                )
+                .unwrap_err();
+                assert!(
+                    err.to_string().contains("export failpoint"),
+                    "unexpected error at {stage:?}: {err}"
+                );
+            }
+            let reopened = AnalyticsStore::open_existing(&db_path, "key").unwrap();
+            assert!(
+                reopened.load_sources().unwrap().is_empty(),
+                "Export watermark must remain absent after failure at {stage:?}"
+            );
+            assert_eq!(
+                reopened.canonical_table_snapshot().unwrap(),
+                empty_snap,
+                "Reopened Export DB must contain nothing after failure at {stage:?}"
+            );
+            connector.ingest_file(&reopened, &devin_file).unwrap();
+            assert_eq!(
+                reopened.canonical_table_snapshot().unwrap(),
+                devin_expected,
+                "Export replay after failure at {stage:?} must match uninterrupted run"
+            );
+        }
+    }
+
+    #[test]
+    fn two_consecutive_batches_mid_pass_failure_persists_batch1_session_facts_and_converges_on_rerun(
+    ) {
+        use super::tests::{open_test_analytics, AdmittedTestDir};
+        use dendro_core::IngestBatchStage;
+
+        let scratch = AdmittedTestDir::new("dendro-d4a-multi-batch");
+        let dir = scratch.path();
+        let tool_key = b"d4a-multi-batch-tool-key-0000000";
+        let link_cfg = dendro_core::SessionLinkConfig::from_key_hex(
+            &"55".repeat(32),
+            Some("acme"),
+            Some("host-d4a"),
+            Some("core"),
+            Some("2026-11"),
+        );
+        let limits = crate::sdk::ReadLimits {
+            encoded_bytes: 1 << 20,
+            nesting_depth: 64,
+            decoded_records_per_batch: 2,
+            line_attempts: None,
+        };
+
+        let empty_db = dir.join("empty_seed.duckdb");
+        {
+            let store = open_test_analytics(&empty_db);
+            store.checkpoint().unwrap();
+        }
+
+        // Part A: 4-record Codex file spanning 2 batches (2 records per batch).
+        // Batch 0 emits an unsettled function_call (c1) and commits the batch-0 session_facts
+        // row + native_session; Batch 1 settles c1 and emits token_count usage.
+        let codex_multi = dir.join("codex_two_batches.jsonl");
+        let line1 = "{\"type\":\"session_meta\",\"timestamp\":\"2026-10-15T12:00:00Z\",\"payload\":{\"id\":\"codex-multi-1\"}}\n";
+        let line2 = "{\"type\":\"response_item\",\"timestamp\":\"2026-10-15T12:00:01Z\",\"payload\":{\"type\":\"function_call\",\"call_id\":\"c1\",\"name\":\"exec_command\",\"arguments\":\"{\\\"cmd\\\":\\\"cargo check\\\"}\"}}\n";
+        let line3 = "{\"type\":\"response_item\",\"timestamp\":\"2026-10-15T12:00:02Z\",\"payload\":{\"type\":\"function_call_output\",\"call_id\":\"c1\",\"output\":\"{\\\"exit_code\\\":0}\"}}\n";
+        let line4 = "{\"type\":\"event_msg\",\"timestamp\":\"2026-10-15T12:00:03Z\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":50,\"cached_input_tokens\":10,\"cache_write_input_tokens\":0,\"output_tokens\":20,\"reasoning_output_tokens\":5}}}}\n";
+        fs::write(&codex_multi, format!("{line1}{line2}{line3}{line4}")).unwrap();
+        let batch0_bytes = (line1.len() + line2.len()) as i64;
+        let expected_codex_sealed = seal_session(Some(tool_key), "codex", "codex-multi-1");
+
+        let multi_ref_db = dir.join("multi_ref.duckdb");
+        fs::copy(&empty_db, &multi_ref_db).unwrap();
+        let multi_expected = {
+            let store = AnalyticsStore::open_existing(&multi_ref_db, "key").unwrap();
+            ingest_jsonl_limited_with_link(
+                &store,
+                "src-multi",
+                "codex",
+                &codex_multi,
+                Some(tool_key),
+                None,
+                || Ok(()),
+                &limits,
+                &link_cfg,
+            )
+            .unwrap();
+            store.checkpoint().unwrap();
+            store.canonical_table_snapshot().unwrap()
+        };
+
+        let batch2_stages = [
+            IngestBatchStage::AfterBaseline,
+            IngestBatchStage::AfterCounters,
+            IngestBatchStage::AfterUsageFacts,
+            IngestBatchStage::AfterToolFacts,
+            IngestBatchStage::AfterToolSettlement,
+            IngestBatchStage::AfterSessionFacts,
+            IngestBatchStage::AfterWatermark,
+            IngestBatchStage::BeforeReaderReplacement,
+            IngestBatchStage::AfterReaderReplacement,
+            IngestBatchStage::BeforeSourceSessionUpdate,
+            IngestBatchStage::BeforeCommit,
+        ];
+
+        let mut batch0_reference_snap: Option<Vec<(String, Vec<String>)>> = None;
+        for (idx, stage) in batch2_stages.into_iter().enumerate() {
+            let db_path = dir.join(format!("multi_stage_{idx}.duckdb"));
+            fs::copy(&empty_db, &db_path).unwrap();
+            {
+                let store = AnalyticsStore::open_existing(&db_path, "key").unwrap();
+                let err = with_ingest_failpoint(
+                    move |batch_idx, at| {
+                        if batch_idx == 1 && at == stage {
+                            anyhow::bail!("batch-2 failpoint at {stage:?}");
+                        }
+                        Ok(())
+                    },
+                    || {
+                        ingest_jsonl_limited_with_link(
+                            &store,
+                            "src-multi",
+                            "codex",
+                            &codex_multi,
+                            Some(tool_key),
+                            None,
+                            || Ok(()),
+                            &limits,
+                            &link_cfg,
+                        )
+                    },
+                )
+                .unwrap_err();
+                assert!(
+                    err.to_string().contains("batch-2 failpoint"),
+                    "must fail in batch 2 at {stage:?}: {err}"
+                );
+            }
+
+            // Reopen after mid-pass failure: Batch 1 is committed (including its session_facts
+            // and source_files.native_session), and Batch 2 is completely rolled back.
+            let reopened = AnalyticsStore::open_existing(&db_path, "key").unwrap();
+            let state = reopened.source_state("src-multi").unwrap().unwrap();
+            assert_eq!(
+                state.1, batch0_bytes,
+                "watermark must stay at batch 1 boundary after batch 2 fails at {stage:?}"
+            );
+            assert_eq!(
+                reopened.source_native_session("src-multi").unwrap(),
+                Some(expected_codex_sealed.clone()),
+                "source_files.native_session must be durable after batch 1 commits ({stage:?})"
+            );
+            assert!(
+                reopened.load_usage().unwrap().is_empty(),
+                "batch 2 usage must not persist after failure at {stage:?}"
+            );
+            let sf_after_b1 = reopened.load_session_facts().unwrap();
+            assert_eq!(
+                sf_after_b1.len(),
+                1,
+                "batch 1 must persist session_facts covered by its watermark ({stage:?})"
+            );
+            assert_eq!(sf_after_b1[0].native_session, expected_codex_sealed);
+            assert_ne!(sf_after_b1[0].link_id, "unlinked");
+            assert!(!sf_after_b1[0].header_conflict);
+            let tools_after_b1 = reopened.load_tools().unwrap();
+            assert_eq!(tools_after_b1.len(), 1);
+            assert_eq!(
+                tools_after_b1[0].failed, None,
+                "batch 2 settlement must roll back when batch 2 fails at {stage:?}"
+            );
+            let snap_after_b1 = reopened.canonical_table_snapshot().unwrap();
+            if let Some(expected_b1) = &batch0_reference_snap {
+                assert_eq!(
+                    &snap_after_b1, expected_b1,
+                    "batch 1 prefix state must be identical regardless of where batch 2 failed ({stage:?})"
+                );
+            } else {
+                batch0_reference_snap = Some(snap_after_b1);
+            }
+
+            // Re-run from the Batch 1 watermark without failpoint -> converges to uninterrupted result.
+            ingest_jsonl_limited_with_link(
+                &reopened,
+                "src-multi",
+                "codex",
+                &codex_multi,
+                Some(tool_key),
+                None,
+                || Ok(()),
+                &limits,
+                &link_cfg,
+            )
+            .unwrap();
+            assert_eq!(
+                reopened.canonical_table_snapshot().unwrap(),
+                multi_expected,
+                "resuming after batch 2 failure at {stage:?} must converge to uninterrupted result"
+            );
+        }
+
+        // Part B: Conflicting session_meta header in Batch 2 flips Batch 1's linked row to unlinked
+        // via D3 sticky-conflict upsert and converges to the uninterrupted state.
+        let codex_conflict = dir.join("codex_conflict_batches.jsonl");
+        let c_line1 = "{\"type\":\"session_meta\",\"timestamp\":\"2026-10-15T12:00:00Z\",\"payload\":{\"id\":\"codex-conflict-a\"}}\n";
+        let c_line2 = "{\"type\":\"event_msg\",\"timestamp\":\"2026-10-15T12:00:01Z\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":10,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":5,\"reasoning_output_tokens\":0}}}}\n";
+        let c_line3 = "{\"type\":\"session_meta\",\"timestamp\":\"2026-10-15T12:00:02Z\",\"payload\":{\"id\":\"codex-conflict-b\"}}\n";
+        let c_line4 = "{\"type\":\"event_msg\",\"timestamp\":\"2026-10-15T12:00:03Z\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":20,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":10,\"reasoning_output_tokens\":0}}}}\n";
+        fs::write(
+            &codex_conflict,
+            format!("{c_line1}{c_line2}{c_line3}{c_line4}"),
+        )
+        .unwrap();
+
+        let conflict_ref_db = dir.join("conflict_ref.duckdb");
+        fs::copy(&empty_db, &conflict_ref_db).unwrap();
+        let conflict_expected = {
+            let store = AnalyticsStore::open_existing(&conflict_ref_db, "key").unwrap();
+            ingest_jsonl_limited_with_link(
+                &store,
+                "src-conflict",
+                "codex",
+                &codex_conflict,
+                Some(tool_key),
+                None,
+                || Ok(()),
+                &limits,
+                &link_cfg,
+            )
+            .unwrap();
+            let sf = store.load_session_facts().unwrap();
+            assert!(!sf.is_empty());
+            assert!(sf
+                .iter()
+                .all(|f| f.header_conflict && f.link_id == "unlinked"));
+            store.checkpoint().unwrap();
+            store.canonical_table_snapshot().unwrap()
+        };
+
+        let conflict_test_db = dir.join("conflict_test.duckdb");
+        fs::copy(&empty_db, &conflict_test_db).unwrap();
+        {
+            let store = AnalyticsStore::open_existing(&conflict_test_db, "key").unwrap();
+            let err = with_ingest_failpoint(
+                move |batch_idx, at| {
+                    if batch_idx == 1 && at == IngestBatchStage::BeforeCommit {
+                        anyhow::bail!("stop after batch 1 committed");
+                    }
+                    Ok(())
+                },
+                || {
+                    ingest_jsonl_limited_with_link(
+                        &store,
+                        "src-conflict",
+                        "codex",
+                        &codex_conflict,
+                        Some(tool_key),
+                        None,
+                        || Ok(()),
+                        &limits,
+                        &link_cfg,
+                    )
+                },
+            )
+            .unwrap_err();
+            assert!(err.to_string().contains("stop after batch 1 committed"));
+        }
+        let reopened_conflict = AnalyticsStore::open_existing(&conflict_test_db, "key").unwrap();
+        let sf_b1 = reopened_conflict.load_session_facts().unwrap();
+        assert_eq!(sf_b1.len(), 1);
+        assert_ne!(
+            sf_b1[0].link_id, "unlinked",
+            "Batch 1 reflects lines 1..2 before the conflict on line 3"
+        );
+        assert!(!sf_b1[0].header_conflict);
+        ingest_jsonl_limited_with_link(
+            &reopened_conflict,
+            "src-conflict",
+            "codex",
+            &codex_conflict,
+            Some(tool_key),
+            None,
+            || Ok(()),
+            &limits,
+            &link_cfg,
+        )
+        .unwrap();
+        assert_eq!(
+            reopened_conflict.canonical_table_snapshot().unwrap(),
+            conflict_expected,
+            "Conflicting multi-batch file must converge to uninterrupted header_conflict state after mid-pass failure"
+        );
+    }
+
+    #[test]
+    fn claude_multi_batch_session_in_batch1_only_batch2_fails_rerun_keeps_session_fact_without_fallback(
+    ) {
+        use super::tests::{open_test_analytics, AdmittedTestDir};
+        use dendro_core::IngestBatchStage;
+
+        let scratch = AdmittedTestDir::new("dendro-d4a-claude-b1-session");
+        let dir = scratch.path();
+        let tool_key = b"d4a-claude-b1-tool-key-00000000";
+        let link_cfg = dendro_core::SessionLinkConfig::from_key_hex(
+            &"66".repeat(32),
+            Some("acme"),
+            Some("host-d4a"),
+            Some("core"),
+            Some("2026-11"),
+        );
+        let limits = crate::sdk::ReadLimits {
+            encoded_bytes: 1 << 20,
+            nesting_depth: 64,
+            decoded_records_per_batch: 2,
+            line_attempts: None,
+        };
+
+        let empty_db = dir.join("empty_seed.duckdb");
+        {
+            let store = open_test_analytics(&empty_db);
+            store.checkpoint().unwrap();
+        }
+
+        // Case 1(a): sessionId "claude-session-X" appears ONLY in Batch 1 (lines 1-2).
+        // Batch 2 (lines 3-4) has valid Claude records with NO sessionId and NO /message/usage.
+        let claude_file = dir.join("claude_b1_only.jsonl");
+        let l1 = "{\"type\":\"assistant\",\"sessionId\":\"claude-session-X\",\"timestamp\":\"2026-10-15T12:00:00Z\",\"message\":{\"id\":\"m-x1\",\"role\":\"assistant\",\"usage\":{\"input_tokens\":40,\"output_tokens\":10,\"cache_read_input_tokens\":0,\"cache_creation_input_tokens\":0}}}\n";
+        let l2 = "{\"type\":\"user\",\"sessionId\":\"claude-session-X\",\"timestamp\":\"2026-10-15T12:00:01Z\",\"message\":{\"role\":\"user\",\"content\":\"hello\"}}\n";
+        let l3 = "{\"type\":\"system\",\"timestamp\":\"2026-10-15T12:00:02Z\"}\n";
+        let l4 = "{\"type\":\"custom-title\",\"timestamp\":\"2026-10-15T12:00:03Z\"}\n";
+        fs::write(&claude_file, format!("{l1}{l2}{l3}{l4}")).unwrap();
+
+        let expected_sealed_x = seal_session(Some(tool_key), "claude", "claude-session-X");
+        let (expected_link_x, _) = link_cfg.resolve_session_link(
+            Some("claude"),
+            Some("claude-session-X"),
+            Some("harness"),
+        );
+        assert_ne!(expected_link_x, "unlinked");
+
+        let ref_db = dir.join("claude_b1_ref.duckdb");
+        fs::copy(&empty_db, &ref_db).unwrap();
+        let expected_snap = {
+            let store = AnalyticsStore::open_existing(&ref_db, "key").unwrap();
+            ingest_jsonl_limited_with_link(
+                &store,
+                "src-claude-b1",
+                "claude",
+                &claude_file,
+                Some(tool_key),
+                None,
+                || Ok(()),
+                &limits,
+                &link_cfg,
+            )
+            .unwrap();
+            let sf = store.load_session_facts().unwrap();
+            assert_eq!(
+                sf.len(),
+                1,
+                "uninterrupted run must have exactly one session_facts row"
+            );
+            assert_eq!(sf[0].native_session, expected_sealed_x);
+            assert_eq!(sf[0].link_id, expected_link_x);
+            assert_eq!(
+                store.source_native_session("src-claude-b1").unwrap(),
+                Some(expected_sealed_x.clone())
+            );
+            store.checkpoint().unwrap();
+            store.canonical_table_snapshot().unwrap()
+        };
+
+        let test_db = dir.join("claude_b1_test.duckdb");
+        fs::copy(&empty_db, &test_db).unwrap();
+        {
+            let store = AnalyticsStore::open_existing(&test_db, "key").unwrap();
+            let err = with_ingest_failpoint(
+                move |batch_idx, at| {
+                    if batch_idx == 1 && at == IngestBatchStage::AfterWatermark {
+                        anyhow::bail!("claude batch-2 failpoint");
+                    }
+                    Ok(())
+                },
+                || {
+                    ingest_jsonl_limited_with_link(
+                        &store,
+                        "src-claude-b1",
+                        "claude",
+                        &claude_file,
+                        Some(tool_key),
+                        None,
+                        || Ok(()),
+                        &limits,
+                        &link_cfg,
+                    )
+                },
+            )
+            .unwrap_err();
+            assert!(err.to_string().contains("claude batch-2 failpoint"));
+        }
+
+        // Right after Batch 2 fails: Batch 1's session_facts row for X and native_session are durable.
+        let reopened = AnalyticsStore::open_existing(&test_db, "key").unwrap();
+        let sf_after_b1 = reopened.load_session_facts().unwrap();
+        assert_eq!(
+            sf_after_b1.len(),
+            1,
+            "X must already have its session_facts row after batch 1 commits"
+        );
+        assert_eq!(sf_after_b1[0].native_session, expected_sealed_x);
+        assert_eq!(sf_after_b1[0].link_id, expected_link_x);
+        assert_eq!(
+            reopened.source_native_session("src-claude-b1").unwrap(),
+            Some(expected_sealed_x.clone())
+        );
+
+        // Rerun from Batch 1's watermark -> X keeps its session_facts row, no spurious claude-session
+        // fallback is added, and the final state equals the uninterrupted run.
+        ingest_jsonl_limited_with_link(
+            &reopened,
+            "src-claude-b1",
+            "claude",
+            &claude_file,
+            Some(tool_key),
+            None,
+            || Ok(()),
+            &limits,
+            &link_cfg,
+        )
+        .unwrap();
+        let sf_final = reopened.load_session_facts().unwrap();
+        assert_eq!(
+            sf_final.len(),
+            1,
+            "rerun must not emit a spurious claude-session fallback row"
+        );
+        assert_eq!(sf_final[0].native_session, expected_sealed_x);
+        assert_eq!(sf_final[0].link_id, expected_link_x);
+        assert_eq!(
+            reopened.canonical_table_snapshot().unwrap(),
+            expected_snap,
+            "resumed Claude multi-batch state must equal uninterrupted run"
+        );
+
+        // Reverse case: Batch 1 has no sessionId and no usage (so Batch 1 persists the temporary
+        // claude-session fallback); Batch 2 has sessionId "claude-session-X" and retires the fallback.
+        let claude_rev_file = dir.join("claude_b2_only.jsonl");
+        fs::write(&claude_rev_file, format!("{l3}{l4}{l1}{l2}")).unwrap();
+        let rev_db = dir.join("claude_b2_rev.duckdb");
+        fs::copy(&empty_db, &rev_db).unwrap();
+        let rev_store = AnalyticsStore::open_existing(&rev_db, "key").unwrap();
+        ingest_jsonl_limited_with_link(
+            &rev_store,
+            "src-claude-b2",
+            "claude",
+            &claude_rev_file,
+            Some(tool_key),
+            None,
+            || Ok(()),
+            &limits,
+            &link_cfg,
+        )
+        .unwrap();
+        let sf_rev = rev_store.load_session_facts().unwrap();
+        assert_eq!(
+            sf_rev.len(),
+            1,
+            "Batch 2 real sessionId must retire Batch 1's temporary claude-session fallback"
+        );
+        assert_eq!(sf_rev[0].native_session, expected_sealed_x);
+        assert_eq!(sf_rev[0].link_id, expected_link_x);
+    }
+
+    #[test]
+    fn codex_multi_batch_conflicting_session_meta_in_batch1_batch2_fails_rerun_agrees_with_uninterrupted(
+    ) {
+        use super::tests::{open_test_analytics, AdmittedTestDir};
+        use dendro_core::IngestBatchStage;
+
+        let scratch = AdmittedTestDir::new("dendro-d4a-codex-b1-conflict");
+        let dir = scratch.path();
+        let tool_key = b"d4a-codex-b1-conflict-key-000000";
+        let link_cfg = dendro_core::SessionLinkConfig::from_key_hex(
+            &"77".repeat(32),
+            Some("acme"),
+            Some("host-d4a"),
+            Some("core"),
+            Some("2026-11"),
+        );
+        let limits = crate::sdk::ReadLimits {
+            encoded_bytes: 1 << 20,
+            nesting_depth: 64,
+            decoded_records_per_batch: 2,
+            line_attempts: None,
+        };
+
+        let empty_db = dir.join("empty_seed.duckdb");
+        {
+            let store = open_test_analytics(&empty_db);
+            store.checkpoint().unwrap();
+        }
+
+        // Case 1(b): conflicting session_meta is in Batch 1 (lines 1-2); Batch 2 (lines 3-4) fails.
+        let codex_file = dir.join("codex_b1_conflict.jsonl");
+        let l1 = "{\"type\":\"session_meta\",\"timestamp\":\"2026-10-15T12:00:00Z\",\"payload\":{\"id\":\"codex-b1-a\"}}\n";
+        let l2 = "{\"type\":\"session_meta\",\"timestamp\":\"2026-10-15T12:00:01Z\",\"payload\":{\"id\":\"codex-b1-b\"}}\n";
+        let l3 = "{\"type\":\"event_msg\",\"timestamp\":\"2026-10-15T12:00:02Z\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":30,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":10,\"reasoning_output_tokens\":0}}}}\n";
+        let l4 = "{\"type\":\"event_msg\",\"timestamp\":\"2026-10-15T12:00:03Z\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":60,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":20,\"reasoning_output_tokens\":0}}}}\n";
+        fs::write(&codex_file, format!("{l1}{l2}{l3}{l4}")).unwrap();
+
+        let ref_db = dir.join("codex_b1_conflict_ref.duckdb");
+        fs::copy(&empty_db, &ref_db).unwrap();
+        let expected_snap = {
+            let store = AnalyticsStore::open_existing(&ref_db, "key").unwrap();
+            ingest_jsonl_limited_with_link(
+                &store,
+                "src-codex-b1-conflict",
+                "codex",
+                &codex_file,
+                Some(tool_key),
+                None,
+                || Ok(()),
+                &limits,
+                &link_cfg,
+            )
+            .unwrap();
+            let sf = store.load_session_facts().unwrap();
+            assert_eq!(sf.len(), 1);
+            assert_eq!(sf[0].link_id, "unlinked");
+            assert!(sf[0].header_conflict);
+            assert_eq!(
+                sf[0].unlinked_reason.as_deref(),
+                Some("missing_native_session")
+            );
+            assert!(store
+                .warning_reasons()
+                .unwrap()
+                .contains(&"conflicting session header".to_string()));
+            store.checkpoint().unwrap();
+            store.canonical_table_snapshot().unwrap()
+        };
+
+        let test_db = dir.join("codex_b1_conflict_test.duckdb");
+        fs::copy(&empty_db, &test_db).unwrap();
+        {
+            let store = AnalyticsStore::open_existing(&test_db, "key").unwrap();
+            let err = with_ingest_failpoint(
+                move |batch_idx, at| {
+                    if batch_idx == 1 && at == IngestBatchStage::AfterUsageFacts {
+                        anyhow::bail!("codex batch-2 failpoint");
+                    }
+                    Ok(())
+                },
+                || {
+                    ingest_jsonl_limited_with_link(
+                        &store,
+                        "src-codex-b1-conflict",
+                        "codex",
+                        &codex_file,
+                        Some(tool_key),
+                        None,
+                        || Ok(()),
+                        &limits,
+                        &link_cfg,
+                    )
+                },
+            )
+            .unwrap_err();
+            assert!(err.to_string().contains("codex batch-2 failpoint"));
+        }
+
+        // Right after Batch 2 fails: warnings and session_facts already agree on the conflict in Batch 1.
+        let reopened = AnalyticsStore::open_existing(&test_db, "key").unwrap();
+        let sf_after_b1 = reopened.load_session_facts().unwrap();
+        assert_eq!(sf_after_b1.len(), 1);
+        assert_eq!(sf_after_b1[0].link_id, "unlinked");
+        assert!(
+            sf_after_b1[0].header_conflict,
+            "Batch 1 must persist header_conflict=true alongside the conflicting-header warning"
+        );
+        assert_eq!(
+            sf_after_b1[0].unlinked_reason.as_deref(),
+            Some("missing_native_session")
+        );
+        assert!(reopened
+            .warning_reasons()
+            .unwrap()
+            .contains(&"conflicting session header".to_string()));
+
+        // Rerun from Batch 1's watermark -> remains unlinked with header_conflict=true,
+        // warnings and session_facts agree, and final state equals uninterrupted run.
+        ingest_jsonl_limited_with_link(
+            &reopened,
+            "src-codex-b1-conflict",
+            "codex",
+            &codex_file,
+            Some(tool_key),
+            None,
+            || Ok(()),
+            &limits,
+            &link_cfg,
+        )
+        .unwrap();
+        let sf_final = reopened.load_session_facts().unwrap();
+        assert_eq!(sf_final.len(), 1);
+        assert_eq!(sf_final[0].link_id, "unlinked");
+        assert!(sf_final[0].header_conflict);
+        assert_eq!(
+            reopened.canonical_table_snapshot().unwrap(),
+            expected_snap,
+            "resumed Codex conflicting-header state must equal uninterrupted run"
+        );
+    }
+
+    #[test]
+    fn appended_multi_batch_run_with_batch2_failing_keeps_native_session_and_reader_marker() {
+        use super::tests::{open_test_analytics, AdmittedTestDir};
+        use dendro_core::IngestBatchStage;
+
+        let scratch = AdmittedTestDir::new("dendro-d4a-appended-native-session");
+        let dir = scratch.path();
+        let tool_key = b"d4a-append-native-session-key-00";
+        let link_cfg = dendro_core::SessionLinkConfig::from_key_hex(
+            &"88".repeat(32),
+            Some("acme"),
+            Some("host-d4a"),
+            Some("core"),
+            Some("2026-11"),
+        );
+        let limits = crate::sdk::ReadLimits {
+            encoded_bytes: 1 << 20,
+            nesting_depth: 64,
+            decoded_records_per_batch: 2,
+            line_attempts: None,
+        };
+
+        let db_path = dir.join("append_native.duckdb");
+        let store = open_test_analytics(&db_path);
+        let codex_file = dir.join("codex_append.jsonl");
+        let l1 = "{\"type\":\"session_meta\",\"timestamp\":\"2026-10-15T12:00:00Z\",\"payload\":{\"id\":\"sess-keep-S\"}}\n";
+        let l2 = "{\"type\":\"event_msg\",\"timestamp\":\"2026-10-15T12:00:01Z\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":10,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":2,\"reasoning_output_tokens\":0}}}}\n";
+        fs::write(&codex_file, format!("{l1}{l2}")).unwrap();
+
+        let expected_s = seal_session(Some(tool_key), "codex", "sess-keep-S");
+        ingest_jsonl_limited_with_link(
+            &store,
+            "src-append-s",
+            "codex",
+            &codex_file,
+            Some(tool_key),
+            None,
+            || Ok(()),
+            &limits,
+            &link_cfg,
+        )
+        .unwrap();
+        assert_eq!(
+            store.source_native_session("src-append-s").unwrap(),
+            Some(expected_s.clone())
+        );
+
+        // Append 4 more lines (2 batches of 2 lines each) and make Batch 2 of the appended pass fail.
+        let l3 = "{\"type\":\"event_msg\",\"timestamp\":\"2026-10-15T12:00:02Z\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":20,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":4,\"reasoning_output_tokens\":0}}}}\n";
+        let l4 = "{\"type\":\"event_msg\",\"timestamp\":\"2026-10-15T12:00:03Z\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":30,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":6,\"reasoning_output_tokens\":0}}}}\n";
+        let l5 = "{\"type\":\"event_msg\",\"timestamp\":\"2026-10-15T12:00:04Z\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":40,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":8,\"reasoning_output_tokens\":0}}}}\n";
+        let l6 = "{\"type\":\"event_msg\",\"timestamp\":\"2026-10-15T12:00:05Z\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":50,\"cached_input_tokens\":0,\"cache_write_input_tokens\":0,\"output_tokens\":10,\"reasoning_output_tokens\":0}}}}\n";
+        fs::write(&codex_file, format!("{l1}{l2}{l3}{l4}{l5}{l6}")).unwrap();
+
+        let err = with_ingest_failpoint(
+            move |batch_idx, at| {
+                if batch_idx == 1 && at == IngestBatchStage::BeforeCommit {
+                    anyhow::bail!("appended batch-2 failpoint");
+                }
+                Ok(())
+            },
+            || {
+                ingest_jsonl_limited_with_link(
+                    &store,
+                    "src-append-s",
+                    "codex",
+                    &codex_file,
+                    Some(tool_key),
+                    None,
+                    || Ok(()),
+                    &limits,
+                    &link_cfg,
+                )
+            },
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("appended batch-2 failpoint"));
+        drop(store);
+
+        let reopened = AnalyticsStore::open_existing(&db_path, "key").unwrap();
+        assert_eq!(
+            reopened.source_native_session("src-append-s").unwrap(),
+            Some(expected_s.clone()),
+            "appended multi-batch run with batch 2 failing must keep source_files.native_session = S"
+        );
+        let reader_marker_session: String = reopened
+            .with_private_connection(|conn| {
+                Ok(conn.query_row(
+                    "SELECT native_session FROM tool_facts WHERE starts_with(source_key, 'dendro-internal:reader:') AND source_id = ?",
+                    [dendro_core::redact("src-append-s")],
+                    |row| row.get(0),
+                )?)
+            })
+            .unwrap();
+        assert_eq!(
+            reader_marker_session, expected_s,
+            "reader-marker session in tool_facts must remain S (never '' or NULL) after batch 1 commits and batch 2 fails"
+        );
     }
 }

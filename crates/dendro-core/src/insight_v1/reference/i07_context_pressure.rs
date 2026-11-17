@@ -26,6 +26,21 @@ impl Insight for ContextPressure {
     fn domain(&self) -> InsightDomain {
         InsightDomain::Harness
     }
+    fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::ContextWindowUsage]
+    }
+    fn optional_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[
+            Field::InputTokens,
+            Field::NativeSession,
+            Field::TurnTimestamp,
+        ]
+    }
+    fn coverage(&self) -> &'static str {
+        COVERAGE
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         if !table_exists(input.connection(), "context_facts") {
             let usage = match usage_count(input) {
@@ -124,24 +139,33 @@ fn missing_limit(insight: &ContextPressure, n: u64, evidence: Vec<String>) -> In
 }
 
 fn usage_count(input: &InsightInput<'_>) -> anyhow::Result<u64> {
-    let count: i64 = input.connection().query_row(
-        "SELECT COUNT(*) FROM usage_facts
+    let mut stmt = input.connection().prepare(
+        "SELECT harness FROM usage_facts
          WHERE (? IS NULL OR harness = ?)
            AND (? IS NULL OR native_session = ?)",
+    )?;
+    let rows = stmt.query_map(
         params![
             input.scope().harness.as_deref(),
             input.scope().harness.as_deref(),
             input.scope().session.as_deref(),
             input.scope().session.as_deref()
         ],
-        |row| row.get(0),
+        |row| row.get::<_, String>(0),
     )?;
-    Ok(count as u64)
+    let mut count = 0u64;
+    for item in rows {
+        let row_harness = item?;
+        if input.allows_harness(&row_harness) {
+            count += 1;
+        }
+    }
+    Ok(count)
 }
 
 fn load(input: &InsightInput<'_>) -> anyhow::Result<Vec<(String, i64, Option<i64>)>> {
     let mut stmt = input.connection().prepare(
-        "SELECT source_key, context_used, context_limit
+        "SELECT source_key, harness, context_used, context_limit
          FROM context_facts
          WHERE (? IS NULL OR harness = ?)
            AND (? IS NULL OR native_session = ?)
@@ -156,7 +180,21 @@ fn load(input: &InsightInput<'_>) -> anyhow::Result<Vec<(String, i64, Option<i64
     let to = scope.to.as_deref();
     let rows = stmt.query_map(
         params![harness, harness, session, session, from, from, to, to],
-        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, Option<i64>>(3)?,
+            ))
+        },
     )?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    let mut out = Vec::new();
+    for item in rows {
+        let (key, row_harness, used, limit) = item?;
+        if input.allows_harness(&row_harness) {
+            out.push((key, used, limit));
+        }
+    }
+    Ok(out)
 }

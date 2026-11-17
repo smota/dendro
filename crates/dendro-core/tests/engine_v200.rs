@@ -72,13 +72,10 @@ fn schema4_shadow_insights_are_deterministic() {
         "I02.gpt-test.input_uncached",
         "100",
     );
-    assert_insight(
+    assert_refused_insight(
         &first,
         "I04",
-        "partial:",
-        &["u1"],
-        "I04.gpt-test.observed_usd",
-        "0.020000000000",
+        "refused:not_computable: missing observed_cost (codex:observed_cost)",
     );
     assert_insight(
         &first,
@@ -96,13 +93,10 @@ fn schema4_shadow_insights_are_deterministic() {
         "I09.relation.spawn",
         "1",
     );
-    assert_insight(
+    assert_refused_insight(
         &first,
         "I14",
-        "computed",
-        &["root-a"],
-        "I14.codex.attribution.launched",
-        "1",
+        "refused:not_computable: missing process_identity, process_resource_samples (codex:process_identity+process_resource_samples)",
     );
     assert_insight(
         &first,
@@ -148,4 +142,22 @@ fn assert_insight(
         .find(|(name, _)| name == measure_id)
         .unwrap_or_else(|| panic!("{measure_id} missing in {insight:?}"));
     assert_eq!(measure.1, measure_value, "{measure_id}");
+}
+
+fn assert_refused_insight(insights: &[ShadowInsight], id: &str, expected_status: &str) {
+    let insight = insights
+        .iter()
+        .find(|insight| insight.id == id)
+        .unwrap_or_else(|| panic!("{id} missing"));
+    assert_eq!(insight.status, expected_status, "{id} status");
+    assert!(
+        insight.evidence.is_empty(),
+        "{id} refused insight must have empty evidence, got {:?}",
+        insight.evidence
+    );
+    assert!(
+        insight.measures.is_empty(),
+        "{id} refused insight must have empty measures, got {:?}",
+        insight.measures
+    );
 }

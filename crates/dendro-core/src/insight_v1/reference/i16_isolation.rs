@@ -26,6 +26,17 @@ impl Insight for Isolation {
     fn domain(&self) -> InsightDomain {
         InsightDomain::Security
     }
+    fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::SecurityPolicy]
+    }
+    fn optional_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::NativeSession]
+    }
+    fn coverage(&self) -> &'static str {
+        COVERAGE
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         let rows = match load(input) {
             Ok(rows) => rows,
@@ -95,7 +106,7 @@ impl Insight for Isolation {
 
 fn load(input: &InsightInput<'_>) -> anyhow::Result<Vec<(String, String)>> {
     let mut stmt = input.connection().prepare(
-        "SELECT source_key, kind
+        "SELECT source_key, harness, kind
          FROM security_facts
          WHERE (? IS NULL OR harness = ?)
            AND (? IS NULL OR native_session = ?)
@@ -110,7 +121,20 @@ fn load(input: &InsightInput<'_>) -> anyhow::Result<Vec<(String, String)>> {
     let to = scope.to.as_deref();
     let rows = stmt.query_map(
         params![harness, harness, session, session, from, from, to, to],
-        |row| Ok((row.get(0)?, row.get(1)?)),
+        |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        },
     )?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    let mut out = Vec::new();
+    for row in rows {
+        let (key, row_harness, kind) = row?;
+        if input.allows_harness(&row_harness) {
+            out.push((key, kind));
+        }
+    }
+    Ok(out)
 }

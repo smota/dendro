@@ -135,13 +135,22 @@ pub struct MigrateV5Request<'a> {
     pub stop_before_cutover: bool,
 }
 
+fn named_io(step: &str, error: MigrationV5Error) -> MigrationV5Error {
+    match error {
+        MigrationV5Error::Io(text) => MigrationV5Error::Io(format!("{step}: {text}")),
+        other => other,
+    }
+}
+
 pub fn migrate_schema4_to_schema5(
     request: MigrateV5Request<'_>,
 ) -> Result<MigrationV5Receipt, MigrationV5Error> {
-    let database = request
-        .database
-        .canonicalize()
-        .map_err(|error| MigrationV5Error::Io(error.to_string()))?;
+    let database = request.database.canonicalize().map_err(|error| {
+        MigrationV5Error::Io(format!(
+            "canonicalize: {error} ({})",
+            request.database.display()
+        ))
+    })?;
     let parent = database
         .parent()
         .ok_or_else(|| MigrationV5Error::Io("database parent absent".into()))?
@@ -156,25 +165,27 @@ pub fn migrate_schema4_to_schema5(
         }
         return Err(MigrationV5Error::LiveWriter);
     }
-    checkpoint_preserving(&database)?;
+    checkpoint_preserving(&database).map_err(|error| named_io("checkpoint", error))?;
     if wal_is_dirty(&database) {
         return Err(MigrationV5Error::UncheckpointedDirtyWal);
     }
     if !request.privacy_key.is_file() {
         return Err(MigrationV5Error::MissingMember("privacy_key".into()));
     }
-    let provenance = provenance_members(&database, request.provenance_sidecars)?;
-    create_backup_dir(&backup)?;
+    let provenance = provenance_members(&database, request.provenance_sidecars)
+        .map_err(|error| named_io("provenance", error))?;
+    create_backup_dir(&backup).map_err(|error| named_io("backup_dir", error))?;
     let members = match copy_backup_set(&database, request.privacy_key, &provenance, &backup) {
         Ok(members) => members,
         Err(error) => {
             let _ = fs::remove_dir_all(&backup);
-            return Err(error);
+            return Err(named_io("copy_backup", error));
         }
     };
     let backup_set_sha256 = backup_set_digest(&members);
-    let pre_version = read_storage_version(&database)?;
-    let live_hash = sha256_file(&database)?;
+    let pre_version =
+        read_storage_version(&database).map_err(|error| named_io("storage_version", error))?;
+    let live_hash = sha256_file(&database).map_err(|error| named_io("live_hash", error))?;
     let receipt = MigrationV5Receipt {
         target_schema_version: MIGRATION_V5_TARGET_SCHEMA_VERSION,
         storage_version: pre_version,
@@ -183,8 +194,9 @@ pub fn migrate_schema4_to_schema5(
         backup_set_sha256: backup_set_sha256.clone(),
     };
     let receipt_bytes = serde_json::to_vec_pretty(&receipt)
-        .map_err(|error| MigrationV5Error::Io(error.to_string()))?;
-    write_exclusive(&backup.join("receipt.json"), &receipt_bytes)?;
+        .map_err(|error| MigrationV5Error::Io(format!("receipt_json: {error}")))?;
+    write_exclusive(&backup.join("receipt.json"), &receipt_bytes)
+        .map_err(|error| named_io("receipt", error))?;
     let mut backup_member_digests = members.clone();
     backup_member_digests.push(MemberDigest {
         role: "receipt".to_string(),
@@ -210,15 +222,15 @@ pub fn migrate_schema4_to_schema5(
         receipt: receipt.clone(),
         loss: None,
     };
-    write_pointer(&parent, &schema4_pointer)?;
+    write_pointer(&parent, &schema4_pointer).map_err(|error| named_io("pointer", error))?;
     if request.stop_before_cutover {
         return Err(MigrationV5Error::InterruptedBeforeCutover);
     }
-    let staged = stage_v200(&database)?;
+    let staged = stage_v200(&database).map_err(|error| named_io("stage", error))?;
     if let Err(error) = upgrade_staged(&staged) {
         let _ = fs::remove_file(&staged);
         let _ = fs::remove_file(wal_path(&staged));
-        return Err(error);
+        return Err(named_io("upgrade", error));
     }
     if sha256_file(&database)? != live_hash || read_storage_version(&database)? != pre_version {
         return Err(MigrationV5Error::Schema(
@@ -236,7 +248,7 @@ pub fn migrate_schema4_to_schema5(
         storage_version,
         ..receipt
     };
-    publish_verified_over_live(&database, &staged)?;
+    publish_verified_over_live(&database, &staged).map_err(|error| named_io("publish", error))?;
     let pointer = PointerManifest {
         selected: "schema5-live".to_string(),
         live_database: live_name,
@@ -245,7 +257,7 @@ pub fn migrate_schema4_to_schema5(
         receipt: receipt.clone(),
         ..schema4_pointer
     };
-    write_pointer(&parent, &pointer)?;
+    write_pointer(&parent, &pointer).map_err(|error| named_io("pointer_flip", error))?;
     Ok(receipt)
 }
 
@@ -1128,11 +1140,63 @@ fn remove_if_present(path: &Path) -> Result<(), MigrationV5Error> {
     Ok(())
 }
 
-/// `sync_all` on a file, or on a directory opened read-only.
+/// `sync_all` on a file or a directory.
+///
+/// Windows `FlushFileBuffers` requires `GENERIC_WRITE`. A read-only handle
+/// returns `ERROR_ACCESS_DENIED` (os error 5). A directory also needs
+/// `FILE_FLAG_BACKUP_SEMANTICS`, or `CreateFile` itself returns error 5.
 fn fsync_path(path: &Path) -> Result<(), MigrationV5Error> {
-    let file = File::open(path).map_err(|error| MigrationV5Error::Io(error.to_string()))?;
+    let file = open_for_sync(path)?;
     file.sync_all()
         .map_err(|error| MigrationV5Error::Io(error.to_string()))
+}
+
+fn open_for_sync(path: &Path) -> Result<File, MigrationV5Error> {
+    #[cfg(windows)]
+    {
+        open_for_sync_windows(path)
+    }
+    #[cfg(not(windows))]
+    {
+        File::open(path).map_err(|error| MigrationV5Error::Io(error.to_string()))
+    }
+}
+
+#[cfg(windows)]
+fn open_for_sync_windows(path: &Path) -> Result<File, MigrationV5Error> {
+    use std::os::windows::fs::OpenOptionsExt;
+    const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+    let metadata =
+        fs::symlink_metadata(path).map_err(|error| MigrationV5Error::Io(error.to_string()))?;
+    let mut options = OpenOptions::new();
+    options.write(true);
+    if metadata.is_dir() {
+        options.read(true).custom_flags(FILE_FLAG_BACKUP_SEMANTICS);
+    }
+    options
+        .open(path)
+        .map_err(|error| MigrationV5Error::Io(error.to_string()))
+}
+
+#[cfg(test)]
+mod fsync_tests {
+    use super::fsync_path;
+    use crate::platform_v1::{create_user_private_root_with_choice, StorageRootChoice};
+    use std::fs;
+
+    #[test]
+    fn owned_synthetic_file_and_directory_flush() {
+        let root =
+            create_user_private_root_with_choice("dendro-fsync-", &StorageRootChoice::UserProfile)
+                .expect("owned synthetic root");
+        let file = root.path().join("synthetic.bin");
+        fs::write(&file, b"owned-synthetic").unwrap();
+        fsync_path(&file).expect("file flush");
+        fsync_path(root.path()).expect("directory flush");
+        let path = root.path().to_path_buf();
+        drop(root);
+        fs::remove_dir_all(path).unwrap();
+    }
 }
 
 fn wal_is_dirty(database: &Path) -> bool {

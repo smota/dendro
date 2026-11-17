@@ -1344,20 +1344,15 @@ mod tests {
         println!("  P95:  {:?}", p95);
         println!("  Max:  {:?}", max);
 
-        // Production latency is measured with optimized code. Keep the same
-        // full-census functional exercise in debug without calling it SLA proof.
-        let (limit_ms, criterion) = if cfg!(debug_assertions) {
-            println!("  Debug functional sanity only; production <50ms SLA requires the release-profile run");
-            (500, "debug functional sanity")
-        } else {
-            (50, "production SLA")
-        };
+        // Production latency is measured with optimized code (`cargo test --release -p dendro-core --lib --locked overview::tests::test_direct_overview_performance_5500_facts`).
+        // Keep the full-census functional exercise in debug without asserting wall-clock latency under unoptimized/contended test runs.
+        #[cfg(debug_assertions)]
+        println!("  Debug functional sanity only; production <50ms SLA is enforced by the release-profile run (`cargo test --release -p dendro-core --lib --locked overview::tests::test_direct_overview_performance_5500_facts`)");
+        #[cfg(not(debug_assertions))]
         assert!(
-            max < std::time::Duration::from_millis(limit_ms),
-            "{} violation: max iteration was {:?}, must be < {}ms",
-            criterion,
+            max < std::time::Duration::from_millis(50),
+            "production SLA violation: max iteration was {:?}, must be < 50ms",
             max,
-            limit_ms
         );
 
         let _ = fs::remove_dir_all(temp_dir);

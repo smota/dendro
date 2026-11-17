@@ -25,6 +25,25 @@ impl Insight for ModelCost {
     fn domain(&self) -> InsightDomain {
         InsightDomain::Model
     }
+    fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::ObservedCost]
+    }
+    fn optional_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[
+            Field::Model,
+            Field::InputTokens,
+            Field::OutputTokens,
+            Field::CacheReadTokens,
+            Field::CacheWriteTokens,
+            Field::NativeSession,
+            Field::TurnTimestamp,
+        ]
+    }
+    fn coverage(&self) -> &'static str {
+        COVERAGE
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         let rows = match input.usage_rows() {
             Ok(rows) => rows,
@@ -129,7 +148,7 @@ mod tests {
             .connection()
             .execute(
                 "INSERT INTO usage_facts (source_key, harness, native_session, ts, seq, input_uncached, output_tokens, cache_read, cache_write, reasoning, currency_total, generation, source_id, model)
-                 VALUES (?, 'claude', 's', NULL, 1, 10, 1, 0, 0, 0, ?, 1, 'src', ?)",
+                 VALUES (?, 'pi', 's', NULL, 1, 10, 1, 0, 0, 0, ?, 1, 'src', ?)",
                 params![key, usd, model],
             )
             .unwrap();
@@ -201,5 +220,29 @@ mod tests {
             InsightStatus::Refused { reason } if reason == "empty population"
         ));
         assert!(result.measures.is_empty());
+    }
+
+    #[test]
+    fn claude_only_is_not_computable_missing_observed_cost() {
+        let store = store();
+        store
+            .connection()
+            .execute(
+                "INSERT INTO usage_facts (source_key, harness, native_session, ts, seq, input_uncached, output_tokens, cache_read, cache_write, reasoning, currency_total, generation, source_id, model)
+                 VALUES ('k-claude', 'claude', 's', NULL, 1, 10, 1, 0, 0, 0, NULL, 1, 'src', 'claude-sonnet-4-5')",
+                [],
+            )
+            .unwrap();
+        let result = only(&store);
+        assert_eq!(
+            result.status,
+            InsightStatus::Refused {
+                reason: "not_computable: missing observed_cost (claude:observed_cost)".to_string(),
+            }
+        );
+        assert!(result.measures.is_empty());
+        assert!(result
+            .coverage
+            .contains("excluded: claude — missing observed_cost"));
     }
 }

@@ -1,0 +1,11 @@
+# link-id-v1 Contract Digest Manifest (Apache-2.0)
+# Format: <sha256>  <relative-path>
+ff334cf88d2e6ade927c71b03ae217785f38fdaee8e7cec09386bebaaefab486  SPEC.md
+05e1e64d0f1cb87c2d4b1005e1d628afaab328f58c7aef49fd13bd61e1248201  vocabulary.json
+8e862caf70e6bb248faf96b02ab3f3ca3816164d70375f2887cc5efe4f7b21c6  vectors/SHA256SUMS
+604d65f52bd6c5f2dcf30afa3e980fa9663c90bf2921c9660c6478e88a1d9dcd  vectors/basic.json
+be80ffa651a784d39c8f141788db0e93e258bca23569c8ddf0bf06bd3a6d8615  vectors/collisions.json
+d2cb873c285e3a1f584ac9b097b80d516d9dc29cccc7f3d0fa7ddc37498c1157  vectors/g0a.json
+26c41f7c988954c00d49e47913c96054f3cc34cb04d09c77ff41c14432980230  vectors/negative.json
+70829ac09c9ec2ab5d6399ddcc44bda265b4cfb2b88b25bb260442d9d2e7aa64  vectors/rotation.json
+# BUNDLE-SHA256: 07dff9562958ec286c1b096f0eb15c91deddb284c26d99904afeba2b882d0ab5

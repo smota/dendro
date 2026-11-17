@@ -9,8 +9,8 @@
     },
     "agents-1-project-context-mission": {
       "address": "AGENTS.md#1-project-context-mission",
-      "sectionSha256": "935e86797107facc23c694606e9b8c36febbfcef238a54aa1fcde8dfe4088e39",
-      "tokens": 141
+      "sectionSha256": "6a1cf4479b7b9fd73602bc13da8ff99bcf41e793fcfc403869aa8c6e2e46b381",
+      "tokens": 162
     },
     "agents-2-autonomous-delivery-governance-agentflow-sdlc": {
       "address": "AGENTS.md#2-autonomous-delivery-governance-agentflow-sdlc",
@@ -118,34 +118,34 @@
       "tokens": 302
     },
     "readme-walkthrough-real-operation-v0-6-0": {
-      "address": "README.md#walkthrough-real-operation-v0-6-0",
-      "sectionSha256": "8b54dc198bcce202e2b9d1bfaee5e2cad1a6016f4a5209babbd52ca1779e8d27",
-      "tokens": 241
+      "address": "docs/VIDEO_WALKTHROUGH.md#overview-analytical-integrity",
+      "sectionSha256": "fa6d2db8ed8cbd34cfc87e01fc270acf93d9eaf6cb91a961421982147e399f9c",
+      "tokens": 250
     },
     "readme-wave-v0-7": {
-      "address": "README.md#wave-v0-7",
-      "sectionSha256": "9131e3abcebc19c1c82b2305b7787ecf1e25115d7c2cd24dc4b6a997e443d223",
-      "tokens": 369
+      "address": "docs/CLI_R1.md#v0-7-0-fleet-brief-cockpit-and-pi-coverage",
+      "sectionSha256": "a19c94f8f6b68776278cfb7da318eb11dd56719cf091e7419fdd4095cb1f8b44",
+      "tokens": 1069
     },
     "readme-start-locally": {
-      "address": "README.md#start-locally",
-      "sectionSha256": "f4511197c0b120b70dfc0b53fcce1a6c17d45beba4e0df4f2dfee01703c07dad",
-      "tokens": 671
+      "address": "README.md#start-locally-60-second-quickstart",
+      "sectionSha256": "03a3ac3000dcfec6fa7cdcbe82bf020d52bc0c9f8126fba76506e4a6f47c9ec3",
+      "tokens": 295
     },
     "readme-start-locally-zero-ceremony-quickstart": {
-      "address": "README.md#start-locally/zero-ceremony-quickstart",
-      "sectionSha256": "ab50b4e8e5100a5fff70a6b60b96d3901644dfcb4df4e72191ef35ccb38405ef",
-      "tokens": 330
+      "address": "docs/CLI_R1.md#v0-6-0-operator-usability-smart-window-extensions",
+      "sectionSha256": "652eeed82387827b461b2015ea9dc41eb78b5e7279434d56a37caf01c16065ff",
+      "tokens": 556
     },
     "readme-start-locally-explicit-roots-fixed-windows": {
-      "address": "README.md#start-locally/explicit-roots-fixed-windows",
-      "sectionSha256": "0e16fa7aefbd40a57a8a6fda028d0937de555594f90ca4c1f7aaa436cac10a17",
-      "tokens": 297
+      "address": "docs/adoption/README.md#choose-sources-and-a-period",
+      "sectionSha256": "2b98749f78d8b08de036cd54ea7b7bf4dcc7d090bd058811c997b39ae6d2c58d",
+      "tokens": 260
     },
     "readme-local-investigation": {
-      "address": "README.md#local-investigation",
-      "sectionSha256": "c9eff9be038a72eacc91053bd95d19a043cff88f7787db515bd1c39c2a172693",
-      "tokens": 158
+      "address": "docs/adoption/README.md#make-your-first-decision",
+      "sectionSha256": "fd09811bffbedbfac5d12976dd47af72d62e40431268c95a5994204928d11b8a",
+      "tokens": 134
     },
     "readme-verification": {
       "address": "README.md#verification",
@@ -154,13 +154,13 @@
     },
     "readme-documentation": {
       "address": "README.md#documentation",
-      "sectionSha256": "3741b3245608984a0e50d883760277ae3040dd8c60c6a41a3ea372064d56df4d",
-      "tokens": 208
+      "sectionSha256": "f00db9b9d37a9943fa8aee439cd4aa559393a8b692dc71cf21fc5e78db1e3dc5",
+      "tokens": 300
     },
     "readme-privacy-and-license": {
       "address": "README.md#privacy-and-license",
-      "sectionSha256": "7e0bd7dfcf6cb42e0ca8adac600f8cda7afc5788a10a3185a5ac53d4b6d83963",
-      "tokens": 95
+      "sectionSha256": "9b4025239e6cebe11de223209ba04213be5cb82c81891a5229c3e5e6cc5c9521",
+      "tokens": 431
     },
     "product-positioning": {
       "address": ".agentflow/PRODUCT.md#positioning",
@@ -243,9 +243,9 @@
       "tokens": 187
     },
     "product-specification-0-positioning": {
-      "address": "docs/PRODUCT_SPECIFICATION.md#0-positioning",
-      "sectionSha256": "1b6bbe933093f62433d95a18e7593c71c8c976de626eded24f13ecff1d69f82d",
-      "tokens": 161
+      "address": "docs/PRODUCT_SPECIFICATION.md#operator-outcome",
+      "sectionSha256": "98f824f69c9bf82b38bad600cb2a12c9bf200f2d5fd6297e8c21ebecf4ab7305",
+      "tokens": 104
     },
     "product-specification-1-conclusion": {
       "address": "docs/PRODUCT_SPECIFICATION.md#1-conclusion",
@@ -576,6 +576,11 @@
       "address": "docs/stack-conventions.md#domain-checklist-devops",
       "sectionSha256": "fbf14c02e7bf90914b5b222446ce16fdc15355b5dd5506c456acc5f8a5808a4c",
       "tokens": 33
+    },
+    "cli-r1-private-staging-and-snapshots": {
+      "address": "docs/CLI_R1.md#private-staging-and-snapshots",
+      "sectionSha256": "6b879ee80b4073e5dff903309a875c7c801e34427b3cc38fc4d64599adc2244f",
+      "tokens": 550
     }
   },
   "claims": [

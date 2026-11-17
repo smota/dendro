@@ -72,9 +72,18 @@ jobs:
 
       - name: AgentFlow Catalogs & Path Ownership Validation
         shell: bash
+        env:
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          BASE_REF: ${{ github.base_ref }}
         run: |
           set -euo pipefail
-          node scripts/validate-path-ownership.mjs
+          node --test scripts/__tests__/validate-dependency-automation.test.mjs
+          node --test scripts/__tests__/ci-scope.test.mjs
+          if [[ "$PR_AUTHOR" == 'dependabot[bot]' ]]; then
+            node scripts/validate-dependency-automation.mjs
+          else
+            node scripts/validate-path-ownership.mjs
+          fi
           node scripts/validate-role-catalog.mjs
           node scripts/validate-skill-catalog.mjs
 

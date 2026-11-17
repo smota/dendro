@@ -1,0 +1,170 @@
+{
+  "contract": "link-id-v1",
+  "suite": "basic",
+  "version": 1,
+  "description": "Basic normative test vectors covering all five canonical harnesses and UTF-8 byte-exact encoding.",
+  "vectors": [
+    {
+      "id": "basic_claude_standard",
+      "description": "Standard Claude Code session link using canonical harness name 'claude'",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-linux-dev-01",
+        "wire_client_id": 2,
+        "raw_harness": "claude",
+        "native_session": "550e8400-e29b-41d4-a716-446655440000",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": "claude",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f76310000000961636d652d636f72700000000f77732d6c696e75782d6465762d303100000006636c617564650000002435353065383430302d653239622d343164342d613731362d343436363535343430303030"
+      },
+      "expected": {
+        "link_id": "57826eeff03fb33b20549e1274ffa010f6aefeb02acc97af8276870d4a90e22a",
+        "unlinked_reason": null
+      }
+    },
+    {
+      "id": "basic_codex_standard",
+      "description": "Standard OpenAI Codex session link using canonical harness name 'codex'",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-linux-dev-01",
+        "wire_client_id": 3,
+        "raw_harness": "codex",
+        "native_session": "01932c8a-7b10-7c00-8000-000000000001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": "codex",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f76310000000961636d652d636f72700000000f77732d6c696e75782d6465762d303100000005636f6465780000002430313933326338612d376231302d376330302d383030302d303030303030303030303031"
+      },
+      "expected": {
+        "link_id": "ef2cdb5eb868f3b4a43720ed6345f9d204ab7c25a023e82242f229167c959931",
+        "unlinked_reason": null
+      }
+    },
+    {
+      "id": "basic_antigravity_standard",
+      "description": "Standard Google Antigravity session link using canonical harness name 'antigravity'",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-win-dev-02",
+        "wire_client_id": 1,
+        "raw_harness": "antigravity",
+        "native_session": "bb0e491f-239d-4d0a-8436-e6d9d8b33cac",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": "antigravity",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f76310000000961636d652d636f72700000000d77732d77696e2d6465762d30320000000b616e7469677261766974790000002462623065343931662d323339642d346430612d383433362d653664396438623333636163"
+      },
+      "expected": {
+        "link_id": "e2ad52decdf89c62638cec7d60160556a381223999461307a8d332e799b1d6db",
+        "unlinked_reason": null
+      }
+    },
+    {
+      "id": "basic_grok_standard",
+      "description": "Standard xAI Grok session link using canonical harness name 'grok'",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-linux-dev-01",
+        "wire_client_id": 4,
+        "raw_harness": "grok",
+        "native_session": "grok-session-20261112-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": "grok",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f76310000000961636d652d636f72700000000f77732d6c696e75782d6465762d30310000000467726f6b0000001967726f6b2d73657373696f6e2d32303236313131322d303031"
+      },
+      "expected": {
+        "link_id": "21ce6ed4fc01d07a1da27d1e61f74a3291a617e917c380f53d414c95ed2d0283",
+        "unlinked_reason": null
+      }
+    },
+    {
+      "id": "basic_pi_standard",
+      "description": "Standard Pi Agent session link using canonical harness name 'pi'",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-linux-dev-01",
+        "wire_client_id": 5,
+        "raw_harness": "pi",
+        "native_session": "pi-session-9f8e7d6c5b4a",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": "pi",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f76310000000961636d652d636f72700000000f77732d6c696e75782d6465762d30310000000270690000001770692d73657373696f6e2d396638653764366335623461"
+      },
+      "expected": {
+        "link_id": "8a565deb8130cc631f0ab18b1df88a2fccff44e8b0705f3f61b52383b5613145",
+        "unlinked_reason": null
+      }
+    },
+    {
+      "id": "basic_utf8_preserved_without_nfc",
+      "description": "Valid UTF-8 characters (decomposed vs precomposed) are encoded byte-exact without NFC normalization",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-linux-dev-01",
+        "wire_client_id": null,
+        "raw_harness": "claude",
+        "native_session": "sess-café-01",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": "claude",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f76310000000961636d652d636f72700000000f77732d6c696e75782d6465762d303100000006636c617564650000000e736573732d63616665cc812d3031"
+      },
+      "expected": {
+        "link_id": "0c5cf2c51f10602587cc6f0fcf234a94918a24f816716025128a9eb473010d0c",
+        "unlinked_reason": null
+      }
+    }
+  ]
+}

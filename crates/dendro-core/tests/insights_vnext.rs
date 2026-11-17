@@ -281,8 +281,8 @@ fn populated_catalog_computes_i01_through_i25_contracts() {
             identity_key, root_key, pid, platform, start_time_unix_s, exe_name, harness,
             environment_kind, isolation_hint, first_seen, last_seen, visibility_limits
         ) VALUES
-        ('i1','root',1,'linux',1,'worker','claude','container','none',TIMESTAMP '2026-01-01 00:00:00',TIMESTAMP '2026-01-01 00:00:10','none'),
-        ('i2','root',2,'linux',2,'worker','claude','container','none',TIMESTAMP '2026-01-01 00:00:00',TIMESTAMP '2026-01-01 00:00:10','none');
+        ('i1','root',1,'linux',1,'worker','environment','container','none',TIMESTAMP '2026-01-01 00:00:00',TIMESTAMP '2026-01-01 00:00:10','none'),
+        ('i2','root',2,'linux',2,'worker','environment','container','none',TIMESTAMP '2026-01-01 00:00:00',TIMESTAMP '2026-01-01 00:00:10','none');
         CREATE TABLE syscall_facts (
             source_key VARCHAR, grammar VARCHAR, operation VARCHAR, resource_class VARCHAR, result VARCHAR
         );
@@ -331,15 +331,18 @@ fn populated_catalog_computes_i01_through_i25_contracts() {
     assert_eq!(int_at(i05, "I05.matched_pairs"), Some(0));
 
     let i06 = by_id(&results, "I06");
-    assert_eq!(int_at(i06, "I06.loaded"), Some(1));
-    assert_eq!(int_at(i06, "I06.invoked"), Some(1));
-    assert_eq!(int_at(i06, "I06.intersection"), Some(1));
-    near(float_at(i06, "I06.rate").unwrap(), 1.0);
-    assert_eq!(int_at(i06, "I06.actions"), Some(1));
+    assert_eq!(
+        reason(&i06.status),
+        Some("not_computable: missing skill_declarations (claude:skill_declarations)")
+    );
+    assert!(i06.measures.is_empty());
 
     let i07 = by_id(&results, "I07");
-    assert_eq!(reason(&i07.status), None);
-    near(float_at(i07, "I07.peak_ratio").unwrap(), 0.5);
+    assert_eq!(
+        reason(&i07.status),
+        Some("not_computable: missing context_window_usage (claude:context_window_usage)")
+    );
+    assert!(i07.measures.is_empty());
 
     let i08 = by_id(&results, "I08");
     assert_eq!(reason(&i08.status), None);
@@ -379,10 +382,13 @@ fn populated_catalog_computes_i01_through_i25_contracts() {
     );
 
     let i15 = by_id(&results, "I15");
-    assert_eq!(reason(&i15.status), None);
-    assert_eq!(int_at(i15, "I15.open.file.success"), Some(1));
-    assert_eq!(int_at(i15, "I15.open.file.unknown"), Some(1));
-    assert!(int_at(i15, "I15.open.file.failed").is_none());
+    assert_eq!(
+        reason(&i15.status),
+        Some(
+            "not_computable: missing privileged_effect_trace (environment:privileged_effect_trace)"
+        )
+    );
+    assert!(i15.measures.is_empty());
 
     let i16 = by_id(&results, "I16");
     assert_eq!(reason(&i16.status), None);
@@ -408,9 +414,12 @@ fn populated_catalog_computes_i01_through_i25_contracts() {
     near(float_at(i19, "I19.acceptance_rate").unwrap(), 0.5);
 
     let i20 = by_id(&results, "I20");
-    assert_eq!(reason(&i20.status), None);
-    near(float_at(i20, "I20.cost_per_accepted").unwrap(), 10.0);
-    near(float_at(i20, "I20.mean_per_work").unwrap(), 10.0);
+    assert_eq!(reason(&i20.status), Some("unmatched population"));
+    assert!(i20
+        .coverage
+        .contains("excluded: claude — missing queue_transitions"));
+    assert_eq!(float_at(i20, "I20.cost_per_accepted"), None);
+    assert_eq!(float_at(i20, "I20.mean_per_work"), None);
 
     let i21 = by_id(&results, "I21");
     assert_eq!(reason(&i21.status), Some("noncomparable"));
@@ -419,30 +428,24 @@ fn populated_catalog_computes_i01_through_i25_contracts() {
     assert!(int_at(i21, "I21.claude.beta").is_some());
 
     let i22 = by_id(&results, "I22");
-    assert_eq!(reason(&i22.status), None);
-    assert_eq!(int_at(i22, "I22.tripped"), Some(1));
-    assert_eq!(int_at(i22, "I22.cohort"), Some(5));
-    assert_eq!(int_at(i22, "I22.capability_class_other"), Some(1));
-    assert!(i22.coverage.contains("assumption:"));
-    assert!(i22.coverage.contains("alternative:"));
+    assert_eq!(
+        reason(&i22.status),
+        Some("not_computable: missing trajectory_vector (environment:trajectory_vector)")
+    );
+    assert!(i22.measures.is_empty());
     let l0 = i22.disclosure_l0();
     assert_eq!(l0.fields[0].0, "status");
     assert_eq!(l0.fields[1].1, "I22 harness.trajectory_vortex");
-    assert!(l0.fields[2].1.contains("not a cause"));
     assert_eq!(l0.fields[3].1, "harness");
-    let l1 = i22.disclosure_l1();
-    assert!(l1.fields[0].1.contains("k=3"));
-    assert!(l1.fields[1].1.contains("capability class"));
     assert_eq!(i22.disclosure_l2().fields[1].1, "1.0.0");
     assert_eq!(i22.disclosure_l3().fields[0].0, "formula");
 
     let i23 = by_id(&results, "I23");
-    assert_eq!(reason(&i23.status), None);
-    near(float_at(i23, "I23.h.v1.v2.l1").unwrap(), 3.0);
-    assert_eq!(int_at(i23, "I23.h.v1.v2.added"), Some(1));
-    assert_eq!(int_at(i23, "I23.h.v1.v2.removed"), Some(0));
-    assert_eq!(int_at(i23, "I23.h.v1.v2.retyped"), Some(1));
-    assert_eq!(int_at(i23, "I23.excluded"), Some(1));
+    assert_eq!(
+        reason(&i23.status),
+        Some("not_computable: missing harness_envelope_shape (h:harness_envelope_shape)")
+    );
+    assert!(i23.measures.is_empty());
 
     let i24 = by_id(&results, "I24");
     assert_eq!(reason(&i24.status), None);
@@ -530,13 +533,19 @@ fn trajectory_and_schema_short_samples_refuse() {
     let (_root, vortex) = writable("vortex-short");
     sql(&vortex, &trajectory_reference_only(4));
     let result = one(&vortex, "I22");
-    assert_eq!(reason(&result.status), Some("insufficient_sample"));
+    assert_eq!(
+        reason(&result.status),
+        Some("not_computable: missing trajectory_vector (environment:trajectory_vector)")
+    );
     assert_eq!(display_status(&result.status), "insufficient_evidence");
 
     let (_root, drift) = writable("drift-short");
     sql(&drift, &envelope_sql(4, 5, false));
     let result = one(&drift, "I23");
-    assert_eq!(reason(&result.status), Some("insufficient_sample"));
+    assert_eq!(
+        reason(&result.status),
+        Some("not_computable: missing harness_envelope_shape (h:harness_envelope_shape)")
+    );
     assert_eq!(display_status(&result.status), "insufficient_evidence");
 }
 

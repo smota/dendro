@@ -9,12 +9,16 @@ pub mod ingest;
 mod lineage;
 mod messages;
 pub mod openrig;
+mod openrig_contract;
 pub mod pi;
 mod security_facts;
 pub mod snapshot;
 pub mod stream;
 
-pub use ingest::{ingest_staged, ingest_staged_with_manifest, SourceRoot};
+pub use ingest::{
+    ingest_staged, ingest_staged_with_link_config, ingest_staged_with_manifest,
+    ingest_staged_with_manifest_and_link_config, SourceRoot,
+};
 
 pub use claude::ClaudeConnector;
 pub use codex::CodexConnector;
@@ -33,5 +37,6 @@ pub use windsurf::WindsurfConnector;
 
 pub mod capture_registry_v1;
 pub mod environment_v1;
+pub mod fidelity;
 pub mod syscall_v1;
 pub mod windows_events_v1;
