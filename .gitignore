@@ -40,3 +40,6 @@ Thumbs.db
 .idea/
 .vscode/
 /.agentflow/transactions/
+
+# graphify knowledge-graph output (regenerated)
+graphify-out/
