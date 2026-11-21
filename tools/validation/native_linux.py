@@ -61,12 +61,22 @@ def linux_tests(source, cache, performance_waiver=None):
     if len(commands) != 1 or commands[0][2:] != ["--workspace", "--locked"]:
         raise SystemExit("Classify changed Rust test gates before native acceptance")
     command = [str(cargo), "test", "--manifest-path", str(source / "Cargo.toml"), *commands[0][2:]]
-    # Each run has a fresh fixture home; dependency and compiler caches are reusable.
-    with tempfile.TemporaryDirectory(prefix="fixtures-", dir=cache) as temporary:
-        private_source = Path(temporary) / "source"
+    fixture_base = original_home / ".cache/dendro-tests"
+    fixture_base.mkdir(parents=True, mode=0o700, exist_ok=True)
+    if fixture_base.stat().st_uid != os.getuid() or fixture_base.stat().st_mode & 0o077:
+        raise SystemExit("Native fixture base must be private and owned by this user")
+    if subprocess.check_output(["findmnt", "-n", "-o", "FSTYPE", "-T", str(fixture_base)], text=True).strip() != "ext4":
+        raise SystemExit("Native fixture base must be on ext4")
+    # Keep fixture paths short enough for Unix sockets; retain the long-lived build cache.
+    with tempfile.TemporaryDirectory(prefix="r-", dir=fixture_base) as temporary:
+        profile = Path(temporary) / "h"
+        if len(os.fsencode(str(profile))) > 50:
+            raise SystemExit("Native fixture HOME is too long for the Unix socket tests")
+        profile.mkdir(mode=0o700)
+        private_source = profile / "s"
         def manifest(directory):
             return [(path.relative_to(directory).as_posix(), hashlib.sha256(path.read_bytes()).hexdigest())
-                    for path in sorted(directory.rglob("*")) if path.is_file()]
+                    for path in sorted(directory.rglob("*"), key=lambda p: p.relative_to(directory).as_posix()) if path.is_file()]
         original_files = manifest(source)
         shutil.copytree(source, private_source, copy_function=shutil.copyfile)
         for directory, names, files in os.walk(private_source):
@@ -81,9 +91,7 @@ def linux_tests(source, cache, performance_waiver=None):
             raise SystemExit("Native source scratch must also be on ext4")
         source = private_source
         command = [str(cargo), "test", "--manifest-path", str(source / "Cargo.toml"), *commands[0][2:]]
-        profile = Path(temporary) / "home"
-        profile.mkdir(mode=0o700)
-        temporary_files = Path(temporary) / "tmp"
+        temporary_files = profile / "t"
         temporary_files.mkdir(mode=0o700)
         for name in (".config", ".local/share", ".cache", ".local/state", ".runtime"):
             (profile / name).mkdir(parents=True, mode=0o700, exist_ok=True)
