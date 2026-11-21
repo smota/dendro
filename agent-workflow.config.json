@@ -1,8 +1,7 @@
 {
   "posture": "autonomous",
   "ciCommands": [
-    "cargo check --workspace",
-    "cargo test --workspace"
+    "mise run verify"
   ],
   "bounded": {
     "allowedExactPaths": [

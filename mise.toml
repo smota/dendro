@@ -1,0 +1,39 @@
+[tools]
+uv = "0.13.8"
+node = "26.13.1"
+pnpm = "12.18.0"
+
+[env]
+RUSTUP_TOOLCHAIN = "1.98.1"
+
+[tasks.verify]
+description = "Native Rust and governance checks, then isolated Linux Rust gates"
+raw = true
+tools = { dagger = "0.21.12" }
+run = ["uv run tools/validation/verify.py", "dagger run -- uv run tools/validation/pipeline.py"]
+
+[tasks."verify:fast"]
+description = "Formatting and existing governance/site checks"
+run = "uv run tools/validation/verify.py --fast"
+
+[tasks."verify:windows"]
+description = "Four Rust gates on actual native Windows"
+run = "uv run tools/validation/verify.py --windows"
+
+[tasks."verify:linux"]
+description = "Four Rust gates inside Dagger Linux (not native foundation certification)"
+raw = true
+tools = { dagger = "0.21.12" }
+run = "dagger run -- uv run tools/validation/pipeline.py"
+
+[tasks."verify:native-fixture"]
+description = "Actual two-volume fixture; requires disposable FOUNDATION_CROSS_VOLUME_SOURCE/DEST"
+run = "uv run tools/validation/verify.py --native-fixture"
+
+[tasks."verify:historical"]
+description = "Native Linux/WSL ext4 historical proof; pass --scratch and --target-dir"
+run = "uv run tools/validation/historical.py"
+
+[tasks."verify:release-candidate"]
+description = "Existing release-note presence and workspace check gate"
+run = "uv run tools/validation/verify.py --release-candidate"

@@ -1,0 +1,13 @@
+diff --git a/agent-workflow.config.json b/agent-workflow.config.json
+--- a/agent-workflow.config.json
++++ b/agent-workflow.config.json
+@@ -1,8 +1,7 @@
+ {
+   "posture": "autonomous",
+   "ciCommands": [
+-    "cargo check --workspace",
+-    "cargo test --workspace"
++    "mise run verify"
+   ],
+   "bounded": {
+     "allowedExactPaths": [
