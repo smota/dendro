@@ -6,49 +6,13 @@
 import asyncio
 from pathlib import Path
 import sys
-import subprocess
-import shutil
 import tempfile
-import hashlib
-import json
 
 import dagger
 from verify import RUST_GATES
+from source_stage import stage_source
 
 ROOT = Path(__file__).resolve().parents[2]
-
-
-def stage_source(destination):
-    candidates = subprocess.check_output(
-        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"], cwd=ROOT,
-    ).decode().split("\0")
-    roots = ("crates/", "docs/", "examples/", "scripts/", "site/", "templates/", ".agentflow/oracles/", "tools/validation/")
-    files = {"Cargo.toml", "Cargo.lock", "README.md", "LICENSE", "NOTICE", ".gitattributes", "mise.toml", "lefthook.yml", "package.json", "pnpm-lock.yaml"}
-    manifest = []
-    for name in sorted(set(candidates) - {""}):
-        if name not in files and not name.startswith(roots):
-            continue
-        relative = Path(name)
-        if any(part in {".git", "node_modules", "target", "private", "secrets", "__pycache__"}
-               or part == ".env" or part.startswith(".env.") for part in relative.parts):
-            continue
-        if any(token in relative.name for token in (".duckdb", ".sqlite")) or relative.suffix in {".key", ".pem"}:
-            continue
-        source = ROOT / relative
-        if not source.is_file():
-            continue
-        if not source.resolve().is_relative_to(ROOT) or any(
-            path.is_symlink() for path in (source, *source.parents) if path != ROOT
-        ):
-            raise ValueError(f"refusing symlink or escaped validation input: {name}")
-        target = destination / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, target)
-        manifest.append((name, hashlib.sha256(target.read_bytes()).hexdigest()))
-    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
-    dirty = subprocess.check_output(["git", "status", "--porcelain", "-z"], cwd=ROOT)
-    print(json.dumps({"head": head, "dirty": bool(dirty), "file_count": len(manifest),
-                      "candidate_manifest_sha256": hashlib.sha256(json.dumps(manifest).encode()).hexdigest()}), flush=True)
 
 
 async def verify(stage):
@@ -76,10 +40,13 @@ async def verify(stage):
             .with_env_variable("CARGO_TERM_COLOR", "never")
             .with_mounted_cache("/usr/local/cargo/registry", client.cache_volume("dendro-rust-1.98.1-registry"), owner="validator")
             .with_mounted_cache("/src/target", client.cache_volume("dendro-linux-rust-1.98.1-target"), owner="validator"))
-        for command in RUST_GATES:
-            container = container.with_exec(command)
+        build_gates = {command[1]: command for command in RUST_GATES if command[:2] != ["cargo", "test"]}
+        if len(build_gates) != 3 or set(build_gates) != {"fmt", "check", "clippy"}:
+            raise RuntimeError("Classify changed Rust gates before container validation")
+        for name in ("fmt", "check", "clippy"):
+            container = container.with_exec(build_gates[name])
         await container.sync()
-        print("Linux container Rust gates passed; native historical/cross-volume certification is separate.")
+        print("Linux container format/check/Clippy gates passed; full tests require the mandatory native Linux leg.")
 
 
 async def main():

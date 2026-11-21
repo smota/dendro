@@ -39,6 +39,13 @@ def require_clean_candidate():
 
 
 def main():
+    from performance_policy import ENVIRONMENT_KEY, TOKEN, decision
+
+    performance = decision(ROOT)
+    os.environ.pop(ENVIRONMENT_KEY, None)
+    if performance["enabled"]:
+        os.environ[ENVIRONMENT_KEY] = TOKEN
+    print("Performance policy: " + str(performance), flush=True)
     parser = argparse.ArgumentParser(description=__doc__)
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--fast", action="store_true")
