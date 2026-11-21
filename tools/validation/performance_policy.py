@@ -26,7 +26,8 @@ def decision(root):
         if git("status", "--porcelain"):
             return {"enabled": False, "reason": "candidate is not clean"}
         base = git("merge-base", "origin/development", ANCHOR)
-        changed = git("diff", "--name-only", base, "HEAD").splitlines()
+        raw = subprocess.check_output(["git", "diff", "--no-renames", "--name-only", "-z", base, "HEAD"], cwd=root)
+        changed = [name for name in raw.decode("utf-8").split("\0") if name]
         if any(name not in ALLOWED_FILES and not name.startswith(ALLOWED_PREFIXES) for name in changed):
             return {"enabled": False, "reason": "changes extend beyond validation tooling"}
         content = (root / TEST_FILE).read_bytes().replace(b"\r\n", b"\n")

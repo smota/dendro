@@ -41,8 +41,8 @@ def require_clean_candidate():
 def main():
     from performance_policy import ENVIRONMENT_KEY, TOKEN, decision
 
-    performance = decision(ROOT)
     os.environ.pop(ENVIRONMENT_KEY, None)
+    performance = decision(ROOT)
     if performance["enabled"]:
         os.environ[ENVIRONMENT_KEY] = TOKEN
     print("Performance policy: " + str(performance), flush=True)
