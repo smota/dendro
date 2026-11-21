@@ -1,3 +1,7 @@
+# /// script
+# requires-python = ">=3.13,<3.15"
+# dependencies = []
+# ///
 """Owned, disk-bounded scratch profiles for native Windows validation."""
 import contextlib
 import ctypes

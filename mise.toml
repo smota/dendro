@@ -5,6 +5,7 @@ pnpm = "12.18.0"
 
 [env]
 RUSTUP_TOOLCHAIN = "1.98.1"
+UV_PYTHON_DOWNLOADS = "never"
 
 [tasks.verify]
 description = "Native Rust and governance checks, then isolated Linux Rust gates"

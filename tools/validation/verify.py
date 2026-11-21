@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.13,<3.15"
 # dependencies = []
 # ///
 """Run authoritative native checks without starting Dendro or installing tools."""
