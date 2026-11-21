@@ -50,7 +50,7 @@ def linux_tests(source, cache, performance_waiver=None):
     probe_environment = dict(os.environ, MISE_AUTO_UPDATE="false", MISE_SELF_UPDATE_AUTO="false",
         MISE_AUTO_INSTALL="false", MISE_TASK_RUN_AUTO_INSTALL="false", RUSTUP_AUTO_INSTALL="0")
     cargo = Path(subprocess.check_output([rustup, "which", "--toolchain", TOOLCHAIN, "cargo"],
-                                       text=True, env=probe_environment).strip())
+                                       text=True, env=probe_environment, cwd=original_home).strip())
     if not cargo.is_file():
         raise SystemExit("Pinned Linux cargo executable is unavailable")
     target = (cache / "target").resolve()
