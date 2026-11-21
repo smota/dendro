@@ -16,6 +16,7 @@ pub mod insight_v1;
 pub mod lifecycle;
 pub mod lineage_graph_v1;
 pub mod lineage_v1;
+pub mod link_id;
 mod loop_trace;
 pub mod manifest;
 pub mod metrics;
@@ -48,6 +49,13 @@ pub use vortex::{parse_friction_duration, FrictionThresholds};
 pub use concurrency::*;
 pub use facts::*;
 pub use lifecycle::{Cancel, Interrupted, RUN_CANCEL};
+pub use link_id::{
+    consumer_env_path, default_private_data_root, derive_session_link_with_key,
+    is_valid_persisted_link_id, read_consumer_env, read_consumer_env_from, CanonicalHarness,
+    LinkIdInput, LinkIdOutcome, LinkKey, SessionLinkConfig, UnlinkedReason, AGENT_SESSION_LINK_ID,
+    AGENT_SESSION_LINK_UNLINKED, AGENT_SESSION_UNLINKED_REASON, K_ORG_REFUSAL_WARNING,
+    LINK_ID_CONTRACT, LINK_ID_CONTRACT_DIGEST, MAX_CONSUMER_ENV_BYTES,
+};
 pub use manifest::*;
 pub use metrics::*;
 pub use models::*;

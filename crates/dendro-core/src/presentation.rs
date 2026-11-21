@@ -1592,11 +1592,11 @@ fn project_insight(row: &Value, aliases: &mut BTreeMap<String, String>) -> Optio
         .as_str()
         .filter(|coverage| {
             !coverage.is_empty()
-                && coverage.len() <= 240
                 && !coverage.contains(['/', '\\', '<', '>', '&'])
                 && coverage.chars().all(|ch| !ch.is_control())
         })
-        .unwrap_or("");
+        .map(truncate_public_coverage)
+        .unwrap_or_default();
     Some(json!({
         "id": id,
         "name": name,
@@ -1608,6 +1608,52 @@ fn project_insight(row: &Value, aliases: &mut BTreeMap<String, String>) -> Optio
         "coverage": coverage,
         "evidence": [],
     }))
+}
+
+fn truncate_public_coverage(coverage: &str) -> String {
+    const MAX_LEN: usize = 1024;
+    if coverage.len() <= MAX_LEN {
+        return coverage.to_string();
+    }
+    let parts: Vec<&str> = coverage.split("; ").collect();
+    let total_parts = parts.len();
+    let mut kept = Vec::new();
+    for part in &parts {
+        let remaining = total_parts.saturating_sub(kept.len() + 1);
+        let suffix = if remaining > 0 {
+            format!("; …(+{remaining} more exclusions)")
+        } else {
+            String::new()
+        };
+        let candidate_len = if kept.is_empty() {
+            part.len() + suffix.len()
+        } else {
+            kept.iter().map(|s: &&str| s.len()).sum::<usize>()
+                + (kept.len() * 2)
+                + part.len()
+                + suffix.len()
+        };
+        if candidate_len <= MAX_LEN {
+            kept.push(*part);
+        } else {
+            break;
+        }
+    }
+    let dropped = total_parts.saturating_sub(kept.len());
+    let suffix = format!("…(+{dropped} more exclusions)");
+    if !kept.is_empty() {
+        let prefix = kept.join("; ");
+        let joined = format!("{prefix}; {suffix}");
+        if joined.len() <= MAX_LEN {
+            return joined;
+        }
+    }
+    let budget = MAX_LEN.saturating_sub(suffix.len());
+    let mut end = budget.min(coverage.len());
+    while end > 0 && !coverage.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}{suffix}", &coverage[..end])
 }
 
 fn project_insights(raw: &Value) -> Value {
@@ -2914,12 +2960,42 @@ mod tests {
 
     #[test]
     fn attach_dashboard_surface_renders_canonical_partial_empty_and_missing_table() {
+        let pi_store = crate::AnalyticsStore::open_in_memory("dash-surface-pi").unwrap();
+        pi_store
+            .connection()
+            .execute(
+                "INSERT INTO session_edges (source_key, source_id, harness, parent_session, child_session, relation, status, observed_at, evidence_kind, generation) VALUES (?, ?, ?, ?, ?, ?, ?, CAST(? AS TIMESTAMP), ?, ?)",
+                duckdb::params!["ghp_canary/private/path", "src", "pi", "", "child-1", "spawn", "observed", "2026-01-01 12:00:00", "explicit", 1i64],
+            )
+            .unwrap();
+        let mut pi_report = json!({"metric": "decisions", "payload": {}});
+        attach_dashboard_surface(
+            &mut pi_report,
+            &pi_store,
+            "2026-01-01T00:00:00Z",
+            "2026-01-02T00:00:00Z",
+        )
+        .unwrap();
+        let pi_projected = public_projection(&pi_report);
+        assert_eq!(
+            pi_projected["payload"]["lineage"]["status"]["state"],
+            "refused"
+        );
+        assert_eq!(
+            pi_projected["payload"]["lineage"]["status"]["reason"],
+            "not_computable: missing session_edges (pi:session_edges)"
+        );
+        assert!(pi_projected["payload"]["lineage"]["measures"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+
         let store = crate::AnalyticsStore::open_in_memory("dash-surface").unwrap();
         store
             .connection()
             .execute(
                 "INSERT INTO session_edges (source_key, source_id, harness, parent_session, child_session, relation, status, observed_at, evidence_kind, generation) VALUES (?, ?, ?, ?, ?, ?, ?, CAST(? AS TIMESTAMP), ?, ?)",
-                duckdb::params!["ghp_canary/private/path", "src", "pi", "", "child-1", "spawn", "observed", "2026-01-01 12:00:00", "explicit", 1i64],
+                duckdb::params!["ghp_canary/private/path", "src", "claude", "", "child-1", "spawn", "observed", "2026-01-01 12:00:00", "explicit", 1i64],
             )
             .unwrap();
         let mut report = json!({"metric": "decisions", "payload": {}});
@@ -2934,6 +3010,10 @@ mod tests {
         assert_eq!(
             projected["payload"]["lineage"]["status"]["state"],
             "partial"
+        );
+        assert_eq!(
+            projected["payload"]["lineage"]["status"]["reason"],
+            "unresolved parent session"
         );
         assert!(projected["payload"]["lineage"]["measures"]
             .as_array()
@@ -3143,5 +3223,67 @@ mod tests {
         let other = json!({"payload": {"message_dump": dump}});
         assert!(check_export_array_limit(&other["payload"]).is_err());
         assert!(offline_html(&other).is_ok());
+    }
+
+    #[test]
+    fn public_projection_truncates_long_coverage_with_more_exclusions_suffix() {
+        let mut long_cov = String::from("base coverage note");
+        for i in 0..30 {
+            long_cov.push_str(&format!(
+                "; excluded: connector_{i} — missing input_tokens, output_tokens, cache_read_tokens, cache_write_tokens"
+            ));
+        }
+        assert!(long_cov.len() > 1024);
+        let raw = json!({
+            "payload": {
+                "insights": [{
+                    "id": "I02",
+                    "name": "model.tokens.direct",
+                    "version": "1.0.0",
+                    "domain": "model",
+                    "status": {"state": "computed"},
+                    "population": {"what": "usage_facts", "n": 1},
+                    "measures": [],
+                    "coverage": long_cov,
+                    "evidence": []
+                }]
+            }
+        });
+        let projected = public_projection(&raw);
+        let cov = projected["payload"]["insights"][0]["coverage"]
+            .as_str()
+            .unwrap();
+        assert!(
+            !cov.is_empty(),
+            "coverage over 1024 chars must not be dropped to empty"
+        );
+        assert!(
+            cov.len() <= 1024,
+            "truncated coverage must be <= 1024 bytes: {}",
+            cov.len()
+        );
+        assert!(
+            cov.ends_with("more exclusions)") && cov.contains("…(+"),
+            "truncated coverage must end with `…(+N more exclusions)`: {cov}"
+        );
+
+        // Verify that when there are no `excluded: ` parts and 3 parts are cut off, every part cut
+        // off is counted (never hardcoded to `+1`).
+        let non_exc_parts = [
+            "a".repeat(800),
+            "b".repeat(200),
+            "c".repeat(200),
+            "d".repeat(200),
+        ]
+        .join("; ");
+        let truncated_non_exc = super::truncate_public_coverage(&non_exc_parts);
+        assert!(
+            truncated_non_exc.len() <= 1024,
+            "truncated coverage must be <= 1024 bytes"
+        );
+        assert!(
+            truncated_non_exc.ends_with("…(+3 more exclusions)"),
+            "expected all 3 cut-off parts to be counted: {truncated_non_exc}"
+        );
     }
 }

@@ -15,6 +15,7 @@
 
 use anyhow::{bail, Context, Result};
 use hmac::{Hmac, Mac};
+use rand::{rngs::SysRng, TryRng};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::fs;
@@ -98,6 +99,14 @@ pub struct ClientCredential {
 pub struct QuackToken;
 
 impl QuackToken {
+    /// The root token comes straight from the OS generator. `ThreadRng` no
+    /// longer reseeds on fork, so it is not used for a persisted credential.
+    fn new_root_token() -> Result<String> {
+        let mut token_bytes = [0u8; 32];
+        SysRng.try_fill_bytes(&mut token_bytes)?;
+        Ok(hex::encode(token_bytes))
+    }
+
     pub fn generate_and_save(private_dir: &Path) -> Result<String> {
         let token_path = private_dir.join("quack.token");
         let token_hex = if token_path.exists() {
@@ -105,14 +114,12 @@ impl QuackToken {
             if existing.len() == 64 {
                 existing
             } else {
-                let token_bytes: [u8; 32] = rand::random();
-                let hex = hex::encode(token_bytes);
+                let hex = Self::new_root_token()?;
                 Self::write_private_file(&token_path, &hex)?;
                 hex
             }
         } else {
-            let token_bytes: [u8; 32] = rand::random();
-            let hex = hex::encode(token_bytes);
+            let hex = Self::new_root_token()?;
             Self::write_private_file(&token_path, &hex)?;
             hex
         };

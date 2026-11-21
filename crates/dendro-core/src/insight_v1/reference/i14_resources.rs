@@ -50,6 +50,17 @@ impl Insight for EnvironmentResources {
     fn domain(&self) -> InsightDomain {
         InsightDomain::Environment
     }
+    fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::ProcessIdentity, Field::ProcessResourceSamples]
+    }
+    fn optional_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::NativeSession]
+    }
+    fn coverage(&self) -> &'static str {
+        COVERAGE
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         let identities = match load_identities(input) {
             Ok(rows) => rows,
@@ -97,6 +108,13 @@ impl Insight for EnvironmentResources {
                 if raw_harness != Some(target_harness) {
                     continue;
                 }
+            }
+            let allows_tree = match raw_harness {
+                Some(h) => input.allows_harness(h),
+                None => input.allows_harness("environment"),
+            };
+            if !allows_tree {
+                continue;
             }
             if let Some(target_session) = scope.session.as_deref() {
                 let matches_session = id_rows
@@ -466,7 +484,7 @@ mod tests {
             &store,
             "root-a",
             "root-a",
-            Some("claude"),
+            Some("environment"),
             Some("launched"),
             "",
         );
@@ -474,7 +492,7 @@ mod tests {
             &store,
             "root-b",
             "root-b",
-            Some("claude"),
+            Some("environment"),
             Some("discovered"),
             "",
         );
@@ -534,45 +552,51 @@ mod tests {
         assert_eq!(result.population.n, 2);
 
         assert_eq!(
-            int_at(&result, "I14.claude.root-a.cpu_time_delta_us"),
+            int_at(&result, "I14.environment.root-a.cpu_time_delta_us"),
             Some(350)
         );
         assert_eq!(
-            int_at(&result, "I14.claude.root-a.max_rss.rss_bytes"),
+            int_at(&result, "I14.environment.root-a.max_rss.rss_bytes"),
             Some(8192)
         );
         assert_eq!(
-            int_at(&result, "I14.claude.root-a.disk_read_delta_bytes"),
+            int_at(&result, "I14.environment.root-a.disk_read_delta_bytes"),
             Some(600)
         );
         assert_eq!(
-            int_at(&result, "I14.claude.root-a.disk_write_delta_bytes"),
+            int_at(&result, "I14.environment.root-a.disk_write_delta_bytes"),
             Some(400)
         );
 
         assert_eq!(
-            int_at(&result, "I14.claude.root-b.cpu_time_delta_us"),
+            int_at(&result, "I14.environment.root-b.cpu_time_delta_us"),
             Some(75)
         );
         assert_eq!(
-            int_at(&result, "I14.claude.root-b.max_rss.working_set_bytes"),
+            int_at(&result, "I14.environment.root-b.max_rss.working_set_bytes"),
             Some(16384)
         );
         assert_eq!(
-            int_at(&result, "I14.claude.root-b.disk_read_delta_bytes"),
+            int_at(&result, "I14.environment.root-b.disk_read_delta_bytes"),
             Some(300)
         );
         assert_eq!(
-            int_at(&result, "I14.claude.root-b.disk_write_delta_bytes"),
+            int_at(&result, "I14.environment.root-b.disk_write_delta_bytes"),
             Some(200)
         );
 
-        assert_eq!(int_at(&result, "I14.claude.attribution.launched"), Some(1));
         assert_eq!(
-            int_at(&result, "I14.claude.attribution.discovered"),
+            int_at(&result, "I14.environment.attribution.launched"),
             Some(1)
         );
-        assert_eq!(int_at(&result, "I14.claude.cpu_unreadable_trees"), Some(0));
+        assert_eq!(
+            int_at(&result, "I14.environment.attribution.discovered"),
+            Some(1)
+        );
+        assert_eq!(
+            int_at(&result, "I14.environment.cpu_unreadable_trees"),
+            Some(0)
+        );
         assert_eq!(
             result.evidence,
             vec!["root-a".to_string(), "root-b".to_string()]
@@ -597,7 +621,7 @@ mod tests {
             &store,
             "root-u",
             "root-u",
-            Some("claude"),
+            Some("environment"),
             Some("discovered"),
             "permission_denied",
         );
@@ -631,17 +655,26 @@ mod tests {
             result.status,
             InsightStatus::Partial { ref reason } if reason.contains("visibility limits")
         ));
-        assert_eq!(int_at(&result, "I14.claude.root-u.cpu_time_delta_us"), None);
-        assert_eq!(int_at(&result, "I14.claude.root-u.max_rss.rss_bytes"), None);
         assert_eq!(
-            int_at(&result, "I14.claude.root-u.disk_read_delta_bytes"),
+            int_at(&result, "I14.environment.root-u.cpu_time_delta_us"),
             None
         );
         assert_eq!(
-            int_at(&result, "I14.claude.root-u.disk_write_delta_bytes"),
+            int_at(&result, "I14.environment.root-u.max_rss.rss_bytes"),
             None
         );
-        assert_eq!(int_at(&result, "I14.claude.cpu_unreadable_trees"), Some(1));
+        assert_eq!(
+            int_at(&result, "I14.environment.root-u.disk_read_delta_bytes"),
+            None
+        );
+        assert_eq!(
+            int_at(&result, "I14.environment.root-u.disk_write_delta_bytes"),
+            None
+        );
+        assert_eq!(
+            int_at(&result, "I14.environment.cpu_unreadable_trees"),
+            Some(1)
+        );
     }
 
     #[test]
@@ -651,7 +684,7 @@ mod tests {
             &store,
             "root-p",
             "root-p",
-            Some("claude"),
+            Some("environment"),
             Some("launched"),
             "",
         );
@@ -710,22 +743,25 @@ mod tests {
         assert!(matches!(result.status, InsightStatus::Computed));
         assert_eq!(result.population.n, 1);
         assert_eq!(
-            int_at(&result, "I14.claude.root-p.cpu_time_delta_us"),
+            int_at(&result, "I14.environment.root-p.cpu_time_delta_us"),
             Some(20)
         );
         assert_eq!(
-            int_at(&result, "I14.claude.root-p.disk_read_delta_bytes"),
+            int_at(&result, "I14.environment.root-p.disk_read_delta_bytes"),
             Some(350)
         );
         assert_eq!(
-            int_at(&result, "I14.claude.root-p.disk_write_delta_bytes"),
+            int_at(&result, "I14.environment.root-p.disk_write_delta_bytes"),
             Some(150)
         );
         assert_eq!(
-            int_at(&result, "I14.claude.root-p.max_rss.rss_bytes"),
+            int_at(&result, "I14.environment.root-p.max_rss.rss_bytes"),
             Some(6144)
         );
-        assert_eq!(int_at(&result, "I14.claude.cpu_unreadable_trees"), Some(0));
+        assert_eq!(
+            int_at(&result, "I14.environment.cpu_unreadable_trees"),
+            Some(0)
+        );
     }
 
     #[test]
@@ -735,7 +771,7 @@ mod tests {
             &store,
             "root-p",
             "root-p",
-            Some("claude"),
+            Some("environment"),
             Some("launched"),
             "",
         );
@@ -792,14 +828,20 @@ mod tests {
 
         let result = only(&store, &Scope::default());
         assert!(matches!(result.status, InsightStatus::Partial { .. }));
-        assert_eq!(int_at(&result, "I14.claude.root-p.cpu_time_delta_us"), None);
-        assert_eq!(int_at(&result, "I14.claude.cpu_unreadable_trees"), Some(1));
         assert_eq!(
-            int_at(&result, "I14.claude.root-p.disk_read_delta_bytes"),
+            int_at(&result, "I14.environment.root-p.cpu_time_delta_us"),
+            None
+        );
+        assert_eq!(
+            int_at(&result, "I14.environment.cpu_unreadable_trees"),
+            Some(1)
+        );
+        assert_eq!(
+            int_at(&result, "I14.environment.root-p.disk_read_delta_bytes"),
             Some(130)
         );
         assert_eq!(
-            int_at(&result, "I14.claude.root-p.disk_write_delta_bytes"),
+            int_at(&result, "I14.environment.root-p.disk_write_delta_bytes"),
             Some(130)
         );
     }

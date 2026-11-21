@@ -1,0 +1,307 @@
+{
+  "contract": "link-id-v1",
+  "suite": "g0a",
+  "version": 1,
+  "description": "Vectors derived from real sanitized Gate-0a captures (Claude Code 2.1.322 S2 and Codex 0.167.0 S1/S2).",
+  "assert_equal_link_id_groups": [
+    [
+      "g0a_claude_s2_session_a_aob_span",
+      "g0a_claude_s2_session_a_dendro_session"
+    ],
+    [
+      "g0a_claude_s2_session_b_aob_span_and_jsonl",
+      "g0a_claude_s2_session_b_dendro_session"
+    ]
+  ],
+  "assert_distinct_link_id_groups": [
+    [
+      "g0a_claude_s2_session_a_aob_span",
+      "g0a_claude_s2_session_b_aob_span_and_jsonl",
+      "g0a_codex_s2_session_1_rollout",
+      "g0a_codex_s2_session_2_rollout",
+      "g0a_codex_s1_session_rollout"
+    ]
+  ],
+  "vectors": [
+    {
+      "id": "g0a_claude_s2_session_a_aob_span",
+      "description": "G0a Claude 2.1.322 S2 Session A (SESSION_fa2814579786c60e) from AOB hook/span surface: wire_client_id=2, gen_ai.agent.name='claude-code' (ignoring pre-#29 gen_ai.provider.name='google')",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "mtn-pilot",
+        "epoch": "2026-11",
+        "org": "smota-org",
+        "endpoint_scope": "g0a-wsl-runner-01",
+        "wire_client_id": 2,
+        "raw_harness": "claude-code",
+        "native_session": "SESSION_fa2814579786c60e",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f7631000000096d746e2d70696c6f7400000007323032362d3131",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "86b94715f57c1401d2581781d01037aae105dd5b57b9160941db65e41b73bae6",
+        "canonical_harness": "claude",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f763100000009736d6f74612d6f7267000000116730612d77736c2d72756e6e65722d303100000006636c617564650000001853455353494f4e5f66613238313435373937383663363065"
+      },
+      "expected": {
+        "link_id": "d564e425c6c86a1933d14e84d3fef8af1aa4610677fb0ca31ca550368722ed68",
+        "unlinked_reason": null
+      },
+      "g0a_provenance": {
+        "harness_dir": "claude-2.1.322",
+        "scenario": "S2",
+        "hook_file": "docs/contracts/fact-export-v1/captures/g0a-20261112/claude-2.1.322/S2/hook-sanitized.jsonl",
+        "hook_file_sha256": "9c37ce7777acd3d63aab9bba39d501e5a93a599037ff888989176e393606c797",
+        "hook_connection": 1,
+        "traces_file": "docs/contracts/fact-export-v1/captures/g0a-20261112/claude-2.1.322/S2/otlp-traces-sanitized.json",
+        "traces_file_sha256": "971a9004464670838350901778f684246095092737cce85c2c9951ade34a56e3",
+        "span_id": "SPAN_bade8b3cc70824ac",
+        "trace_id": "TRACE_ea2a14b327e77273",
+        "ignored_pre29_provider_name": "google"
+      }
+    },
+    {
+      "id": "g0a_claude_s2_session_a_dendro_session",
+      "description": "G0a Claude 2.1.322 S2 Session A (SESSION_fa2814579786c60e) from dendro session surface: harness='claude' joins byte-for-byte with AOB span",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "mtn-pilot",
+        "epoch": "2026-11",
+        "org": "smota-org",
+        "endpoint_scope": "g0a-wsl-runner-01",
+        "wire_client_id": null,
+        "raw_harness": "claude",
+        "native_session": "SESSION_fa2814579786c60e",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f7631000000096d746e2d70696c6f7400000007323032362d3131",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "86b94715f57c1401d2581781d01037aae105dd5b57b9160941db65e41b73bae6",
+        "canonical_harness": "claude",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f763100000009736d6f74612d6f7267000000116730612d77736c2d72756e6e65722d303100000006636c617564650000001853455353494f4e5f66613238313435373937383663363065"
+      },
+      "expected": {
+        "link_id": "d564e425c6c86a1933d14e84d3fef8af1aa4610677fb0ca31ca550368722ed68",
+        "unlinked_reason": null
+      },
+      "g0a_provenance": {
+        "harness_dir": "claude-2.1.322",
+        "scenario": "S2",
+        "hook_file": "docs/contracts/fact-export-v1/captures/g0a-20261112/claude-2.1.322/S2/hook-sanitized.jsonl",
+        "hook_file_sha256": "9c37ce7777acd3d63aab9bba39d501e5a93a599037ff888989176e393606c797",
+        "hook_connection": 1
+      }
+    },
+    {
+      "id": "g0a_claude_s2_session_b_aob_span_and_jsonl",
+      "description": "G0a Claude 2.1.322 S2 Session B (SESSION_82d7a11553f766a4) present in both otlp-traces-sanitized.json (SPAN_5517429e4c78d1bc) and session-log-sanitized.jsonl (line 1)",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "mtn-pilot",
+        "epoch": "2026-11",
+        "org": "smota-org",
+        "endpoint_scope": "g0a-wsl-runner-01",
+        "wire_client_id": 2,
+        "raw_harness": "claude-code",
+        "native_session": "SESSION_82d7a11553f766a4",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f7631000000096d746e2d70696c6f7400000007323032362d3131",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "86b94715f57c1401d2581781d01037aae105dd5b57b9160941db65e41b73bae6",
+        "canonical_harness": "claude",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f763100000009736d6f74612d6f7267000000116730612d77736c2d72756e6e65722d303100000006636c617564650000001853455353494f4e5f38326437613131353533663736366134"
+      },
+      "expected": {
+        "link_id": "3ac25b2ac6b1a498e8eac6b71a572cdb28f4dacd061168a91f8475c7ab248e7e",
+        "unlinked_reason": null
+      },
+      "g0a_provenance": {
+        "harness_dir": "claude-2.1.322",
+        "scenario": "S2",
+        "hook_file": "docs/contracts/fact-export-v1/captures/g0a-20261112/claude-2.1.322/S2/hook-sanitized.jsonl",
+        "hook_file_sha256": "9c37ce7777acd3d63aab9bba39d501e5a93a599037ff888989176e393606c797",
+        "hook_connection": 3,
+        "traces_file": "docs/contracts/fact-export-v1/captures/g0a-20261112/claude-2.1.322/S2/otlp-traces-sanitized.json",
+        "traces_file_sha256": "971a9004464670838350901778f684246095092737cce85c2c9951ade34a56e3",
+        "span_id": "SPAN_5517429e4c78d1bc",
+        "trace_id": "TRACE_8e7a28412a304c7d",
+        "session_log_file": "docs/contracts/fact-export-v1/captures/g0a-20261112/claude-2.1.322/S2/session-log-sanitized.jsonl",
+        "session_log_file_sha256": "f3db8dd708ebd6a5d7864c6c3322e32bc1a6fb5143ebb9b6478bfe6cbdab1d7d",
+        "ignored_pre29_provider_name": "google"
+      }
+    },
+    {
+      "id": "g0a_claude_s2_session_b_dendro_session",
+      "description": "G0a Claude 2.1.322 S2 Session B (SESSION_82d7a11553f766a4) from dendro session-log-sanitized.jsonl with harness='claude'",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "mtn-pilot",
+        "epoch": "2026-11",
+        "org": "smota-org",
+        "endpoint_scope": "g0a-wsl-runner-01",
+        "wire_client_id": null,
+        "raw_harness": "claude",
+        "native_session": "SESSION_82d7a11553f766a4",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f7631000000096d746e2d70696c6f7400000007323032362d3131",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "86b94715f57c1401d2581781d01037aae105dd5b57b9160941db65e41b73bae6",
+        "canonical_harness": "claude",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f763100000009736d6f74612d6f7267000000116730612d77736c2d72756e6e65722d303100000006636c617564650000001853455353494f4e5f38326437613131353533663736366134"
+      },
+      "expected": {
+        "link_id": "3ac25b2ac6b1a498e8eac6b71a572cdb28f4dacd061168a91f8475c7ab248e7e",
+        "unlinked_reason": null
+      },
+      "g0a_provenance": {
+        "harness_dir": "claude-2.1.322",
+        "scenario": "S2",
+        "session_log_file": "docs/contracts/fact-export-v1/captures/g0a-20261112/claude-2.1.322/S2/session-log-sanitized.jsonl",
+        "session_log_file_sha256": "f3db8dd708ebd6a5d7864c6c3322e32bc1a6fb5143ebb9b6478bfe6cbdab1d7d"
+      }
+    },
+    {
+      "id": "g0a_codex_s2_session_1_rollout",
+      "description": "G0a Codex 0.167.0 S2 Session 1 (SESSION_844c4f549f5485b2) from session-log-sanitized.jsonl line 1 (session_meta)",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "mtn-pilot",
+        "epoch": "2026-11",
+        "org": "smota-org",
+        "endpoint_scope": "g0a-wsl-runner-01",
+        "wire_client_id": 3,
+        "raw_harness": "codex",
+        "native_session": "SESSION_844c4f549f5485b2",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f7631000000096d746e2d70696c6f7400000007323032362d3131",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "86b94715f57c1401d2581781d01037aae105dd5b57b9160941db65e41b73bae6",
+        "canonical_harness": "codex",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f763100000009736d6f74612d6f7267000000116730612d77736c2d72756e6e65722d303100000005636f6465780000001853455353494f4e5f38343463346635343966353438356232"
+      },
+      "expected": {
+        "link_id": "fb3e1515dc914a554e2896c62878d63edd5f7aa87e18b3f8fce995131f1bff97",
+        "unlinked_reason": null
+      },
+      "g0a_provenance": {
+        "harness_dir": "codex-0.167.0",
+        "scenario": "S2",
+        "session_log_file": "docs/contracts/fact-export-v1/captures/g0a-20261112/codex-0.167.0/S2/session-log-sanitized.jsonl",
+        "session_log_file_sha256": "d2b17b15b88d2d432db737ddcbf2a91279b8a8c357d432aa5ee751f28e84a3c7"
+      }
+    },
+    {
+      "id": "g0a_codex_s2_session_2_rollout",
+      "description": "G0a Codex 0.167.0 S2 Session 2 (SESSION_6460b176b74ce2dc) from session-log-sanitized.jsonl line 26 (session_meta)",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "mtn-pilot",
+        "epoch": "2026-11",
+        "org": "smota-org",
+        "endpoint_scope": "g0a-wsl-runner-01",
+        "wire_client_id": null,
+        "raw_harness": "codex",
+        "native_session": "SESSION_6460b176b74ce2dc",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f7631000000096d746e2d70696c6f7400000007323032362d3131",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "86b94715f57c1401d2581781d01037aae105dd5b57b9160941db65e41b73bae6",
+        "canonical_harness": "codex",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f763100000009736d6f74612d6f7267000000116730612d77736c2d72756e6e65722d303100000005636f6465780000001853455353494f4e5f36343630623137366237346365326463"
+      },
+      "expected": {
+        "link_id": "dc9b37a3543a570345211af70eb677dfe76fe8b5542ec36e7cd37258c3b0815b",
+        "unlinked_reason": null
+      },
+      "g0a_provenance": {
+        "harness_dir": "codex-0.167.0",
+        "scenario": "S2",
+        "session_log_file": "docs/contracts/fact-export-v1/captures/g0a-20261112/codex-0.167.0/S2/session-log-sanitized.jsonl",
+        "session_log_file_sha256": "d2b17b15b88d2d432db737ddcbf2a91279b8a8c357d432aa5ee751f28e84a3c7"
+      }
+    },
+    {
+      "id": "g0a_codex_s1_session_rollout",
+      "description": "G0a Codex 0.167.0 S1 Session (SESSION_cbee0a64728e9ee3) from session-log-sanitized.jsonl line 1 (session_meta)",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "mtn-pilot",
+        "epoch": "2026-11",
+        "org": "smota-org",
+        "endpoint_scope": "g0a-wsl-runner-01",
+        "wire_client_id": 3,
+        "raw_harness": "codex",
+        "native_session": "SESSION_cbee0a64728e9ee3",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f7631000000096d746e2d70696c6f7400000007323032362d3131",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "86b94715f57c1401d2581781d01037aae105dd5b57b9160941db65e41b73bae6",
+        "canonical_harness": "codex",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f763100000009736d6f74612d6f7267000000116730612d77736c2d72756e6e65722d303100000005636f6465780000001853455353494f4e5f63626565306136343732386539656533"
+      },
+      "expected": {
+        "link_id": "6a10c5fc93745b9885e3022111f5efbc7e1f6446a3196ed666966b8f051fc977",
+        "unlinked_reason": null
+      },
+      "g0a_provenance": {
+        "harness_dir": "codex-0.167.0",
+        "scenario": "S1",
+        "session_log_file": "docs/contracts/fact-export-v1/captures/g0a-20261112/codex-0.167.0/S1/session-log-sanitized.jsonl",
+        "session_log_file_sha256": "49f565680d2a3323d3cfdea546eb884b579ad2913d5777992cd0461c05a31701"
+      }
+    },
+    {
+      "id": "g0a_codex_s2_synthetic_collision_filtered",
+      "description": "G0a Codex 0.167.0 S2 synthetic collision frame (SESSION_feff16fc0a8d88f9, origin='synthetic', header.client_id=2) is filtered to unlinked",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "mtn-pilot",
+        "epoch": "2026-11",
+        "org": "smota-org",
+        "endpoint_scope": "g0a-wsl-runner-01",
+        "wire_client_id": 2,
+        "raw_harness": null,
+        "native_session": "SESSION_feff16fc0a8d88f9",
+        "origin": "synthetic"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f7631000000096d746e2d70696c6f7400000007323032362d3131",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "86b94715f57c1401d2581781d01037aae105dd5b57b9160941db65e41b73bae6",
+        "canonical_harness": null,
+        "lp_payload_hex": null
+      },
+      "expected": {
+        "link_id": "unlinked",
+        "unlinked_reason": "non_harness_origin"
+      },
+      "g0a_provenance": {
+        "harness_dir": "codex-0.167.0",
+        "scenario": "S2",
+        "hook_file": "docs/contracts/fact-export-v1/captures/g0a-20261112/codex-0.167.0/S2/hook-sanitized.jsonl",
+        "hook_file_sha256": "bf0a30ceab9baf32791fc6c86e8f08657fc0db573fc54761169c3a9f74ccb31d",
+        "hook_connection": 1
+      }
+    }
+  ]
+}

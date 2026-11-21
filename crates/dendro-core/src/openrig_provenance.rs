@@ -72,6 +72,42 @@ impl AnalyticsStore {
         Ok(())
     }
 
+    /// Flush any buffered OpenRig row-provenance mappings inside the active
+    /// [`Self::with_openrig_fact_batch`] transaction.
+    pub fn flush_openrig_pending_records(&self) -> Result<()> {
+        let records = match self.openrig_pending.borrow_mut().as_mut() {
+            Some(pending) => std::mem::take(pending),
+            None => return Ok(()),
+        };
+        if records.is_empty() {
+            return Ok(());
+        }
+        self.conn.execute_batch(
+            "CREATE TEMP TABLE openrig_provenance_stage AS SELECT * FROM openrig_row_records WHERE FALSE",
+        )?;
+        {
+            let mut appender = self.conn.appender("openrig_provenance_stage")?;
+            for row in &records {
+                crate::RUN_CANCEL.check()?;
+                appender.append_row(params![
+                    row.source_id,
+                    row.generation,
+                    row.producing_revision,
+                    row.table_name,
+                    row.row_id,
+                    row.row_digest,
+                    row.row_state,
+                    row.source_key
+                ])?;
+            }
+            appender.flush()?;
+        }
+        self.conn.execute_batch(
+            "INSERT INTO openrig_row_records SELECT DISTINCT * FROM openrig_provenance_stage ON CONFLICT DO NOTHING; DROP TABLE openrig_provenance_stage",
+        )?;
+        Ok(())
+    }
+
     /// Batch all facts and their provenance mappings from one accepted source
     /// snapshot into one transaction. A failed reader rolls the batch back.
     pub fn with_openrig_fact_batch<T>(&self, ingest: impl FnOnce() -> Result<T>) -> Result<T> {
@@ -80,34 +116,19 @@ impl AnalyticsStore {
                 return Err(anyhow!("OpenRig fact batch is already active"));
             }
             *self.openrig_pending.borrow_mut() = Some(Vec::new());
-            let result = ingest();
-            // Clear the buffer before propagating reader/flush errors so rollback
-            // cannot leave mappings available to the next accepted batch.
-            let records = self.openrig_pending.borrow_mut().take().unwrap_or_default();
-            let result = result?;
-            if !records.is_empty() {
-                self.conn.execute_batch("CREATE TEMP TABLE openrig_provenance_stage AS SELECT * FROM openrig_row_records WHERE FALSE")?;
-                {
-                    let mut appender = self.conn.appender("openrig_provenance_stage")?;
-                    for row in &records {
-                        crate::RUN_CANCEL.check()?;
-                        appender.append_row(params![
-                            row.source_id,
-                            row.generation,
-                            row.producing_revision,
-                            row.table_name,
-                            row.row_id,
-                            row.row_digest,
-                            row.row_state,
-                            row.source_key
-                        ])?;
-                    }
-                    appender.flush()?;
-                }
-                self.conn.execute_batch("INSERT INTO openrig_row_records SELECT DISTINCT * FROM openrig_provenance_stage ON CONFLICT DO NOTHING; DROP TABLE openrig_provenance_stage")?;
+            let result = (|| {
+                let out = ingest()?;
+                self.flush_openrig_pending_records()?;
+                crate::RUN_CANCEL.check()?;
+                Ok(out)
+            })();
+            // Clear the buffer and row cache before propagating reader/flush errors so
+            // rollback cannot leave mappings or cached provenance available to the next batch.
+            *self.openrig_pending.borrow_mut() = None;
+            if result.is_err() {
+                *self.openrig_rows.borrow_mut() = None;
             }
-            crate::RUN_CANCEL.check()?;
-            Ok(result)
+            result
         })
     }
 
@@ -161,125 +182,124 @@ impl AnalyticsStore {
         revision: &str,
         rows: &[OpenRigRow],
     ) -> Result<OpenRigIngest> {
-        *self.openrig_rows.borrow_mut() = None;
-        self.conn.execute_batch(SCHEMA)?;
-        let source_id = redact(source_id);
-        let revision = redact(revision);
-        let previous = self.load_openrig_row_records()?;
-        let mut latest = BTreeMap::<(String, String), &OpenRigRecord>::new();
-        let mut max_generation = 0;
-        for record in previous.iter().filter(|r| r.source_id == source_id) {
-            max_generation = max_generation.max(record.generation);
-            if record.source_key.is_empty() {
-                let key = (record.table_name.clone(), record.row_id.clone());
-                if latest
-                    .get(&key)
-                    .is_none_or(|old| old.generation < record.generation)
-                {
-                    latest.insert(key, record);
-                }
-            }
-        }
-        let incoming: BTreeMap<_, _> = rows
-            .iter()
-            .map(|r| {
-                (
-                    (redact(&r.table_name), redact(&r.row_id)),
-                    redact(&r.row_digest),
-                )
-            })
-            .collect();
-        // events is durable append-only evidence; only transition/snapshot
-        // disappearance may be ordinary retention.
-        let reset = latest.iter().any(|(key, old)| {
-            key.0 == "events" && old.row_state != "superseded" && !incoming.contains_key(key)
-        }) || latest.iter().any(|(key, old)| {
-            key.0 == "source_identity"
-                && incoming
-                    .get(key)
-                    .is_some_and(|digest| digest != &old.row_digest)
-        });
-        let changed = latest.iter().any(|(key, old)| {
-            matches!(key.0.as_str(), "events" | "queue_transitions" | "snapshots")
-                && incoming
-                    .get(key)
-                    .is_some_and(|digest| digest != &old.row_digest)
-        });
-        let added = incoming
-            .iter()
-            .any(|(key, digest)| latest.get(key).is_none_or(|old| &old.row_digest != digest));
-        let generation = if max_generation == 0 {
-            1
-        } else if reset || added {
-            max_generation + 1
-        } else {
-            max_generation
-        };
-        let tx = self.conn.unchecked_transaction()?;
-        self.invalidate_semantic()?;
-        tx.execute("DELETE FROM mutable_source_disclosures", [])?;
-        if reset {
-            tx.execute("UPDATE openrig_row_records SET row_state = 'superseded' WHERE source_id = ? AND row_state IN ('present', 'gone')", params![source_id])?;
-        }
-        for (key, old) in &latest {
-            crate::RUN_CANCEL.check()?;
-            if reset {
-                continue;
-            }
-            if incoming
-                .get(key)
-                .is_some_and(|digest| digest != &old.row_digest)
-            {
-                let immutable =
-                    matches!(key.0.as_str(), "events" | "queue_transitions" | "snapshots");
-                tx.execute("UPDATE openrig_row_records SET row_state = ? WHERE source_id = ? AND table_name = ? AND row_id = ? AND generation = ?",
-                    params![if immutable { "changed" } else { "superseded" }, source_id, key.0, key.1, old.generation])?;
-                if immutable {
-                    tx.execute(
-                        "INSERT INTO warnings (path, line_no, reason) VALUES (?, NULL, ?)",
-                        params![
-                            source_id,
-                            redact(&format!(
-                                "openrig source changed: {}:{} changed in place",
-                                key.0, key.1
-                            ))
-                        ],
-                    )?;
-                }
-            } else if !incoming.contains_key(key) && old.row_state == "present" {
-                tx.execute("UPDATE openrig_row_records SET row_state = 'gone' WHERE source_id = ? AND table_name = ? AND row_id = ? AND generation = ?",
-                    params![source_id, key.0, key.1, old.generation])?;
-            }
-        }
-        {
-            let mut insert = tx.appender("openrig_row_records")?;
-            let mut restore = tx.prepare("UPDATE openrig_row_records SET row_state = 'present' WHERE source_id = ? AND table_name = ? AND row_id = ? AND generation = ?")?;
-            for ((table, row_id), digest) in &incoming {
-                crate::RUN_CANCEL.check()?;
-                let old = latest.get(&(table.clone(), row_id.clone()));
-                if !reset && old.is_some_and(|r| &r.row_digest == digest) {
-                    let old = old.expect("checked");
-                    if old.row_state != "present" {
-                        restore.execute(params![source_id, table, row_id, old.generation])?;
+        self.canonical_write(|| {
+            *self.openrig_rows.borrow_mut() = None;
+            self.conn.execute_batch(SCHEMA)?;
+            let source_id = redact(source_id);
+            let revision = redact(revision);
+            let previous = self.load_openrig_row_records()?;
+            let mut latest = BTreeMap::<(String, String), &OpenRigRecord>::new();
+            let mut max_generation = 0;
+            for record in previous.iter().filter(|r| r.source_id == source_id) {
+                max_generation = max_generation.max(record.generation);
+                if record.source_key.is_empty() {
+                    let key = (record.table_name.clone(), record.row_id.clone());
+                    if latest
+                        .get(&key)
+                        .is_none_or(|old| old.generation < record.generation)
+                    {
+                        latest.insert(key, record);
                     }
+                }
+            }
+            let incoming: BTreeMap<_, _> = rows
+                .iter()
+                .map(|r| {
+                    (
+                        (redact(&r.table_name), redact(&r.row_id)),
+                        redact(&r.row_digest),
+                    )
+                })
+                .collect();
+            // events is durable append-only evidence; only transition/snapshot
+            // disappearance may be ordinary retention.
+            let reset = latest.iter().any(|(key, old)| {
+                key.0 == "events" && old.row_state != "superseded" && !incoming.contains_key(key)
+            }) || latest.iter().any(|(key, old)| {
+                key.0 == "source_identity"
+                    && incoming
+                        .get(key)
+                        .is_some_and(|digest| digest != &old.row_digest)
+            });
+            let changed = latest.iter().any(|(key, old)| {
+                matches!(key.0.as_str(), "events" | "queue_transitions" | "snapshots")
+                    && incoming
+                        .get(key)
+                        .is_some_and(|digest| digest != &old.row_digest)
+            });
+            let added = incoming
+                .iter()
+                .any(|(key, digest)| latest.get(key).is_none_or(|old| &old.row_digest != digest));
+            let generation = if max_generation == 0 {
+                1
+            } else if reset || added {
+                max_generation + 1
+            } else {
+                max_generation
+            };
+            self.conn.execute("DELETE FROM mutable_source_disclosures", [])?;
+            if reset {
+                self.conn.execute("UPDATE openrig_row_records SET row_state = 'superseded' WHERE source_id = ? AND row_state IN ('present', 'gone')", params![source_id])?;
+            }
+            for (key, old) in &latest {
+                crate::RUN_CANCEL.check()?;
+                if reset {
                     continue;
                 }
-                insert.append_row(params![
-                    source_id, generation, revision, table, row_id, digest, "present", ""
-                ])?;
+                if incoming
+                    .get(key)
+                    .is_some_and(|digest| digest != &old.row_digest)
+                {
+                    let immutable =
+                        matches!(key.0.as_str(), "events" | "queue_transitions" | "snapshots");
+                    self.conn.execute("UPDATE openrig_row_records SET row_state = ? WHERE source_id = ? AND table_name = ? AND row_id = ? AND generation = ?",
+                        params![if immutable { "changed" } else { "superseded" }, source_id, key.0, key.1, old.generation])?;
+                    if immutable {
+                        self.conn.execute(
+                            "INSERT INTO warnings (path, line_no, reason) VALUES (?, NULL, ?)",
+                            params![
+                                source_id,
+                                redact(&format!(
+                                    "openrig source changed: {}:{} changed in place",
+                                    key.0, key.1
+                                ))
+                            ],
+                        )?;
+                    }
+                } else if !incoming.contains_key(key) && old.row_state == "present" {
+                    self.conn.execute("UPDATE openrig_row_records SET row_state = 'gone' WHERE source_id = ? AND table_name = ? AND row_id = ? AND generation = ?",
+                        params![source_id, key.0, key.1, old.generation])?;
+                }
             }
-            insert.flush()?;
-        }
-        tx.execute(
-            "UPDATE source_files SET generation = ? WHERE source_id = ?",
-            params![generation, source_id],
-        )?;
-        tx.commit()?;
-        self.refresh_openrig_row_cache()?;
-        Ok(OpenRigIngest {
-            generation,
-            changed,
-            reset,
+            {
+                let mut insert = self.conn.appender("openrig_row_records")?;
+                let mut restore = self.conn.prepare("UPDATE openrig_row_records SET row_state = 'present' WHERE source_id = ? AND table_name = ? AND row_id = ? AND generation = ?")?;
+                for ((table, row_id), digest) in &incoming {
+                    crate::RUN_CANCEL.check()?;
+                    let old = latest.get(&(table.clone(), row_id.clone()));
+                    if !reset && old.is_some_and(|r| &r.row_digest == digest) {
+                        let old = old.expect("checked");
+                        if old.row_state != "present" {
+                            restore.execute(params![source_id, table, row_id, old.generation])?;
+                        }
+                        continue;
+                    }
+                    insert.append_row(params![
+                        source_id, generation, revision, table, row_id, digest, "present", ""
+                    ])?;
+                }
+                insert.flush()?;
+            }
+            self.conn.execute(
+                "UPDATE source_files SET generation = ? WHERE source_id = ?",
+                params![generation, source_id],
+            )?;
+            self.refresh_openrig_row_cache()?;
+            Ok(OpenRigIngest {
+                generation,
+                changed,
+                reset,
+            })
         })
     }
 

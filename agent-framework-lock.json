@@ -3,9 +3,9 @@
   "profile": "standard",
   "package": {
     "name": "agentflow-sdlc",
-    "version": "1.10.0"
+    "version": "1.11.0"
   },
-  "planToken": "d0a1451d33a3b3421d48582be08a6c54947f51aff95dcbb9b5bd377214ee668f",
+  "planToken": "d972a7111c4ac254d11b2640c24e9536df3e1cef8857dc38c6ce892252b673d7",
   "entries": [
     {
       "source": "adapters/openrig/agentflow-world/manifest.yaml",
@@ -40,14 +40,14 @@
       "target": "agent-workflow.config.json",
       "ownership": "seed-once",
       "state": "managed",
-      "hash": "44496f9fb3b39f66ad95c2d753a0975a5575f012b889c61327696514ab75074f"
+      "hash": "9ef3fdaa9888741cc96372666b6ccd7773c111888885bd18254f10f1bdc9d5fc"
     },
     {
       "source": "defaults/AGENTS.md",
       "target": "AGENTS.md",
       "ownership": "seed-once",
       "state": "managed",
-      "hash": "5c55abadb94787ddb1ed40dd408acd7273cc0a5619fb4c511510bd38d26fecaf"
+      "hash": "d2887356b2af83796824b851e8eff7f3c5d3a99f22ca1bfa6669d2108c5b815b"
     },
     {
       "source": "docs/adopters/index.md",
@@ -88,8 +88,8 @@
       "source": "docs/capabilities.md",
       "target": "docs/capabilities.md",
       "ownership": "managed",
-      "state": "managed",
-      "hash": "10450a8c60242439b7f81b1d2d248a86434bc1ef2401615c75767a5d4b4c3b33"
+      "state": "merged",
+      "hash": null
     },
     {
       "source": "docs/delivery-release-acceptance.md",
@@ -417,8 +417,8 @@
       "source": "lib/core/dispatch.mjs",
       "target": "lib/core/dispatch.mjs",
       "ownership": "managed",
-      "state": "managed",
-      "hash": "297dad803a1bca1129107a79d762f28bb72f3c4823885b75837ca4a45caeda01"
+      "state": "merged",
+      "hash": null
     },
     {
       "source": "lib/core/execution-intent.mjs",
@@ -1538,7 +1538,7 @@
       "target": "skills/agentflow-steerer/references/adapter-openrig.md",
       "ownership": "managed",
       "state": "managed",
-      "hash": "8bcbfe29e08737168ad15c0a280100291a86301ab2c80499b751670e13b583d6"
+      "hash": "af2633710349cb68290ed81c5f9891f41ec4d2a57ea912f525eb965023682e52"
     },
     {
       "source": "skills/agentflow-steerer/references/adapter-tmux.md",

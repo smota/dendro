@@ -45,6 +45,22 @@ impl Insight for CounterfactualRouting {
     fn domain(&self) -> InsightDomain {
         InsightDomain::Model
     }
+    fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[
+            Field::InputTokens,
+            Field::OutputTokens,
+            Field::CacheReadTokens,
+            Field::CacheWriteTokens,
+        ]
+    }
+    fn optional_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::Model, Field::TurnTimestamp, Field::NativeSession]
+    }
+    fn coverage(&self) -> &'static str {
+        COVERAGE
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         let usage = match load_usage(input) {
             Ok(rows) => rows,
@@ -234,7 +250,14 @@ fn load_usage(input: &InsightInput<'_>) -> anyhow::Result<Vec<Usage>> {
             })
         },
     )?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    let mut out = Vec::new();
+    for row in rows {
+        let row = row?;
+        if input.allows_harness(&row.harness) {
+            out.push(row);
+        }
+    }
+    Ok(out)
 }
 
 fn load_tier(input: &InsightInput<'_>) -> anyhow::Result<Option<Tier>> {

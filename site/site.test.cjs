@@ -8,18 +8,30 @@ class Node {
  setAttribute(k,v){this.attrs[k]=String(v);}getAttribute(k){return this.attrs[k];}addEventListener(k,fn){this.listeners[k]=fn;}focus(){this.focused=true;}
 }
 const read=p=>fs.readFileSync(path.join(__dirname,p),'utf8');
-function viewer(){const html=read('viewer.html'),nodes=new Map(),tabs=['pulse','flow','trace','insights'].map(id=>{const n=new Node('button');n.setAttribute('aria-controls',id);return n;});
+function viewer(html=read('viewer.html')){const nodes=new Map(),tabs=['pulse','flow','trace','insights'].map(id=>{const n=new Node('button');n.setAttribute('aria-controls',id);return n;});
  const document={getElementById(id){if(!nodes.has(id))nodes.set(id,new Node(id==='seat'?'select':'div'));return nodes.get(id);},createElement:tag=>new Node(tag),createElementNS:(_,tag)=>new Node(tag),createTextNode:t=>{const n=new Node('#text');n.textContent=t;return n;},querySelectorAll:()=>tabs};
- document.getElementById('dendro-data').textContent='null';const context=vm.createContext({document,console});const script=html.match(/<script>\n([\s\S]*)<\/script>/)[1];vm.runInContext(script,context);return {context,nodes,tabs,run:code=>vm.runInContext(code,context)};}
+ document.getElementById('dendro-data').textContent='null';const context=vm.createContext({document,console});const script=html.match(/<script>\r?\n([\s\S]*)<\/script>/);
+ assert.ok(script,'viewer.html must contain an inline viewer script');
+ vm.runInContext(script[1],context);return {context,nodes,tabs,run:code=>vm.runInContext(code,context)};}
+test('viewer fixture executes with LF and CRLF line endings',()=>{
+ const html=read('viewer.html').replace(/\r\n/g,'\n');
+ for(const newline of ['\n','\r\n']){
+  const v=viewer(html.replace(/\n/g,newline));
+  assert.match(v.nodes.get('status').textContent,/Synthetic demo/);
+ }
+});
+test('viewer fixture reports a missing inline script explicitly',()=>{
+ assert.throws(()=>viewer('<html></html>'),/viewer\.html must contain an inline viewer script/);
+});
 test('scenario retains fractional returns, uses fleet totals, and handles endpoints',()=>{const context=vm.createContext({document:{addEventListener(){}}});vm.runInContext(read('app.js'),context);
  const calculate=x=>vm.runInContext(`modelScenario(${JSON.stringify(x)})`,context);const assumptions={seats:4,missions:25,tokensK:400,reworkPercent:25,costPerMillion:5,hours:2,reduction:20};const r=calculate(assumptions);
  assert.equal(r.returned,6.25);assert.equal(r.tokenMillions,2.5);assert.equal(r.cost,12.5);assert.equal(r.hours,2.5);assert.equal(r.capacity,5);assert.equal(r.missionsPerSeat,6.25);
  assert.equal(calculate({...assumptions,seats:50}).cost,12.5);assert.equal(calculate({...assumptions,reworkPercent:0}).cost,0);assert.equal(calculate({...assumptions,reduction:0}).hours,0);assert.equal(calculate({...assumptions,reworkPercent:100,reduction:100}).capacity,100);
 });
-test('synthetic demo renders SVG, timeline, local aliases, and numeric evidence',()=>{const v=viewer();assert.match(v.nodes.get('status').textContent,/Synthetic demo/);assert.equal(v.nodes.get('sankey').children[0].tag,'svg');assert.equal(v.nodes.get('timeline').children[0].tag,'svg');assert.match(v.nodes.get('inspection').textContent,/900,000/);assert.doesNotMatch(v.nodes.get('inspection').textContent,/builder/);
+test('synthetic demo renders SVG, timeline, local aliases, and numeric evidence',()=>{const v=viewer();assert.match(v.nodes.get('status').textContent,/Synthetic demo/);assert.equal(v.nodes.get('sankey').children[0].tag,'svg');assert.equal(v.nodes.get('timeline').children[0].tag,'svg');assert.ok(v.nodes.get('inspection').textContent.includes((900000).toLocaleString()));assert.doesNotMatch(v.nodes.get('inspection').textContent,/builder/);
  const ribbon=v.nodes.get('sankey').children[0].children.find(c=>c.tag==='path');ribbon.listeners.click();assert.match(v.nodes.get('flow-detail').textContent,/Actor 1 → Actor 2: 2/);
 });
-test('real report envelope and trace inputs adapt without demo data',()=>{const v=viewer();v.run(`load({metric:'activity',payload:{product:'AI Fleet Intelligence',tokens:42,m1_by_seat:[{seat:'private-name',tokens:42,closed_items:0}] }},'test')`);assert.match(v.nodes.get('metrics').textContent,/42/);assert.match(v.nodes.get('timeline').textContent,/required/);assert.match(v.nodes.get('sankey').textContent,/No handoff/);assert.match(v.nodes.get('inspection').textContent,/Unavailable/);assert.doesNotMatch(v.nodes.get('inspection').textContent,/private-name|900,000/);
+test('real report envelope and trace inputs adapt without demo data',()=>{const v=viewer();v.run(`load({metric:'activity',payload:{product:'AI Fleet Intelligence',tokens:42,m1_by_seat:[{seat:'private-name',tokens:42,closed_items:0}] }},'test')`);assert.match(v.nodes.get('metrics').textContent,/42/);assert.match(v.nodes.get('timeline').textContent,/required/);assert.match(v.nodes.get('sankey').textContent,/No handoff/);assert.match(v.nodes.get('inspection').textContent,/Unavailable/);assert.doesNotMatch(v.nodes.get('inspection').textContent,/private-name/);assert.ok(!v.nodes.get('inspection').textContent.includes((900000).toLocaleString()));
  v.run(`load({metric_id:'tokens',inputs:{tokens:7}},'trace')`);assert.match(v.nodes.get('metrics').textContent,/7/);assert.equal(v.nodes.get('seat').disabled,true);
 });
 test('projection excludes labels, secrets, source paths and nonnumeric injections',()=>{const v=viewer();const p=v.run(`project({product:'AI Fleet Intelligence',tokens:'<img src=x onerror=alert(1)>',m1_by_seat:[{seat:'sk-private-canary',tokens:5}],activity:[{seat:'sk-private-canary',source_key:'/private/canary',active_secs:-1}],command:'ghp_secret',metadata:{password:'canary'}})`);const serialized=JSON.stringify(p);assert.doesNotMatch(serialized,/sk-private|ghp_|canary|onerror|private/);assert.equal(p.total,null);assert.equal(p.activity[0].active_secs,null);assert.equal(p.seats[0].seat,'Actor 1');
@@ -30,10 +42,10 @@ test('keyboard tabs change panel and selected state',()=>{const v=viewer();v.tab
 test('life boundaries prevent running states carrying across unobserved intervals',()=>{const v=viewer();v.run(`load({product:'AI Fleet Intelligence',from:'2026-01-01T00:00:00Z',to:'2026-01-01T01:00:00Z',activity:[{seat:'a',observed_spans:[{from:'2026-01-01T00:00:00Z',to:'2026-01-01T00:20:00Z'},{from:'2026-01-01T00:40:00Z',to:'2026-01-01T01:00:00Z'}]}],activity_events:[{seat:'a',ts:'2026-01-01T00:00:00Z',state:'running'}]},'test')`);const rects=v.nodes.get('timeline').children[0].children.filter(x=>x.tag==='rect'&&x.attrs.fill==='#10b981');assert.equal(rects.length,1);assert.ok(Number(rects[0].attrs.width)<300);});
 test('offline viewer has embedding marker and no remote dependencies; media preserved',()=>{const html=read('viewer.html');assert.match(html,/<script id="dendro-data" type="application\/json">null<\/script>/);assert.doesNotMatch(html,/<(?:script|link|img|iframe)[^>]+(?:src|href)="https?:/);assert.doesNotMatch(read('index.html'),/fonts\.google/);['assets/logo.jpg','assets/dendro-demo.mp4','assets/dendro-preview.gif'].forEach(p=>assert.ok(fs.statSync(path.join(__dirname,p)).size>0));});
 test('pair heatmap separates explicit zero from unknown and renders execution / boundaries',()=>{const v=viewer();v.run(`load({product:'AI Fleet Intelligence',m2_pairs:[{from:'a',to:'b',handoffs:4,return_rate:0}],pair_medians:[{from:'a',to:'b',wait_median:0,exec_median:12,exec_samples:2}],ring_boundaries:{edges:[{from:'a',to:'b',boundary:'in_ring'}]}},'test')`);assert.match(v.nodes.get('heatmap').textContent,/4/);v.nodes.get('heatMetric').value='rate';v.nodes.get('heatMetric').listeners.change();assert.match(v.nodes.get('heatmap').textContent,/0/);assert.match(v.nodes.get('heatmap').textContent,/—/);v.nodes.get('heatMetric').value='exec';v.nodes.get('heatMetric').listeners.change();assert.match(v.nodes.get('heatmap').textContent,/12/);v.nodes.get('heatMetric').value='boundary';v.nodes.get('heatMetric').listeners.change();assert.match(v.nodes.get('heatmap').textContent,/in_ring: 1/);});
-test('timestamped context-drop markers use only numeric counts and actual positions',()=>{const v=viewer();v.run(`load({product:'AI Fleet Intelligence',from:'2026-01-01T00:00:00Z',to:'2026-01-01T01:00:00Z',activity_events:[{seat:'a',ts:'2026-01-01T00:00:00Z',state:'running'}],context_compactions:{events:[{seat:'a',ts:'2026-01-01T00:30:00Z',pre_drop_context_tokens:325000,post_drop_context_tokens:34000,command:'private-canary'}]}},'test')`);const markers=v.nodes.get('timeline').children[0].children.filter(n=>n.tag==='line');assert.equal(markers.length,1);assert.equal(markers[0].attrs.x1,'545');assert.match(markers[0].textContent,/325,000 → 34,000/);assert.doesNotMatch(markers[0].textContent,/canary/);});
+test('timestamped context-drop markers use only numeric counts and actual positions',()=>{const v=viewer();v.run(`load({product:'AI Fleet Intelligence',from:'2026-01-01T00:00:00Z',to:'2026-01-01T01:00:00Z',activity_events:[{seat:'a',ts:'2026-01-01T00:00:00Z',state:'running'}],context_compactions:{events:[{seat:'a',ts:'2026-01-01T00:30:00Z',pre_drop_context_tokens:325000,post_drop_context_tokens:34000,command:'private-canary'}]}},'test')`);const markers=v.nodes.get('timeline').children[0].children.filter(n=>n.tag==='line');assert.equal(markers.length,1);assert.equal(markers[0].attrs.x1,'545');assert.ok(markers[0].textContent.includes(`${(325000).toLocaleString()} → ${(34000).toLocaleString()}`));assert.doesNotMatch(markers[0].textContent,/canary/);});
 test('existing CLI handoff report and trace fixtures render using their real envelopes',{skip:!process.env.DENDRO_SITE_FIXTURE_DIR},()=>{const v=viewer();for(const name of ['loops.handoffs.candidate.json','loops.trace.candidate.json']){const raw=JSON.parse(fs.readFileSync(path.join(process.env.DENDRO_SITE_FIXTURE_DIR,name),'utf8'));v.context.fixture=raw;v.run(`load(fixture,'verified fixture')`);assert.match(v.nodes.get('status').textContent,/verified fixture/);assert.doesNotMatch(v.nodes.get('status').textContent,/Synthetic/);}});
 
-test('committed native CLI fixture preserves actual numeric projection and aliased flows',()=>{const v=viewer();v.context.fixture=JSON.parse(read('fixtures/canonical-handoffs.json'));v.run("load(fixture,'native synthetic CLI fixture')");assert.equal(v.run('current.edges.length'),4);assert.equal(v.run('current.histogram[0].secs'),3600);assert.equal(v.run('current.pairs[0].exec_median'),9);assert.match(v.nodes.get('sankey').textContent,/Actor 1/);assert.match(v.nodes.get('concurrency').textContent,/3,600/);});
+test('committed native CLI fixture preserves actual numeric projection and aliased flows',()=>{const v=viewer();v.context.fixture=JSON.parse(read('fixtures/canonical-handoffs.json'));v.run("load(fixture,'native synthetic CLI fixture')");assert.equal(v.run('current.edges.length'),4);assert.equal(v.run('current.histogram[0].secs'),3600);assert.equal(v.run('current.pairs[0].exec_median'),9);assert.match(v.nodes.get('sankey').textContent,/Actor 1/);assert.ok(v.nodes.get('concurrency').textContent.includes((3600).toLocaleString()));});
 
 test('offline fleet explorer demo dataset populates all 4 tabs, timeline, compactions, pairs, insights, and security',()=>{
  const v=viewer();
@@ -50,11 +62,11 @@ test('offline fleet explorer demo dataset populates all 4 tabs, timeline, compac
  });
 
  // Tab 1: Pulse & Session Timeline
- assert.match(v.nodes.get('metrics').textContent,/482,910,400/);
- assert.match(v.nodes.get('metrics').textContent,/0\.79/);
+ assert.ok(v.nodes.get('metrics').textContent.includes((482910400).toLocaleString()));
+ assert.ok(v.nodes.get('metrics').textContent.includes((0.79).toLocaleString()));
  assert.match(v.nodes.get('metrics').textContent,/6/);
  assert.match(v.nodes.get('metrics').textContent,/4/);
- assert.match(v.nodes.get('metrics').textContent,/3\.42/);
+ assert.ok(v.nodes.get('metrics').textContent.includes((3.42).toLocaleString()));
 
  const aliases=[...v.run('current.aliases')];
  assert.deepEqual(aliases,['Actor 1','Actor 2','Actor 3','Actor 4','Actor 5','Actor 6']);
@@ -64,13 +76,13 @@ test('offline fleet explorer demo dataset populates all 4 tabs, timeline, compac
  assert.equal(timelineSvg.tag,'svg');
  const compactions=timelineSvg.children.filter(c=>c.tag==='line');
  assert.equal(compactions.length,5);
- assert.match(compactions[0].children[0].textContent,/198,500 → 32,400/);
+ assert.ok(compactions[0].children[0].textContent.includes(`${(198500).toLocaleString()} → ${(32400).toLocaleString()}`));
 
  const intervals=timelineSvg.children.filter(c=>c.tag==='rect'&&(c.attrs.fill==='#fbbf24'||c.attrs.fill==='url(#container-hatch)'));
  assert.equal(intervals.length,8);
 
- assert.match(v.nodes.get('concurrency').textContent,/k=0: 3,600 s/);
- assert.match(v.nodes.get('concurrency').textContent,/k=6: 3,600 s/);
+ assert.ok(v.nodes.get('concurrency').textContent.includes(`k=0: ${(3600).toLocaleString()} s`));
+ assert.ok(v.nodes.get('concurrency').textContent.includes(`k=6: ${(3600).toLocaleString()} s`));
 
  // Tab 2: Flow & Model Accounting
  const sankeySvg=v.nodes.get('sankey').children[0];
@@ -78,10 +90,10 @@ test('offline fleet explorer demo dataset populates all 4 tabs, timeline, compac
  const returnRibbons=sankeySvg.children.filter(c=>c.tag==='path'&&c.attrs.class&&c.attrs.class.includes('return'));
  assert.ok(returnRibbons.length>=3);
 
- assert.match(v.nodes.get('tokens').textContent,/62,450,000/);
- assert.match(v.nodes.get('tokens').textContent,/348,120,400/);
- assert.match(v.nodes.get('attribution').textContent,/396,420,000/);
- assert.match(v.nodes.get('attribution').textContent,/54,180,000/);
+ assert.ok(v.nodes.get('tokens').textContent.includes((62450000).toLocaleString()));
+ assert.ok(v.nodes.get('tokens').textContent.includes((348120400).toLocaleString()));
+ assert.ok(v.nodes.get('attribution').textContent.includes((396420000).toLocaleString()));
+ assert.ok(v.nodes.get('attribution').textContent.includes((54180000).toLocaleString()));
 
  assert.equal(v.nodes.get('heatmap').children[0].tag,'table');
  assert.equal(v.nodes.get('heatmap').children[0].children.length,7);
@@ -92,7 +104,7 @@ test('offline fleet explorer demo dataset populates all 4 tabs, timeline, compac
  // Tab 3: Actor Evidence (Trace)
  assert.equal(v.nodes.get('seat').children.length,6);
  assert.match(v.nodes.get('inspection').textContent,/Actor 1/);
- assert.match(v.nodes.get('inspection').textContent,/38,450,000/);
+ assert.ok(v.nodes.get('inspection').textContent.includes((38450000).toLocaleString()));
  assert.match(v.nodes.get('inspection').textContent,/142/);
 
  // Tab 4: Insights & Security

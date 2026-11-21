@@ -36,7 +36,7 @@ Analytics databases written before this change counted every Pi or Codex file un
 
 ## Source summary (AC1)
 
-The `sources` field of `dendro run` lists each configured root. Default configured roots for Pi include both OpenRig-managed sessions (`$OPENRIG_HOME/state/pi`) and standalone user sessions (`$HOME/.pi/agent/sessions`). A Claude, Codex or Pi root reads `<harness> files=<n> records_read=<r> usage_records=<u>`. A record is one complete, non-blank JSONL line read by this run. Lines below the stored watermark were read by an earlier run and are not counted again, and a trailing line without its newline is not a record yet. `usage_records` counts the usage facts stored by this run after duplicate messages are skipped, so it can be lower than `records_read`. The OpenRig root reads `openrig events=<n> ...`, where `events` counts the rows of the `events` table read from the private copy. The queue tables are read too, for chain and destination evidence, and are not counted. A root that does not exist is listed as `<harness> missing`, records the warning `source <harness> missing`, and the other roots still run.
+The `sources` field of `dendro run` lists each configured root. Default configured roots for Pi include both OpenRig-managed sessions (`$OPENRIG_HOME/state/pi`) and standalone user sessions (`$HOME/.pi/agent/sessions`). A Claude, Codex or Pi root reads `<harness> files=<n> records_read=<r> usage_records=<u>`. A record is one complete, non-blank JSONL line read by this run. Lines below the stored watermark were read by an earlier run and are not counted again, and a trailing line without its newline is not a record yet. `usage_records` counts the usage facts stored by this run after duplicate messages are skipped, so it can be lower than `records_read`. The OpenRig root reads `openrig events=<n> ...`, where `events` counts the rows of the `events` table read from the private copy. The queue tables are read too, for chain and destination evidence, and are not counted. The same root prints `dendro: openrig contract=<supported|additive|drifted|unsupported> rig=<version|unknown> migration=<name|none> unknown_events=<n> dropped=<n> reason=<short>`. `supported` matches the pinned columns and migration tail. `additive` is an unknown column or a newer migration name; ingest continues. `drifted` means the migration table is unreadable or a non-required table is missing; ingest continues and the line is the warning. `unsupported` means `events` or `queue_transitions` is missing, or a required column is missing or has the wrong type; that source stops before facts are written. `DENDRO_OPENRIG_CONTRACT=strict` treats `drifted` the same way. Any other value, including an unset variable, keeps the warning. `unknown_events` counts event kinds this reader does not store. `dropped` stays 0. A root that does not exist is listed as `<harness> missing`, records the warning `source <harness> missing`, and the other roots still run.
 
 ## Token totals per session and seat (AC6)
 
@@ -252,6 +252,19 @@ dendro advise --mcp-schema
 ```
 
 `dendro advise` evaluates `model_cohort_baseline`, `skill_effectiveness_audit`, `delegation_loop_risk`, or `environment_readiness`. Use `--db`, `--harness`, `--skill`, and `--session` to select the relevant evidence; `--json` returns structured output and `--mcp-schema` prints the advisory tool schema. `--budget-ms` sets the evaluation budget. The warm p95 target is **<=15ms**; an exceeded budget returns `advisory_budget_exceeded` rather than partial advice. This is not a cold-start guarantee. Advice remains operator-facing and pull-only.
+
+### Release-profile latency SLA enforcement
+
+Wall-clock latency SLAs are enforced in release-profile test gates (`cfg!(not(debug_assertions))`), while debug-profile test runs retain all functional, schema, conservation, and zero-write assertions without failing on unoptimized wall-clock variance under load:
+
+- **Direct Overview (`<50ms` max across 20 warm iterations on the 5,500-fact census):**
+  ```sh
+  cargo test --release -p dendro-core --lib --locked overview::tests::test_direct_overview_performance_5500_facts
+  ```
+- **`dendro advise` (`<=15ms` warm p95 across 30 runs on the frozen fixture, `A11`):**
+  ```sh
+  cargo test --release -p dendro-cli --test advise --locked test_warm_p95_under_15ms_and_zero_writes
+  ```
 
 `dendro ask` remains the supported-intent entry point over Nao semantic projections. Use `dendro ask --list-intents` for the catalog; materialization and missing-evidence rules remain unchanged.
 

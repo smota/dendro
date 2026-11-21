@@ -40,6 +40,13 @@ impl Insight for SchemaDrift {
     fn domain(&self) -> InsightDomain {
         InsightDomain::Harness
     }
+    fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::HarnessEnvelopeShape]
+    }
+    fn coverage(&self) -> &'static str {
+        COVERAGE
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         if !table_exists(input.connection(), "harness_envelope") {
             return refused(self, "insufficient_sample", "harness_envelope");
@@ -268,5 +275,12 @@ fn load(input: &InsightInput<'_>) -> anyhow::Result<Vec<Envelope>> {
             shape: row.get(3)?,
         })
     })?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    let mut out = Vec::new();
+    for row in rows {
+        let row = row?;
+        if input.allows_harness(&row.harness) {
+            out.push(row);
+        }
+    }
+    Ok(out)
 }

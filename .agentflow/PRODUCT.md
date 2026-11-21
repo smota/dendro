@@ -29,14 +29,16 @@ Primary: operator of a multi-agent OpenRig rig (sponsor). Secondary: contributor
 
 | Goal | State |
 | --- | --- |
-| G1 Local engine (OpenRig, Claude Code, Codex, Pi; then AGY, Grok) | R1 — proceed |
+| G1 Local engine (OpenRig, Claude Code, Codex, Pi, Grok; AGY pending / not admitted) | R1 — proceed |
 | G2 Natural language (Nao), dashboards, alerts | Next. Non-normative for R1. |
 | G3 Extensibility | Later. The three documentation sets: parallel, Antigravity |
 | G4 Site, brand | Parallel, Antigravity (outside this squad) |
 
+Harness coverage note (F1, F2): the Antigravity (`agy`) connector is registered as `pending` and not admitted (`crates/dendro-connectors/src/agy.rs:63` returns `source_not_admitted`), and Codex tool calls are recorded coarsely under a constant name (`CommandExecution` / `CodexSeatCall` in `crates/dendro-connectors/src/stream.rs:451,621,1862`, `crates/dendro-core/src/facts.rs:146-147`) outside the shared tool scan and watermark guard. Local parsers stay owned in-tree while `agentparse` is tracked (#141), and no cloud-session connectors belong in local Dendro (#140).
+
 ## Anti-goals
 
-Not SaaS or cloud APM. Does not control agents. Does not judge code quality. Does not guess links. The site does not show invented numbers as real.
+Not SaaS or cloud APM. Nothing leaves by default. When an org export is explicitly configured, only zero-content, pseudonymized `fact-export-v1` bundles are written to an operator-configured path. Dendro writes locally and never uploads. No cloud-session connectors in local Dendro (#140). Does not control agents. Does not judge code quality. Does not guess links. The site does not show invented numbers as real.
 
 ## Release intent
 
@@ -91,3 +93,11 @@ Decision 2026-10-14: **hold unqualified #30 QA/product acceptance**. Independent
 ## Selected — #32 file-source state
 
 2026-10-15 UTC: **proceed to analysis** for present/changed/superseded/unavailable file-source trace annotations after pruning or replacement, preserving historical metrics on the same analytics snapshot. Metadata-only observations must distinguish evidence from unknowns and cannot prove content identity or infer lineage. Analyst owns exact fields, timing, errors, detached-source compatibility and synthetic expected vectors. Phase0: https://github.com/smota/dendro/issues/32#issuecomment-6183940065. File-source scope only; #13 alignment dependency must be surfaced, no #13 acceptance. Local v0.2.0, existing integration/publication boundaries unchanged. Framing: `goals/file-source-state/phase-0.md`.
+
+## Sponsor decisions — Goal 10 Family MVP alignment (2026-11-11, D8)
+
+- **S1 (Export boundary):** Nothing leaves by default. When an org export is explicitly configured, only zero-content, pseudonymized `fact-export-v1` bundles are written to an operator-configured path. Dendro writes locally and never uploads.
+- **S2 (#127 re-scope & vocabulary):** Issue #127 remains open and is re-scoped as opt-in, off by default, operation health only, with no session data, governed by the S1 rule. The positioning vocabulary rule in `.agentflow/PRODUCT.md:7` remains binding across positioning, docs, and interfaces.
+- **#140 (No cloud-session connectors):** Local Dendro does not include cloud-session connectors; it reads only local session and verified export files.
+- **#141 (Owned local parsers):** Local harness parsers remain owned in-tree by Dendro; `agentparse` is tracked as an external reference rather than adopted as a runtime dependency.
+- **Harness coverage truth (F1, F2):** The Antigravity (`agy`) connector is not admitted (`crates/dendro-connectors/src/agy.rs:63` returns `source_not_admitted`; deferred outside MVP). Codex tool calls are recorded coarsely under a constant name (`CommandExecution` / `CodexSeatCall` at `crates/dendro-connectors/src/stream.rs:451,621,1862`) until D1 moves `observe_codex` into the shared watermark-gated tool scan.
