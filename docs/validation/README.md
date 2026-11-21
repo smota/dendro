@@ -1,9 +1,10 @@
 # Local validation
 
 Run `mise run verify` before requesting review. It runs the four locked Rust gates
-on the current host, the existing governance and site checks, then the same Rust
-gates inside Dagger Linux. Failures stop the task. `verify:fast` runs formatting
-and governance/site checks; it is an iteration aid, not full acceptance.
+on the current host and the existing governance and site checks. Its Linux leg
+runs formatting, check, and Clippy in Dagger, followed by the complete unfiltered
+workspace test suite on native ext4. Failures stop the task. `verify:fast` runs
+formatting and governance/site checks; it is an iteration aid, not full acceptance.
 
 The repository pins Rust 1.98.1 and Python Dagger SDK 0.21.12. Dagger requires a
 local Linux Docker backend. Mise declares the matching Dagger CLI; tasks use
@@ -27,9 +28,29 @@ Mise tools must already be available or installed by an authorized native statio
 process. This change does not install station tools or activate hooks.
 
 `mise run verify:windows` refuses other platforms and runs all four Rust gates on
-native Windows. `mise run verify:linux` runs container gates only. They are
-separate evidence: a container pass does not prove Windows ACLs, native ext4,
-actual cross-volume publication, or historical migration/rollback.
+native Windows. `mise run verify:linux` composes the Dagger gates and native
+Linux tests. On Windows, the native adapter uses WSL and a private temporary ext4
+copy of a sanitized source snapshot. Source editing and Git work stay on Windows.
+The adapter verifies the copied content digest, admits only private ext4 roots,
+uses a short isolated fixture HOME and TMPDIR, and passes an allowlisted environment.
+It verifies that the Windows candidate remained unchanged and records a local
+receipt under `.agent-runs/local-validation/`. The pinned Linux Rust toolchain must
+already be installed; this task does not install it.
+
+Dependency and compiler caches remain on ext4. `DENDRO_LINUX_CACHE_DIR` can select
+an existing admitted private cache; it never selects a production data directory.
+The native test command has a two-hour deadline. These are separate evidence:
+a container pass does not prove Windows ACLs or native ext4, and the routine
+native suite does not prove actual cross-volume publication or historical rollback.
+
+Samuel authorized ignoring performance requirements for tooling migration #163.
+The runners clear inherited waiver values and admit this exception only for a
+clean `work/local-validation` candidate descending from the approved anchor,
+with an allowed tooling diff and the hash-pinned advisor test file. The exception
+removes the advisor tests' timing cutoff and p95 requirement. Semantic results,
+zero writes, privacy, and the explicit zero-budget rejection test remain required.
+Other branches and product changes retain normal limits. This exception does not
+waive unrelated benchmark invariants or release acceptance.
 
 Dagger receives candidate files from an explicit source allowlist and narrowly
 selected `.agentflow/oracles` test fixtures. It excludes git history, agent
@@ -83,16 +104,18 @@ check before a release-candidate handoff.
 
 ## Hooks and GitHub
 
-`lefthook.yml` declares `mise run verify` for pre-push. Review the station's existing
-`core.hooksPath` before opting in to Lefthook; do not replace managed station
-hooks. The configuration is delivered without an installation task or activation.
-The station chain remains the active owner through `ciCommands`. Samuel approved
+`lefthook.yml` declares `mise run verify` for pre-push. These source files do not
+install hooks. Inspect the effective owner with
+`git config --show-origin --get core.hooksPath`; use the station's guarded
+preview, activation, and rollback procedure for ownership changes. A managed
+repository-local owner must preserve station checks and keep the global setting
+unchanged. Do not run `lefthook install` over managed station hooks. Samuel approved
 the exact protected patch in Plannotator message `msg_01M7Z0ZHZ0P8A7BK848AAVJX5C`,
 and Codex applied it to this source worktree on 2026-11-21. `ciCommands` now
 delegates to `mise run verify`. The patch is retained as a review record; do not
 apply it again. Installed runtimes and trust still require a verified native
-executor, and the existing Linux filesystem acceptance limit remains. A later
-Lefthook activation must select one owner and retire the old verify invocation;
+executor, and historical/cross-volume acceptance remains separate. A guarded
+Lefthook handover must select one owner and retire the old verify invocation;
 do not activate both forwarding chains.
 
 Routine hosted foundation/governance workflows are archived outside

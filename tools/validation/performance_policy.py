@@ -8,7 +8,7 @@ TOKEN = "local-validation-163"
 ANCHOR = "836335bff01a8287b30ec61b925d9e210be6b7b0"
 TEST_FILE = "crates/dendro-cli/tests/advise.rs"
 # Bound the allowed Rust test delta to the reviewed performance-only switch.
-TEST_SHA256 = "315ff42a23f61377e2362f974f657ad86a4b7257ec7cfd235841cf29dce017b3"
+TEST_SHA256 = "2690231553f70bb8ca8029ff188cc7cb5cd17b54325ced880c5385274cd42824"
 ALLOWED_FILES = {".gitattributes", ".gitignore", "CONTRIBUTING.md", "agent-workflow.config.json",
                  "lefthook.yml", "mise.toml", TEST_FILE}
 ALLOWED_PREFIXES = (".github/workflows/", "docs/validation/", "tools/validation/")
