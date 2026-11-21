@@ -24,7 +24,7 @@ run = "uv run tools/validation/verify.py --windows"
 description = "Dagger Linux build gates and required full native ext4 workspace tests"
 raw = true
 tools = { dagger = "0.21.12" }
-run = ["dagger run -- uv run tools/validation/pipeline.py", "uv run tools/validation/native_linux.py"]
+run = ["uv run tools/validation/windows_guard.py --external -- dagger run -- uv run tools/validation/pipeline.py", "uv run tools/validation/windows_guard.py --external -- uv run tools/validation/native_linux.py"]
 
 [tasks."verify:native-fixture"]
 description = "Actual two-volume fixture; requires disposable FOUNDATION_CROSS_VOLUME_SOURCE/DEST"

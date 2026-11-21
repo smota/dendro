@@ -25,9 +25,18 @@ GOVERNANCE = [
 ]
 
 
+GUARD = None
+
+
+def execute(command, **kwargs):
+    if GUARD is not None:
+        return GUARD.run(command, cwd=ROOT, **kwargs)
+    return subprocess.run(command, cwd=ROOT, **kwargs)
+
+
 def run(command):
     print("+ " + " ".join(command), flush=True)
-    subprocess.run(command, cwd=ROOT, check=True)
+    execute(command, check=True)
 
 
 def require_clean_candidate():
@@ -60,6 +69,11 @@ def main():
     os.environ.setdefault("CARGO_BUILD_JOBS", "2")
     os.environ.setdefault("CMAKE_BUILD_PARALLEL_LEVEL", "2")
     os.environ.setdefault("RUST_TEST_THREADS", "2")
+    if GUARD is not None:
+        GUARD.env.pop(ENVIRONMENT_KEY, None)
+        for key in (ENVIRONMENT_KEY, "RUSTUP_TOOLCHAIN", "CARGO_BUILD_JOBS", "CMAKE_BUILD_PARALLEL_LEVEL", "RUST_TEST_THREADS"):
+            if key in os.environ:
+                GUARD.env[key] = os.environ[key]
     if args.release_candidate:
         version = tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]["package"]["version"]
         if not (ROOT / "docs" / f"RELEASE_NOTES_v{version}.md").is_file():
@@ -82,7 +96,7 @@ def main():
         command = ["cargo", "test", "-p", "dendro-core", "--locked", "--test",
              "native_foundation_acceptance", "cross_volume_closed_copy_then_local_pointer_publication",
              "--", "--ignored", "--exact", "--nocapture"]
-        result = subprocess.run(command, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        result = execute(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         print(result.stdout, end="", flush=True)
         result.check_returncode()
         if not all(marker in result.stdout for marker in (
@@ -110,4 +124,13 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if sys.platform == "win32":
+        from windows_guard import GuardError, WindowsGuard
+        try:
+            with WindowsGuard(ROOT) as guard:
+                GUARD = guard
+                main()
+        except GuardError as error:
+            raise SystemExit(str(error)) from error
+    else:
+        main()

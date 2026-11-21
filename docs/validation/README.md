@@ -19,7 +19,7 @@ async pipeline has a two-hour deadline. SDK bootstrap can block in a synchronous
 worker thread, so that async deadline cannot guarantee termination of bootstrap.
 Use an external task deadline when supervising unattended runs. On this Windows
 station a direct CLI pipe stalled before command entry; file-backed execution
-worked during diagnosis. This configuration adds no platform wrapper.
+worked during diagnosis. The Windows disk guard retains inherited terminal streams.
 The Dagger tasks use mise's `raw = true` to inherit terminal I/O. Agents should
 run those tasks in an Orca terminal, without piping or capturing their process
 streams through a shell executor. Redirect diagnostic output only when investigating
@@ -28,7 +28,67 @@ Mise tools must already be available or installed by an authorized native statio
 process. This change does not install station tools or activate hooks.
 
 `mise run verify:windows` refuses other platforms and runs all four Rust gates on
-native Windows. `mise run verify:linux` composes the Dagger gates and native
+native Windows. Every native Windows verification mode uses one private profile
+under `.agent-runs/windows-validation/<run-id>/`. Child `USERPROFILE`, `HOME`,
+`APPDATA`, `LOCALAPPDATA`, `TEMP`, and `TMP` point inside that run. Tests cannot
+leave their synthetic library folders in the owner's profile through these paths.
+Windows requires Python 3.13 or newer so `mkdir(mode=0o700)` gives the run root
+an explicit private ACL instead of inheriting repository access. Older Python
+versions fail before launch; the guard does not install an interpreter.
+The guard preserves Rustup, Cargo, mise, uv, and pnpm installation/cache locations
+before redirecting the profile. It disables Rustup automatic toolchain installation.
+Native child environments admit only Windows/build variables, known tool paths,
+proxy/CA settings, fixture paths, and the separately admitted performance token.
+Agent data overrides and provider credentials are excluded. XDG directories also
+point inside the private profile; mise auto-install/update flags are disabled.
+Validation sets `CARGO_PROFILE_DEV_DEBUG=0`, `CARGO_PROFILE_TEST_DEBUG=0`, and
+`CARGO_INCREMENTAL=0`; debug assertions remain enabled. Existing build artifacts
+remain reusable in `CARGO_TARGET_DIR` (default: this worktree's `target/`).
+
+The Windows guard accepts these positive integer byte limits:
+
+| Environment variable | Default | Bound |
+| --- | --- | --- |
+| `DENDRO_WINDOWS_MIN_FREE_BYTES` | 10737418240 (10 GiB) | Free space on source, cache, and run volumes |
+| `DENDRO_WINDOWS_TARGET_MAX_BYTES` | 25769803776 (24 GiB) | Reusable Cargo target directory |
+| `DENDRO_WINDOWS_RUN_MAX_BYTES` | 4294967296 (4 GiB) | All Windows run workspaces combined |
+
+Preflight refuses an over-budget run. While a command runs, the guard scans usage
+between 200 ms waits and stops its Windows Job Object on a breach. These are
+sampled limits, so a child can overshoot during a scan or between samples.
+Commands start only after their helper joins the owned job. A parent crash closes
+the job handle and stops its children. Success, failure, and interruption drain
+the job before scratch cleanup. A marker and exclusive lease permit pruning
+only abandoned workspaces recorded as idle. An abandoned `running` marker,
+missing ownership evidence, an ownership-root reparse point, or an unknown reparse
+tag stops validation and leaves the directory for manual inspection. Ordinary
+descendant symlinks and Windows junctions are legitimate test fixtures: scans
+count their entry metadata and never descend into linked targets. Cleanup removes
+only link entries; it preserves outside targets. Read-only ordinary fixture files
+are made writable and retried. Other cleanup failures report the exact path and
+retain ownership evidence while payload files remain. Cleanup never searches the owner's profile or
+removes the reusable build cache. Large caches require deliberate cleanup or an
+explicitly adjusted budget before retrying. External cross-volume fixture paths
+remain separately authorized disposable inputs and are outside scratch cleanup.
+Read-only Git admission metadata runs outside the child-command guard.
+
+For an abandoned run, retain the error path and inspect that exact UUID directory
+and its marker. Verify that its recorded root matches this worktree and that its
+root, marker, lease, and ancestors are ordinary entries. Identify the corresponding
+validation invocation and establish that its owned children have stopped; for WSL,
+also check its Linux supervisor and test process group. A missing parent PID alone
+does not establish this. Do not change a `running` marker to `idle` to bypass refusal.
+After ownership and termination are established, inspect descendant links and
+remove only those entries, then remove only the identified disposable run directory.
+Never follow link targets, clear the registry by prefix, or delete tool/build caches
+as a workaround. If ownership or child termination remains uncertain, leave the
+directory intact and report the exact path for operator review. An idle directory
+blocked by a temporary file handle can be retried after that handle is released.
+
+Run the cheap guard checks without compiling Rust:
+`python -m unittest discover -s tools/validation -p test_windows_guard.py -v`.
+
+`mise run verify:linux` composes the Dagger gates and native
 Linux tests. On Windows, the native adapter uses WSL and a private temporary ext4
 copy of a sanitized source snapshot. Source editing and Git work stay on Windows.
 The adapter verifies the copied content digest, admits only private ext4 roots,
@@ -36,6 +96,27 @@ uses a short isolated fixture HOME and TMPDIR, and passes an allowlisted environ
 It verifies that the Windows candidate remained unchanged and records a local
 receipt under `.agent-runs/local-validation/`. The pinned Linux Rust toolchain must
 already be installed; this task does not install it.
+
+`verify:linux` launches its existing Dagger and native-adapter commands through
+`windows_guard.py --external -- ...`. This mode retains the caller's tool and
+desktop profiles. On Windows it checks the host free-space floor and contains
+the client process tree in an owned Job Object; other platforms pass the command
+through unchanged. It does not impose quotas on Docker/WSL virtual disks or kill
+their services. Stopping a client is not proof that engine-side work has stopped.
+Do not treat this wrapper as a Dagger engine cache limit.
+
+The native Linux supervisor checks cache, aggregate fixture workspace, and staged
+source sizes before Cargo starts and while it runs. It checks free space on all
+three filesystems, including the Windows `/mnt/c` source-stage volume in WSL.
+`DENDRO_LINUX_MIN_FREE_BYTES`, `DENDRO_LINUX_CACHE_MAX_BYTES`, and
+`DENDRO_LINUX_WORKSPACE_MAX_BYTES` set positive byte limits; defaults are 10 GiB,
+24 GiB, and 4 GiB. The free-space default also accepts the Windows floor override.
+The adapter forwards these limits explicitly to its WSL child. Linux Cargo uses
+the same no-debug/no-incremental settings as Windows and retains the complete
+unfiltered workspace test command. Its owned process group stops on a budget
+breach, two-hour deadline, interruption, or supervisor TERM/HUP signal. The Linux
+supervisor owns this enforcement independently of its Windows client. These are
+sampled checks, not filesystem quotas; SIGKILL or a host crash cannot run cleanup.
 
 Dependency and compiler caches remain on ext4. `DENDRO_LINUX_CACHE_DIR` can select
 an existing admitted private cache; it never selects a production data directory.
