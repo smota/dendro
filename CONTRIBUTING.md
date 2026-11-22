@@ -124,3 +124,9 @@ By submitting a pull request, issue patch, or other contribution to Dendro:
 3. **No conflicting obligations:** You represent that you are legally entitled to grant this license and that your contributions are your original creation or licensed appropriately.
 
 For more details, please review [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
+
+For local validation, Dagger Linux gates, native acceptance and optional hooks,
+see [local validation](docs/validation/README.md). The routine entry point is
+`mise run verify`, which runs the cheap Python guard regressions before Rust;
+container success does not certify native historical or
+cross-volume acceptance.

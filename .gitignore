@@ -30,6 +30,7 @@ gate-lane-verdict.json
 .agent-runs/
 .worktrees/
 node_modules/
+/tools/validation/__pycache__/
 
 # OS and Editor
 .DS_Store

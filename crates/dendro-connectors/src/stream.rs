@@ -7015,7 +7015,7 @@ mod hostile_input_tests {
         // 4. Session ID transformed by seal_session (contains secret-shaped token):
         //    proves link_id is computed from the RAW session BEFORE seal_session, while
         //    only the sealed native_session (`<opaque>\t[redacted]`) is persisted.
-        let secret_session_raw = "sk-ant-session-raw-before-seal-987654";
+        let secret_session_raw = "sk-ant-session-raw-before-seal-987654"; //pragma: allowlist secret
         let (expected_secret_link, expected_secret_reason) =
             link_cfg.resolve_session_link(Some("claude"), Some(secret_session_raw), None);
         assert!(expected_secret_reason.is_none());
@@ -7395,7 +7395,7 @@ mod hostile_input_tests {
         // Even if the path string changes for the same source_id in generation 3,
         // the header_conflict lock (keyed by source_id, not path.display()) still holds:
         let codex_conflict_relocated = dir.join("codex_conflict_relocated.jsonl");
-        fs::write(&codex_conflict_relocated, format!("{hdr1}")).unwrap();
+        fs::write(&codex_conflict_relocated, hdr1).unwrap();
         ingest_jsonl_with_link_config(
             &store,
             "src-codex-conflict",
