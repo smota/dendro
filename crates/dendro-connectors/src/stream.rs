@@ -7395,7 +7395,7 @@ mod hostile_input_tests {
         // Even if the path string changes for the same source_id in generation 3,
         // the header_conflict lock (keyed by source_id, not path.display()) still holds:
         let codex_conflict_relocated = dir.join("codex_conflict_relocated.jsonl");
-        fs::write(&codex_conflict_relocated, format!("{hdr1}")).unwrap();
+        fs::write(&codex_conflict_relocated, hdr1).unwrap();
         ingest_jsonl_with_link_config(
             &store,
             "src-codex-conflict",
