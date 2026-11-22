@@ -35,6 +35,17 @@ impl Insight for ConfigurationDivergence {
     fn domain(&self) -> InsightDomain {
         InsightDomain::Model
     }
+    fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::NativeSession, Field::Model, Field::Effort]
+    }
+    fn optional_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::TurnTimestamp]
+    }
+    fn coverage(&self) -> &'static str {
+        COVERAGE
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         let rows = match load(input) {
             Ok(rows) => rows,
@@ -219,7 +230,14 @@ fn load_desired(input: &InsightInput<'_>) -> anyhow::Result<Vec<Binding>> {
     let harness = scope.harness.as_deref();
     let session = scope.session.as_deref();
     let rows = stmt.query_map(params![harness, harness, session, session], read_binding)?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    let mut out = Vec::new();
+    for item in rows {
+        let row = item?;
+        if input.allows_harness(&row.harness) {
+            out.push(row);
+        }
+    }
+    Ok(out)
 }
 
 fn bind_rows(
@@ -235,7 +253,14 @@ fn bind_rows(
         params![harness, harness, session, session, from, from, to, to],
         read_binding,
     )?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    let mut out = Vec::new();
+    for item in rows {
+        let row = item?;
+        if input.allows_harness(&row.harness) {
+            out.push(row);
+        }
+    }
+    Ok(out)
 }
 
 fn read_binding(row: &duckdb::Row<'_>) -> duckdb::Result<Binding> {

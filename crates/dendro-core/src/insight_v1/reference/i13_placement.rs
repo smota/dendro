@@ -36,6 +36,13 @@ impl Insight for Placement {
     fn domain(&self) -> InsightDomain {
         InsightDomain::Environment
     }
+    fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::ProcessIdentity]
+    }
+    fn coverage(&self) -> &'static str {
+        COVERAGE
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         let rows = match load(input) {
             Ok(rows) => rows,
@@ -130,7 +137,7 @@ impl Insight for Placement {
 fn load(input: &InsightInput<'_>) -> anyhow::Result<Vec<Identity>> {
     let mut stmt = input.connection().prepare(
         "SELECT identity_key, platform, exe_name, environment_kind,
-                CAST(first_seen AS VARCHAR), CAST(last_seen AS VARCHAR)
+                CAST(first_seen AS VARCHAR), CAST(last_seen AS VARCHAR), harness
          FROM process_identities
          WHERE (? IS NULL OR harness = ?)
            AND (? IS NULL OR session_link = ?)
@@ -146,15 +153,30 @@ fn load(input: &InsightInput<'_>) -> anyhow::Result<Vec<Identity>> {
     let rows = stmt.query_map(
         params![harness, harness, session, session, from, from, to, to],
         |row| {
-            Ok(Identity {
-                key: row.get(0)?,
-                platform: row.get(1)?,
-                exe_name: row.get(2)?,
-                environment_kind: row.get(3)?,
-                first_seen: row.get(4)?,
-                last_seen: row.get(5)?,
-            })
+            let row_harness: Option<String> = row.get(6)?;
+            Ok((
+                row_harness,
+                Identity {
+                    key: row.get(0)?,
+                    platform: row.get(1)?,
+                    exe_name: row.get(2)?,
+                    environment_kind: row.get(3)?,
+                    first_seen: row.get(4)?,
+                    last_seen: row.get(5)?,
+                },
+            ))
         },
     )?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    let mut out = Vec::new();
+    for row in rows {
+        let (row_harness, identity) = row?;
+        let allows = match row_harness.as_deref().filter(|h| !h.is_empty()) {
+            Some(h) => input.allows_harness(h),
+            None => input.allows_harness("environment"),
+        };
+        if allows {
+            out.push(identity);
+        }
+    }
+    Ok(out)
 }

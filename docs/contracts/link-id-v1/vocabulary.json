@@ -1,0 +1,84 @@
+{
+  "contract": "link-id-v1",
+  "version": 1,
+  "spdx_license_identifier": "Apache-2.0",
+  "description": "Closed canonical harness vocabulary for agent.session.link_id derivation (resolves F12 and #29).",
+  "unknown_behavior": "unlinked",
+  "normalization_rule": "Require ASCII-only input (0x00..=0x7F), convert ASCII uppercase A-Z to lowercase a-z without trimming whitespace, then look up in aliases. Any non-ASCII input or input not present in aliases MUST resolve to unlinked.",
+  "forbidden_sources": [
+    "gen_ai.provider.name",
+    "gen_ai.system",
+    "gen_ai.request.model",
+    "gen_ai.response.model"
+  ],
+  "canonical_harnesses": [
+    {
+      "canonical": "antigravity",
+      "wire_client_id": 1,
+      "aob_client_kind": "Antigravity",
+      "aob_agent_name": "antigravity",
+      "dendro_connector": "antigravity",
+      "aliases": [
+        "antigravity",
+        "agy"
+      ]
+    },
+    {
+      "canonical": "claude",
+      "wire_client_id": 2,
+      "aob_client_kind": "ClaudeCode",
+      "aob_agent_name": "claude-code",
+      "dendro_connector": "claude",
+      "aliases": [
+        "claude",
+        "claude-code"
+      ]
+    },
+    {
+      "canonical": "codex",
+      "wire_client_id": 3,
+      "aob_client_kind": "Codex",
+      "aob_agent_name": "codex",
+      "dendro_connector": "codex",
+      "aliases": [
+        "codex"
+      ]
+    },
+    {
+      "canonical": "grok",
+      "wire_client_id": 4,
+      "aob_client_kind": "Grok",
+      "aob_agent_name": "grok",
+      "dendro_connector": "grok",
+      "aliases": [
+        "grok"
+      ]
+    },
+    {
+      "canonical": "pi",
+      "wire_client_id": 5,
+      "aob_client_kind": "Pi",
+      "aob_agent_name": "pi",
+      "dendro_connector": "pi",
+      "aliases": [
+        "pi"
+      ]
+    }
+  ],
+  "aliases": {
+    "agy": "antigravity",
+    "antigravity": "antigravity",
+    "claude": "claude",
+    "claude-code": "claude",
+    "codex": "codex",
+    "grok": "grok",
+    "pi": "pi"
+  },
+  "wire_client_ids": {
+    "1": "antigravity",
+    "2": "claude",
+    "3": "codex",
+    "4": "grok",
+    "5": "pi"
+  }
+}

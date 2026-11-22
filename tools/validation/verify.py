@@ -23,6 +23,10 @@ GOVERNANCE = [
     "validate-skill-catalog.mjs", "verify-architecture-guardrails.mjs",
     "verify-design-guardrails.mjs",
 ]
+GOVERNANCE_TESTS = [
+    "scripts/__tests__/validate-dependency-automation.test.mjs",
+    "scripts/__tests__/ci-scope.test.mjs",
+]
 
 
 GUARD = None
@@ -48,13 +52,6 @@ def require_clean_candidate():
 
 
 def main():
-    from performance_policy import ENVIRONMENT_KEY, TOKEN, decision
-
-    os.environ.pop(ENVIRONMENT_KEY, None)
-    performance = decision(ROOT)
-    if performance["enabled"]:
-        os.environ[ENVIRONMENT_KEY] = TOKEN
-    print("Performance policy: " + str(performance), flush=True)
     parser = argparse.ArgumentParser(description=__doc__)
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--fast", action="store_true")
@@ -70,8 +67,7 @@ def main():
     os.environ.setdefault("CMAKE_BUILD_PARALLEL_LEVEL", "2")
     os.environ.setdefault("RUST_TEST_THREADS", "2")
     if GUARD is not None:
-        GUARD.env.pop(ENVIRONMENT_KEY, None)
-        for key in (ENVIRONMENT_KEY, "RUSTUP_TOOLCHAIN", "CARGO_BUILD_JOBS", "CMAKE_BUILD_PARALLEL_LEVEL", "RUST_TEST_THREADS"):
+        for key in ("RUSTUP_TOOLCHAIN", "CARGO_BUILD_JOBS", "CMAKE_BUILD_PARALLEL_LEVEL", "RUST_TEST_THREADS"):
             if key in os.environ:
                 GUARD.env[key] = os.environ[key]
     if args.release_candidate:
@@ -117,6 +113,8 @@ def main():
             if re.search(r"^\+version\s*=", diff, re.MULTILINE):
                 parser.error("incidental SemVer bump targeting development; use rc/v* or hotfix/*")
         run(["pnpm", "install", "--frozen-lockfile"])
+        for script in GOVERNANCE_TESTS:
+            run(["node", "--test", script])
         for script in GOVERNANCE:
             run(["node", f"scripts/{script}"])
         run(["node", "--test", "site/site.test.cjs"])

@@ -1,0 +1,54 @@
+# AgentFlow Canonical Capabilities Catalog — Dendro
+version: 1
+updated: "2026-10-28"
+
+capabilities:
+  - id: overview-critical-focus-banner
+    name: Critical Focus Bottleneck Isolation
+    domain: ux
+    owner: pm.analyst
+    description: Deterministically isolate and display the Rank 1 fleet bottleneck across stalls, holds, and rework vortexes using canonical producer thresholds and temporal snapshot wording.
+    dependencies:
+      - friction-loop-detector
+      - advisory-pattern-classifier
+      - fleet-admission-hold-heatmap
+
+  - id: overview-cwd-fingerprint-rollup
+    name: CWD Fingerprint Project Resource Aggregation
+    domain: ux
+    owner: pm.analyst
+    description: Aggregate active hours, token burn, dollar spend, and closed issue tasks grouped by privacy-safe cwd_fingerprint and aliases.
+    dependencies: []
+
+  - id: overview-context-tax-detector
+    name: Silent Tool & MCP Context-Tax Detector
+    domain: ux
+    owner: pm.analyst
+    description: Measure uncalled tool counts from skill_facts.invoked = false and report truthful evidence states (measured or unavailable) with zero arbitrary constants.
+    dependencies: []
+
+  - id: overview-fleet-throughput-rollup
+    name: Fleet Throughput & Cost Rollup
+    domain: ux
+    owner: pm.analyst
+    description: Aggregate total fleet cost, closed issue tasks (closed_issue_qitems), and average cost per closed task with neutral missing-data handling.
+    dependencies: []
+
+  - id: overview-mode-toggle-layout
+    name: Viewport-Bounded Workspace Layout
+    domain: ux
+    owner: pm.analyst
+    description: 1080p viewport-bounded top fold (<=900px height) with dual-mode toggle between Modo Direto and Modo Forense, and grounded predefined question chips.
+    dependencies:
+      - overview-critical-focus-banner
+      - overview-cwd-fingerprint-rollup
+      - overview-context-tax-detector
+      - overview-fleet-throughput-rollup
+
+  - id: overview-contextual-drawer
+    name: Contextual Lateral Drill-Down Drawer
+    domain: ux
+    owner: pm.analyst
+    description: Lateral slide-out drawer providing AC7 source keys, causal explanations, and copyable CLI trace commands without page reload.
+    dependencies:
+      - overview-mode-toggle-layout

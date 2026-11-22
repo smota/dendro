@@ -11,7 +11,11 @@ UV_PYTHON_DOWNLOADS = "never"
 description = "Native Rust and governance checks, then isolated Linux Rust gates"
 raw = true
 tools = { dagger = "0.21.12" }
-run = ["uv run tools/validation/verify.py", "mise run verify:linux"]
+run = ["mise run verify:guard", "uv run tools/validation/verify.py", "mise run verify:linux"]
+
+[tasks."verify:guard"]
+description = "Cheap validation-boundary regressions; no Rust compilation or SDK"
+run = "uv run tools/validation/test_windows_guard.py -v"
 
 [tasks."verify:fast"]
 description = "Formatting and existing governance/site checks"

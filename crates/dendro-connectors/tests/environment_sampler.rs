@@ -62,8 +62,14 @@ fn spawn_tree(cwd: &Path) -> Child_ {
 #[test]
 fn samples_a_real_process_tree_once_and_stores_no_paths() {
     let scratch = Scratch::new();
-    let child = spawn_tree(&scratch.0);
+    let mut child = spawn_tree(&scratch.0);
     let root_pid = child.0.id();
+    #[cfg(target_os = "linux")]
+    let disk_readable = std::fs::File::open(format!("/proc/{root_pid}/io")).is_ok();
+    assert!(
+        child.0.try_wait().unwrap().is_none(),
+        "pinned root exited before its I/O capability could be sampled"
+    );
     // No name matching: this machine may run real harnesses that would fill
     // the tracking bound before the pinned root is considered.
     let config = Config {
@@ -147,6 +153,21 @@ fn samples_a_real_process_tree_once_and_stores_no_paths() {
         .unwrap();
     assert!(sample.rss_bytes.unwrap() > 0);
     assert!(sample.cpu_time_us.is_some());
+    #[cfg(target_os = "linux")]
+    if disk_readable {
+        assert!(sample.visibility_limits.is_empty(), "{sample:?}");
+        assert!(sample.disk_read_bytes.is_some());
+        assert!(sample.disk_write_bytes.is_some());
+    } else {
+        // Some kernels omit procfs I/O accounting even for our own live child.
+        assert_eq!(
+            sample.visibility_limits,
+            [dendro_core::domain_v1::VisibilityLimit::PermissionDenied].into()
+        );
+        assert_eq!(sample.disk_read_bytes, None);
+        assert_eq!(sample.disk_write_bytes, None);
+    }
+    #[cfg(not(target_os = "linux"))]
     assert!(sample.visibility_limits.is_empty(), "{sample:?}");
     if cfg!(windows) {
         assert_eq!(sample.rss_unit, Unit::WindowsWorkingSetBytes);

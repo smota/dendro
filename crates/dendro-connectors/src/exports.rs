@@ -637,33 +637,17 @@ impl ExportConnector {
             coverage.merge(batch.coverage);
             let old_offset = prior.as_ref().map_or(0, |w| w.byte_offset);
             warnings.extend(batch.warnings.iter().copied());
-            store.commit_file_batch_observed(
-                &source,
-                self.harness,
-                &source,
-                1,
-                i64::try_from(batch.watermark.byte_offset)?,
-                batch.watermark.session_id.as_deref().expect("SDK digest"),
-                None,
-                &batch.usage,
-                &batch.tools,
-                &[],
-                &dendro_core::ReaderState {
-                    complete: batch.complete && !coverage.partial,
-                    native_session: None,
-                },
-                &batch.baseline,
-            )?;
             let unsupported = batch
                 .warnings
                 .iter()
                 .any(|reason| reason.starts_with("unsupported-"));
+            let mut batch_warnings = Vec::with_capacity(batch.warnings.len() + 2);
             for reason in batch.warnings {
-                store.record_warning(&dendro_core::WarningNote {
+                batch_warnings.push(dendro_core::WarningNote {
                     path: source.clone(),
                     line: None,
                     reason: reason.into(),
-                })?;
+                });
             }
             if batch.coverage.unknown_kind
                 + batch.coverage.unsupported_version
@@ -674,19 +658,37 @@ impl ExportConnector {
                 != 0
                 || unsupported
             {
-                store.record_warning(&dendro_core::WarningNote {
+                batch_warnings.push(dendro_core::WarningNote {
                     path: source.clone(),
                     line: None,
                     reason: "coverage-partial".into(),
-                })?;
+                });
             }
             let mut progress = coverage;
             progress.partial |= !batch.complete;
-            store.record_warning(&dendro_core::WarningNote {
+            batch_warnings.push(dendro_core::WarningNote {
                 path: source.clone(),
                 line: None,
                 reason: progress.summary(),
-            })?;
+            });
+            let reader_state = dendro_core::ReaderState {
+                complete: batch.complete && !coverage.partial,
+                native_session: None,
+            };
+            let mut ingest_batch = dendro_core::IngestBatch::new(
+                &source,
+                self.harness,
+                &source,
+                1,
+                i64::try_from(batch.watermark.byte_offset)?,
+                batch.watermark.session_id.as_deref().expect("SDK digest"),
+            );
+            ingest_batch.usages = &batch.usage;
+            ingest_batch.tools = &batch.tools;
+            ingest_batch.warnings = &batch_warnings;
+            ingest_batch.reader = Some(&reader_state);
+            ingest_batch.baseline = Some(&batch.baseline);
+            crate::stream::commit_ingest_batch_checked(store, &ingest_batch)?;
             let done = batch.complete
                 || batch.coverage.held_tail != 0
                 || batch.watermark.byte_offset == old_offset;

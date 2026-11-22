@@ -1,10 +1,13 @@
 # Local validation
 
-Run `mise run verify` before requesting review. It runs the four locked Rust gates
+Run `mise run verify` before requesting review. It first runs `verify:guard`, the
+stdlib-only Python boundary regression suite, then runs the four locked Rust gates
 on the current host and the existing governance and site checks. Its Linux leg
 runs formatting, check, and Clippy in Dagger, followed by the complete unfiltered
 workspace test suite on native ext4. Failures stop the task. `verify:fast` runs
 formatting and governance/site checks; it is an iteration aid, not full acceptance.
+The local governance leg includes the dependency-automation and CI-scope unit
+tests introduced by the current development baseline.
 
 The repository pins Rust 1.98.1 and Python Dagger SDK 0.21.12. Dagger requires a
 local Linux Docker backend. Mise declares the matching Dagger CLI; tasks use
@@ -44,7 +47,7 @@ guard-base, worktree, home, and system ancestor permissions are not changed.
 The guard preserves Rustup, Cargo, mise, uv, and pnpm installation/cache locations
 before redirecting the profile. It disables Rustup automatic toolchain installation.
 Native child environments admit only Windows/build variables, known tool paths,
-proxy/CA settings, fixture paths, and the separately admitted performance token.
+proxy/CA settings, and fixture paths.
 Agent data overrides and provider credentials are excluded. XDG directories also
 point inside the private profile; mise auto-install/update flags are disabled.
 Validation sets `CARGO_PROFILE_DEV_DEBUG=0`, `CARGO_PROFILE_TEST_DEBUG=0`, and
@@ -130,14 +133,11 @@ The native test command has a two-hour deadline. These are separate evidence:
 a container pass does not prove Windows ACLs or native ext4, and the routine
 native suite does not prove actual cross-volume publication or historical rollback.
 
-Samuel authorized ignoring performance requirements for tooling migration #163.
-The runners clear inherited waiver values and admit this exception only for a
-clean `work/local-validation` candidate descending from the approved anchor,
-with an allowed tooling diff and the hash-pinned advisor test file. The exception
-removes the advisor tests' timing cutoff and p95 requirement. Semantic results,
-zero writes, privacy, and the explicit zero-budget rejection test remain required.
-Other branches and product changes retain normal limits. This exception does not
-waive unrelated benchmark invariants or release acceptance.
+Advisor tests match development commit
+`65451963296afa312ea8b68fe976d0b2d034e70e` exactly. Upstream enforces the timing
+threshold in release builds; debug checks retain semantic results, zero writes,
+privacy, and the explicit zero-budget rejection assertion. The validation runners
+do not override these upstream requirements.
 
 Dagger receives candidate files from an explicit source allowlist and narrowly
 selected `.agentflow/oracles` test fixtures. It excludes git history, agent
@@ -175,8 +175,9 @@ positive test output and candidate revision as acceptance evidence.
 The fixture task requires a clean committed candidate, a successful exit and both
 original positive output markers; a zero-test invocation fails acceptance.
 
-The former hosted foundation wrappers remain unchanged in
-`workflow-reference/` for review. They retain hosted-runner admission checks and
+The former hosted governance, foundation, and nightly workflows are retained in
+`workflow-reference/` as exact snapshots from development commit
+`65451963296afa312ea8b68fe976d0b2d034e70e`. They retain hosted-runner admission checks and
 are not portable local commands. Their full receipt collector and native-host
 certification have not been replaced or certified by the Dagger task. Missing
 historical or cross-volume evidence is incomplete release acceptance, even when

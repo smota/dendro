@@ -1,3 +1,7 @@
+# /// script
+# requires-python = ">=3.13,<3.15"
+# dependencies = []
+# ///
 """Cheap regression checks; no Cargo commands or Rust compilation."""
 import json
 import os
@@ -317,7 +321,7 @@ class GuardTests(unittest.TestCase):
     def test_verify_windows_modes_with_fake_tools_no_compilation(self):
         tools = self.root / "tools" / "validation"
         tools.mkdir(parents=True)
-        for name in ("verify.py", "windows_guard.py", "performance_policy.py"):
+        for name in ("verify.py", "windows_guard.py"):
             shutil.copy2(Path(__file__).parent / name, tools / name)
         fake = self.root / "fake"
         fake.mkdir()
@@ -352,8 +356,7 @@ class GuardTests(unittest.TestCase):
         source.mkdir()
         dest.mkdir()
         env = dict(self.environment, PATH=str(fake) + os.pathsep + os.environ["PATH"])
-        env.update(FOUNDATION_CROSS_VOLUME_SOURCE=str(source), FOUNDATION_CROSS_VOLUME_DEST=str(dest),
-                   DENDRO_VALIDATION_PERF_WAIVER="inherited-invalid-token")
+        env.update(FOUNDATION_CROSS_VOLUME_SOURCE=str(source), FOUNDATION_CROSS_VOLUME_DEST=str(dest))
         for flags, expected in ((["--windows"], ["fmt", "check", "clippy", "test"]),
                                 ([], ["fmt", "check", "clippy", "test"]),
                                 (["--fast"], ["fmt"]), (["--release-candidate"], ["check"]),
@@ -370,7 +373,6 @@ class GuardTests(unittest.TestCase):
                 self.assertFalse(Path(homes.pop()).exists(), "verify entry point must clean the workspace")
                 for call in calls:
                     self.assertEqual(call["env"]["CARGO_PROFILE_TEST_DEBUG"], "0")
-                    self.assertNotIn("DENDRO_VALIDATION_PERF_WAIVER", call["env"])
         self.assertTrue(source.exists() and dest.exists(), "external fixture directories must survive")
 
 

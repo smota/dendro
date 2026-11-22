@@ -17,7 +17,8 @@ impl Drop for Scratch {
 fn fixture(path: &Path, seat: &str) {
     let conn = Connection::open(path).unwrap();
     conn.execute_batch(
-        "CREATE TABLE events(seq INTEGER PRIMARY KEY,type TEXT,payload TEXT,created_at TEXT)",
+        "CREATE TABLE events(seq INTEGER PRIMARY KEY,type TEXT,payload TEXT,created_at TEXT);
+         CREATE TABLE queue_transitions(transition_id INTEGER,qitem_id TEXT,ts TEXT,state TEXT,transition_note TEXT,actor_session TEXT,closure_reason TEXT,closure_target TEXT)",
     )
     .unwrap();
     for (seq, kind, hour, payload) in [

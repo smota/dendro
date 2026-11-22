@@ -1,0 +1,872 @@
+{
+  "contract": "link-id-v1",
+  "suite": "negative",
+  "version": 1,
+  "description": "Negative test vectors verifying fail-closed 'unlinked' behavior on unknown harnesses, provider names (#29), missing/empty fields, synthetic origins, control characters, and weak keys.",
+  "vectors": [
+    {
+      "id": "neg_unknown_harness_cursor",
+      "description": "Unknown harness 'cursor' outside the closed vocabulary resolves to unlinked",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "cursor",
+        "native_session": "sess-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": null,
+        "lp_payload_hex": null
+      },
+      "expected": {
+        "link_id": "unlinked",
+        "unlinked_reason": "unknown_harness"
+      }
+    },
+    {
+      "id": "neg_provider_google_rejected",
+      "description": "Provider name 'google' (gen_ai.provider.name artifact from #29) MUST NOT be accepted as a harness",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "google",
+        "native_session": "sess-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": null,
+        "lp_payload_hex": null
+      },
+      "expected": {
+        "link_id": "unlinked",
+        "unlinked_reason": "unknown_harness"
+      }
+    },
+    {
+      "id": "neg_provider_anthropic_rejected",
+      "description": "Provider name 'anthropic' MUST NOT be accepted as a harness",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "anthropic",
+        "native_session": "sess-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": null,
+        "lp_payload_hex": null
+      },
+      "expected": {
+        "link_id": "unlinked",
+        "unlinked_reason": "unknown_harness"
+      }
+    },
+    {
+      "id": "neg_provider_openai_rejected",
+      "description": "Provider name 'openai' MUST NOT be accepted as a harness",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "openai",
+        "native_session": "sess-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": null,
+        "lp_payload_hex": null
+      },
+      "expected": {
+        "link_id": "unlinked",
+        "unlinked_reason": "unknown_harness"
+      }
+    },
+    {
+      "id": "neg_provider_xai_rejected",
+      "description": "Provider name 'xai' MUST NOT be accepted as a harness",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "xai",
+        "native_session": "sess-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": null,
+        "lp_payload_hex": null
+      },
+      "expected": {
+        "link_id": "unlinked",
+        "unlinked_reason": "unknown_harness"
+      }
+    },
+    {
+      "id": "neg_provider_gemini_rejected",
+      "description": "Model/provider family 'gemini' MUST NOT be accepted as a harness in link-id-v1",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "gemini",
+        "native_session": "sess-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": null,
+        "lp_payload_hex": null
+      },
+      "expected": {
+        "link_id": "unlinked",
+        "unlinked_reason": "unknown_harness"
+      }
+    },
+    {
+      "id": "neg_fallback_ai_agent_rejected",
+      "description": "AOB fallback agent name 'ai-agent' resolves to unlinked",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "ai-agent",
+        "native_session": "sess-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": null,
+        "lp_payload_hex": null
+      },
+      "expected": {
+        "link_id": "unlinked",
+        "unlinked_reason": "unknown_harness"
+      }
+    },
+    {
+      "id": "neg_unknown_wire_client_id_99",
+      "description": "Unknown non-zero wire_client_id=99 resolves to unlinked",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": 99,
+        "raw_harness": null,
+        "native_session": "sess-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": null,
+        "lp_payload_hex": null
+      },
+      "expected": {
+        "link_id": "unlinked",
+        "unlinked_reason": "unknown_harness"
+      }
+    },
+    {
+      "id": "neg_conflicting_wire_and_raw_harness",
+      "description": "Conflicting wire_client_id=2 (claude) and raw_harness='codex' resolves to unlinked",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": 2,
+        "raw_harness": "codex",
+        "native_session": "sess-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": null,
+        "lp_payload_hex": null
+      },
+      "expected": {
+        "link_id": "unlinked",
+        "unlinked_reason": "conflicting_harness"
+      }
+    },
+    {
+      "id": "neg_missing_harness_both_none",
+      "description": "Absent wire_client_id (or 0) and absent raw_harness resolves to unlinked",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": 0,
+        "raw_harness": null,
+        "native_session": "sess-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": null,
+        "lp_payload_hex": null
+      },
+      "expected": {
+        "link_id": "unlinked",
+        "unlinked_reason": "missing_harness"
+      }
+    },
+    {
+      "id": "neg_empty_harness_string",
+      "description": "Empty raw_harness='' with no wire_client_id resolves to unlinked",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "   ",
+        "native_session": "sess-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": null,
+        "lp_payload_hex": null
+      },
+      "expected": {
+        "link_id": "unlinked",
+        "unlinked_reason": "missing_harness"
+      }
+    },
+    {
+      "id": "neg_empty_native_session",
+      "description": "Empty native_session='' resolves to unlinked",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "claude",
+        "native_session": "",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": "claude",
+        "lp_payload_hex": null
+      },
+      "expected": {
+        "link_id": "unlinked",
+        "unlinked_reason": "missing_native_session"
+      }
+    },
+    {
+      "id": "neg_whitespace_native_session",
+      "description": "Whitespace-only native_session='  \\t\\n ' resolves to unlinked",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "claude",
+        "native_session": "  \t\n ",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": "claude",
+        "lp_payload_hex": null
+      },
+      "expected": {
+        "link_id": "unlinked",
+        "unlinked_reason": "missing_native_session"
+      }
+    },
+    {
+      "id": "neg_null_native_session",
+      "description": "Absent (null) native_session resolves to unlinked",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "claude",
+        "native_session": null,
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": "claude",
+        "lp_payload_hex": null
+      },
+      "expected": {
+        "link_id": "unlinked",
+        "unlinked_reason": "missing_native_session"
+      }
+    },
+    {
+      "id": "neg_empty_org",
+      "description": "Empty org='' resolves to unlinked",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "claude",
+        "native_session": "sess-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": null,
+        "lp_payload_hex": null
+      },
+      "expected": {
+        "link_id": "unlinked",
+        "unlinked_reason": "missing_org"
+      }
+    },
+    {
+      "id": "neg_empty_endpoint_scope",
+      "description": "Empty endpoint_scope='' resolves to unlinked",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "",
+        "wire_client_id": null,
+        "raw_harness": "claude",
+        "native_session": "sess-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": null,
+        "lp_payload_hex": null
+      },
+      "expected": {
+        "link_id": "unlinked",
+        "unlinked_reason": "missing_endpoint_scope"
+      }
+    },
+    {
+      "id": "neg_synthetic_origin_rejected",
+      "description": "Non-harness origin='synthetic' resolves to unlinked",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": 2,
+        "raw_harness": "claude",
+        "native_session": "sess-001",
+        "origin": "synthetic"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": null,
+        "lp_payload_hex": null
+      },
+      "expected": {
+        "link_id": "unlinked",
+        "unlinked_reason": "non_harness_origin"
+      }
+    },
+    {
+      "id": "neg_nul_byte_in_native_session",
+      "description": "NUL control character in native_session is rejected as invalid_field_characters",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "claude",
+        "native_session": "sess-\u0000-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": "claude",
+        "lp_payload_hex": null
+      },
+      "expected": {
+        "link_id": "unlinked",
+        "unlinked_reason": "invalid_field_characters"
+      }
+    },
+    {
+      "id": "neg_leading_whitespace_in_native_session",
+      "description": "Leading/trailing whitespace in native_session is rejected to prevent silent trimming collisions",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "claude",
+        "native_session": " sess-001 ",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": "claude",
+        "lp_payload_hex": null
+      },
+      "expected": {
+        "link_id": "unlinked",
+        "unlinked_reason": "invalid_field_characters"
+      }
+    },
+    {
+      "id": "neg_short_org_master_key",
+      "description": "K_org shorter than 32 bytes (16 bytes) is rejected as invalid_key_material",
+      "inputs": {
+        "k_org_hex": "000102030405060708090a0b0c0d0e0f",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "claude",
+        "native_session": "sess-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": null,
+        "prk_hex": null,
+        "k_link_hex": null,
+        "canonical_harness": null,
+        "lp_payload_hex": null
+      },
+      "expected": {
+        "link_id": "unlinked",
+        "unlinked_reason": "invalid_key_material"
+      }
+    },
+    {
+      "id": "neg_empty_team_in_key_derivation",
+      "description": "Empty team='' in HKDF key derivation fails closed as invalid_key_material",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "claude",
+        "native_session": "sess-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": null,
+        "prk_hex": null,
+        "k_link_hex": null,
+        "canonical_harness": null,
+        "lp_payload_hex": null
+      },
+      "expected": {
+        "link_id": "unlinked",
+        "unlinked_reason": "invalid_key_material"
+      }
+    },
+    {
+      "id": "neg_native_session_trailing_u00a0",
+      "description": "native_session with trailing U+00A0 (NO-BREAK SPACE) is rejected without trimming",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "claude",
+        "native_session": "sess-001\u00a0",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": "claude",
+        "lp_payload_hex": null
+      },
+      "expected": {
+        "link_id": "unlinked",
+        "unlinked_reason": "invalid_field_characters"
+      }
+    },
+    {
+      "id": "neg_native_session_trailing_u0085",
+      "description": "native_session with trailing U+0085 (NEXT LINE, both C1 control and Unicode White_Space) is rejected",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "claude",
+        "native_session": "sess-001\u0085",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": "claude",
+        "lp_payload_hex": null
+      },
+      "expected": {
+        "link_id": "unlinked",
+        "unlinked_reason": "invalid_field_characters"
+      }
+    },
+    {
+      "id": "neg_native_session_trailing_u3000",
+      "description": "native_session with trailing U+3000 (IDEOGRAPHIC SPACE) is rejected without trimming",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "claude",
+        "native_session": "sess-001\u3000",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": "claude",
+        "lp_payload_hex": null
+      },
+      "expected": {
+        "link_id": "unlinked",
+        "unlinked_reason": "invalid_field_characters"
+      }
+    },
+    {
+      "id": "neg_org_only_u3000",
+      "description": "org consisting solely of U+3000 (IDEOGRAPHIC SPACE) is treated as missing_org",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "\u3000",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "claude",
+        "native_session": "sess-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": null,
+        "lp_payload_hex": null
+      },
+      "expected": {
+        "link_id": "unlinked",
+        "unlinked_reason": "missing_org"
+      }
+    },
+    {
+      "id": "neg_org_with_space",
+      "description": "org containing an ASCII space violates the printable ASCII slug grammar",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "claude",
+        "native_session": "sess-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": null,
+        "lp_payload_hex": null
+      },
+      "expected": {
+        "link_id": "unlinked",
+        "unlinked_reason": "invalid_field_characters"
+      }
+    },
+    {
+      "id": "neg_origin_capitalized_harness",
+      "description": "origin='Harness' (different case from exact lowercase 'harness') resolves to unlinked",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "claude",
+        "native_session": "sess-001",
+        "origin": "Harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": null,
+        "lp_payload_hex": null
+      },
+      "expected": {
+        "link_id": "unlinked",
+        "unlinked_reason": "non_harness_origin"
+      }
+    },
+    {
+      "id": "neg_field_over_1024_bytes",
+      "description": "native_session of 1025 bytes (> 1024 max) is rejected as invalid_field_characters",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "claude",
+        "native_session": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": "claude",
+        "lp_payload_hex": null
+      },
+      "expected": {
+        "link_id": "unlinked",
+        "unlinked_reason": "invalid_field_characters"
+      }
+    },
+    {
+      "id": "neg_del_0x7f_in_native_session",
+      "description": "native_session containing DEL (0x7F) is rejected as invalid_field_characters",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "claude",
+        "native_session": "sess-\u007f-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": "claude",
+        "lp_payload_hex": null
+      },
+      "expected": {
+        "link_id": "unlinked",
+        "unlinked_reason": "invalid_field_characters"
+      }
+    },
+    {
+      "id": "neg_unknown_wire_client_id_6",
+      "description": "Unassigned wire_client_id=6 with no valid raw_harness is rejected as unknown_harness",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": 6,
+        "raw_harness": null,
+        "native_session": "sess-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": null,
+        "lp_payload_hex": null
+      },
+      "expected": {
+        "link_id": "unlinked",
+        "unlinked_reason": "unknown_harness"
+      }
+    },
+    {
+      "id": "neg_invalid_epoch_with_space",
+      "description": "epoch containing whitespace violates the ASCII slug grammar and fails key derivation with invalid_key_material",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026 Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "claude",
+        "native_session": "sess-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": null,
+        "prk_hex": null,
+        "k_link_hex": null,
+        "canonical_harness": null,
+        "lp_payload_hex": null
+      },
+      "expected": {
+        "link_id": "unlinked",
+        "unlinked_reason": "invalid_key_material"
+      }
+    },
+    {
+      "id": "neg_team_with_outer_whitespace",
+      "description": "team with leading/trailing whitespace violates the ASCII slug grammar and fails key derivation with invalid_key_material",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": " platform-eng ",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "claude",
+        "native_session": "sess-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": null,
+        "prk_hex": null,
+        "k_link_hex": null,
+        "canonical_harness": null,
+        "lp_payload_hex": null
+      },
+      "expected": {
+        "link_id": "unlinked",
+        "unlinked_reason": "invalid_key_material"
+      }
+    }
+  ]
+}

@@ -35,12 +35,22 @@ impl TestDir {
             std::process::id(),
             TEST_COUNTER.fetch_add(1, Ordering::Relaxed)
         );
+        #[cfg(windows)]
+        let path = {
+            let root = dendro_core::platform_v1::create_user_private_root_with_choice(
+                &format!("{unique}-"),
+                &dendro_core::platform_v1::StorageRootChoice::UserProfile,
+            )
+            .expect("dashboard fixture requires an owner-only private directory");
+            root.path().to_path_buf()
+        };
+        #[cfg(not(windows))]
         let path = std::env::temp_dir().join(unique);
-        fs::create_dir_all(&path).unwrap();
         #[cfg(unix)]
-        {
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
-        }
+        dendro_core::lifecycle::create_private_dir(&path).unwrap();
+        #[cfg(any(windows, target_os = "linux"))]
+        dendro_core::platform_v1::open_existing_private_root(&path)
+            .expect("dashboard fixture directory must pass native privacy checks");
         Self(path)
     }
 
@@ -93,12 +103,16 @@ fn test_bind_address_security_rejects_non_loopback() {
         .contains("security refused: dashboard server must bind to a loopback address"));
 }
 
-async fn http_get(addr: SocketAddr, path: &str) -> (String, Vec<u8>) {
+async fn http_get(addr: SocketAddr, path: &str, cookie: &str) -> (String, Vec<u8>) {
+    http_request(addr, path, &format!("Host: {addr}\r\nCookie: {cookie}\r\n")).await
+}
+
+async fn http_request(addr: SocketAddr, path: &str, headers: &str) -> (String, Vec<u8>) {
     let mut stream = TcpStream::connect(addr)
         .await
         .expect("connection to dashboard server should succeed");
 
-    let req = format!("GET {path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n");
+    let req = format!("GET {path} HTTP/1.1\r\n{headers}Connection: close\r\n\r\n");
     stream.write_all(req.as_bytes()).await.unwrap();
 
     let mut response = Vec::new();
@@ -112,6 +126,134 @@ async fn http_get(addr: SocketAddr, path: &str) -> (String, Vec<u8>) {
     let headers = String::from_utf8_lossy(&response[..header_end]).to_string();
     let body = response[header_end + 4..].to_vec();
     (headers, body)
+}
+
+#[tokio::test]
+async fn test_localhost_launch_url_uses_numeric_host_and_refuses_localhost_header() {
+    let dir = TestDir::new("localhost");
+    let server = ConnectedServer::bind(
+        "localhost:0",
+        dir.path().join("db"),
+        dir.path().to_path_buf(),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let addr = server.local_addr().unwrap();
+    assert_eq!(addr.ip(), std::net::Ipv4Addr::LOCALHOST);
+    let launch_file = server.write_browser_launch_file().await.unwrap();
+    let html = fs::read_to_string(&launch_file).unwrap();
+    let url = html
+        .split("href=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap();
+    assert!(url.starts_with(&format!("http://127.0.0.1:{}/_studio/launch/", addr.port())));
+    let uri = url
+        .strip_prefix(&format!("http://{addr}"))
+        .unwrap()
+        .to_owned();
+    let task = tokio::spawn(server.run());
+    let (headers, _) =
+        http_request(addr, &uri, &format!("Host: localhost:{}\r\n", addr.port())).await;
+    assert!(headers.starts_with("HTTP/1.1 421"));
+    assert!(launch_file.exists());
+    let (headers, _) = http_request(addr, &uri, &format!("Host: {addr}\r\n")).await;
+    assert!(headers.starts_with("HTTP/1.1 200"));
+    assert!(!launch_file.exists());
+    task.abort();
+    let _ = task.await;
+}
+
+#[cfg(any(target_os = "linux", windows))]
+#[tokio::test]
+async fn test_automatic_bind_uses_random_loopback_address() {
+    let dir = TestDir::new("automatic-bind");
+    // Select exactly as `--serve auto` does, then bind that address on an ephemeral port so the
+    // test does not depend on port 8080 being free on the host (a wildcard listener on :8080
+    // blocks every 127.x.y.z:8080).
+    let selected = validate_dashboard_bind_address("auto").unwrap();
+    assert_eq!(selected.port(), 8080);
+    let server = ConnectedServer::bind(
+        &format!("{}:0", selected.ip()),
+        dir.path().join("db"),
+        dir.path().to_path_buf(),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let address = server.local_addr().unwrap();
+    assert!(address.ip().is_loopback());
+    assert_ne!(address.ip(), std::net::Ipv4Addr::LOCALHOST);
+    assert!(address.is_ipv4());
+}
+
+#[tokio::test]
+async fn test_connection_capacity_waits_for_a_slot_then_recovers() {
+    let dir = TestDir::new("capacity");
+    let server = ConnectedServer::bind(
+        "127.0.0.1:0",
+        dir.path().join("db"),
+        dir.path().to_path_buf(),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let address = server.local_addr().unwrap();
+    let task = tokio::spawn(server.run());
+    let (ready, _) = http_request(address, "/", &format!("Host: {address}\r\n")).await;
+    assert!(ready.starts_with("HTTP/1.1 401"));
+    let mut held = Vec::new();
+    for _ in 0..64 {
+        held.push(TcpStream::connect(address).await.unwrap());
+    }
+    let mut queued = TcpStream::connect(address).await.unwrap();
+    queued
+        .write_all(format!("GET / HTTP/1.1\r\nHost: {address}\r\n\r\n").as_bytes())
+        .await
+        .unwrap();
+    let mut byte = [0];
+    assert!(
+        tokio::time::timeout(Duration::from_millis(150), queued.read(&mut byte))
+            .await
+            .is_err(),
+        "65th connection was handled before a slot opened"
+    );
+    drop(held.pop());
+    let mut reply = String::new();
+    tokio::time::timeout(Duration::from_secs(2), queued.read_to_string(&mut reply))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(reply.starts_with("HTTP/1.1 401"));
+    task.abort();
+    let _ = task.await;
+}
+
+#[tokio::test]
+async fn test_studio_rejects_unauthenticated_requests() {
+    let dir = TestDir::new("auth");
+    let server = ConnectedServer::bind(
+        "127.0.0.1:0",
+        dir.path().join("absent.duckdb"),
+        dir.path().to_path_buf(),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    let addr = server.local_addr().unwrap();
+    let task = tokio::spawn(server.run());
+    for path in ["/api/query", "/api/events", "/api/future", "/snapshot.json"] {
+        let (headers, _) = http_request(addr, path, &format!("Host: {addr}\r\n")).await;
+        assert!(headers.starts_with("HTTP/1.1 401"), "{path}: {headers}");
+    }
+    task.abort();
 }
 
 #[tokio::test]
@@ -176,30 +318,60 @@ async fn test_connected_dashboard_server_full_lifecycle() {
     .expect("server should bind to ephemeral loopback port");
 
     let local_addr = server.local_addr().expect("local_addr should be valid");
+    let launch_file = server.write_browser_launch_file().await.unwrap();
+    #[cfg(unix)]
+    assert_eq!(
+        fs::metadata(&launch_file).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    let launch_html = fs::read_to_string(&launch_file).unwrap();
+    let launch_url = launch_html
+        .split("href=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap();
+    let launch_uri = launch_url
+        .strip_prefix(&format!("http://{local_addr}"))
+        .unwrap();
     let server_handle = tokio::spawn(async move {
         let _ = server.run().await;
     });
 
     tokio::time::sleep(Duration::from_millis(50)).await;
 
+    let (launch_headers, _) =
+        http_request(local_addr, launch_uri, &format!("Host: {local_addr}\r\n")).await;
+    assert!(launch_headers.starts_with("HTTP/1.1 200"));
+    assert!(launch_headers.contains("HttpOnly; SameSite=Strict"));
+    assert!(!launch_file.exists());
+    let cookie = launch_headers
+        .lines()
+        .find_map(|line| line.strip_prefix("Set-Cookie: "))
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap();
+
     // 3. Test Root Redirect (GET / -> 302 Found Location: /dashboards/index.html)
-    let (headers, _) = http_get(local_addr, "/").await;
+    let (headers, _) = http_get(local_addr, "/", cookie).await;
     assert!(headers.starts_with("HTTP/1.1 302 Found"));
     assert!(headers.contains("Location: /dashboards/index.html"));
 
     // 4. Test Static Asset Serving (GET /dashboards/index.html)
-    let (headers, body) = http_get(local_addr, "/dashboards/index.html").await;
+    let (headers, body) = http_get(local_addr, "/dashboards/index.html", cookie).await;
     assert!(headers.starts_with("HTTP/1.1 200 OK"));
     assert!(headers.contains("Content-Type: text/html"));
     let body_str = String::from_utf8_lossy(&body);
     assert!(body_str.contains("Dendro") || body_str.contains("Fleet"));
 
     // 5. Test Path Traversal Defense (GET /../Cargo.toml -> 404)
-    let (headers, _) = http_get(local_addr, "/../Cargo.toml").await;
+    let (headers, _) = http_get(local_addr, "/../Cargo.toml", cookie).await;
     assert!(headers.starts_with("HTTP/1.1 404 Not Found"));
 
     // 6. Test Uncapped Live Query API: Hub Overview (GET /api/query?view=hub)
-    let (headers, body) = http_get(local_addr, "/api/query?view=hub").await;
+    let (headers, body) = http_get(local_addr, "/api/query?view=hub", cookie).await;
     assert!(headers.starts_with("HTTP/1.1 200 OK"));
     assert!(headers.contains("Content-Type: application/json"));
     let hub_json: serde_json::Value =
@@ -221,7 +393,7 @@ async fn test_connected_dashboard_server_full_lifecycle() {
     assert!(hub_json["scopes"].is_array());
 
     // 7. Test Uncapped View Query: message_mix (GET /api/query?view=message_mix)
-    let (headers, body) = http_get(local_addr, "/api/query?view=message_mix").await;
+    let (headers, body) = http_get(local_addr, "/api/query?view=message_mix", cookie).await;
     assert!(headers.starts_with("HTTP/1.1 200 OK"));
     assert!(headers.contains("Cache-Control: no-store, no-cache, must-revalidate, max-age=0"));
     assert!(headers.contains("Pragma: no-cache"));
@@ -235,7 +407,7 @@ async fn test_connected_dashboard_server_full_lifecycle() {
 
     // 8. Test Uncapped Row Count: cost_and_loops (GET /api/query?view=cost_and_loops)
     // Asserts all 60 rows returned with zero 50-row cap
-    let (headers, body) = http_get(local_addr, "/api/query?view=cost_and_loops").await;
+    let (headers, body) = http_get(local_addr, "/api/query?view=cost_and_loops", cookie).await;
     assert!(headers.starts_with("HTTP/1.1 200 OK"));
     assert!(headers.contains("Cache-Control: no-store, no-cache, must-revalidate, max-age=0"));
     assert!(headers.contains("Pragma: no-cache"));
@@ -255,7 +427,7 @@ async fn test_connected_dashboard_server_full_lifecycle() {
     );
 
     // 9. Test Static file headers (GET /dashboards/index.html)
-    let (stat_headers, _) = http_get(local_addr, "/dashboards/index.html").await;
+    let (stat_headers, _) = http_get(local_addr, "/dashboards/index.html", cookie).await;
     assert!(stat_headers.starts_with("HTTP/1.1 200 OK"));
     assert!(stat_headers.contains("Cache-Control: no-store, no-cache, must-revalidate, max-age=0"));
     assert!(stat_headers.contains("Pragma: no-cache"));
@@ -264,7 +436,7 @@ async fn test_connected_dashboard_server_full_lifecycle() {
     // 10. Test Live SSE Stream (GET /api/events?view=hub)
     let mut sse_stream = TcpStream::connect(local_addr).await.unwrap();
     let sse_req = format!(
-        "GET /api/events?view=hub HTTP/1.1\r\nHost: {local_addr}\r\nConnection: close\r\n\r\n"
+        "GET /api/events?view=hub HTTP/1.1\r\nHost: {local_addr}\r\nCookie: {cookie}\r\nConnection: close\r\n\r\n"
     );
     sse_stream.write_all(sse_req.as_bytes()).await.unwrap();
 

@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, Result};
 #[cfg(unix)]
 use fd_lock::RwLock;
-use rand::RngCore;
+use rand::{rngs::SysRng, TryRng};
 
 use crate::privacy::key_id;
 
@@ -104,6 +104,14 @@ pub struct KeyMaterial {
     pub bytes: [u8; 32],
 }
 
+/// Key bytes come straight from the OS generator. `ThreadRng` no longer reseeds
+/// on fork, so it is not used for material that outlives the process.
+fn random_key_bytes() -> Result<[u8; 32]> {
+    let mut bytes = [0u8; 32];
+    SysRng.try_fill_bytes(&mut bytes)?;
+    Ok(bytes)
+}
+
 #[cfg(unix)]
 pub fn load_or_create_key(path: &Path, allow_create: bool) -> Result<KeyMaterial> {
     if path.exists() {
@@ -115,8 +123,7 @@ pub fn load_or_create_key(path: &Path, allow_create: bool) -> Result<KeyMaterial
     if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
         fs::create_dir_all(parent)?;
     }
-    let mut bytes = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut bytes);
+    let bytes = random_key_bytes()?;
     let id = key_id(&bytes);
     let mut body = Vec::new();
     body.extend_from_slice(MAGIC);
@@ -453,11 +460,11 @@ pub fn load_or_create_key(path: &Path, allow_create: bool) -> Result<KeyMaterial
         return Err(anyhow!("analytics key is missing"));
     }
     let (root, name) = private_parent(path)?;
+    // Drawn before creation so an entropy failure cannot strand an empty key.
+    let bytes = random_key_bytes()?;
     // Exclusive creation with the private ACL from inception. Existing key
     // collisions are errors, never permission repair or a silent rekey.
     let mut file = root.create_file(&name)?;
-    let mut bytes = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut bytes);
     let id = key_id(&bytes);
     file.file_mut().write_all(MAGIC)?;
     file.file_mut().write_all(&1u32.to_le_bytes())?;

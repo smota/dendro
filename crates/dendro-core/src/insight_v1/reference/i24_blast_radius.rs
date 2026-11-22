@@ -34,6 +34,21 @@ impl Insight for BlastRadiusInsight {
     fn domain(&self) -> InsightDomain {
         InsightDomain::Security
     }
+    fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[
+            Field::SessionEdges,
+            Field::SecurityPolicy,
+            Field::NativeSession,
+        ]
+    }
+    fn optional_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::SecurityCommandCheck]
+    }
+    fn coverage(&self) -> &'static str {
+        COVERAGE
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
         let (edges, edge_keys) = match load_edges(input) {
             Ok(rows) => rows,
@@ -132,7 +147,7 @@ impl Insight for BlastRadiusInsight {
 
 fn load_edges(input: &InsightInput<'_>) -> anyhow::Result<(Vec<SessionLink>, Vec<String>)> {
     let mut stmt = input.connection().prepare(
-        "SELECT source_key, parent_session, child_session, relation, status
+        "SELECT source_key, harness, parent_session, child_session, relation, status
          FROM session_edges
          WHERE (? IS NULL OR harness = ?)
          ORDER BY source_key",
@@ -141,27 +156,30 @@ fn load_edges(input: &InsightInput<'_>) -> anyhow::Result<(Vec<SessionLink>, Vec
     let rows = stmt.query_map(params![harness, harness], |row| {
         Ok((
             row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
             SessionLink {
-                parent_session: row.get(1)?,
-                child_session: row.get(2)?,
-                relation: row.get(3)?,
-                status: row.get(4)?,
+                parent_session: row.get(2)?,
+                child_session: row.get(3)?,
+                relation: row.get(4)?,
+                status: row.get(5)?,
             },
         ))
     })?;
     let mut edges = Vec::new();
     let mut keys = Vec::new();
     for row in rows {
-        let (key, edge) = row?;
-        keys.push(key);
-        edges.push(edge);
+        let (key, row_harness, edge) = row?;
+        if input.allows_harness(&row_harness) {
+            keys.push(key);
+            edges.push(edge);
+        }
     }
     Ok((edges, keys))
 }
 
 fn load_facts(input: &InsightInput<'_>) -> anyhow::Result<(Vec<SecurityObservation>, Vec<String>)> {
     let mut stmt = input.connection().prepare(
-        "SELECT source_key, native_session, kind, value
+        "SELECT source_key, harness, native_session, kind, value
          FROM security_facts
          WHERE (? IS NULL OR harness = ?)
            AND (? IS NULL OR native_session = ?)
@@ -172,19 +190,22 @@ fn load_facts(input: &InsightInput<'_>) -> anyhow::Result<(Vec<SecurityObservati
     let rows = stmt.query_map(params![harness, harness, session, session], |row| {
         Ok((
             row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
             SecurityObservation {
-                native_session: row.get(1)?,
-                kind: row.get(2)?,
-                value: row.get(3)?,
+                native_session: row.get(2)?,
+                kind: row.get(3)?,
+                value: row.get(4)?,
             },
         ))
     })?;
     let mut facts = Vec::new();
     let mut keys = Vec::new();
     for row in rows {
-        let (key, fact) = row?;
-        keys.push(key);
-        facts.push(fact);
+        let (key, row_harness, fact) = row?;
+        if input.allows_harness(&row_harness) {
+            keys.push(key);
+            facts.push(fact);
+        }
     }
     Ok((facts, keys))
 }

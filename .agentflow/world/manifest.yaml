@@ -433,7 +433,7 @@ atoms:
         - When
         - you
   - id: readme-walkthrough-real-operation-v0-6-0
-    address: "README.md#walkthrough-real-operation-v0-6-0"
+    address: "docs/VIDEO_WALKTHROUGH.md#overview-analytical-integrity"
     taxonomy: world
     regions:
       - affordances
@@ -442,17 +442,17 @@ atoms:
       - fresh
       - handover
       - post-compaction
-    purpose: "Section \"Walkthrough & Real Operation (`v0.6.0`)\" in README.md covering affordances, state."
+    purpose: "Section \"Overview & Analytical Integrity\" in docs/VIDEO_WALKTHROUGH.md covering affordances, state."
     order: 24
     priority: core
     probe:
-      prompt: "What does section \"Walkthrough & Real Operation (`v0.6.0`)\" (README.md#walkthrough-real-operation-v0-6-0) define for affordances?"
-      expect: "Establishes Walkthrough & Real Operation (`v0.6.0`) in README.md for affordances."
+      prompt: "What does section \"Overview & Analytical Integrity\" (docs/VIDEO_WALKTHROUGH.md#overview-analytical-integrity) document?"
+      expect: "Section \"Overview & Analytical Integrity\" in docs/VIDEO_WALKTHROUGH.md."
       expectedPatterns:
-        - Walkthrough
-        - Real
+        - "Overview"
+        - "Analytical"
   - id: readme-wave-v0-7
-    address: "README.md#wave-v0-7"
+    address: "docs/CLI_R1.md#v0-7-0-fleet-brief-cockpit-and-pi-coverage"
     taxonomy: world
     regions:
       - actors
@@ -460,16 +460,17 @@ atoms:
     situations:
       - fresh
       - handover
-    purpose: "Section \"Wave v0.7\" in README.md covering actors, state."
+    purpose: "Section \"v0.7.0 Fleet brief, cockpit, and Pi coverage\" in docs/CLI_R1.md covering actors, state."
     order: 25
     priority: recommended
     probe:
-      prompt: "What does section \"Wave v0.7\" (README.md#wave-v0-7) define for actors?"
-      expect: Establishes Wave v0.7 in README.md for actors.
+      prompt: "What does section \"v0.7.0 Fleet brief, cockpit, and Pi coverage\" (docs/CLI_R1.md#v0-7-0-fleet-brief-cockpit-and-pi-coverage) document?"
+      expect: "Section \"v0.7.0 Fleet brief, cockpit, and Pi coverage\" in docs/CLI_R1.md."
       expectedPatterns:
-        - Wave
+        - "Fleet"
+        - "Pi"
   - id: readme-start-locally
-    address: "README.md#start-locally"
+    address: "README.md#start-locally-60-second-quickstart"
     taxonomy: world
     regions:
       - affordances
@@ -478,17 +479,17 @@ atoms:
       - fresh
       - handover
       - post-compaction
-    purpose: "Section \"Start locally\" in README.md covering affordances, state."
+    purpose: "Section \"Start locally (60-Second Quickstart)\" in README.md covering affordances, state."
     order: 26
     priority: core
     probe:
-      prompt: "What does section \"Start locally\" (README.md#start-locally) define for affordances?"
-      expect: Establishes Start locally in README.md for affordances.
+      prompt: "What does section \"Start locally (60-Second Quickstart)\" (README.md#start-locally-60-second-quickstart) document?"
+      expect: "Section \"Start locally (60-Second Quickstart)\" in README.md."
       expectedPatterns:
-        - Start
-        - locally
+        - "Start"
+        - "Quickstart"
   - id: readme-start-locally-zero-ceremony-quickstart
-    address: "README.md#start-locally/zero-ceremony-quickstart"
+    address: "docs/CLI_R1.md#v0-6-0-operator-usability-smart-window-extensions"
     taxonomy: world
     regions:
       - affordances
@@ -497,17 +498,17 @@ atoms:
       - fresh
       - handover
       - post-compaction
-    purpose: "Section \"Zero-ceremony quickstart\" in README.md covering affordances, actors."
+    purpose: "Section \"v0.6.0 Operator Usability & Smart Window Extensions\" in docs/CLI_R1.md covering affordances, actors."
     order: 27
     priority: core
     probe:
-      prompt: "What does section \"Zero-ceremony quickstart\" (README.md#start-locally/zero-ceremony-quickstart) define for affordances?"
-      expect: Establishes Zero-ceremony quickstart in README.md for affordances.
+      prompt: "What does section \"v0.6.0 Operator Usability & Smart Window Extensions\" (docs/CLI_R1.md#v0-6-0-operator-usability-smart-window-extensions) document?"
+      expect: "Section \"v0.6.0 Operator Usability & Smart Window Extensions\" in docs/CLI_R1.md."
       expectedPatterns:
-        - Zero
-        - ceremony
+        - "Operator"
+        - "Window"
   - id: readme-start-locally-explicit-roots-fixed-windows
-    address: "README.md#start-locally/explicit-roots-fixed-windows"
+    address: "docs/adoption/README.md#choose-sources-and-a-period"
     taxonomy: world
     regions:
       - affordances
@@ -516,17 +517,17 @@ atoms:
       - fresh
       - handover
       - post-compaction
-    purpose: "Section \"Explicit roots & fixed windows\" in README.md covering affordances, terrain."
+    purpose: "Section \"Choose sources and a period\" in docs/adoption/README.md covering affordances, terrain."
     order: 28
     priority: core
     probe:
-      prompt: "What does section \"Explicit roots & fixed windows\" (README.md#start-locally/explicit-roots-fixed-windows) define for affordances?"
-      expect: "Establishes Explicit roots & fixed windows in README.md for affordances."
+      prompt: "What does section \"Choose sources and a period\" (docs/adoption/README.md#choose-sources-and-a-period) document?"
+      expect: "Section \"Choose sources and a period\" in docs/adoption/README.md."
       expectedPatterns:
-        - Explicit
-        - roots
+        - "sources"
+        - "period"
   - id: readme-local-investigation
-    address: "README.md#local-investigation"
+    address: "docs/adoption/README.md#make-your-first-decision"
     taxonomy: world
     regions:
       - state
@@ -534,15 +535,15 @@ atoms:
     situations:
       - fresh
       - handover
-    purpose: "Section \"Local investigation\" in README.md covering state, actors."
+    purpose: "Section \"Make your first decision\" in docs/adoption/README.md covering state, actors."
     order: 29
     priority: recommended
     probe:
-      prompt: "What does section \"Local investigation\" (README.md#local-investigation) define for state?"
-      expect: Establishes Local investigation in README.md for state.
+      prompt: "What does section \"Make your first decision\" (docs/adoption/README.md#make-your-first-decision) document?"
+      expect: "Section \"Make your first decision\" in docs/adoption/README.md."
       expectedPatterns:
-        - Local
-        - investigation
+        - "first"
+        - "decision"
   - id: readme-verification
     address: "README.md#verification"
     taxonomy: world
@@ -890,7 +891,7 @@ atoms:
         - Selected
         - file
   - id: product-specification-0-positioning
-    address: "docs/PRODUCT_SPECIFICATION.md#0-positioning"
+    address: "docs/PRODUCT_SPECIFICATION.md#operator-outcome"
     taxonomy: world
     regions:
       - identity
@@ -899,14 +900,15 @@ atoms:
       - fresh
       - handover
       - post-compaction
-    purpose: "Section \"0. Positioning\" in docs/PRODUCT_SPECIFICATION.md covering identity, actors."
+    purpose: "Section \"Operator outcome\" in docs/PRODUCT_SPECIFICATION.md covering identity, actors."
     order: 49
     priority: core
     probe:
-      prompt: "What does section \"0. Positioning\" (docs/PRODUCT_SPECIFICATION.md#0-positioning) define for identity?"
-      expect: Establishes 0. Positioning in docs/PRODUCT_SPECIFICATION.md for identity.
+      prompt: "What does section \"Operator outcome\" (docs/PRODUCT_SPECIFICATION.md#operator-outcome) document?"
+      expect: "Section \"Operator outcome\" in docs/PRODUCT_SPECIFICATION.md."
       expectedPatterns:
-        - Positioning
+        - "Operator"
+        - "outcome"
   - id: product-specification-1-conclusion
     address: "docs/PRODUCT_SPECIFICATION.md#1-conclusion"
     taxonomy: world
@@ -2134,3 +2136,22 @@ atoms:
       expectedPatterns:
         - Domain
         - checklist
+  - id: cli-r1-private-staging-and-snapshots
+    address: "docs/CLI_R1.md#private-staging-and-snapshots"
+    taxonomy: world
+    regions:
+      - affordances
+      - actors
+    situations:
+      - fresh
+      - handover
+      - post-compaction
+    purpose: "Section \"Private staging and snapshots\" in docs/CLI_R1.md covering affordances, actors."
+    order: 116
+    priority: core
+    probe:
+      prompt: "What does section \"Private staging and snapshots\" (docs/CLI_R1.md#private-staging-and-snapshots) document?"
+      expect: "Section \"Private staging and snapshots\" in docs/CLI_R1.md."
+      expectedPatterns:
+        - "Private"
+        - "snapshots"

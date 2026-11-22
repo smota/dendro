@@ -11,11 +11,22 @@ impl OpenRigConnector {
     }
 
     pub fn db_path() -> PathBuf {
-        let home = std::env::var("OPENRIG_HOME")
-            .or_else(|_| std::env::var("HOME"))
-            .unwrap_or_else(|_| ".".into());
-        PathBuf::from(home).join(".openrig").join("openrig.sqlite")
+        let openrig_home = std::env::var("OPENRIG_HOME")
+            .ok()
+            .filter(|value| !value.is_empty());
+        let user_home = std::env::var("HOME").ok().filter(|value| !value.is_empty());
+        openrig_sqlite_path(openrig_home.as_deref(), user_home.as_deref())
     }
+}
+
+/// `OPENRIG_HOME` is the OpenRig directory. Unset, the database is `$HOME/.openrig/openrig.sqlite`.
+pub fn openrig_sqlite_path(openrig_home: Option<&str>, user_home: Option<&str>) -> PathBuf {
+    if let Some(home) = openrig_home {
+        return PathBuf::from(home).join("openrig.sqlite");
+    }
+    PathBuf::from(user_home.unwrap_or("."))
+        .join(".openrig")
+        .join("openrig.sqlite")
 }
 
 impl Default for OpenRigConnector {
@@ -82,11 +93,67 @@ struct TablePrefix {
 /// Hash typed, length-delimited SQLite values, including every source column.
 /// This avoids JSON formatting ambiguity and detects changes to unused columns too.
 fn table_prefix(conn: &Connection, table: &str, limit: Option<Option<i64>>) -> Result<TablePrefix> {
+    table_prefix_projected(conn, table, limit, None)
+}
+
+/// Digest of the known contract columns, in table order, using the same hash as `table_prefix`.
+pub(crate) fn contract_row_digests(
+    conn: &Connection,
+    table: &str,
+    known: &[&str],
+) -> Result<BTreeMap<String, String>> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info(\"{table}\")"))?;
+    let names = stmt
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let projected = names
+        .iter()
+        .filter(|name| known.contains(&name.as_str()))
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    let prefix = table_prefix_projected(conn, table, None, Some(&projected))?;
+    Ok(prefix
+        .rows
+        .into_iter()
+        .map(|row| (row.row_id, row.row_digest))
+        .collect())
+}
+
+fn table_prefix_projected(
+    conn: &Connection,
+    table: &str,
+    limit: Option<Option<i64>>,
+    columns: Option<&[&str]>,
+) -> Result<TablePrefix> {
+    let id = match table {
+        "events" => "seq",
+        "queue_transitions" => "transition_id",
+        "snapshots" | "rigs" => "rowid",
+        _ => bail!("unsupported OpenRig table"),
+    };
+    let projection = match columns {
+        None => format!("{id}, *"),
+        Some([]) => id.to_string(),
+        Some(columns) => format!(
+            "{id}, {}",
+            columns
+                .iter()
+                .map(|column| format!("\"{}\"", column.replace('"', "")))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    };
     let sql = match table {
-        "events" => "SELECT seq, * FROM events WHERE (?1 IS NULL OR seq <= ?1) ORDER BY seq",
-        "queue_transitions" => "SELECT transition_id, * FROM queue_transitions WHERE (?1 IS NULL OR transition_id <= ?1) ORDER BY transition_id",
-        "snapshots" => "SELECT rowid, * FROM snapshots WHERE (?1 IS NULL OR rowid <= ?1) ORDER BY rowid",
-        "rigs" => "SELECT rowid, * FROM rigs ORDER BY rowid",
+        "events" => format!(
+            "SELECT {projection} FROM events WHERE (?1 IS NULL OR seq <= ?1) ORDER BY seq"
+        ),
+        "queue_transitions" => format!(
+            "SELECT {projection} FROM queue_transitions WHERE (?1 IS NULL OR transition_id <= ?1) ORDER BY transition_id"
+        ),
+        "snapshots" => format!(
+            "SELECT {projection} FROM snapshots WHERE (?1 IS NULL OR rowid <= ?1) ORDER BY rowid"
+        ),
+        "rigs" => format!("SELECT {projection} FROM rigs ORDER BY rowid"),
         _ => bail!("unsupported OpenRig table"),
     };
     let mut total = Sha256::new();
@@ -100,7 +167,7 @@ fn table_prefix(conn: &Connection, table: &str, limit: Option<Option<i64>>) -> R
         result.digest = hex::encode(total.finalize());
         return Ok(result);
     }
-    let Ok(mut stmt) = conn.prepare(sql) else {
+    let Ok(mut stmt) = conn.prepare(&sql) else {
         result.digest = hex::encode(total.finalize());
         return Ok(result);
     };

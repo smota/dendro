@@ -621,8 +621,7 @@ async fn test_windows_rpc_recovers_from_busy_pipe_before_sending_once() {
     occupied_server.connect().await.unwrap();
     let busy = ClientOptions::new()
         .open(&socket_path)
-        .err()
-        .expect("the only pipe instance must be occupied");
+        .expect_err("the only pipe instance must be occupied");
     assert_eq!(busy.raw_os_error(), Some(231));
 
     let payload = r#"{"method":"busy_fixture"}"#;

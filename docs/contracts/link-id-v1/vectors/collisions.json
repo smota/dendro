@@ -1,0 +1,621 @@
+{
+  "contract": "link-id-v1",
+  "suite": "collisions",
+  "version": 1,
+  "description": "Collision-resistance vectors proving LP prevents concatenation ambiguity and alias vectors proving exact F12 canonicalization.",
+  "assert_distinct_link_id_groups": [
+    [
+      "collision_lp_org_ab_endpoint_c",
+      "collision_lp_org_a_endpoint_bc"
+    ],
+    [
+      "collision_lp_delimiter_in_org",
+      "collision_lp_delimiter_in_endpoint"
+    ],
+    [
+      "collision_hkdf_info_team_enga_epoch_1",
+      "collision_hkdf_info_team_eng_epoch_a1"
+    ],
+    [
+      "collision_utf8_nfc_precomposed",
+      "collision_utf8_nfd_decomposed"
+    ],
+    [
+      "alias_f12_dendro_claude",
+      "collision_org_mixed_case_acme_corp"
+    ]
+  ],
+  "assert_equal_link_id_groups": [
+    [
+      "alias_f12_dendro_claude",
+      "alias_f12_aob_claude_code",
+      "alias_f12_claudecode_compact",
+      "alias_f12_wire_client_id_2_only"
+    ],
+    [
+      "alias_antigravity_canonical",
+      "alias_antigravity_agy"
+    ],
+    [
+      "alias_codex_canonical",
+      "alias_codex_cli"
+    ],
+    [
+      "alias_grok_canonical",
+      "alias_grok_cli"
+    ],
+    [
+      "alias_pi_canonical",
+      "alias_pi_cli"
+    ]
+  ],
+  "vectors": [
+    {
+      "id": "collision_lp_org_ab_endpoint_c",
+      "description": "LP boundary test: org='ab', endpoint_scope='c'",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "ab",
+        "endpoint_scope": "c",
+        "wire_client_id": null,
+        "raw_harness": "claude",
+        "native_session": "sess-01",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": "claude",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f7631000000026162000000016300000006636c6175646500000007736573732d3031"
+      },
+      "expected": {
+        "link_id": "3b080950214419e6795bb0cbf8cfef7afa2eb007bf1aa8fc7ca085ffb16de0a7",
+        "unlinked_reason": null
+      }
+    },
+    {
+      "id": "collision_lp_org_a_endpoint_bc",
+      "description": "LP boundary test: org='a', endpoint_scope='bc' (must differ from org='ab', endpoint_scope='c')",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "a",
+        "endpoint_scope": "bc",
+        "wire_client_id": null,
+        "raw_harness": "claude",
+        "native_session": "sess-01",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": "claude",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f7631000000016100000002626300000006636c6175646500000007736573732d3031"
+      },
+      "expected": {
+        "link_id": "5e9b4dbf904ef55ba87279fb72fda14a4218f4cf46f3f3f6bcc987b338efbc9f",
+        "unlinked_reason": null
+      }
+    },
+    {
+      "id": "collision_lp_delimiter_in_org",
+      "description": "LP delimiter injection test: org='acme:ws-01', endpoint_scope='prod'",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme:ws-01",
+        "endpoint_scope": "prod",
+        "wire_client_id": null,
+        "raw_harness": "codex",
+        "native_session": "sess-99",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": "codex",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f76310000000a61636d653a77732d30310000000470726f6400000005636f64657800000007736573732d3939"
+      },
+      "expected": {
+        "link_id": "52675005db77be9c81ca3fb8a2cda9f4d5a3882727c63d05f60972d77b2f2f29",
+        "unlinked_reason": null
+      }
+    },
+    {
+      "id": "collision_lp_delimiter_in_endpoint",
+      "description": "LP delimiter injection test: org='acme', endpoint_scope='ws-01:prod'",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme",
+        "endpoint_scope": "ws-01:prod",
+        "wire_client_id": null,
+        "raw_harness": "codex",
+        "native_session": "sess-99",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": "codex",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f76310000000461636d650000000a77732d30313a70726f6400000005636f64657800000007736573732d3939"
+      },
+      "expected": {
+        "link_id": "1ae5093a1266f9a02bec3d5bbd20c18abb089e020a4beeed0815c299e0b75432",
+        "unlinked_reason": null
+      }
+    },
+    {
+      "id": "collision_hkdf_info_team_enga_epoch_1",
+      "description": "HKDF info LP boundary test: team='eng-a', epoch='1'",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "eng-a",
+        "epoch": "1",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "claude",
+        "native_session": "sess-shared",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f763100000005656e672d610000000131",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "cefd53e9d50bfdf5407906ee446dec3fe3140b5f7c9cdabd7303693e7ee7fefb",
+        "canonical_harness": "claude",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f76310000000961636d652d636f72700000000577732d303100000006636c617564650000000b736573732d736861726564"
+      },
+      "expected": {
+        "link_id": "e299c0360e1032865e694aaf49e08d1ba098f6c04109c897eaefa3795160268e",
+        "unlinked_reason": null
+      }
+    },
+    {
+      "id": "collision_hkdf_info_team_eng_epoch_a1",
+      "description": "HKDF info LP boundary test: team='eng-', epoch='a1' (must produce distinct K_link and link_id)",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "eng-",
+        "epoch": "a1",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "claude",
+        "native_session": "sess-shared",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f763100000004656e672d000000026131",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "55c6e66e33f110fb5af65a529025847ccf8417f71df12e9e497715310bc7994b",
+        "canonical_harness": "claude",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f76310000000961636d652d636f72700000000577732d303100000006636c617564650000000b736573732d736861726564"
+      },
+      "expected": {
+        "link_id": "8ecacc75f58e77a8b4a0369a452559e2a95baff0038959552526829fbcf54a36",
+        "unlinked_reason": null
+      }
+    },
+    {
+      "id": "collision_utf8_nfc_precomposed",
+      "description": "UTF-8 precomposed U+00E9 ('e-acute') in native_session",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "claude",
+        "native_session": "sess-é",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": "claude",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f76310000000961636d652d636f72700000000577732d303100000006636c6175646500000007736573732dc3a9"
+      },
+      "expected": {
+        "link_id": "b45f99c15a6729c26bcd1fe354f727be3b7c7b88d5d46cf0c9c0e01aeb9f3f99",
+        "unlinked_reason": null
+      }
+    },
+    {
+      "id": "collision_utf8_nfd_decomposed",
+      "description": "UTF-8 decomposed 'e' + U+0301 in native_session (distinct byte sequence -> distinct link_id)",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "claude",
+        "native_session": "sess-é",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": "claude",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f76310000000961636d652d636f72700000000577732d303100000006636c6175646500000008736573732d65cc81"
+      },
+      "expected": {
+        "link_id": "18f7be4979fe349c21009c48265fa1938b1099b82b89f1eaae0d9f453f241d93",
+        "unlinked_reason": null
+      }
+    },
+    {
+      "id": "alias_f12_dendro_claude",
+      "description": "F12 resolution: dendro harness='claude' maps to canonical 'claude'",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "claude",
+        "native_session": "conv-f12-parity-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": "claude",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f76310000000961636d652d636f72700000000577732d303100000006636c6175646500000013636f6e762d6631322d7061726974792d303031"
+      },
+      "expected": {
+        "link_id": "b45fa9c3f8fa71ad76d630cd6f3584253b872ebff729acb77b0af611e2d7f452",
+        "unlinked_reason": null
+      }
+    },
+    {
+      "id": "alias_f12_aob_claude_code",
+      "description": "F12 resolution: AOB gen_ai.agent.name='claude-code' maps to canonical 'claude'",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "claude-code",
+        "native_session": "conv-f12-parity-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": "claude",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f76310000000961636d652d636f72700000000577732d303100000006636c6175646500000013636f6e762d6631322d7061726974792d303031"
+      },
+      "expected": {
+        "link_id": "b45fa9c3f8fa71ad76d630cd6f3584253b872ebff729acb77b0af611e2d7f452",
+        "unlinked_reason": null
+      }
+    },
+    {
+      "id": "alias_f12_claudecode_compact",
+      "description": "F12 resolution: mixed-case 'Claude-Code' maps to canonical 'claude'",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "Claude-Code",
+        "native_session": "conv-f12-parity-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": "claude",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f76310000000961636d652d636f72700000000577732d303100000006636c6175646500000013636f6e762d6631322d7061726974792d303031"
+      },
+      "expected": {
+        "link_id": "b45fa9c3f8fa71ad76d630cd6f3584253b872ebff729acb77b0af611e2d7f452",
+        "unlinked_reason": null
+      }
+    },
+    {
+      "id": "alias_f12_wire_client_id_2_only",
+      "description": "F12 resolution: IPC wire_client_id=2 without raw_harness maps to canonical 'claude'",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": 2,
+        "raw_harness": null,
+        "native_session": "conv-f12-parity-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": "claude",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f76310000000961636d652d636f72700000000577732d303100000006636c6175646500000013636f6e762d6631322d7061726974792d303031"
+      },
+      "expected": {
+        "link_id": "b45fa9c3f8fa71ad76d630cd6f3584253b872ebff729acb77b0af611e2d7f452",
+        "unlinked_reason": null
+      }
+    },
+    {
+      "id": "alias_antigravity_canonical",
+      "description": "Antigravity canonical name 'antigravity'",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "antigravity",
+        "native_session": "conv-agy-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": "antigravity",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f76310000000961636d652d636f72700000000577732d30310000000b616e7469677261766974790000000c636f6e762d6167792d303031"
+      },
+      "expected": {
+        "link_id": "5c7127071db59a780fdce3521abcd746f697387788b4429ecdf476952c168572",
+        "unlinked_reason": null
+      }
+    },
+    {
+      "id": "alias_antigravity_agy",
+      "description": "Antigravity short CLI alias 'agy' maps to canonical 'antigravity'",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "AGY",
+        "native_session": "conv-agy-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": "antigravity",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f76310000000961636d652d636f72700000000577732d30310000000b616e7469677261766974790000000c636f6e762d6167792d303031"
+      },
+      "expected": {
+        "link_id": "5c7127071db59a780fdce3521abcd746f697387788b4429ecdf476952c168572",
+        "unlinked_reason": null
+      }
+    },
+    {
+      "id": "alias_codex_canonical",
+      "description": "Codex canonical name 'codex'",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "codex",
+        "native_session": "conv-codex-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": "codex",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f76310000000961636d652d636f72700000000577732d303100000005636f6465780000000e636f6e762d636f6465782d303031"
+      },
+      "expected": {
+        "link_id": "874387baa5faaa32fb1d4a8e78541029052eefbb74938e4fc4ff721ad4ce90f5",
+        "unlinked_reason": null
+      }
+    },
+    {
+      "id": "alias_codex_cli",
+      "description": "Codex alias group: wire_client_id=3 and uppercase 'CODEX' agree on canonical 'codex'",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": 3,
+        "raw_harness": "CODEX",
+        "native_session": "conv-codex-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": "codex",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f76310000000961636d652d636f72700000000577732d303100000005636f6465780000000e636f6e762d636f6465782d303031"
+      },
+      "expected": {
+        "link_id": "874387baa5faaa32fb1d4a8e78541029052eefbb74938e4fc4ff721ad4ce90f5",
+        "unlinked_reason": null
+      }
+    },
+    {
+      "id": "alias_grok_canonical",
+      "description": "Grok canonical name 'grok'",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "grok",
+        "native_session": "conv-grok-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": "grok",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f76310000000961636d652d636f72700000000577732d30310000000467726f6b0000000d636f6e762d67726f6b2d303031"
+      },
+      "expected": {
+        "link_id": "f4f9d0cb8ef91ab844867b3ea6ce95d763927e364e5c039d102d0883e7b05b4d",
+        "unlinked_reason": null
+      }
+    },
+    {
+      "id": "alias_grok_cli",
+      "description": "Grok alias group: wire_client_id=4 and uppercase 'GROK' agree on canonical 'grok'",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": 4,
+        "raw_harness": "GROK",
+        "native_session": "conv-grok-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": "grok",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f76310000000961636d652d636f72700000000577732d30310000000467726f6b0000000d636f6e762d67726f6b2d303031"
+      },
+      "expected": {
+        "link_id": "f4f9d0cb8ef91ab844867b3ea6ce95d763927e364e5c039d102d0883e7b05b4d",
+        "unlinked_reason": null
+      }
+    },
+    {
+      "id": "alias_pi_canonical",
+      "description": "Pi canonical name 'pi'",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "pi",
+        "native_session": "conv-pi-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": "pi",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f76310000000961636d652d636f72700000000577732d30310000000270690000000b636f6e762d70692d303031"
+      },
+      "expected": {
+        "link_id": "b458a770df9be8fd0d6fde002f156c7ccf6d5a55f0b91f8104e06de6b7c8e152",
+        "unlinked_reason": null
+      }
+    },
+    {
+      "id": "alias_pi_cli",
+      "description": "Pi alias group: wire_client_id=5 and uppercase 'PI' agree on canonical 'pi'",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "acme-corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": 5,
+        "raw_harness": "PI",
+        "native_session": "conv-pi-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": "pi",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f76310000000961636d652d636f72700000000577732d30310000000270690000000b636f6e762d70692d303031"
+      },
+      "expected": {
+        "link_id": "b458a770df9be8fd0d6fde002f156c7ccf6d5a55f0b91f8104e06de6b7c8e152",
+        "unlinked_reason": null
+      }
+    },
+    {
+      "id": "collision_org_mixed_case_acme_corp",
+      "description": "Case-sensitive org slug: 'Acme-Corp' is valid without case-folding and produces a distinct link_id from lowercase 'acme-corp'",
+      "inputs": {
+        "k_org_hex": "4f72674d61737465725365637265745f323032365f4d544e385f4331615f4b31",
+        "salt_hex": "6167656e742d6f74656c2d6272696467653a6c696e6b2d69642d76313a73616c74",
+        "team": "platform-eng",
+        "epoch": "2026-Q4",
+        "org": "Acme-Corp",
+        "endpoint_scope": "ws-01",
+        "wire_client_id": null,
+        "raw_harness": "claude",
+        "native_session": "conv-f12-parity-001",
+        "origin": "harness"
+      },
+      "intermediates": {
+        "hkdf_info_hex": "000000196167656e742e73657373696f6e2e6c696e6b2e6b65792f76310000000c706c6174666f726d2d656e6700000007323032362d5134",
+        "prk_hex": "45a12bea07c0a084e78cddd2d3da7a2b95a1c06534acc374ebaf937bf05ad2b3",
+        "k_link_hex": "c4ed91ad0f2d1b87a067093c0a2ecea930c784850d759756530a98a29fb331ff",
+        "canonical_harness": "claude",
+        "lp_payload_hex": "000000156167656e742e73657373696f6e2e6c696e6b2f76310000000941636d652d436f72700000000577732d303100000006636c6175646500000013636f6e762d6631322d7061726974792d303031"
+      },
+      "expected": {
+        "link_id": "8d7e8f423a9483442f5b755f17c7c7e56fcd212df95970e54150b7900d059d81",
+        "unlinked_reason": null
+      }
+    }
+  ]
+}

@@ -81,7 +81,7 @@ def candidate():
     return head
 
 
-def linux_tests(source, cache, performance_waiver=None, limits=None):
+def linux_tests(source, cache, limits=None):
     limits = limits or (10 * 1024 ** 3, 24 * 1024 ** 3, 4 * 1024 ** 3)
     host_source = source
     original_home = Path.home()
@@ -157,15 +157,13 @@ def linux_tests(source, cache, performance_waiver=None, limits=None):
             RUSTUP_TOOLCHAIN=TOOLCHAIN, RUSTUP_AUTO_INSTALL="0", PATH=str(cargo.parent) + ":/usr/bin:/bin",
             MISE_AUTO_UPDATE="false", MISE_SELF_UPDATE_AUTO="false", MISE_AUTO_INSTALL="false", MISE_TASK_RUN_AUTO_INSTALL="false",
             CARGO_BUILD_JOBS="2", CMAKE_BUILD_PARALLEL_LEVEL="2", RUST_TEST_THREADS="2"))
-        if performance_waiver == "local-validation-163":
-            environment["DENDRO_VALIDATION_PERF_WAIVER"] = performance_waiver
         rustc_version = subprocess.check_output([str(cargo.parent / "rustc"), "--version"], text=True).strip()
         if not rustc_version.startswith("rustc " + TOOLCHAIN + " "):
             raise SystemExit("Native rustc differs from the pinned toolchain")
         print(json.dumps({"filesystem": filesystem, "cargo": str(cargo), "target": str(target),
                           "fixtureHome": str(profile), "source": str(source), "rustc": rustc_version,
                           "sourceCopyManifestSha256": hashlib.sha256(json.dumps(original_files).encode()).hexdigest(),
-                          "argv": command, "performanceWaiver": performance_waiver}), flush=True)
+                          "argv": command}), flush=True)
         return bounded_tests(command, source, environment, cache, fixture_base, host_source, limits)
 
 
@@ -175,7 +173,6 @@ def main():
     parser.add_argument("--wsl-distro", default=os.environ.get("DENDRO_WSL_DISTRO", "Ubuntu"))
     parser.add_argument("--wsl-child", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--source-root", type=Path, help=argparse.SUPPRESS)
-    parser.add_argument("--performance-waiver", choices=("local-validation-163",), help=argparse.SUPPRESS)
     positive = local_module("windows_guard").positive
     parser.add_argument("--min-free-bytes", type=positive, default=os.environ.get("DENDRO_LINUX_MIN_FREE_BYTES", os.environ.get("DENDRO_WINDOWS_MIN_FREE_BYTES", 10 * 1024 ** 3)))
     parser.add_argument("--cache-max-bytes", type=positive, default=os.environ.get("DENDRO_LINUX_CACHE_MAX_BYTES", 24 * 1024 ** 3))
@@ -187,17 +184,14 @@ def main():
             parser.error("WSL child requires Linux")
         if not args.source_root:
             parser.error("WSL child requires the sanitized source root")
-        return linux_tests(args.source_root, args.cache_dir, args.performance_waiver, limits)
+        return linux_tests(args.source_root, args.cache_dir, limits)
     head = candidate()
-    performance = local_module("performance_policy").decision(ROOT)
     staging = local_module("source_stage")
     if sys.platform == "win32":
         prefix = ["wsl.exe", "--distribution", args.wsl_distro, "--exec"]
         script = subprocess.check_output([*prefix, "wslpath", "-u", str(Path(__file__).resolve())], text=True).strip()
         command = [*prefix, "/usr/bin/python3", "-I", script, "--wsl-child"]
         command += ["--min-free-bytes", str(limits[0]), "--cache-max-bytes", str(limits[1]), "--workspace-max-bytes", str(limits[2])]
-        if performance["enabled"]:
-            command += ["--performance-waiver", performance["id"]]
         if args.cache_dir:
             if not args.cache_dir.as_posix().startswith("/"):
                 parser.error("--cache-dir must be an absolute Linux path")
@@ -223,15 +217,14 @@ def main():
         unchanged = candidate() == head
         (log.with_suffix(".json")).write_text(json.dumps({"head": head, "exitCode": code,
             "candidateUnchanged": unchanged, "passed": code == 0 and unchanged,
-            "command": command, "sourceStage": staged, "native": child_metadata,
-            "performancePolicy": performance}, indent=2), encoding="utf-8")
+            "command": command, "sourceStage": staged, "native": child_metadata}, indent=2), encoding="utf-8")
     elif sys.platform == "linux":
         stages = ROOT / ".agent-runs/local-validation/stages"
         stages.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="native-linux-", dir=stages) as temporary:
             stage = Path(temporary).resolve()
             staging.stage_source(stage)
-            code = linux_tests(stage, args.cache_dir, performance.get("id") if performance["enabled"] else None, limits)
+            code = linux_tests(stage, args.cache_dir, limits)
     else:
         raise SystemExit("Native Linux acceptance needs Linux or Windows with WSL")
     if candidate() != head:

@@ -34,11 +34,34 @@ impl Insight for QueueWait {
     fn domain(&self) -> InsightDomain {
         InsightDomain::Coordination
     }
+    fn required_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::QueueTransitions, Field::TurnTimestamp]
+    }
+    fn optional_fields(&self) -> &'static [crate::insight_v1::Field] {
+        use crate::insight_v1::Field;
+        &[Field::NativeSession]
+    }
+    fn coverage(&self) -> &'static str {
+        COVERAGE
+    }
     fn compute(&self, input: &InsightInput<'_>) -> InsightResult {
-        let rows = match load(input) {
+        let (rows, excluded_connectors) = match load(input) {
             Ok(rows) => rows,
             Err(_) => return refused(self, "store read failed", "queue_facts"),
         };
+        let mut coverage = COVERAGE.to_string();
+        if !excluded_connectors.is_empty() {
+            let mut all: Vec<&str> = vec!["openrig"];
+            all.extend(excluded_connectors.iter().copied());
+            if let crate::insight_v1::DenominatorEvaluation::Computable { scope } =
+                crate::insight_v1::evaluate_denominator(self, &all)
+            {
+                if let Some(disc) = crate::insight_v1::format_denominator_disclosure(&scope) {
+                    coverage = format!("{coverage}; {disc}");
+                }
+            }
+        }
         if rows.is_empty() {
             return refused(self, "empty population", "queue_facts");
         }
@@ -141,7 +164,7 @@ impl Insight for QueueWait {
                     "pending rows with no later in-progress, or end < start",
                 ),
             ],
-            coverage: COVERAGE.to_string(),
+            coverage,
             evidence: rows.into_iter().map(|row| row.key).collect(),
         })
     }
@@ -219,9 +242,11 @@ fn epoch(input: &InsightInput<'_>, text: Option<&str>) -> anyhow::Result<Option<
     Ok(Some(value))
 }
 
-fn load(input: &InsightInput<'_>) -> anyhow::Result<Vec<Row>> {
+fn load(
+    input: &InsightInput<'_>,
+) -> anyhow::Result<(Vec<Row>, std::collections::BTreeSet<&'static str>)> {
     let mut stmt = input.connection().prepare(
-        "SELECT source_key, qitem_id, epoch(ts), transition_id, state
+        "SELECT source_key, qitem_id, epoch(ts), transition_id, state, COALESCE(source_seat, ''), COALESCE(dest_seat, '')
          FROM queue_facts
          WHERE (? IS NULL OR qitem_id = ? OR source_seat = ? OR dest_seat = ?)
            AND (? IS NULL OR ts >= CAST(? AS TIMESTAMP))
@@ -235,14 +260,32 @@ fn load(input: &InsightInput<'_>) -> anyhow::Result<Vec<Row>> {
     let rows = stmt.query_map(
         params![session, session, session, session, from, from, to, to],
         |row| {
-            Ok(Row {
-                key: row.get(0)?,
-                item: row.get(1)?,
-                ts: row.get(2)?,
-                transition: row.get(3)?,
-                state: row.get(4)?,
-            })
+            Ok((
+                Row {
+                    key: row.get(0)?,
+                    item: row.get(1)?,
+                    ts: row.get(2)?,
+                    transition: row.get(3)?,
+                    state: row.get(4)?,
+                },
+                row.get::<_, String>(5)?,
+                row.get::<_, String>(6)?,
+            ))
         },
     )?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    let mut out = Vec::new();
+    let mut excluded = std::collections::BTreeSet::new();
+    for item in rows {
+        let (row, source_seat, dest_seat) = item?;
+        let conn = crate::insight_v1::fidelity::infer_seat_or_key_connector(
+            &row.key,
+            &[&source_seat, &dest_seat],
+        );
+        if input.allows_harness(conn) {
+            out.push(row);
+        } else {
+            excluded.insert(conn);
+        }
+    }
+    Ok((out, excluded))
 }

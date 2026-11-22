@@ -158,6 +158,14 @@ CREATE TABLE tool_facts (
 );
 ```
 - **Grain:** One row per tool invocation. Command arguments and raw outputs are omitted; only deterministic hashed fingerprints are retained.
+- **Shared Watermark-Gated Tool Scan (`ToolScan`, D1 / F2):**
+  - Claude, Codex, Pi, and Grok tool calls are observed through the shared per-generation `ToolScan` path in [`crates/dendro-connectors/src/stream.rs`](../crates/dendro-connectors/src/stream.rs), guarded by the per-file ingestion watermark (`new_from`).
+  - **Real Codex Tool Names & Payload Types:** Codex rollout records (`response_item` with `payload.type` in `function_call`, `custom_tool_call`, or `tool_call` [not observed in G0a captures]) record the real tool name from `payload.name` (e.g. `exec`, `exec_command`, `spawn_agent`, `wait_agent`, `apply_patch`), never the legacy constant `CodexSeatCall`. `response_item` with `payload.type = "local_shell_call"` records a call named `local_shell` (fingerprinting and classifying `action.command` under the same privacy rules as other tool inputs without storing or exporting command text) and settles against `local_shell_call_output`. Native `event_msg` `item_completed` `CommandExecution` items continue to record `CommandExecution` under the same watermark guard and are included in `calls`, `new_calls`, and `prefix_skipped`.
+  - **Per-File Fallback Sessions:** When a Codex file has no `session_meta` header on line 1, `tool_facts.native_session` uses the sealed per-file fallback `codex-file:{source_id}` (`source_session`), matching the session used by the same file's other facts and keeping each header-less file isolated in `evaluate_codex_loops` without guessing or sharing sessions across files.
+  - **Replay Safety, Call-ID Matching & Deduplication:** Within a file generation, calls and results match strictly on `(native_session, call_id)` (never falling back to message `id`, which occupies a different identifier space). A call without a `call_id` is recorded and counted as call-only and is never matched by a result. Calls inside the already-committed watermark prefix (`line_no <= new_from`) do not emit new `tool_facts` rows on replay or re-ingest and increment `prefix_skipped`; repeated call blocks with an already-seen `(native_session, call_id)` increment `duplicate_call_id`.
+  - **Outcome Settlement & Late/Unmatched Results:** A `function_call_output`, `custom_tool_call_output`, `tool_call_output` (not observed in G0a captures), or `local_shell_call_output` settles `tool_facts.failed` only when an explicit outcome signal is present (`is_error`/`isError`, explicit `status`, `exit_code`, non-empty `error`, or an unambiguous `Exit code: N` / `Process exited with code N` line in the `exec_command` header section before `Output:`); outputs without an explicit signal leave `tool_facts.failed = NULL` (unknown). A matched result is counted in `late_results` only when the result's line is past the watermark (`line_no > new_from`) and its call was recorded in an earlier pass or batch (`call.line <= new_from`), so parallel in-batch calls and pure replays of an unchanged log report `late_results = 0`. Outputs arriving before their call within a batch or across batches in the same pass still attach once the call is observed. Outputs with no matching call in `(native_session, call_id)` are counted as `unmatched_results` and never invent a call.
+  - **Observable Tool-Scan Measures (`FileStats.tool_scan: ToolScanCounts`):** Each ingest pass exposes `calls` (unique calls across the generation, including `CommandExecution`), `new_calls` (calls emitted past the watermark cutoff, including `CommandExecution`), `results` (matched result records), `late_results` (matched results past the watermark whose call was recorded in an earlier pass or batch), `unmatched_results` (results with no matching call), `prefix_skipped` (calls at or before the watermark), and `duplicate_call_id` (repeated `call_id` records suppressed within the session).
+  - **Migration / Release Note (Pre-D1 Databases):** Databases ingested before D1 retain their existing `CodexSeatCall` rows in `tool_facts` until the source file changes generation (is replaced or truncated). When an existing pre-D1 Codex session file grows by append without changing generation, its already-committed prefix rows keep `CodexSeatCall` while newly appended calls in that same generation are recorded under their real tool names (mixed naming within that generation until a fresh database or new file generation).
 
 ### 3.3. `message_facts`
 Message metadata tracking turn direction and order without storing text.
@@ -341,6 +349,44 @@ CREATE TABLE file_source_baselines (
 - `dendro_meta`: Metadata header (`schema_version INTEGER NOT NULL, key_id VARCHAR NOT NULL`).
 - `dendro_semantic_state`: Semantic cache invalidation tracking (`id INTEGER PRIMARY KEY, dirty BOOLEAN NOT NULL`).
 
+### 3.13. `session_facts` (`link-id-v1`, `MTN-19 / D3`)
+Cross-product privacy-preserving session link facts (`agent.session.link_id` and `agent.session.unlinked_reason`) conforming byte-exactly to [`docs/contracts/link-id-v1/SPEC.md`](contracts/link-id-v1/SPEC.md) (pinned digest `07dff9562958ec286c1b096f0eb15c91deddb284c26d99904afeba2b882d0ab5`).
+```sql
+CREATE TABLE IF NOT EXISTS session_facts (
+    source_key VARCHAR PRIMARY KEY,
+    source_id VARCHAR NOT NULL,
+    harness VARCHAR NOT NULL,
+    native_session VARCHAR NOT NULL,
+    link_id VARCHAR NOT NULL DEFAULT 'unlinked',
+    unlinked_reason VARCHAR,
+    header_conflict BOOLEAN NOT NULL DEFAULT FALSE,
+    generation BIGINT NOT NULL
+);
+```
+- **Grain:** One row per session identity `(source_id, harness, native_session)` observed during ingestion (`source_key = "{source_id}:{harness}:{native_session}"`), upserted across generations. Only an explicit header conflict (`header_conflict = TRUE`, keyed by `source_id`) permanently locks a session row to `'unlinked'` across subsequent generations and appends; sessions unlinked for configuration or input reasons (`invalid_key_material`, `missing_org`, `missing_endpoint_scope`, missing/invalid `team` or `epoch`) and fallback `{harness}-file:` / `claude-session` rows are recomputed and replaced on subsequent ingests, and a fallback row created during a zero-byte or partial line-1 first pass is retired once the real session header appears.
+- **Compute-Before-Seal Invariant:** `link_id` is computed from the **raw** harness-minted session identifier (`native_session`) **before** `seal_session` is applied. `session_facts.native_session` stores the sealed session token (`session:<hex>`, identical to `usage_facts.native_session` and `tool_facts.native_session`); the raw `native_session` is never persisted anywhere in the database.
+- **Closed Harness Vocabulary (`I01`):** `link-id-v1` canonicalizes harness aliases strictly (`antigravity`/`agy` $\to$ `antigravity`, `claude`/`claude-code` $\to$ `claude`, `codex` $\to$ `codex`, `grok` $\to$ `grok`, `pi` $\to$ `pi`).
+- **Origin Rule (Parser Provenance):** `origin` is assigned by Dendro's parser, never read from transcript content. Native harness-log parsers assign `origin = "harness"`; export or any non-native path sets a non-harness origin, which resolves to `link_id = 'unlinked'` with `unlinked_reason = 'non_harness_origin'`.
+- **Synthetic, Fallback & Header-less Sessions (Parser Provenance):** Sessions are marked unlinked when the parser assigns a fallback or synthetic identifier (per-file fallback `{harness}-file:{source_id}` on header-less Codex/Pi/Grok files, `claude-session` fallback when `sessionId` is absent on a Claude record, or files with conflicting session headers across the file or prior generations), resolving to `link_id = 'unlinked'` (`missing_native_session` when link key material is configured, or `invalid_key_material` when unconfigured).
+- **Closed `unlinked_reason` Vocabulary:** `NULL` when `link_id` is a 64-character lowercase hex digest (`^[0-9a-f]{64}$`); when `link_id = 'unlinked'`, one of:
+  - `invalid_key_material`: No `K_link` configured, `K_link` shorter than 32 bytes / invalid hex, or forbidden `K_org` variable present on the endpoint path.
+  - `non_harness_origin`: Caller/parser `origin` is anything other than `"harness"`.
+  - `missing_org`: Missing or whitespace-only `org` scope.
+  - `missing_endpoint_scope`: Missing or whitespace-only `endpoint_scope`.
+  - `missing_harness`: Missing or whitespace-only harness identifier.
+  - `unknown_harness`: Harness identifier outside the closed `I01` vocabulary.
+  - `conflicting_harness`: Disagreement between `agent.harness` and wire `client_id`.
+  - `missing_native_session`: Missing, whitespace-only, or parser-fallback/header-less `native_session`.
+  - `invalid_field_characters`: Scope slug (`org`, `endpoint_scope`) violates `^[\x21-\x7E]{1,1024}$`, or `native_session` exceeds 1024 UTF-8 bytes, has leading/trailing Unicode `White_Space`, or contains NUL / control (`Cc`) characters.
+- **Pre-D3 Databases & Downstream Export (`D4b`):** `session_facts` is new in D3. Opening a pre-D3 database adds `session_facts` without touching existing tables. Pre-D3 sessions have no row in `session_facts` (`NULL` when joined = *"not computed; full rebuild computes it"*). Downstream export (`D4b`) **MUST** treat a missing `session_facts` row or `NULL` link as `'unlinked'`. See [`docs/link-id-config.md`](link-id-config.md) for endpoint configuration.
+
+### 3.14. Per-Batch Atomicity, Watermarks & Replay Guarantee (`MTN-20 / D4a`)
+- **Single-Transaction Batch Commit (`AnalyticsStore::commit_ingest_batch`):** For every per-file ingestion batch across native harness streams (`stream.rs`) and export connectors (`exports.rs`), all emitted fact families (`file_source_baselines`, `codex_counters`, `usage_facts`, `tool_facts`, `message_facts`, `skill_facts`, `session_edges`, `security_facts`, `session_facts` + fallback retirements, `warnings`) and the covering `source_files` watermark + `dendro-internal:reader:<source_id>:<generation>` checkpoint commit atomically in one DuckDB transaction. OpenRig per-snapshot ingestion (`ingest_openrig` in `ingest.rs`) likewise commits `openrig_row_records`, `mutable_source_disclosures`, OpenRig fact tables, and the `source_files` revision watermark in one transaction via `with_openrig_fact_batch` + `commit_ingest_batch`.
+- **Stage-and-Insert Appenders:** Inside the transaction, `usage_facts` and `tool_facts` bulk-load into connection-scoped temporary tables (`usage_stage`, `tool_stage`) whose creation (`CREATE TEMP TABLE`) and drop (`DROP TABLE`) are transactional inside `tx`, populated via `tx.appender(...)`, and merge via `INSERT INTO ... SELECT ... ON CONFLICT (source_key) DO NOTHING` before dropping the staging table. This retains typed appender throughput and the 1 GB connection memory ceiling while ensuring uncommitted rows and staging tables roll back if the transaction aborts.
+- **Per-Batch `session_facts` & `native_session` Durability:** Every committed batch persists all facts derived from the lines covered by its watermark, including `session_facts` observed up to that watermark, the sticky `header_conflict` latch, `retired_fallback_keys`, and `source_files.native_session` / the reader-marker session (written on every batch once known from batch 1, never overwritten with `NULL` or `''` on single-session sources). Intermediate multi-batch states are safe because each committed state reflects the exact lines covered by its watermark, and a later header conflict can only flip a session row from linked to `'unlinked'` (never the reverse), enforced by the D3 sticky-conflict upsert. On resume, in-memory per-pass session state (`header_conflict` and existing session rows for `source_id`) is seeded from the store so a resumed pass converges to the exact same final state as an uninterrupted pass.
+- **Intentional Separate Writers:** Staged discovery and unreadable-file warnings (`source <name> missing`, `native_entry_unreadable`, `native_file_unreadable`, `export_discovery_failed`), export refusal warnings (`ExportRefused`), live watch process samples (`AnalyticsStore::commit_process_samples`), and post-loop OpenRig seat-lifetime replacement (`AnalyticsStore::replace_seat_bounds`) operate outside per-file batch watermarks in their own bounded transactions.
+- **Deterministic Crash Replay:** If any write stage or `BeforeCommit` fails, the transaction rolls back completely, leaving `source_files` and all fact/warning tables unchanged for that batch. Re-running ingestion from the preserved watermark converges to the exact same row set and content as an uninterrupted run.
+
 ---
 
 ## 4. The 25 Reference Insights Catalog (`I01`–`I25`)
@@ -353,7 +399,7 @@ All reference insights adhere to the immutable contract:
 
 | ID | Name | Domain | Physical Facts | Contract & Output Measures |
 |:---|:---|:---|:---|:---|
-| **I01** | `model.invocations` | Model | `usage_facts`, `message_facts` | Distinct evidenced invocation count. Call grain only; usage-only rows counted separately. Empty population returns `not_observable`. |
+| **I01** | `model.invocations` | Model | `usage_facts` | Distinct qualified invocation count at call grain; dedupes on `(canonical_harness, native_session, source_id, message_id)`. `usage_only` and `unqualified` rows are counted separately. See identity and missingness below. |
 | **I02** | `model.tokens` | Model | `usage_facts` | Inclusive sum of tokens: `cache_read`, `cache_write`, `input_uncached`, `output_tokens`, and non-additive `reasoning`. |
 | **I03** | `model.tokens.inclusive` | Model | `usage_facts`, `session_edges` | Sum over reachable observation graph union. Incomplete lineage yields lower bound. Ambiguous duplicates refuse total. |
 | **I04** | `model.cost` | Model | `usage_facts`, `_dendro_pricing_tiers` | Monetary burn calculated from currency figures or pinned pricing tiers. Excludes estimated or unverified rates. |
@@ -378,6 +424,36 @@ All reference insights adhere to the immutable contract:
 | **I23** | `harness.schema_drift` | Harness | `harness_envelope` | L1 distance between `envelope_shape` key distributions across harness versions. Reports added, removed, and type-altered keys. |
 | **I24** | `security.authority_blast_radius` | Security | `session_edges`, `security_facts` | Bounded graph reachability (`duckpgq`) from revoked/failed grants. Traverses only `status = evidenced`. Carries dependency exposure non-claim. |
 | **I25** | `model.counterfactual_routing` | Model | `usage_facts`, `_dendro_pricing_tiers` | Counterfactual fast-tier simulation via `ASOF JOIN` and `QUANTILE_CONT` cache inflection. Refuses if cohort/tier profile is unpinned. |
+
+### I01 invocation identity and missingness
+
+`I01.distinct_calls` counts distinct tuples of `(canonical_harness, native_session,
+message_id)` from scoped `usage_facts`, matching the store's own call identity
+(`message_seen`). Repeated observations of the same tuple count once, including across
+different `source_id` values; the same message ID in different sessions or harnesses
+counts separately. This is local invocation qualification;
+it does not compute a session `link_id` or introduce machine, actor, or principal keys.
+
+Harness aliases follow the frozen `link-id-v1` vocabulary in
+[`smota/agent-otel-bridge`](https://github.com/smota/agent-otel-bridge/blob/main/docs/contracts/fact-export-v1/link-id-v1/vocabulary.json):
+`claude-code` and `claude` map to `claude`; `agy` and `antigravity` map to
+`antigravity`; `codex`, `grok`, and `pi` map to themselves. Input must be ASCII,
+ASCII case-insensitive, with no trimming. Unknown aliases (including model/provider
+names) do not qualify. Session and message identifiers remain byte-exact;
+they are never concatenated into an ambiguous delimiter-separated key.
+
+`I01.usage_only` counts rows with absent, empty, or whitespace-only message IDs.
+Among rows with message IDs, `I01.unqualified` counts each row with a missing or
+unknown qualifier separately, without deduplicating or adding it to
+`distinct_calls`. Empty/whitespace-only values and literal `unknown` (ASCII
+case-insensitive) are treated as missing session qualifiers (a real session id
+spelled `unknown` is therefore unqualified). When `unqualified > 0` alongside qualified
+calls the status is `partial` with reason `unqualified_rows`; otherwise `computed`.
+Insight version is `1.1.0`. The two row counts are disjoint; the population
+includes all scoped usage rows. With no qualified call the result refuses with
+`not_observable`; an empty population also refuses. Existing qualified single-session
+counts are unchanged. The additive `unqualified` measure exposes missingness rather
+than guessing invocation identities.
 
 ---
 
@@ -417,3 +493,30 @@ Operator-visible intelligence advisor and Model Context Protocol (MCP) server:
 - **Budget & Performance:** Evaluates responses within a warm $p95 \le 15\text{ ms}$ budget. Returns `advisory_budget_exceeded` if the threshold is exceeded.
 - **Uncertainty Taxonomy:** Structured uncertainty expressed through the `AdviseUncertainty` enum (`sample_below_minimum`, `missing_denominator`, `noncomparable_mix`, `counterfactual_only`, `stale`).
 - **Governance Seam:** Advisory is strictly informational for the operator. Advice is never injected into agent prompts and never executes autonomous lifecycle changes.
+
+---
+
+## 6. Field-Level Connector Fidelity & Insight Denominator Matrix (`dendro#134`)
+
+Every connector in `CONNECTOR_DECLARATIONS` (`crates/dendro-core/src/insight_v1/fidelity.rs`)
+declares what it supplies across the closed 28-field `Field` enum (`input_tokens`,
+`output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `reasoning_tokens`,
+`observed_cost`, `message_id`, `native_session`, `turn_timestamp`, `model`, `effort`,
+`context_window_usage`, `tool_call_name`, `tool_outcome`, `tool_fingerprint`,
+`session_edges`, `skill_declarations`, `skill_invocations`, `activity_intervals`,
+`queue_transitions`, `process_identity`, `process_resource_samples`,
+`privileged_effect_trace`, `security_policy`, `security_command_check`,
+`source_coverage`, `trajectory_vector`, `harness_envelope_shape`). Each declaration
+maps a `(connector, Field)` pair to a `FieldFidelity`:
+- `Observed`: parsed directly from native session or verified export records.
+- `Derived`: deterministically computed from observed fields during ingestion (e.g., Codex cumulative-delta token accounting and `input_tokens = input_raw - cache_read - cache_write`, rejecting negative values with a parse error at `crates/dendro-connectors/src/stream.rs:1469-1476`, or heuristic `$skill` / `skills/<name>/SKILL.md` path matching in Codex and Pi).
+- `Partial(PartialFidelityReason)`: supplied only under an explicit typed condition (e.g., Codex `tool_outcome` is `Partial(ExplicitSignalOnly)` when an explicit exit code or error object is present; Claude `effort` is `Partial(ParsedWhenPresentNotObservedInCaptures)`).
+- `Absent`: not supplied by the connector's parser (the honest default).
+
+Every registered insight (`I01`–`I25`) declares its `required_fields` and `optional_fields`
+directly on its registry entry in `crates/dendro-core/src/insight_v1/reference/mod.rs`.
+Evaluating `(insight, connector_set)` via `evaluate` / `evaluate_catalog` or `evaluate_denominator`
+produces a closed two-state `DenominatorEvaluation`:
+- `Computable { scope: DenominatorScope }`: at least one connector supplies all required fields. Connectors lacking any required field are placed in `scope.excluded` with their missing fields, filtered out via the included-connector allow-list (`allows_harness`), and disclosed in `coverage` (`excluded: <connector> — missing <fields>`, or `excluded: unregistered harness` for unregistered harness values).
+- `NotComputable { missing, by_connector, .. }`: no connector in the evaluated set supplies all required fields. The insight refuses with `InsightStatus::Refused { reason: "not_computable: missing ..." }` (mapped to display badge `insufficient_evidence`), preserving its original coverage text and appending the missing-field refusal and exclusion list, never emitting a guessed or zero value. See `docs/providers/provider-matrix.md` for the full generated field-fidelity and denominator matrix.
+- **Single Source of Truth & Deferred Cross-Connector Joins:** `CONNECTOR_DECLARATIONS` is the single source of truth for denominator eligibility across both scoped and unscoped evaluation paths; there are no runtime overrides or ad-hoc table presence carve-outs. Every fact row is filtered strictly by its own harness (`allows_harness`), and unattributable rows are excluded and counted in `coverage` (`excluded: N unattributed rows`) whenever an allow-list is active. Cross-connector joins (such as combining `openrig` context, skill declarations, or queue transitions with individual harness rows) are deferred from the MVP and require an explicit declared-join design.
