@@ -35,6 +35,12 @@ leave their synthetic library folders in the owner's profile through these paths
 Windows requires Python 3.13 or newer so `mkdir(mode=0o700)` gives the run root
 an explicit private ACL instead of inheriting repository access. Older Python
 versions fail before launch; the guard does not install an interpreter.
+Before creating children, the guard replaces Python's `OWNER RIGHTS` ACE on that
+new empty run root with an explicit creator-SID grant plus SYSTEM and Administrators.
+Its protected DACL grants only those three principals inherited full control.
+This preserves Dendro's ancestor-admission policy, which refuses replacement rights
+granted to `OWNER RIGHTS`. Profile descendants inherit the admitted grants; existing
+guard-base, worktree, home, and system ancestor permissions are not changed.
 The guard preserves Rustup, Cargo, mise, uv, and pnpm installation/cache locations
 before redirecting the profile. It disables Rustup automatic toolchain installation.
 Native child environments admit only Windows/build variables, known tool paths,

@@ -108,6 +108,57 @@ def lock(file):
         fcntl.flock(file, fcntl.LOCK_EX | fcntl.LOCK_NB)
 
 
+def admit_private_windows_root(path):
+    """Replace Python's OWNER RIGHTS ACE only on a newly created empty run root."""
+    if os.name != "nt":
+        return
+    from ctypes import wintypes
+    api = ctypes.WinDLL("advapi32", use_last_error=True)
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    pointer = ctypes.c_void_p
+    api.GetNamedSecurityInfoW.argtypes = [wintypes.LPWSTR, ctypes.c_int, wintypes.DWORD,
+                                        ctypes.POINTER(pointer), pointer, pointer, pointer, ctypes.POINTER(pointer)]
+    api.GetNamedSecurityInfoW.restype = wintypes.DWORD
+    api.ConvertSidToStringSidW.argtypes = [pointer, ctypes.POINTER(pointer)]
+    api.ConvertSidToStringSidW.restype = wintypes.BOOL
+    api.ConvertStringSecurityDescriptorToSecurityDescriptorW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD,
+                                                                        ctypes.POINTER(pointer), pointer]
+    api.ConvertStringSecurityDescriptorToSecurityDescriptorW.restype = wintypes.BOOL
+    api.GetSecurityDescriptorDacl.argtypes = [pointer, ctypes.POINTER(wintypes.BOOL),
+                                             ctypes.POINTER(pointer), ctypes.POINTER(wintypes.BOOL)]
+    api.GetSecurityDescriptorDacl.restype = wintypes.BOOL
+    api.SetNamedSecurityInfoW.argtypes = [wintypes.LPWSTR, ctypes.c_int, wintypes.DWORD,
+                                        pointer, pointer, pointer, pointer]
+    api.SetNamedSecurityInfoW.restype = wintypes.DWORD
+    kernel.LocalFree.argtypes = [pointer]
+    kernel.LocalFree.restype = pointer
+    owner, original, owner_text, private, dacl = (pointer() for _ in range(5))
+    try:
+        status = api.GetNamedSecurityInfoW(str(path), 1, 1, ctypes.byref(owner), None, None, None, ctypes.byref(original))
+        if status:
+            raise ctypes.WinError(status)
+        if not api.ConvertSidToStringSidW(owner, ctypes.byref(owner_text)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        sid = ctypes.wstring_at(owner_text)
+        sddl = f"D:P(A;OICI;FA;;;{sid})(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
+        if not api.ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl, 1, ctypes.byref(private), None):
+            raise ctypes.WinError(ctypes.get_last_error())
+        present, defaulted = wintypes.BOOL(), wintypes.BOOL()
+        if not api.GetSecurityDescriptorDacl(private, ctypes.byref(present), ctypes.byref(dacl), ctypes.byref(defaulted)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        if not present or not dacl:
+            raise GuardError(f"Private validation DACL is absent: {path}")
+        status = api.SetNamedSecurityInfoW(str(path), 1, 0x80000004, None, None, dacl, None)
+        if status:
+            raise ctypes.WinError(status)
+    except OSError as error:
+        raise GuardError(f"Cannot admit private validation ACL at {path}: {error}") from error
+    finally:
+        for allocation in (private, owner_text, original):
+            if allocation:
+                kernel.LocalFree(allocation)
+
+
 class WindowsJob:
     """An assigned helper cannot start its command before the parent releases it."""
     def __init__(self):
@@ -272,6 +323,12 @@ class WindowsGuard:
             self.check()
             self.path = self.base / uuid.uuid4().hex
             self.path.mkdir(mode=0o700)
+            try:
+                admit_private_windows_root(self.path)
+            except BaseException:
+                self.path.rmdir()  # Still empty; no child or ownership record exists yet.
+                self.path = None
+                raise
             self._state("idle")
             (self.path / LEASE).write_bytes(b"1")
             self.lease = (self.path / LEASE).open("r+b")

@@ -82,14 +82,19 @@ class GuardTests(unittest.TestCase):
                 "@{protected=$acl.AreAccessRulesProtected; owner=$acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value; current=[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value; "
                 "rules=@($acl.Access | ForEach-Object { @{sid=$_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value; "
                 "allow=($_.AccessControlType -eq 'Allow')} })} | ConvertTo-Json -Depth 4 -Compress")
-            result = subprocess.run([powershell, "-NoProfile", "-NonInteractive", "-Command", script],
-                                    env=dict(os.environ, DENDRO_GUARD_ACL_PATH=str(guard.path)),
-                                    capture_output=True, text=True, check=True, timeout=10)
-            acl = json.loads(result.stdout)
-            self.assertTrue(acl["protected"], "private root must not inherit repository access rules")
-            self.assertEqual(acl["owner"], acl["current"])
-            allowed = {acl["current"], "S-1-3-4", "S-1-5-32-544", "S-1-5-18"}
-            self.assertTrue(all(rule["sid"] in allowed for rule in acl["rules"] if rule["allow"]))
+            for directory in (guard.path, Path(guard.env["USERPROFILE"]), Path(guard.env["APPDATA"])):
+                with self.subTest(directory=directory):
+                    result = subprocess.run([powershell, "-NoProfile", "-NonInteractive", "-Command", script],
+                                            env=dict(os.environ, DENDRO_GUARD_ACL_PATH=str(directory)),
+                                            capture_output=True, text=True, check=True, timeout=10)
+                    acl = json.loads(result.stdout)
+                    if directory == guard.path:
+                        self.assertTrue(acl["protected"], "private root must not inherit repository access rules")
+                    self.assertEqual(acl["owner"], acl["current"])
+                    allowed = {acl["current"], "S-1-5-32-544", "S-1-5-18"}
+                    granted = {rule["sid"] for rule in acl["rules"] if rule["allow"]}
+                    self.assertTrue(granted <= allowed, "ancestor admission refuses OWNER RIGHTS and other replacement principals")
+                    self.assertIn(acl["current"], granted, "grant the creator SID explicitly")
 
     def test_external_floor_stops_owned_child(self):
         with ExternalWindowsGuard(self.root, self.environment) as guard:
