@@ -6,8 +6,17 @@ on the current host and the existing governance and site checks. Its Linux leg
 runs formatting, check, and Clippy in Dagger, followed by the complete unfiltered
 workspace test suite on native ext4. Failures stop the task. `verify:fast` runs
 formatting and governance/site checks; it is an iteration aid, not full acceptance.
+Full native verification refuses a dirty candidate before running a Rust command.
+The cheap gate runs both Windows resource-guard and committed-input/receipt tests;
+neither suite compiles Rust or loads the Dagger SDK.
 The local governance leg includes the dependency-automation and CI-scope unit
 tests introduced by the current development baseline.
+`mise run verify:dependency-automation` runs the upstream Dependabot author/path
+validator against `origin/development` without a Rust build. A full local run on
+a `dependabot/*` branch also adds this check. That name grants no permission:
+the existing validator still checks every commit's author and allowed paths, and
+ordinary path-ownership/catalog checks still run. `BASE_REF` comes from the
+explicit `--base main|development` argument, never a caller-supplied environment.
 
 The repository pins Rust 1.98.1 and Python Dagger SDK 0.21.12. Dagger requires a
 local Linux Docker backend. Mise declares the matching Dagger CLI; tasks use
@@ -139,12 +148,44 @@ threshold in release builds; debug checks retain semantic results, zero writes,
 privacy, and the explicit zero-budget rejection assertion. The validation runners
 do not override these upstream requirements.
 
-Dagger receives candidate files from an explicit source allowlist and narrowly
-selected `.agentflow/oracles` test fixtures. It excludes git history, agent
-configuration, environment files, private keys and databases. Edits to tracked
-files and permitted untracked files are included. A temporary sanitized copy is
+Dagger and native Linux receive committed HEAD blobs from one streaming Git
+`cat-file --batch` process on the source host. Staging requires a clean worktree
+before and after the copy and refuses a changed HEAD. Checkout line endings and
+untracked files cannot replace committed bytes. No Git operations run in WSL.
+
+Every tracked input must be classified explicitly. Public roots are `adapters`,
+`crates`, `docs`, `examples`, `goals`, `lib`, `manifests`, `openrig`, `roles`,
+`schemas`, `scripts`, `site`, `skills`, `templates`, `transitions`,
+`tools/validation`, and `.agentflow/oracles`. The named root-file list also admits
+Cargo/Node/workspace metadata, licenses, public documentation, project governance
+configuration, and canonical Rust/tool configuration such as `rustfmt.toml`,
+`clippy.toml`, `.cargo/config.toml`, `rust-toolchain.toml`, and `deny.toml` when
+tracked. An unclassified tracked path fails staging; extend the classification
+through review when adding a new public package or configuration location.
+
+Explicit exclusions cover agent installations/instructions, known `.agentflow`
+operational state, hosted-service metadata, VCS/hooks, generated output,
+environment files, credentials, keys, and databases. Exclusion counts are recorded
+by category without uploading their contents. A public input must be a regular
+Git `100644` or `100755` blob; symlinks, gitlinks, reparse points, and escaped paths
+are refused. Review new candidate files for secrets.
+
+The generated `.validation-source-manifest.json` binds candidate HEAD/tree to
+each admitted path, Git mode, blob object ID, and SHA-256. Receivers verify the
+complete file set and recompute both blob IDs and byte digests. Git executable
+modes travel as metadata, because Windows stat bits cannot prove those modes.
+The Linux private copy applies `0700` to executable files and `0600` to ordinary
+files; Dagger explicitly sets the admitted scripts executable before Rust gates.
+The current executable inputs are `scripts/verify-architecture-guardrails.mjs`,
+`scripts/verify-design-guardrails.mjs`, and `scripts/worktree-slice.sh`.
+
+The Linux child verifies the source before and after tests, then emits candidate
+HEAD/tree, manifest SHA-256, file count, and executable paths. The Windows receipt
+requires exactly one valid child record matching all staged facts. Missing or
+mismatched metadata makes `passed` false and the adapter exit nonzero even when
+the child returned zero. `childExitCode` preserves that original status; `exitCode`
+records the adapter's attestation decision. A temporary sanitized copy remains
 the only host upload; literal paths avoid glob syntax and request-header limits.
-Symlinks and escaped paths are refused. Review new candidate files for secrets.
 Containers mount only project-specific dependency/build caches, never host home,
 production stores, Docker sockets, or installed Dendro data.
 

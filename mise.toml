@@ -15,7 +15,11 @@ run = ["mise run verify:guard", "uv run tools/validation/verify.py", "mise run v
 
 [tasks."verify:guard"]
 description = "Cheap validation-boundary regressions; no Rust compilation or SDK"
-run = "uv run tools/validation/test_windows_guard.py -v"
+run = ["uv run tools/validation/test_windows_guard.py -v", "uv run tools/validation/test_validation_inputs.py -v"]
+
+[tasks."verify:dependency-automation"]
+description = "Require real Dependabot commit authorship and allowed paths against development"
+run = "uv run tools/validation/verify.py --dependency-automation --base development"
 
 [tasks."verify:fast"]
 description = "Formatting and existing governance/site checks"

@@ -4,7 +4,6 @@
 # ///
 """Run Linux workspace tests on admitted ext4; Windows retains all source Git work."""
 import argparse
-import hashlib
 import importlib.util
 import json
 import os
@@ -81,7 +80,35 @@ def candidate():
     return head
 
 
-def linux_tests(source, cache, limits=None):
+def receipt_result(head, staged, metadata, child_code, unchanged):
+    expected = {"sourceHead": head, "sourceTree": staged["git_tree"],
+                "sourceCopyManifestSha256": staged["candidate_manifest_sha256"],
+                "sourceFileCount": staged["file_count"], "sourceExecutablePaths": staged["executable_paths"]}
+    attested = staged["head"] == head and isinstance(metadata, dict) and metadata.get("filesystem") == "ext4" and all(
+        type(metadata.get(key)) is type(value) and metadata[key] == value for key, value in expected.items()
+    )
+    passed = child_code == 0 and unchanged and attested
+    return {"head": head, "childExitCode": child_code,
+            "exitCode": child_code if child_code else (0 if passed else 1),
+            "candidateUnchanged": unchanged, "sourceAttested": attested, "passed": passed,
+            "sourceStage": staged, "native": metadata}
+
+
+def child_metadata(output):
+    records = []
+    for line in output.splitlines():
+        if line.startswith('{"filesystem":'):
+            try:
+                records.append(json.loads(line))
+            except ValueError:
+                return None
+    return records[0] if len(records) == 1 else None
+
+
+def linux_tests(source, cache, limits, expected):
+    staging = local_module("source_stage")
+    copied = staging.verify_source(source, expected_head=expected["head"],
+                                   expected_digest=expected["candidate_manifest_sha256"])
     limits = limits or (10 * 1024 ** 3, 24 * 1024 ** 3, 4 * 1024 ** 3)
     host_source = source
     original_home = Path.home()
@@ -125,19 +152,10 @@ def linux_tests(source, cache, limits=None):
             raise SystemExit("Native fixture HOME is too long for the Unix socket tests")
         profile.mkdir(mode=0o700)
         private_source = profile / "s"
-        def manifest(directory):
-            return [(path.relative_to(directory).as_posix(), hashlib.sha256(path.read_bytes()).hexdigest())
-                    for path in sorted(directory.rglob("*"), key=lambda p: p.relative_to(directory).as_posix()) if path.is_file()]
-        original_files = manifest(source)
-        shutil.copytree(source, private_source, copy_function=shutil.copyfile)
-        for directory, names, files in os.walk(private_source):
-            Path(directory).chmod(0o700)
-            for name in files:
-                path = Path(directory) / name
-                executable = (source / path.relative_to(private_source)).stat().st_mode & 0o100
-                path.chmod(0o600 | executable)
-        if manifest(private_source) != original_files:
-            raise SystemExit("Private ext4 source copy differs from the sanitized stage")
+        shutil.copytree(source, private_source, copy_function=shutil.copyfile, symlinks=True)
+        staging.apply_source_modes(private_source)
+        staging.verify_source(private_source, expected_head=copied["head"],
+                              expected_digest=copied["candidate_manifest_sha256"], enforce_modes=True)
         if subprocess.check_output(["findmnt", "-n", "-o", "FSTYPE", "-T", str(private_source)], text=True).strip() != "ext4":
             raise SystemExit("Native source scratch must also be on ext4")
         source = private_source
@@ -160,11 +178,16 @@ def linux_tests(source, cache, limits=None):
         rustc_version = subprocess.check_output([str(cargo.parent / "rustc"), "--version"], text=True).strip()
         if not rustc_version.startswith("rustc " + TOOLCHAIN + " "):
             raise SystemExit("Native rustc differs from the pinned toolchain")
+        code = bounded_tests(command, source, environment, cache, fixture_base, host_source, limits)
+        staging.verify_source(source, expected_head=copied["head"],
+                              expected_digest=copied["candidate_manifest_sha256"], enforce_modes=True)
         print(json.dumps({"filesystem": filesystem, "cargo": str(cargo), "target": str(target),
                           "fixtureHome": str(profile), "source": str(source), "rustc": rustc_version,
-                          "sourceCopyManifestSha256": hashlib.sha256(json.dumps(original_files).encode()).hexdigest(),
+                          "sourceHead": copied["head"], "sourceTree": copied["git_tree"],
+                          "sourceCopyManifestSha256": copied["candidate_manifest_sha256"],
+                          "sourceFileCount": copied["file_count"], "sourceExecutablePaths": copied["executable_paths"],
                           "argv": command}), flush=True)
-        return bounded_tests(command, source, environment, cache, fixture_base, host_source, limits)
+        return code
 
 
 def main():
@@ -173,6 +196,8 @@ def main():
     parser.add_argument("--wsl-distro", default=os.environ.get("DENDRO_WSL_DISTRO", "Ubuntu"))
     parser.add_argument("--wsl-child", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--source-root", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--expected-head", help=argparse.SUPPRESS)
+    parser.add_argument("--expected-source-sha256", help=argparse.SUPPRESS)
     positive = local_module("windows_guard").positive
     parser.add_argument("--min-free-bytes", type=positive, default=os.environ.get("DENDRO_LINUX_MIN_FREE_BYTES", os.environ.get("DENDRO_WINDOWS_MIN_FREE_BYTES", 10 * 1024 ** 3)))
     parser.add_argument("--cache-max-bytes", type=positive, default=os.environ.get("DENDRO_LINUX_CACHE_MAX_BYTES", 24 * 1024 ** 3))
@@ -182,9 +207,10 @@ def main():
     if args.wsl_child:
         if sys.platform != "linux":
             parser.error("WSL child requires Linux")
-        if not args.source_root:
-            parser.error("WSL child requires the sanitized source root")
-        return linux_tests(args.source_root, args.cache_dir, limits)
+        if not args.source_root or not args.expected_head or not args.expected_source_sha256:
+            parser.error("WSL child requires the sanitized source root and expected HEAD/digest")
+        return linux_tests(args.source_root, args.cache_dir, limits,
+                           {"head": args.expected_head, "candidate_manifest_sha256": args.expected_source_sha256})
     head = candidate()
     staging = local_module("source_stage")
     if sys.platform == "win32":
@@ -207,24 +233,29 @@ def main():
             if not stage.is_relative_to(stages.resolve()):
                 raise SystemExit("Source stage escaped the intended workspace")
             staged = staging.stage_source(stage)
+            if staged["head"] != head:
+                raise SystemExit("Candidate changed before source staging")
             source_linux = subprocess.check_output([*prefix, "wslpath", "-u", str(stage)], text=True).strip()
-            command += ["--source-root", source_linux]
+            command += ["--source-root", source_linux, "--expected-head", staged["head"],
+                        "--expected-source-sha256", staged["candidate_manifest_sha256"]]
             with log.open("w", encoding="utf-8") as output:
                 code = subprocess.run(command, cwd=ROOT, stdout=output, stderr=subprocess.STDOUT, timeout=7800).returncode
         print(log.read_text(encoding="utf-8", errors="replace")[-16000:], flush=True)
-        child_metadata = next((json.loads(line) for line in log.read_text(encoding="utf-8", errors="replace").splitlines()
-                               if line.startswith('{"filesystem":')), None)
+        metadata = child_metadata(log.read_text(encoding="utf-8", errors="replace"))
         unchanged = candidate() == head
-        (log.with_suffix(".json")).write_text(json.dumps({"head": head, "exitCode": code,
-            "candidateUnchanged": unchanged, "passed": code == 0 and unchanged,
-            "command": command, "sourceStage": staged, "native": child_metadata}, indent=2), encoding="utf-8")
+        receipt = receipt_result(head, staged, metadata, code, unchanged)
+        receipt["command"] = command
+        (log.with_suffix(".json")).write_text(json.dumps(receipt, indent=2), encoding="utf-8")
+        code = receipt["exitCode"]
     elif sys.platform == "linux":
         stages = ROOT / ".agent-runs/local-validation/stages"
         stages.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="native-linux-", dir=stages) as temporary:
             stage = Path(temporary).resolve()
-            staging.stage_source(stage)
-            code = linux_tests(stage, args.cache_dir, limits)
+            staged = staging.stage_source(stage)
+            if staged["head"] != head:
+                raise SystemExit("Candidate changed before source staging")
+            code = linux_tests(stage, args.cache_dir, limits, staged)
     else:
         raise SystemExit("Native Linux acceptance needs Linux or Windows with WSL")
     if candidate() != head:

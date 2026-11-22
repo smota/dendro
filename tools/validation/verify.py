@@ -58,10 +58,13 @@ def main():
     group.add_argument("--windows", action="store_true")
     group.add_argument("--native-fixture", action="store_true")
     group.add_argument("--release-candidate", action="store_true")
+    group.add_argument("--dependency-automation", action="store_true")
     parser.add_argument("--base", choices=("main", "development"), default="development")
     args = parser.parse_args()
     if args.windows and sys.platform != "win32":
         parser.error("verify:windows must run on native Windows")
+    if not args.fast:
+        require_clean_candidate()
     os.environ.setdefault("RUSTUP_TOOLCHAIN", "1.98.1")
     os.environ.setdefault("CARGO_BUILD_JOBS", "2")
     os.environ.setdefault("CMAKE_BUILD_PARALLEL_LEVEL", "2")
@@ -70,6 +73,14 @@ def main():
         for key in ("RUSTUP_TOOLCHAIN", "CARGO_BUILD_JOBS", "CMAKE_BUILD_PARALLEL_LEVEL", "RUST_TEST_THREADS"):
             if key in os.environ:
                 GUARD.env[key] = os.environ[key]
+    def dependency_automation():
+        os.environ["BASE_REF"] = args.base
+        if GUARD is not None:
+            GUARD.env["BASE_REF"] = args.base
+        run(["node", "scripts/validate-dependency-automation.mjs"])
+    if args.dependency_automation:
+        dependency_automation()
+        return
     if args.release_candidate:
         version = tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]["package"]["version"]
         if not (ROOT / "docs" / f"RELEASE_NOTES_v{version}.md").is_file():
@@ -77,7 +88,6 @@ def main():
         run(["cargo", "check", "--workspace", "--locked"])
         return
     if args.native_fixture:
-        require_clean_candidate()
         paths = []
         for key in ("FOUNDATION_CROSS_VOLUME_SOURCE", "FOUNDATION_CROSS_VOLUME_DEST"):
             value = os.environ.get(key)
@@ -115,6 +125,8 @@ def main():
         run(["pnpm", "install", "--frozen-lockfile"])
         for script in GOVERNANCE_TESTS:
             run(["node", "--test", script])
+        if branch.startswith("dependabot/"):
+            dependency_automation()
         for script in GOVERNANCE:
             run(["node", f"scripts/{script}"])
         run(["node", "--test", "site/site.test.cjs"])

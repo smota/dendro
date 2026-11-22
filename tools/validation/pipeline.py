@@ -15,7 +15,7 @@ from source_stage import stage_source
 ROOT = Path(__file__).resolve().parents[2]
 
 
-async def verify(stage):
+async def verify(stage, staged):
     async with dagger.Connection(dagger.Config(
         log_output=sys.stderr, timeout=dagger.Timeout(60, connect=30, read=7200),
     )) as client:
@@ -40,6 +40,8 @@ async def verify(stage):
             .with_env_variable("CARGO_TERM_COLOR", "never")
             .with_mounted_cache("/usr/local/cargo/registry", client.cache_volume("dendro-rust-1.98.1-registry"), owner="validator")
             .with_mounted_cache("/src/target", client.cache_volume("dendro-linux-rust-1.98.1-target"), owner="validator"))
+        if staged["executable_paths"]:
+            container = container.with_exec(["chmod", "700", *staged["executable_paths"]])
         build_gates = {command[1]: command for command in RUST_GATES if command[:2] != ["cargo", "test"]}
         if len(build_gates) != 3 or set(build_gates) != {"fmt", "check", "clippy"}:
             raise RuntimeError("Classify changed Rust gates before container validation")
@@ -51,8 +53,8 @@ async def verify(stage):
 
 async def main():
     with tempfile.TemporaryDirectory(prefix="dendro-validation-") as stage:
-        stage_source(Path(stage))
-        await verify(stage)
+        staged = stage_source(Path(stage))
+        await verify(stage, staged)
 
 
 if __name__ == "__main__":
